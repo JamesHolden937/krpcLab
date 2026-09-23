@@ -12,15 +12,15 @@
 # separates "this control loop amplifies" from "these two games are not the
 # same", and nothing else could answer it after the fact.
 #
-#   OUT=/tmp/base.txt N=8 ./farmfly.sh
-#   OUT=/tmp/arm.txt  N=8 SETS="CROSS_DEADBAND_PER_KM=4;CROSS_DEADBAND_MAX_M=6000" ./farmfly.sh
-#   OUT=/tmp/arm.txt  N=10 INSTANCES="0 2 3" TS=6.0 ./farmfly.sh
+#   OUT=/tmp/base.txt N=8 ./spaceplane/tools/farmfly.sh
+#   OUT=/tmp/arm.txt  N=8 SETS="CROSS_DEADBAND_PER_KM=4;CROSS_DEADBAND_MAX_M=6000" ./spaceplane/tools/farmfly.sh
+#   OUT=/tmp/arm.txt  N=10 INSTANCES="0 2 3" TS=6.0 ./spaceplane/tools/farmfly.sh
 #
-# Then: ./landsum.py logs/LOG16*   (and read the arrival and the landing bias
-# as two separate numbers -- see docs/spaceplane.md).
+# Then: ./spaceplane/tools/landsum.py logs/LOG16*   (and read the arrival and the landing bias
+# as two separate numbers -- see docs/spaceplane/design.md).
 #
 # Before believing the result, three one-line farm checks that have each cost
-# this project a day; see docs/test-instances.md:
+# this project a day; see docs/testInstances.md:
 #
 #   pgrep -af spaceplane.autopilot                 # one per busy instance
 #   md5sum testInstances/ksp*/saves/default/qs_plane.sfs | awk '{print $1}' | sort -u | wc -l
@@ -37,7 +37,7 @@ INSTANCES="${INSTANCES:-0 1 2 3}"
 SETS="${SETS:-}"
 # GOVERN=--no-govern turns the time-scale governor off, so --timescale means
 # a fixed multiplier for the whole flight -- the old meaning.  Only for
-# measuring the governor against itself; see docs/spaceplane.md.
+# measuring the governor against itself; see docs/spaceplane/design.md.
 GOVERN="${GOVERN:-}"
 OUT="${OUT:-$ROOT/logs/farmfly.txt}"
 

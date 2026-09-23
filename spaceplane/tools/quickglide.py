@@ -6,9 +6,9 @@ as ``quickfly.py``: load a save, press START on the panel itself, wait for the
 autopilot to finish, and print one line saying what happened.  In-game
 measurement is the bottleneck, so the loop has to be pressable by a script.
 
-    ./quickglide.py -n 3
-    ./quickglide.py -n 1 --instance 0 --set AERO_REFRESH_UT=0.5
-    ./quickglide.py -n 3 --instance 0 --timescale 4.0
+    ./spaceplane/tools/quickglide.py -n 3
+    ./spaceplane/tools/quickglide.py -n 1 --instance 0 --set AERO_REFRESH_UT=0.5
+    ./spaceplane/tools/quickglide.py -n 3 --instance 0 --timescale 4.0
 
 What it reports is the *signed* offset from the runway midpoint, along and
 across the centreline, not a great-circle distance.  A distance cannot tell an
@@ -241,7 +241,7 @@ def fly(args, index):
     # logbook opened or a traceback out of the control loop -- and discarding
     # them turns "the autopilot died at 2.5 km" into a log that simply stops
     # mid-glide with no shutdown line and a vessel the game reports as 0.00 t.
-    # ``run-glide.sh`` appends to the same file; so does this.
+    # ``run.sh --pilot spaceplane`` appends to the same file; so does this.
     launched = time.time()
     errors = open(os.path.join(ROOT, "logs", "stderr.log"), "a")
     try:

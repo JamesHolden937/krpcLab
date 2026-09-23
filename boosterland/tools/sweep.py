@@ -8,9 +8,9 @@ pool of instances.  A flight is about three minutes, and the question that
 matters -- does a change help on *every* entry state, or only the one it was
 tuned on -- is a grid, so serially it is an hour a question.
 
-    ./sweep.py -n 2 --saves quicksave,qs_hot,qs_cold
-    ./sweep.py -n 2 --compare CORRECTION_ENTER_M=300,1200
-    ./sweep.py -n 3 --saves quicksave --set AIM_BIAS_EAST_M=0
+    ./boosterland/tools/sweep.py -n 2 --saves quicksave,qs_hot,qs_cold
+    ./boosterland/tools/sweep.py -n 2 --compare CORRECTION_ENTER_M=300,1200
+    ./boosterland/tools/sweep.py -n 3 --saves quicksave --set AIM_BIAS_EAST_M=0
 
 Every job in one sweep runs under the same instance count, because that is the
 comparison the harness supports: a loaded machine slows the game below real

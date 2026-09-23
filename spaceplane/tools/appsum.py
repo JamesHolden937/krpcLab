@@ -29,8 +29,8 @@ and that compensating should collapse it.  **Check the mechanism moved before
 reading the outcome** (CLAUDE.md): a null on the landings with ``excess``
 unchanged means the knob never reached the decision.
 
-    ./appsum.py logs/LOG24*
-    ./appsum.py --by-arm logs/LOG24*
+    ./spaceplane/tools/appsum.py logs/LOG24*
+    ./spaceplane/tools/appsum.py --by-arm logs/LOG24*
 """
 import argparse
 import glob

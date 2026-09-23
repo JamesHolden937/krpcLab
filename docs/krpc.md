@@ -44,8 +44,11 @@ anything uncertain — several signatures differ from older tutorials.
   opposite sides at the part's *deploy angle*, which is not a typed property
   — it is the module field `"Deploy Angle"`, reached through
   `module.has_field(name)` / `module.set_field_float(name, value)` on the
-  part's `ControlSurface` module. On `qs_plane` all six surfaces read
-  `pitch_enabled == yaw_enabled == roll_enabled == False`, so **do not
-  identify a rudder by what the game says it does** — there is nothing to
-  read. `spaceplane/airbrake.py` identifies it geometrically instead, from
-  `part.position(frame)` and the span axis of `part.rotation(frame)`.
+  part's `ControlSurface` module. **The part menu's `Pitch`/`Yaw`/`Roll`
+  fields are KSP's *ignore* flags** (`ignorePitch` in the save), not enables:
+  `Pitch=False` means the axis is live. An earlier reading took them the other
+  way round, and `available_torque` on the pad (q=0) seemed to agree; every
+  surface on both spaceplane craft has every axis live (docs/spaceplane/journal.md,
+  "Session, 2026-09-23"). `spaceplane/airbrake.py` identifies a rudder
+  geometrically, from `part.position(frame)` and the span axis of
+  `part.rotation(frame)`, which does not depend on those flags.

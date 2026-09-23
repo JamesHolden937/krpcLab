@@ -120,7 +120,7 @@ fi
 # every physics step is the step the vehicle flies at 1x.  KSP's own physics
 # warp does the opposite -- it multiplies fixedDeltaTime to hold CPU cost flat,
 # which is an integration-fidelity loss exactly where this vehicle lives.
-# Off by default; ../timescale.py turns it on per instance.  See
+# Off by default; ../tools/timescale.py turns it on per instance.  See
 # keepNotes.md, "Flying faster than real time".
 if [ -f "$HERE/timescaleSrc/TimeScale.cs" ]; then
   M="$BASE/KSP_x64_Data/Managed"
@@ -181,7 +181,7 @@ set_key ANTI_ALIASING             0
 # for the whole desktop.  That is not a comfort problem: an exhausted card
 # loses GL contexts, and a lost context takes down *every* GL client at once,
 # which is the "all four instances died together" entry in
-# docs/test-instances.md and the browser core dump that was mistaken for its
+# docs/testInstances.md and the browser core dump that was mistaken for its
 # cause.  The desktop going glitchy whenever the farm runs is the same
 # shortage seen from the other side.
 #

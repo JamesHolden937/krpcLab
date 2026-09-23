@@ -7,8 +7,8 @@ The logs are dense and meant to be read whole, but comparing twenty flights
 needs the four numbers that separate them: where boostback stopped, what the
 coast did to the prediction, and where the booster ended up.
 
-    ./logsum.py logs/LOG1 logs/LOG2
-    ./logsum.py --trace logs/LOG1
+    ./boosterland/tools/logsum.py logs/LOG1 logs/LOG2
+    ./boosterland/tools/logsum.py --trace logs/LOG1
 """
 import argparse
 import re

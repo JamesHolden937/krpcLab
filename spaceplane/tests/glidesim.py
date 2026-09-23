@@ -8,8 +8,8 @@ whether the solve's signs are right, whether it saturates, whether the phases
 hand over sensibly, and whether the vehicle arrives at the gate on speed.
 Those are the failures worth catching before spending a three-minute flight.
 
-    python3 -m tests.glidesim --dv 60
-    python3 -m tests.glidesim --sweep
+    python3 -m spaceplane.tests.glidesim --dv 60
+    python3 -m spaceplane.tests.glidesim --sweep
 """
 import argparse
 import math

@@ -5,7 +5,7 @@ TEMPORARY TEST HARNESS -- not part of the flight software.  ``logsum.py`` is
 the booster's equivalent and reads a different telemetry line.
 
 The spaceplane's open problem is **repeatability**, not aim (see
-`docs/spaceplane-failures.md` 10c/10d), and the quantity that turned out to
+`docs/spaceplane/failures.md` 10c/10d), and the quantity that turned out to
 separate two otherwise identical flights is not in any existing summary: how
 many times the bank reversed, and where.  The sign of the bank is the only
 cross-track authority in the flight, so every reversal is also a dozen
@@ -14,9 +14,9 @@ vertical and the vehicle stops sinking.  A flight that reverses twenty times
 has spent half its entry in that transient, and *which* transient it is in
 when the air thickens is worth tens of kilometres at the ground.
 
-    ./glidesum.py logs/LOG706 logs/LOG710
-    ./glidesum.py --trace logs/LOG706
-    ./glidesum.py --band 33000 26000 logs/LOG7*      # just the level-off
+    ./spaceplane/tools/glidesum.py logs/LOG706 logs/LOG710
+    ./spaceplane/tools/glidesum.py --trace logs/LOG706
+    ./spaceplane/tools/glidesum.py --band 33000 26000 logs/LOG7*      # just the level-off
 
 What it counts is a *sign change of the commanded bank* between consecutive
 telemetry lines.  That is the reversal itself and not the solve's intent: in

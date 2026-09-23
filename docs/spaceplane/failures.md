@@ -1,7 +1,7 @@
 # Spaceplane: failure modes already paid for
 
-Referenced by number from [spaceplane.md](spaceplane.md). Citations of
-*boosterland* failures point at [booster-failures.md](booster-failures.md).
+Referenced by number from [design.md](design.md) and [journal.md](journal.md). Citations of
+*boosterland* failures point at [docs/boosterland/failures.md](../boosterland/failures.md).
 
 **Entry 10 is long, partly wrong, and kept anyway.** It was the open frontier
 for several sessions and most of what it concluded has since been overturned
@@ -126,7 +126,7 @@ results.** The current frontier is 10d.
 6. **A patch removed `trajectory.predict` and nothing noticed** until a flight
    died eight minutes in with `AttributeError` — every import still succeeded,
    because the missing name is only looked up when a propagation runs.
-   `tests/test_spaceplane.py` now calls every guidance entry point once on a
+   `spaceplane/tests/testSpaceplane.py` now calls every guidance entry point once on a
    plausible state.
 
 7. **The entry was aimed at a mass the vehicle would not have, and it cost
@@ -1466,7 +1466,7 @@ results.** The current frontier is 10d.
    never asked: the commands in those traces are the *held* value, not a
    choice.
 
-   **What it costs.** The flown polar (`./polar.py`, 935 logs) is
+   **What it costs.** The flown polar (`./spaceplane/tools/polar.py`, 935 logs) is
    L/D 2.08-2.12 flat from 8 to 12 degrees and 1.43 at 16, and the flights
    spend 7539 subsonic samples at 16 against 972 at 12. The terminal glide
    is flown at two thirds of the glide ratio the airframe has, in the one
@@ -1751,7 +1751,7 @@ results.** The current frontier is 10d.
 
    Seventy-nine full flights off one save put interface specific energy
    against landing miss at correlation 0.88, slope ~11 km per m/s. The
-   conclusion drawn from it -- written into `docs/spaceplane.md` and into
+   conclusion drawn from it -- written into `docs/spaceplane/design.md` and into
    CLAUDE.md, and steering a session's worth of work -- was that the burn
    must deliver ±0.1 m/s to land inside a kilometre, and that everything
    measured inside the glide was a 1-2 km knob underneath an 11 km input
@@ -1878,7 +1878,7 @@ results.** The current frontier is 10d.
    by arriving with so much speed that pulling any useful angle of attack
    *climbs*: measured, the flare ended at sink **-7.5 m/s** at 93 m/s with
    15.7 degrees achieved, and the vehicle skipped down the runway on its tail
-   shedding parts. The project's own integration in `spaceplane.md` already
+   shedding parts. The project's own integration in `docs/spaceplane/design.md` already
    said 1.90 arrests with a 54 m/s touchdown; flown, 1.90 gives 37-51 m/s at
    3-5 m/s of sink.
 
@@ -2315,7 +2315,7 @@ results.** The current frontier is 10d.
    `+118 m + 0.324 * arrival` with a residual of **258 m** -- so the miss is
    inherited from the arrival and an arrival centred on zero lands on the
    runway with nothing else changed. The arrival bias is not made over the
-   2000 km entry as `docs/spaceplane.md` assumed: `long` holds within tens of
+   2000 km entry as `docs/spaceplane/design.md` assumed: `long` holds within tens of
    metres down to 26 km and loses 5.4 km below it.
 
    **The obvious fix is nearly worthless, and that is the useful part.**
@@ -3449,7 +3449,7 @@ results.** The current frontier is 10d.
     The way out is to notice that the **time scale is the free variable and
     the control interval is the constraint**.  Ask for a fixed interval in
     *game* seconds, measure what one tick costs in wall seconds, and the
-    fastest honest scale is the ratio.  `boosterland.pacing.ScaleGovernor`
+    fastest honest scale is the ratio.  `common.pacing.ScaleGovernor`
     writes it to the plugin's control file; `Config.TIMESCALE_GOVERNOR` is
     the path, `quickglide --timescale` becomes a ceiling, `--no-govern`
     restores the old meaning.  Throughput is unchanged: 5.0-6.0x achieved.
@@ -3743,7 +3743,7 @@ results.** The current frontier is 10d.
     textbook approach" -- and every candidate mechanism was therefore a
     property of the arrival.  Measured across 41 flights that came to rest
     within 2 km of the runway midpoint, grouped by whether the flight lost a
-    part at all (`./rollsum.py --near 2000`):
+    part at all (`./spaceplane/tools/rollsum.py --near 2000`):
 
     |  | n | sink at handover | touchdown speed | decel to first loss |
     |---|---|---|---|---|
@@ -4836,7 +4836,7 @@ results.** The current frontier is 10d.
     | 40-50 km | -- | -- | -- | -- | **1.00** | 0.85 |
 
     L/D *rises* to alpha 20-26 and falls below it.  The propagator's peak at
-    16 is an artefact of `tests/fakeplane`'s tables, which is failure 13
+    16 is an artefact of `spaceplane/tests/fakeplane`'s tables, which is failure 13
     exactly: `planeprobe` over-reads subsonic lift ~1.8x, nothing reads the
     table back except a human, and the error survives because it is never
     contradicted.

@@ -621,7 +621,7 @@ class Config:
     #   across the flow.  Which is why the targeting moves to *when* the burn
     #   is lit rather than how big it is.
     #
-    # **This looks refuted and is not.**  docs/spaceplane.md, "High alpha:
+    # **This looks refuted and is not.**  docs/spaceplane/design.md, "High alpha:
     # what the airframe gives and what it will hold", closed high alpha as an
     # entry mode on a measured curve: wheels-only, the vehicle holds 90
     # degrees only to about 500 Pa, 48 at 1 kPa and 26 at 4 kPa -- "available
@@ -1657,7 +1657,7 @@ class Config:
     # it has to be *probed* rather than picked up incidentally during a
     # landing entry -- which this project already knows how to do:
     # ``BROADSIDE_PROBE_DEG`` flew exactly that sweep and produced exactly
-    # this curve (docs/spaceplane.md, "High alpha"). Two probe flights per
+    # this curve (docs/spaceplane/design.md, "High alpha: what the airframe gives"). Two probe flights per
     # vehicle would fix ``A`` and ``B``, after which the propagator is honest
     # from the first tick of every entry, and ``GLIDE_RESERVE_M`` retires.
     # The probe is general: any vehicle can fly it, and it measures rather
@@ -1794,7 +1794,7 @@ class Config:
     # achieved, and the vehicle skipped along the runway on its tail shedding
     # parts.  Every arrival of that configuration ended with 0 of 23.
     #
-    # The integration in ``docs/spaceplane.md`` puts 1.90 at "arrested, flare
+    # The integration in ``docs/spaceplane/design.md`` puts 1.90 at "arrested, flare
     # uses 11.1 m, touchdown 54.4 m/s", and 1.30-1.50 at "stalled".  Flown at
     # 1.90 the touchdowns are 37-51 m/s at 3-5 m/s of sink, which is the
     # table's number, and the first intact landing this project has made came
@@ -2608,7 +2608,7 @@ class Config:
     # failure 91.
     DEORBIT_PACE_WHOLE_PHASE: bool = False
     # **Govern the time scale on the phase's worst tick, not its average.**
-    # See ``boosterland.pacing.LoopRate.peak``.  ``ScaleGovernor`` keeps a
+    # See ``common.pacing.LoopRate.peak``.  ``ScaleGovernor`` keeps a
     # decaying maximum because "what binds is the tail", and it was being fed
     # an exponential *average*, so the tail was gone before it looked.  On
     # ``DEORBIT`` that is the difference between a burn flown at 1.3x and one
@@ -2934,13 +2934,13 @@ class Config:
     # axis on both craft is on (``ignorePitch = False``; the old reading was
     # the part menu's ignore flag, and the pad's torque at q=0).  What is
     # written below about "no control authority" is false; kept for the
-    # record.  docs/spaceplane.md, "Session, 2026-09-23".
+    # record.  docs/spaceplane/journal.md, "Session, 2026-09-23".
     # **The one dissipation control this vehicle has and has never been
     # given.**  See ``spaceplane/airbrake.py``: a mirrored pair of vertical
     # control surfaces deployed in opposing directions is drag with the yaw
     # and the roll cancelled, and on this craft it costs no control authority
     # because all six surfaces have Pitch, Yaw and Roll disabled already --
-    # it is flown on reaction wheels (docs/spaceplane.md, "This vehicle has
+    # it is flown on reaction wheels (docs/spaceplane/design.md, "This vehicle has
     # no aerodynamic control at all").
     #
     # Off until it has been flown.  The identification refuses rather than
@@ -2969,7 +2969,7 @@ class Config:
     # axis on both craft is on (``ignorePitch = False``; the old reading was
     # the part menu's ignore flag, and the pad's torque at q=0).  What is
     # written below about "no control authority" is false; kept for the
-    # record.  docs/spaceplane.md, "Session, 2026-09-23".
+    # record.  docs/spaceplane/journal.md, "Session, 2026-09-23".
     # **Switch on control axes the craft file left disabled.**  See
     # ``autopilot.enable_control_surfaces``.  The craft this autopilot grew
     # up on has six control surfaces with pitch, yaw *and* roll all off, and
@@ -2997,7 +2997,7 @@ class Config:
     # 1-2 km, so the guard is always tripped and the brake never deploys
     # (`pairfly-flapguard.txt`).  And the extra sink was the speed loop
     # diving to recover the speed the brake took, not the brake itself --
-    # see docs/spaceplane.md.  Left off.
+    # see docs/spaceplane/design.md.  Left off.
     AIRBRAKE_SINK_GUARD: bool = False
     # **The instrument, and it flies before the law does.**  Deploy the
     # opposed flaps at this angle (the aft group; the forward group gets
@@ -3449,7 +3449,7 @@ class Config:
     # exists for.  Neither is necessary: ask for a fixed interval in *game*
     # seconds, measure what one tick costs in wall seconds, and the fastest
     # honest scale is the ratio -- tens of x in orbit, one or two on final,
-    # decided per phase by the loop itself.  ``boosterland.pacing.ScaleGovernor``
+    # decided per phase by the loop itself.  ``common.pacing.ScaleGovernor``
     # writes it to the plugin's control file; the path is the instance's
     # ``timescale.txt`` and the harness passes it (``quickglide.py``).
     #
@@ -3652,7 +3652,7 @@ class Config:
     #
     # It is also the knob the high-alpha experiment has to move: the measured
     # holdability curve is a *wheels-only* curve because this shuts the valve
-    # at 500 Pa.  See docs/spaceplane.md, "High alpha: what the airframe
+    # at 500 Pa.  See docs/spaceplane/design.md, "High alpha: what the airframe
     # gives and what it will hold".
     RCS_Q_MAX_PA: float = 500.0
     # No knob for the deorbit flip any more.  It was flown on reaction wheels

@@ -1,15 +1,15 @@
 # Booster: testing without KSP
 
-`tests/fakeksp` and what its regression fixtures are for.
-Numbered failures cited here are in [booster-failures.md](booster-failures.md).
+`boosterland/tests/fakeksp` and what its regression fixtures are for.
+Numbered failures cited here are in [docs/boosterland/failures.md](failures.md).
 
-`tests/fakeksp.py` installs a fake `krpc` module in `sys.modules` and provides
+`boosterland/tests/fakeksp.py` installs a fake `krpc` module in `sys.modules` and provides
 a point-mass flight model (instant pointing, optional exponential atmosphere).
-`tests/test_flight_sim.py` runs the *real* `Autoland` loop against it
+`boosterland/tests/testFlightSim.py` runs the *real* `Autoland` loop against it
 (`time.sleep` is patched to advance the simulated vessel) and asserts the
 booster completes all phases, lands near the pad, and arrives slowly enough to
 keep its legs (`Vessel.impact_speed`, recorded when the *bottom* of the vessel
-reaches the ground). `tests/test_offline.py` covers the propagator, guidance
+reaches the ground). `boosterland/tests/testOffline.py` covers the propagator, guidance
 laws, logbook gating and config overrides against a `FakeEnv`.
 
 Pass `atmosphere=True` to `fakeksp.Vessel` for the version that matters: the

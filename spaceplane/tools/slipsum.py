@@ -13,7 +13,7 @@ reaction wheels actually deliver?  A row where achieved tracks commanded is a
 slip the vehicle can hold and therefore drag it can make; a row where it
 collapses is the wheels losing to the weathercock moment.
 
-    ./slipsum.py logs/LOG28*
+    ./spaceplane/tools/slipsum.py logs/LOG28*
 """
 import glob, re, sys
 from collections import defaultdict

@@ -24,8 +24,8 @@ Four columns and the relations between them are the whole diagnosis:
               +/-1200 m along and +/-35 m across, and those two bounds are
               the only pass/fail in this project
 
-    ./landsum.py logs/LOG16*
-    ./landsum.py --arrivals-within 5000 logs/LOG16*   # only the ones the
+    ./spaceplane/tools/landsum.py logs/LOG16*
+    ./spaceplane/tools/landsum.py --arrivals-within 5000 logs/LOG16*   # only the ones the
                                                       # entry did its job on
 
 **The last line is the one to read.** ``stopped - arrival`` is the bias the

@@ -4,8 +4,8 @@
 TEMPORARY TEST HARNESS -- not part of the flight software, and it prints to
 stdout deliberately: it is a diagnostic, run on a log after the fact.
 
-    ./aeroaudit.py logs/LOG620
-    ./aeroaudit.py logs/LOG620 --rows 30
+    ./spaceplane/tools/aeroaudit.py logs/LOG620
+    ./spaceplane/tools/aeroaudit.py logs/LOG620 --rows 30
 
 The spaceplane had no equivalent of ``replay.py``, and that gap cost a
 session.  Five batches of in-game flights showed the vehicle landing 40-70 km

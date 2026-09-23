@@ -7,7 +7,7 @@ logs/
 logs_baseline/
 logs_r2/
 
-# Generated single-file bundles (./bundle.py rebuilds them).
+# Generated single-file bundles (./tools/bundle.py rebuilds them).
 dist/
 
 # The measurement farm's game copies and wine prefixes: 15 GB, rebuilt by

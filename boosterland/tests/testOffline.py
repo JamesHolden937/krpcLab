@@ -2,7 +2,7 @@
 
 The propagator, the guidance laws, the log gating and the config overrides all
 run against a stand-in for :class:`boosterland.environment.Environment`, so
-``python -m unittest discover tests`` is a real regression test even with KSP
+``python3 -m unittest`` is a real regression test even with KSP
 closed.
 """
 
@@ -1494,7 +1494,7 @@ class TestTheRcsValve(unittest.TestCase):
     especially the parts that are not a simple threshold, which is where a
     later simplification would put the waste back.
 
-    ``tests/fakeksp`` cannot check any of this from a flight: its
+    ``boosterland/tests/fakeksp`` cannot check any of this from a flight: its
     ``control.rcs`` is a bare bool and its slew does not depend on it, so the
     closed-loop test can only show that nothing else broke.  In game, the
     thing to watch is the ``rcs on``/``rcs off`` events against the flip.

@@ -22,14 +22,14 @@
 # flown on every instance the same number of times, and the two halves are
 # interleaved in time rather than run end to end.
 #
-#   ROUNDS=4 SAVE=qs_plane_inc ./pairfly.sh "" "BRAKE_FOR_DISTANCE=False"
-#   ROUNDS=4 OUT=/tmp/pair.txt ./pairfly.sh "A=1" "A=2"
+#   ROUNDS=4 SAVE=qs_plane_inc ./spaceplane/tools/pairfly.sh "" "BRAKE_FOR_DISTANCE=False"
+#   ROUNDS=4 OUT=/tmp/pair.txt ./spaceplane/tools/pairfly.sh "A=1" "A=2"
 #
 # The first argument is arm A and the second arm B; an empty string means the
 # committed defaults.  Read the result with:
 #
-#   ./rollsum.py logs/LOG24*        # what the rollout was handed
-#   ./landsum.py logs/LOG24*        # arrival, handover, wheels
+#   ./spaceplane/tools/rollsum.py logs/LOG24*        # what the rollout was handed
+#   ./spaceplane/tools/landsum.py logs/LOG24*        # arrival, handover, wheels
 #
 # Every log says which arm flew it: the `config:` line carries the --set list
 # and the defaults fingerprint, and SAVE_NAME carries the entry state.  Two

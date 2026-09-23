@@ -2,12 +2,12 @@
 
 How the boosterland autopilot is put together and why each piece is shaped the
 way it is. Read this before changing guidance, the propagator, or a phase.
-Numbered failures cited here are in [booster-failures.md](booster-failures.md).
+Numbered failures cited here are in [docs/boosterland/failures.md](failures.md).
 
 ## Architecture
 
 ```
-run.sh -> boosterland.autoland (phase machine, the only kRPC-aware control code)
+run.sh --pilot booster -> boosterland.autoland (phase machine, the only kRPC-aware control code)
             |-- environment.py  cached world data (density/sound tables,
             |                     the Cd*A-against-Mach curve, the lift
             |                     coefficient, omega)
@@ -16,7 +16,7 @@ run.sh -> boosterland.autoland (phase machine, the only kRPC-aware control code)
             |-- trajectory.py   local propagator + landing prediction
             |-- guidance.py     steering/throttle laws (pure functions)
             |-- gui.py          in-game panel, START / TERMINATE buttons
-            `-- logbook.py      numbered log files, ut-gated
+            `-- common/logbook.py  numbered log files, ut-gated (shared)
 ```
 
 **Guidance acts on the miss in two places.** Boostback removes the bulk of it;
@@ -162,7 +162,7 @@ needing them *in the phase* is not needing them *in the tick*, and the ticks
 where the vehicle is already pointed where it was told outnumber the ones
 where it is turning. `update_rcs` runs after the phase handler each tick (so
 the error is measured against the attitude this tick commanded) and hands the
-angle to the shared `boosterland.rcs.Valve`; `docs/spaceplane.md` under
+angle to the shared `common.rcs.Valve`; `docs/spaceplane/design.md` under
 "Monopropellant is spent on turns, not on holds" has the design and the
 numbers behind the three constants.
 

@@ -58,7 +58,7 @@ chmod +x "$DIR/.inner.sh"
 # them, and what is left on disk is four orderly Unity `OnDestroy` cascades
 # ending in "Server 'Default Server' stopped".
 #
-# That signature is in docs/test-instances.md twice -- once as "the graphical
+# That signature is in docs/testInstances.md twice -- once as "the graphical
 # session restarting" and once as "unexplained" -- and the tell was written
 # down both times without being read: an orderly OnDestroy cascade is a
 # **clean quit request**, not a crash.  Nothing was reaping these processes;

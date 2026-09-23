@@ -10,8 +10,8 @@ beat the glide's own 2.3 km repeatability, with the arms rotated across
 instances so an instance effect cannot masquerade as a dose-response.  Doing
 that by hand is what this replaces.
 
-    ./ladder.py --arms qs_l0,qs_l8,qs_l16 -n 4
-    ./ladder.py --arms qs_l0,qs_l32 -n 3 --instances 0,4 --timescale 6
+    ./spaceplane/tools/ladder.py --arms qs_l0,qs_l8,qs_l16 -n 4
+    ./spaceplane/tools/ladder.py --arms qs_l0,qs_l32 -n 3 --instances 0,4 --timescale 6
 
 Three properties it has to keep, each of which is a rule this project has
 already paid for:

@@ -5,8 +5,8 @@ TEMPORARY TEST HARNESS -- not part of the flight software, and it does not
 change any of it: the bundle is the same modules, byte for byte, with an
 importer in front of them.
 
-    ./bundle.py booster                 # -> dist/boosterlandAutoland.py
-    ./bundle.py plane -o /tmp/fly.py    # -> /tmp/fly.py
+    ./tools/bundle.py booster                 # -> dist/boosterlandAutoland.py
+    ./tools/bundle.py plane -o /tmp/fly.py    # -> /tmp/fly.py
     python3 dist/boosterlandAutoland.py --set BOOSTBACK_TOLERANCE_M=250
 
 **Why a loader and not a concatenation.**  Pasting the modules end to end

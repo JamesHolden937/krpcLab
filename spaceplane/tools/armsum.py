@@ -12,9 +12,9 @@ scatter is **sd ~10 km**, so an arm of three has a standard error of six and
 two such arms cannot resolve anything smaller than fifteen.  Reading a mean
 without its standard error is what made that mistake invisible.
 
-    ./armsum.py logs/LOG10*                  # every arm it can find
-    ./armsum.py --by GLIDE_RESERVE_ON logs/LOG1*
-    ./armsum.py --against '(defaults)' logs/LOG1*
+    ./spaceplane/tools/armsum.py logs/LOG10*                  # every arm it can find
+    ./spaceplane/tools/armsum.py --by GLIDE_RESERVE_ON logs/LOG1*
+    ./spaceplane/tools/armsum.py --against '(defaults)' logs/LOG1*
 
 The grouping key is the log's own ``config:`` line, including the
 ``[defaults ...]`` fingerprint -- two logs with different fingerprints are

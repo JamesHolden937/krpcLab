@@ -10,8 +10,8 @@ air.  The deorbit is the thing to work on, and its output is not where the
 vehicle lands: it is the **predicted along-track miss at the first glide
 solve**, which arrives about ninety seconds into a warped flight.
 
-    ./deorbitprobe.py 0 -n 6
-    ./deorbitprobe.py 0 -n 6 --set DEORBIT_WINDOW_BIAS=0.5
+    ./spaceplane/tools/deorbitprobe.py 0 -n 6
+    ./spaceplane/tools/deorbitprobe.py 0 -n 6 --set DEORBIT_WINDOW_BIAS=0.5
 
 So this flies the deorbit and the coast, reads the first settled prediction
 out of the flight's own log, and stops there.  A deorbit arm costs a fifth

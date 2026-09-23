@@ -818,7 +818,7 @@ class TestDragCurve(unittest.TestCase):
     def test_a_probe_off_retrograde_is_not_taken_as_a_measurement(self):
         """The angle is measured from retrograde: the engines face the flow.
 
-        ``tests/fakeksp`` cannot show what this is worth -- its drag ignores
+        ``boosterland/tests/fakeksp`` cannot show what this is worth -- its drag ignores
         attitude entirely, so a broadside probe and a nose-on one return the
         same number.  The evidence is LOG53, where the curve at the boostback
         exit propagates the coast 1297 m wrong and the curve at touchdown

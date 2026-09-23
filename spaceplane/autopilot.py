@@ -180,7 +180,7 @@ def live_time_to_peak(cfg, vessel):
     **The static derivation is right in vacuum and fifteen times too slow in
     thick air.**  ``slew_time_scale`` reads the wheels, because at STANDBY
     that is all there is.  But the control surfaces are live on both craft
-    (docs/spaceplane.md, "Session, 2026-09-23"), and their authority grows
+    (docs/spaceplane/journal.md, "Session, 2026-09-23"), and their authority grows
     with q: on the shuttle at 4.7 kPa ``available_control_surface_torque`` is
     **2928 kN m of pitch against the wheels' 15**.  Tuned to the wheels' 22 s
     there, a bank reversal at 30 deg of alpha -- which needs the nose to
@@ -1767,7 +1767,7 @@ class Autopilot:
         real one.  Permission alone still pays for the hunt, because the hunt
         happens inside the phase that needed the slew: the flip costs a few
         seconds of thruster and the settling afterwards costs more than the
-        flip.  See ``boosterland.rcs``.
+        flip.  See ``common.rcs``.
         """
         self.rcs.update(snap.ut if snap is not None else 0.0, permitted,
                         self.pointing_error(snap),
@@ -3357,7 +3357,7 @@ class Autopilot:
         # the glide's angle of attack shortfall is a saturation the thrusters
         # would fight continuously rather than a slew they could finish, and
         # the tank is sized for slews.  It is a switch because the high-alpha
-        # experiment needs it (docs/spaceplane.md, "High alpha: what the
+        # experiment needs it (docs/spaceplane/design.md, "High alpha: what the
         # airframe gives and what it will hold"), and because "RCS cannot
         # help here" should be a measurement rather than an assumption.
         self.set_rcs(self.cfg.GLIDE_RCS, snap)

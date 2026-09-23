@@ -253,7 +253,7 @@ booster docs.
    worse answer. `PREDICT_RK4=False` restores the old scheme;
    `test_the_step_is_fine_enough_to_have_stopped_mattering` holds the property
    rather than the scheme.
-   **`tests/fakeksp` cannot judge this change and says the opposite** — it
+   **`boosterland/tests/fakeksp` cannot judge this change and says the opposite** — it
    integrates its own truth with semi-implicit Euler at `SIM_DT` 0.2, so it
    rewards a predictor sharing that bias (71/45/50/49 m for Euler against
    144/125/144/60 for RK4), and sub-stepping its physics 8x does not change the

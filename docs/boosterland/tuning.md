@@ -2,7 +2,7 @@
 
 How to get a trustworthy number out of a change: replaying a flight, aiming off
 the pad, in-game against the sim, and what the accuracy history says.
-Numbered failures cited here are in [booster-failures.md](booster-failures.md).
+Numbered failures cited here are in [docs/boosterland/failures.md](failures.md).
 
 ## Replaying a flight offline
 
@@ -13,10 +13,10 @@ curve, plus the atmosphere tables and frame constants once at startup.
 with air it did not have:
 
 ```bash
-./quickfly.py -n 1 --set DIAG_STATE=True
-./replay.py logs/LOG53                    # the walk, as flown
-./replay.py logs/LOG53 --curve-from -1    # every tick, with the final curve
-./replay.py logs/LOG53 --omega zero       # ... or without the frame terms
+./boosterland/tools/quickfly.py -n 1 --set DIAG_STATE=True
+./boosterland/tools/replay.py logs/LOG53                    # the walk, as flown
+./boosterland/tools/replay.py logs/LOG53 --curve-from -1    # every tick, with the final curve
+./boosterland/tools/replay.py logs/LOG53 --omega zero       # ... or without the frame terms
 ```
 
 It reproduces the in-flight predictions to tens of metres out of 112 km. It
@@ -70,9 +70,9 @@ sweep made the real flight worse, and the sim could not have caught any:
 | the signed boostback exit (`BOOSTBACK_UNDERSHOOT_M` = 0) | 4/75/19/5 m | 236-885 m on every save |
 
 All are still in the tree behind flags, defaulted off. The last ZEM/ZEV row is
-what "Aim, then stop" in [booster-design.md](booster-design.md) answers.
+what "Aim, then stop" in [design.md](design.md) answers.
 
-**It runs the other way too.** `tests/fakeksp` integrates its own truth with
+**It runs the other way too.** `boosterland/tests/fakeksp` integrates its own truth with
 semi-implicit Euler at `SIM_DT` 0.2, so it rewards a predictor that shares that
 bias: the RK4 propagator (failure 16) is worse in every sim cell and better in
 every in-game cell but one. A sim that models the vehicle as a point mass is
@@ -134,10 +134,10 @@ arrival at 6.3 m/s and 0.3 at 8.6, the trim term overshooting in the last few
 metres.
 
 The in-game figure to compare a change against is in "Flying the coast as a
-wing" ([booster-design.md](booster-design.md)): **median 4 m / mean 4 m / worst
+wing" ([design.md](design.md)): **median 4 m / mean 4 m / worst
 7 m** over 15 flights at zeroed bias.
 
-When changing guidance, sweep parameters through `tests.test_flight_sim.fly`
+When changing guidance, sweep parameters through `boosterland.tests.testFlightSim.fly`
 with a modified `Config` rather than guessing.
 
 **Sweep in atmosphere with a slew rate set.** `fakeksp.Vessel(slew_deg_s=...)`

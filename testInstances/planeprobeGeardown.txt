@@ -1,6 +1,6 @@
 # !! THE SUBSONIC HALF OF THIS FILE DISAGREES WITH THE AIRFRAME BY ~1.8x !!
 #
-# Measured against the force kRPC reports in flight (./polar.py, and
+# Measured against the force kRPC reports in flight (./spaceplane/tools/polar.py, and
 # spaceplane failure 13): best glide is L/D 2.1 at 12 deg, not 3.39 at 10,
 # and the most lift this airframe has been seen making subsonically is
 # ClA 45-50 -- a stall near 48 m/s, not the 37.1 below.  The *ratios* here

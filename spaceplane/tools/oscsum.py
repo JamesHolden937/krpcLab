@@ -12,7 +12,7 @@ to 52, with sideslip swinging +-30 at Mach 7 -- and arrived 205 km short,
 while every summary in the tree reported only the 205 km.  An attitude that
 is not held is a drag number nobody planned, and it has to be readable.
 
-    ./oscsum.py logs/LOG287*
+    ./spaceplane/tools/oscsum.py logs/LOG287*
 """
 import re
 import statistics

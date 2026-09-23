@@ -6,8 +6,8 @@ stdout deliberately.  ``aeroaudit.py`` asks whether the *model* matches the
 flight; this asks what the *airframe* is, which is a different question and
 the one every terminal constant in ``config.py`` is an answer to.
 
-    ./polar.py                       # every log, subsonic
-    ./polar.py --mach 0.45 logs/LOG77*
+    ./spaceplane/tools/polar.py                       # every log, subsonic
+    ./spaceplane/tools/polar.py --mach 0.45 logs/LOG77*
 
 It exists because ``planeprobe`` was wrong by a factor of 1.8 subsonically
 and nothing could contradict it: its numbers were transcribed into

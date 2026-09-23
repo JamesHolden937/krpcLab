@@ -16,7 +16,7 @@ surfaces deployed in *opposing* directions are a split rudder: the side
 forces act at equal and opposite moment arms, so yaw and roll both cancel and
 what is left is drag.  On this craft it is free in the strongest sense --
 **all six control surfaces have Pitch, Yaw and Roll disabled** and the
-vehicle flies on 15 kN m of reaction wheel (docs/spaceplane.md, "This vehicle
+vehicle flies on 15 kN m of reaction wheel (docs/spaceplane/design.md, "This vehicle
 has no aerodynamic control at all"), so splitting a pair costs no control
 authority because they have none to cost.
 
@@ -26,7 +26,7 @@ menu's ``Pitch=False``, which is KSP's *ignore* flag, and the torque on the
 pad at q=0.  So a deployed surface is *not* free: its deploy angle and its
 control deflection share one travel, and deploying it borrows authority from
 whatever it is controlling.  Read the probe's ``aoa=cmd/actual`` with that in
-mind.  docs/spaceplane.md, "Session, 2026-09-23".
+mind.  docs/spaceplane/journal.md, "Session, 2026-09-23".
 
 Two rules run this module, and both are about generality rather than about
 this aircraft.
@@ -80,7 +80,7 @@ def span_axis(rotation):
 
     ``part.rotation(vessel.reference_frame)`` is a quaternion ``(x, y, z,
     w)``; a control surface spans along its local x.  Written out rather than
-    pulled from a library because ``boosterland.vec`` is deliberately plain
+    pulled from a library because ``common.vec`` is deliberately plain
     3-tuples and this is the only quaternion in either autopilot.
     """
     x, y, z, w = rotation

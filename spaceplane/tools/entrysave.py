@@ -13,8 +13,8 @@ A save taken at the interface removes both.  Every flight from it starts from
 byte-identical state, so the glide's own repeatability can be measured
 without the deorbit underneath it, and each flight costs half as much.
 
-    ./entrysave.py 0                       # watch instance 0, save as qs_entry
-    ./entrysave.py 0 --name qs_entry_hot --alt 58000
+    ./spaceplane/tools/entrysave.py 0                       # watch instance 0, save as qs_entry
+    ./spaceplane/tools/entrysave.py 0 --name qs_entry_hot --alt 58000
 
 Run it alongside a normal ``quickglide.py`` flight on the same instance: it
 opens its own kRPC connection, watches the altitude, and saves once on the

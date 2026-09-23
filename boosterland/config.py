@@ -49,7 +49,7 @@ class Config:
     # allowed is not the same as open.  Most ticks of a five-minute flight the
     # vehicle is already pointed where it was told and the autopilot is merely
     # hunting, and a thruster held open through the hunt pays for every
-    # oscillation.  ``boosterland.rcs.Valve`` makes the valve a relay on the
+    # oscillation.  ``common.rcs.Valve`` makes the valve a relay on the
     # angle between the commanded nose and the real one: on above ``ON``, off
     # once inside ``OFF`` for ``SETTLE_S``.  The deadband is what stops the
     # relay switching at the frequency of the oscillation it is damping.

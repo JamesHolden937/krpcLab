@@ -20,11 +20,11 @@ because that is the frame the perturbation means something in: prograde is
 "off the KSC plane", which is the one that puts a cross-track error in front
 of the guidance.
 
-    ./savegen.py --list
-    ./savegen.py -o hot   --prograde  60
-    ./savegen.py -o cold  --prograde -60
-    ./savegen.py -o north --normal    40
-    ./savegen.py -o steep --radial   -40
+    ./tools/savegen.py --list
+    ./tools/savegen.py -o hot   --prograde  60
+    ./tools/savegen.py -o cold  --prograde -60
+    ./tools/savegen.py -o north --normal    40
+    ./tools/savegen.py -o steep --radial   -40
 
 The element/state conversion is done in whatever frame KSP's elements are
 expressed in and converted straight back, so it never has to know kRPC's or

@@ -202,7 +202,7 @@ def _derived(env, cfg, field, fallback):
     unconditional change because the committed configuration lands and this
     moves four numbers under it at once -- ``pairfly.sh`` needs both arms to
     exist.  The fallback is the transcribed constant, which is also what the
-    offline tests fly: ``tests/fakeksp`` sweeps no table, so ``env`` carries
+    offline tests fly: ``boosterland/tests/fakeksp`` sweeps no table, so ``env`` carries
     nothing and every call here returns exactly what it returned before.
 
     The fallback is deliberately *not* a plausible invented value.  When the

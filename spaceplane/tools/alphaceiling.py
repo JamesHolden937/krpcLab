@@ -10,7 +10,7 @@ reaction wheel; a craft with working control surfaces should hold it deeper,
 because a surface's authority grows with ``q`` exactly as the disturbance
 does while a wheel's does not.
 
-    ./alphaceiling.py logs/LOG2881
+    ./spaceplane/tools/alphaceiling.py logs/LOG2881
 """
 import re
 import sys

@@ -1,6 +1,6 @@
 """Offline tests for the spaceplane guidance.
 
-These run without KSP, against ``tests.fakeplane``, whose coefficients are the
+These run without KSP, against ``spaceplane.tests.fakeplane``, whose coefficients are the
 ones ``testInstances/planeprobe.py`` measured off the real airframe.
 
 Most of this file is a **smoke test**, and it is here because of a specific
@@ -362,7 +362,7 @@ class TestTheGuidanceEntryPoints(unittest.TestCase):
         self.assertGreater(b.excess_height, 0.0,
                            "being fast must buy height to spend")
         # What the downstream geometry does with the extra budget depends on
-        # whether the cone has path to spare, and ``tests/fakeplane``'s cone
+        # whether the cone has path to spare, and ``spaceplane/tests/fakeplane``'s cone
         # is short of path at every distance and speed tried -- so the
         # surplus branch is not reachable here and is not asserted.  What is
         # asserted is the term itself: present when fast, exactly zero at the
@@ -2842,7 +2842,7 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         **Against the flown polar, not ``fakeplane``'s.**  The offline
         table is ``planeprobe``'s and over-reads subsonic lift by 1.8x, so
         it answers 2.14 here -- a derivation checked against it is checked
-        against nothing.  ``tests/flownpolar`` is what the airframe reported
+        against nothing.  ``spaceplane/tests/flownpolar`` is what the airframe reported
         about itself on a flight that stopped on the runway, which is the
         same aircraft the 1.86 was fitted to.
 
@@ -5448,7 +5448,7 @@ class TestEveryConfigFieldReferencedExists(unittest.TestCase):
 
 
 class TestLoopRate(unittest.TestCase):
-    """The loop's own rate, measured -- see ``boosterland.pacing``."""
+    """The loop's own rate, measured -- see ``common.pacing``."""
 
     def test_interval_is_game_time_and_busy_is_wall_time(self):
         from common.pacing import LoopRate
@@ -6005,7 +6005,7 @@ class TestTheSplitRudderAirbrake(unittest.TestCase):
     """The identification refuses rather than guesses, and the policy waits.
 
     The geometry below is ``qs_plane``'s, measured on the live craft by
-    ``testInstances/surfacespan.py`` (docs/spaceplane.md, "This vehicle has
+    ``testInstances/surfacespan.py`` (docs/spaceplane/design.md, "This vehicle has
     no aerodynamic control at all"), so this is the rule run against the one
     aircraft whose answer is known.
     """

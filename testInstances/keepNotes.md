@@ -143,12 +143,12 @@ closing on a target.
 so every physics step is the step the vehicle flies at 1x; `Time.timeScale`
 goes up, which makes Unity run *more* of those steps per real second.  Same
 trajectory, more of it per wall-clock second, linear CPU cost.  Driven by
-`<instance>/timescale.txt`, off by default, and `../timescale.py` is the other
+`<instance>/timescale.txt`, off by default, and `../tools/timescale.py` is the other
 end:
 
-    ./timescale.py 5 2.0     # fixed 2x
-    ./timescale.py 5 max     # as fast as the main thread will sustain
-    ./timescale.py 5         # what it actually ACHIEVED, not what it was told
+    ./tools/timescale.py 5 2.0     # fixed 2x
+    ./tools/timescale.py 5 max     # as fast as the main thread will sustain
+    ./tools/timescale.py 5         # what it actually ACHIEVED, not what it was told
 
 ### The ceiling is control quantization, not the CPU
 
@@ -175,7 +175,7 @@ Two things fall out of that, and both were measured rather than reasoned:
 
 Both autopilots paced their loops with `time.sleep(LOOP_SLEEP_S)` -- wall-clock
 seconds.  At 4x that is a 5 Hz loop *in the air* for a 20 Hz command interval,
-and the flight it produces is not reproducible at 1x.  `boosterland/pacing.py`
+and the flight it produces is not reproducible at 1x.  `common/pacing.py`
 paces on `space_center.ut` instead, behind `LOOP_PACING_GAME_TIME`, which
 `quickfly.py` turns on automatically whenever `--timescale` is not off.
 

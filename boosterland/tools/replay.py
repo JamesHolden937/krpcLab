@@ -6,7 +6,7 @@ TEMPORARY DIAGNOSTIC HARNESS -- not part of the flight software.
 The question this exists to answer: on the real vehicle the predicted miss
 walks monotonically out during a *ballistic* coast -- LOG49 goes 41 m at
 32 km to 620 m at the landing burn, with the engines off the whole way --
-while the same coast in ``tests/fakeksp`` oscillates around zero and lands
+while the same coast in ``boosterland/tests/fakeksp`` oscillates around zero and lands
 at 18 m.  A fresh propagation of an unpowered arc should not change its
 answer, so either the air the propagator is reading is being revised under
 it, or the propagation disagrees with the vehicle.  The log could not tell
@@ -17,9 +17,9 @@ happened to be doing and the propagator reads a whole curve.
 atmosphere tables; this reads them back and re-propagates, so a tick can be
 re-flown with air it did not have:
 
-    ./replay.py logs/LOG54                  # walk of the prediction
-    ./replay.py logs/LOG54 --curve-from -1  # every tick, with the final curve
-    ./replay.py logs/LOG54 --scale 0.8      # ... or with the curve scaled
+    ./boosterland/tools/replay.py logs/LOG54                  # walk of the prediction
+    ./boosterland/tools/replay.py logs/LOG54 --curve-from -1  # every tick, with the final curve
+    ./boosterland/tools/replay.py logs/LOG54 --scale 0.8      # ... or with the curve scaled
 
 If re-flying the early ticks with the *late* curve removes the walk, the
 curve was being revised and the estimator is what to fix.  If the walk
@@ -167,7 +167,7 @@ def main(argv=None):
     p.add_argument("--omega", choices=("measured", "negated", "zero"),
                    default="measured",
                    help="the rotating-frame terms are the one part of the "
-                        "propagator tests/fakeksp cannot exercise -- it sets "
+                        "propagator boosterland/tests/fakeksp cannot exercise -- it sets "
                         "rotational_speed = 0 -- so a sign error there would "
                         "be invisible offline and would grow with the "
                         "prediction horizon, which is the shape of the walk")

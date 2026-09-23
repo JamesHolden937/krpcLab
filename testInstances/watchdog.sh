@@ -3,7 +3,7 @@
 # watchdog.sh start|stop|status [n]... -- keep the named instances alive.
 #
 # The farm has four documented ways to lose every instance at once (see
-# docs/test-instances.md) and they have one thing in common: nothing here
+# docs/testInstances.md) and they have one thing in common: nothing here
 # notices.  The compositors survive, `ss -ltn` still shows nothing, and the
 # next batch is launched into four dead ports -- or worse, a flight already
 # in the air stops producing telemetry and the harness sits on it until its
@@ -77,7 +77,7 @@ verdict() {
 # exhausted card does not fail politely: it loses GL contexts, and a lost
 # context takes down every GL client on the machine at once -- the farm, the
 # browser, and the desktop's smoothness with them.  That is the real shape of
-# the "everything died together" entry in docs/test-instances.md.  One line
+# the "everything died together" entry in docs/testInstances.md.  One line
 # in the log when it gets tight turns the next occurrence from a mystery into
 # a number.
 vram_warn() {
@@ -113,7 +113,7 @@ vram_warn() {
 # genuinely wedged instance, because the one that produced this was
 # restarted before the check existed and kRPC offers no way to pause a game
 # on purpose.  Treat a warning from it as a hypothesis worth confirming with
-# `./timescale.py N` -- a wedged instance reports `achieved 0.00x` at a
+# `./tools/timescale.py N` -- a wedged instance reports `achieved 0.00x` at a
 # healthy frame rate -- until it has caught one in the wild.
 clock_frozen() {                      # 0 = frozen, 1 = advancing or unknown
   local n="$1" rpc stream

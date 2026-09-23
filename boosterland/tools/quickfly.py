@@ -3,16 +3,16 @@
 
 TEMPORARY TEST HARNESS -- not part of the flight software.
 
-`tests/fakeksp.py` is a point mass: it has no aerodynamic torque, its drag
+`boosterland/tests/fakeksp.py` is a point mass: it has no aerodynamic torque, its drag
 ignores attitude entirely, and its atmosphere is isothermal, so the estimator
 noise and the transonic behaviour that actually limit this booster's accuracy
 are invisible to it.  This runs the *real* `Autoland` against the *real* game
 instead, from the same entry state every time, so a parameter can be measured
 rather than guessed.
 
-    ./quickfly.py -n 5
-    ./quickfly.py -n 3 --set CORRECTION_MAX_BURNS=0
-    ./quickfly.py --compare CORRECTION_ENTER_M=300,1200
+    ./boosterland/tools/quickfly.py -n 5
+    ./boosterland/tools/quickfly.py -n 3 --set CORRECTION_MAX_BURNS=0
+    ./boosterland/tools/quickfly.py --compare CORRECTION_ENTER_M=300,1200
 
 Each run loads `--save` (default "quicksave", the post-separation state at
 UT 2843.5), presses START itself, flies to touchdown or `--timeout`, and

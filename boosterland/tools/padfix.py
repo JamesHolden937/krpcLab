@@ -24,9 +24,9 @@ joints and suspension; the spread is reported so the jitter is visible rather
 than assumed.  Everything is done in `body.reference_frame`, the rotating
 frame the rest of this code works in.
 
-    ./padfix.py                     # measure, compare against Config
-    ./padfix.py -n 1000 --interval 0.02
-    ./padfix.py --raycast           # also find the deck's geometric centre
+    ./boosterland/tools/padfix.py                     # measure, compare against Config
+    ./boosterland/tools/padfix.py -n 1000 --interval 0.02
+    ./boosterland/tools/padfix.py --raycast           # also find the deck's geometric centre
 
 The spawn point and the centre of the concrete are not the same thing, and
 which one you want is a choice of a few metres rather than a measurement.

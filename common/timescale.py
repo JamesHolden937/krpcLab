@@ -8,10 +8,10 @@ real time without touching ``Time.fixedDeltaTime``, so every physics step is
 the step the vehicle flies at 1x.  It is driven by a file at the instance
 root, and this is the other end of that file.
 
-    ./timescale.py 0 2.0        # instance ksp0 at 2x
-    ./timescale.py 0 max        # as fast as its main thread will go
-    ./timescale.py 0 off        # back to 1x
-    ./timescale.py 0            # what is it actually achieving?
+    ./tools/timescale.py 0 2.0        # instance ksp0 at 2x
+    ./tools/timescale.py 0 max        # as fast as its main thread will go
+    ./tools/timescale.py 0 off        # back to 1x
+    ./tools/timescale.py 0            # what is it actually achieving?
 
 The distinction that matters is **commanded** versus **achieved**.  KSP's
 physics is single-threaded, so asking for 4x on a machine that can sustain 1.6x

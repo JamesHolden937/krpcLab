@@ -28,8 +28,8 @@ survived:
     lost@    seconds from touchdown to the first part loss, and what went.
     parts    kept of total.
 
-    ./rollsum.py logs/LOG23*
-    ./rollsum.py --broken logs/LOG23*      # only the ones that lost parts
+    ./spaceplane/tools/rollsum.py logs/LOG23*
+    ./spaceplane/tools/rollsum.py --broken logs/LOG23*      # only the ones that lost parts
 
 Read ``dec`` and ``slip`` together.  Gear-down drag on this airframe is about
 1 m/s^2 and the brakes are worth a few more; anything in double figures is

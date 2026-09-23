@@ -570,7 +570,7 @@ def _quat_rotate(q, v):
 
     The probe hands the game an attitude to evaluate at, and a fake that
     cannot read one cannot model an angle of attack.  This is the same
-    convention ``boosterland.vec.quat_rotate`` uses -- and the flight code
+    convention ``common.vec.quat_rotate`` uses -- and the flight code
     verifies its own quaternions against the result rather than trusting the
     convention, so the two agreeing here is a convenience, not a contract.
     """

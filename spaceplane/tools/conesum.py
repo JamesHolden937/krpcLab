@@ -24,8 +24,8 @@ that changes how the cone is flown -- the attitude controller, the bank
 limit, the speed the turn is held at -- because every one of those changes
 both halves.
 
-    ./conesum.py logs/LOG13*
-    ./conesum.py --settled logs/LOG13*    # only flights whose plan was stable
+    ./spaceplane/tools/conesum.py logs/LOG13*
+    ./spaceplane/tools/conesum.py --settled logs/LOG13*    # only flights whose plan was stable
 """
 import argparse
 import os

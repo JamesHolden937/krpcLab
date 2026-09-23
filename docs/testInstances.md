@@ -67,7 +67,7 @@ compositor: no visible window, no display contention. `run-ksp.sh N`
 **Flights can run faster than real time without coarsening the physics step.**
 `testInstances/timescaleSrc` raises `Time.timeScale` while leaving
 `Time.fixedDeltaTime` at 0.02, which is the opposite of what KSP's own physics
-warp does; `./timescale.py N max` turns it on and reports what was *achieved*
+warp does; `./tools/timescale.py N max` turns it on and reports what was *achieved*
 rather than what was commanded. The ceiling is control quantization
 (`timeScale / fps`), not the CPU, so `SYNC_VBL = 0` and `FRAMERATE_LIMIT = 90`
 matter more than the machine does — and frames above what the quantum needs
@@ -87,7 +87,7 @@ itself on `qs_plane` — same save, same defaults, same farm state — it costs
 nothing in throughput (5.0-6.0x achieved) and takes the entry's arrival from
 −3226 m sd 806 to +294 m sd 171. The whole effect is in the **deorbit burn**,
 whose tick goes 0.30 → 0.10 game-seconds; every other phase was already being
-served at 6x on this machine. See docs/spaceplane.md, "The farm was measuring
+served at 6x on this machine. See docs/spaceplane/design.md, "The farm was measuring
 its own tick latency, in one phase".
 
 ### The saves are per-instance, and they drift
@@ -219,7 +219,7 @@ alternative is a day of measurements that disagree with each other.
 
 ### How fast an instance goes, and what is stopping it
 
-`./instancebench.py N --save qs_plane --quant 0.05,0.1,0.2` reports, per
+`./tools/instancebench.py N --save qs_plane --quant 0.05,0.1,0.2` reports, per
 setting, the multiplier achieved **and which of the two ceilings is binding**.
 That distinction is the whole point: from inside the game both look like "it
 is going at 4x", and they want opposite fixes.

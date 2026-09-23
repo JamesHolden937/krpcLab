@@ -7,7 +7,7 @@ opinion about the aircraft; it is what the aircraft reported about itself on
 a flight that worked, and the landing constants were fitted against flights
 exactly like it.
 
-It exists because ``tests/fakeplane``'s own table comes from
+It exists because ``spaceplane/tests/fakeplane``'s own table comes from
 ``planeprobe``, which over-reads subsonic lift by about 1.8x (spaceplane
 failure 13) -- fine for flying the offline sim, useless for asking whether a
 derived landing constant lands on the value that was fitted in game.  A
@@ -26,7 +26,7 @@ LOG = "LOG2747"
 MASS = 6800.0           # kg, the mass the wheels arrived at
 GRAVITY = 9.81
 
-# ``(altitude, speed, {alpha_deg: (ClA, CdA)})`` -- ``tests.fakeplane.FakeEnv``
+# ``(altitude, speed, {alpha_deg: (ClA, CdA)})`` -- ``spaceplane.tests.fakeplane.FakeEnv``
 # takes this shape directly as ``rows=``.
 ROWS = (
     (200, 0.0, {0: (0.1, 2.6), 2: (7.0, 3.1), 5: (17.6, 4.7), 8: (28.3, 7.4), 12: (42.6, 12.6), 16: (56.3, 19.5), 20: (69.0, 28.0), 25: (81.7, 40.1), 30: (88.3, 52.3), 35: (79.9, 58.9), 40: (68.6, 63.4), 50: (44.5, 59.5), 65: (16.5, 44.1), 90: (0.0, 28.2)}),
