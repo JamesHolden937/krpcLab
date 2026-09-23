@@ -43,6 +43,9 @@ find "$DIR/GameData" -type f \
      -exec bash -c 'unshare "$0"' {} \;
 for f in "$DIR/settings.cfg" "$DIR/Physics.cfg" "$DIR/buildID64.txt"; do unshare "$f"; done
 find "$DIR/saves" "$DIR/Ships" -type f -exec bash -c 'unshare "$0"' {} \;
+# The tracked reference saves (../saves/), not whatever base/ copied from the
+# live install -- see syncSaves.sh for why clones must not drift.
+"$HERE/syncSaves.sh" push "$N"
 # PluginData/KSPBurst* is a generated, version-keyed, read-only cache: shared.
 
 # --- this clone's kRPC ports ----------------------------------------------
