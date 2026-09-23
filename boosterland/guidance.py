@@ -11,7 +11,7 @@ prediction lands inside ``BOOSTBACK_TOLERANCE_M``.
 import math
 from dataclasses import dataclass
 
-from . import vec
+from common import vec
 from . import trajectory
 from .trajectory import landing_command, miss_vector
 

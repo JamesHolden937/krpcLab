@@ -1,13 +1,13 @@
-# The test-instance farm (`test_instances/`)
+# The test-instance farm (`testInstances/`)
 
 Independent graphics-stripped KSP copies for flying several measurements at
 once, and the operational failures that farm has produced.
 
 In-game measurement is the bottleneck: a flight is about three minutes and the
-useful experiments are three flights a configuration. `test_instances/` holds
+useful experiments are three flights a configuration. `testInstances/` holds
 independent, graphics-stripped copies of the KSP install, each with its own
 kRPC port. The live install at `~/Kerbal Space Program` is only ever **read**;
-`test_instances/README.md` and `keep-notes.md` carry the detail.
+`testInstances/README.md` and `keepNotes.md` carry the detail.
 
 `mkbase.sh` builds `base/` by copying the install without the mods in
 `strip.txt` — GameData drops 9.4 GB to 2.4 GB, kRPC open in 39 s against 61 s.
@@ -15,7 +15,7 @@ A second pass took the last 1.2 GB out of mods that *stay*: the surface
 textures and plume models of ReStock and Squad, whose part meshes — and so
 the drag cubes and masses — are untouched. Three mods that look like GUI tools
 were put back because they replace stock PartModules on the flying vessel;
-`keep-notes.md` has the table. `mkclone.sh N` hardlinks a clone off `base/` and
+`keepNotes.md` has the table. `mkclone.sh N` hardlinks a clone off `base/` and
 breaks the links on every file KSP rewrites, so an instance costs ~10 MB plus
 its own 1.3 GB wine prefix. Ports are `50100 + 2N`, clear of 50000/50001.
 
@@ -39,7 +39,7 @@ the private `saves/` and `Ships/` per clone, and `base/` is never launched.
 `Core.StopAll()` whenever `CurrentGameScene()` is `GameScene.None`, and the
 main menu is `None` — so `autoStartServers = True` is necessary but not
 sufficient, and an instance parked at the menu never opens its port.
-`GameData/BoosterlandAutoLoad` (built from `autoload-src/` by `mkbase.sh`)
+`GameData/BoosterlandAutoLoad` (built from `autoloadSrc/` by `mkbase.sh`)
 loads the quicksave from the menu into `SPACECENTER`. It is
 `[KSPAddon(Startup.MainMenu, true)]`, so it cannot influence a flight. Two
 traps in it, both paid for:
@@ -59,13 +59,13 @@ which an off-screen instance can never click. The stall is silent — no error,
 no CPU, no log line. Before bisecting a mod list for a hang, diff
 `GameData/*/PluginData` against the live install.
 
-`kwin-run.sh N` runs an instance inside its own `kwin_wayland --virtual`
+`kwinRun.sh N` runs an instance inside its own `kwin_wayland --virtual`
 compositor: no visible window, no display contention. `run-ksp.sh N`
 (gamescope, `BACKEND=sdl|headless|none`) is for watching one interactively.
 `start.sh` launches each in its own `systemd-run --user --scope`.
 
 **Flights can run faster than real time without coarsening the physics step.**
-`test_instances/timescale-src` raises `Time.timeScale` while leaving
+`testInstances/timescaleSrc` raises `Time.timeScale` while leaving
 `Time.fixedDeltaTime` at 0.02, which is the opposite of what KSP's own physics
 warp does; `./timescale.py N max` turns it on and reports what was *achieved*
 rather than what was commanded. The ceiling is control quantization
@@ -73,7 +73,7 @@ rather than what was commanded. The ceiling is control quantization
 matter more than the machine does — and frames above what the quantum needs
 come straight out of the speedup. Measured: 175 s/flight to 47 s. The control
 loops must be paced on `ut` for this to be honest (`LOOP_PACING_GAME_TIME`);
-see `keep-notes.md`, "Flying faster than real time".
+see `keepNotes.md`, "Flying faster than real time".
 
 **And pacing the loop on `ut` is not enough, because the loop cannot always
 keep up with it.** A tick costs 20-60 ms of wall clock whatever the game
@@ -106,7 +106,7 @@ the others. A session's worth of cone flights was read as "the glide scatters
 So before a batch:
 
 ```bash
-md5sum test_instances/ksp*/saves/default/<save>.sfs | awk '{print $1}' | sort -u | wc -l
+md5sum testInstances/ksp*/saves/default/<save>.sfs | awk '{print $1}' | sort -u | wc -l
 ```
 
 One line of output means one experiment. More than one means copy the
@@ -407,7 +407,7 @@ journalctl --user -b --since "-10min" | grep -E "systemd\[.*\]:.*(Started|Consum
   yes. A reaper leaves a `SIGKILL` and a truncated log; this leaves a tidy
   shutdown, and the difference is the whole diagnosis.
 
-  `kwin-run.sh` runs each compositor under `dbus-run-session` now, so its
+  `kwinRun.sh` runs each compositor under `dbus-run-session` now, so its
   global shortcuts are global only to itself. **Check this first** when
   instances die together, before the suspend and the GPU: it is free to rule
   out (did anyone touch the keyboard?) and it was the cause of every
@@ -476,7 +476,7 @@ being paid at full price:
 | `TEXTURE_QUALITY` | 0 (full) | **3 (eighth)** | VRAM, see below |
 
 **The render size was not what `settings.cfg` said.** `mkbase.sh` set
-`SCREEN_RESOLUTION_*` to 640x360 and `kwin-run.sh` passed
+`SCREEN_RESOLUTION_*` to 640x360 and `kwinRun.sh` passed
 `-screen-width 900 -screen-height 520` on the command line, which wins -- so
 the number in the config file had never been the one in use. Both are set
 together now.
@@ -488,7 +488,7 @@ instances booted at 1x1, 32x32, 160x100 and 320x200: the first two reach
 320x200 are fine. The floor is somewhere between 32x32 and 160x100 and there
 was no reason to find it more precisely. KSP is frame-driven and everything
 after the loading screen needs frames, so the target is the smallest size
-that still renders, not the smallest that is readable. `RES=WxH ./kwin-run.sh
+that still renders, not the smallest that is readable. `RES=WxH ./kwinRun.sh
 N` overrides it.
 
 **VRAM is a real constraint and it used to be the binding one.** Four

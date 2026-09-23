@@ -1,0 +1,56 @@
+# !! THE SUBSONIC HALF OF THIS FILE DISAGREES WITH THE AIRFRAME BY ~1.8x !!
+#
+# Measured against the force kRPC reports in flight (./polar.py, and
+# spaceplane failure 13): best glide is L/D 2.1 at 12 deg, not 3.39 at 10,
+# and the most lift this airframe has been seen making subsonically is
+# ClA 45-50 -- a stall near 48 m/s, not the 37.1 below.  The *ratios* here
+# survive (L/D 1.70 at 30 deg against 1.6 flown); the magnitudes do not.
+#
+# Do not transcribe a constant out of the "approach" section into config.py.
+# That is how STALL_SPEED_M_S, APPROACH_FACTOR, APPROACH_BEST_LD, GATE_ALT_M
+# and the flare trigger were all set for an aircraft that does not exist,
+# and why every flight of this vehicle ended as a wreck.
+#
+<frozen site>:101: RuntimeWarning: Unexpected value in sys.prefix, expected /home/holden/boosterlandKSP/.venv, got /home/holden/boosterlandKSP/testInstances/../.venv
+<frozen site>:101: RuntimeWarning: Unexpected value in sys.exec_prefix, expected /home/holden/boosterlandKSP/.venv, got /home/holden/boosterlandKSP/testInstances/../.venv
+# vessel=Untitled Space Craft  parts=23  mass now=9.495 t  probing at 6.715 t
+# body=Kerbin  R=600000 m  g=9.81 m/s^2  atmosphere=70000 m  gear=down
+
+# pitch plane: azimuth 0 deg, as given
+
+=== entry: what the air will do at angle of attack ===
+
+=== approach: stall, glide and sink ===
+
+  glide at 100 m, mass 6.715 t, g 9.81 m/s^2
+      aoa   speed   sink   L/D    ClA    CdA
+         5   111.1  53.40   2.08   9.51   4.57
+         8    75.2  25.62   2.93  20.78   7.08
+        10    63.9  20.85   3.07  28.65   9.35
+        12    56.7  18.83   3.01  36.36  12.08
+        14    51.6  17.95   2.87  43.90  15.27
+        16    47.8  17.67   2.71  51.11  18.88
+        18    44.9  17.72   2.53  58.07  22.91
+        20    42.5  17.96   2.37  64.69  27.33
+        22    40.7  18.41   2.21  70.75  32.04
+        25    38.6  19.43   1.99  78.34  39.43
+        30    36.9  22.18   1.66  85.63  51.44
+        35    38.9  28.54   1.36  77.16  56.61
+        40    42.2  37.60   1.12  65.72  58.61
+
+      stall        36.9 m/s at 30 deg   -> approach 1.3x = 48 m/s
+      best glide   63.9 m/s at 10 deg   L/D 3.07, sink 20.8 m/s
+      min sink     47.8 m/s at 16 deg   L/D 2.71, sink 17.7 m/s
+
+  flare, holding 30 deg (maximum lift), stall 36.9 m/s
+      approach   x Vs   sink   outcome      height   touchdown
+        48.0     1.30   16.6   stalled       24.1 m     36.8 m/s
+        55.4     1.50   17.4   stalled       19.3 m     36.8 m/s
+        62.8     1.70   19.4   arrested      14.6 m     43.7 m/s
+        70.1     1.90   22.1   arrested      13.8 m     51.8 m/s
+        77.5     2.10   25.3   arrested      14.2 m     58.2 m/s
+        88.6     2.40   30.4   arrested      15.8 m     67.2 m/s
+        99.7     2.70   41.9   arrested      24.5 m     72.1 m/s
+       110.8     3.00   47.9   arrested      26.8 m     80.1 m/s
+      (sink is what the approach arrives at; height is what the
+       flare consumes; touchdown is the speed the wheels see)

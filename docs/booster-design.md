@@ -407,7 +407,7 @@ than applying a fitted gain. With no sideforce the slope stays empty, the
 solver's conditioning test trips, and the vehicle holds retrograde
 (`test_a_booster_with_no_wing_is_not_steered`).
 
-**What the booster actually has**, from `test_instances/liftprobe.py` against
+**What the booster actually has**, from `testInstances/liftprobe.py` against
 the real craft with no flight (the probe takes an attitude, so it can be asked
 about angles the vehicle is not holding):
 

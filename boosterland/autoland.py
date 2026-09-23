@@ -21,13 +21,14 @@ from dataclasses import fields
 
 import krpc
 
-from . import guidance, trajectory, vec
-from . import rcs as rcs_valve
+from common import vec
+from . import guidance, trajectory
+from common import rcs as rcs_valve
 from .config import Config, apply_overrides
 from .environment import Environment
 from .gui import ControlPanel, telemetry_lines
-from .logbook import Logbook
-from .pacing import sleeper
+from common.logbook import Logbook
+from common.pacing import sleeper
 from .proximity import ProximityScan
 from .telemetry import Telemetry
 

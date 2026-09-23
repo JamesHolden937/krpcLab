@@ -872,7 +872,7 @@ results.** The current frontier is 10d.
    clean, nearly constant factor, which is exactly the kind that reads as a
    plausible measurement.
 
-   **The general rule.** `planeprobe-gearup.txt` is a file of measurements
+   **The general rule.** `planeprobeGearup.txt` is a file of measurements
    and the constants in `config.py` were transcribed from it by hand, which
    made it a source with no consumer that could contradict it. A measurement
    that only ever feeds constants can be wrong for as long as the project
@@ -1860,7 +1860,7 @@ results.** The current frontier is 10d.
    it, and the two configurations are indistinguishable in the log because
    the `config:` line faithfully reports the value that was ignored.
 
-   This is `test_instances/HANDOFF.md`'s "read the numeric value, never the
+   This is `testInstances/HANDOFF.md`'s "read the numeric value, never the
    label" from the other side: there the label hid the value, here the value
    was read and then thrown away. A clamp that can make two configurations
    fly identically belongs in a test, and now is one.

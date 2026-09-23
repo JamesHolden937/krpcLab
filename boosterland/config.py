@@ -489,7 +489,7 @@ class Config:
     LOOP_PACING_GAME_TIME: bool = False     # pace on ut, not wall clock.  Only
                                             # matters when the game is running
                                             # off 1x -- see
-                                            # test_instances/timescale-src
+                                            # testInstances/timescaleSrc
     LOOP_PACING_MAX_STRETCH: float = 5.0    # give up on a tick after this many
                                             # intervals of wall clock: a paused
                                             # game must not hang the autopilot

@@ -45,7 +45,7 @@ deorbit: working on both craft. Landing: the old craft on `qs_plane` only.**
   earlier** -- first thing that ever has -- while breaking 3 of 6, because
   the approach's speed loop dives to win back the speed the brake takes.
 - **Instruments:** every log has `actuators:` at STANDBY and `authority kN m
-  ... at q=` per phase; `test_instances/actuators.py` dumps a craft's every
+  ... at q=` per phase; `testInstances/actuators.py` dumps a craft's every
   module setting; `STATE_FROZEN_S` ends a flight whose kRPC state has frozen
   (one did for 50 minutes).
 
@@ -77,7 +77,7 @@ unbraked approach already sinks 46-49 m/s at altitude).
 ### Method notes
 
 - Code frozen during batches; develop in a copy of the tree
-  (`cp -r spaceplane tests boosterland` + `test_instances/planeprobe-gearup.txt`).
+  (`cp -r spaceplane tests boosterland` + `testInstances/planeprobeGearup.txt`).
 - `farmfly.sh` will not share the farm and writes `BATCH DONE` to its OUT
   file; `ladder.py` arms carrying settings must be separated by `;`;
   `pgrep -f` in a wait loop matches itself.
@@ -92,7 +92,7 @@ files listed at the end of docs/spaceplane.md.
 ## What this is
 
 Two kRPC autopilots in one tree, sharing `boosterland.vec`, `boosterland.logbook`,
-the `test_instances/` measurement farm, and every convention below.
+the `testInstances/` measurement farm, and every convention below.
 
 - **`boosterland/`** flies a KSP booster back to the KSC launchpad after stage
   separation, Superheavy-style: boostback burn, ballistic coast, suicide burn,
@@ -336,7 +336,7 @@ the `test_instances/` measurement farm, and every convention below.
   (+9.7 km arrival, 132-135 m/s into the flare). It needs a design session
   from a final-approach save, not a constant swap.
   Every log now carries `actuators:` at STANDBY and `authority kN m ... at
-  q=` on each phase change, and `test_instances/actuators.py` dumps every
+  q=` on each phase change, and `testInstances/actuators.py` dumps every
   module setting of a craft -- run it on any new airframe first.
   `qs_shuttle_inc` and `qs_shuttle_high` exist on the farm (`savegen.py`,
   normal 100 / prograde 80): the same configuration arrives **+3.4 km**
@@ -403,7 +403,7 @@ python3 -m unittest tests.test_offline.TestGuidance.test_boostback_burns_against
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `cd test_instances && ./nosleep.sh start && ./start.sh 0 1 2`, wait for the
+# `cd testInstances && ./nosleep.sh start && ./start.sh 0 1 2`, wait for the
 # ports, fly; `./stop.sh` when the suite has to run or the session ends.
 #
 # **Three instances, and never beside the test suite.**  Four idle instances
@@ -412,8 +412,8 @@ python3 -m unittest tests.test_offline.TestGuidance.test_boostback_burns_against
 # it: stop the farm, run the suite, restart the farm, fly.  `pairfly.sh`
 # takes INSTANCES="0 1 2" and still balances arms across instances over an
 # even ROUNDS.
-cd test_instances && ./mkbase.sh   # build a stripped KSP copy (once, ~7.5 GB)
-./mkclone.sh 0 && ./kwin-run.sh 0  # an unattended instance, invisible
+cd testInstances && ./mkbase.sh   # build a stripped KSP copy (once, ~7.5 GB)
+./mkclone.sh 0 && ./kwinRun.sh 0  # an unattended instance, invisible
 ./watchdog.sh start                # restart any instance that dies
 ./fly.sh 0 -n 3                    # fly it, on that instance's kRPC ports
 ./stop.sh                          # stop them all (and the watchdog)
@@ -423,7 +423,7 @@ cd test_instances && ./mkbase.sh   # build a stripped KSP copy (once, ~7.5 GB)
 **Three things make a farm batch a lie, and none of them announce it.**
 `pgrep -af spaceplane.autopilot` should show exactly one per busy instance --
 the harness runs the flight as a *child*, so a killed batch used to leave it
-flying (fixed, but check). `md5sum test_instances/ksp*/saves/default/<save>.sfs
+flying (fixed, but check). `md5sum testInstances/ksp*/saves/default/<save>.sfs
 | sort -u | wc -l` should print 1 -- each clone keeps its own quicksaves and
 they drift. And `swapon --show` should be near zero *after* the batch as well
 as before: four instances left up for seven hours put 15.5 GB into zram and
@@ -471,7 +471,7 @@ python3 -m unittest tests.test_spaceplane           # offline, no KSP
 python3 -m tests.glidesim --dv 60                   # one entry, traced
 ./polar.py --mach 0.45          # the polar the airframe flies, from the logs
 ./aeroaudit.py logs/LOG601      # model against flight, from a log
-./test_instances/planeprobe.py 0 --mass 6.715   # probe it -- but it over-reads
+./testInstances/planeprobe.py 0 --mass 6.715   # probe it -- but it over-reads
                                 #   subsonic lift ~1.8x; see failure 13
 ```
 
@@ -578,7 +578,7 @@ These bite in both projects and are the ones a change most often violates.
   faithfully report the one that was ignored.** `deorbit_aim` returned
   `max(bias, fraction * arc)`, so with the fraction retired a configured
   `-3000` flew as `0` -- four in-game batches were flown believing they were
-  aimed short. Spaceplane failure 33, and `test_instances/HANDOFF.md`'s
+  aimed short. Spaceplane failure 33, and `testInstances/HANDOFF.md`'s
   "read the numeric value, never the label" from the other side.
 - **A control loop that cannot serve its own commanded interval is flying a
   different vehicle, and the log has to say so.** Every spaceplane log ends

@@ -28,9 +28,9 @@ import time
 
 import krpc
 
-from boosterland import rcs, vec
-from boosterland.logbook import Logbook
-from boosterland.pacing import LoopRate, ScaleGovernor, sleeper
+from common import rcs, vec
+from common.logbook import Logbook
+from common.pacing import LoopRate, ScaleGovernor, sleeper
 from . import airbrake as airbrake_mod
 from . import airframe
 from . import guidance, trajectory
@@ -504,7 +504,7 @@ class Autopilot:
         (``Drain Mode``, the brake strength, ...).  One line, at STANDBY, so
         two logs from two airframes can be read against each other and a
         setting that differs between them is visible before it is a bug.
-        ``test_instances/actuators.py`` is the full, per-module version.
+        ``testInstances/actuators.py`` is the full, per-module version.
         """
         bits = []
         try:

@@ -17,7 +17,7 @@ boostback aims at the point the vehicle will actually touch down on.
 import math
 from dataclasses import dataclass
 
-from . import vec
+from common import vec
 
 
 @dataclass

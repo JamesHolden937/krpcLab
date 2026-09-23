@@ -17,7 +17,7 @@ runs all the way to the tarmac is solving a manoeuvre it has no model of.
 import math
 from dataclasses import replace
 
-from boosterland import vec
+from common import vec
 from . import airframe, trajectory
 from .trajectory import Steer
 

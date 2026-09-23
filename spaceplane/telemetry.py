@@ -8,7 +8,7 @@ import math
 
 from dataclasses import dataclass
 
-from boosterland import vec
+from common import vec
 
 
 @dataclass

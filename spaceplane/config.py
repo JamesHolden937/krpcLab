@@ -6,8 +6,8 @@ listing what differs from these defaults, so a log says which configuration
 flew it.
 
 The aerodynamic numbers here are *measured*, not guessed --
-``test_instances/planeprobe.py`` against the real airframe, recorded in
-``planeprobe-gearup.txt``.  Where a default came out of that file the
+``testInstances/planeprobe.py`` against the real airframe, recorded in
+``planeprobeGearup.txt``.  Where a default came out of that file the
 measurement is quoted next to it, because the next vehicle will have different
 ones and there has to be a way to tell a measurement from a guess.
 """
@@ -3433,7 +3433,7 @@ class Config:
     LOOP_PACING_GAME_TIME: bool = False     # pace on ut, not wall clock.  Only
                                             # matters when the game is running
                                             # off 1x -- see
-                                            # test_instances/timescale-src
+                                            # testInstances/timescaleSrc
     LOOP_PACING_MAX_STRETCH: float = 5.0    # give up on a tick after this many
                                             # intervals of wall clock: a paused
                                             # game must not hang the autopilot

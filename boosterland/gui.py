@@ -5,7 +5,7 @@ presses are read through kRPC streams (cheap polling) and the ``clicked`` flag
 is reset by us, exactly as in the kRPC user-interface tutorial.
 """
 
-from . import vec
+from common import vec
 
 
 class ControlPanel:

@@ -17,7 +17,7 @@ remote kRPC call, so the expensive things are cached here:
 import bisect
 import math
 
-from . import vec
+from common import vec
 
 
 class Environment:

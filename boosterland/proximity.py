@@ -19,7 +19,7 @@ that is still correct once it has.
 import math
 from dataclasses import dataclass
 
-from . import vec
+from common import vec
 
 
 @dataclass

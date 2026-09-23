@@ -9,7 +9,7 @@ All vectors are in the body's rotating reference frame, matching
 import math
 from dataclasses import dataclass
 
-from . import vec
+from common import vec
 
 
 @dataclass

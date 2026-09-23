@@ -26,7 +26,7 @@ nose brakes.
 import math
 from dataclasses import dataclass, field
 
-from boosterland import vec
+from common import vec
 from . import airframe
 
 

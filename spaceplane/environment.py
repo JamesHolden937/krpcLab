@@ -33,7 +33,7 @@ are refined from the prediction's own once there is one.
 """
 import math
 
-from boosterland import vec
+from common import vec
 
 
 class Table:

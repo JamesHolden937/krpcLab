@@ -6,7 +6,7 @@ are in [spaceplane-failures.md](spaceplane-failures.md).
 A second autopilot in the same tree: deorbit from orbit, fly an atmospheric
 entry, and land a winged vehicle on the KSC runway. `boosterland/` is untouched
 by it and its 152 tests still pass; what the two share is `boosterland.vec` and
-`boosterland.logbook`, the `test_instances/` farm, and every convention in
+`boosterland.logbook`, the `testInstances/` farm, and every convention in
 `CLAUDE.md`.
 
 ```bash
@@ -21,7 +21,7 @@ OUT=/tmp/base.txt N=8 ./farmfly.sh                   # one config, n per instanc
 ./armsum.py --by GLIDE_RESERVE_ON --against '(default)' logs/LOG10*
 python3 -m unittest tests.test_spaceplane           # offline, no KSP
 python3 -m tests.glidesim --dv 60                   # one entry, traced
-./test_instances/planeprobe.py 0 --mass 6.715       # measure the airframe
+./testInstances/planeprobe.py 0 --mass 6.715       # measure the airframe
 ```
 
 An entry is ten minutes of game time and the orbital wait is more, so
@@ -159,8 +159,8 @@ lift units          4.72       capsule body lift 1.4 (30%), wings 2.0, ctrl 1.32
 LV-T91, 125 kN vac, Isp 355    1206 m/s available; a deorbit needs 40-120
 ```
 
-`test_instances/planeprobe.py` measures the rest against the real craft with no
-flight at all (`planeprobe-gearup.txt`) — **and its subsonic half is wrong by
+`testInstances/planeprobe.py` measures the rest against the real craft with no
+flight at all (`planeprobeGearup.txt`) — **and its subsonic half is wrong by
 about 1.8x; see failure 13.** The table below is kept because its hypersonic
 rows and all of its *ratios* are sound and the design rests on those; every
 number that is a magnitude subsonic — the stall speed, `ClA max`, the glide
@@ -281,7 +281,7 @@ is now 0.03.
 > 2026-09-23". The paragraph is left as written so the citations to it
 > still resolve.
 
-Probed live on the craft (`test_instances/ctrlsrf.py`, `surfacespan.py`):
+Probed live on the craft (`testInstances/ctrlsrf.py`, `surfacespan.py`):
 **all six control surfaces have Pitch, Yaw and Roll disabled** -- 0 of 6 have
 any axis enabled -- and `available_torque` is (15000, 15000, 15000) N m,
 which is the reaction wheels alone. The aircraft is flown entirely on
@@ -750,7 +750,7 @@ Re-making any of them, or making the same dial for a third state:
 
 ```bash
 ./entrysave.py 0                      # alongside a normal flight, saves qs_entry
-cp test_instances/ksp0/saves/default/qs_entry.{sfs,loadmeta} /tmp/
+cp testInstances/ksp0/saves/default/qs_entry.{sfs,loadmeta} /tmp/
 ./savegen.py --save-dir /tmp --source qs_entry -o qs_hot --prograde 24
 ./ladder.py --arms qs_b0,qs_b24,qs_b32 -n 4 --instances 0,1,4,5
 ```
@@ -2109,7 +2109,7 @@ these surfaces have none** (see "This vehicle has no aerodynamic control at
 all" above).
 
 **The identification rule must stay geometric and must refuse rather than
-guess.** `test_instances/surfacespan.py` implements it: span axis from the
+guess.** `testInstances/surfacespan.py` implements it: span axis from the
 part rotation quaternion; vertical when `|span.z| > |span.x|` in the vessel
 frame; require a pair mirrored about the centreline; **no pair -> no
 airbrake**, and the vehicle flies as it does now. Horizontal surfaces are
@@ -2203,7 +2203,7 @@ any constant in it is touched:
 - *Other craft.* The identification refuses on anything but a clean mirrored
   vertical pair, so it is safe by construction -- but "safe" and "works" are
   different claims and only `qs_plane`'s geometry has been run through it,
-  offline. `test_instances/mkheavy.py` and a craft file with a centreline fin
+  offline. `testInstances/mkheavy.py` and a craft file with a centreline fin
   or with two fin pairs are the cheap tests, and the second of those needs no
   game at all.
 - *Other situations.* The trigger is the APPROACH's weave saturating, because
@@ -2221,7 +2221,7 @@ any constant in it is touched:
 - **`HAC_ENTRY_AFFORDABLE`** -- enter the cone when it can pay for itself.
   Separates 21/3 from 9/24 over 57 flights offline, but note it asks
   `needed`, computed with `HAC_LD`, so it may be inert until that is honest.
-- **`test_instances/mkheavy.py`**, which builds `qs_plane_heavy` (+20%
+- **`testInstances/mkheavy.py`**, which builds `qs_plane_heavy` (+20%
   landing mass via MonoPropellant, which `DRAIN` does not dump) -- the only
   generality test available, since every save in the farm holds the same
   airframe. It writes binary to preserve CRLF; reading a save in text mode
@@ -2244,7 +2244,7 @@ New this session, **all default off**: `AIRFRAME_DERIVED`,
 in the units its consumers were fitted in and is therefore inert on the
 reference craft. New modules: `spaceplane/airframe.py` additions,
 `tests/flownpolar.py` (a real swept polar from `logs/LOG2747`),
-`test_instances/{ctrlsrf,surfacespan,mkheavy}.py`, and now
+`testInstances/{ctrlsrf,surfacespan,mkheavy}.py`, and now
 `spaceplane/airbrake.py` with `AIRBRAKE_*` in `config.py`. The last four
 batches are `logs/LOG2757-2812`. 530 offline tests pass.
 
@@ -3166,7 +3166,7 @@ One flight, small bins; the level is soft, the trend across six bins is not.
   fingerprints (`f1916f8e` -> `7dafb344`). The first ten flights were
   discarded. The fingerprint caught it, which is the mechanism working; the
   fix is to develop in a copy of the tree (`cp -r spaceplane tests
-  boosterland` somewhere, plus `test_instances/planeprobe-gearup.txt` which
+  boosterland` somewhere, plus `testInstances/planeprobeGearup.txt` which
   `fakeplane` reads) and apply the patch when the farm is free.
 - **A batch died to memory pressure at 5.7 GB of zram** and I only read the
   number in the post-mortem. Watch it every round; it dropped to 712 MB the
@@ -3299,7 +3299,7 @@ mostly delays the braking rather than moving the stop. Not changed.
 
 ### Missing-controls audit, as a tool and as a log line
 
-`test_instances/actuators.py <instance> [save]` lists every part module's
+`testInstances/actuators.py <instance> [save]` lists every part module's
 fields, events and actions, the torque by source, and the kRPC auto-pilot's
 tuning. Diffing the two craft's inventories is how the above was found.
 Other differences it shows, none of them commanded by the autopilot:

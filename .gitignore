@@ -12,7 +12,7 @@ dist/
 
 # The measurement farm's game copies and wine prefixes: 15 GB, rebuilt by
 # mkbase.sh / mkclone.sh.  The scripts and mod sources beside them are tracked.
-test_instances/base/
-test_instances/ksp[0-9]*/
-test_instances/prefix[0-9]*/
+testInstances/base/
+testInstances/ksp[0-9]*/
+testInstances/prefix[0-9]*/
 *.log
