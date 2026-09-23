@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Flight logs and batch outputs: large, per-machine, and cited by number in the docs.
+logs/
+logs_baseline/
+logs_r2/
+
+# Generated single-file bundles (./bundle.py rebuilds them).
+dist/
+
+# The measurement farm's game copies and wine prefixes: 15 GB, rebuilt by
+# mkbase.sh / mkclone.sh.  The scripts and mod sources beside them are tracked.
+test_instances/base/
+test_instances/ksp[0-9]*/
+test_instances/prefix[0-9]*/
+*.log

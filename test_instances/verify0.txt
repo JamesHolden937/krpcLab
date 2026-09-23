@@ -1,0 +1,6 @@
+flying default  (1/1) ...
+   VesselSituation.landed 111 m  VesselSituation.landed 111 m from pad, alt=-1 spd=1.5
+
+== default ==
+  1/1  VesselSituation.landed      111 m    1.5 m/s  c0   N    +6 E  -111  LOG70
+  -> median 111 m   mean 111 m   worst 111 m   (n=1)

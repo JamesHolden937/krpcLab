@@ -1,0 +1,86 @@
+# !! THE SUBSONIC HALF OF THIS FILE DISAGREES WITH THE AIRFRAME BY ~1.8x !!
+#
+# Measured against the force kRPC reports in flight (./polar.py, and
+# spaceplane failure 13): best glide is L/D 2.1 at 12 deg, not 3.39 at 10,
+# and the most lift this airframe has been seen making subsonically is
+# ClA 45-50 -- a stall near 48 m/s, not the 37.1 below.  The *ratios* here
+# survive (L/D 1.70 at 30 deg against 1.6 flown); the magnitudes do not.
+#
+# Do not transcribe a constant out of the "approach" section into config.py.
+# That is how STALL_SPEED_M_S, APPROACH_FACTOR, APPROACH_BEST_LD, GATE_ALT_M
+# and the flare trigger were all set for an aircraft that does not exist,
+# and why every flight of this vehicle ended as a wreck.
+#
+# vessel=Untitled Space Craft  parts=23  mass now=9.495 t  probing at 6.715 t
+# body=Kerbin  R=600000 m  g=9.81 m/s^2  atmosphere=70000 m  gear=up
+
+# pitch plane: azimuth 0 deg, as given
+
+=== entry: what the air will do at angle of attack ===
+   55000 m  2270 m/s  M 7.51  rho=9.63e-05   max L/D 1.28 @20deg   ClA max 9.26 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.48    1.32    2.27    2.95    3.66    4.38    5.09    5.79    6.47    7.13    8.04    9.21    9.26    8.90    7.35    3.75    0.00
+      CdA      0.99    1.23    1.67    2.21    2.61    3.05    3.52    4.01    4.52    5.05    5.63    6.70    9.19   14.15   20.51   26.32   29.22   29.89
+      decel    0.04    0.05    0.06    0.08    0.10    0.11    0.13    0.15    0.17    0.19    0.21    0.25    0.34    0.52    0.76    0.97    1.08    1.10   m/s^2 along the flow
+   45000 m  2240 m/s  M 6.91  rho=0.00048   max L/D 1.42 @18deg   ClA max 9.29 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.49    1.33    2.28    2.97    3.67    4.39    5.11    5.81    6.50    7.16    8.07    9.25    9.29    8.94    7.38    3.77    0.00
+      CdA      0.85    1.06    1.45    1.94    2.31    2.72    3.15    3.61    4.09    4.59    5.14    6.17    8.59   13.46   19.72   25.40   28.16   28.79
+      decel    0.15    0.19    0.26    0.35    0.41    0.49    0.57    0.65    0.73    0.82    0.92    1.11    1.54    2.41    3.54    4.56    5.05    5.17   m/s^2 along the flow
+   35000 m  2150 m/s  M 6.60  rho=0.0023   max L/D 1.44 @18deg   ClA max 9.31 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.49    1.33    2.29    2.97    3.68    4.40    5.12    5.82    6.51    7.17    8.08    9.27    9.31    8.95    7.39    3.77    0.00
+      CdA      0.83    1.03    1.42    1.90    2.27    2.67    3.10    3.55    4.03    4.53    5.07    6.09    8.50   13.35   19.59   25.24   27.98   28.60
+      decel    0.66    0.82    1.12    1.50    1.79    2.11    2.45    2.81    3.19    3.58    4.02    4.82    6.73   10.57   15.51   19.98   22.15   22.63   m/s^2 along the flow
+   25000 m  1500 m/s  M 4.96  rho=0.0151   max L/D 1.51 @18deg   ClA max 9.37 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.49    1.34    2.30    2.99    3.70    4.43    5.15    5.86    6.55    7.22    8.14    9.33    9.37    9.01    7.44    3.80    0.00
+      CdA      0.78    0.97    1.33    1.80    2.15    2.54    2.96    3.40    3.87    4.36    4.89    5.89    8.27   13.08   19.28   24.86   27.54   28.12
+      decel    1.98    2.45    3.38    4.55    5.45    6.44    7.50    8.62    9.81   11.04   12.39   14.93   20.96   33.16   48.86   63.01   69.80   71.28   m/s^2 along the flow
+   15000 m   900 m/s  M 3.05  rho=0.108   max L/D 1.70 @16deg   ClA max 11.96 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.63    1.71    2.94    3.82    4.73    5.65    6.57    7.48    8.36    9.22   10.39   11.91   11.96   11.50    9.50    4.85    0.00
+      CdA      0.86    1.07    1.48    2.00    2.41    2.86    3.35    3.87    4.43    5.00    5.64    6.80    9.51   14.73   21.39   27.28   29.90   30.29
+      decel    5.63    6.95    9.61   13.03   15.69   18.63   21.82   25.22   28.82   32.58   36.70   44.32   61.92   95.92  139.32  177.66  194.76  197.30   m/s^2 along the flow
+    8000 m   400 m/s  M 1.31  rho=0.4   max L/D 1.45 @18deg   ClA max 17.44 @35deg
+      aoa         0       2       5       8      10      12      14      16      18      20      22      25      30      35      40      50      65      90
+      ClA      0.00    0.91    2.49    4.28    5.56    6.89    8.24    9.58   10.90   12.19   13.43   15.14   17.35   17.44   16.77   13.84    7.06    0.00
+      CdA      1.70    2.05    2.73    3.60    4.27    5.01    5.81    6.65    7.53    8.45    9.47   11.44   16.33   26.86   40.55   52.99   59.16   60.72
+      decel    8.11    9.74   13.01   17.16   20.36   23.87   27.66   31.67   35.87   40.23   45.08   54.48   77.78  127.90  193.14  252.40  281.78  289.20   m/s^2 along the flow
+
+=== approach: stall, glide and sink ===
+
+  glide at 100 m, mass 6.715 t, g 9.81 m/s^2
+      aoa   speed   sink   L/D    ClA    CdA
+         5   111.5  44.88   2.49   9.43   3.79
+         8    75.5  22.68   3.33  20.60   6.19
+        10    64.2  18.94   3.39  28.42   8.39
+        12    56.9  17.44   3.26  36.08  11.06
+        14    51.8  16.87   3.07  43.55  14.18
+        16    48.0  16.79   2.86  50.71  17.73
+        18    45.1  16.98   2.65  57.62  21.71
+        20    42.7  17.32   2.46  64.18  26.06
+        22    40.8  17.85   2.29  70.20  30.71
+        25    38.8  18.97   2.04  77.71  38.01
+        30    37.1  21.81   1.70  84.83  49.88
+        35    39.2  28.22   1.39  76.17  54.88
+        40    42.5  37.38   1.14  64.54  56.71
+        50    53.9  64.30   0.84  40.20  47.99
+        65    93.3  206.90   0.45  13.41  29.74
+
+      stall        37.1 m/s at 30 deg   -> approach 1.3x = 48 m/s
+      best glide   64.2 m/s at 10 deg   L/D 3.39, sink 18.9 m/s
+      min sink     48.0 m/s at 16 deg   L/D 2.86, sink 16.8 m/s
+
+  flare, holding 30 deg (maximum lift), stall 37.1 m/s
+      approach   x Vs   sink   outcome      height   touchdown
+        48.2     1.30   15.9   stalled       22.7 m     37.1 m/s
+        55.6     1.50   16.3   stalled       16.9 m     37.0 m/s
+        63.1     1.70   17.8   arrested      12.1 m     46.3 m/s
+        70.5     1.90   19.9   arrested      11.1 m     54.4 m/s
+        77.9     2.10   22.6   arrested      11.4 m     60.8 m/s
+        89.0     2.40   27.2   arrested      12.6 m     70.2 m/s
+       100.1     2.70   36.3   arrested      18.5 m     76.5 m/s
+       111.3     3.00   41.5   arrested      20.2 m     84.9 m/s
+      (sink is what the approach arrives at; height is what the
+       flare consumes; touchdown is the speed the wheels see)

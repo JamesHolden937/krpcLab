@@ -1,0 +1,12 @@
+flying default  (1/3) ...
+   VesselSituation.landed 74 m  VesselSituation.landed 74 m from pad, alt=-1 spd=0.5
+flying default  (2/3) ...
+   VesselSituation.landed 66 m  VesselSituation.landed 66 m from pad, alt=-1 spd=0.2
+flying default  (3/3) ...
+   VesselSituation.landed 52 m  VesselSituation.landed 52 m from pad, alt=-1 spd=0.4
+
+== default ==
+  1/3  VesselSituation.landed       74 m    0.5 m/s  c0   N    +4 E   -74  LOG67
+  2/3  VesselSituation.landed       66 m    0.2 m/s  c0   N    -5 E   -66  LOG68
+  3/3  VesselSituation.landed       52 m    0.4 m/s  c0   N    +0 E   -52  LOG69
+  -> median 66 m   mean 64 m   worst 74 m   (n=3)

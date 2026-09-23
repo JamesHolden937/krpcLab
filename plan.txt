@@ -1,0 +1,22 @@
+I want to make a KSP kRPC script to boostback and land a booster on the launchpad after stage separation, like starship superheavy.
+do not log anything in STDout as that is messy. make a logs directory inside this directory, and store all logs in there, named LOG1 LOG2 and so on. This way you can access them at any time
+base when to make a new log line off of in game time, not real time, so it the game pauses, it doesn't log, and if I time warp, it will still log every x seconds of in game time.
+be sure to log often enough that you can see what is going on, but not so much it becomes really token consuming to read the logs.
+Be sure to look up any kRPC api you do not know.
+the exact coordinates of the KSP launchpad are -0.097162 Lat and -74.557679 Lon
+
+Now onto how I think we should do this
+the first thing the script should do is turn on RCS and AG2.
+wait like 3 secoonds for the upper stage to get far enough.
+then, calculate the attitude vector and burn length at which the boostback burn should be performed. recalculate this every tick from now on until boostback is complete
+full throttle and quickly flip the ship to boostback vector, and keep burning, adjusting the vector and throttle as calculations read, until the landing prediction is within a distance to the target coordinates. lets do 500m for now.
+you can use kRPC simulate atmosphric force to run an aerodynamic sim, this way the boostback is acurate, and also when determining landing point, factor in the suicide burn that will land the ship will kill off horizontal velocity.
+coast until suicide burn.
+suicide burn
+land.
+end the script.
+
+make a little GUI in game that has telemetry that you are logging and a start autoland button, and a terminate script button, which would terminate the script.
+
+Use python kRPC and a venv
+write a run.sh that will set up the venv and run the script, then stop the script and exit venv on ctrl-c or terminate script from within game. 
