@@ -1,1 +1,1 @@
-krpc>=0.5.4
+krpc==0.6.0   # must match the kRPC server mod in testInstances/base/GameData/kRPC

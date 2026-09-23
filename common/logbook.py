@@ -16,7 +16,7 @@ class Logbook:
         self.interval_ut = float(interval_ut)
         self.path, self._fh = _open_next_log(directory)
         self._next_ut = None
-        self._fh.write("# boosterland log, opened %s\n"
+        self._fh.write("# krpcLab log, opened %s\n"
                        % time.strftime("%Y-%m-%d %H:%M:%S"))
 
     # -- writing -----------------------------------------------------------

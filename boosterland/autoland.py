@@ -127,6 +127,7 @@ class Autoland:
         self.gui = ControlPanel(conn)
 
         self.state = STANDBY
+        self.autostart = False   # --autostart: STANDBY acts as if START was pressed
         self.phase_start_ut = ut
         self.prediction = None
         self.roll_up = None      # last roll reference, for continuity
@@ -221,7 +222,7 @@ class Autoland:
         gimbal, and the descent has very little authority on anything else --
         but *needing them in the phase* is not needing them in the tick, and
         the ticks where the booster is already pointed where it was told
-        outnumber the ones where it is turning.  See ``boosterland.rcs``.
+        outnumber the ones where it is turning.  See ``common.rcs``.
         """
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
@@ -333,7 +334,8 @@ class Autoland:
     # -- phases ------------------------------------------------------------
     def run_standby(self, snap):
         self.set_throttle(0.0)
-        if self.gui.start_pressed():
+        if self.autostart or self.gui.start_pressed():
+            self.autostart = False
             self.rcs_permitted = True   # allowed from here; see ``update_rcs``
             self.control.set_action_group(self.cfg.STARTUP_ACTION_GROUP, True)
             self.control.sas = False
@@ -1075,6 +1077,8 @@ def parse_args(argv):
     parser.add_argument("--name", default="boosterland")
     parser.add_argument("--set", action="append", default=[], metavar="K=V",
                         help="override a Config field, repeatable")
+    parser.add_argument("--autostart", action="store_true",
+                        help="do not wait for the panel's START button")
     return parser.parse_args(argv)
 
 
@@ -1090,6 +1094,7 @@ def main(argv=None):
                             rpc_port=args.rpc_port,
                             stream_port=args.stream_port)
         run = Autoland(conn, cfg, log)
+        run.autostart = args.autostart
         run.run()
         reason = run.exit_reason or "complete"
     except KeyboardInterrupt:
