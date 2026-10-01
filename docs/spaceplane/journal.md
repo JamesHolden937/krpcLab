@@ -3576,3 +3576,31 @@ polar approach speed):
   nose-up, flown alpha below command) and dives; 12/12 identical crashes at
   118-175 m/s (`rot-gate-1001`), LOG4371 the same at 1x. The late-glide
   bench shows the same transient right after loading and recovers.
+
+**Afternoon batches** (each 8 from orbit unless noted):
+- `rot-chain4-1001` round 0 (swing threshold 12): LOG4375 exited -55 m, on
+  the centreline, crossed the midpoint 840 m up and dove into the runway at
+  90 m/s -- the final was aimed at `TOUCHDOWN_AIM_M`=2400, the far
+  threshold. -> `TOUCHDOWN_AIM_DERIVED` (zone less flare float; 42 m).
+- `rot-chain5-1001` round 0: 3/4 glides 10-36 km off; LOG4379 arrived on
+  target and ran out of height -- `HAC_AIM_DERIVED` was aiming at best
+  glide (3.57), the edge of the cone's authority. -> aim at the harmonic
+  mean of steepest (alpha-limit drag x least efficient weave) and flattest
+  (best glide): 1.79 for the shuttle.
+- `rot-chain6-1001` (midpoint aim): **3/8 intact** (LOG4385 28/31 at 38 m/s,
+  199 m from the midpoint; LOG4387 31/31, +78 m along; LOG4388 31/31) but
+  416-2503 m off the centreline. LOG4385: the capture commanded level with
+  27 deg of bank still on and the track turned on to +21 deg before the
+  wings came level.
+- `rot-chain7-1001` (+`APPROACH_ENERGY_EXCESS`, `APPROACH_HEADING_LEAD`):
+  **0/8 intact**, touchdowns 1.7-2.6 km short of the midpoint, flares 83-95.
+  Energy excess refuted; heading lead unproven (confounded).
+- The user pointed out the shuttle already has canards: two Big-S Elevon 1
+  at z=0 on the nose adapter, ~12 m ahead of the CoM (I had read the part
+  list by name, not position). The Mach 3-5 pitch-ups do not follow
+  flap-brake deployments (1/28). User approved a forward-ballast test;
+  first form needs no craft edit: `DRAIN_RESERVE_DV_MS=1000` keeps all the
+  propellant, `FUEL_TO_NOSE` puts ~8.7 t in the nose adapter
+  (`rot-ballast3-1001`, chain6 vs chain6 + ballast, 4 v 4).
+- Trap repeated: idle kspSim servers from the morning's sim screens sat
+  beside every game batch until ~11:00 (1.6 GB swap).
