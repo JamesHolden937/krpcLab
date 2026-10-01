@@ -8954,3 +8954,29 @@ class ApproachEnergyExcess(unittest.TestCase):
         self.assertAlmostEqual(on.excess - off.excess,
                                (vec.norm(v) ** 2 - door ** 2) / (2 * 9.81),
                                delta=1.0)
+
+
+class RcsPitchGate(unittest.TestCase):
+    """``RCS_PITCH_BY_AUTHORITY``: pitch thrusters off once surfaces win."""
+
+    def test_pitch_thrusters_follow_the_authority(self):
+        cfg = replace(Config(), RCS_PITCH_BY_AUTHORITY=True)
+        blocks = [SimpleNamespace(pitch_enabled=True) for _ in range(3)]
+        vessel = SimpleNamespace(
+            available_control_surface_torque=((100e3, 0, 0), (0, 0, 0)),
+            available_rcs_torque=((290e3, 0, 0), (0, 0, 0)),
+            parts=SimpleNamespace(rcs=blocks))
+        fake = SimpleNamespace(cfg=cfg, state=autopilot_module.GLIDE,
+                               vessel=vessel,
+                               logbook=SimpleNamespace(event=lambda u, t: 0))
+        gate = autopilot_module.Autopilot.rcs_pitch_gate
+        gate(fake, SimpleNamespace(ut=0.0, dynamic_pressure=500.0))
+        self.assertTrue(all(b.pitch_enabled for b in blocks))
+        # Surfaces grow past the thrusters; the thrusters' own reading now
+        # reads 0 (pitch off) but the remembered figure stands.
+        vessel.available_control_surface_torque = ((2000e3, 0, 0), (0, 0, 0))
+        gate(fake, SimpleNamespace(ut=5.0, dynamic_pressure=3000.0))
+        self.assertFalse(any(b.pitch_enabled for b in blocks))
+        vessel.available_rcs_torque = ((0.0, 0, 0), (0, 0, 0))
+        gate(fake, SimpleNamespace(ut=10.0, dynamic_pressure=3000.0))
+        self.assertFalse(any(b.pitch_enabled for b in blocks))

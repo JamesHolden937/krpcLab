@@ -3217,6 +3217,53 @@ class Autopilot:
         self.logbook.event(snap.ut, "air drag brake in: %s" % why)
 
     # -- phases ------------------------------------------------------------
+    def rcs_pitch_gate(self, snap):
+        """``RCS_PITCH_BY_AUTHORITY``: pitch thrusters only while the
+        surfaces have less pitch authority than they do.
+
+        The valve opens on total pointing error -- for yaw, in practice --
+        and every block then fires in pitch as well, adding ~290 kN m to a
+        pitch loop tuned for the surfaces.  On both shuttles the valve was
+        open (opened 0-28 s before) at the onset of most Mach 3-6 pitch-ups
+        (alpha 35-39 commanded, 47-58 flown; the single-fin craft as often as
+        the twin).  Measured every ``RCS_PITCH_GATE_S`` in GLIDE and HAC:
+        ``available_control_surface_torque`` against the thrusters' pitch
+        torque, remembered from whenever it was last readable.
+        """
+        if (not getattr(self.cfg, "RCS_PITCH_BY_AUTHORITY", False)
+                or self.state not in (GLIDE, HAC)):
+            return
+        last = getattr(self, "_rcs_gate_ut", None)
+        if last is not None and snap.ut - last < self.cfg.RCS_PITCH_GATE_S:
+            return
+        self._rcs_gate_ut = snap.ut
+        try:
+            surf = abs(self.vessel.available_control_surface_torque[0][0])
+            rcs = abs(self.vessel.available_rcs_torque[0][0])
+        except Exception:                               # noqa: BLE001
+            return
+        self._rcs_pitch_torque = max(getattr(self, "_rcs_pitch_torque", 0.0),
+                                     rcs)
+        if self._rcs_pitch_torque <= 0.0:
+            return
+        want = surf < self._rcs_pitch_torque
+        if want == getattr(self, "_rcs_pitch_on", True):
+            return
+        changed = 0
+        try:
+            for block in self.vessel.parts.rcs:
+                block.pitch_enabled = want
+                changed += 1
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "rcs pitch: FAILED (%s)" % exc)
+            return
+        self._rcs_pitch_on = want
+        self.logbook.event(snap.ut, "rcs pitch %s on %d blocks: surfaces %.0f"
+                                    " kN m against thrusters %.0f (q=%.0f Pa)"
+                           % ("enabled" if want else "disabled", changed,
+                              surf / 1000.0, self._rcs_pitch_torque / 1000.0,
+                              snap.dynamic_pressure))
+
     def set_rcs(self, permitted, snap=None):
         """RCS on only while something is actually turning the vehicle.
 
@@ -6528,6 +6575,7 @@ class Autopilot:
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
         self.retune_attitude(snap)
+        self.rcs_pitch_gate(snap)
         self.fuel_trim(snap)
         self.drain_residual(snap)
         handler(snap)

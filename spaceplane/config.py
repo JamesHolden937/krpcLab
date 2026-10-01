@@ -4007,6 +4007,12 @@ class Config:
     # magnitude is capped at ``rate * (time to the door - roll
     # time_to_peak)``, so the wings are level when the flare opens.  Off
     # until paired.
+    # **RCS works only the axes the surfaces cannot** (``Autopilot.
+    # rcs_pitch_gate``): pitch thrusters off while the surfaces' measured
+    # pitch torque exceeds theirs.  The open valve preceded most Mach 3-6
+    # pitch-ups on both shuttles.  Off.
+    RCS_PITCH_BY_AUTHORITY: bool = False
+    RCS_PITCH_GATE_S: float = 2.0
     APPROACH_BANK_BY_ROLL: bool = False
     # **Lead the capture by the roll-out** (``Autopilot.
     # approach_heading_lead``): the heading error the lateral law sees is
