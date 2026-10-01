@@ -1836,9 +1836,9 @@ def hac_ladder(env, cfg, height, mass, gravity, reference, radius, turn,
 
 
 def straight_in_reach(env, cfg, mass, gravity):
-    """``HAC_AIM_DERIVED``: ground per metre of height a wings-level glide
-    at the cone's own speed covers from ``HAC_ALT_M`` to the gate, off the
-    table (``hac_ladder`` with no arc), or ``None``.
+    """``HAC_AIM_DERIVED``: the entry aim's ground per metre of height --
+    the middle of what the cone can fly from ``HAC_ALT_M`` to the gate (see
+    below), off the table, or ``None``.
 
     What ``HAC_GATE_LD`` (1.35, fitted on the old craft) stands in for: the
     entry aim should put the cone where a straight-in at the cone's speed
@@ -1854,7 +1854,29 @@ def straight_in_reach(env, cfg, mass, gravity):
                        1.0, 0.0, 0, 1.0)
     if rungs is None or len(rungs) < 2:
         return None
-    return rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M)
+    longest = rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M)
+    # **The middle of the cone's authority, not its edge.**  ``longest`` is
+    # the flattest the cone can glide (wings level at its own speed); aimed
+    # there, nothing is left for a short arrival: LOG4379 arrived on target
+    # at ratio 3.57 and ran out of height.  The steepest is the drag at the
+    # cone's alpha limit times the held weave's least efficient swing.  The
+    # aim is their midpoint in height per metre (the harmonic mean), so equal
+    # height errors either way are absorbed.
+    mid_h = 0.5 * (cfg.HAC_ALT_M + cfg.GATE_ALT_M)
+    speed = base * eas_scale(env, cfg, mid_h)
+    try:
+        cla, cda = env.coefficients(cfg.HAC_ALPHA_MAX_DEG, speed, mid_h)
+    except Exception:                                       # noqa: BLE001
+        return longest
+    if cla <= 0.0 or cda <= 0.0:
+        return longest
+    theta = cfg.HAC_WEAVE_MAX_DEG
+    rev = weave_reversal_s(cfg, theta, speed, gravity)
+    steepest = (cla / cda) * weave_efficiency(theta, rev,
+                                              cfg.HAC_WEAVE_HOLD_S)
+    if steepest >= longest:
+        return longest
+    return 2.0 / (1.0 / steepest + 1.0 / longest)
 
 
 def ladder_height(rungs, path, fallback_ld):
