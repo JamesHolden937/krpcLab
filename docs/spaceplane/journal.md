@@ -3374,3 +3374,48 @@ against a vehicle whose roll lags 4-6 s (LOG4129: -17, -30, -4, +20, +18,
 roll `time_to_peak` 5.5 s; and the approach dives (LOG4127: +-40 S-turns
 at alpha 2-6, 128 m/s and 77 m/s of sink at the flare door, struck at 133).
 And the cone exits +1.0 to +5.0 km high (LOG4131 +5022 with laps=0).
+
+## Session, 2026-09-30 night: fuel, and why the shuttle arrives high
+
+**Gear.** `NOSE_WHEEL_FRICTION` (default 1.0): the nose wheel's friction
+control switched to manual, the user's rule. Verified in game (LY-35 at 1,
+mains 200%/10).
+
+**Fuel.** The pre-burn drain keeps a 200 m/s x 1.25 reserve for the worst
+orbit; the shuttle's burns are ~26 m/s, so 1.9 t rode to the wheels (LOG4135:
+30.1 t, dry 27.5). In `qs_shuttle2` all of it is in the nose adapter
+(+10.8 m) -- the other LF/Ox tanks are empty; 399 mono sit 0.6 m behind the
+CoM. Built: `DRAIN_TO_BURN` (drain to the solved burn x1.25 + 10 m/s,
+re-solve, then commit; LOG4140: 430 -> 69 units, burn delivered 26.2 of
+26.2) and `FUEL_TO_NOSE` (first COAST tick: pump every tank front-to-back;
+in-game test moved 700 LF/800 Ox from aft tanks to the nose in 1.4 s).
+**`DRAIN_TO_BURN` is refuted as a default**: 3/3 drained flights crashed
+27-31 km short with hypersonic departures (LOG4140, 4142, 4144; `rot-drain-0930`)
+against 3/3 defaults reaching the field -- the nose fuel is the hypersonic
+ballast (as `DRAIN_RESIDUAL_MACH_MAX`'s note recorded). The combination that
+works: keep the reserve, `FUEL_TO_NOSE`, dump at Mach 0.8 (`DRAIN_RESIDUAL`):
+valves open at 237-258 m/s, empty in 0.4-1.0 s, 30.6 -> 28.7 t
+(`rot-ballast-0930`, LOG4149-4156).
+
+**Arriving high: two mechanisms** (all `qs_shuttle2` exits +1.0..+5.4 km,
+`laps=0`, planned path ~16 km on every flight whatever the entry height).
+1. *The phantom lap* (LOG4152): 16 km before the gate, lined up, the weave's
+   first swing put the tangent point 13 deg past the rollout -- one degree
+   outside `hac_turn`'s 12 -- and the plan read a 347 deg / 106 km turn
+   against 59 km affordable: *short*. Weave off, wings level, 13 km straight
+   to the gate, +5.4 km. `HAC_PAST_BEFORE_GATE_DEG` (new): before the gate,
+   a tangent point up to N deg past the rollout costs the run to the gate.
+2. *Speed the plan cannot see* (bench): the cone dives 13.5 -> 9.7 km
+   gaining 258 -> 314 m/s, then bleeds to 77 m/s by *climbing* (5790 ->
+   6100 m) -- 4.3 km of height in kinetic energy that `HAC_ENERGY_BUDGET`
+   (off since LOG1941-1952, old craft) would count. Bench `qs_shuttle2_low`
+   (new: the twin-fin craft spliced into `qs_shuttle_low`, cone in 2.5 min):
+   defaults exit +1591 (LOG4157-4159); energy budget +649..+722 (LOG4160-4162).
+
+**Bench stack** (energy budget + wrap + `DRAIN_RESIDUAL` +
+`APPROACH_BANK_BY_ROLL` + `APPROACH_FLARE_FACTOR=1.45`): **3 of 5 intact**
+(LOG4166: 31/31, 4.8 m/s sink at 51.7 m/s, wings level; 4167, 4169) against
+0 of 7 bench flights without it. The losses (LOG4168, 4170) reached the door
+at 80-82 m/s with ~30 m/s of sink and contacted nose-down (pitch -13/-16) at
+23-24 m/s -- the cone still exits ~+1 km dry, and the approach spends it as
+speed. The slowest door (66.7 m/s, LOG4166) landed best.

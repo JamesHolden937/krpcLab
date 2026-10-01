@@ -464,6 +464,11 @@ class Config:
     # deg turn, the plan called itself short, stopped weaving and handed
     # over 5.4 km high.  0 is the committed behaviour.
     HAC_PAST_BEFORE_GATE_DEG: float = 0.0
+    # **Price a lap at the speed it will be flown** (``guidance.hac_radius``):
+    # laps take their radius floor from the cone's target speed, not the
+    # entry speed.  At 270 m/s the floor is 7.4 km and no lap ever fits, so
+    # 5-7 km of surplus went out of the gate (LOG4152, 4171).  Off.
+    HAC_LAP_AT_TARGET_SPEED: bool = False
     # **The cone's glide ratio at the speed and bank it will be flown at**
     # (``guidance._hac_planned_ld``): the swept table at the cone's target
     # speed, wings level on the straight legs and at the circle's bank on

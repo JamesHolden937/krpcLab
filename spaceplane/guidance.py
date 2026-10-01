@@ -1533,7 +1533,7 @@ def hac_enterable(cfg, speed, gravity=9.81, load=None):
 
 
 def hac_radius(env, cfg, end, r, side, available, speed=None,
-               gravity=9.81, load=None):
+               gravity=9.81, load=None, lap_speed=None):
     """The radius (and extra laps) whose path spends exactly the height left.
 
     A scan rather than an inversion.  ``path`` is not monotone in the radius
@@ -1575,6 +1575,20 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     if not getattr(cfg, "HAC_ENTRY_DERIVED", False):
         floor = min(floor, cfg.HAC_RADIUS_MAX_M)
 
+    # ``HAC_LAP_AT_TARGET_SPEED``: **a lap is flown at the cone's speed,
+    # not the entry's.**  The floor above is the circle the vehicle can hold
+    # *now*; at 270 m/s that is 7.4 km and a lap on it is 46 km of path, so
+    # an arrival 7 km high never fits one and exits the gate +5 km (LOG4171,
+    # 4152 -- the scan read laps=0 throughout).  By the time a lap is flown
+    # the speed law has brought it to ``lap_speed``; price the laps there.
+    lap_floor = floor
+    if (getattr(cfg, "HAC_LAP_AT_TARGET_SPEED", False)
+            and lap_speed is not None and speed is not None):
+        lap_floor = max(cfg.HAC_RADIUS_MIN_M,
+                        hac_hold_radius(cfg, min(speed, lap_speed), gravity,
+                                        load))
+        lap_floor = min(lap_floor, floor)
+
     def scan(laps):
         """The best radius at this lap count, and how well it fits.
 
@@ -1591,8 +1605,9 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
         fits = None
         over = None
         steps = 24
+        low = lap_floor if laps > 0 else floor
         for i in range(steps + 1):
-            radius = floor + (cfg.HAC_RADIUS_MAX_M - floor) * i / float(steps)
+            radius = low + (cfg.HAC_RADIUS_MAX_M - low) * i / float(steps)
             path, turn, tangent = costed(radius)
             total = path + laps * 2.0 * math.pi * radius
             entry = (abs(total - available), radius, laps, turn, tangent,
@@ -1809,7 +1824,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     load = airframe.turn_load(env, cfg, speed, height, mass, gravity)
     radius, laps, turn, tangent, total = hac_radius(env, cfg, end, r, side,
                                                     available, speed,
-                                                    gravity, load)
+                                                    gravity, load,
+                                                    lap_speed=reference)
     if getattr(cfg, "HAC_LD_AT_TARGET", False):
         # ``HAC_LD_AT_TARGET``: price the path still to fly at the ratio the
         # vehicle will fly it at -- the swept table at the cone's own
