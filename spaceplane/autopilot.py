@@ -4324,6 +4324,12 @@ class Autopilot:
                 or self.state not in (GLIDE, HAC, APPROACH)):
             return
         remaining = snap.liquid_fuel + snap.oxidizer
+        if (self.residual_drain in (None, "trim")
+                and getattr(self.cfg, "DRAIN_TRIM_LOOP", False)):
+            if self.drain_trim(snap, remaining):
+                return
+            if self.residual_drain == "trim":
+                self.residual_drain = None
         if self.residual_drain is None:
             if not self.drain_modules or remaining <= float(
                     self.cfg.DRAIN_REMAINING_UNITS):
@@ -4386,6 +4392,63 @@ class Autopilot:
                                         "%.1f units left, mass %.3f t"
                                % (snap.ut - self.residual_since, remaining,
                                   snap.mass / 1000.0))
+
+    def drain_trim(self, snap, remaining):
+        """``DRAIN_TRIM_LOOP``: trim the CG with the nose fuel.  True while
+        it owns the valves (the residual drain then waits).
+
+        Wet, the shuttle flies 2-20 deg *under* its commanded alpha below
+        Mach 3 (nose-heavy: no drag, arrives 13-19 km up, LOG4171); fully
+        drained it flies up to 19 *over* (tail-heavy: arrives short,
+        LOG4241).  So the fuel is let go a step at a time while the vehicle
+        is short of its command, and kept the moment it tracks -- the amount
+        is the vehicle's own answer, not a number fitted to one craft.
+        Between ``DRAIN_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX`` (the
+        hypersonic glide needs it all as ballast); the residual drain takes
+        whatever is left at its own Mach as before.
+        """
+        if self.state != GLIDE or not self.drain_modules:
+            return False
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return False
+        if mach is None:
+            return False
+        if mach > float(self.cfg.DRAIN_TRIM_MACH_TOP):
+            return True             # still ballast: the residual drain waits
+        if mach <= float(self.cfg.DRAIN_RESIDUAL_MACH_MAX):
+            return False            # the residual drain's turn
+        self.residual_drain = "trim"
+        commanded = float(getattr(self, "commanded_alpha", 0.0) or 0.0)
+        achieved = getattr(snap, "alpha_actual", None)
+        if achieved is None or math.isnan(achieved):
+            return True
+        short = commanded - float(achieved)
+        # Smoothed over a few ticks: one reversal transient is not trim.
+        prev = getattr(self, "_trim_short", None)
+        k = float(self.cfg.DRAIN_TRIM_SMOOTH)
+        self._trim_short = short if prev is None else prev + k * (short - prev)
+        last = getattr(self, "_trim_ut", None)
+        if last is not None and snap.ut - last < float(
+                self.cfg.DRAIN_TRIM_INTERVAL_S):
+            return True
+        floor = float(self.cfg.DRAIN_REMAINING_UNITS)
+        if (self._trim_short > float(self.cfg.DRAIN_TRIM_SHORT_DEG)
+                and remaining > floor + 1.0):
+            keep = max(floor, remaining - float(self.cfg.DRAIN_TRIM_STEP_UNITS))
+            opened = sum(1 for module in self.drain_modules
+                         if self._open_one_drain(module))
+            if opened:
+                self.drain_to_reserve(snap, keep)
+            self._trim_ut = snap.ut
+            self.logbook.event(snap.ut, "drain trim: %.1f deg short of %.1f "
+                                        "at Mach %.2f -> %.0f -> %.0f units"
+                               % (self._trim_short, commanded, mach,
+                                  remaining, keep))
+        return True
 
     def run_drain(self, snap):
         """Dump the propellant, and wait for it to actually be gone.

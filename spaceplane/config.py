@@ -3411,6 +3411,19 @@ class Config:
     # this many units and the rest goes at ``DRAIN_RESIDUAL_FINAL_MACH``.
     # 0 drains everything at once (the old behaviour).
     DRAIN_RESIDUAL_KEEP_UNITS: float = 0.0
+    # **Trim by dumping** (``Autopilot.drain_trim``): between
+    # ``DRAIN_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX``, while the
+    # vehicle flies more than ``DRAIN_TRIM_SHORT_DEG`` under its commanded
+    # alpha (smoothed), dump ``DRAIN_TRIM_STEP_UNITS`` every
+    # ``DRAIN_TRIM_INTERVAL_S``; never while it tracks or overshoots.  The
+    # rest goes at ``DRAIN_RESIDUAL_MACH_MAX`` (set it to 0.8 with this).
+    # Needs ``DRAIN_RESIDUAL``.  Off.
+    DRAIN_TRIM_LOOP: bool = False
+    DRAIN_TRIM_MACH_TOP: float = 3.5
+    DRAIN_TRIM_SHORT_DEG: float = 2.0
+    DRAIN_TRIM_STEP_UNITS: float = 25.0
+    DRAIN_TRIM_INTERVAL_S: float = 6.0
+    DRAIN_TRIM_SMOOTH: float = 0.3
     DRAIN_RESIDUAL_FINAL_MACH: float = 0.8
 
     # -- the aerodynamic table ---------------------------------------------
