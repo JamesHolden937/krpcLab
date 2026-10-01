@@ -4344,6 +4344,13 @@ class Autopilot:
                          if self._open_one_drain(module))
             self.residual_drain = "open" if opened else "done"
             self.residual_since = snap.ut
+            keep = float(getattr(self.cfg, "DRAIN_RESIDUAL_KEEP_UNITS", 0.0))
+            if opened and keep > 0.0 and remaining > keep:
+                # **Part of it is trim, not ballast.**  Watched down to
+                # ``keep`` in this tick (the valve outruns the loop); the
+                # rest goes at ``DRAIN_RESIDUAL_FINAL_MACH``.
+                self.drain_to_reserve(snap, keep)
+                self.residual_drain = "kept"
             self.logbook.event(snap.ut, "residual drain %s (%d of %d valves) "
                                         "in %s: %.1f units, mass %.3f t, "
                                         "%.0f m/s"
@@ -4352,6 +4359,25 @@ class Autopilot:
                                   self.state, remaining,
                                   snap.mass / 1000.0,
                                   vec.norm(snap.velocity)))
+            return
+        if self.residual_drain == "kept":
+            # ``DRAIN_RESIDUAL_KEEP_UNITS``: the trim ballast goes at the
+            # final Mach, where the alpha it trims is no longer flown.
+            final = float(getattr(self.cfg, "DRAIN_RESIDUAL_FINAL_MACH", 0.8))
+            try:
+                mach = self.env.mach(vec.norm(snap.velocity),
+                                     vec.norm(snap.position)
+                                     - self.env.equatorial_radius)
+            except Exception:                           # noqa: BLE001
+                return
+            if mach is None or mach > final:
+                return
+            opened = sum(1 for module in self.drain_modules
+                         if self._open_one_drain(module))
+            self.residual_drain = "open"
+            self.logbook.event(snap.ut, "residual drain: the kept %.1f units "
+                                        "go at Mach %.2f (%d valves)"
+                               % (remaining, mach, opened))
             return
         if remaining <= float(self.cfg.DRAIN_REMAINING_UNITS):
             self.stop_drain(snap)

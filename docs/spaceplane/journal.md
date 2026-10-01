@@ -3419,3 +3419,36 @@ valves open at 237-258 m/s, empty in 0.4-1.0 s, 30.6 -> 28.7 t
 at 80-82 m/s with ~30 m/s of sink and contacted nose-down (pitch -13/-16) at
 23-24 m/s -- the cone still exits ~+1 km dry, and the approach spends it as
 speed. The slowest door (66.7 m/s, LOG4166) landed best.
+
+**From orbit on the farm the stack did not hold** (`rot-stack-0930`,
+LOG4171-4174; `rot-gap-0930`, LOG4177-4179): exits +2.0, +5.3, -1.8, -1.2,
+-6.4, +4.3, -1.6 km; cone entries 13.4-19.5 km, all on the 3 km *distance
+backstop*, never the glide's own `HAC_ALT_M` 12 km target. 0 intact.
+
+**kspSim for the twin-fin craft.** `makecraft.sh 0 qs_shuttle2
+qs_shuttle2_low qs_shuttle2` -> `models/qs_shuttle2.json`,
+`qs_shuttle2_low.json` (augment needed an instance restart: stale thruster
+transforms). Bench in the sim: exits ~-0.4 km where the game's are +1.0 --
+biased, relative use only. From orbit it reproduces the scatter (exits
+-3.5..+2.3, 1/6 intact) in **2.4 min for 6 flights**. New:
+`kspSim/tools/simarms.sh SAVE K "arm sets" ...` (K flights per arm, all at
+once) and `spaceplane/tools/armgroup.py` (groups logs by their own config
+line -- concurrent flights confuse the harness's LOG attribution).
+
+Sim screens from orbit (stack = energy budget + wrap + past-gate 60 + drain
+residual + fuel to nose + bank by roll + flare factor 1.45):
+- stack 2/9 intact; + `HAC_SPEED_PATH` 5/9, then 1/6 on a repeat (n=6 is
+  noise here). Weave 75 + Rmin 1000: 1/3. `HAC_LAP_AT_TARGET_SPEED` (new,
+  laps priced at the cone's speed): 2/6, three out of height -- overspends.
+- **Why the entries scatter: the late glide cannot hold alpha.** LOG4171
+  (game): commanded 31-34 deg at Mach 1.6-2.6, flown 13-15 -- less drag,
+  arrives 18 km up over the field. The 1.9 t nose ballast costs the elevons
+  their alpha authority below Mach 3 (cgProbe's 0.33 of pitch authority).
+  **`DRAIN_RESIDUAL_MACH_MAX=2.5`** (dump after the hypersonic regime where
+  the ballast is needed): sim 3/6 intact vs 0/6, cone entries **11.9-12.5
+  km** (the 12 km target) vs 13.2-14.7, exits **+1.0..+1.5** vs
+  -3.1..+3.0 (LOG4228-4239). The cone then tracks `need` within 300-500 m.
+  Drained, alpha *overshoots* the command by 10-13 deg at Mach 1-3 (aft CG)
+  -- watch it in game. The residual +1.2 km: flown cone L/D 2.3-2.6 in the
+  sim against `HAC_LD` 1.86 (game measured 1.55-1.65 wet) -- not refitted
+  from sim numbers.

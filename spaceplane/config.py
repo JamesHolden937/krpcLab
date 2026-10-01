@@ -3403,6 +3403,15 @@ class Config:
     # 20 deg at 70-100 m/s).  So the valve waits for this Mach; 0 opens on
     # the first GLIDE tick, as first flown.
     DRAIN_RESIDUAL_MACH_MAX: float = 0.8
+    # **And the ballast is also trim.**  Wet, the shuttle flies 2-6 deg
+    # *under* the commanded alpha at Mach 1-3 (nose-heavy: glides long,
+    # arrives 13-19 km up); drained at Mach 2.5 it flies up to 19 deg
+    # *over* (tail-heavy: glides short, LOG4241 met 12 km 12.5 km before the
+    # field).  So the first opening (at ``DRAIN_RESIDUAL_MACH_MAX``) stops at
+    # this many units and the rest goes at ``DRAIN_RESIDUAL_FINAL_MACH``.
+    # 0 drains everything at once (the old behaviour).
+    DRAIN_RESIDUAL_KEEP_UNITS: float = 0.0
+    DRAIN_RESIDUAL_FINAL_MACH: float = 0.8
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and
