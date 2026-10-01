@@ -78,7 +78,9 @@ HAC_WEAVE_MAX_DEG=75`) + all of the above. Exact string in
 ## Traps paid this session
 
 - **Sims beside the farm**: load 23 on 16 cores; 4 of 4 sim flights departed.
-  Don't.
+  Don't. And **simarms.sh leaves its servers running**: four idle kspSim
+  servers sat beside every game batch from ~07:45 to 11:00 today (1.6 GB of
+  swap; killed before `rot-chain6-1001`).
 - A re-fit arm (`HAC_GATE_LD=2.4;HAC_LD=2.4`, LOG4333/4335) was flown once as
   a gain check; not a candidate value.
 - Void: LOG4340-4343 (killed at ~30 s, rot-chain-1001 round 1).
