@@ -1745,7 +1745,7 @@ class Autopilot:
             prev = getattr(self, "_alpha_swing", 0.0)
             self._alpha_swing = prev + k * (abs(error) - prev)
             last = getattr(self, "_alpha_swing_ut", None)
-            if (self._alpha_swing > self.cfg.ALPHA_TRACK_TOLERANCE_DEG
+            if (self._alpha_swing > self.cfg.ALPHA_SWING_TOL_DEG
                     and (last is None
                          or snap.ut - last >= self.cfg.ALPHA_SWING_TAU_S)):
                 floor = max(self.cfg.ALPHA_CEILING_FLOOR_DEG,

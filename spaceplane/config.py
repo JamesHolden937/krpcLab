@@ -1632,6 +1632,12 @@ class Config:
     # cannot see.  Off.
     ALPHA_RATCHET_ON_SWING: bool = False
     ALPHA_SWING_TAU_S: float = 8.0
+    # The swing that counts.  At the tracking tolerance (6) it fired on the
+    # routine 6-7.5 deg swings of the hypersonic glide (q 3-5 kPa) and took
+    # the ceiling 40 -> 33, the drag the glide needed: three of four arrived
+    # 10-46 km long (``rot-chain3-1001`` round 1).  The departures it is for
+    # swung 13-19 deg mean (LOG4334, 4338, 4353).
+    ALPHA_SWING_TOL_DEG: float = 12.0
     ALPHA_BACKOFF_DEG: float = 2.0
     # **And the floor under it has to be a statement about the plant.**  It
     # was ``GLIDE_ALPHA_DEG`` -- 20 degrees, the angle the *guidance* wants
