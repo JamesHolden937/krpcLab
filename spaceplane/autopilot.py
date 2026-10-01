@@ -664,7 +664,7 @@ class Autopilot:
             got = None
             self.logbook.event(snap.ut, "hac aim: FAILED (%s)" % exc)
         self.env.runway.aim_ld = got or self.cfg.HAC_GATE_LD
-        self.logbook.event(snap.ut, "hac aim: straight-in ratio %s at %.2f t"
+        self.logbook.event(snap.ut, "hac aim: mid-authority ratio %s at %.2f t"
                                     " -> entry aim %.1f km before the gate"
                            % ("%.2f" % got if got else "unavailable "
                               "(HAC_GATE_LD %.2f)" % self.cfg.HAC_GATE_LD,
