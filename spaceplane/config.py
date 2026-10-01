@@ -3490,11 +3490,15 @@ class Config:
     # ``DRAIN_RESIDUAL``.  Off.
     FUEL_TRIM_TRANSFER: bool = False
     FUEL_TRIM_MACH_TOP: float = 4.0
-    FUEL_TRIM_INTERVAL_S: float = 3.0
+    # Sized from rot-ballast2-1001: 100 units dumped from the nose moved the
+    # mean alpha error ~16 deg, so ~0.2 deg per unit pumped nose-to-aft (a
+    # 13 m arm against 10.8); 3 units per degree closes ~60% a step.  What
+    # would contradict it: ``fuel trim`` steps alternating sign each
+    # interval in the log.
+    FUEL_TRIM_INTERVAL_S: float = 6.0
     FUEL_TRIM_DEADBAND_DEG: float = 2.0
-    FUEL_TRIM_UNITS_PER_DEG: float = 2.0
-    FUEL_TRIM_STEP_MAX_UNITS: float = 30.0
-    FUEL_TRIM_SMOOTH: float = 0.4
+    FUEL_TRIM_UNITS_PER_DEG: float = 3.0
+    FUEL_TRIM_STEP_MAX_UNITS: float = 40.0
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and

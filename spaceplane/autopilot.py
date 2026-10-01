@@ -4518,13 +4518,18 @@ class Autopilot:
         if achieved is None or math.isnan(achieved):
             return
         over = float(achieved) - commanded
-        prev = getattr(self, "_fuel_trim_err", None)
-        k = float(self.cfg.FUEL_TRIM_SMOOTH)
-        self._fuel_trim_err = over if prev is None else prev + k * (over
-                                                                    - prev)
+        # **The mean over the interval, not a short filter.**  Trim is the
+        # offset that persists; a bank reversal swings alpha +-15 deg for a
+        # few seconds (LOG4333/4334 stepped both ways inside ten seconds).
+        acc = getattr(self, "_fuel_trim_acc", None) or [0.0, 0]
+        acc[0] += over
+        acc[1] += 1
+        self._fuel_trim_acc = acc
         last = getattr(self, "_fuel_trim_ut", None)
-        if last is not None and snap.ut - last < float(
-                self.cfg.FUEL_TRIM_INTERVAL_S):
+        if last is None:
+            self._fuel_trim_ut = snap.ut
+            return
+        if snap.ut - last < float(self.cfg.FUEL_TRIM_INTERVAL_S):
             return
         moving = getattr(self, "_fuel_trim_moves", None) or []
         try:
@@ -4532,14 +4537,15 @@ class Autopilot:
                 return
         except Exception:                               # noqa: BLE001
             pass
-        err = self._fuel_trim_err
+        err = acc[0] / max(1, acc[1])
+        self._fuel_trim_err = err
+        self._fuel_trim_acc = [0.0, 0]
+        self._fuel_trim_ut = snap.ut
         band = float(self.cfg.FUEL_TRIM_DEADBAND_DEG)
         if abs(err) <= band:
             return
         units = min(float(self.cfg.FUEL_TRIM_STEP_MAX_UNITS),
-                    float(self.cfg.FUEL_TRIM_UNITS_PER_DEG)
-                    * (abs(err) - band))
-        self._fuel_trim_ut = snap.ut
+                    float(self.cfg.FUEL_TRIM_UNITS_PER_DEG) * abs(err))
         tanks = self._fuel_trim_tanks(snap)
         if not tanks:
             return

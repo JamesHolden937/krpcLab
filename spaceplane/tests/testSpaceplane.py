@@ -8803,6 +8803,8 @@ class FuelTrimTransfer(unittest.TestCase):
                                position=(620000.0, 0.0, 0.0), ut=100.0,
                                alpha_actual=flown, liquid_fuel=90.0,
                                oxidizer=110.0)
+        autopilot_module.Autopilot.fuel_trim(fake, snap)   # opens the window
+        snap.ut += cfg.FUEL_TRIM_INTERVAL_S
         autopilot_module.Autopilot.fuel_trim(fake, snap)
         return starts
 
