@@ -974,8 +974,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
         polar = polar_speed(env, cfg, max(0.0, distance) / height, height,
                             mass, gravity, stall)
         if polar is not None:
-            target = polar
-            floor = min(floor, polar)
+            # **One-sided: it may only slow the approach toward best
+            # glide.**  On the fast side the polar is flat near its top, so
+            # a final needing ~4.2 against a best of 4.15 inverted to ~140
+            # m/s: LOG4354 crossed the threshold at 138 m/s 700 m up and
+            # floated 3.6 km.  Speed stretches a low final; a high one is
+            # the S-turn's.
+            target = min(target, polar)
+            floor = min(floor, target)
     if getattr(cfg, "APPROACH_SPEED_PROFILE", False):
         # The height the flare will fire at, from the same expression the
         # flare's own trigger uses -- shared rather than re-derived, for the
