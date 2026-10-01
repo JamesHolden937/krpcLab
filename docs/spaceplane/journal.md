@@ -3477,3 +3477,19 @@ trigger).
 **`HAC_ENTRY_AFFORDABLE` (sim, LOG4270-4281): stack + affordable 4/4
 intact, 2 on the runway, exits -191..+990**; + trim loop 0/4 (arrives
 low); trim loop alone 2/4. Game confirmation: `rot-afford-1001`.
+
+**Game, the rest of the night** (all n=2-4 per arm; exits in km):
+`rot-afford-1001` wet+affordable +1.9 +3.9 +4.0 -2.7 (0/4), +trim loop -2.1
++1.1 -1.0 -0.8 (1/4); `rot-spend-1001` trim+affordable +3.2 +4.1 -1.3 +6.6
+(0/4), + spend authority -1.1 +1.3 -1.8 +1.9 (1/4). `conesum` on these:
+HAC_LD median 1.89 (configured 1.86) -- not a calibration error. Sim:
+`PREDICT_RESIDUAL_DUMP` null (drained arrivals are short from over-rotation
+drag, not mass). Across 46 game flights the entry height follows the glide's
+`long=` at handover (on target -> 13.5-16.7 km; long -> 18-21; short ->
+12 km early, out of height); corr(h, M1-3 alpha deficit) 0.45, (h, hypersonic
+slip ticks) 0.15.
+
+**`rot-ballast2-1001`** (LOG4311-4319): keep 200 units below Mach 3.5 ->
+exits +2.08 +2.15 +2.22 +2.35 (one -8.0, entered 22 km short); keep 300 ->
++1.8..+4.4. The first consistent arrival of the session; lost in the
+approach at 82-96 m/s. Next session starts there (HANDOFF).
