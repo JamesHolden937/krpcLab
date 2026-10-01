@@ -8980,3 +8980,7 @@ class RcsPitchGate(unittest.TestCase):
         vessel.available_rcs_torque = ((0.0, 0, 0), (0, 0, 0))
         gate(fake, SimpleNamespace(ut=10.0, dynamic_pressure=3000.0))
         self.assertFalse(any(b.pitch_enabled for b in blocks))
+        # A dip in the surfaces' reading does not re-enable them (latched).
+        vessel.available_control_surface_torque = ((200e3, 0, 0), (0, 0, 0))
+        gate(fake, SimpleNamespace(ut=15.0, dynamic_pressure=3000.0))
+        self.assertFalse(any(b.pitch_enabled for b in blocks))

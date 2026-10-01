@@ -3247,7 +3247,13 @@ class Autopilot:
         if self._rcs_pitch_torque <= 0.0:
             return
         want = surf < self._rcs_pitch_torque
-        if want == getattr(self, "_rcs_pitch_on", True):
+        # **Latched off.**  The surfaces' available torque reads with their
+        # deflection (242 <-> 431 kN m within 2 s, LOG4404) and re-enabled
+        # the thrusters for 2.4 s at q=3 kPa -- the moment of that flight's
+        # pitch-up.  Through the glide the air only thickens.
+        if not getattr(self, "_rcs_pitch_on", True):
+            return
+        if want:
             return
         changed = 0
         try:
