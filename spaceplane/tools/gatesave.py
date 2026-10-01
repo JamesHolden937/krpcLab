@@ -43,10 +43,13 @@ def main(argv=None):
     p.add_argument("--name", default="qs_shuttle2_gate")
     p.add_argument("--tol", type=float, default=300.0)
     p.add_argument("--timeout", type=float, default=7200.0)
+    p.add_argument("--after", type=int, default=None,
+                   help="watch logs numbered above this (default: the newest "
+                        "at start -- a flight already flying has its log)")
     args = p.parse_args(argv)
     logs = os.path.join(ROOT, "logs")
-    start = max((lognum(f) for f in glob.glob(os.path.join(logs, "LOG*"))),
-                default=0)
+    start = args.after if args.after is not None else max(
+        (lognum(f) for f in glob.glob(os.path.join(logs, "LOG*"))), default=0)
     deadline = time.time() + args.timeout
     offsets = {}
     while time.time() < deadline:
