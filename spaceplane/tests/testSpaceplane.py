@@ -4201,6 +4201,42 @@ class TestTheHeadingAlignmentCone(unittest.TestCase):
         self.assertLess(on.needed_height, off.needed_height - 500.0)
         self.assertGreater(on.surplus, off.surplus)
 
+    def test_a_measured_ld_scale_scales_the_cone_budget(self):
+        """``HAC_LD_MEASURED``: a vehicle flying 20% better than its table
+        reads 20% more path, so the same height is more surplus; no scale
+        yet is the table alone."""
+        side = 1.0
+        _, along, _, _ = self.frame()
+        r = self.point(-10000.0, 0.0, 6000.0)
+        v = vec.scale(along, 110.0)
+        self.cfg.HAC_LD_MEASURED = True
+        table = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
+                             9.81, 6000.0, side)
+        same = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
+                            9.81, 6000.0, side, ld_scale=1.0)
+        better = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
+                              9.81, 6000.0, side, ld_scale=1.2)
+        self.assertAlmostEqual(table.plan_ld, same.plan_ld, places=6)
+        self.assertAlmostEqual(better.plan_ld, 1.2 * same.plan_ld, places=6)
+        self.assertLess(better.needed_height, same.needed_height)
+
+    def test_the_derived_aim_is_the_straight_in_ratio(self):
+        """``HAC_AIM_DERIVED``: the aim's ratio is the wings-level ladder
+        from ``HAC_ALT_M`` to the gate, and ``high_gate`` uses it."""
+        got = guidance.straight_in_reach(self.env, self.cfg, 7000.0, 9.81)
+        self.assertIsNotNone(got)
+        self.assertGreater(got, 0.5)
+        # The real ``Runway.high_gate``, on the fake's geometry.
+        rw = SimpleNamespace(cfg=self.cfg,
+                             horizontal=self.env.runway.horizontal,
+                             gate_dist=lambda: self.cfg.GATE_DIST_M)
+        high = lambda: environment.Runway.high_gate(rw, self.end)
+        before = high()
+        rw.aim_ld = 2.0 * self.cfg.HAC_GATE_LD
+        moved = vec.norm(vec.sub(high(), before))
+        reach = (self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M) * self.cfg.HAC_GATE_LD
+        self.assertAlmostEqual(moved, reach, delta=0.02 * reach)
+
     def test_the_ladder_prices_each_slice_at_its_own_height(self):
         """Path per metre of height is summed down to the gate, not taken
         where the vehicle is; and the profile height inverts it."""

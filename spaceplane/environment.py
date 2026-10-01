@@ -321,8 +321,11 @@ class Runway:
         # 1.35 to its measured 1.70 moved this aim point 3.3 km further out
         # and every arrival with it.  Failure 19's shape -- one number
         # standing in for two things -- caught before it cost a session.
-        reach = ((self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M)
-                 * self.cfg.HAC_GATE_LD)
+        # ``HAC_AIM_DERIVED``: the ratio the table says a straight-in at
+        # the cone's speed flies (``guidance.straight_in_reach``), set once
+        # by the autopilot when the table is ready; ``HAC_GATE_LD`` until.
+        ratio = getattr(self, "aim_ld", None) or self.cfg.HAC_GATE_LD
+        reach = (self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M) * ratio
         back = vec.scale(along, -(self.gate_dist() + max(0.0, reach)))
         out = vec.add(end["threshold"], back)
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.HAC_ALT_M)

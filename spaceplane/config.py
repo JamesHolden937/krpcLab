@@ -485,6 +485,20 @@ class Config:
     # with 5 km of path left -- weave pinned at 50, out +2.0 km (LOG4091).
     # Off until paired.
     HAC_LD_AT_TARGET: bool = False
+    # **The cone's ratio as a measured curve** (``guidance.hac``,
+    # ``Autopilot.hac_ld_scale``): the ladder above, every rung scaled by
+    # the vehicle's measured L/D (kRPC's force, ``act=``) over the table's
+    # at the alpha it is flying, smoothed over ``HAC_LD_MEASURED_TAU_S``.
+    # Replaces ``HAC_LD`` without re-fitting it: the table supplies how the
+    # ratio changes with height, the flight supplies the scale, on whatever
+    # airframe flies.  Off.
+    HAC_LD_MEASURED: bool = False
+    HAC_LD_MEASURED_TAU_S: float = 20.0
+    # **The entry aim off the same table** (``guidance.straight_in_reach``):
+    # ``HAC_GATE_LD`` 1.35 is the old craft's; this computes the ground a
+    # straight-in at the cone's speed covers per metre of height, once,
+    # when the table is ready.  Off.
+    HAC_AIM_DERIVED: bool = False
     HAC_LADDER_STEP_M: float = 500.0
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
     # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the

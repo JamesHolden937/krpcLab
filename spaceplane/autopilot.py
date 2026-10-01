@@ -646,6 +646,62 @@ class Autopilot:
         self._static_peak = tuple(peak)
         self._tuned_peak = want
 
+    def derive_hac_aim(self, snap):
+        """``HAC_AIM_DERIVED``: set the entry aim's ratio once, off the table,
+        at the mass the cone will fly (the residual is dumped before it)."""
+        if (not getattr(self.cfg, "HAC_AIM_DERIVED", False)
+                or getattr(self.env.runway, "aim_ld", None) is not None
+                or not self.env.ready()):
+            return
+        mass = snap.mass
+        if getattr(self.cfg, "DRAIN_RESIDUAL", False):
+            mass -= ((snap.liquid_fuel + snap.oxidizer)
+                     * float(self.cfg.RESOURCE_KG_PER_UNIT))
+        try:
+            got = guidance.straight_in_reach(self.env, self.cfg, mass,
+                                             self.body.surface_gravity)
+        except Exception as exc:                        # noqa: BLE001
+            got = None
+            self.logbook.event(snap.ut, "hac aim: FAILED (%s)" % exc)
+        self.env.runway.aim_ld = got or self.cfg.HAC_GATE_LD
+        self.logbook.event(snap.ut, "hac aim: straight-in ratio %s at %.2f t"
+                                    " -> entry aim %.1f km before the gate"
+                           % ("%.2f" % got if got else "unavailable "
+                              "(HAC_GATE_LD %.2f)" % self.cfg.HAC_GATE_LD,
+                              mass / 1000.0,
+                              (self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M)
+                              * self.env.runway.aim_ld / 1000.0))
+
+    def measure_hac_ld(self, snap):
+        """``HAC_LD_MEASURED``: the vehicle's L/D over the table's at the
+        alpha it is flying, smoothed; subsonic GLIDE warms it, HAC uses it."""
+        if (not getattr(self.cfg, "HAC_LD_MEASURED", False)
+                or self.state not in (GLIDE, HAC)
+                or snap.dynamic_pressure < 300.0 or not self.env.ready()):
+            return
+        speed = vec.norm(snap.velocity)
+        altitude = vec.norm(snap.position) - self.env.equatorial_radius
+        try:
+            if self.env.mach(speed, altitude) > 0.95:
+                return
+            cla, cda = measured_coefficients(snap)
+            mla, mda = self.env.coefficients(snap.alpha_actual, speed,
+                                             altitude)
+        except Exception:                               # noqa: BLE001
+            return
+        if min(cla, cda, mla, mda) <= 0.01:
+            return
+        inst = vec.clamp((cla / cda) / (mla / mda), 0.5, 2.0)
+        last = getattr(self, "_hac_ld_ut", None)
+        prev = getattr(self, "hac_ld_scale", None)
+        self._hac_ld_ut = snap.ut
+        if prev is None or last is None:
+            self.hac_ld_scale = inst
+            return
+        k = min(1.0, max(0.0, snap.ut - last)
+                / max(1.0, float(self.cfg.HAC_LD_MEASURED_TAU_S)))
+        self.hac_ld_scale = prev + k * (inst - prev)
+
     def hac_weave_sign(self, ut):
         """Which way the cone's weave leans this tick.
 
@@ -5748,7 +5804,8 @@ class Autopilot:
                                previous=self.hac_radius,
                                max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
                                weave=self.hac_weave_sign(snap.ut),
-                               roll_rate=self.roll_rate.limit())
+                               roll_rate=self.roll_rate.limit(),
+                               ld_scale=getattr(self, "hac_ld_scale", None))
         if command is None:
             # **No answer, not a zero.**  Degenerate geometry here means over
             # the centre of the circle or stopped; holding the last command
@@ -6406,6 +6463,8 @@ class Autopilot:
         # only fires in the configuration nobody uses is not a check.
         if self.airframe is None and self.env.ready():
             self.report_airframe(snap)
+        self.derive_hac_aim(snap)
+        self.measure_hac_ld(snap)
         self.check_thermal(snap)
         self.watch_breakup(snap)
         self.destroyed_early(snap)
@@ -6889,6 +6948,10 @@ def compact_line(state, snap, run):
                        else ("" if c.on_circle else " join")))
         bits.append("path=%6.0f need=%6.0f wv=%4.1f sink=%5.1f"
                     % (c.path, c.needed_height, c.weave_deg, c.sink))
+        if getattr(run.cfg, "HAC_LD_MEASURED", False):
+            bits.append("ldk=%.2f pld=%.2f"
+                        % (getattr(run, "hac_ld_scale", None) or 0.0,
+                           getattr(c, "plan_ld", 0.0)))
         if getattr(run.cfg, "HAC_WEAVE_HELD", False):
             bits.append("wh=%4.1f wd=%+.0f"
                         % (getattr(c, "weave_half_s", 0.0),

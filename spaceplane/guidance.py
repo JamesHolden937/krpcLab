@@ -1774,6 +1774,28 @@ def hac_ladder(env, cfg, height, mass, gravity, reference, radius, turn,
     return rungs
 
 
+def straight_in_reach(env, cfg, mass, gravity):
+    """``HAC_AIM_DERIVED``: ground per metre of height a wings-level glide
+    at the cone's own speed covers from ``HAC_ALT_M`` to the gate, off the
+    table (``hac_ladder`` with no arc), or ``None``.
+
+    What ``HAC_GATE_LD`` (1.35, fitted on the old craft) stands in for: the
+    entry aim should put the cone where a straight-in at the cone's speed
+    reaches the gate, so the weave spends what is high and best-glide speed
+    stretches what is low.  At 1.35 the shuttle, which glides 2.1-2.6 in
+    the cone, entered high by construction on every flight (LOG4321: 14.6
+    km at 20 km, weave pinned, out +4.2 km).
+    """
+    stall = airframe.stall(env, cfg)
+    base = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+    rungs = hac_ladder(env, cfg, cfg.HAC_ALT_M, mass, gravity,
+                       lambda h: base * eas_scale(env, cfg, h),
+                       1.0, 0.0, 0, 1.0)
+    if rungs is None or len(rungs) < 2:
+        return None
+    return rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M)
+
+
 def ladder_height(rungs, path, fallback_ld):
     """The height on ``rungs`` that pays for ``path``; extrapolated past the
     top at the top slice's ratio (``fallback_ld`` with no slice at all)."""
@@ -1811,7 +1833,8 @@ def eas_scale(env, cfg, height):
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
-        previous=None, max_step=None, weave=0.0, roll_rate=None):
+        previous=None, max_step=None, weave=0.0, roll_rate=None,
+        ld_scale=None):
     """Circle down to the gate, and let the radius carry the energy error.
 
     The one control decision here is **how wide to turn**.  The path still to
@@ -1881,7 +1904,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
                                                     available, speed,
                                                     gravity, load,
                                                     lap_speed=reference)
-    if getattr(cfg, "HAC_LD_AT_TARGET", False):
+    measured = getattr(cfg, "HAC_LD_MEASURED", False)
+    if getattr(cfg, "HAC_LD_AT_TARGET", False) or measured:
         # ``HAC_LD_AT_TARGET``: price the path still to fly at the ratio the
         # vehicle will fly it at -- the swept table at the cone's own
         # target speed, wings level on the straight legs and at the circle's
@@ -1896,6 +1920,14 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         rungs = hac_ladder(env, cfg, height, mass, gravity,
                            lambda h: base * eas_scale(env, cfg, h),
                            radius, turn, laps, total)
+        # ``HAC_LD_MEASURED``: the table gives the curve's *shape* with
+        # height; the vehicle's own L/D against the table's at the alpha it
+        # is flying (``Autopilot.hac_ld_scale``) gives its scale.  A curve
+        # corrected by a measurement, where ``HAC_LD`` was one airframe's
+        # whole-cone average (1.86 on the old craft; the shuttle's cones
+        # fly 2.1-2.6 per planned metre, conesum).
+        if rungs is not None and measured and ld_scale:
+            rungs = [(h, p * ld_scale) for h, p in rungs]
         if rungs is not None and len(rungs) >= 2:
             top = rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M)
             available = rungs[-1][1] + excess_height * top
@@ -2107,6 +2139,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.short = short
     command.weave_deg = weave_deg
     command.weave_half_s = weave_half_s
+    command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M))
+                       if rungs is not None and len(rungs) >= 2 else cone_ld)
     command.surplus = surplus
     command.excess_height = excess_height
     command.lead = lead
