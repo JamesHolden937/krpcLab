@@ -1445,6 +1445,23 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
     if (getattr(cfg, "HAC_PATH_WRAP_TO_GATE", False) and turn == 0.0
             and (side * (exit_angle - tangent)) % (2.0 * math.pi) > math.pi):
         return to_gate, turn, tangent
+    # ``HAC_PAST_BEFORE_GATE_DEG``: **a few degrees past the rollout is not
+    # a lap while the gate is still ahead.**  ``hac_turn`` forgives 12 deg;
+    # one degree more and the same vehicle is costed a whole circle.  LOG4152
+    # joined over the field lined up 16 km before the gate, the weave's
+    # first swing put the tangent point 13 deg past the rollout, and the
+    # plan read 347 deg / 106 km to go against 59 km affordable -- *short*
+    # -- so the weave stopped, the wings went level and it flew 13 km
+    # straight at the gate, arriving 5.4 km high (every high exit on
+    # qs_shuttle2 has this shape, laps=0).  Before the gate (``x < 0``) the
+    # path is the run to it; a lap that is really needed is the scan's
+    # ``laps``, priced as a lap.  Past the gate the wrap stands: that is a
+    # lap being flown.
+    past_deg = float(getattr(cfg, "HAC_PAST_BEFORE_GATE_DEG", 0.0))
+    if (past_deg > 0.0
+            and turn > 2.0 * math.pi - math.radians(past_deg)
+            and distance * math.cos(angle) < 0.0):
+        return to_gate, 0.0, tangent
     return max(lead + radius * turn, to_gate), turn, tangent
 
 

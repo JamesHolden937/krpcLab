@@ -458,6 +458,12 @@ class Config:
     # the weave at 0.  With this on, a tangent point past the rollout costs
     # the distance to the gate.  Off until paired.
     HAC_PATH_WRAP_TO_GATE: bool = False
+    # **The same phantom, one degree outside the band** (``guidance.hac_path``):
+    # before the gate, a tangent point up to this far past the rollout costs
+    # the run to the gate, not a lap.  LOG4152: 13 deg past read as a 347
+    # deg turn, the plan called itself short, stopped weaving and handed
+    # over 5.4 km high.  0 is the committed behaviour.
+    HAC_PAST_BEFORE_GATE_DEG: float = 0.0
     # **The cone's glide ratio at the speed and bank it will be flown at**
     # (``guidance._hac_planned_ld``): the swept table at the cone's target
     # speed, wings level on the straight legs and at the circle's bank on
