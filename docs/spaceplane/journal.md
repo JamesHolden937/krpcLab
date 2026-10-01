@@ -3604,3 +3604,16 @@ polar approach speed):
   (`rot-ballast3-1001`, chain6 vs chain6 + ballast, 4 v 4).
 - Trap repeated: idle kspSim servers from the morning's sim screens sat
   beside every game batch until ~11:00 (1.6 GB swap).
+
+**Evening: the "pitch-up".** The user asked why the twin-fin craft would
+pitch up and not the single-fin one: it doesn't -- paired `rot-shuttle2-0930`
+has single-fin 4/6, twin-fin 2/6; all game flights 54% vs 28%. Precursors
+over 71 overshoots: RCS valve open (most), residual drain dumping the nose
+fuel at Mach 3.5 (16), fuel trim aft, reversals. `RCS_PITCH_BY_AUTHORITY`
+(`rot-rcsgate-1001`, 4 v 4): 2/4 still departed vs 1/4 -- null. Read on
+LOG4409: sideslip 21-27 deg for 20 s with the flown bank going the wrong way
+(+7 -> +107 -> -95 vs -31 commanded), roll damper swings to 178, *then*
+alpha 66-88. The pitch-up is the end of a high-alpha lateral departure
+(failure 99), common to both Mk3 shuttles. Forward ballast
+(`rot-ballast3-1001`, round 0 only): 0/2 departures but commanded alpha
+only 18-25 -- a different regime. Not fixed; HANDOFF item 1.
