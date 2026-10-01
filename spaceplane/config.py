@@ -4012,11 +4012,17 @@ class Config:
     # approach_heading_lead``): the heading error the lateral law sees is
     # the one the vehicle will have after rolling level at its measured
     # roll rate.  LOG4385 commanded level with 27 deg of bank on and turned
-    # on to 20 deg off the runway.  Off.
+    # on to 20 deg off the runway.  Flown only together with
+    # ``APPROACH_ENERGY_EXCESS`` (``rot-chain7-1001``): cross at the flare
+    # -31..+885 m against -232..+218 without -- not better; unproven.  Off.
     # **The approach's excess in energy, against the flare's door**
     # (``guidance.approach``): ``(v^2 - v_door^2) / 2g`` is added to the
     # height over the glide to the aim, so a hot exit is spent early by the
-    # S-turn and the speed law instead of dived away low (LOG4383).  Off.
+    # S-turn and the speed law instead of dived away low (LOG4383).
+    # **Refuted as built** (``rot-chain7-1001`` vs ``rot-chain6-1001``, 8 v
+    # 8, flown with ``APPROACH_HEADING_LEAD``): touchdowns 1.7-2.6 km short
+    # of the midpoint against -0.2..+0.1 km, flares 83-95 m/s, 0 intact
+    # against 3.  It spends what the flare would have floated.  Off.
     APPROACH_ENERGY_EXCESS: bool = False
     APPROACH_HEADING_LEAD: bool = False
     APPROACH_HEADING_LEAD_TAU_S: float = 1.0
