@@ -8932,3 +8932,25 @@ class ApproachHeadingLead(unittest.TestCase):
         self.assertAlmostEqual(out, 2.0 * 0.5 * 3.0, delta=0.3)
         cfg.APPROACH_HEADING_LEAD = False
         self.assertEqual(lead(fake, SimpleNamespace(ut=200.0)), 0.0)
+
+
+class ApproachEnergyExcess(unittest.TestCase):
+    """``APPROACH_ENERGY_EXCESS``: speed over the door reads as height."""
+
+    def test_a_hot_final_reads_higher(self):
+        from spaceplane.tests.fakeplane import FakeEnv
+        cfg = replace(Config(), APPROACH_FLARE_FACTOR=1.45)
+        env = FakeEnv(cfg)
+        end = env.runway.ends["09"]
+        along = env.runway.horizontal(end, end["along"])
+        up = vec.unit(end["threshold"])
+        ground = vec.add(end["threshold"], vec.scale(along, -6000.0))
+        r = vec.scale(vec.unit(ground), vec.norm(end["threshold"]) + 1500.0)
+        v = vec.add(vec.scale(along, 130.0), vec.scale(up, -20.0))
+        off = guidance.approach(env, cfg, end, r, v, 7000.0, 9.81, 1500.0)
+        cfg.APPROACH_ENERGY_EXCESS = True
+        on = guidance.approach(env, cfg, end, r, v, 7000.0, 9.81, 1500.0)
+        door = 1.45 * cfg.STALL_SPEED_M_S
+        self.assertAlmostEqual(on.excess - off.excess,
+                               (vec.norm(v) ** 2 - door ** 2) / (2 * 9.81),
+                               delta=1.0)

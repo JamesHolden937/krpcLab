@@ -4013,6 +4013,11 @@ class Config:
     # the one the vehicle will have after rolling level at its measured
     # roll rate.  LOG4385 commanded level with 27 deg of bank on and turned
     # on to 20 deg off the runway.  Off.
+    # **The approach's excess in energy, against the flare's door**
+    # (``guidance.approach``): ``(v^2 - v_door^2) / 2g`` is added to the
+    # height over the glide to the aim, so a hot exit is spent early by the
+    # S-turn and the speed law instead of dived away low (LOG4383).  Off.
+    APPROACH_ENERGY_EXCESS: bool = False
     APPROACH_HEADING_LEAD: bool = False
     APPROACH_HEADING_LEAD_TAU_S: float = 1.0
     # **Whether the speed loop knows it is in a turn.**  See

@@ -1023,6 +1023,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # is surplus, which is the side to be on.
     reachable = max(0.0, distance) / max(0.1, best_ld)
     excess = height - reachable
+    if getattr(cfg, "APPROACH_ENERGY_EXCESS", False) and gravity > 0.0:
+        # ``APPROACH_ENERGY_EXCESS``: the speed over the flare's door is
+        # height the final has to spend too, and it has a target -- the
+        # door.  Counted in height only, LOG4383 left the cone at 133 m/s
+        # (650 m over the door), read itself +560 m high only as it slowed,
+        # then dove to spend it and reached the door at 81 m/s.
+        door = cfg.APPROACH_FLARE_FACTOR * stall
+        excess += (speed * speed - door * door) / (2.0 * gravity)
     target, floor = spend_as_speed(cfg, target, floor, excess, stall,
                                    gravity, fast)
     wanted_sink = (height * max(1.0, math.sqrt(max(0.0, speed * speed
