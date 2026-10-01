@@ -8891,3 +8891,21 @@ class AlphaRatchetOnSwing(unittest.TestCase):
         self.assertLess(self.fly(wallow), 40.0)
         self.assertEqual(self.fly(wallow, on=False), 41.0)
         self.assertGreaterEqual(self.fly([40.5] * 30), 41.0 - 1e-9)
+
+
+class DerivedTouchdownAim(unittest.TestCase):
+    """``TOUCHDOWN_AIM_DERIVED``: the zone less the flare's float."""
+
+    def test_the_aim_is_the_zone_less_the_float(self):
+        cfg = replace(Config(), TOUCHDOWN_AIM_DERIVED=True,
+                      APPROACH_FLARE_FACTOR=1.45)
+        env = SimpleNamespace(stall_speed=48.0, best_ld=4.0)
+        decel = 9.81 / 4.0
+        float_m = ((1.45 * 48.0) ** 2 - 48.0 ** 2) / (2.0 * decel)
+        self.assertAlmostEqual(airframe.touchdown_aim(env, cfg),
+                               0.25 * cfg.RUNWAY_LENGTH_M - float_m)
+        # A longer float never aims past the threshold's near side.
+        env.best_ld = 12.0
+        self.assertEqual(airframe.touchdown_aim(env, cfg), 0.0)
+        cfg.TOUCHDOWN_AIM_DERIVED = False
+        self.assertEqual(airframe.touchdown_aim(env, cfg), cfg.TOUCHDOWN_AIM_M)

@@ -4107,6 +4107,13 @@ class Config:
     # time-based weave stop or ``GATE_FROM_APPROACH``.  **Make the cone
     # spend the surplus first (HANDOFF, "SECOND THING"), then move this.**
     TOUCHDOWN_AIM_M: float = 2400.0
+    # **The aim derived** (``airframe.touchdown_aim``): the touchdown zone
+    # (this fraction of ``RUNWAY_LENGTH_M`` -- the user's rule, aim at the
+    # near end so the rollout has the room) less the flare's float at best
+    # glide.  The cone now exits within a few hundred metres (rot-chain3),
+    # which is the condition the comment above set for moving it.  Off.
+    TOUCHDOWN_AIM_DERIVED: bool = False
+    TOUCHDOWN_ZONE_FRACTION: float = 0.25
     FLARE_RAMP_S: float = 0.4
 
     # -- the propagator ----------------------------------------------------

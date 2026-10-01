@@ -444,6 +444,32 @@ def approach_ld(env, cfg, altitude, mass, gravity):
     return got * PLANNING_BIAS
 
 
+def touchdown_aim(env, cfg):
+    """Where the final's glide line meets the runway, metres past the
+    threshold: ``TOUCHDOWN_AIM_M``, or under ``TOUCHDOWN_AIM_DERIVED`` the
+    touchdown zone (``TOUCHDOWN_ZONE_FRACTION`` of the runway) less the
+    flare's float.
+
+    The float is the flare bleeding the door speed to the stall at the
+    deceleration of best glide, ``(v_door^2 - v_stall^2) / (2 g / best_ld)``:
+    the longest it can float, so the wheels land no later than the zone.
+    2400 m is the far threshold -- an old-craft bias that made the shuttle
+    cross the midpoint 840 m up and dive into the runway at 90 m/s
+    (LOG4375).
+    """
+    if not getattr(cfg, "TOUCHDOWN_AIM_DERIVED", False):
+        return cfg.TOUCHDOWN_AIM_M
+    # The table's own numbers when it has been read, whatever
+    # ``AIRFRAME_DERIVED`` says: this quantity has no fitted history to keep.
+    v_stall = getattr(env, "stall_speed", None) or stall(env, cfg)
+    v_door = cfg.APPROACH_FLARE_FACTOR * v_stall
+    ratio = getattr(env, "best_ld", None) or glide_ld(env, cfg)
+    decel = 9.81 / max(1.0, ratio)
+    float_m = max(0.0, (v_door * v_door - v_stall * v_stall) / (2.0 * decel))
+    zone = cfg.TOUCHDOWN_ZONE_FRACTION * cfg.RUNWAY_LENGTH_M
+    return max(0.0, zone - float_m)
+
+
 def alpha_ceiling(env, cfg):
     """The highest angle of attack worth commanding on this wing.
 

@@ -3320,7 +3320,8 @@ class Autopilot:
             # distance from the gate to the aim -- rather than a new
             # constant.
             if getattr(self.cfg, "ENGAGE_INTO_LANDING", False):
-                reach = (self.env.runway.gate_dist() + self.cfg.TOUCHDOWN_AIM_M
+                reach = (self.env.runway.gate_dist()
+                         + airframe.touchdown_aim(self.env, self.cfg)
                          + self.cfg.GATE_ALT_M
                          * airframe.approach_ld(
                              self.env, self.cfg, self.cfg.GATE_ALT_M,
@@ -3432,13 +3433,14 @@ class Autopilot:
                                          self.cfg.GATE_ALT_M, mass,
                                          self.body.surface_gravity)
             dist = max(self.cfg.GATE_CAPTURE_M,
-                       self.cfg.GATE_ALT_M * ratio - self.cfg.TOUCHDOWN_AIM_M)
+                       self.cfg.GATE_ALT_M * ratio
+                       - airframe.touchdown_aim(self.env, self.cfg))
             self.env.runway.gate_dist_m = dist
             self.logbook.event(snap.ut, "gate: %.0f m before the threshold -- "
                                "%.0f m at the approach's %.2f, less the %.0f m "
                                "aim (GATE_DIST_M says %.0f)"
                                % (dist, self.cfg.GATE_ALT_M, ratio,
-                                  self.cfg.TOUCHDOWN_AIM_M,
+                                  airframe.touchdown_aim(self.env, self.cfg),
                                   self.cfg.GATE_DIST_M))
         # **And bring the learned ceiling under the wing's own stall.**
         # The two limits are different -- see ``airframe.alpha_ceiling`` --

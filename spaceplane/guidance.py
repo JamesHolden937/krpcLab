@@ -917,7 +917,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
     up = vec.unit(r)
     along = env.runway.horizontal(end, end["along"])
     across = vec.unit(vec.cross(up, along))
-    aim = vec.add(end["threshold"], vec.scale(along, cfg.TOUCHDOWN_AIM_M))
+    aim = vec.add(end["threshold"],
+                  vec.scale(along, airframe.touchdown_aim(env, cfg)))
 
     offset = vec.sub(vec.scale(vec.unit(r), vec.norm(end["threshold"])), aim)
     distance = -vec.dot(offset, along)          # positive: still short of aim
@@ -2202,7 +2203,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # The gate is at ``(0, -side * radius)`` in this circle's frame, so the
     # range to it is one hypotenuse and it is not ambiguous about anything.
     gate_range = math.hypot(distance * ux, side * radius + distance * uy)
-    approach_needed = ((gate_range + gate_dist(env, cfg) + cfg.TOUCHDOWN_AIM_M)
+    approach_needed = ((gate_range + gate_dist(env, cfg)
+                        + airframe.touchdown_aim(env, cfg))
                        / max(0.1, airframe.approach_ld(env, cfg, height,
                                                        mass, gravity)))
     command = HacCommand(alpha, bank, math.degrees(turn), distance, radius,
