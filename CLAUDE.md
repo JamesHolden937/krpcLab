@@ -10,6 +10,13 @@ Interrupting is the user's job, not asking permission. **Commit before
 anything risky**: a default change, a batch on new code, a refactor or a
 scripted edit, so it can always be undone.
 
+**Once a batch starts, stop and wait until it ends.** Launch one background
+waiter that prints the summary when the batch finishes (`ROT DONE`), end the
+turn, and do nothing with the batch until that notification arrives. Don't
+poll, don't chain wait calls, don't read mid-flight logs: it wastes tokens,
+and part-batch data (one round, half the arms, a flight still in the glide)
+gets misread as a result.
+
 0. **Take the sleep inhibitor first thing**: `testInstances/nosleep.sh start`
    (idempotent; `status` checks it). **Release it last thing**, after the
    farm is stopped and HANDOFF.md is written: `testInstances/nosleep.sh
