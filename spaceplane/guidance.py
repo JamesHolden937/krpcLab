@@ -842,9 +842,18 @@ def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
     """
     best = None
     curve = []
-    step = max(0.5, float(getattr(cfg, "APPROACH_POLAR_STEP_M_S", 2.0)))
-    v = 1.2 * stall
-    while v <= 3.0 * stall:
+    # The bounds are equivalent airspeeds -- the stall is one -- so they are
+    # scaled to true airspeed at this height (the cone flies 12 km up, where
+    # best glide is 1.8x its sea-level speed).
+    try:
+        rho0, rho = env.density(0.0), env.density(max(0.0, height))
+        scale = math.sqrt(rho0 / rho) if rho0 > 0.0 and rho > 0.0 else 1.0
+    except Exception:                                       # noqa: BLE001
+        scale = 1.0
+    step = max(0.5, float(getattr(cfg, "APPROACH_POLAR_STEP_M_S", 2.0))
+               * scale)
+    v = 1.2 * stall * scale
+    while v <= 3.0 * stall * scale:
         ld = airframe.turning_ld(env, cfg, v, height, mass, gravity, 0.0)
         if ld is not None and ld > 0.0:
             ld *= airframe.PLANNING_BIAS      # a straight final, see approach_ld
