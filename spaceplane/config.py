@@ -2171,6 +2171,15 @@ class Config:
     # the speed it arrives at -- calibrate it against the speed *delivered*.
     # Failure 62; failure 49 is the same knob read before the hold existed.
     APPROACH_SPEED_PROFILE: bool = True
+    # **The approach's speed off the polar** (``guidance.polar_speed``):
+    # the speed whose one-g glide ratio is the ratio still needed to the
+    # aim (distance over height), on the fast side of best glide; the floor
+    # comes down under it.  ``APPROACH_FACTOR`` x stall is the old craft's
+    # fit: the shuttle flies L/D 3.0 there and its final needs 4.2, so it
+    # dove at 1.4 deg of alpha and reached every flare at 85-95 m/s.  The
+    # flare ramp (``APPROACH_SPEED_PROFILE``) still ends at the door.  Off.
+    APPROACH_POLAR_SPEED: bool = False
+    APPROACH_POLAR_STEP_M_S: float = 2.0
     # **A high approach flies slower, so the brake can stay out.**  The
     # approach holds 2.25 x stall (108 m/s) until the profile ramps it to
     # the flare's 1.75 x near the door, and the airbrake is stowed the

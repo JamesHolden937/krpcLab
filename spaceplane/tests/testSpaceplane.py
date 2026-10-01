@@ -8826,3 +8826,18 @@ class FuelTrimTransfer(unittest.TestCase):
                          [])
         self.assertEqual(self.run_trim(flown=10.0, commanded=25.0, mach=0.7),
                          [])
+
+
+class PolarSpeed(unittest.TestCase):
+    """``APPROACH_POLAR_SPEED``: the speed is chosen off the polar."""
+
+    def test_a_flatter_final_flies_slower_down_to_best_glide(self):
+        from spaceplane.tests.fakeplane import FakeEnv
+        cfg = Config()
+        env = FakeEnv(cfg)
+        speeds = [guidance.polar_speed(env, cfg, r, 1000.0, 7000.0, 9.81,
+                                       48.0) for r in (2.0, 2.5, 3.0, 9.0)]
+        self.assertEqual(speeds, sorted(speeds, reverse=True))
+        # Beyond the best ratio there is nothing to gain: best-glide speed.
+        self.assertEqual(speeds[-1], guidance.polar_speed(
+            env, cfg, 50.0, 1000.0, 7000.0, 9.81, 48.0))

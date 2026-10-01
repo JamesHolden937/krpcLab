@@ -830,6 +830,38 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
     return alpha
 
 
+def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
+    """The speed whose wings-level, one-g glide ratio is ``ratio``.
+
+    On the fast side of best glide, where speed is stable to fly: best-glide
+    speed when ``ratio`` is more than the airframe has (low -- stretch), the
+    first faster speed whose ratio has fallen to ``ratio`` otherwise, and
+    the top of the scan when even that is too flat (high -- the S-turn's
+    job).  Off the table (``airframe.turning_ld``); ``None`` if it cannot
+    answer.  The scan's bounds are multiples of the stall only as limits.
+    """
+    best = None
+    curve = []
+    step = max(0.5, float(getattr(cfg, "APPROACH_POLAR_STEP_M_S", 2.0)))
+    v = 1.2 * stall
+    while v <= 3.0 * stall:
+        ld = airframe.turning_ld(env, cfg, v, height, mass, gravity, 0.0)
+        if ld is not None and ld > 0.0:
+            ld *= airframe.PLANNING_BIAS      # a straight final, see approach_ld
+            curve.append((v, ld))
+            if best is None or ld > best[1]:
+                best = (v, ld)
+        v += step
+    if best is None:
+        return None
+    if ratio >= best[1]:
+        return best[0]
+    for v, ld in curve:
+        if v > best[0] and ld <= ratio:
+            return v
+    return curve[-1][0]
+
+
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
@@ -922,6 +954,19 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
     target = (cfg.FLARE_SHALLOW_APPROACH_FACTOR if fast
               else cfg.APPROACH_FACTOR) * stall
     floor = cfg.APPROACH_SPEED_FLOOR_FACTOR * stall
+    if getattr(cfg, "APPROACH_POLAR_SPEED", False) and height > 1.0:
+        # ``APPROACH_POLAR_SPEED``: the speed whose glide ratio is the one
+        # still needed to the aim, off the polar -- see ``polar_speed``.
+        # Replaces ``APPROACH_FACTOR`` (2.25 x stall, the old craft's) and
+        # puts the floor under it: on the shuttle 108 m/s is L/D 3.0, so on
+        # a final needing 4.2 it read itself low all the way down and dove
+        # at 1.4 deg of alpha to hold a speed it could not afford (LOG4281:
+        # exc -360..-620, flare at 91 m/s).
+        polar = polar_speed(env, cfg, max(0.0, distance) / height, height,
+                            mass, gravity, stall)
+        if polar is not None:
+            target = polar
+            floor = min(floor, polar)
     if getattr(cfg, "APPROACH_SPEED_PROFILE", False):
         # The height the flare will fire at, from the same expression the
         # flare's own trigger uses -- shared rather than re-derived, for the
