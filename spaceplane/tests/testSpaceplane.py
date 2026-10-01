@@ -8858,3 +8858,36 @@ class PolarSpeed(unittest.TestCase):
         # Beyond the best ratio there is nothing to gain: best-glide speed.
         self.assertEqual(speeds[-1], guidance.polar_speed(
             env, cfg, 50.0, 1000.0, 7000.0, 9.81, 48.0))
+
+
+class AlphaRatchetOnSwing(unittest.TestCase):
+    """``ALPHA_RATCHET_ON_SWING``: an overshooting wallow lowers the ceiling."""
+
+    def fly(self, flown_seq, on=True):
+        cfg = replace(Config(), ALPHA_RATCHET_ON_SWING=on)
+        events = []
+        fake = SimpleNamespace(
+            cfg=cfg, alpha_checked_ut=None, commanded_alpha=40.0,
+            commanded_slip=0.0, holdable_quiet_until=None,
+            alpha_ceiling=41.0,
+            env=SimpleNamespace(
+                mach=lambda v, h: 0.9, equatorial_radius=600000.0,
+                holdable=SimpleNamespace(observe=lambda *a: None,
+                                         limit=lambda q: None)),
+            slip_holdable=SimpleNamespace(observe=lambda *a: None),
+            logbook=SimpleNamespace(event=lambda ut, t: events.append(t)),
+            _glide_top=lambda snap: 41.0)
+        for i, flown in enumerate(flown_seq):
+            snap = SimpleNamespace(ut=100.0 + i, dynamic_pressure=2000.0,
+                                   velocity=(250.0, 0.0, 0.0),
+                                   position=(612000.0, 0.0, 0.0),
+                                   alpha_actual=flown, sideslip=0.0)
+            autopilot_module.Autopilot.ratchet_alpha(fake, snap)
+        return fake.alpha_ceiling
+
+    def test_a_wallow_backs_off_and_tracking_does_not(self):
+        # Overshoots only: the deficit test never fires on these.
+        wallow = [40.0 + (25.0 if i % 2 else 2.0) for i in range(30)]
+        self.assertLess(self.fly(wallow), 40.0)
+        self.assertEqual(self.fly(wallow, on=False), 41.0)
+        self.assertGreaterEqual(self.fly([40.5] * 30), 41.0 - 1e-9)

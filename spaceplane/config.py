@@ -1619,6 +1619,14 @@ class Config:
     # the vessel is not in is not available at any price.  The command is
     # ratcheted against what the vehicle actually achieves.
     ALPHA_TRACK_TOLERANCE_DEG: float = 6.0
+    # **Back the ceiling off on a swing as well as a deficit**
+    # (``Autopilot.ratchet_alpha``): the mean |alpha error| over
+    # ``ALPHA_SWING_TAU_S`` beyond the tolerance lowers the ceiling by
+    # ``ALPHA_BACKOFF_DEG`` below what was commanded, at most once per tau.
+    # Transonic departures (LOG4334, 4338) were overshoots the deficit test
+    # cannot see.  Off.
+    ALPHA_RATCHET_ON_SWING: bool = False
+    ALPHA_SWING_TAU_S: float = 8.0
     ALPHA_BACKOFF_DEG: float = 2.0
     # **And the floor under it has to be a statement about the plant.**  It
     # was ``GLIDE_ALPHA_DEG`` -- 20 degrees, the angle the *guidance* wants

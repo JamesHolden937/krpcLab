@@ -1732,6 +1732,34 @@ class Autopilot:
         if self.commanded_alpha <= self.cfg.ALPHA_MIN_DEG + 1.0:
             return
         error = self.commanded_alpha - snap.alpha_actual
+        if getattr(self.cfg, "ALPHA_RATCHET_ON_SWING", False):
+            # ``ALPHA_RATCHET_ON_SWING``: the swing, not only the deficit.
+            # Transonically the shuttle wallows 3-66 deg about a 41 deg
+            # command (LOG4338) on a lift curve that is flat from 24 to 50 --
+            # the lift plateau says nothing about it, and a signed deficit
+            # test never fires on an overshoot.  The mean |error| over
+            # ``ALPHA_SWING_TAU_S`` past the tolerance backs the ceiling off
+            # from what was commanded; the give-back above returns it once
+            # the vehicle tracks.
+            k = min(1.0, dt / max(1.0, self.cfg.ALPHA_SWING_TAU_S))
+            prev = getattr(self, "_alpha_swing", 0.0)
+            self._alpha_swing = prev + k * (abs(error) - prev)
+            last = getattr(self, "_alpha_swing_ut", None)
+            if (self._alpha_swing > self.cfg.ALPHA_TRACK_TOLERANCE_DEG
+                    and (last is None
+                         or snap.ut - last >= self.cfg.ALPHA_SWING_TAU_S)):
+                floor = max(self.cfg.ALPHA_CEILING_FLOOR_DEG,
+                            self.cfg.GLIDE_ALPHA_DEG)
+                new = max(floor, min(self.alpha_ceiling, self.commanded_alpha)
+                          - self.cfg.ALPHA_BACKOFF_DEG)
+                if new < self.alpha_ceiling - 0.01:
+                    self._alpha_swing_ut = snap.ut
+                    self.alpha_ceiling = new
+                    self.logbook.event(
+                        snap.ut, "alpha ceiling -> %.1f deg on swing: mean "
+                                 "|error| %.1f deg about %.1f (q=%.0f Pa)"
+                        % (new, self._alpha_swing, self.commanded_alpha,
+                           snap.dynamic_pressure))
         if (abs(error) < 0.5 * self.cfg.ALPHA_TRACK_TOLERANCE_DEG
                 and self.alpha_ceiling < self._glide_top(snap)):
             # Tracking comfortably, so give the authority back.  Without this
