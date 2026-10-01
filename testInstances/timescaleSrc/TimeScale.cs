@@ -145,6 +145,19 @@ namespace BoosterlandTimeScale
 
         void LateUpdate()
         {
+            // **A paused game stays paused.**  KSP pauses by setting
+            // Time.timeScale to 0 and this addon wrote it back every frame, so
+            // kRPC's `paused = True` read back True while game time ran on --
+            // an in-air save could not be held still while the harness
+            // started the autopilot (56 game-seconds of free fall from
+            // qs_shuttle_cone).  Stand down, and restart the measuring window
+            // so the paused frames do not read as a slow game.
+            if (FlightDriver.Pause)
+            {
+                ResetWindow();
+                return;
+            }
+
             // KSP's own time warp writes Time.timeScale too.  While it is
             // engaged this addon stands down completely: two things fighting
             // over one property is not a speedup, it is a bug that only shows

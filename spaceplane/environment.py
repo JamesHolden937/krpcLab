@@ -253,6 +253,13 @@ class Runway:
         up = vec.unit(end["threshold"])
         return vec.unit(vec.project_out(direction, up))
 
+    def gate_dist(self):
+        """How far before the threshold the low gate sits: the derived
+        distance when ``GATE_FROM_APPROACH`` has set one, else
+        ``GATE_DIST_M``."""
+        got = getattr(self, "gate_dist_m", None)
+        return self.cfg.GATE_DIST_M if got is None else got
+
     def low_gate(self, end):
         """The aim point: on the extended centreline, before the threshold.
 
@@ -263,7 +270,7 @@ class Runway:
         happens when a predicted manoeuvre and the flown one disagree.
         """
         along = self.horizontal(end, end["along"])
-        back = vec.scale(along, -self.cfg.GATE_DIST_M)
+        back = vec.scale(along, -self.gate_dist())
         out = vec.add(end["threshold"], back)
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.GATE_ALT_M)
 
@@ -316,7 +323,7 @@ class Runway:
         # standing in for two things -- caught before it cost a session.
         reach = ((self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M)
                  * self.cfg.HAC_GATE_LD)
-        back = vec.scale(along, -(self.cfg.GATE_DIST_M + max(0.0, reach)))
+        back = vec.scale(along, -(self.gate_dist() + max(0.0, reach)))
         out = vec.add(end["threshold"], back)
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.HAC_ALT_M)
 

@@ -16,6 +16,7 @@ So: call every guidance entry point once, on a plausible state, and assert the
 answer is finite and in range.  Cheap, and it fails loudly.
 """
 import inspect
+import types
 import math
 import os
 import re
@@ -24,6 +25,7 @@ import tempfile
 import textwrap
 import sys
 import unittest
+import unittest.mock
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -35,6 +37,7 @@ from spaceplane import airbrake, airframe, environment, guidance, trajectory  # 
 from spaceplane.tests import flownpolar  # noqa: E402
 sys.modules.setdefault('krpc', __import__('types').ModuleType('krpc'))
 from spaceplane import autopilot as autopilot_module     # noqa: E402
+from spaceplane import rollrate as rollrate_mod           # noqa: E402
 from spaceplane.config import Config, apply_overrides, differences  # noqa: E402
 from spaceplane.trajectory import Steer                 # noqa: E402
 from spaceplane.tests.fakeplane import FakeEnv, circular_state     # noqa: E402
@@ -220,7 +223,8 @@ class TestTheGuidanceEntryPoints(unittest.TestCase):
                                                  self.cfg, self.end, 30.0, 0.0)
         self.assertIsNotNone(prediction)
         self.assertGreaterEqual(steer.alpha, self.cfg.SOLVE_ALPHA_MIN_DEG - 1e-6)
-        self.assertLessEqual(steer.alpha, self.cfg.ALPHA_MAX_DEG + 1e-6)
+        self.assertLessEqual(steer.alpha,
+                             trajectory.glide_alpha_max(self.cfg) + 1e-6)
         self.assertLessEqual(abs(steer.bank), self.cfg.BANK_MAX_DEG + 1e-6)
 
     def _unreachable_state(self, share):
@@ -854,7 +858,15 @@ class TestConfig(unittest.TestCase):
         against ``APPROACH_BEST_LD`` rather than a written-down angle, so
         that re-measuring the polar cannot leave the gate behind again."""
         cfg = Config()
-        to_fly = cfg.GATE_DIST_M + cfg.TOUCHDOWN_AIM_M
+        gate = cfg.GATE_DIST_M
+        if cfg.GATE_FROM_APPROACH:
+            # ``Autopilot`` places it where the approach needs GATE_ALT_M
+            # (``approach_ld`` there is ``APPROACH_BEST_LD`` when nothing
+            # is measured), so the geometry closes by construction.
+            gate = max(cfg.GATE_CAPTURE_M,
+                       cfg.GATE_ALT_M * cfg.APPROACH_BEST_LD
+                       - cfg.TOUCHDOWN_AIM_M)
+        to_fly = gate + cfg.TOUCHDOWN_AIM_M
         reach = cfg.GATE_ALT_M * cfg.APPROACH_BEST_LD
         # **This inequality is currently not closed, by about 4%, and that is
         # deliberate.**  Both handles on it -- raising ``GATE_ALT_M`` and
@@ -1166,11 +1178,31 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         self.assertAlmostEqual(yaw, math.sqrt(2106086.0 / 15000.0), places=6)
         self.assertLess(roll, 0.25 * pitch)
 
-    def test_the_axes_are_handed_over_in_krpc_order(self):
-        """`moment_of_inertia` is (pitch, roll, yaw); `time_to_peak` wants
-        (pitch, yaw, roll). Getting that wrong swaps the quickest axis for
-        one of the slowest."""
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True)
+    def test_the_corrected_order_is_krpcs_own(self):
+        """**kRPC applies `time_to_peak` as (pitch, roll, yaw)** -- measured
+        by its autotuned gains -- the same order as `moment_of_inertia`."""
+        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True,
+                      ATTITUDE_AXES_KRPC_ORDER=True,
+                      ATTITUDE_AXES_FROM_CONE=False,
+                      ATTITUDE_ROLL_TIME_TO_PEAK_S=0.0,
+                      ATTITUDE_YAW_WITH_ROLL=False)
+        got = autopilot_module.attitude_time_to_peak(
+            cfg, self.vessel(self.SHUTTLE))
+        pitch, roll, yaw = autopilot_module.slew_time_scale(
+            self.vessel(self.SHUTTLE))
+        k = cfg.ATTITUDE_SLEW_FACTOR
+        self.assertAlmostEqual(got[0], k * pitch, places=6)
+        self.assertAlmostEqual(got[1], k * roll, places=6)
+        self.assertAlmostEqual(got[2], k * yaw, places=6)
+        # roll is the quick axis, and it is where kRPC reads roll
+        self.assertLess(got[1], 0.25 * got[0])
+
+    def test_the_legacy_order_is_reproduced_with_the_flag_off(self):
+        """The old belief, (pitch, yaw, roll), kept exactly when
+        `ATTITUDE_AXES_KRPC_ORDER` is off so old flights are reproducible.
+        kRPC applied it as (pitch, roll, yaw): roll on yaw's figure."""
+        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True,
+                      ATTITUDE_AXES_KRPC_ORDER=False)
         got = autopilot_module.attitude_time_to_peak(
             cfg, self.vessel(self.SHUTTLE))
         pitch, roll, yaw = autopilot_module.slew_time_scale(
@@ -1187,7 +1219,9 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         a derivation that reproduces a fit says the fit was right for *that*
         aircraft and nothing yet about the next one.
         """
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True)
+        # In the legacy order, where got[1] is yaw.
+        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True,
+                      ATTITUDE_AXES_KRPC_ORDER=False)
         got = autopilot_module.attitude_time_to_peak(cfg,
                                                      self.vessel(self.OLD))
         # pitch and yaw, the axes the constant was fitted against
@@ -1250,6 +1284,212 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         """Null on the old craft (qs_plane_inc pair, 2026-09-23) and the
         precondition for every shuttle result."""
         self.assertTrue(Config().ATTITUDE_TIME_TO_PEAK_DERIVED)
+
+
+class TestRollIsNeverGatedOnPointing(unittest.TestCase):
+    """kRPC drops roll above 20 deg of nose error; a bank reversal at high
+    alpha is always that far off, so the default must open the gate."""
+
+    def test_default_opens_the_gate(self):
+        ap = SimpleNamespace(roll_start_angle=20.0, roll_engage_angle=15.0)
+        self.assertTrue(autopilot_module.ungate_roll(Config(), ap))
+        self.assertEqual(ap.roll_start_angle, 180.0)
+        self.assertEqual(ap.roll_engage_angle, 175.0)
+        self.assertLess(ap.roll_engage_angle, ap.roll_start_angle)
+
+    def test_zero_leaves_krpc_alone(self):
+        ap = SimpleNamespace(roll_start_angle=20.0, roll_engage_angle=15.0)
+        cfg = replace(Config(), ATTITUDE_ROLL_ENGAGE_DEG=0.0)
+        self.assertFalse(autopilot_module.ungate_roll(cfg, ap))
+        self.assertEqual((ap.roll_engage_angle, ap.roll_start_angle),
+                         (15.0, 20.0))
+
+    def test_a_server_without_the_gate_is_reported_not_raised(self):
+        self.assertFalse(autopilot_module.ungate_roll(Config(), object()))
+
+
+class TestTheRollDamperLearnsFromOscillation(unittest.TestCase):
+    """The lateral axes slow when the bank diverges about a steady command
+    (LOG3692), and not on a steady wobble (LOG3710)."""
+
+    # LOG3692, GLIDE from q ~1000 Pa: (commanded, flown), 2.4 s apart.
+    LOG3692 = [(30.4, 21.3), (30.0, 21.2), (30.0, 31.0), (32.7, 40.8),
+               (30.1, 41.6), (30.0, 27.4), (30.0, 16.1), (31.9, 28.1),
+               (31.5, 47.8), (31.5, 34.3), (30.0, 15.4), (30.0, 35.1),
+               (30.0, 44.3), (30.0, 7.5), (30.0, 59.4), (30.0, -5.1),
+               (30.0, 64.5), (30.0, -10.0)]
+
+    def test_the_users_divergence_slows_the_roll(self):
+        rd = rollrate_mod.RollDamper(Config(), 1.0, 22.6)
+        for i, (cmd, flown) in enumerate(self.LOG3692):
+            rd.update(2.4 * i, cmd, flown)
+        self.assertGreaterEqual(rd.swings, 3)
+        self.assertGreater(rd.tp, 3.0)
+        self.assertLessEqual(rd.tp, 22.6)
+
+    def test_a_steady_wobble_is_not_a_divergence(self):
+        """LOG3710: +-7 about -30 at q 2300-3300, unchanged by the tune."""
+        rd = rollrate_mod.RollDamper(Config(), 4.8, 22.4)
+        for i in range(60):
+            flown = -30.0 + 7.5 * math.sin(2 * math.pi * i / 8.0)
+            rd.update(float(i), -30.0, flown)
+        self.assertEqual(rd.swings, 0)
+        self.assertEqual(rd.tp, 4.8)
+
+    def test_a_clean_reversal_is_not_a_swing(self):
+        """The command walks from -30 to +30 with the bank lagging behind
+        and settling: the crossing is the command's, not the loop's."""
+        rd = rollrate_mod.RollDamper(Config(), 1.0, 22.6)
+        cmd = -30.0
+        flown = -30.0
+        for i in range(60):
+            cmd = min(30.0, cmd + 2.0)
+            flown = min(cmd, flown + 2.0) if i > 3 else flown
+            rd.update(float(i), cmd, flown)
+        self.assertEqual(rd.swings, 0)
+        self.assertEqual(rd.tp, 1.0)
+
+    def test_it_relaxes_back_to_the_floor_while_it_holds(self):
+        rd = rollrate_mod.RollDamper(Config(), 1.0, 22.6)
+        rd.tp = 10.0
+        for i in range(1000):
+            rd.update(float(i), 30.0, 30.5)
+        self.assertEqual(rd.tp, 1.0)
+
+    def test_capped_at_the_slowest_axis(self):
+        rd = rollrate_mod.RollDamper(Config(), 1.0, 3.0)
+        for i in range(9):
+            amp = 6.0 * 1.5 ** i
+            rd.update(float(i), 0.0, amp * (1 if i % 2 else -1))
+        self.assertGreater(rd.tp, 2.9)
+        self.assertLessEqual(rd.tp, 3.0)
+
+
+class TestTheRollRateIsMeasuredInFlight(unittest.TestCase):
+    """The bank command slews at what the vehicle was seen to deliver."""
+
+    def roll(self, rr, rate, lead=20.0, slip=0.0, ticks=30, dt=1.0, t0=0.0):
+        flown = 0.0
+        for i in range(ticks):
+            rr.update(t0 + i * dt, flown + lead, flown, slip)
+            flown += rate * dt
+        return t0 + ticks * dt
+
+    def test_prior_until_measured(self):
+        rr = rollrate_mod.RollRate(Config())
+        self.assertEqual(rr.limit(), Config().BANK_RATE_DEG_S)
+
+    def test_learns_a_slow_vehicle(self):
+        rr = rollrate_mod.RollRate(Config())
+        self.roll(rr, 3.0)
+        self.assertAlmostEqual(rr.rate, 3.0, places=3)
+        self.assertAlmostEqual(rr.limit(), 3.0 * Config().BANK_RATE_PROBE)
+
+    def test_a_slow_start_does_not_ratchet_it_down(self):
+        """LOG3684: an average of wind-up ticks read 1.1 on a 20 deg/s
+        vehicle.  The peak is what it can do."""
+        rr = rollrate_mod.RollRate(Config())
+        t = self.roll(rr, 12.0, ticks=5)
+        self.roll(rr, 0.0, ticks=3, t0=t)
+        self.assertGreater(rr.rate, 10.0)
+
+    def test_learns_upward_while_keeping_up(self):
+        """A vehicle that follows the command exactly is still sampled,
+        because the command is slewing -- else the limit could never rise."""
+        rr = rollrate_mod.RollRate(Config())
+        rr.rate = 2.0
+        cmd = flown = 0.0
+        for i in range(40):
+            rr.update(float(i), cmd, flown, 0.0)
+            step = rr.limit()
+            cmd += step
+            flown += min(step, 15.0)        # the vehicle can do 15
+        self.assertGreater(rr.rate, 14.0)
+
+    def test_a_settled_vehicle_is_not_a_sample(self):
+        rr = rollrate_mod.RollRate(Config())
+        for i in range(30):
+            rr.update(float(i), 1.0, 0.0, 0.0)
+        self.assertIsNone(rr.rate)
+
+    def test_rolling_the_wrong_way_delivers_nothing(self):
+        rr = rollrate_mod.RollRate(Config())
+        self.roll(rr, -5.0)
+        self.assertEqual(rr.rate, 0.0)
+        self.assertEqual(rr.limit(), Config().BANK_RATE_MIN_DEG_S)
+
+    def test_sideslip_past_the_tolerance_pulls_it_down(self):
+        cfg = Config()
+        calm, slipping = rollrate_mod.RollRate(cfg), rollrate_mod.RollRate(cfg)
+        t = self.roll(calm, 10.0, ticks=3)
+        self.roll(slipping, 10.0, ticks=3)
+        self.roll(calm, 0.0, ticks=20, t0=t)
+        self.roll(slipping, 0.0, ticks=20, t0=t,
+                  slip=4 * cfg.BANK_RATE_SLIP_TOL_DEG)
+        self.assertLess(slipping.rate, 0.5 * calm.rate)
+
+    def test_one_tick_across_a_discontinuity_is_clamped(self):
+        rr = rollrate_mod.RollRate(Config())
+        rr.update(0.0, 20.0, 0.0, 0.0)
+        rr.update(0.1, 20.0, 25.0, 0.0)
+        self.assertLessEqual(rr.rate, Config().BANK_RATE_MAX_DEG_S)
+
+    def test_a_gap_is_not_a_rate(self):
+        rr = rollrate_mod.RollRate(Config())
+        rr.update(0.0, 20.0, 0.0, 0.0)
+        rr.update(100.0, 60.0, 40.0, 0.0)
+        self.assertIsNone(rr.rate)
+
+    def test_nan_bank_resets_instead_of_sampling(self):
+        rr = rollrate_mod.RollRate(Config())
+        rr.update(0.0, 20.0, 0.0, 0.0)
+        rr.update(1.0, 20.0, float("nan"), 0.0)
+        rr.update(2.0, 20.0, 10.0, 0.0)
+        self.assertIsNone(rr.rate)
+
+
+class TestTheFlapBrakeYieldsToRoll(unittest.TestCase):
+    """The flap brake deploys the roll surfaces; both glide losses of
+    control began the tick it went out (LOG3680, LOG3690)."""
+
+    def pilot(self, commanded):
+        ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
+        ap.cfg = Config()
+        ap.commanded_bank = commanded
+        return ap
+
+    def snap(self, ut, bank, slip=0.0):
+        # Level flight east at the equator; roof rolled by ``bank``.
+        b = math.radians(bank)
+        return SimpleNamespace(ut=ut, position=(600000.0, 0.0, 0.0),
+                               velocity=(0.0, 0.0, 2000.0), sideslip=slip,
+                               roof=(math.cos(b), math.sin(b), 0.0))
+
+    def flown(self, bank):
+        return autopilot_module.flown_bank(self.snap(0.0, bank))
+
+    def test_off_the_commanded_bank_needs_the_flaps(self):
+        b = self.flown(30.0)
+        ap = self.pilot(b + 20.0)
+        self.assertTrue(ap.roll_needs_the_flaps(self.snap(0.0, 30.0)))
+
+    def test_sideslip_needs_the_flaps(self):
+        ap = self.pilot(self.flown(30.0))
+        self.assertTrue(ap.roll_needs_the_flaps(self.snap(0.0, 30.0,
+                                                          slip=12.0)))
+
+    def test_held_bank_frees_them_after_the_settle_time(self):
+        ap = self.pilot(self.flown(30.0))
+        settle = ap.cfg.FLAP_BRAKE_ROLL_SETTLE_S
+        self.assertTrue(ap.roll_needs_the_flaps(self.snap(0.0, 30.0)))
+        self.assertTrue(ap.roll_needs_the_flaps(self.snap(settle / 2, 30.0)))
+        self.assertFalse(ap.roll_needs_the_flaps(self.snap(settle + 0.1,
+                                                           30.0)))
+
+    def test_off_by_flag(self):
+        ap = self.pilot(0.0)
+        ap.cfg = replace(Config(), FLAP_BRAKE_YIELDS_TO_ROLL=False)
+        self.assertFalse(ap.roll_needs_the_flaps(self.snap(0.0, 60.0)))
 
 
 class TestTheDrainReserveIsADvNotAUnitCount(unittest.TestCase):
@@ -1827,7 +2067,8 @@ class TestTheSpeedFloorIsTheOtherHalfOfTheHold(unittest.TestCase):
         self.assertGreater(fast, self.cfg.ALPHA_MIN_DEG)
 
     def test_it_never_asks_for_more_than_the_airframe_has(self):
-        self.assertLessEqual(self.floor(400.0, 3000.0), self.cfg.ALPHA_MAX_DEG)
+        self.assertLessEqual(self.floor(400.0, 3000.0),
+                             trajectory.glide_alpha_max(self.cfg))
 
     def test_supersonically_it_leaves_the_range_minimum_guard_alone(self):
         """Above ``SPEED_FLOOR_MACH`` the range curve has an interior optimum
@@ -2326,11 +2567,23 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
         centreline -- a phase must hand over a state the next one can fly,
         and the flare flies whatever cross-track it is given."""
         # ``state``'s distance is from the threshold; the law's is from the
-        # aim, ``TOUCHDOWN_AIM_M`` further in.
+        # aim, ``TOUCHDOWN_AIM_M`` further in.  The distance stop; the time
+        # stop is ``test_the_time_stop_is_a_time``.
+        self.cfg = replace(self.cfg, APPROACH_SCURVE_STOP_BY_TIME=False)
         near = self.scurve(0.0, 0.0, +1.0,
                            distance=(self.cfg.APPROACH_SCURVE_STOP_M
                                      - self.cfg.TOUCHDOWN_AIM_M - 100.0))
         self.assertEqual(near.scurve_deg, 0.0)
+
+    def test_the_time_stop_is_a_time(self):
+        """``APPROACH_SCURVE_STOP_BY_TIME`` (default with the near aim): the
+        weave stops on time to the flare's door, not on distance to the aim
+        -- which is what keeps a nearer aim from moving the dissipation out
+        (failure 68).  Same state, only the time allowance changes."""
+        self.cfg = replace(self.cfg, APPROACH_SCURVE_STOP_BY_TIME=True)
+        self.assertGreater(self.scurve(0.0, 0.0, +1.0).scurve_deg, 10.0)
+        self.cfg = replace(self.cfg, APPROACH_SCURVE_STOP_S=1000.0)
+        self.assertEqual(self.scurve(0.0, 0.0, +1.0).scurve_deg, 0.0)
 
     def wanted_rate(self, cross, speed=115.0, height=1000.0):
         """The closure the law is actually asking for, found by bisection on
@@ -3332,7 +3585,7 @@ class TestTheLeanIsGoneByTheGate(unittest.TestCase):
         with open(os.path.join(here, "spaceplane", "autopilot.py")) as fh:
             source = fh.read()
         cap = source.index("align_bank_cap")
-        rate = source.index("BANK_RATE_DEG_S * dt", cap)
+        rate = source.index("self.bank_rate() * dt", cap)
         self.assertLess(cap, rate)
 
 
@@ -3901,6 +4154,71 @@ class TestTheHeadingAlignmentCone(unittest.TestCase):
                                                 exit_angle, side, radius)
         self.assertAlmostEqual(math.degrees(turn), 90.0, delta=2.0)
         self.assertAlmostEqual(path, radius * math.pi / 2.0, delta=200.0)
+
+    def test_a_tangent_point_past_the_rollout_is_not_path(self):
+        """``HAC_PATH_WRAP_TO_GATE``: lined up just outside a wide circle,
+        the tangent point lies past the rollout and the run to it is not
+        path (LOG4056: ``gate=955 path=2650``)."""
+        side = 1.0
+        radius = 16000.0
+        # 955 m before the gate, 190 m outside the centreline.
+        r = self.point(-955.0, -side * 190.0, 1000.0)
+        state = guidance.hac_state(self.env, self.cfg, self.end, r, side,
+                                   radius)
+        old, _, _ = guidance.hac_path(self.cfg, *state[:3], side=side,
+                                      radius=radius)
+        self.cfg.HAC_PATH_WRAP_TO_GATE = True
+        new, turn, _ = guidance.hac_path(self.cfg, *state[:3], side=side,
+                                         radius=radius)
+        self.assertGreater(old, 2000.0)
+        self.assertAlmostEqual(new, math.hypot(955.0, 190.0), delta=60.0)
+        self.assertEqual(turn, 0.0)
+        # A real turn still to fly is untouched.
+        r = self.point(-radius, side * radius, 6000.0)
+        state = guidance.hac_state(self.env, self.cfg, self.end, r, side,
+                                   radius)
+        self.cfg.HAC_PATH_WRAP_TO_GATE = False
+        before = guidance.hac_path(self.cfg, *state[:3], side=side,
+                                   radius=radius)[0]
+        self.cfg.HAC_PATH_WRAP_TO_GATE = True
+        after = guidance.hac_path(self.cfg, *state[:3], side=side,
+                                  radius=radius)[0]
+        self.assertAlmostEqual(before, after, delta=1.0)
+
+    def test_a_straight_in_is_priced_at_the_wings_level_ratio(self):
+        """``HAC_LD_AT_TARGET``: lined up, the path left is flown wings
+        level at the cone's speed, so the profile is lower than ``HAC_LD``
+        prices it and the same height reads as more surplus."""
+        side = 1.0
+        _, along, _, _ = self.frame()
+        r = self.point(-10000.0, 0.0, 6000.0)
+        v = vec.scale(along, 110.0)
+        off = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0, 9.81,
+                           6000.0, side)
+        self.cfg.HAC_LD_AT_TARGET = True
+        on = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0, 9.81,
+                          6000.0, side)
+        self.assertLess(on.needed_height, off.needed_height - 500.0)
+        self.assertGreater(on.surplus, off.surplus)
+
+    def test_the_ladder_prices_each_slice_at_its_own_height(self):
+        """Path per metre of height is summed down to the gate, not taken
+        where the vehicle is; and the profile height inverts it."""
+        speed = lambda h: 110.0
+        rungs = guidance.hac_ladder(self.env, self.cfg, 8000.0, 7000.0, 9.81,
+                                    speed, 16000.0, 0.0, 0, 10000.0)
+        self.assertIsNotNone(rungs)
+        self.assertAlmostEqual(rungs[0][0], self.cfg.GATE_ALT_M)
+        self.assertAlmostEqual(rungs[-1][0], 8000.0)
+        paths = [p for _, p in rungs]
+        self.assertEqual(paths, sorted(paths))
+        # Inverse: the height that pays for the whole ladder is its top.
+        self.assertAlmostEqual(
+            guidance.ladder_height(rungs, rungs[-1][1], 1.86), 8000.0,
+            delta=1.0)
+        self.assertAlmostEqual(
+            guidance.ladder_height(rungs, 0.0, 1.86),
+            self.cfg.GATE_ALT_M, delta=1.0)
 
     def test_a_vehicle_still_far_out_is_costed_the_run_in_as_well(self):
         """The failure the first version had: an arc-only path model reads
@@ -4742,8 +5060,11 @@ class TestTheSpaceplaneShutsItsThrustersInAir(unittest.TestCase):
         self.cfg = Config()
 
     def test_the_ceiling_is_set_and_low(self):
+        """Raised to 20 kPa with ``GLIDE_RCS`` (default 2026-09-25), which
+        is guarded by Mach instead: no thrusters in the subsonic air."""
         self.assertGreater(self.cfg.RCS_Q_MAX_PA, 0.0)
-        self.assertLess(self.cfg.RCS_Q_MAX_PA, 5000.0)
+        self.assertLessEqual(self.cfg.RCS_Q_MAX_PA, 20000.0)
+        self.assertGreaterEqual(self.cfg.GLIDE_RCS_MACH_MIN, 1.0)
 
     def test_the_deadband_cannot_invert(self):
         """ON below OFF is a relay that latches on and never lets go."""
@@ -4903,6 +5224,74 @@ class TestTheBroadsideProbeReachesTheVehicle(unittest.TestCase):
         self.assertAlmostEqual(run.commanded_alpha, 14.0, places=6)
 
 
+class TestTheNoseFollowsTheFlownBank(unittest.TestCase):
+    """``AIM_NOSE_FROM_FLOWN_BANK``: a lagging roll must not command slip.
+
+    LOG3741: bank commanded +21.5, flown -2.0, alpha 31.5 -- the nose aimed
+    at the commanded lift sat 12 deg off the vehicle's pitch plane, and the
+    vehicle flew 17-24 deg of sideslip into the reversal."""
+
+    def setUp(self):
+        self.sent = None
+
+    def _record(self, direction, up, roll=0.0):
+        self.sent = (direction, up)
+
+    def run_(self, on):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), AIM_NOSE_FROM_FLOWN_BANK=on)
+        run.state = autopilot_module.GLIDE
+        run.autopilot = SimpleNamespace(target_direction=None,
+                                        target_roll=0.0,
+                                        set_direction_and_up=self._record)
+        return run
+
+    def snap(self, flown):
+        pos, v = (650000.0, 0.0, 0.0), (0.0, 0.0, 2000.0)
+        roof = trajectory.lift_direction(pos, v, flown) if flown is not None \
+            else ()
+        return SimpleNamespace(velocity=v, position=pos, roof=roof)
+
+    def expected(self, snap, bank, alpha):
+        lift = trajectory.lift_direction(snap.position, snap.velocity, bank)
+        a = math.radians(alpha)
+        return vec.unit(vec.add(vec.scale(vec.unit(snap.velocity),
+                                          math.cos(a)),
+                                vec.scale(lift, math.sin(a))))
+
+    def test_the_nose_stays_in_the_flown_pitch_plane(self):
+        snap = self.snap(-2.0)
+        self.run_(True).aim(31.5, 21.5, snap)
+        self.assertLess(vec.angle_between(
+            self.sent[0], self.expected(snap, -2.0, 31.5)), 0.01)
+
+    def test_the_roof_still_goes_to_the_commanded_bank(self):
+        """Otherwise the vehicle would never roll at all."""
+        snap = self.snap(-2.0)
+        self.run_(True).aim(31.5, 21.5, snap)
+        want = trajectory.lift_direction(snap.position, snap.velocity, 21.5)
+        self.assertLess(vec.angle_between(self.sent[1], want), 0.01)
+
+    def test_off_aims_at_the_commanded_bank(self):
+        snap = self.snap(-2.0)
+        self.run_(False).aim(31.5, 21.5, snap)
+        got = self.expected(snap, 21.5, 31.5)
+        self.assertLess(vec.angle_between(self.sent[0], got), 0.01)
+        # ... and the difference is the commanded slip it exists to remove
+        self.assertAlmostEqual(
+            vec.angle_between(self.sent[0], self.expected(snap, -2.0, 31.5)),
+            12.0, delta=1.0)
+
+    def test_an_unreadable_roof_falls_back_to_the_command(self):
+        snap = self.snap(None)
+        self.run_(True).aim(31.5, 21.5, snap)
+        self.assertLess(vec.angle_between(
+            self.sent[0], self.expected(snap, 21.5, 31.5)), 0.01)
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().AIM_NOSE_FROM_FLOWN_BANK)
+
+
 class TestTheApproachNeverUnloadsTheWing(unittest.TestCase):
     """Lift below weight is not a steep glide, it is a fall.
 
@@ -5005,8 +5394,12 @@ class TestTheFlareRespectsTheTail(unittest.TestCase):
         self.assertGreater(near, far)
 
     def test_the_flare_applies_it(self):
+        # Through ``flare_tail_cap`` (``FLARE_TAIL_BY_ATTITUDE``), which is
+        # the tail limit itself with the flag off.
         source = inspect.getsource(autopilot_module.Autopilot.run_flare)
-        self.assertIn("tail_limit_deg", source)
+        self.assertIn("flare_tail_cap", source)
+        cap = inspect.getsource(autopilot_module.Autopilot.flare_tail_cap)
+        self.assertIn("tail_limit_deg", cap)
 
 
 class TestABurnThatNeverHappened(unittest.TestCase):
@@ -5597,6 +5990,26 @@ class TestTwoSidedSpeed(unittest.TestCase):
         self.assertGreater(alpha, trim)
         self.assertGreater(self.load(124.0, 500.0, alpha), 1.0)
 
+    def test_level_and_fast_asks_for_more_load_only_when_allowed_to_climb(self):
+        """``HAC_CLIMB``: the user's zoom.  Level at twice the target, the
+        floored law holds the path; allowed to climb, it pulls up into one."""
+        speed, height, target = 90.0, 3000.0, 60.0
+        sink = 0.0
+        trim = trajectory.alpha_for_load(self.env, speed, height, self.mass,
+                                         self.g, 1.0)
+        level = guidance.alpha_for_speed(
+            self.env, self.cfg, speed, sink, height, self.mass, self.g,
+            target, trim)
+        cfg = replace(self.cfg, SPEED_PATH_CLIMB_MAX_DEG=20.0)
+        climb = guidance.alpha_for_speed(
+            self.env, cfg, speed, sink, height, self.mass, self.g,
+            target, trim, climb_ok=True)
+        self.assertGreater(self.load(speed, height, climb),
+                           self.load(speed, height, level))
+
+    def test_the_climb_is_off_by_default(self):
+        self.assertFalse(Config().HAC_CLIMB)
+
     def test_the_dive_is_bounded_however_slow_it_gets(self):
         """``APPROACH_DIVE_MAX_DEG`` is ``APPROACH_TRIM_FLOOR``'s caution,
         moved onto the path where the speed and the mass cannot move it."""
@@ -5680,7 +6093,8 @@ class TestFlareSinkSchedule(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = replace(Config(), FLARE_SINK_TRACK=True)
+        self.cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=True)
         self.env = FakeEnv(self.cfg)
         self.mass, self.g = 6930.0, 9.81
 
@@ -5722,13 +6136,69 @@ class TestFlareSinkSchedule(unittest.TestCase):
                              self.cfg.FLARE_TRACK_LOAD_MAX + 1e-6)
 
     def test_the_old_arrest_is_what_flies_with_the_flag_off(self):
-        cfg = replace(Config(), FLARE_SINK_TRACK=False)
+        cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=False)
         env = FakeEnv(cfg)
         r = (600070.0 + 50.0, 0.0, 0.0)
         v = (-2.0, 85.0, 0.0)
         _, _, needed = guidance.flare(env, cfg, r, v, self.mass, self.g,
                                       50.0, 5.0)
         self.assertGreaterEqual(needed, 1.0)
+
+
+class TestFlareShallow(unittest.TestCase):
+    """``FLARE_SHALLOW``: a preflare high up, a shallow glide, a settle."""
+
+    def setUp(self):
+        self.off = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=True)
+        self.cfg = replace(self.off, FLARE_SHALLOW=True)
+        self.env = FakeEnv(self.cfg)
+        self.mass, self.g = 6930.0, 9.81
+
+    def load(self, height, sink, speed=110.0):
+        r = (600070.0 + height, 0.0, 0.0)
+        v = (-sink, math.sqrt(max(0.0, speed * speed - sink * sink)), 0.0)
+        _, _, needed = guidance.flare(self.env, self.cfg, r, v, self.mass,
+                                      self.g, height, 5.0)
+        return needed
+
+    def test_off_the_door_is_the_old_expression(self):
+        for sink in (0.0, 20.0, 55.0):
+            self.assertAlmostEqual(
+                guidance.flare_door(self.off, sink, 110.0),
+                self.off.FLARE_ALT_M + self.off.FLARE_LEAD_S * sink)
+
+    def test_the_door_is_the_height_the_pull_up_needs(self):
+        """A 55 m/s sink at 1.5 g needs ~300 m, not the old ~190."""
+        door = guidance.flare_door(self.cfg, 55.0, 115.0)
+        inner = guidance.inner_glide_sink(self.cfg, 115.0)
+        pull = (self.cfg.FLARE_SHALLOW_PULL_LOAD - 1.0) * 9.81
+        self.assertGreater(door, (55.0 ** 2 - inner ** 2) / (2 * pull))
+        self.assertGreater(door, guidance.flare_door(self.off, 55.0, 115.0))
+
+    def test_on_the_inner_glide_it_holds_one_g(self):
+        speed = 100.0
+        sink = guidance.inner_glide_sink(self.cfg, speed)
+        self.assertAlmostEqual(self.load(40.0, sink, speed), 1.0, delta=0.02)
+
+    def test_a_dive_at_the_door_pulls(self):
+        self.assertGreater(self.load(300.0, 50.0), 1.4)
+
+    def test_the_last_metres_settle_below_the_inner_glide(self):
+        """Near the ground the schedule is the gentle bottom, not the glide."""
+        speed = 90.0
+        sink = guidance.inner_glide_sink(self.cfg, speed)
+        self.assertGreater(self.load(2.0, sink, speed), 1.0)
+        self.assertAlmostEqual(
+            self.load(0.0, self.cfg.FLARE_SHALLOW_TOUCHDOWN_SINK_M_S, speed),
+            1.0, delta=0.02)
+
+    def test_the_approach_flies_faster(self):
+        env = FakeEnv(self.cfg)
+        stall = airframe.stall(env, self.cfg)
+        self.assertGreater(self.cfg.FLARE_SHALLOW_DOOR_FACTOR * stall,
+                           self.cfg.APPROACH_FLARE_FACTOR * stall)
 
 
 class TestTheBrakesAreForTheDistanceThatIsLeft(unittest.TestCase):
@@ -6667,8 +7137,19 @@ class TestTheTuneFollowsTheAir(unittest.TestCase):
         self.assertLess(live[0], 2.0)            # pitch, from 22.4
         self.assertLess(live[1], 4.0 * live[0])  # yaw follows its own torque
 
+    def test_live_follows_the_corrected_order_too(self):
+        cfg = replace(Config(), ATTITUDE_AXES_KRPC_ORDER=True,
+                      ATTITUDE_AXES_FROM_CONE=False,
+                      ATTITUDE_ROLL_TIME_TO_PEAK_S=0.0,
+                      ATTITUDE_YAW_WITH_ROLL=False)
+        pitch, roll, yaw = autopilot_module.live_time_to_peak(
+            cfg, self.vessel((100.0e3, 400.0e3, 900.0e3)))
+        k = cfg.ATTITUDE_SLEW_FACTOR
+        self.assertAlmostEqual(roll, k * math.sqrt(94184.0 / 400e3))
+        self.assertAlmostEqual(yaw, k * math.sqrt(2106086.0 / 900e3))
+
     def test_the_axes_are_reordered_for_krpc(self):
-        cfg = Config()
+        cfg = replace(Config(), ATTITUDE_AXES_KRPC_ORDER=False)
         pitch, yaw, roll = autopilot_module.live_time_to_peak(
             cfg, self.vessel((100.0e3, 400.0e3, 900.0e3)))
         k = cfg.ATTITUDE_SLEW_FACTOR
@@ -6745,8 +7226,9 @@ class TestTheBrakeNeverOutrunsTheFlare(unittest.TestCase):
         self.assertGreater(limit, 30.0)   # the unbraked 29-36 is inside
         self.assertLess(limit, 45.0)      # the braked 38-58 is not
 
-    def test_off_by_default(self):
-        self.assertFalse(Config().AIRBRAKE_SINK_GUARD)
+    def test_on_by_default(self):
+        """Default since 2026-09-25 (the shuttle chain, LOG3656-3661)."""
+        self.assertTrue(Config().AIRBRAKE_SINK_GUARD)
 
 
 class TestAFrozenStateEndsTheFlight(unittest.TestCase):
@@ -6775,3 +7257,1439 @@ class TestAFrozenStateEndsTheFlight(unittest.TestCase):
         for ut in range(0, 60):
             run.frozen_early(self.snap(float(ut), float(ut)))
         self.assertIsNone(run.finished)
+
+
+class TestMeasuredBrake(unittest.TestCase):
+    """`airbrake.choose_measured_brake` on the shuttle's measured deploys
+    (qs_shuttle_cone, M0.4 alpha 5, +/-15 deg): one main pair spoils lift at
+    +15, the other main pair and the forward pair at -15."""
+
+    def rec(self, title):
+        return airbrake.Surface(title, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
+                                2.0, title)
+
+    SHUTTLE = [
+        ("main2a", -9.12, -38.96, 4.51, 22.13),
+        ("main1a", 4.70, 25.55, -3.11, -14.65),
+        ("main2b", -9.11, -38.94, 4.22, 20.61),
+        ("main1b", 4.70, 25.53, -3.11, -14.66),
+        ("fwda", 5.51, -54.27, -2.94, 27.13),
+        ("fwdb", 5.51, -54.29, -3.18, 29.35),
+    ]
+
+    def samples(self, rows):
+        return [(self.rec(t),) + tuple(v) for t, *v in rows]
+
+    def test_each_surface_takes_its_own_spoiling_sense(self):
+        got = dict((r.title, m) for r, m in airbrake.choose_measured_brake(
+            self.samples(self.SHUTTLE)).surfaces())
+        self.assertGreater(got["main2a"], 0.0)
+        self.assertLess(got["main1a"], 0.0)
+        self.assertLess(got["fwda"], 0.0)
+
+    def test_the_moments_cancel_and_lift_is_spoiled(self):
+        brake = airbrake.choose_measured_brake(self.samples(self.SHUTTLE))
+        self.assertTrue(brake.any)
+        self.assertLess(brake.lift, 0.0)
+        self.assertAlmostEqual(brake.moment, 0.0, places=6)
+
+    def test_no_opposing_moment_is_no_brake(self):
+        rows = [("a", -5.0, -10.0, 3.0, 8.0), ("b", -4.0, -20.0, 2.0, 9.0)]
+        self.assertFalse(airbrake.choose_measured_brake(
+            self.samples(rows)).any)
+
+    def test_a_surface_that_spoils_nothing_is_left_out(self):
+        rows = self.SHUTTLE + [("fin", 0.3, -7.0, 0.1, -2.0)]
+        titles = [r.title for r, _ in airbrake.choose_measured_brake(
+            self.samples(rows)).surfaces()]
+        self.assertNotIn("fin", titles)
+
+    def test_on_by_default(self):
+        """Default since 2026-09-25 (the shuttle chain, LOG3656-3661)."""
+        self.assertTrue(Config().AIRBRAKE_MEASURED)
+
+
+class TestMeasuredBrakeRebalance(TestMeasuredBrake):
+    def test_a_nose_up_residual_raises_the_nose_down_side(self):
+        brake = airbrake.choose_measured_brake(self.samples(self.SHUTTLE))
+        g_up, g_down = brake.gains
+        after = brake.rebalanced(+55.0)
+        self.assertTrue(after.gains[1] > g_down or after.gains[0] < g_up)
+        self.assertLess(after.moment, brake.moment)
+
+    def test_a_nose_down_residual_goes_the_other_way(self):
+        brake = airbrake.choose_measured_brake(self.samples(self.SHUTTLE))
+        after = brake.rebalanced(-55.0)
+        self.assertGreater(after.moment, brake.moment)
+
+
+class TestMeasuredFlaps(TestMeasuredBrake):
+    def test_flaps_take_the_other_sense_and_add_lift(self):
+        flaps = airbrake.choose_measured_flaps(self.samples(self.SHUTTLE))
+        got = dict((r.title, m) for r, m in flaps.surfaces())
+        self.assertTrue(flaps.any)
+        self.assertGreater(flaps.lift, 0.0)
+        self.assertAlmostEqual(flaps.moment, 0.0, places=6)
+        self.assertLess(got["main2a"], 0.0)
+        self.assertGreater(got["main1a"], 0.0)
+        self.assertEqual(flaps.kind, "flap")
+
+    def test_flaps_off_by_default(self):
+        self.assertFalse(Config().AIRBRAKE_FLAPS)
+
+
+class TestMeasuredSetBracket(TestMeasuredBrake):
+    def test_a_bracket_is_searched_not_overshot(self):
+        """The shuttle's flap set oscillated 0.92/0.20/0.72/0.28 on slope
+        steps; with the measured bracket the next balance lies inside it."""
+        flaps = airbrake.choose_measured_flaps(self.samples(self.SHUTTLE))
+        a, b = flaps.at_balance(0.92), flaps.at_balance(0.20)
+        history = [(a.balance(), +78.0)]
+        nxt = b.rebalanced(-56.0, history)
+        self.assertGreater(nxt.balance(), 0.20)
+        self.assertLess(nxt.balance(), 0.92)
+        # regula falsi between (0.20, -56) and (0.92, +78)
+        self.assertAlmostEqual(nxt.balance(), 0.20 + 56.0 * 0.72 / 134.0,
+                               places=6)
+
+    def test_balance_round_trips(self):
+        flaps = airbrake.choose_measured_flaps(self.samples(self.SHUTTLE))
+        for x in (0.0, 0.3, 1.0, 1.4, 2.0):
+            self.assertAlmostEqual(flaps.at_balance(x).balance(), x)
+
+
+class TestConeSpeedIsEquivalentAirspeed(unittest.TestCase):
+    def test_thin_air_asks_for_more_true_airspeed(self):
+        cfg = replace(Config(), HAC_SPEED_EAS=True)
+        env = FakeEnv(cfg)
+        self.assertAlmostEqual(guidance.eas_scale(env, cfg, 0.0), 1.0)
+        high = guidance.eas_scale(env, cfg, 9000.0)
+        self.assertGreater(high, 1.3)
+        self.assertAlmostEqual(high, math.sqrt(env.density(0.0)
+                                               / env.density(9000.0)))
+
+    def test_off_is_one(self):
+        env = FakeEnv(Config())
+        self.assertEqual(guidance.eas_scale(env, Config(), 9000.0), 1.0)
+
+
+class TestTheEntryAndConeFlagsOf20260924(unittest.TestCase):
+    """The glide's own alpha ceiling and the cone's wrap and weave."""
+
+    def test_glide_ceiling_defaults_to_the_airframe_one(self):
+        cfg = replace(Config(), GLIDE_ALPHA_MAX_DEG=0.0)
+        self.assertEqual(trajectory.glide_alpha_max(cfg), cfg.ALPHA_MAX_DEG)
+        cfg = replace(cfg, GLIDE_ALPHA_MAX_DEG=40.0)
+        self.assertEqual(trajectory.glide_alpha_max(cfg), 40.0)
+        # The deorbit's corner does not move with it.
+        self.assertEqual(cfg.ALPHA_MAX_DEG, Config().ALPHA_MAX_DEG)
+
+    def test_a_little_past_the_rollout_is_arrived_not_a_lap(self):
+        # side +1: turn left = exit - angle, wrapped into [0, 2pi).
+        past = math.radians(20.0)
+        cfg = Config()
+        self.assertGreater(guidance.hac_turn(cfg, past, 0.0, 1.0),
+                           math.radians(300.0))
+        cfg = replace(cfg, HAC_OVERSHOOT_DEG=60.0)
+        self.assertEqual(guidance.hac_turn(cfg, past, 0.0, 1.0), 0.0)
+        # A real turn is untouched.
+        self.assertAlmostEqual(guidance.hac_turn(cfg, -1.0, 0.0, 1.0), 1.0)
+
+    def test_the_default_band_is_the_exit_band(self):
+        cfg = Config()
+        inside = math.radians(cfg.HAC_EXIT_TURN_DEG - 1.0)
+        self.assertEqual(guidance.hac_turn(cfg, inside, 0.0, 1.0), 0.0)
+
+
+class TestGroundSpoiler(unittest.TestCase):
+    """``ROLLOUT_GROUND_SPOILER``: the measured spoiler fully out the tick a
+    main wheel is grounded, at the measured ratio, once (the user's rule,
+    2026-09-25)."""
+
+    class _Module(object):
+        name = "SyncModuleControlSurface"
+
+        def __init__(self):
+            self.angle = None
+
+        def has_field(self, name):
+            return name == "Deploy Angle"
+
+        def set_field_float(self, name, value):
+            self.angle = value
+
+        def get_field(self, name):
+            return "%.1f" % self.angle
+
+    class _Surface(object):
+        def __init__(self, module):
+            self.key = types.SimpleNamespace(
+                part=types.SimpleNamespace(modules=[module]), deployed=False)
+
+    class _Wheel(object):
+        def __init__(self, grounded):
+            self.grounded = grounded
+
+    def setUp(self):
+        self.fwd_mod, self.aft_mod = self._Module(), self._Module()
+        self.fwd, self.aft = self._Surface(self.fwd_mod), \
+            self._Surface(self.aft_mod)
+        brake = types.SimpleNamespace(
+            any=True, surfaces=lambda: [(self.fwd, -1.42), (self.aft, 1.0)])
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = Config()
+        run.flap_brake = brake
+        run.flap_brake_out = False
+        run._ground_spoiler_done = False
+        run.events = []
+        run.logbook = types.SimpleNamespace(
+            event=lambda ut, text: run.events.append(text))
+        self.wheels = [self._Wheel(False), self._Wheel(False)]
+        run._brake_wheel_cache = self.wheels
+        self.run = run
+        self.snap = types.SimpleNamespace(ut=10.0, velocity=(50.0, 0.0, 0.0))
+
+    def test_waits_for_the_mains(self):
+        self.run.ground_spoiler(self.snap)
+        self.assertFalse(self.fwd.key.deployed)
+        self.assertFalse(self.run._ground_spoiler_done)
+
+    def test_full_out_on_contact_at_the_measured_ratio(self):
+        self.wheels[1].grounded = True
+        self.run.ground_spoiler(self.snap)
+        self.assertTrue(self.fwd.key.deployed and self.aft.key.deployed)
+        self.assertAlmostEqual(self.fwd_mod.angle, -25.0)
+        self.assertAlmostEqual(self.aft_mod.angle, 25.0 / 1.42)
+        self.assertTrue(self.run.flap_brake_out)
+        self.assertIn("ground spoiler out", self.run.events[-1])
+
+    def test_rollout_deploys_without_the_wheels(self):
+        self.run.ground_spoiler(self.snap, landed=True)
+        self.assertTrue(self.aft.key.deployed)
+
+    def test_no_measured_set_says_so(self):
+        self.run.flap_brake = None
+        self.run.ground_spoiler(self.snap, landed=True)
+        self.assertIn("no measured spoiler", self.run.events[-1])
+
+    def test_the_drag_brake_is_preferred_when_armed(self):
+        other_mod = self._Module()
+        other = self._Surface(other_mod)
+        self.run.drag_brake = types.SimpleNamespace(
+            any=True, kind="drag brake", surfaces=lambda: [(other, -0.5)])
+        self.run.ground_spoiler(self.snap, landed=True)
+        self.assertTrue(other.key.deployed)
+        self.assertFalse(self.fwd.key.deployed)
+        self.assertAlmostEqual(other_mod.angle, -25.0)
+        self.assertIn("ground drag brake out", self.run.events[-1])
+
+    def test_on_by_default(self):
+        self.assertTrue(Config().ROLLOUT_GROUND_SPOILER)
+
+
+class TestTheRollFixIsTheDefault(unittest.TestCase):
+    """Live flights run defaults, and defaults flew roll on yaw's 22.6 s:
+    LOG3644/3645, bank commanded +40 for 80 s and -15..+9 flown."""
+
+    def test_on_by_default(self):
+        self.assertTrue(Config().ATTITUDE_AXES_KRPC_ORDER)
+        # And in the entry too: the legacy order there is roll on 22.6 s,
+        # and the user saw no roll input through a reversal (LOG3691).
+        self.assertFalse(Config().ATTITUDE_AXES_FROM_CONE)
+
+
+class TestRollHasFullAuthority(unittest.TestCase):
+    """The user: "why don't you just give roll full authority"."""
+
+    def test_roll_gets_the_configured_figure(self):
+        cfg = replace(Config(), ATTITUDE_ROLL_TIME_TO_PEAK_S=1.0,
+                      ATTITUDE_YAW_WITH_ROLL=False)
+        out = autopilot_module.krpc_axes(cfg, 22.4, 4.8, 22.6)
+        self.assertEqual(out, (22.4, 1.0, 22.6))
+
+    def test_the_default_is_the_derived_figure(self):
+        """Full authority lost the shuttle's entry 5/5 (LOG3692-3702)."""
+        self.assertEqual(autopilot_module.krpc_axes(Config(), 22.4, 4.8,
+                                                    22.6), (22.4, 4.8, 22.6))
+
+    def test_zero_leaves_the_derivation(self):
+        cfg = replace(Config(), ATTITUDE_ROLL_TIME_TO_PEAK_S=0.0,
+                      ATTITUDE_YAW_WITH_ROLL=False)
+        self.assertEqual(autopilot_module.krpc_axes(cfg, 22.4, 4.8, 22.6),
+                         (22.4, 4.8, 22.6))
+
+    def test_never_lands_on_yaw_in_the_legacy_order(self):
+        cfg = replace(Config(), ATTITUDE_AXES_KRPC_ORDER=False)
+        self.assertEqual(autopilot_module.krpc_axes(cfg, 22.4, 4.8, 22.6),
+                         (22.4, 22.6, 4.8))
+
+    def test_yaw_can_share_rolls_figure(self):
+        """LOG3699: roll 1.0 against yaw 22.6 turned a reversal into 30 s
+        of 30-40 deg sideslip."""
+        cfg = replace(Config(), ATTITUDE_YAW_WITH_ROLL=True,
+                      ATTITUDE_ROLL_TIME_TO_PEAK_S=0.0)
+        self.assertEqual(autopilot_module.krpc_axes(cfg, 22.4, 4.8, 22.6),
+                         (22.4, 4.8, 4.8))
+
+
+class TestYawFollowsItsShareOfTheBank(unittest.TestCase):
+    """``ATTITUDE_YAW_BY_ALPHA``: yaw at roll's figure / sin(alpha)."""
+
+    def cfg(self, **kw):
+        return replace(Config(), ATTITUDE_YAW_WITH_ROLL=False,
+                       ATTITUDE_YAW_BY_ALPHA=True, **kw)
+
+    def test_the_entry_gets_a_quick_yaw(self):
+        got = autopilot_module.yaw_time_to_peak(self.cfg(), 4.8, 22.6, 40.0)
+        self.assertAlmostEqual(got, 4.8 / math.sin(math.radians(40.0)))
+
+    def test_near_level_flight_keeps_the_static_yaw(self):
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 5.0), 22.6)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 0.0), 22.6)
+
+    def test_never_quicker_than_roll(self):
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 90.0), 4.8)
+
+    def test_off_is_the_static_yaw_and_with_roll_is_roll(self):
+        off = replace(Config(), ATTITUDE_YAW_WITH_ROLL=False,
+                      ATTITUDE_YAW_BY_ALPHA=False)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            off, 4.8, 22.6, 40.0), 22.6)
+        on = replace(off, ATTITUDE_YAW_WITH_ROLL=True)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            on, 4.8, 22.6, 5.0), 4.8)
+
+
+class TestYawFliesTheThrusters(unittest.TestCase):
+    """``ATTITUDE_YAW_WITH_RCS``: while the valve is open in GLIDE, yaw's
+    figure counts the RCS -- 290 kN m of yaw beside the wheels' 15 on the
+    shuttle, which the static 22.6 s never asked for."""
+
+    # The shuttle at STANDBY (LOG3759): I_yaw, wheel and RCS yaw torque.
+    SHUTTLE = (2106086.0, 15000.0, 290134.0)
+
+    def cfg(self, on=True):
+        return replace(Config(), ATTITUDE_YAW_WITH_RCS=on,
+                       ATTITUDE_YAW_WITH_ROLL=False,
+                       ATTITUDE_YAW_BY_ALPHA=False)
+
+    def test_the_shuttle_figure(self):
+        got = autopilot_module.rcs_yaw_time_to_peak(self.cfg(), *self.SHUTTLE)
+        self.assertAlmostEqual(got, 1.91 * math.sqrt(2106086.0 / 305134.0),
+                               places=3)
+        self.assertAlmostEqual(got, 5.0, delta=0.1)
+
+    def test_no_rcs_is_no_figure(self):
+        self.assertIsNone(autopilot_module.rcs_yaw_time_to_peak(
+            self.cfg(), 2106086.0, 15000.0, 0.0))
+        self.assertIsNone(autopilot_module.rcs_yaw_time_to_peak(
+            self.cfg(), None, 15000.0, 290134.0))
+
+    def test_open_valve_flies_it_but_never_quicker_than_roll(self):
+        self.assertAlmostEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 35.0, 5.02), 5.02)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 35.0, 2.0), 4.8)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 35.0, 40.0), 22.6)
+
+    def test_shut_valve_or_flag_off_is_the_static_yaw(self):
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(), 4.8, 22.6, 35.0, None), 22.6)
+        self.assertEqual(autopilot_module.yaw_time_to_peak(
+            self.cfg(False), 4.8, 22.6, 35.0, 5.02), 22.6)
+
+    def run_(self, on, state, valve, bank_cmd=0.0):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = self.cfg(on)
+        run.state = state
+        run.rcs = SimpleNamespace(on=valve)
+        run._rcs_yaw_peak = 5.02
+        run.commanded_bank = bank_cmd
+        return run
+
+    def test_only_in_glide_or_hac_with_the_valve_open(self):
+        G, H = autopilot_module.GLIDE, autopilot_module.HAC
+        self.assertEqual(self.run_(True, G, True).rcs_yaw_now(), 5.02)
+        self.assertIsNone(self.run_(True, G, False).rcs_yaw_now())
+        # The HAC inherits a turn still in progress (LOG3802, 3838).
+        self.assertEqual(self.run_(True, H, True).rcs_yaw_now(), 5.02)
+        self.assertIsNone(self.run_(True, H, False).rcs_yaw_now())
+        self.assertIsNone(self.run_(True, autopilot_module.APPROACH,
+                                    True).rcs_yaw_now())
+        self.assertIsNone(self.run_(False, G, True).rcs_yaw_now())
+
+    def test_the_torque_is_read_while_the_valve_is_open(self):
+        """kRPC reports no RCS torque with the valve shut (probed on ksp2:
+        290 kN m open, 0 shut), so it is read on the first open tick --
+        read at engage it was nothing, and the flag flew as the defaults
+        (LOG3764)."""
+        run = self.run_(True, autopilot_module.GLIDE, True)
+        run._rcs_yaw_peak, run._rcs_yaw_reads = None, 0
+        run._static_peak = (22.4, 4.8, 22.6)
+        run.vessel = SimpleNamespace(
+            moment_of_inertia=(2068357.0, 94186.0, 2106084.0),
+            available_reaction_wheel_torque=((15000.0,) * 3, (-15000.0,) * 3),
+            available_rcs_torque=((290112.0, 42625.0, 290134.0),
+                                  (-290112.0, -42625.0, -290134.0)))
+        said = []
+        run.logbook = SimpleNamespace(event=lambda ut, text: said.append(text))
+        self.assertAlmostEqual(run.rcs_yaw_now(1.0), 5.0, delta=0.1)
+        self.assertEqual(len(said), 1)
+        run.rcs_yaw_now(2.0)
+        self.assertEqual(len(said), 1)      # read once, then cached
+
+    def test_a_shut_valve_reads_nothing_and_counts_the_try(self):
+        run = self.run_(True, autopilot_module.GLIDE, True)
+        run._rcs_yaw_peak, run._rcs_yaw_reads = None, 0
+        run._static_peak = None
+        run.vessel = SimpleNamespace(
+            moment_of_inertia=(1.0, 1.0, 2106084.0),
+            available_reaction_wheel_torque=((15000.0,) * 3,),
+            available_rcs_torque=((0.0, 0.0, 0.0),))
+        run.logbook = SimpleNamespace(event=lambda ut, text: None)
+        self.assertIsNone(run.rcs_yaw_now(1.0))
+        self.assertEqual(run._rcs_yaw_reads, 1)
+
+    def snap(self, flown):
+        pos, v = (650000.0, 0.0, 0.0), (0.0, 0.0, 2000.0)
+        return SimpleNamespace(velocity=v, position=pos,
+                               roof=trajectory.lift_direction(pos, v, flown))
+
+    def test_a_reversal_is_a_turn_before_the_error_shows_it(self):
+        G = autopilot_module.GLIDE
+        self.assertTrue(self.run_(True, G, False, 20.0)
+                        .reversal_under_way(self.snap(-10.0)))
+        self.assertFalse(self.run_(True, G, False, -8.0)
+                         .reversal_under_way(self.snap(-10.0)))
+        self.assertFalse(self.run_(False, G, False, 20.0)
+                         .reversal_under_way(self.snap(-10.0)))
+        self.assertFalse(self.run_(True, autopilot_module.HAC, False, 20.0)
+                         .reversal_under_way(self.snap(-10.0)))
+
+
+class TestTheTailStrikesByAttitude(unittest.TestCase):
+    """``FLARE_TAIL_BY_ATTITUDE``: the tail limit bounds the body's attitude,
+    which is alpha less the descent -- and ``aim_runway`` delivers alpha."""
+
+    def run_(self, on, tail=9.1):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), FLARE_TAIL_BY_ATTITUDE=on,
+                          AIM_RUNWAY_TRUE_ALPHA=True)
+        run.tail_limit_deg = lambda: tail
+        run.pitch_overshoot = lambda snap: 0.0
+        run.sent = None
+        run.autopilot = SimpleNamespace(
+            target_direction=None, target_roll=0.0,
+            set_direction_and_up=lambda d, u, roll=0.0: setattr(
+                run, "sent", (d, u)))
+        # runway along +x, up along +z at the vehicle
+        run.end = {"along": 0.0}
+        run.env = SimpleNamespace(runway=SimpleNamespace(
+            horizontal=lambda end, along: (1.0, 0.0, 0.0)))
+        return run
+
+    def snap(self, speed, descent_deg):
+        d = math.radians(descent_deg)
+        return SimpleNamespace(position=(0.0, 0.0, 600000.0),
+                               velocity=(speed * math.cos(d), 0.0,
+                                         -speed * math.sin(d)),
+                               nose=(1.0, 0.0, 0.0), ut=0.0)
+
+    def test_the_cap_is_the_tail_plus_the_descent(self):
+        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
+            self.snap(84.0, 30.0)), 39.1, places=6)
+
+    def test_level_it_is_the_tail(self):
+        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
+            self.snap(84.0, 0.0)), 9.1, places=6)
+        # climbing is not extra room
+        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
+            self.snap(84.0, -5.0)), 9.1, places=6)
+
+    def test_off_is_the_tail_alone(self):
+        self.assertEqual(self.run_(False).flare_tail_cap(
+            self.snap(84.0, 30.0)), 9.1)
+
+    def pitch(self, run):
+        d = run.sent[0]
+        return math.degrees(math.atan2(d[2], d[0]))
+
+    def test_aim_runway_delivers_the_alpha_commanded(self):
+        run = self.run_(True)
+        run.aim_runway(6.0, self.snap(70.0, 4.0))
+        self.assertAlmostEqual(self.pitch(run), 2.0, places=4)
+        # nose above the velocity by the commanded alpha
+        self.assertAlmostEqual(self.pitch(run) + 4.0, 6.0, places=4)
+
+    def test_off_pitches_to_alpha_plus_descent(self):
+        """The old sign: 6 + 4 = 10 -> capped at the tail's 9.1, which
+        delivers 13.1 of alpha against the 6 asked for."""
+        run = self.run_(False)
+        run.aim_runway(6.0, self.snap(70.0, 4.0))
+        self.assertAlmostEqual(self.pitch(run), 9.1, places=4)
+
+    def test_the_pitch_cap_still_binds(self):
+        run = self.run_(True)
+        run.aim_runway(30.0, self.snap(70.0, 2.0))
+        self.assertAlmostEqual(self.pitch(run), 9.1, places=4)
+
+
+class TestTheFlareLeadsItsOwnResponse(unittest.TestCase):
+    """``FLARE_LEAD_BY_RESPONSE``: the sink schedule read ``lead_s`` of sink
+    lower, so the load is asked for while the pitch can still deliver it."""
+
+    def needed(self, lead, height=48.0, sink=22.9, speed=83.0):
+        cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=True, FLARE_SHALLOW=False)
+        env = FakeEnv(cfg)
+        d = math.asin(sink / speed)
+        r = (0.0, 0.0, 600000.0 + height)
+        v = (speed * math.cos(d), 0.0, -speed * math.sin(d))
+        return guidance.flare(env, cfg, r, v, 30000.0, 9.81, height, 5.0,
+                              lead)[2]
+
+    def test_on_schedule_without_the_lead_asks_for_nothing(self):
+        # LOG3771 at 48 m: 22.9 m/s of sink *is* the 0.5 g schedule there
+        self.assertAlmostEqual(self.needed(0.0), 1.0, delta=0.02)
+
+    def test_the_lead_asks_now(self):
+        self.assertGreater(self.needed(3.0), 1.5)
+
+    def test_no_sink_no_lead(self):
+        self.assertAlmostEqual(self.needed(3.0, sink=0.01),
+                               self.needed(0.0, sink=0.01), places=6)
+
+    def test_the_autopilot_passes_its_pitch_response(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.attitude_settle_s = 3.0
+        run.cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_LEAD_BY_RESPONSE=True)
+        self.assertEqual(run.flare_lead_s(), 3.0)
+        run.cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_LEAD_BY_RESPONSE=False)
+        self.assertEqual(run.flare_lead_s(), 0.0)
+
+
+class TestAHighApproachFliesSlower(unittest.TestCase):
+    """``APPROACH_SPEND_AS_SPEED``: surplus height lowers the target speed
+    toward the flare's door speed, so the airbrake's speed guard stops
+    stowing it (LOG3775: out four times for 0.2-1.4 s, 1.15 km high)."""
+
+    def cfg(self, on=True):
+        return replace(Config(), APPROACH_SPEND_AS_SPEED=on)
+
+    def test_no_surplus_no_change(self):
+        cfg = self.cfg()
+        self.assertEqual(guidance.spend_as_speed(cfg, 108.0, 96.0, 150.0,
+                                                 48.0), (108.0, 96.0))
+
+    def test_surplus_is_spent_as_speed_first(self):
+        cfg = self.cfg()
+        spend = 100.0
+        target, floor = guidance.spend_as_speed(
+            cfg, 108.0, 96.0, cfg.APPROACH_SCURVE_M + spend, 48.0)
+        self.assertAlmostEqual(target,
+                               math.sqrt(108.0 ** 2 - 2 * 9.81 * spend))
+        self.assertEqual(floor, min(96.0, target))
+
+    def test_never_below_the_door_speed(self):
+        cfg = self.cfg()
+        target, floor = guidance.spend_as_speed(cfg, 108.0, 96.0, 2000.0,
+                                                48.0)
+        self.assertAlmostEqual(target, cfg.APPROACH_FLARE_FACTOR * 48.0)
+        self.assertLessEqual(floor, target)
+
+    def test_off_is_untouched(self):
+        self.assertEqual(guidance.spend_as_speed(self.cfg(False), 108.0,
+                                                 96.0, 2000.0, 48.0),
+                         (108.0, 96.0))
+
+    def test_the_approach_reports_the_lowered_target(self):
+        """Wired: the command the brake reads carries the new target."""
+        src = inspect.getsource(guidance.approach)
+        self.assertIn("spend_as_speed(", src)
+        self.assertLess(src.index("spend_as_speed("),
+                        src.index("command.target_speed = target"))
+
+
+class TestTheMachFloorLetsATurnFinish(unittest.TestCase):
+    """``ATTITUDE_YAW_WITH_RCS``: below ``GLIDE_RCS_MACH_MIN`` an open valve
+    is not forced shut mid-turn (LOG3802)."""
+
+    def test_the_glide_keeps_an_open_valve(self):
+        src = inspect.getsource(autopilot_module.Autopilot)
+        i = src.index("GLIDE_RCS_MACH_MIN")
+        chunk = src[i:i + 2500]
+        self.assertIn("ATTITUDE_YAW_WITH_RCS", chunk)
+        self.assertIn('getattr(self.rcs, "on", False)', chunk)
+
+    def test_the_hac_keeps_an_open_valve_and_never_reopens_it(self):
+        """The first HAC tick used to shut it (LOG3802, 3805, 3838)."""
+        src = inspect.getsource(autopilot_module.Autopilot.run_hac)
+        i = src.index("self.set_rcs(")
+        chunk = src[i:i + 200]
+        self.assertIn("ATTITUDE_YAW_WITH_RCS", chunk)
+        self.assertIn('getattr(self.rcs, "on", False)', chunk)
+
+
+class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):
+    """``FLARE_DOOR_FROM_RESPONSE``: the door is the pitch response at the
+    present sink plus the pull-up at ``FLARE_TRACK_LOAD_MAX``."""
+
+    def cfg(self, on=True):
+        return replace(Config(), FLARE_EXP_TAU_S=0.0,
+                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_DOOR_FROM_RESPONSE=on,
+                       FLARE_SHALLOW=False)
+
+    def test_the_door_from_the_response(self):
+        cfg = self.cfg()
+        env = SimpleNamespace(pitch_response_s=3.0)
+        want = (cfg.FLARE_ALT_M + 3.0 * 46.0
+                + (46.0 ** 2 - cfg.FLARE_TOUCHDOWN_SINK_M_S ** 2)
+                / (2.0 * (cfg.FLARE_TRACK_LOAD_MAX - 1.0) * 9.81))
+        self.assertAlmostEqual(guidance.flare_door(cfg, 46.0, 90.0, env),
+                               want)
+        # LOG3801/3803 opened at 163-169 m; this is well above it
+        self.assertGreater(want, 240.0)
+
+    def test_no_response_known_falls_back_to_the_lead_constant(self):
+        cfg = self.cfg()
+        got = guidance.flare_door(cfg, 20.0, 80.0, None)
+        self.assertGreater(got, cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * 20.0)
+
+    def test_off_is_the_old_door(self):
+        cfg = self.cfg(False)
+        env = SimpleNamespace(pitch_response_s=3.0)
+        self.assertEqual(guidance.flare_door(cfg, 46.0, 90.0, env),
+                         cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * 46.0)
+
+    def test_every_caller_passes_the_env(self):
+        for src in (inspect.getsource(guidance),
+                    inspect.getsource(autopilot_module)):
+            for m in re.finditer(r"flare_door\(", src):
+                call = src[m.start():m.start() + 120]
+                if call.startswith("flare_door(cfg, sink, speed=None"):
+                    continue
+                self.assertIn("env", call, call)
+
+
+class TestAHighConeFliesSlower(unittest.TestCase):
+    """``HAC_SPEND_AS_SPEED``: the cone's surplus over its own profile lowers
+    its target speed, floored at the door speed scaled for the bank."""
+
+    def test_the_floor_is_the_one_passed(self):
+        cfg = replace(Config(), APPROACH_SPEND_AS_SPEED=False)
+        got = guidance.spend_as_speed(cfg, 120.0, 120.0, 5000.0, 48.0,
+                                      lowest=95.0)[0]
+        self.assertAlmostEqual(got, 95.0)
+
+    def test_a_small_surplus_is_a_small_cut(self):
+        cfg = replace(Config(), APPROACH_SPEND_AS_SPEED=False)
+        spend = 50.0
+        got = guidance.spend_as_speed(cfg, 120.0, 120.0,
+                                      cfg.APPROACH_SCURVE_M + spend, 48.0,
+                                      lowest=95.0)[0]
+        self.assertAlmostEqual(got, math.sqrt(120.0 ** 2 - 2 * 9.81 * spend))
+
+    def test_the_cone_is_wired_behind_its_flag(self):
+        src = inspect.getsource(guidance.hac)
+        i = src.index("HAC_SPEND_AS_SPEED")
+        self.assertIn("spend_as_speed(", src[i:i + 900])
+        self.assertIn("lowest=", src[i:i + 900])
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().HAC_SPEND_AS_SPEED)
+
+
+class TestTheSpoilerMustNotRollTheVehicle(unittest.TestCase):
+    """``AIRBRAKE_SPOILER_LATERAL_CHECK``: the ground spoiler's roll and yaw
+    are measured, and a set that rolls is not deployed on the ground."""
+
+    def run_(self, roll, yaw=0.0):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), AIRBRAKE_SPOILER_LATERAL_CHECK=True)
+        reads = iter([(0.0, 0.0, 0.0, 0.0, 0.0),
+                      (-30.0, 5.0, 1.0, roll, yaw)])
+        run._probe_wrench_full = lambda alt, speed, alpha: next(reads)
+        run._deploy_surface = lambda r, angle, on: True
+        run.said = []
+        run.logbook = SimpleNamespace(event=lambda ut, t: run.said.append(t))
+        spoiler = SimpleNamespace(surfaces=lambda: [("elevon", 1.0)])
+        return run, spoiler
+
+    def check(self, roll, yaw=0.0):
+        run, spoiler = self.run_(roll, yaw)
+        with unittest.mock.patch.object(autopilot_module.time, "sleep"):
+            ok = run.check_spoiler_lateral(SimpleNamespace(ut=0.0), spoiler,
+                                           15.0, 0.0, 1000.0, 100.0, 5.0,
+                                           10.0)
+        return ok, run.said
+
+    def test_a_level_set_is_fit(self):
+        ok, said = self.check(2.0)
+        self.assertTrue(ok)
+        self.assertIn("fit for the ground", said[-1])
+
+    def test_a_rolling_set_is_refused(self):
+        ok, said = self.check(25.0)
+        self.assertFalse(ok)
+        self.assertIn("NOT deployed", said[-1])
+
+    def test_yaw_counts_too(self):
+        self.assertFalse(self.check(0.0, -25.0)[0])
+
+    def test_the_ground_spoiler_obeys_it(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), ROLLOUT_GROUND_SPOILER=True)
+        run.main_wheels_grounded = lambda: True
+        run.envelope = None
+        run.flap_brake = SimpleNamespace(any=True,
+                                         surfaces=lambda: [("e", 1.0)])
+        run._spoiler_lateral_ok = False
+        run.deploy_set = lambda *a, **k: self.fail("deployed")
+        said = []
+        run.logbook = SimpleNamespace(event=lambda ut, t: said.append(t))
+        run.ground_spoiler(SimpleNamespace(ut=0.0))
+        self.assertIn("nothing deployed", said[-1])
+
+
+class TestFullBrakesOnContact(unittest.TestCase):
+    """``ROLLOUT_BRAKE_FULL_ON_CONTACT``: mains at 200% from contact, nose
+    wheel none, whatever the runway left."""
+
+    def run_(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), ROLLOUT_BRAKE_FULL_ON_CONTACT=True,
+                          WHEEL_BRAKE_MAX_PCT=200.0)
+        run.control = SimpleNamespace(brakes=False)
+        self.mains = [SimpleNamespace(brakes=0.0), SimpleNamespace(brakes=0.0)]
+        self.nose = SimpleNamespace(brakes=0.0)
+        run._brake_wheels = lambda: self.mains
+        run.said = []
+        run.logbook = SimpleNamespace(event=lambda ut, t: run.said.append(t))
+        run.runway_remaining = lambda snap: 5000.0
+        run.last_free_decel = 1.0
+        return run
+
+    def test_the_rollout_brakes_flat_out(self):
+        run = self.run_()
+        run.apply_brakes(SimpleNamespace(ut=0.0), 60.0)
+        self.assertTrue(run.control.brakes)
+        self.assertEqual([w.brakes for w in self.mains], [200.0, 200.0])
+        self.assertEqual(self.nose.brakes, 0.0)
+        self.assertEqual(run.brake_fraction, 1.0)
+        self.assertEqual(len(run.said), 1)
+        run.apply_brakes(SimpleNamespace(ut=1.0), 50.0)
+        self.assertEqual(len(run.said), 1)      # logged once
+
+    def test_the_flare_brakes_on_main_wheel_contact(self):
+        src = inspect.getsource(autopilot_module.Autopilot.run_flare)
+        i = src.index("ROLLOUT_BRAKE_FULL_ON_CONTACT")
+        self.assertIn("main_wheels_grounded()", src[i:i + 300])
+        self.assertIn("brakes_full(snap)", src[i:i + 300])
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().ROLLOUT_BRAKE_FULL_ON_CONTACT)
+
+
+class TestTheRolloutSteersOnWhereItIsGoing(unittest.TestCase):
+    """``ROLLOUT_STEER_PID``: P on the cross-track, D on the drift across
+    the runway, a small clamped I."""
+
+    def run_(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), ROLLOUT_STEER_PID=True,
+                          ROLLOUT_STEER_GAIN=0.02,
+                          ROLLOUT_STEER_LOOKAHEAD_S=2.0,
+                          ROLLOUT_STEER_KI=0.002, ROLLOUT_STEER_I_MAX=0.1)
+        return run
+
+    def cmd(self, run, ut, cross, drift, limit=0.4):
+        return run.rollout_steer_pid(SimpleNamespace(ut=ut), cross, drift,
+                                     limit)
+
+    def test_drifting_back_is_steered_less_than_drifting_away(self):
+        back = self.cmd(self.run_(), 0.0, 10.0, -3.0)
+        away = self.cmd(self.run_(), 0.0, 10.0, +3.0)
+        self.assertLess(abs(back), abs(away))
+        # the P-only law gives both -0.2
+        self.assertAlmostEqual(away, -(0.02 * 10 + 0.04 * 3))
+
+    def test_it_counter_steers_when_closing_fast(self):
+        # 5 m off but closing at 5 m/s: the look-ahead point is 5 m past
+        self.assertGreater(self.cmd(self.run_(), 0.0, 5.0, -5.0), 0.0)
+
+    def test_the_output_is_limited(self):
+        self.assertEqual(self.cmd(self.run_(), 0.0, 500.0, 0.0, 0.1), -0.1)
+
+    def test_the_integral_is_clamped_and_does_not_wind_up(self):
+        run = self.run_()
+        for k in range(1000):
+            self.cmd(run, float(k), 500.0, 0.0, 0.1)     # saturated
+        self.assertEqual(run._steer_int, 0.0)
+        run2 = self.run_()
+        for k in range(10000):
+            self.cmd(run2, float(k), 1.0, 0.0, 10.0)     # not saturated
+        self.assertLessEqual(0.002 * run2._steer_int, 0.1 + 1e-9)
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().ROLLOUT_STEER_PID)
+
+
+class TestTheValveHoldsThroughATurn(unittest.TestCase):
+    """``rcs.Valve.update(hold=True)``: open whatever the error, and the
+    settle clock restarts, so it shuts ``RCS_SETTLE_S`` after the turn."""
+
+    def valve(self):
+        from common import rcs
+        cfg = replace(Config(), ENABLE_RCS=True, RCS_ERROR_ON_DEG=5.0,
+                      RCS_ERROR_OFF_DEG=1.5, RCS_SETTLE_S=2.0,
+                      RCS_Q_MAX_PA=20000.0)
+        return rcs.Valve(cfg)
+
+    def test_hold_opens_a_settled_valve(self):
+        v = self.valve()
+        self.assertFalse(v.update(0.0, True, 0.5))
+        self.assertTrue(v.update(1.0, True, 0.5, hold=True))
+        # still settled-small after the hold: not shut until SETTLE_S later
+        self.assertTrue(v.update(2.0, True, 0.5))
+        self.assertTrue(v.update(3.5, True, 0.5))
+        self.assertFalse(v.update(4.5, True, 0.5))
+
+    def test_hold_does_not_beat_permission_or_the_q_ceiling(self):
+        v = self.valve()
+        self.assertFalse(v.update(0.0, False, 0.5, hold=True))
+        self.assertFalse(v.update(1.0, True, 0.5, q=30000.0, hold=True))
+
+
+class TestSimplex(unittest.TestCase):
+    """The small LP behind the drag brake."""
+
+    def test_a_textbook_problem(self):
+        # max 3x + 5y, x <= 4, 2y <= 12, 3x + 2y <= 18 -> (2, 6), 36
+        x = airbrake.simplex_max([3.0, 5.0],
+                                 [[1.0, 0.0], [0.0, 2.0], [3.0, 2.0]],
+                                 [4.0, 12.0, 18.0])
+        self.assertAlmostEqual(x[0], 2.0)
+        self.assertAlmostEqual(x[1], 6.0)
+
+    def test_unbounded_says_so(self):
+        self.assertIsNone(airbrake.simplex_max([1.0], [[-1.0]], [1.0]))
+
+
+class TestTheDragBrakeSplitsWhatIsFreeToSplit(unittest.TestCase):
+    """``choose_max_drag_set``: every surface independent, most braking,
+    no net moment.  Responses are (dClA, dCdA, pitch, roll, yaw)."""
+
+    def four(self):
+        """Two mirrored pairs, fore and aft.  Each surface adds drag either
+        way; the roll of a surface is opposite on its mirror, so a split of
+        one pair must be cancelled by an opposite split of the other."""
+        def s(name, pitch, roll, lift):
+            return (name, (lift, 3.0, pitch, roll, 0.1 * roll),
+                    (-0.5 * lift, 3.0, -pitch, -roll, -0.1 * roll))
+        return [s("RL", +10.0, +20.0, -4.0), s("RR", +10.0, -20.0, -4.0),
+                s("FL", -8.0, +12.0, -1.0), s("FR", -8.0, -12.0, -1.0)]
+
+    def net(self, samples, got):
+        mult = dict(got.surfaces())
+        total = [0.0] * 5
+        for name, plus, minus in samples:
+            x = mult.get(name, 0.0)
+            r = plus if x >= 0.0 else minus
+            for k in range(5):
+                total[k] += abs(x) * r[k]
+        return total
+
+    def test_moments_held_and_more_drag_than_moving_pairs_together(self):
+        samples = self.four()
+        frac = 0.05
+        got = airbrake.choose_max_drag_set(samples, lift_weight=0.0,
+                                           moment_frac=frac)
+        self.assertTrue(got.any)
+        net = self.net(samples, got)
+        for axis in (2, 3, 4):
+            largest = max(max(abs(p[axis]), abs(m[axis]))
+                          for _, p, m in samples)
+            self.assertLessEqual(abs(net[axis]), frac * largest + 1e-9)
+        self.assertLessEqual(net[0], 1e-9)            # no lift added
+        # the best tied-pair answer: both pairs symmetric (roll free), the
+        # rear at g and the fore at 10/8 g to cancel pitch, g <= 0.8 -> drag
+        # 2 * 3 * 0.8 + 2 * 3 * 1.0 = 10.8
+        self.assertGreater(got.drag, 10.8 + 1e-6)
+
+    def test_a_lone_surface_with_a_moment_is_refused(self):
+        lone = [("T", (-4.0, 3.0, +10.0, 0.0, 0.0),
+                 (+2.0, 3.0, -10.0, 0.0, 0.0))]
+        got = airbrake.choose_max_drag_set(lone, moment_frac=0.0)
+        self.assertFalse(got.any)
+
+    def test_the_lift_weight_prefers_dumping_lift(self):
+        # two independent balanced options: A drags more, B dumps more lift
+        a = ("A", (0.0, 5.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0, 0.0))
+        b = ("B", (-8.0, 1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0, 0.0))
+        got = airbrake.choose_max_drag_set([a, b], lift_weight=1.0)
+        self.assertEqual(sorted(dict(got.surfaces())), ["A", "B"])
+
+
+class TestTheDragBrakeUsesOnlyMirroredSurfaces(unittest.TestCase):
+    """The user's rule: a lone surface (the shuttle's one rudder) is never
+    deflected by the drag brake."""
+
+    def surf(self, title, x, y=-5.0, z=0.0, vertical=False):
+        span = (0.0, 0.0, 1.0) if vertical else (1.0, 0.0, 0.0)
+        return airbrake.Surface(title, (x, y, z), span, 2.0, title)
+
+    def test_a_centreline_rudder_is_dropped(self):
+        rudder = self.surf("rudder", 0.0, -9.0, 2.0, vertical=True)
+        left, right = self.surf("elevon", -3.0), self.surf("elevon", +3.0)
+        kept, dropped = airbrake.mirrored_only([rudder, left, right])
+        self.assertEqual(dropped, [rudder])
+        self.assertEqual(kept, [left, right])
+
+    def test_an_unmatched_surface_is_dropped(self):
+        a, b = self.surf("elevon", -3.0), self.surf("elevon", +3.0, y=-6.0)
+        c = self.surf("canard", -2.0, y=4.0)
+        kept, dropped = airbrake.mirrored_only([a, b, c])
+        self.assertEqual(kept, [])
+        self.assertEqual(len(dropped), 3)
+
+    def test_the_autopilot_filters_before_probing(self):
+        source = inspect.getsource(
+            autopilot_module.Autopilot.probe_surfaces_full)
+        self.assertLess(source.index("mirrored_only"),
+                        source.index("_probe_wrench_full"))
+
+
+class TestTheAirDragBrake(unittest.TestCase):
+    """``AIRBRAKE_DRAG_IN_FLIGHT``: too fast at the right height."""
+
+    def frac(self, over, excess=0.0, height=1000.0, was_out=False):
+        cfg = Config()
+        return airbrake.drag_brake_fraction(cfg, 100.0 + over, 100.0,
+                                            excess, height, was_out)
+
+    def test_out_when_fast_on_profile(self):
+        self.assertEqual(self.frac(5.0), 0.0)
+        self.assertGreater(self.frac(15.0), 0.0)
+        self.assertEqual(self.frac(60.0), 1.0)
+
+    def test_not_when_low(self):
+        """Below the profile the speed is the height it is short of."""
+        self.assertEqual(self.frac(40.0, excess=-500.0), 0.0)
+        self.assertEqual(self.frac(40.0, height=50.0), 0.0)
+
+    def test_hysteresis(self):
+        self.assertEqual(self.frac(6.0), 0.0)
+        self.assertGreater(self.frac(6.0, was_out=True), 0.0)
+
+    def test_quarters(self):
+        for over in (11.0, 14.0, 19.0, 24.0):
+            self.assertIn(self.frac(over), (0.25, 0.5, 0.75, 1.0))
+
+    def test_the_air_set_holds_lift(self):
+        def s(name, pitch, roll, lift):
+            return (name, (lift, 3.0, pitch, roll, 0.1 * roll),
+                    (-0.5 * lift, 3.0, -pitch, -roll, -0.1 * roll))
+        samples = [s("RL", +10.0, +20.0, -4.0), s("RR", +10.0, -20.0, -4.0),
+                   s("FL", -8.0, +12.0, -1.0), s("FR", -8.0, -12.0, -1.0)]
+        got = airbrake.choose_max_drag_set(samples, lift_weight=0.0,
+                                           moment_frac=0.05, lift_band=0.1)
+        self.assertTrue(got.any)
+        self.assertEqual(got.kind, "air drag brake")
+        self.assertLessEqual(abs(got.lift), 0.4 + 1e-9)
+
+    def test_the_flare_stows_it_before_the_flaps(self):
+        source = inspect.getsource(autopilot_module.Autopilot.run_flare)
+        self.assertLess(source.index('stow_air_drag(snap, "the flare")'),
+                        source.index("AIRBRAKE_FLAPS"))
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().AIRBRAKE_DRAG_IN_FLIGHT)
+        self.assertFalse(Config().AIRBRAKE_MAX_DRAG)
+
+
+class TestLinprog(unittest.TestCase):
+    """The two-phase LP behind the surface envelope."""
+
+    def test_agrees_with_the_one_phase_case(self):
+        x = airbrake.linprog_max([3.0, 5.0],
+                                 [[1.0, 0.0], [0.0, 2.0], [3.0, 2.0]],
+                                 [4.0, 12.0, 18.0])
+        self.assertAlmostEqual(x[0], 2.0)
+        self.assertAlmostEqual(x[1], 6.0)
+
+    def test_an_equality_by_two_inequalities(self):
+        # max x + y, x + y <= 4, x - y = 1 -> x=2.5, y=1.5
+        x = airbrake.linprog_max([1.0, 1.0],
+                                 [[1.0, 1.0], [1.0, -1.0], [-1.0, 1.0]],
+                                 [4.0, 1.0, -1.0])
+        self.assertAlmostEqual(x[0], 2.5)
+        self.assertAlmostEqual(x[1], 1.5)
+
+    def test_a_lower_bound(self):
+        # max -x, x >= 3 (as -x <= -3), x <= 5 -> x = 3
+        x = airbrake.linprog_max([-1.0], [[-1.0], [1.0]], [-3.0, 5.0])
+        self.assertAlmostEqual(x[0], 3.0)
+
+    def test_infeasible_says_so(self):
+        # x <= 1 and x >= 2
+        self.assertIsNone(airbrake.linprog_max([1.0], [[1.0], [-1.0]],
+                                               [1.0, -2.0]))
+
+    def test_unbounded_says_so(self):
+        self.assertIsNone(airbrake.linprog_max([1.0], [[-1.0]], [-1.0]))
+
+
+class TestTheSurfaceEnvelope(unittest.TestCase):
+    """The lift/drag spectrum: any reachable (dClA, dCdA), moments held."""
+
+    def samples(self):
+        def s(name, pitch, roll, lift, drag=3.0):
+            return (name, (lift, drag, pitch, roll, 0.1 * roll),
+                    (-0.5 * lift, drag, -pitch, -roll, -0.1 * roll))
+        return [s("RL", +10.0, +20.0, -4.0), s("RR", +10.0, -20.0, -4.0),
+                s("FL", -8.0, +12.0, -1.0), s("FR", -8.0, -12.0, -1.0)]
+
+    def envelope(self):
+        return airbrake.SurfaceEnvelope(self.samples(), 15.0, 1.5,
+                                        moment_frac=0.05)
+
+    def net(self, point):
+        mult = dict(point.surfaces())
+        total = [0.0] * 5
+        for name, plus, minus in self.samples():
+            x = mult.get(name, 0.0)
+            r = plus if x >= 0.0 else minus
+            for k in range(5):
+                total[k] += abs(x) * r[k]
+        return total
+
+    def held(self, point, env):
+        net = self.net(point)
+        for k, axis in enumerate((2, 3, 4)):
+            self.assertLessEqual(abs(net[axis]), env._limits[k] + 1e-6)
+
+    def test_the_corners_are_what_they_say(self):
+        env = self.envelope()
+        c = env.corners()
+        self.assertLess(c["spoil"].lift, 0.0)
+        self.assertGreater(c["flap"].lift, 0.0)
+        self.assertGreater(c["drag"].drag, 0.0)
+        self.assertLess(abs(c["drag"].lift), 0.1 * abs(c["spoil"].lift))
+        self.assertGreaterEqual(c["brake"].drag, c["drag"].drag - 1e-6)
+        for p in c.values():
+            self.held(p, env)
+            for _, x in p.surfaces():
+                self.assertLessEqual(abs(x), env.usable + 1e-9)
+
+    def test_an_interior_request_is_met(self):
+        env = self.envelope()
+        c = env.corners()
+        # a mix of corners (stowed is one) is inside a convex polygon;
+        # "half the spoil, 40% of the drag" alone need not be -- cutting
+        # lift costs a minimum drag
+        want_l = 0.5 * c["spoil"].lift + 0.3 * c["drag"].lift
+        want_d = 0.5 * c["spoil"].drag + 0.3 * c["drag"].drag
+        got = env.solve(want_l, want_d)
+        self.assertAlmostEqual(got.lift, want_l, places=4)
+        self.assertAlmostEqual(got.drag, want_d, places=4)
+        self.held(got, env)
+
+    def test_it_is_continuous(self):
+        """A small change in the request is a small change in lift and
+        drag -- the point of a spectrum over a switch."""
+        env = self.envelope()
+        top = env.corners()["drag"].drag
+        prev = None
+        for k in range(11):
+            got = env.solve(0.0, top * k / 10.0)
+            if prev is not None:
+                self.assertLess(abs(got.drag - prev), 0.11 * top + 1e-6)
+            prev = got.drag
+
+    def test_out_of_reach_gets_the_nearest(self):
+        env = self.envelope()
+        c = env.corners()
+        got = env.solve(0.0, 10.0 * c["drag"].drag)
+        self.assertAlmostEqual(got.drag, c["drag"].drag, delta=0.05 * c[
+            "drag"].drag + 0.5)
+        self.held(got, env)
+
+    def test_zero_is_stowed(self):
+        self.assertFalse(self.envelope().solve(0.0, 0.0).any)
+
+    def test_calibration_rescales_what_it_reports(self):
+        env = self.envelope()
+        env.calibrate([(-10.0, 5.0)], [(-5.0, 10.0)])
+        self.assertAlmostEqual(env.lift_scale, 0.5)
+        self.assertAlmostEqual(env.drag_scale, 2.0)
+        spoil = env.corners()["spoil"]          # already in game units
+        got = env.solve(0.5 * spoil.lift, 0.5 * spoil.drag)
+        self.assertAlmostEqual(got.lift, 0.5 * spoil.lift, places=4)
+        self.assertAlmostEqual(got.drag, 0.5 * spoil.drag, places=4)
+        raw = self.envelope().corners()["spoil"]
+        self.assertAlmostEqual(spoil.lift, 0.5 * raw.lift, places=4)
+        self.assertAlmostEqual(spoil.drag, 2.0 * raw.drag, places=4)
+
+
+class TestTheEnvelopeIsFlown(unittest.TestCase):
+    """``request_surfaces`` and the approach's request, against fakes."""
+
+    class _Module(object):
+        name = "SyncModuleControlSurface"
+
+        def __init__(self):
+            self.angle = 0.0
+
+        def has_field(self, name):
+            return name == "Deploy Angle"
+
+        def set_field_float(self, name, value):
+            self.angle = value
+
+    def setUp(self):
+        base = TestTheSurfaceEnvelope()
+        samples = []
+        self.mods = {}
+        for name, plus, minus in base.samples():
+            mod = self._Module()
+            rec = airbrake.Surface(
+                types.SimpleNamespace(part=types.SimpleNamespace(
+                    modules=[mod]), deployed=False),
+                (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), 1.0, name)
+            self.mods[name] = (mod, rec)
+            samples.append((rec, plus, minus))
+        env = airbrake.SurfaceEnvelope(samples, 15.0, 1.2, moment_frac=0.05)
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = Config()
+        run.envelope = env
+        run._envelope_full = 1.5
+        run.flap_brake_out = False
+        run.events = []
+        run.logbook = types.SimpleNamespace(
+            event=lambda ut, text: run.events.append(text))
+        self.run, self.env = run, env
+
+    def snap(self, q=1000.0, mass=30000.0):
+        return types.SimpleNamespace(ut=1.0, dynamic_pressure=q, mass=mass,
+                                     velocity=(80.0, 0.0, 0.0))
+
+    def command(self, speed, target, excess=0.0):
+        return types.SimpleNamespace(speed=speed, target_speed=target,
+                                     excess=excess)
+
+    def deployed(self):
+        return [n for n, (m, r) in self.mods.items() if r.key.deployed]
+
+    def test_a_request_deploys_and_zero_stows(self):
+        c = self.env.corners()["drag"]
+        self.run.request_surfaces(self.snap(), 0.0, 0.5 * c.drag, "test")
+        self.assertTrue(self.deployed())
+        self.assertTrue(self.run.flap_brake_out)
+        self.run.request_surfaces(self.snap(), 0.0, 0.0, "test")
+        self.assertEqual(self.deployed(), [])
+        self.assertFalse(self.run.flap_brake_out)
+
+    def test_the_same_request_writes_nothing(self):
+        c = self.env.corners()["drag"]
+        self.run.request_surfaces(self.snap(), 0.0, 0.5 * c.drag, "a")
+        n = len(self.run.events)
+        self.run.request_surfaces(self.snap(), 0.0, 0.501 * c.drag, "b")
+        self.assertEqual(len(self.run.events), n)
+
+    def test_the_approach_asks_drag_for_speed_in_newtons_over_q(self):
+        """30 t, 5 m/s over, 10 s: 15 kN -> 15 CdA at 1 kPa (or the
+        polygon's edge).  kg, not tonnes."""
+        self.run.envelope_approach(self.snap(), self.command(85.0, 80.0),
+                                   1000.0, False)
+        self.assertIn("asked +0.0 +15.0", self.run.events[-1])
+
+    def test_no_drag_below_the_profile(self):
+        self.run.envelope_approach(self.snap(),
+                                   self.command(100.0, 80.0, excess=-500.0),
+                                   1000.0, False)
+        self.assertEqual(self.deployed(), [])
+
+    def test_the_spoiler_request_is_a_lift_cut(self):
+        self.run.envelope_approach(self.snap(), self.command(80.0, 80.0),
+                                   1000.0, True)
+        self.assertLess(self.run._envelope_point.lift, 0.0)
+
+
+class TestTheEnvelopeDoesNotFlicker(TestTheEnvelopeIsFlown):
+    """LOG3672: a request on a step boundary deployed and stowed on
+    alternate ticks."""
+
+    def test_a_boundary_request_settles(self):
+        span = self.env.corners(usable=1.5)["brake"].drag
+        step = self.run.cfg.ENVELOPE_QUANTUM * span
+        self.run.request_surfaces(self.snap(), 0.0, 0.6 * step, "a")
+        n = len(self.run.events)
+        for k in range(10):
+            self.run.request_surfaces(self.snap(), 0.0,
+                                      (0.4 if k % 2 else 0.6) * step, "b")
+        self.assertEqual(len(self.run.events), n)
+
+
+class TestTheFlareFliesTheLoad(unittest.TestCase):
+    """``FLARE_LOAD_LOOP``: the flare's angle is offset until the measured
+    load is the commanded one (LOG3832 made a third of the table's lift)."""
+
+    def run_(self, on=True, made_g=1.0):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), FLARE_LOAD_LOOP=on)
+        run.flare_since = 100.0
+        mass, g = 30000.0, 9.81
+        run.body = SimpleNamespace(surface_gravity=g)
+        # A table promising ClA 5 per degree; q 10 kPa.
+        run.env = SimpleNamespace(
+            equatorial_radius=600000.0, pitch_response_s=2.0,
+            coefficients=lambda a, s, h: (5.0 * a, 1.0))
+        run._made = made_g * mass * g
+
+        def snap(ut):
+            return SimpleNamespace(
+                ut=ut, dynamic_pressure=10000.0, mass=mass,
+                position=(600100.0, 0.0, 0.0), velocity=(-10.0, 100.0, 0.0),
+                aero_force=(run._made, 0.0, 0.0))
+        return run, snap
+
+    def test_off_is_the_cap_alone(self):
+        run, snap = self.run_(False)
+        self.assertEqual(run.flare_load_loop(12.0, 2.0, 5.0, 9.0, snap(101)),
+                         9.0)
+        self.assertEqual(run.flare_load_loop(5.0, 2.0, 5.0, 9.0, snap(101)),
+                         5.0)
+
+    def test_short_of_load_raises_the_angle_and_respects_the_cap(self):
+        run, snap = self.run_(True, made_g=1.0)
+        out = [run.flare_load_loop(4.0, 2.0, 5.0, 30.0, snap(101 + 0.1 * i))
+               for i in range(20)]
+        self.assertEqual(out[0], 4.0)
+        self.assertGreater(out[-1], out[1])
+        self.assertGreater(out[-1], 4.0)
+        capped = run.flare_load_loop(4.0, 2.0, 5.0, 5.0, snap(103.1))
+        self.assertLessEqual(capped, 5.0)
+
+    def test_too_much_load_lowers_it(self):
+        run, snap = self.run_(True, made_g=3.0)
+        for i in range(10):
+            out = run.flare_load_loop(6.0, 1.5, 5.0, 30.0, snap(101 + 0.1 * i))
+        self.assertLess(out, 6.0)
+
+    def test_a_new_flare_starts_from_nothing(self):
+        run, snap = self.run_(True, made_g=1.0)
+        for i in range(10):
+            run.flare_load_loop(4.0, 2.0, 5.0, 30.0, snap(101 + 0.1 * i))
+        run.flare_since = 200.0
+        self.assertEqual(run.flare_load_loop(4.0, 2.0, 5.0, 30.0, snap(200.1)),
+                         4.0)
+
+
+class TestTheApproachBankIsOneTheRollCanFly(unittest.TestCase):
+    """``APPROACH_BANK_BY_ROLL``: slewed at the measured roll rate and small
+    enough to roll out of before the flare door (LOG3855: -51 deg flown at
+    the door, -36 at touchdown)."""
+
+    def run_(self, on=True):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), APPROACH_BANK_BY_ROLL=on)
+        run.bank_rate = lambda: 10.0
+        run._tuned_peak = (3.0, 5.0, 22.6)
+        return run
+
+    def snap(self, ut):
+        return SimpleNamespace(ut=ut, flown_bank=0.0)
+
+    def test_off_passes_the_command(self):
+        run = self.run_(False)
+        self.assertEqual(run.approach_bank(self.snap(0), 40.0, 1000, 200, 20),
+                         40.0)
+
+    def test_slews_at_the_roll_rate(self):
+        run = self.run_()
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        return_value=0.0):
+            first = run.approach_bank(self.snap(0.0), 40.0, 2000, 200, 20)
+            second = run.approach_bank(self.snap(1.0), 40.0, 1980, 200, 20)
+            third = run.approach_bank(self.snap(2.0), -40.0, 1960, 200, 20)
+        self.assertEqual(first, 0.0)
+        self.assertAlmostEqual(second, 10.0)
+        self.assertAlmostEqual(third, 0.0)
+
+    def test_level_by_the_door(self):
+        run = self.run_()
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        return_value=40.0):
+            # Starts from the flown bank, then slews to the cap: 8 s to the
+            # door, 5 s to settle -- 30 deg allowed.
+            self.assertEqual(run.approach_bank(self.snap(0.0), 40.0, 380,
+                                               200, 20), 40.0)
+            got = run.approach_bank(self.snap(1.0), 40.0, 360, 200, 20)
+            self.assertAlmostEqual(got, 30.0)
+            # Inside the settle time: rolling out at the roll rate.
+            got2 = run.approach_bank(self.snap(2.0), 40.0, 280, 200, 20)
+            self.assertAlmostEqual(got2, 20.0)
+
+
+class TestTheLiftLoopIsConnected(unittest.TestCase):
+    """``LIFT_LOOP`` swallows exceptions, so a missing attribute would make
+    it a silent no-op (failure 10a's shape).  Short of lift -> delta grows."""
+
+    def test_short_of_lift_raises_the_angle(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), LIFT_LOOP=True)
+        run.state = autopilot_module.APPROACH
+        run.env = SimpleNamespace(equatorial_radius=600000.0,
+                                  coefficients=lambda a, s, h: (10.0 * a, 1.0))
+        q = 8000.0
+        out = None
+        for i in range(30):
+            ut = 100.0 + 0.1 * i
+            asked = 4.0
+            got_cla = 0.4 * 10.0 * (asked + getattr(run, "_lift_delta", 0.0))
+            snap = SimpleNamespace(
+                ut=ut, dynamic_pressure=q, krpc_aoa=asked
+                + getattr(run, "_lift_delta", 0.0),
+                position=(601000.0, 0.0, 0.0), velocity=(0.0, 110.0, 0.0),
+                aero_force=(got_cla * q, 0.0, 0.0))
+            out = run.lift_loop(asked, snap)
+        self.assertGreater(out, 4.5)
+
+
+class TestTheExponentialFlare(unittest.TestCase):
+    """``FLARE_EXP_TAU_S``: the sink schedule no faster than td + h/tau."""
+
+    def test_it_caps_the_schedule_near_the_ground(self):
+        env = SimpleNamespace(
+            coefficients=lambda a, s, h: (8.0 * a, 1.0),
+            density=lambda h: 1.2, pitch_response_s=None)
+        args = (env, None, (600010.0, 0.0, 0.0), (-12.0, 70.0, 0.0),
+                30000.0, 9.81, 10.0, 5.0)
+        off = replace(Config(), FLARE_EXP_TAU_S=0.0)
+        on = replace(Config(), FLARE_EXP_TAU_S=4.0)
+        with unittest.mock.patch.object(guidance, "alpha_for_load",
+                                        lambda e, v, h, m, g, n: 3.0 * n):
+            _, _, n_off = guidance.flare(env, off, *args[2:])
+            _, _, n_on = guidance.flare(env, on, *args[2:])
+        # 12 m/s of sink at 10 m: the root schedule allows ~12.8, the
+        # exponential 2 + 10/4 = 4.5 -- it pulls where the root one does not.
+        self.assertGreater(n_on, n_off)
+
+
+class TestTheConeBrakeOnSurplus(unittest.TestCase):
+    """``HAC_FLAP_BRAKE_ON_SURPLUS``: the cone's brake is not gated on the
+    weave being pinned (it never pinned on the shuttle, LOG3846-3875)."""
+
+    def run_(self, on):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), HAC_FLAP_BRAKE=True,
+                          HAC_FLAP_BRAKE_ON_SURPLUS=on,
+                          FLAP_BRAKE_YIELDS_TO_ROLL=False)
+        run.flap_brake = object()
+        run.flap_brake_out = False
+        run.body = SimpleNamespace(surface_gravity=9.81)
+        run.logbook = SimpleNamespace(event=lambda *a, **k: None)
+
+        def set_flap_brake(out, *a):
+            run.flap_brake_out = bool(out)
+            return True
+        run.set_flap_brake = set_flap_brake
+        return run
+
+    def test_surplus_alone_deploys_it(self):
+        snap = SimpleNamespace(ut=1.0, position=(600000.0, 0.0, 0.0),
+                               velocity=(-20.0, 120.0, 0.0))
+        command = SimpleNamespace(needed_height=10000.0, weave_deg=44.0)
+        off = self.run_(False)
+        off.hac_flap_brake(snap, command, 13000.0)
+        self.assertFalse(off.flap_brake_out)
+        on = self.run_(True)
+        on.hac_flap_brake(snap, command, 13000.0)
+        self.assertTrue(on.flap_brake_out)
+
+
+class TestTheDoorOpensWhereTheScheduleBinds(unittest.TestCase):
+    """``FLARE_DOOR_FROM_SCHEDULE``: tau (sink - td) + T sink (LOG3961)."""
+
+    def test_the_door(self):
+        cfg = replace(Config(), FLARE_EXP_TAU_S=4.0,
+                      FLARE_DOOR_FROM_SCHEDULE=True, FLARE_SHALLOW=False)
+        env = SimpleNamespace(pitch_response_s=3.0)
+        self.assertAlmostEqual(guidance.flare_door(cfg, 31.0, 90.0, env),
+                               4.0 * 29.0 + 3.0 * 31.0)
+        # Never below the old door.
+        self.assertAlmostEqual(guidance.flare_door(cfg, 3.0, 60.0, env),
+                               cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * 3.0)
+        off = replace(cfg, FLARE_DOOR_FROM_SCHEDULE=False,
+                      FLARE_DOOR_FROM_RESPONSE=False)
+        self.assertAlmostEqual(guidance.flare_door(off, 31.0, 90.0, env),
+                               off.FLARE_ALT_M + off.FLARE_LEAD_S * 31.0)
+
+
+class TestTheAlphaTrimLoop(unittest.TestCase):
+    """``ALPHA_TRIM_LOOP``: a standing alpha deficit is integrated out, and
+    only while the roll is settled (LOG3994-4007)."""
+
+    def run_(self, on=True):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), ALPHA_TRIM_LOOP=on)
+        run.state = autopilot_module.FLARE
+        run.attitude_settle_s = 2.0
+        run.commanded_bank = 0.0
+        return run
+
+    def snap(self, ut, aoa, bank=0.0):
+        return SimpleNamespace(ut=ut, krpc_aoa=aoa, sideslip=1.0,
+                               dynamic_pressure=4000.0, flown_bank=bank)
+
+    def test_a_deficit_raises_the_command(self):
+        run = self.run_()
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        lambda s: s.flown_bank):
+            for i in range(40):
+                out = run.alpha_trim_loop(7.0, self.snap(100 + 0.1 * i, 4.0))
+        self.assertGreater(out, 8.0)
+        self.assertLessEqual(out, 7.0 + run.cfg.ALPHA_TRIM_MAX_DEG)
+
+    def test_not_while_rolling_or_off(self):
+        run = self.run_()
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        lambda s: s.flown_bank):
+            for i in range(40):
+                out = run.alpha_trim_loop(7.0, self.snap(100 + 0.1 * i, 4.0,
+                                                         bank=30.0))
+        self.assertEqual(out, 7.0)
+        self.assertEqual(self.run_(False).alpha_trim_loop(
+            7.0, self.snap(100, 4.0)), 7.0)
+
+
+class TestTheApproachCanLeaveAMush(unittest.TestCase):
+    """``APPROACH_MUSH_RECOVERY``: well below target speed and high, the
+    load floor of the dive bound yields (LOG4053: 57 m/s, 40 deg path)."""
+
+    def test_it_unloads(self):
+        env = SimpleNamespace(density=lambda h: 1.2,
+                              coefficients=lambda a, s, h: (8.0 * a, 40.0))
+        loads = {}
+
+        def alpha_for_load(e, v, h, m, g, n):
+            loads.setdefault("n", []).append(n)
+            return 10.0 * n
+        args = (env, None, 57.0, 36.0, 2000.0, 30000.0, 9.81, 100.0, 12.0)
+        with unittest.mock.patch.object(guidance, "alpha_for_load",
+                                        alpha_for_load):
+            off = guidance.alpha_for_speed(
+                env, replace(Config(), APPROACH_MUSH_RECOVERY=False), *args[2:])
+            on = guidance.alpha_for_speed(
+                env, replace(Config(), APPROACH_MUSH_RECOVERY=True), *args[2:])
+            low = guidance.alpha_for_speed(
+                env, replace(Config(), APPROACH_MUSH_RECOVERY=True),
+                57.0, 36.0, 500.0, 30000.0, 9.81, 100.0, 12.0)
+        self.assertLess(on, off)
+        self.assertAlmostEqual(low, off)

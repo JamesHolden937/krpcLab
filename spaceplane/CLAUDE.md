@@ -23,6 +23,11 @@ comes from that fresh prediction.
 
 ## Where it stands (2026-09-23, fingerprint `64268a58`)
 
+> **Superseded by the root [HANDOFF.md](../HANDOFF.md)** for the latest
+> session (2026-09-23 evening): the shuttle's attitude axes, measured
+> spoiler/flaps, and the cone as the blocker. The table below is the state
+> before that session.
+
 | | arrival at the cone | landing |
 |---|---|---|
 | old craft, `qs_plane` | +0.1..+0.8 km, pinned at the cone's saturation | usually intact; loses the vehicle when the touchdown is late |
@@ -80,6 +85,14 @@ engine torque in the total and a chattering surface torque),
 46-49 m/s).
 
 ## Standing facts (each paid for; the journal has the evidence)
+
+- **Roll and yaw are one lateral axis at high alpha** (failure 99). kRPC
+  roll at its default 1.0 s ("full authority") lost the shuttle's entry
+  5/5: at 35 deg of alpha a body roll *is* sideslip, and yaw on 22.6 s
+  never takes it out. Roll flies the derived 4.8 s. Yaw on roll's figure
+  cures the hypersonic slip and loses the bank in the cone; yaw scheduled
+  by sin(alpha) tumbled 2/6. Tune the lateral axes together, and fly any
+  change to them on the farm first -- the user flies defaults live.
 
 - **The control surfaces are live on every axis, on both craft.**
   `ignorePitch = False`; 95-276 kN m in flight. An old probe read KSP's

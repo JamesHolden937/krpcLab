@@ -103,13 +103,52 @@ class GameClockPacer:
         return ut
 
 
-def sleeper(cfg, ut_fn):
+def lockstep(conn, after_work=False):
+    """``wait(interval, from_ut)`` for a simulated instance, or ``None``.
+
+    ``kspSim`` serves a ``Sim`` service the game does not have.  Its
+    ``AdvanceTo`` runs the physics to the target at once instead of making the
+    loop sleep for it, and returns the stream generation that carries the new
+    state; waiting for that generation on the stream connection makes every
+    stream the loop reads at least as fresh as the clock it just jumped to.
+    The loop's own work still costs game time -- the simulator advances at the
+    governed time scale while the client computes -- so the latency a flight
+    pays is the farm's, and only the idle wait disappears.
+    """
+    sim = getattr(conn, "sim", None)
+    if sim is None:
+        return None
+    gen = conn.add_stream(getattr, sim, "generation")
+
+    def wait(interval, from_ut):
+        if interval <= 0.0:
+            return from_ut
+        # ``after_work``: the loop sleeps its interval *after* its work, as a
+        # wall-clock-paced loop does in the game (period = work + interval);
+        # otherwise the interval is from the tick's start (game-time pacing).
+        start = conn.space_center.ut if after_work else from_ut
+        target = sim.advance_to(start + interval)
+        deadline = time.monotonic() + 5.0
+        with gen.condition:
+            while gen() < target and time.monotonic() < deadline:
+                gen.wait(timeout=0.5)
+        return conn.space_center.ut
+    return wait
+
+
+def sleeper(cfg, ut_fn, conn=None):
     """Return ``wait(interval, from_ut)`` honouring ``LOOP_PACING_GAME_TIME``.
 
     Wall-clock pacing stays the default: at 1x the two are the same thing, and
     the version that costs no extra RPC per tick is the one to run when there
-    is nothing to gain from the other.
+    is nothing to gain from the other.  Connected to a simulated instance
+    (``kspSim``), the wait is lock-step whatever the setting: a simulator has
+    no wall clock worth pacing on.
     """
+    if conn is not None:
+        step = lockstep(conn, after_work=not getattr(cfg, "LOOP_PACING_GAME_TIME", False))
+        if step is not None:
+            return step
     if not getattr(cfg, "LOOP_PACING_GAME_TIME", False):
         def wall(interval, from_ut):
             time.sleep(interval)

@@ -1,5 +1,8 @@
 # testInstances -- state at handoff
 
+> The farm's build history. **The current session handoff is the root
+> [HANDOFF.md](../HANDOFF.md)**, read at the start of every session.
+
 Read `README.md` for how to use it and `keepNotes.md` for why it is built the
 way it is.  This file is the short version plus what is and is not verified.
 

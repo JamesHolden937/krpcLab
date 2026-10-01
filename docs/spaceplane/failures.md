@@ -4878,3 +4878,132 @@ results.** The current frontier is 10d.
     It was not flown this session -- the aim's gain (failure 88) turned out
     to be the cheaper route to the same symptom -- and it is left at `False`
     with the coupling written down rather than left to be rediscovered.
+
+96. **The per-axis attitude tune handed kRPC roll and yaw swapped, and the
+    comment beside it said the opposite of what kRPC does.**
+    `attitude_time_to_peak` returned `(pitch, yaw, roll)` with the comment
+    "`time_to_peak` wants (pitch, yaw, roll)"; kRPC applies it as **(pitch,
+    roll, yaw)**, the vessel frame's x, y, z and the order of
+    `moment_of_inertia`. Measured on the shuttle in orbit: `time_to_peak`
+    (3, 30, 3) cuts the *roll* PID gains tenfold (19.3 -> 1.93) and
+    (3, 3, 30) the *yaw* gains (431 -> 43); a 90 degree roll takes 8.0 s
+    against 3.7. So since `ATTITUDE_TIME_TO_PEAK_DERIVED` became the default
+    the shuttle has flown **roll on 22.6 s** and **yaw on 4.8 s** -- a bank
+    that lags its command by tens of seconds (`bnk=` against `bank=`: -45
+    commanded, +17 flown; the heading rate says 3-16 deg of a 40 deg command,
+    against 22-24 on the old craft), and a quick yaw on its weakest axis. The
+    offline test enshrined the wrong order because it tested the code against
+    its own comment. The read-back of `time_to_peak` returns what was
+    written, so nothing in a log could show it; the autotuned *gains* can.
+    Fix behind `ATTITUDE_AXES_KRPC_ORDER`. **Check an interface's axis order
+    against its behaviour, not its documentation and not our comment.**
+
+97. **The coast reversed the bank on every azimuth crossing, at no dynamic
+    pressure.** `run_coast` leaned through `guidance.bank_toward`, which has no
+    hysteresis, so with the track near the bearing to the gate the sign
+    flipped every time they crossed: 8-9 full +-30 deg reversals in COAST at
+    Mach 7 and q 0-120 Pa on the shuttle (game LOG3404/3405, sim LOG3416+),
+    against 3 in the whole hypersonic glide. `COAST_BANK_LATCH` routes the
+    sign through the glide's own deadband: 0 reversals, in the sim and the
+    game. **It is not a fix on its own**: the entry then leaned the other way
+    first, and the arrival went +4.7 -> +8.9 km in the game (n=3 an arm,
+    `pairfly` 2026-09-24, LOG3456-3501) -- because the terminal glide had no
+    sink left to absorb any change in cross-track history. See 98.
+
+98. **Below Mach 3.5 the glide ran out of sink with drag untouched.** Bank at
+    `BANK_MAX_DEG` 70, alpha at `ALPHA_MAX_DEG` 32, and `long` climbing
+    +500 -> +8000 m through the chattering terminal reversals (LOG3416,
+    LOG3440), while the shuttle's own table offers CdA 145 at 40 deg against
+    86 at 30 (Mach 3). Raising `ALPHA_MAX_DEG` itself broke the deorbit (it
+    is a corner of the search box: 6 of 8 sim flights never reached the
+    interface). `GLIDE_ALPHA_MAX_DEG` is the glide's own ceiling. With it the
+    hypersonic lean fell from ~50 to ~32 deg -- alpha doing the energy work
+    bank had been doing -- and the arrival came in; see the journal,
+    2026-09-24 (third).
+
+99. **"Full authority" on roll lost the shuttle's entry every time it was
+    flown, and the loss looked like a roll oscillation, not a departure.**
+    `ATTITUDE_ROLL_TIME_TO_PEAK_S=1.0` (kRPC's default tune, the user's
+    request the night before) replaced the derived 4.8 s. It tracked to a
+    degree up to q ~700 Pa; above that the bank swung about a *steady* +30
+    command with growing amplitude -- 16, 48, 34, 15, 35, 44, 7, 59, -5, 64
+    -- until the nose was lost (the user, live, LOG3692: "the roll kept
+    oscillating"). On the farm, qs_shuttle, it was **5/5 destroyed in the
+    entry** (LOG3693/3696/3699/3702 plus the live one), bank error 125-179,
+    sideslip 41-64, against no entry lost at 4.8. The mechanism is not the
+    roll loop alone: at 35 deg of alpha a body roll *is* sideslip, and yaw
+    sat on its wheels-only 22.6 s, so a fast roll made slip that nothing
+    took out (LOG3699: +27..+40 deg of slip for 30 s about a steady command).
+    **Roll and yaw are one lateral axis at high alpha; tune them apart and
+    the faster one makes the slower one's error.** Default back to the
+    derived figure (fingerprint in HANDOFF.md). Two follow-ups measured:
+    yaw on roll's figure everywhere (`ATTITUDE_YAW_WITH_ROLL`) halved the
+    hypersonic slip and lost the bank in the cone instead (see the journal,
+    2026-09-26); a damper that slowed on every crossing of the command ran
+    to its ceiling on a +-7 deg wobble the tune did not change (LOG3710) --
+    an airframe mode, not a loop one -- and was cut back to growth only.
+
+100. **The propellant the deorbit left over was the shuttle's hypersonic
+     pitch stability, and dumping it lost the entry 3 of 3.** 250 m/s of
+     reserve for a 26 m/s burn left 376 units (1.88 t, 6.5%) aboard to the
+     runway, all of it in the only tank that holds any -- the Mk3 adapter at
+     the nose, station +9.8 m -- which is what the user asked about ("why
+     aren't you draining all the fuel?"). `DRAIN_RESIDUAL` dumped it on the
+     first GLIDE tick (1 s, both valves, mass 30.48 -> 28.72 t). Flown
+     against the defaults (pairfly ksp0/1, qs_shuttle, fingerprint
+     `cb8bcf3d`), the drained vehicle **departed 3 of 3** (LOG3743, 3744,
+     3745): alpha overshooting its 35 deg command to 45-48 at a Mach 4-7
+     bank reversal, sideslip 70-100 deg peak to peak, arrival 19-29 km
+     short; the defaults beside it 1 of 2 (LOG3742, flown while a third
+     instance was busy; LOG3746 clean) and 0 of 6 the night before
+     (LOG3729-3739). `testInstances/cgProbe.py` shows the mechanism
+     without a flight: the pitching moment about each candidate CG, at
+     neutral surfaces, as a fraction of the elevons' authority. Drained,
+     the CG moves 0.65 m aft and the Mach-6 moment curve goes flat
+     (-0.00 per 20 deg of alpha against -0.02 to -0.04 with the nose
+     tank): neutrally stable exactly where the glide holds 35 deg and
+     reverses its bank. Subsonic it stays stable (-0.11 per 20 deg), and
+     there the nose fuel is pure cost -- up to 0.33 of the pitch authority
+     spent on trim in the flare against 0.19 drained. **Mass you did not put
+     aboard on purpose can still be doing a job; price the CG before you
+     dump it.** `DRAIN_RESIDUAL_MACH_MAX` holds the valve to Mach 0.8.
+
+101. **The flare flew its attitude with the descent added twice, and every
+     arrest it made became a float and a stall.** `aim_runway` turned the
+     flare's angle of attack into a pitch above the runway as `alpha +
+     descent` (`AIM_RUNWAY_TRUE_ALPHA`, written to cure a flare that had
+     flown `alpha` as a pitch); attitude is `alpha - descent`, so the vehicle
+     was handed alpha plus *twice* the descent angle. On the old craft
+     (LOG3869) the door asked 6 deg and the vehicle flew 15.6 the tick the
+     runway reference took over, levelled at 65 m, bled 85 -> 45 m/s and fell
+     the last 60 m at 17.7 m/s. Every default flare on both craft did the
+     same thing -- the shuttle bench (`qs_shuttle_low`) stalled out 11 of 12
+     (minimum speed 34-37 m/s, docking port first: a nose slam), the old
+     craft from orbit contacted at 15-21 m/s on 6 of 6 (LOG4012-4028). The
+     error was *masked* by the thing it broke: the extra lift is what
+     arrested the sink at all, so every other flare constant had been fitted
+     to it. Fixed together with the two things it had been hiding
+     (`FLARE_TAIL_BY_ATTITUDE`, `FLARE_EXP_TAU_S`, `FLARE_DOOR_FROM_SCHEDULE`,
+     default 2026-09-30): the sink schedule `sqrt(td^2 + 2 a h)` was
+     *designed* to touch down at 8 m/s (wings and elevons tolerate 15, the
+     shuttle's engine 7), and the door opened 1-2 s after the schedule began
+     to bind. Old craft from orbit 5/6 intact on the runway, contact 1-4 m/s.
+     **A sign error that the rest of the law has been tuned around is not
+     fixed by flipping the sign; find what else was leaning on it.**
+
+102. **The cone's plan credited path the vehicle would never fly, and the
+     radius scan went looking for it.** Lined up a little outside a wide
+     circle, the tangent point lies a few degrees *past* the rollout.
+     `hac_turn` correctly reads that as arrived (turn 0), but `hac_path`
+     still costed the straight run to the tangent point, `sqrt(x^2 + 2 R
+     dy)`: 190 m outside a 16 km circle and 955 m before the gate is 2651 m
+     of "path" (LOG4056 logged `gate=955 path=2650`; reproduced to the
+     metre offline). `hac_radius` picks the *longest* path that fits the
+     height, so it steered the plan onto exactly those circles -- R walked
+     13 -> 16 km in the cone's last kilometres -- and the cone read itself
+     on profile while 1.1-2.8 km high on every flight of both craft, with
+     the weave at 0 (LOG4051 carried 2.2-3.3 km of phantom through most of
+     its cone). `HAC_PATH_WRAP_TO_GATE` costs such a tangent point as the
+     distance to the gate. **A scan that maximises a model will find the
+     model's errors before it finds anything real; check the maximiser's
+     choice against the geometry, not just the model's value.**

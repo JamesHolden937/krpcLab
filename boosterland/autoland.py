@@ -978,7 +978,7 @@ class Autoland:
         # fixed wall-clock sleep would quietly halve the control rate the
         # vehicle sees for every doubling of the time scale, and a flight flown
         # that way is not reproducible at 1x.
-        wait = sleeper(self.cfg, lambda: self.conn.space_center.ut)
+        wait = sleeper(self.cfg, lambda: self.conn.space_center.ut, self.conn)
         while not self.finished:
             snap = self.tick()
             wait(self.cfg.LOOP_SLEEP_S,

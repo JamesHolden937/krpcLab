@@ -281,12 +281,12 @@ def alpha_limit_for_speed(env, cfg, speed, altitude, mass, gravity):
     # ``Config.GLIDE_ARRIVAL_FACTOR``.
     approach = cfg.GLIDE_ARRIVAL_FACTOR * airframe.stall(env, cfg)
     if speed >= cfg.SPEED_HOLD_FACTOR * approach:
-        return cfg.ALPHA_MAX_DEG
+        return glide_alpha_max(cfg, env, speed, altitude)
     trim = alpha_for_load(env, speed, altitude, mass, gravity, 1.0)
     if trim is None:
-        return cfg.ALPHA_MAX_DEG
+        return glide_alpha_max(cfg, env, speed, altitude)
     wanted = trim + cfg.SPEED_HOLD_KP * (speed - approach)
-    return vec.clamp(wanted, cfg.ALPHA_MIN_DEG, cfg.ALPHA_MAX_DEG)
+    return vec.clamp(wanted, cfg.ALPHA_MIN_DEG, glide_alpha_max(cfg, env, speed, altitude))
 
 
 def alpha_floor_for_speed(env, cfg, speed, altitude, mass, gravity):
@@ -359,6 +359,62 @@ def cfg_default_max(cfg):
     return 90.0 if cfg is None else cfg.ALPHA_MAX_DEG
 
 
+def glide_alpha_max(cfg, env=None, speed=None, altitude=None):
+    """The glide's alpha ceiling.
+
+    With ``GLIDE_ALPHA_PLATEAU`` and a table to read: the far edge of this
+    wing's lift plateau at this Mach -- the highest alpha whose ``ClA`` is
+    still within that fraction of the row's peak (see the config entry).
+    Else ``GLIDE_ALPHA_MAX_DEG``, else ``ALPHA_MAX_DEG``.
+    """
+    frac = float(getattr(cfg, "GLIDE_ALPHA_PLATEAU", 0.0) or 0.0)
+    if frac > 0.0 and env is not None and speed and altitude is not None:
+        got = plateau_edge(env, frac, speed, altitude)
+        if got is not None:
+            return got
+    top = float(getattr(cfg, "GLIDE_ALPHA_MAX_DEG", 0.0) or 0.0)
+    return top if top > 0.0 else cfg.ALPHA_MAX_DEG
+
+
+def plateau_edge(env, frac, speed, altitude):
+    """Highest alpha with ``ClA >= (1 - frac) * peak`` at this Mach, from the
+    swept table, interpolated; ``None`` when the table cannot answer.
+    Cached on ``env`` per 0.1 of Mach -- the propagator asks every step."""
+    try:
+        if not env.ready():
+            return None
+        mach = env.mach(speed, altitude)
+    except Exception:                                       # noqa: BLE001
+        return None
+    key = round(mach, 1)
+    cache = getattr(env, "_plateau_cache", None)
+    if cache is None:
+        cache = env._plateau_cache = {}
+    if key in cache:
+        return cache[key]
+    alphas = sorted(getattr(env, "_alphas", ()) or ())
+    out = None
+    if alphas:
+        try:
+            lift = [env.coefficients(a, speed, altitude)[0] for a in alphas]
+        except Exception:                                   # noqa: BLE001
+            lift = None
+        if lift and max(lift) > 0.0:
+            i = max(range(len(lift)), key=lambda k: lift[k])
+            floor = (1.0 - frac) * lift[i]
+            out = alphas[i]
+            for k in range(i + 1, len(alphas)):
+                if lift[k] >= floor:
+                    out = alphas[k]
+                    continue
+                span = lift[k - 1] - lift[k]
+                share = (lift[k - 1] - floor) / span if span > 0.0 else 0.0
+                out = alphas[k - 1] + share * (alphas[k] - alphas[k - 1])
+                break
+    cache[key] = out
+    return out
+
+
 def gravity_at(env, r):
     d = vec.norm(r)
     return vec.scale(r, -env.mu / (d * d * d))
@@ -411,8 +467,9 @@ class Holdable:
     ``ALPHA_TRACKING``'s proportional gain failed (the solve cancels a gain by
     asking for more; it cannot talk a ceiling round).  What no measurement in
     this project could supply was ``holdable`` itself, because
-    ``simulate_aerodynamic_force_at`` returns a force and kRPC will not report
-    a pitching moment at any price.
+    ``simulate_aerodynamic_force_at`` returns a force.  (kRPC 0.6 *does*
+    report the moment -- ``simulate_aerodynamic_wrench_at`` -- and can hold a
+    surface deflection; see the journal, "Session, 2026-09-23 (second)".)
 
     So it is *observed* rather than tabulated.  Every tick the control loop
     already knows what it asked for, what the vehicle achieved, and the

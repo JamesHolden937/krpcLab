@@ -45,6 +45,10 @@ def ports(instance):
             int(open(os.path.join(base, ".stream_port")).read()))
 
 
+# Game time from a save's UT to the autopilot's first tick in the game's
+# governed load (load, 1 s clock check, pause): 1.14-1.16 s, LOG3380/3381.
+SIM_START_LAG_S = 1.15
+
 _LIVE = []
 
 
@@ -126,6 +130,33 @@ def offsets(conn, cfg):
     return vec.dot(offset, along), vec.dot(offset, across), vessel
 
 
+def set_paused(rpc, stream, paused, settle=0.5):
+    """Pause or unpause, and say whether the game clock obeyed.
+
+    ``KRPC.paused`` reads back whatever was written even when the game runs
+    on regardless -- the time-scale plugin used to rewrite the time scale
+    every frame -- so the answer is the clock, not the flag.
+    """
+    try:
+        conn = krpc.connect(name="quickglide-pause", rpc_port=rpc,
+                            stream_port=stream) if rpc else \
+            krpc.connect(name="quickglide-pause")
+    except Exception:                                   # noqa: BLE001
+        return None
+    try:
+        conn.krpc.paused = paused
+        first = conn.space_center.ut
+        time.sleep(settle)
+        return (conn.space_center.ut == first) == paused
+    except Exception:                                   # noqa: BLE001
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:                               # noqa: BLE001
+            pass
+
+
 def clock_is_running(rpc, stream, seconds=3.0):
     """Is game time actually advancing on this instance?
 
@@ -138,7 +169,8 @@ def clock_is_running(rpc, stream, seconds=3.0):
     slot would burn the full timeout before reporting a position as though it
     meant something.
 
-    kRPC exposes no pause flag in this version, so the clock is the test.
+    ``KRPC.paused`` reads back whatever was written whether or not the clock
+    obeys it (see ``set_paused``), so the clock is the test.
     """
     try:
         conn = krpc.connect(name="quickglide-clock", rpc_port=rpc,
@@ -166,15 +198,25 @@ def fly(args, index):
     ceiling = None
     if args.timescale is not None:
         ceiling = ts.write(tsdir, args.timescale)
+        # **Load at real time when the autopilot will govern the scale.**
+        # The six wall-seconds below were being run at the ceiling, which is
+        # nothing for an orbital save and 56 game-seconds of uncontrolled
+        # fall for one taken in the air: ``qs_shuttle_cone``, saved at 12 km
+        # and 221 m/s, engaged at 2.2 km in a 127 m/s dive and all three
+        # flights of a batch broke up (LOG3031-3033).  The governor raises
+        # the scale itself from the first tick it can serve.
+        if args.timescale != "off" and not args.no_govern:
+            ts.hold(tsdir)
+    sim = str(args.instance).startswith("sim")
     conn = connect("quickglide-loader", rpc, stream)
     try:
         conn.space_center.load(args.save)
+        save_ut = conn.space_center.ut if sim else None
     finally:
         try:
             conn.close()
         except Exception:                               # noqa: BLE001
             pass
-    time.sleep(6.0)
     # **Refuse to fly rather than fly slowly and say nothing.**  KSP loads
     # plugins at startup, so an instance booted before
     # ``BoosterlandTimeScale.dll`` was installed never reads the file
@@ -187,7 +229,36 @@ def fly(args, index):
     # vessel is in the scene.  Checking it at the top of the run reports the
     # plugin missing on every freshly booted instance, which is the other
     # half of the same lie.
-    running = clock_is_running(rpc, stream)
+    #
+    # Checked over one real-time second (the load runs at 1x, above), then
+    # **paused**: the autopilot unpauses once it has engaged on the state the
+    # save recorded.  The settle wait used to run with the game live, and a
+    # save taken in the air fell for all of it (LOG3031-3033).
+    # A simulated instance (kspSim) needs none of the game's settling: its
+    # clock and pause answer at once, and a settle wait there is pure wall
+    # time (six of a 15 s flight).
+    running = clock_is_running(rpc, stream, seconds=0.1 if sim else 1.0)
+    if running and args.timescale != "off" and not args.no_govern:
+        held = set_paused(rpc, stream, True, settle=0.05 if sim else 0.5)
+        time.sleep(0.0 if sim else 4.0)
+        if held is not True:
+            print("ksp%s: could not pause after the load -- an instance "
+                  "running the old time-scale plugin ignores the pause, and "
+                  "the save runs on while the autopilot starts"
+                  % (args.instance if args.instance is not None else "?"),
+                  file=sys.stderr)
+    if sim and running and args.timescale != "off" and not args.no_govern:
+        # Engage where the game would have: its load check and pause above
+        # cost it SIM_START_LAG_S of game time after the save's UT, which a
+        # simulated instance spends in a tenth of that.  Measured on
+        # qs_shuttle_final, the gap was 42 m of height at the handover.
+        conn = connect("quickglide-lag", rpc, stream)
+        try:
+            conn.krpc.paused = False
+            conn.sim.advance_to(save_ut + SIM_START_LAG_S)
+            conn.krpc.paused = True
+        finally:
+            conn.close()
     if running is False:
         raise SystemExit(
             "ksp%s: the save loaded but game time is not advancing -- the "
@@ -203,7 +274,12 @@ def fly(args, index):
             "Restart the\n  instance, or pass --timescale off."
             % (tsdir, args.timescale))
 
-    command = [os.path.join(ROOT, ".venv", "bin", "python"), "-m",
+    # ``--pypy``: the same flight software under PyPy (``.venv-pypy``, see
+    # kspSim/CLAUDE.md), whose propagator runs several times faster.  On a
+    # simulated instance that is wall time saved; the governor still makes
+    # every tick's interval be served.
+    venv = ".venv-pypy" if args.pypy else ".venv"
+    command = [os.path.join(ROOT, venv, "bin", "python"), "-m",
                "spaceplane.autopilot", "--autostart"]
     if rpc:
         command += ["--rpc-port", str(rpc), "--stream-port", str(stream)]
@@ -263,7 +339,7 @@ def fly(args, index):
         errors.close()
     try:
         while process.poll() is None and time.time() - started < args.timeout:
-            time.sleep(2.0)
+            time.sleep(0.1 if sim else 2.0)
     finally:
         _reap(process)
         if process in _LIVE:
@@ -369,6 +445,8 @@ def main():
     p.add_argument("--instance", default=None)
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
+    p.add_argument("--pypy", action="store_true",
+                   help="run the autopilot under PyPy (.venv-pypy)")
     p.add_argument("--timescale", default=None, metavar="SPEC",
                    help="off | max | a multiplier such as 4.0")
     p.add_argument("--no-govern", action="store_true",

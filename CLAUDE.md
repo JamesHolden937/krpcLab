@@ -2,6 +2,31 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session procedure (standing, every session)
+
+**Work autonomously.** Don't ask whether to go on to the next batch, fix or
+experiment. Pick the best next step, do it, and report what you did and why.
+Interrupting is the user's job, not asking permission. **Commit before
+anything risky**: a default change, a batch on new code, a refactor or a
+scripted edit, so it can always be undone.
+
+0. **Take the sleep inhibitor first thing**: `testInstances/nosleep.sh start`
+   (idempotent; `status` checks it). **Release it last thing**, after the
+   farm is stopped and HANDOFF.md is written: `testInstances/nosleep.sh
+   stop`. Both, every session, whether or not anything flies -- a suspend
+   mid-batch reads as a crash, and an inhibitor left held is the user's
+   sleep setting overridden.
+1. **Start by reading [HANDOFF.md](HANDOFF.md)**, the last session's state:
+   what changed, which flags exist and what they measured, the blocker,
+   what's next, and the traps. Then the pilot's own `CLAUDE.md`.
+   `testInstances/HANDOFF.md` is the farm's build history, not this.
+2. **End by rewriting HANDOFF.md.** Also do it before any long pause or when
+   the user asks for a summary. Record the date, the defaults fingerprint,
+   commit state, where each airframe stands, every flag added and what it
+   measured (with log/batch names), the blocker and the proposed next step,
+   open items in order, and traps paid for. It's a snapshot: replace it,
+   don't append. The history goes in `docs/<pilot>/journal.md`.
+
 ## What this is
 
 **krpcLab**: kRPC autopilots for Kerbal Space Program, and the infrastructure
@@ -12,6 +37,7 @@ readers. New autopilots go here and plug into all of it.
 |---|---|
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
+| `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
 | `common/` | shared by every autopilot: `vec`, `logbook`, `pacing` (loop pacing and the time-scale governor), `rcs` (the RCS valve), `timescale` (the farm plugin's file), `paths`, `launcher` |
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
@@ -62,13 +88,14 @@ python3 -m unittest boosterland.tests.testFlightSim   # one module
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `cd testInstances && ./nosleep.sh start && ./start.sh 0 1 2`, wait for the
+# `cd testInstances && ./nosleep.sh start && ./start.sh 0 1 2 3`, wait for the
 # ports, fly; `./stop.sh` when the suite has to run or the session ends.
 #
-# **Three instances, and never beside the test suite.**  Four idle instances
-# hold 13-16 GB of this box's 30, and a four-flight pairfly round or a
-# `python3 -m unittest` on top of them is killed by memory pressure.  Sequence
-# it: stop the farm, run the suite, restart the farm, fly.
+# **Four instances at most, and never beside the test suite.**  Three hold
+# ~18 GB with flights running and leave ~12 GB free; a fourth fits, a fifth
+# swaps (8 GB into zram, measured), and swap biases the results.  Check
+# `swapon --show` after each batch.  `python3 -m unittest` on top of the farm
+# is killed by memory pressure: stop the farm, run the suite, restart, fly.
 cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 GB)
 ./mkclone.sh 0 && ./kwinRun.sh 0       # an unattended instance, invisible
 ./syncSaves.sh check                   # do the instances fly the reference saves?
@@ -310,6 +337,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [boosterland/CLAUDE.md](boosterland/CLAUDE.md) | anything in `boosterland/` |
 | [docs/testInstances.md](docs/testInstances.md) | running the parallel-instance farm, or when instances die |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
+| [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
 | [saves/README.md](saves/README.md) | which save is which vehicle and state; adding a save |
 
 **Keep this file short.** It is loaded into every session whole; the docs are

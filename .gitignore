@@ -16,3 +16,11 @@ testInstances/base/
 testInstances/ksp[0-9]*/
 testInstances/prefix[0-9]*/
 *.log
+
+# kspSim: probed models (regenerate with kspSim/tools/probe.py, 1-5 min each)
+# and the simulated/proxy instances' port directories.
+kspSim/models/
+testInstances/kspsim[0-9]*/
+testInstances/kspproxy[0-9]*/
+.venv-pypy/
+.pypy/

@@ -75,17 +75,27 @@ class Valve:
             return bool(self.on)
         return False
 
-    def update(self, ut, permitted, error_deg, q=None, apply=None):
+    def update(self, ut, permitted, error_deg, q=None, apply=None,
+               hold=False):
         """Set the valve for this tick.  Returns what it is now.
 
         ``permitted`` false is absolute and immediate -- a phase that says no
         is not overruled by a large error -- and the whole mechanism stays
         behind ``ENABLE_RCS``, so a config that has never wanted RCS still
-        never gets it.
+        never gets it.  ``hold`` is a caller that knows a turn is under way
+        before the pointing error shows it (a bank reversal): the valve is
+        wanted whatever the error, and the settle clock restarts, so it
+        closes only ``RCS_SETTLE_S`` after the turn is over.  It does not
+        override ``RCS_Q_MAX_PA``.
         """
         permitted = bool(permitted) and bool(self.cfg.ENABLE_RCS)
         self.permitted = permitted
         wanted = permitted and self.demand(ut, error_deg, q)
+        if permitted and hold and not wanted:
+            ceiling = getattr(self.cfg, "RCS_Q_MAX_PA", 0.0)
+            if q is None or ceiling <= 0.0 or q <= ceiling:
+                self.settled_since = None
+                wanted = True
         if wanted != self.on:
             was = self.on
             self.on = wanted

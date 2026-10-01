@@ -68,6 +68,18 @@ def write(dirpath, spec, quant_s=DEFAULT_QUANT_S, max_scale=8.0):
     return scale if mode == "fixed" else (max_scale if mode == "adaptive" else 1.0)
 
 
+def hold(dirpath, quant_s=DEFAULT_QUANT_S):
+    """Real time, with the plugin still answering -- for the load itself.
+
+    ``write(dirpath, "1")`` means "off", and an instance told "off" may stop
+    reporting status, which the harness reads as a plugin that is not there.
+    """
+    path = os.path.join(dirpath, "timescale.txt")
+    with open(path, "w") as fh:
+        fh.write("mode = fixed\nscale = 1.0000\nmax_scale = 1.0000\n"
+                 "quant_s = %.4f\n" % quant_s)
+
+
 # How old a status file may be and still describe the present.  The plugin
 # rewrites it about once a second while a vessel is in the scene, so anything
 # older than this is from a previous life.

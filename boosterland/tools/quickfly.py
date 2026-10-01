@@ -45,6 +45,7 @@ from common import timescale as ts
 
 SETTLE_TIMEOUT_S = 90.0
 SETTLE_POLL_S = 0.5      # game time keeps running while we wait, so poll fast
+SIM_START_LAG_S = 5.8    # game time from the save to START in the game (LOG3094-3097)
 DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d.]+)")
 # Fallback, and the number that is always right: the last telemetry line's own
 # great-circle distance from the pad.
@@ -64,13 +65,29 @@ def load_save(args):
     rather than trying to reuse anything across the load.
     """
     conn = connect(args, "quickfly-loader")
+    sim = str(args.instance or "").startswith("sim")
     try:
         conn.space_center.load(args.save)
+        if sim:
+            # A simulated instance loads at once and would otherwise run on
+            # while this harness polls in wall time: freeze it on the save.
+            conn.krpc.paused = True
+            save_ut = conn.space_center.ut
     finally:
         try:
             conn.close()
         except Exception:
             pass
+    if sim:
+        # The game reaches START 5.68-5.88 s of game time after the save's
+        # UT (LOG3094-3097: load, settle, reconnect); fly the sim from the
+        # same place on the trajectory, or its start is kilometres off.
+        conn = connect(args, "quickfly")
+        conn.krpc.paused = False       # the sim does not advance while paused
+        conn.sim.advance_to(save_ut + SIM_START_LAG_S)
+        vessel = conn.space_center.active_vessel
+        return conn, conn.space_center.ut, \
+            vessel.flight(vessel.orbit.body.reference_frame).speed
 
     deadline = time.time() + SETTLE_TIMEOUT_S
     while time.time() < deadline:
@@ -143,7 +160,7 @@ def fly_once(args, overrides):
         # is not at 1x.  quickfly drives tick() itself, so a pacer added only
         # to Autoland.run() would not be in this path at all -- which is the
         # path every measurement actually flies.
-        wait = sleeper(cfg, lambda: conn.space_center.ut)
+        wait = sleeper(cfg, lambda: conn.space_center.ut, conn)
         while not run.finished and time.time() < deadline:
             snap = run.tick()
             wait(cfg.LOOP_SLEEP_S,

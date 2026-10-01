@@ -58,6 +58,11 @@ class Snapshot:
     # against the commanded nose -- is a two-axis quantity and the angle to
     # the velocity throws the bank half of it away.
     nose: tuple = (0.0, 0.0, 0.0)
+    # The roof (the vessel's -z), so the bank the vehicle *flies* can be set
+    # beside the one it was commanded: the log carried only the command, and
+    # a shuttle turning at a fifth of its commanded bank looked like it was
+    # banked 40 degrees for a minute.  Empty when kRPC could not answer.
+    roof: tuple = ()
     # -- what the air actually did, read from the game rather than inferred.
     # ``aero_force`` is the whole aerodynamic force in the body's rotating
     # frame, so a ``Cl*A``/``Cd*A`` taken from it is the *measured* polar at
@@ -146,6 +151,11 @@ class Telemetry:
         self.position = stream(vessel.position, frame)
         self.velocity = stream(vessel.velocity, frame)
         self.direction = stream(vessel.direction, frame)
+        try:
+            self.roof = stream(sc.transform_direction, (0.0, 0.0, -1.0),
+                               vessel.reference_frame, frame)
+        except Exception:                                   # noqa: BLE001
+            self.roof = None
         self.mass = stream(getattr, vessel, "mass")
         self.surface_altitude = stream(getattr, flight, "surface_altitude")
         self.mean_altitude = stream(getattr, flight, "mean_altitude")
@@ -263,6 +273,18 @@ class Telemetry:
             # negative one buys nothing a 180 degree bank does not), and what
             # this is compared against is the magnitude of that command.
             alpha_actual = vec.angle_between(nose, velocity)
+            # **"The command is always positive" is not "the vehicle is
+            # always positive."**  An unsigned angle reads a nose pitched
+            # five degrees *below* the airflow as five above, so on the
+            # shuttle's dive (LOG3035: kRPC -1.5, -4.7, -5.5 deg while this
+            # read +4.6..+7.4) a fifteen degree tracking error looked like
+            # five -- inside ``ALPHA_TRACK_TOLERANCE_DEG`` -- and nothing
+            # reacted.  kRPC's angle is signed and in the pitch plane.
+            if getattr(self.cfg, "ALPHA_SIGNED", False):
+                try:
+                    alpha_actual = float(self.krpc_aoa())
+                except Exception:                           # noqa: BLE001
+                    pass
 
         # The hottest part as a fraction of what it can take.  One number,
         # because that is the one that decides whether the vehicle arrives in
@@ -299,6 +321,7 @@ class Telemetry:
             wheel_clearance=self.wheel_clearance,
             situation=self.situation(), alpha_actual=alpha_actual,
             nose=nose,
+            roof=self._roof(),
             surface_sane=sane,
             liquid_fuel=self._amount("LiquidFuel"),
             # **What the attitude has cost so far.**  The tank is 150 units
@@ -330,6 +353,14 @@ class Telemetry:
             return tuple(read())
         except Exception:                               # noqa: BLE001
             return (0.0, 0.0, 0.0)
+
+    def _roof(self):
+        if self.roof is None:
+            return ()
+        try:
+            return tuple(self.roof())
+        except Exception:                               # noqa: BLE001
+            return ()
 
     @staticmethod
     def _scalar(read):

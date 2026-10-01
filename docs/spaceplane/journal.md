@@ -2319,3 +2319,1058 @@ unedited except for file paths.
   commanded angle of attack (32.0 commanded, 32.2 achieved). Entry range is
   *non-monotone* in bank (1730 km at 0 deg, 1872 at 30, 1432 at 70) and in
   entry alpha, with a plateau at 20-22 deg.
+
+## Session, 2026-09-23 (second): the shuttle's landing chain, from the attitude layer up
+
+Goal: generality -- the shuttle (`qs_shuttle`) had never landed. Every shuttle
+flight at the start of the session left the cone "out of height" and was
+destroyed or splashed 2.5-7.8 km from the runway (LOG3028-3030).
+
+### A save in the air fell for 56 s before the autopilot engaged
+
+`quickglide.py` wrote the time-scale ceiling (6x) *before* the load and slept
+6 wall-seconds for the scene, so `qs_shuttle_cone` (saved at 11971 m, 221 m/s)
+engaged at **2189 m in a 127 m/s dive**; all three flights of the first batch
+(LOG3031-3033) broke up within 15 s in both arms. Every earlier in-air save
+(`qs_cone`, entry saves) paid some of this. Fixed three ways:
+
+- `common/timescale.hold()`: the load runs at 1x when the autopilot governs.
+- The harness pauses (`KRPC.paused`) after a one-second clock check, and the
+  autopilot unpauses once it has engaged on the recorded state (`unpaused:`
+  in the log). Engagement is now ~3 s after the save (11568 m).
+- **The time-scale plugin defeated KSP's pause**: it rewrote `Time.timeScale`
+  every frame, so `paused` read back True while game time ran on at 1x or 6x.
+  `TimeScale.cs` now stands down while `FlightDriver.Pause`; rebuilt and
+  installed on every clone (base/ksp0-4 share one hardlinked DLL, ksp5 has
+  its own copy).
+
+### The probe is right; the table is untrimmed
+
+`simulate_aerodynamic_force_at` at the vehicle's *live* state matches the
+game's force to 1% from Mach 6 to Mach 0.38 (lift and drag, ratio 1.00). But
+the STANDBY table is probed with the surfaces neutral, and in flight the
+shuttle trims with its elevons: at Mach 0.38-0.45 the flown lift is
+**0.72-0.74x** the table at the same Mach and alpha, drag 1.01x, pitch input
++0.63. The old craft's log reads the opposite way (1.34x). So every
+`alpha_for_load` on the landing is off in a craft-specific direction.
+LiftTrim's subsonic bin (0.42 on the shuttle) is polluted by flare/rollout
+samples; the clean figure is 0.73.
+
+kRPC 0.6 has `simulate_aerodynamic_wrench_at` (force *and* torque) and
+`ControlSurface.deflection_override`/`deflection`, so the claim in
+`ratchet_alpha` and `Holdable` that a pitching moment "is unavailable at any
+price" is out of date. A table swept *at trim* -- per Mach and alpha, the
+deflection that zeroes the pitching moment, and where none does, the trim
+limit -- is buildable from the game's own model. Probe script written
+(scratchpad `trimprobe.py`), not yet run.
+
+### The measured alpha was unsigned
+
+`Telemetry.alpha_actual` is the angle between nose and velocity. In the
+shuttle's dive from `qs_shuttle_cone` (LOG3035) kRPC read **-1.5, -4.7,
+-5.5 deg** while the log said +4.6..+7.4, so a 15 degree tracking error
+looked like 5 -- inside `ALPHA_TRACK_TOLERANCE_DEG` -- and nothing reacted.
+The log now carries kRPC's signed angle as `aoak=`. `ALPHA_SIGNED` (feed it to
+the ratchet) is built and **harmful as built**: negative samples during an
+upset collapsed the ceiling to 8 deg in a second (LOG3036). Off.
+
+### The dive is the pitch controller, not trim saturation
+
+In that dive the pitch input was **+0.08** of 1.0 -- nowhere near saturated.
+The static tune is `sqrt(I / wheels)` x 1.91 = 19 s of pitch, and kRPC scales
+its gains to the *available* torque (surfaces 6000-12000 kN m against 15 of
+wheel), so the aero moment that grows with q is left to a slow integral term.
+The drain moves the CoM **aft** 2.4 m (fuel is forward), so it is not a
+nose-heavy accident.
+
+`ATTITUDE_PITCH_AIR`: pitch only, `ATTITUDE_SLEW_FACTOR * sqrt(I / (wheels +
+EMA(surfaces)))`, never engine or RCS, floored at `ATTITUDE_TIME_TO_PEAK_S`
+(so inert on the old craft, whose static pitch *is* the floor), never slower
+than static. Yaw and roll keep the static derivation.
+
+**Flown in the glide, it costs the entry ~8 km**
+(`logs/pairfly-shuttle-pitchair.txt`, stopped after round 2): cone arrivals
++8.5 +14.9 +12.6 +15.4 +18.7 km (mean +14.0) against defaults +6.5 +6.7 +6.3
++5.1 (mean +6.2). No overlap. Now restricted to HAC/APPROACH/FLARE. Landings
+in that batch: no flight on the runway in either arm; survivable verticals
+(flare door ~85 m/s, 25-33 m/s sink, touchdown sink ~0) appeared in both.
+
+### The shuttle does not turn when it banks
+
+Heading rate against commanded bank in APPROACH (turn rate = g tan(phi)/v,
+scratchpad `bankfly.py`): the old craft flies **22-24 deg** of a 37-39 deg
+command in the right direction on 84-100% of ticks; the shuttle flies
+**3-16 deg** of 34-40, in no consistent direction -- in both arms. The log
+carried only the *commanded* bank; `bnk=` is now the flown one, in
+`lift_frame`'s sense. The user's warning: the shuttle's yaw authority is poor
+(surface yaw 155 kN m against 679 in pitch at the cone entry) and too much
+sideslip flips it retrograde -- so the lateral fix is to ask for less (bank
+and bank rate bounded by yaw authority, backed off on |slip|), **not** a
+quicker yaw tune.
+
+Saves added: `qs_shuttle_cone` (11971 m, 221 m/s -- taken from LOG3028's
+cone under the old controller, already at -8 deg alpha in a 33 deg dive: a
+recovery test, not an arrival) and `qs_shuttle_final` (2972 m but 63 m/s).
+
+### Roll and yaw were swapped in the tune (failure 96), and fixing it exposed roll
+
+kRPC applies `time_to_peak` as (pitch, roll, yaw), measured by the autotuned
+PID gains; the code handed it (pitch, yaw, roll). Corrected
+(`ATTITUDE_AXES_KRPC_ORDER`), the bank follows its command on final (-45
+commanded, -43.6 flown, where the heading rate had said 3-16 deg of 40) and
+the glide's sideslip halves (<=10 deg against 18.5) -- but a hypersonic bank
+reversal between 35 and 28 km overshoots (+2 commanded, -75 flown, LOG3051),
+the misses ratchet the alpha ceiling to 15 deg, and the cone arrival goes
+to **+35 km** (LOG3051-3052, `logs/pairfly-shuttle-axes.txt`, stopped in
+round 0). Roll's wheel-derived 4.8 s is far too quick against ~10000 kN m
+of surface roll in thick air; the legacy order had it accidentally at
+22.6 s. `ATTITUDE_AXES_FROM_CONE` keeps the legacy order in the entry and
+switches on reaching the cone -- a phase split, stated as such in
+`switch_axes`, until roll in thick air has a derivation.
+
+### The flap brake was half a flap: `Deploy Angle` direction is per part
+
+Measured with `deflection_override`, the `Deploy Angle` field and
+`simulate_aerodynamic_wrench_at` on `qs_shuttle_cone` (M0.4, alpha 5,
++/-15 deg): +15 spoils lift on one main elevon pair (-9.1 ClA) and *adds* it
+on the other main pair (+4.7) and the forward pair (+5.5). The geometric
+brake deployed every surface at +20. That also explains the old craft's
+probe, where the "brake" raised hypersonic L/D (0.88 -> 1.27).
+
+`AIRBRAKE_MEASURED`: in vacuum, once, after the harness unpauses, each
+horizontal surface is deployed at +/-15 and probed; each keeps its
+lift-spoiling sense; surfaces are grouped by the *sign of the moment they
+make* (the shuttle's main elevons sit on its CoM and pitch by camber, so
+station is the wrong split); the stronger side is scaled to cancel; and the
+set is **re-probed and rebalanced on the measured residual**, because
+deflections do not add (a set predicted to cancel measured +55-67 CmA).
+On the shuttle it arms at **-33.7 ClA (~40% of the lift) with -27 CmA
+residual**, within half a single surface's moment. Verified in the game's
+model only; its first flights are in `pairfly-shuttle-chain.txt`.
+
+Group-level probe of the same surfaces in the lift-spoiling sense: L/D 0.62
+-> 0.54 at Mach 6/alpha 30, 1.10 -> 1.00 at Mach 2, 3.01 -> 1.96 at Mach 0.4
+-- a brake at every Mach, so usable in the glide when it saturates long
+(not yet wired).
+
+### With the chain in, the cone is the blocker
+
+Chain arm (corrected axes from the cone, pitch retune from the cone,
+measured brake): every mechanism fires as designed (LOG3057-3058), the cone
+arrival is +2.7/+3.6 km, the bank tracks -- and both flights leave the cone
+"out of height" with 211-215 deg of turn left and dive to the flare door at
+180-187 m/s. The cone enters at 18-19 km and 282 m/s and its one-sided speed
+law bleeds the excess at 18-22 deg of alpha (sink 175 m/s), undershoots to
+105 m/s, then dives. Next: `HAC_SPEED_PATH` on top of the chain
+(`pairfly-shuttle-hacspeed2.txt`).
+
+Also: three smoke flights ran together on ksp0 for 12 minutes because a
+pattern kill (`quickglide.py --save`) matched nothing; LOG3053-3055 are
+contaminated past their brake lines.
+
+## Session, 2026-09-24 (third): the shuttle's entry reversals, then the cone
+
+The user's framing: bank is the entry's sink control and the big shuttle
+does not want to bank back and forth at hypersonic speed, for want of yaw
+authority to coordinate the roll. Flown in kspSim for screening (qs_shuttle,
+~40 s a flight, 2-8 at once) and confirmed on the farm (ksp0-2, `pairfly`,
+governed `--timescale 8`, frozen tree copies in the scratchpad).
+
+**Two sim caveats learned the hard way.** (1) Sim flights are less
+repeatable while the game farm loads the box: the governor paces on wall
+time. (2) The sim cannot judge the flap brake at all -- its probe reads
++15 and -15 deg as the same nose-up spoiler, `AIRBRAKE_MEASURED` arms
+nothing, and `ControlSurface.deployed` does not move a surface. A sim
+"refutation" of the brake (LOG3550-3555) is void.
+
+### Where the reversals were
+
+Counted per phase (sign changes of the commanded bank; "bad" = bank off its
+command by >20 deg or |slip| >8):
+
+| | COAST M>4 | GLIDE M>4 | GLIDE M<4 |
+|---|---|---|---|
+| game LOG3404/3405 | **8** | 3 | 3 |
+| sim LOG3416/3417 | **9** | 3 | 3 |
+
+COAST chose the sign with `bank_toward`, no hysteresis, at q 0-120 Pa
+(failure 97). `COAST_BANK_LATCH` -> 0 in both. Game n=3 an arm
+(LOG3456-3501): arrival **+4.7 -> +8.9 km** -- it leaned the other way first
+and the terminal glide could not absorb it. Game glide slip p-p unchanged
+(32 -> 32-33); the sim had said 37 -> 26. So the *glide's* reversals carry
+the game's sideslip.
+
+### The terminal glide had no sink left (failure 98)
+
+Below Mach 3.5, bank at 70 and alpha at 32 and `long` running +500 -> +8 km.
+`ALPHA_MAX_DEG=40` broke the deorbit (a corner of its box). New
+`GLIDE_ALPHA_MAX_DEG`: the glide's own ceiling, the ratchet still bounding
+it. Sim, latch on, n=4 each: 36 -> +0.52 km sd 0.03, 40 -> +1.3 sd 0.6
+without RCS / +0.46 sd 0.10 with, 45 -> +0.06 sd 0.44; RCS without the
+ceiling +13.8. The hypersonic lean fell ~50 -> ~32 deg: alpha doing the
+energy work. Cost: below Mach 5 the sim vehicle cannot follow bank at 38 deg
+(the stability-axis roll needs yaw ~ p sin(alpha)).
+
+`GLIDE_RCS` with `RCS_Q_MAX_PA=20000`: mistracked ticks below Mach 4 ~80% ->
+~31% in the sim, and **it emptied the tank** -- nothing after GLIDE closed
+the valve (230 of 429 units subsonic). HAC/APPROACH/FLARE/ROLLOUT now close
+it (inert on defaults: no default flight spends mono below the glide), and
+`GLIDE_RCS_MACH_MIN=1.0` confines it: 117 units, all supersonic.
+
+**Game, the package** (`COAST_BANK_LATCH; GLIDE_ALPHA_MAX_DEG=40;
+GLIDE_RCS; RCS_Q_MAX_PA=20000; GLIDE_RCS_MACH_MIN=1.0`), n=3 an arm,
+instance-balanced (`game_pkg`, LOG3506-3508, 3540, 3542-3543):
+
+    defaults  +4.5  +6.9  +6.1   mean +5.8   (with the first batch: +5.3, n=6)
+    package   +0.38 -0.61 -2.44  mean -0.9
+
+Hypersonic mistracked ticks 29 -> 12-13 of ~136; glide slip p-p not better
+(36 vs 32). Both package flights of round 0 lined up (+-160 m) and landed
+~4 km short, as the sim's package flights did (-3.5..-4.3).
+
+### The cone: two geometry defects (sim)
+
+The cone approaches the gate straight (R pinned at 16 km) weaving +-45-50
+deg to spend surplus. **The weave is `acos(total/available)`, so it is at
+its maximum as the path goes to zero**: LOG3524 passed the gate sideways
+(gate distance 442 -> 1738 m) and left "out of height". And `hac_turn`'s
+wrap band was `HAC_EXIT_TURN_DEG` (12): LOG3520 overshot the tangent by
+14.6 deg and read 345 deg to go. `HAC_WEAVE_WHOLE_CYCLE` (weave only while
+`total >= speed * HAC_WEAVE_PERIOD_S`) and `HAC_OVERSHOOT_DEG=60`. Either
+alone did not do it (6/6 out of height with the band; with the cycle rule
+alone the exits read turn 315-348). Together, on the package plus the
+attitude chain (`ATTITUDE_AXES_KRPC_ORDER; ATTITUDE_AXES_FROM_CONE;
+ATTITUDE_PITCH_AIR`), 12 sim flights: every cone ends at turn 0, flare at
+51-100 m/s and +-200 m, touchdown sink 5-12 m/s; **3 intact, 7 damaged
+(19-25 parts), 2 lost** -- against ~all lost before. They float: stopped
++3.5..+5 km on a runway ending at +1.2. `AIRFRAME_DERIVED` on top: worse
+(0 intact, 4 lost of 6).
+
+### The flap brake as the glide's third control
+
+`GLIDE_FLAP_BRAKE` (`autopilot.glide_flap_brake`): the measured set out
+when the brake-*stowed* prediction reads long past reserve +
+`GLIDE_FLAP_ON_M`, in when it is back on the reserve; never switched
+mid-reversal; stowed at the cone. Its first transit test used
+`bank_in_transit` after the rate limiter and read every tick as
+mid-reversal -- caught by making it log why it declines. With the 40 deg
+ceiling the sim glide never read long enough to use it (max +963 m).
+Game batch `game_flaps` (chain vs chain + flaps, glide and approach):
+round 0 (LOG3567-3569) -- **the flaps never deployed in either phase**: the
+glide never saturated (40 deg ceiling), and the approach brake's trigger is
+surplus height, which a game approach that leaves the cone "out of height"
+(300-1100 m short at 2 km) does not have. Arrivals -454/+482/+628 m; all
+three flared at ~101 m/s with **60-65 m/s of sink** (the sim floats long on
+the same code). LOG3567 touched down at sink 10, 73 m off the centreline,
+kept 29/30 and ran off the far end; the other two were destroyed. So the
+game's cone and approach are worse than the sim's, and that is the next
+question (HANDOFF).
+
+Round 1 (LOG3570-3572): A 28/30 and 28/30, B lost -- all **overran into the
+water** (+3.2..+6.8 km). The chain in the game, n=6 (the flaps never fired,
+so both arms are the chain): 3 kept 28-29 parts, 1 kept 21, 2 lost.
+
+### The approach started 1 km from the runway at 2 km up
+
+The game's cone and the sim's are the same tick for tick (LOG3567 against
+LOG3538: speed, `ld=`, `need=` within a few percent), so the game/sim
+difference is after the cone. Both reach the gate ~700 m high and overfly
+it; the approach then begins at **rwy=1046 m, h=2000, exc=+1222**
+(LOG3567) -- a 63 deg path -- saturates its S-turn, dives to 117 m/s and
+lands long (sim) or flares at 60 m/s of sink (game).
+
+Two causes. `GATE_DIST_M` is 4000 at `GATE_ALT_M` 2000, a 2:1 final sized
+for the old craft; and **`HAC_OVERSHOOT_DEG` broke the lap**: a vehicle
+too high to exit at the gate (`HAC_EXIT_SURPLUS_M` 500) is meant to fly on,
+wrap, and lap -- with the band it read "arrived", could not exit, and flew
+straight on to 2 km (gate distance 6.7-7.9 km at the handover, 4 of 6).
+Without the band the laps came back but started from heights that could not
+pay for them (3 of 6 out of height mid-lap at the gate): the gap between
+"exit" (500 m of surplus) and "a lap" is where the approach's own brake
+belongs, as the Shuttle's speedbrake does.
+
+Sim, chain with `HAC_WEAVE_WHOLE_CYCLE; GATE_DIST_M=8000;
+HAC_EXIT_SURPLUS_M=1500` (no overshoot band), LOG3585-3590: **6 of 6
+"rolled out"**, the approach starting 7.8-8.8 km out, touchdown 35-37 m/s
+at sink 8-15, cross -64..+19 m in five of six, stopped +0.5..+2.3 km (3 of
+6 on the runway). All but one kept 19/30: 11 parts go 4 s into the rollout
+at 10-22 m/s with no sink -- the sim's spring-damper gear, not the landing
+(the game kept 29/30 from a 10 m/s touchdown).
+
+**`GATE_DIST_M=8000` is not a default candidate as a constant**: the old
+craft's best L/D is 3.06, so a 4:1 final is beyond it. The gate distance
+wants to be the airframe's approach ratio times the gate height --
+`APPROACH_BEST_LD` is a hand-copied 4.2 shared by both craft. Game batch
+`game_gate`: that chain against it + flaps (LOG3591+).
+
+### Generality pass (2026-09-25): the landing numbers derived
+
+The user plans many shuttle variants (passenger, tanker, ISRU explorer:
+different masses, slightly different aero); the bar is "fitted constants
+only if they apply to almost everything". Replaced, each behind a flag:
+
+- `GATE_FROM_APPROACH`: the gate where the approach's own model needs
+  `GATE_ALT_M` (`GATE_ALT_M * approach_ld - TOUCHDOWN_AIM_M`, 6000 m now).
+  At 4000 the cone's exit check (`approach_needed`) wanted 1524 m of a
+  2000 m gate: every approach started high by construction.
+- `HAC_EXIT_SURPLUS_DERIVED`: exit unless the surplus pays for a lap at the
+  tightest circle held (`2 pi R / cone_ld`). Every lap begun at the gate had
+  run out of height; an S-turn-only allowance (~865 m) sent 4 of 6 sim
+  cones round (LOG3597-3602). With the lap rule, 6 of 6 rolled out and 3 of
+  6 kept 30/30 (LOG3603-3608).
+- `GLIDE_ALPHA_PLATEAU=0.05`: the glide ceiling at the far edge of the wing's
+  lift plateau, per Mach, from the table (shuttle ~41 hypersonic, ~31
+  subsonic). Fixed 60/90 doubled-to-tripled alpha sd and lost landings
+  (LOG3612-3617); the plateau matched fixed 40 (LOG3618-3623; old craft
+  +954 m, within its cone).
+- `TAIL_LIMIT_ACHIEVED`: the tail cap less the measured pitch overshoot.
+  The shuttle flies 3-5 deg above its pitch command; every game touchdown
+  lost parts within 0.5 s (tail fin, wing, RCS blocks).
+- Flap laws: `HAC_FLAP_BRAKE` (out when the weave saturates with surplus,
+  in counting `sink^2/2a` to arrest what it built) and
+  `AIRBRAKE_SINK_TRACK` (the approach brake stows when sinking faster than
+  the approach wants; LOG3593 dove to 149 m/s of sink on the old stow).
+
+**Game, the general chain** (`game_v2`, LOG3609-3611, 3639-3641; B arm
++ every flap law): **none destroyed** in 6 -- 29, 28, 28, 25, 22 and 8 parts --
+but 4 of 6 overran the far end into the water. All three flap laws fired in
+game: glide (+2015 -> +21 m in 8 s at Mach 4.9, overshooting below the 500 m
+reserve), cone (surplus 2000 -> 1525 in 10 s, stowed at sink 106 with 1144 m
+to arrest), approach (out at 854 m, in at the flare door). LOG3611: sink 5.7
+at 34 m/s but 310 m off and 21 deg crabbed -- wing and fin lost.
+
+**Still hand-set and blocking the variants:** `STALL_SPEED_M_S`,
+`APPROACH_BEST_LD`, `APPROACH_FACTOR`. `AIRFRAME_DERIVED` (+
+`APPROACH_LD_DERIVED`) on the new chain lands +5..+11 km long (LOG3627-3638).
+The reason is in its own log: STANDBY reads best L/D 5.87 at 0 deg, the
+landing-mass re-read 1.46-3.65 at 2-12 deg -- the re-read is the live
+*trimmed* vehicle at whatever trim it holds. The general fix is a table swept
+**at trim** in STANDBY (the pitch-moment-zeroing deflection per Mach and
+alpha; `simulate_aerodynamic_wrench_at` gives the torque), which the session
+of 2026-09-23 designed and never ran.
+
+**Gear (the user's rule, default now):** nose no brake and auto friction;
+mains `WHEEL_BRAKE_MAX_PCT=200` (game max) and `MAIN_WHEEL_FRICTION=10`
+(slider max, `ModuleWheelBase.frictionMultiplier`, decompiled). Before, the
+mains braked at the craft file's 50% and the rollout law scaled 100.
+Verified in game (LOG3643: "brake 200%, friction 10"); the sim clamps to
+100% and has no friction field. Not yet flown on a full landing.
+
+## Session, 2026-09-25 (LOG3644, a live flight on defaults)
+
+The user flew `qs_shuttle` live on **plain defaults** (`72859ef7`): landed
+in the water 9.1 km off the centreline, 28 of 30 parts, flare at 17.5 m/s
+sink. Their report: roll seemed locked to 0; wobbly at Mach 1-3; deploy full
+spoiler when the main wheels touch.
+
+- **Roll locked: the axis swap, still in the defaults.** Line 50:
+  `time_to_peak as applied (pitch 22.4, roll 22.6, yaw 4.8)` -- roll on
+  yaw's slew time. From ~Mach 0.4 the bank command sat at +-45 (HAC) and +40
+  (all of APPROACH, 80 s) while the achieved bank stayed between -15 and +9.
+  The vehicle never turned onto the runway: `rwy` 826 m -> 10.2 km,
+  `xt` +8.9 km at the flare. HAC exited "out of height" (h 1996 against
+  3401, gate 7883 m). The chain flights with `ATTITUDE_AXES_KRPC_ORDER` +
+  `_FROM_CONE` track it (LOG3609/3641: HAC +45 commanded, +52..+54 flown).
+  **Defaults still fly the swapped order; the corrected one is in the chain.**
+- **Mach 1-3 wobble is not the roll bug.** Over Mach 1-3, LOG3644: sideslip
+  sd 5.5 (max 11), bank error rms 32, alpha error min -15.6. The chain
+  (LOG3609-3611, 3639-3641): sideslip sd 6.4-8.0 (max 12-20), bank error rms
+  18-38. The same or worse. Reversals in that band swing the command
+  +70 <-> -70 inside 40 s. Open.
+- **Ground spoiler (built, default on, unflown):** `ROLLOUT_GROUND_SPOILER`
+  deploys the measured spoiler set (`flap_brake`) the tick any braked wheel
+  reports `Wheel.grounded`, ROLLOUT as backstop, the largest surface at
+  `ROLLOUT_SPOILER_DEG`=25 (the Big-S elevons' `ctrlSurfaceRange`), the rest
+  at their measured ratio. Logs the read-back deploy angle. **Needs
+  `AIRBRAKE_OPPOSED_FLAPS` + `AIRBRAKE_MEASURED`**; without them it logs
+  "no measured spoiler set". Fingerprint -> `03b1dee1`.
+- **LOG3645** (user, live, defaults `03b1dee1`): still no roll -- bank -47
+  commanded steady, -82..+23 flown at Mach 5; ended at Mach 4.7 on a broken
+  kRPC pipe. **`ATTITUDE_AXES_KRPC_ORDER` + `ATTITUDE_AXES_FROM_CONE`
+  promoted to defaults**, fingerprint `80468d1f`. The entry keeps the soft
+  legacy roll by design (LOG3051); corrected order from the cone on.
+- **Entry-roll pairfly** (`80468d1f`, qs_shuttle, ksp0/1, 4 rounds,
+  LOG3647-3654). A = defaults (roll fix from the cone): **4/4 destroyed**,
+  6.0-9.4 km off, 126-184 m/s -- HAC out of height, then APPROACH dives
+  (flare at 300-400 m with 103-143 m/s sink; LOG3644 on the old defaults
+  sank ~20). Roll now banks the vehicle and pitch, still on 22.4 s, cannot
+  hold the nose: **the roll fix needs `ATTITUDE_PITCH_AIR` with it** (the
+  chain always had both). B = `ATTITUDE_AXES_FROM_CONE=False` (fast roll in
+  the entry too): 4/4 destroyed, 1.6, 11.5, **34.7, 34.8 km** -- LOG3051's
+  +35 km reproduced. **Fast entry roll stays refuted.**
+- **Pitch-air vs the chain** (`80468d1f`, LOG3655-3662, 4 rounds, ksp0/1).
+  A = `ATTITUDE_PITCH_AIR` alone: **0/4**, all destroyed 7.6-11.8 km off
+  (HAC out of height, dive into the flare at 130-190 m/s sink). B = the
+  game_v2 chain + flaps: **4/4 landed** (18, 16, 18, 13 parts), within 60 m
+  of the centreline, stopped +1956, +419, -4296, +1679 from the midpoint;
+  touchdown ~3100, ~1500, -3100 (short, on the grass), ~2800 m from the
+  threshold. The ground spoiler fired on all four on main-wheel contact
+  (25 fore / ~14 aft). Stopping from ~36 m/s takes ~300 m.
+- **Defaults `4fe7eaf0`**: the chain promoted (every B flag), plus the
+  near aim (`TOUCHDOWN_AIM_M` 2400 -> 400, `APPROACH_SCURVE_STOP_BY_TIME`,
+  `GATE_FROM_APPROACH`). The chain is **unflown on the old craft**.
+- **Drag brake, built, off** (`AIRBRAKE_MAX_DRAG`, `AIRBRAKE_DRAG_IN_FLIGHT`,
+  the user's idea): every mirrored surface probed on its own (drag, lift,
+  pitch, roll, yaw); `airbrake.choose_max_drag_set` (a small simplex) picks
+  each deflection -- ground set: max drag + lift dumped; air set: max drag,
+  lift held -- all moments held, verified in game. Never the rudder
+  (`mirrored_only`). Air set deploys in APPROACH on speed over
+  `target_speed` at a height on profile (`drag_brake_fraction`).
+- Touchdown along-track scatter is the limiter now: ~6 km over 4 flights
+  on a 2.4 km runway. The aim moves the mean; nothing yet moves the spread.
+- **Is the landing scatter systemic from the glide? Partly.** Over the 10
+  chain flights (LOG3609-3611, 3639-3641, 3656-3657, 3660-3661) the glide's
+  cone arrival is **bimodal**: ~2.5 km short at ~12.1 km (3611, 3640, 3657)
+  or ~+500 m long at ~14 km (the other seven). The short ones stopped +420,
+  +626, +1173 from the midpoint (all on the runway); the long ones +1675 to
+  +3039 (all past the far end), bar 3660 (left the cone slow, 63 m/s, and
+  fell 3.1 km short). Within a group the stops agree ~+-600 m; the groups
+  differ ~1.7 km -- most of the 6 km spread. **The cone passed it on: laps=0
+  in all 10**, handing the approach 1000-2500 m of surplus where it needs
+  ~2213. Fix it in the cone (lap or flap brake until the exit surplus is
+  spent; why `HAC_EXIT_SURPLUS_DERIVED` never affords a lap), not the glide.
+  Grouped post hoc on n=10: re-check on the aim batch (LOG3663+) first.
+- **Aim batch** (`4fe7eaf0`, LOG3663-3670). A = `TOUCHDOWN_AIM_M=2400` +
+  distance weave stop: **4/4 landed** (22, 6, 14, 14 parts; +1829, +577,
+  -4968, -5023 from the midpoint). B = aim 400 + time stop: **3/4 crashed**
+  (LOG3664, 3668, 3669), one landed 15 parts 600 m short. B left the cone
+  with 3491-3907 m (needs ~2213) and dived: flare at 70 m/s of sink from
+  220 m (3665, 3668). The near aim cannot be flown while the cone passes on
+  its surplus. **Reverted** to 2400 and the distance stop; fingerprint
+  `77fe82b1`. The glide-bimodality grouping: A's 3667/3670 left the cone at
+  2439-2527 m and fell ~3.8 km short; the high exits went long -- the cone's
+  exit surplus, not the arrival, is the variable that reads through.
+- **Surface envelope built** (`AIRBRAKE_ENVELOPE`, off; the user's
+  "spectrum"): `airbrake.SurfaceEnvelope` + a two-phase simplex
+  (`linprog_max`); requests (dClA, dCdA) solved per change, moments held,
+  mirrored surfaces only, corners verified and rescaled in vacuum.
+  Consumers: approach (drag for overspeed over `ENVELOPE_SPEED_TAU_S`, lift
+  cut when the brake law wants), flare (stow), touchdown ("brake" corner).
+  First batch: defaults vs envelope, scratchpad `envelope.txt`, LOG3671+.
+- **Envelope batch** (`77fe82b1`, LOG3671-3678). Defaults 4/4 landed (25,
+  22, 10, 9 parts). `AIRBRAKE_ENVELOPE` 3/4 landed (20, 10, 2), 1 destroyed
+  -- but its two worst (3673, 3676) left the cone out of height and the
+  envelope only acted at touchdown; not a verdict on it. Vacuum check: the
+  rudder excluded; corners' moments 1.1-1.3x the limit (held); the model is
+  ~2.2x low on the brake corner (-20/+10 predicted, -45/+22 measured) and
+  "drag with lift held" cut 16 of lift -- deflections do not superpose at
+  25 deg from 15 deg probes. Big-S Elevon 2 *reduces* drag one way. In the
+  approach the requests chattered on a step boundary (LOG3672, 12 writes);
+  fixed with hysteresis. Stays off; next is probing more points (a second
+  angle, pairs) so the model is fitted, not assumed linear.
+
+
+## Session, 2026-09-25 (night, roll)
+
+User, live on defaults (LOG3679): "the craft isn't attempting to roll AT
+ALL" (GUI roll indicator at zero). kRPC 0.6's controller gates roll on
+pointing error: off above `roll_start_angle` 20 deg, full below
+`roll_engage_angle` 15; never set by this code. At 36 deg alpha a reversal
+slewing at `BANK_RATE_DEG_S` 8 (unsourced) leads the vehicle 20+ deg within
+two ticks. Added `ATTITUDE_ROLL_ENGAGE_DEG` 175 (ungated) and
+`BANK_RATE_MEASURED` (`rollrate.RollRate`, runtime peak roll rate with a
+sideslip tolerance, the user's idea). Farm, qs_shuttle, ksp0/1:
+LOG3680 (ungated) landed +994 m but tumbled at Mach 4.8 (bank +-150, slip
++-50); LOG3681 (gated) splashed +2368. LOG3684/3685: the first estimator
+(averaged, lead-gated) ratcheted to 1.1 deg/s in GLIDE while the control arm
+measured 7.1; LOG3684 still landed (2452 m, -289 m). Rewritten as a probed,
+decaying peak; unflown -- batch stopped for the user's live test. Nothing
+concluded; every arm n=1.
+
+Later: user flew LOG3690 live (defaults f283628a): "still not rolling at all".
+Cause: the glide flap brake deploys the elevons (the roll surfaces); both
+losses of control (LOG3680 61713.8, LOG3690 61568.4) began the tick it went
+OUT, and its mid-reversal guard returned with the brake still out. Added
+`FLAP_BRAKE_YIELDS_TO_ROLL` (glide and cone), unflown. config.py was
+truncated by a scripted edit and restored from the previous session's dev
+copy (fingerprint 77fe82b1) plus this session's blocks; new defaults
+78d872d1.
+
+**Follow-up (LOG3691, user: "still isn't rolling").** Defaults `78d872d1`.
+The attitude line reads `time_to_peak as applied (pitch 22.4, roll 22.6,
+yaw 4.8)`: `ATTITUDE_AXES_FROM_CONE` kept the legacy swapped order through
+the entry, so roll ran on yaw's slow figure and the reversal (-31 -> +27
+flown at ~2 deg/s) was flown by yaw with the roll input near zero.
+`ATTITUDE_AXES_FROM_CONE` -> False (fingerprint `44553753`); two legacy-order
+tests now pin the old order explicitly. Unflown.
+
+Then `ATTITUDE_ROLL_TIME_TO_PEAK_S=1.0` (user: "give roll full authority"): roll on kRPC's default tune, not the derived 4.8 s. Fingerprint `b55c72f8`. Unflown.
+
+## Session, 2026-09-26 (roll oscillation)
+
+User, live on defaults `b55c72f8` (LOG3692): "the roll kept oscillating".
+That default flew roll at kRPC's 1.0 s (`ATTITUDE_ROLL_TIME_TO_PEAK_S`, the
+user's "full authority" of the night before), yaw on its wheels-only 22.6 s.
+Tracked to ~1 deg up to q ~700 Pa; above it the bank swung about a steady
++30 with growing amplitude (16, 48, 34, 15, 35, 44, 7, 59, -5, 64), then
+the alpha went (30 commanded, 4 achieved). Failure 99. All farm batches
+qs_shuttle, pairfly on ksp0/1 (2 instances), results in the session
+scratchpad (`pair-*.txt`); glide sideslip = max |slip| above Mach 1.5.
+
+1. **1.0 vs derived 4.8** (defaults `b55c72f8`, LOG3693-3696, stopped after
+   2 rounds): 1.0 destroyed in the entry 2/2 (bank error 125-179, slip
+   41-56); 4.8 survived 2/2 (splashed +2.2 km 25 parts; crashed 6 km
+   across).
+2. **`ROLL_DAMPER` v1** (every crossing of a steady command by 5 deg each
+   way slows roll x1.5, relaxes over 120 s) at 1.0 vs 4.8 without it
+   (LOG3699-3702, stopped after 2 rounds): 1.0 + damper destroyed 2/2 --
+   the damper reached 19.6 s but only after the departure (LOG3699: a
+   reversal at q 2200 made +27..+40 deg of slip that held 30 s at a steady
+   command; tumble at Mach 4). 4.8 survived 2/2. **The slip, not the bank,
+   goes first: yaw on 22.6 s cannot remove it.**
+3. **`ATTITUDE_YAW_WITH_ROLL`** (yaw on roll's figure) at 1.0 vs 4.8, both
+   damper v1 (LOG3705-3716, 6 an arm): no entry lost in 12. Glide slip
+   26-48 at 1.0, **8-19 at 4.8** (against 21-74 with yaw 22.6 in 1-2).
+   Damper v1 ran to its 22 s ceiling in every flight: in LOG3710 a +-7 deg
+   swing at q 2300-3300 kept its amplitude as the tune went 4.8 -> 20 s --
+   an airframe mode, not the loop -- and the lag it bought cost the bank on
+   final (LOG3711: +-40 S-turn commands flown 30-60 deg late, 60 m/s sink
+   into the flare). **Damper v2: growth only** (a half-swing past a steady
+   command must peak 1.1x the one before).
+4. **Defaults: roll 4.8, yaw=roll, damper v2 vs yaw on 22.6**
+   (LOG3717-3728): landings 4/6 with parts either way; slip 19-28 against
+   19-65 (one tumble, LOG3727, 55 km short) -- but >60 deg of bank error on
+   **92 ticks below Mach 2 against 33**, three of the yaw=roll flights
+   losing the bank in the cone at Mach 0.8-1.1 (LOG3717, 3720, 3721). Fast
+   yaw helps at 35-40 deg of alpha and hurts at ~20 deg below Mach 1, where
+   RCS is off and the single rudder is the yaw.
+5. **`ATTITUDE_YAW_BY_ALPHA`** (yaw = roll / sin(commanded alpha), clamped
+   between roll's and yaw's static figure; logged, the knob moves: 7.4 s at
+   40 deg, 12.8 at 22, 18.2 at 15) vs defaults `fbe32132` (roll 4.8, yaw
+   22.6, damper v2) (LOG3729-3740): bimodal -- 4 flights at slip 10-17 and
+   **2 hypersonic tumbles** (LOG3734, LOG3738: slip +7 -> +30 over 25 s at
+   Mach 4 about a steady command). Defaults: no tumble, slip 16-27, 9 ticks
+   of >60 deg error, 5/6 with parts. Not adopted.
+
+**Defaults now `fbe32132`**: `ATTITUDE_ROLL_TIME_TO_PEAK_S=0` (derived),
+`ROLL_DAMPER` (growth only), `ATTITUDE_YAW_WITH_ROLL`/`_BY_ALPHA` off.
+Hypersonic tumbles over the session: yaw=roll 0/12, yaw 22.6 2/16, by alpha
+2/6 -- not a dose-response at these n, and the one arm with none pays for it
+in the cone. The damper v2 has not been flown against its own absence.
+Touchdowns still lose parts on most flights (sink 60+ m/s into the flare on
+some) -- the handoff's items 1 and 3, unchanged.
+
+## Session, 2026-09-26 (afternoon: the leftover fuel, the CG, a faster shallower final)
+
+The user asked three things: why the propellant left after the deorbit is
+not drained; if not, could fuel transfer move the CG; and would a faster,
+shallower landing help.
+
+**The leftover.** `DRAIN_RESERVE_DV_MS` 200 x 1.25 for a 26 m/s burn leaves
+~376 units (1.88 t, 6.5% of the shuttle) aboard to the runway. The save's
+part list says all 1750 units live in one tank, the Mk3->2.5 m adapter at the
+nose; the aft Mk3 tanks (y -13/-15) and wing tanks are empty.
+
+**The CG, priced without flying** (`testInstances/cgProbe.py 0
+qs_shuttle_final`, new): part masses/CoMs in the vessel frame (the sum closes
+on kRPC's CoM to 0.00 m -- a body-frame first version missed by 1.9 m because
+the vessel moves while thirty parts are read), and the pitching moment against
+alpha at neutral surfaces from `simulate_aerodynamic_force_at`/`_torque_at`,
+as a fraction of the surfaces' pitch authority, for several placements of the
+1.88 t:
+
+| placement | CG station | flare (70 m/s), worst | Mach 6 slope per 20 deg |
+|---|---|---|---|
+| nose tank (as flown) | 0.00 | -0.33 | -0.02..-0.04 |
+| drained | -0.65 m | -0.19 | ~0.00 |
+| aft Mk3 tank | -0.81 | -0.15 | ~+0.01 |
+| aft adapter | -0.95 | -0.12 | ~+0.01 |
+
+So transfer buys only 0.16-0.30 m beyond draining and carries the 1.88 t to
+the ground; draining is the better answer on this airframe *for the landing*.
+
+**Drained at the first GLIDE tick (`DRAIN_RESIDUAL`, 1 s, both valves):
+departed 3 of 3** (LOG3743-3745, `cb8bcf3d`, pairfly ksp0/1 plus a ksp2
+flight) -- alpha 35 -> 45-48 at Mach 4-7 bank reversals, slip 70-100 p-p,
+19-29 km short. Defaults beside it: 1 of 2 (LOG3742, flown while a third
+instance was busy; LOG3746 clean), and 0 of 6 the night before. The table's
+Mach-6 column is why: drained the vehicle is neutrally stable in pitch
+exactly where the glide flies. Failure 100. Batch stopped after round 1.
+
+**`DRAIN_RESIDUAL_MACH_MAX` = 0.8** (the valve waits; `entry_mass` then
+predicts the entry wet). Opens at ~236 m/s at the end of the glide or in the
+cone, empties in <1 s. Flown (`de45abf3`, pairfly ksp0/1, qs_shuttle), round
+0 only before the session ended: defaults LOG3749 destroyed (0/30),
+drained LOG3751 **24/30 on the runway** (+1491 along, -88 across); the
+ksp2 save flight LOG3750 glided clean (alpha sd 4.1). Two clean drained
+glides, n=1 pair -- no measurement yet.
+
+**Faster and shallower: yes, on the evidence.** The tail strikes at 9.1 deg,
+so the flare is capped at ~7 commanded and speed is its only authority
+(spare lift ~0.8 g at 100 m/s, ~2 g at 130). Below ~60 m/s the drained wing
+cannot hold 1 g at a tail-safe attitude. On `fbe32132` every flare door was a
+30-32 deg path at 43-69 m/s of sink (LOG3729-3739); the user's live LOG3741
+reached its door at 54 m/s with 37 of sink and touched at 29 of sink, 13/30
+parts. The two gentle farm touchdowns (LOG3737, 3739) lost parts to an alpha
+overshooting its command by 6-8 deg in the last 2 s (3.4 commanded, 11.5
+achieved), past the tail limit. The steepness is surplus: the approach
+spends the cone's excess at the *bottom*, by S-turns, brakes and a dive.
+
+Built (**`FLARE_SHALLOW`, off, unflown except two contaminated flights**):
+`guidance.flare_door` -- one function for all six places that computed the
+door -- is physical when on: the height to bring the sink to the inner
+glide's at `FLARE_SHALLOW_PULL_LOAD` 1.5 g, plus `FLARE_TRACK_TAU_S` of lag,
+plus `FLARE_ALT_M` of inner glide (a 55 m/s sink at 115 m/s: ~465 m against
+the old 192). The flare's sink schedule is capped at
+`speed * sin(FLARE_INNER_GLIDE_DEG=5)` with a gentle bottom
+(`FLARE_SHALLOW_FINAL_LOAD` 1.15 to 1.5 m/s); the approach flies
+`FLARE_SHALLOW_APPROACH_FACTOR` 2.7 / `_DOOR_FACTOR` 2.4 x stall. Six offline
+tests (`TestFlareShallow`). Why 5 deg and not the Shuttle's 1.5: at L/D ~3.25
+any inner glide decelerates ~2-2.5 m/s^2, so its length is its speed cost.
+
+**The approach save failed twice.** `qs_shuttle_app` (ksp2 only, not in
+`saves/`) was taken at 3493 m from LOG3750, whose cone handed over 6846 m
+against 2042 needed: both arms flown from it dove vertically (sink 107-113,
+LOG3752/3753) -- and those two also flew **while LOG3750 was still flying on
+the same instance** (entrysave finishing is not the flight finishing). Void.
+The first attempt (LOG3744) was a departed flight. Do not use it.
+
+## Session, 2026-09-29 (the live spin: the reversal's sideslip was commanded)
+
+User, live on defaults `de45abf3` (LOG3758): "entered a spin at around
+2000 m/s". Confirmed from the log, and the figure is the right one. **Every
+flight, landed or lost, takes 12-24 deg of sideslip and a 10-15 deg alpha
+overshoot (35 -> 45-51) in the first bank reversal, at ~2000 m/s, Mach 6.5,
+52 km, q ~300 Pa** (LOG3741, 3742, 3744, 3745, 3749, 3758). Most recover.
+LOG3758 recovered from that one, then at the second reversal (1680 m/s,
+Mach 5.0, 37 km, cmd +34 -> -30) slip climbed 2 -> 38 deg over 25 s while
+the bank rolled *away* from a steady command (+130, -144, +160), alpha to
+85 deg; the roll damper ran to 22.6 s and never got it back. Fell out
+subsonic 49 km short, HAC -> APPROACH at h 1997 against 15380 needed,
+flare at 73 m/s of sink, destroyed. Same mass and leftover fuel as the farm
+flights (440 units, 30.6 t) -- not a loading difference. Defaults depart
+roughly 1 in 7 (LOG3727, 3742, 3758), always seeded by a reversal.
+
+**Mechanism: `aim` commanded the slip.** The nose target was
+`v cos(alpha) + lift(bank_cmd) sin(alpha)` -- tilted toward the
+*commanded* lift. While the roll lags its command by Δ, that target sits
+asin(sin alpha sin Δ) off the vehicle's own pitch plane: a sideslip
+command. Lags in the first reversal are 10-23 deg (LOG3741: cmd +21.5,
+flown -2.0), which at alpha 31-35 is 7-13 deg of commanded slip against
+12-24 flown. Failure 99 and its four follow-ups re-tuned how fast the
+loops *chase* this target (roll 1.0/4.8, yaw with roll, yaw by alpha, the
+damper) -- null or bimodal each time. This changes the target.
+
+**`AIM_NOSE_FROM_FLOWN_BANK`** (off, 5 offline tests): the nose from the
+*flown* bank, the roof to the commanded one -- a stability-axis roll: the
+roll loop alone carries the bank change and the nose follows round the
+alpha cone with no slip asked of it. Falls back to the command when the
+roof is unreadable.
+
+**Flown and refuted** (pairfly ksp0/1, qs_shuttle, `44e63da5`, stopped
+after round 1 on the stopping rule): the flag 2/2 departed -- LOG3760 slip
+26 deg in the first reversal, tumble at Mach 3-4, 28 km short, destroyed;
+LOG3761 slip 31, 19 km short, destroyed. Defaults LOG3759 beside it: slip
+**26** in the same reversal and landed (+456 long). So with *zero*
+commanded slip the reversal slip is unchanged or worse: the commanded
+component was not the source. It is the body roll outrunning a 22.6 s yaw
+at 35 deg of alpha -- and the lead toward the commanded lift was starting
+the nose round the cone early, i.e. helping. LOG3762 is a killed partial.
+Five attempts on the loop and the target now; **the untried levers act on
+the rate or on a different actuator**: slew the bank command in the
+hypersonic reversal at what yaw can coordinate (roll rate x sin alpha <=
+the measured yaw rate -- `rollrate` measures roll only), or put RCS on yaw
+for the reversal instead of waiting for 5.8 deg of pointing error.
+
+## Session, 2026-09-29 evening (yaw on the thrusters; the landing is an energy problem)
+
+**The missing actuator was already open.** The shuttle's RCS makes 290 kN m
+of yaw against the reaction wheels' 15 (STANDBY torque lines), and
+`GLIDE_RCS` has the valve open through every hypersonic reversal -- but
+yaw's `time_to_peak` (22.6 s) is derived from the wheels alone, and kRPC
+schedules the nose's target rate from it. So the thrusters were asked for a
+wheel's worth of yaw while roll (4.8 s) outran it. **`ATTITUDE_YAW_WITH_RCS`**
+(built, off): while the valve is open in GLIDE, yaw's figure is
+`ATTITUDE_SLEW_FACTOR * sqrt(I_yaw / (wheel + rcs))` (4.3 s, clamped to
+roll's 4.8), static again the moment the valve shuts -- so below Mach 1,
+where yaw-on-roll's-figure lost the cone (`ATTITUDE_YAW_WITH_ROLL`), nothing
+changes. The valve is held open while the bank command leads the flown bank
+by more than `BANK_RATE_SAT_DEG` (`rcs.Valve.update(hold=True)`).
+
+**Trap paid: kRPC reports no RCS torque with the valve shut** (probed on
+ksp2: 290 kN m open, 0 shut). The first version read it at engage, where the
+valve had just been shut, and flew as the defaults (LOG3764; batch killed).
+It is now read on the first ticks the valve is open.
+
+**Flown** (pairfly ksp0/1, qs_shuttle, `e1a9838c`, 6 rounds): peak glide
+sideslip above Mach 2 **8-12 deg on all six flag flights, 14-57 on all six
+defaults** -- no overlap; departures 0/6 against 1/6 (LOG3787, 56 km short).
+Arrivals with the flag: +489..+595 m, all six (defaults +116..+546 and
+-1556). With the flag the shuttle crosses the threshold at 26-611 m and
+touches down 35-1351 m in -- on the runway -- but steep and fast (sink
+22-70 m/s at 82-118 m/s); 5/6 broke up (LOG3781: on the runway, 22/30
+parts). Defaults cross at 388-1447 m and land long. Logs LOG3766-3794 (A:
+3766 3769 3775 3782 3787 3794; B: 3767 3768 3776 3781 3788 3793).
+
+**The landing misses are energy on final, not the flare.** Over LOG3720-3779
+the approach spends a near-fixed 2.4-3.2 km of height in its ~6.7 km however
+much the HAC hands it (needed ~2.2 km; the exit tolerates up to a lap's
+worth, `hac_exit_surplus`), so HAC exits at ~3.1 km cross the threshold at
+150-460 m and land on the runway, at 3.5-4.2 km cross at 600-1400 m and land
+1.8-3.6 km in, and above 5 km are lost. The brake cannot help as wired: on
+LOG3775 (1.15 km high) it came out four times for 0.2-1.4 s, stowed each
+time on "speed 108 below target 108" or "sink 39 above the 39 the flare can
+arrest" -- a drag brake can only spend height as speed or as path, and at a
+fixed 108 m/s both are forbidden.
+
+**Built, off, offline-tested:**
+- `APPROACH_SPEND_AS_SPEED`: surplus past `APPROACH_SCURVE_M` lowers the
+  approach's target speed to `sqrt(target^2 - 2 g surplus)`, floored at the
+  flare's door speed (`guidance.spend_as_speed`); the floor follows. ~235 m
+  spent as speed, and at 84 m/s the same 39 m/s sink limit allows a 28 deg
+  path against 21 -- about 1 km more over the final.
+- `FLARE_TAIL_BY_ATTITUDE`: the flare capped its *angle of attack* at the
+  tail angle (9.1 deg) at every height; the tail strikes by *attitude*, which
+  is alpha less the descent (25-35 deg at the door). Cap = tail + descent.
+  And `aim_runway` pitched to `alpha + descent` (`AIM_RUNWAY_TRUE_ALPHA`) --
+  a sign error delivering alpha plus twice the descent, masked by the tail
+  cap on pitch (gentle flares fly 7-9 deg over command, LOG3730, 3737); now
+  `alpha - descent`.
+- `FLARE_LEAD_BY_RESPONSE`: the sink schedule read at `h - T sink`, T the
+  pitch axis's own derived response time (`attitude_settle_s`).
+
+**A new save, and why it did not measure the landing.** `qs_shuttle_low`
+(14913 m, 231 m/s, late GLIDE, from defaults LOG3765) is highly repeatable,
+but the airbrake is measured in vacuum, so from it the spoiler and flap brake
+are **never armed** ("not measured, not armed"): every flight splashed 2.6-4.4
+km long with both flare flags and without (LOG3770-3796). It measures the
+flare law in isolation only; landing work still has to fly from orbit.
+
+**Yaw flag alone vs yaw flag + the three landing flags** (`2c1fa02b`,
+pairfly ksp0/1 6 rounds + ksp2 alternating 4; A: LOG3797 3798 3802 3804 3806
+3808 3809 3810 3814 3816, B: 3799 3800 3801 3803 3805 3807 3811 3812 3813
+3815). **Five departures in 19**, and in 9 of 19 the slip first passes 15
+deg between Mach 0.9 and 1.4 -- where `GLIDE_RCS_MACH_MIN` shuts the valve
+(LOG3802: "rcs off (err 10.8 deg)" with 20 deg of slip) and yaw snaps from
+4.8 s back to 22.6 mid-recovery; the damper then counts six growing swings.
+The defaults had no transonic trouble in the batch before, so **the yaw
+flag made this**. Fix (built): under the flag an open valve stays permitted
+below the Mach floor until its own relay settles.
+
+The flare's outcome is set by the sink it is entered at, in both arms:
+entered at <=25 m/s it touched down at -2..+13; entered at >=45 it hit at
+38-80 (LOG3801, 3803: door at 163-169 m, 46-48 m/s, touchdown 3.5 s later
+at the same sink). The door (`50 + 2.5 s * sink`) is lower than the pitch
+response plus the pull-up. LOG3799 (package) is the gentlest touchdown on
+record for this craft: flare at 63 m/s, touchdown sink -0.3, 48 m/s, on
+the runway 51 m off the centreline, 24/30 parts.
+
+**`FLARE_DOOR_FROM_RESPONSE`** (built, off): door = `FLARE_ALT_M + T sink +
+(sink^2 - td^2) / (2 (FLARE_TRACK_LOAD_MAX - 1) g)`, T = `attitude_settle_s`
+published on `env.pitch_response_s` each tick; one function, so the speed
+profile, brake stow and S-turn stop move with it.
+
+**Defaults vs the whole package** (yaw + handover, flare attitude, lead,
+spend-as-speed, derived door; `baf131f9`; stopped after 8 package flights,
+LOG3817-3832): **worse** -- 0/8 package flights usable, six destroyed at
+59-149 m/s, three 650-2350 m off the side. LOG3832: out of the HAC short
+(299 deg off, 2 km up), dived at 90 m/s of sink, the raised door opened the
+flare at 615 m and 149 m/s and the flare asked for 2-4 deg (its table
+over-reads trimmed lift) -- no arrest. LOG3824: 2 km high at the approach,
+spend-as-speed slowed it to 70 m/s and it still S-turned over the
+threshold. LOG3819: the door arrested 62 -> 7.5 m/s of sink (it works when
+there is height) but the vehicle was 1.5 km off the centreline. **Lesson:
+five changes in one arm; fly them one at a time.**
+
+**Why gentle touchdowns break up.** Wings are within 1-4 deg of level at
+the last flare tick; the roll comes *after* contact (+25..+57 deg 1-2 s in,
+three ended inverted). The first part lost, 0.1-1.4 s after contact, is at
+the back/underside on nearly every flight: aft RCS block 7/12, else tail
+fin, engine, docking port. Craft file: the lower aft RCS blocks sit 2.3 m
+behind the main gear and *below* its mount (y 8.72 vs 8.92), beside the
+3.75 m engine bell. The flare commands ~7.3 deg (the tail cap, 0.8 x 9.1)
+but flies 12-18 (the `aim_runway` sign error), and as the sink goes to
+zero the attitude becomes that alpha -- above the 9.1 deg tail angle, before
+gear compression. **Refuted on the way:** the ground spoiler rolling it --
+`AIRBRAKE_SPOILER_LATERAL_CHECK` measured the set at roll -0.00, yaw -0.00
+(LOG3836).
+
+**The user's landing rules, built (off):** `ROLLOUT_BRAKE_FULL_ON_CONTACT`
+(mains 200% from the tick they are `grounded`, held; nose none -- the
+rollout had been giving 0-24% of 200% at contact under
+`BRAKE_FOR_DISTANCE`), `ROLLOUT_STEER_PID` (P on cross-track, D on measured
+drift = steer on the position `ROLLOUT_STEER_LOOKAHEAD_S` ahead, small
+clamped I; the P-only law weaves and stops 30-40 m off). "Flare less, fly
+faster" was flown as `FLARE_TAIL_BY_ATTITUDE=True;TAIL_STRIKE_MARGIN=0.5;
+APPROACH_FLARE_FACTOR=2.1;APPROACH_FLARE_FLOOR_FACTOR=2.0;
+ROLLOUT_BRAKE_FULL_ON_CONTACT=True` -- one flight before the session ended
+(LOG3839: destroyed at 80.6 m/s, 1.4 km along; not a result).
+
+**Yaw flag with the Mach-floor fix vs defaults** (`37ba2429`, 2 of 6 rounds,
+LOG3837-3844, stopped for the session end): transonic slip still builds on
+the flag (LOG3838 33 deg at M1.6, LOG3844 41 at M1.2). Cause found: `run_hac`
+calls `set_rcs(False)` on its first tick -- "rcs off (err 22.9 deg, q 2481
+Pa)" 0.2 s after GLIDE -> HAC -- and `rcs_yaw_now` applies in GLIDE only, so
+yaw snaps back to 22.6 s at HAC entry mid-slip. The Mach-floor fix covered
+the GLIDE half of the same handover.
+
+## Session, 2026-09-29 night -> 09-30 (yaw-RCS becomes default; the flare is the common killer)
+
+**`ATTITUDE_YAW_WITH_RCS` is a default** (`c31c3bea` onward). The HAC
+handover fixed first: `run_hac` now keeps an open valve permitted (it used
+to shut it on the first tick) and `rcs_yaw_now` applies in HAC as well as
+GLIDE. Pairfly qs_shuttle 6 v 6 on ksp1/2 (`23e33e7b`; A defaults LOG3846
+3850 3852 3856 3858 3862, B flag 3847 3849 3853 3855 3859 3861): hypersonic
+peak slip **8-13 deg on all six flag flights, 15-70 on the defaults**; the
+defaults departed once (LOG3850, 70 deg, 54 km short -- the user's live
+spin), the flag never; two flag flights landed 30/30 (LOG3853 795 m off the
+side, LOG3859 1.9 km long). The valve now stays open into the cone until
+its relay settles (LOG3847: shut 133 s into HAC). Transonic bank overshoot
+(cmd 37, flown 80-106, LOG3859) is present on both arms at similar size --
+a separate roll problem, not this flag's.
+
+**The aft-RCS craft variant** (`saves/qs_shuttle_rcsup.sfs`: qs_shuttle with
+the two lower aft RV-105 blocks rotated 45 deg about the long axis to the
+sides, x=+-1.81 z=0; RCS yaw torque 266 kN m vs 290) flown solo on ksp0
+alternating with qs_shuttle, 3 v 3 (A LOG3848 3857 3860, B 3851 3854
+3863): **inconclusive** -- every touchdown in both arms was hard (9-17 m/s
+sink) and the first part lost was a delta wing, tail fin or the pod, not the
+aft RCS. The craft geometry cannot be judged until touchdowns are gentle.
+
+**Measured: why the landings fail, in order.**
+
+1. *The approach dives.* Approaches that S-turn (|bank| > 30 on 50-100% of
+   ticks) track commanded alpha 2-7 deg rms worse than straight ones (0.5-1.4)
+   and dive: LOG3849, 3852, 3864, 3870 reached the door at 130-190 m/s and
+   90-130 m/s of sink. The S-turn's bank is a +-40 relay reversing every 4-8
+   s against a ~12 deg/s roll; the vehicle never reaches the command and the
+   pitch loop loses alpha in the reversals. (An earlier reading that "the
+   table over-reads lift 3x" -- LOG3832 act 20-34 vs mdl 62-73 -- was an
+   artifact: `mdl=` is evaluated at the *unsigned* alpha; with sideslip the
+   signed alpha was ~0. `LIFT_LOOP` flown, n=2: it learns only +-2 deg.)
+2. *The cone hands over 1-2 km high* (conesum, 35 flights): the glide
+   arrives over the field at 13.7-15 km (the 3 km distance backstop fires
+   before `HAC_ALT_M`), the cone's plan saturates at R=16 km (~16 km of
+   path), it flies ~20 km at L/D 1.9 and exits at 3.5-4.4 km against 2.2
+   needed. **The cone's flap brake never deployed** on any of these flights:
+   `hac_flap_brake` waits for the weave to pin at `HAC_WEAVE_MAX_DEG` (50) and
+   the weave sat at ~44. A disconnected brake.
+3. *The flare over-lifts, floats and stalls out* -- on every arm and on the
+   old craft. `aim_runway` pitches to alpha + descent (the sign error found
+   last session): LOG3869 (qs_plane) commanded 6 deg at the door and flew
+   15.6, levelled at 65 m, bled 85 -> 45 m/s and fell 17.7 m/s. On the flare
+   bench (qs_shuttle_low, 6 per arm, LOG3882-3905) the defaults stalled out
+   6/6 (min speed 34-37 m/s, 27-28 parts, docking port first -- a nose slam).
+4. *Wings not level at contact.* LOG3855: 0.04 m/s of "sink" on the FLARE ->
+   ROLLOUT line, but the vehicle arrived at the door with -51 deg of bank
+   flown (0 commanded, S-turn still reversing at 208 m) and touched down at
+   -36: wing lost. The FLARE -> ROLLOUT sink is read after the bounce.
+
+**The flare bench** (`qs_shuttle_low`, ~2.5 min a flight; 4-arm rotation
+over ksp0-2, `440649ed`):
+
+- defaults: stall-out 6/6, 27-28 parts.
+- `FLARE_TAIL_BY_ATTITUDE` (the sign fix + attitude cap): never stalls
+  (min speed 58-84). 30/30 on 3/6 -- all three from doors at <= 70 m/s;
+  doors at 74-87 m/s fly ~4 deg of alpha to the ground at 20-24 m/s sink,
+  16-21 deg banked (22-24 parts).
+- + `FLARE_EXP_TAU_S=4` (new: wanted sink <= 2 + h/4): 4/6 intact.
+- + `FLARE_LOAD_LOOP` (new): worse (23-29) -- it *reduced* alpha, because the
+  schedule asked for less than one g; the loop did what it was told.
+- + `APPROACH_BANK_BY_ROLL` (new, bench 2 LOG3906-3926): bank at contact
+  -5..+2 (from -12..-20), and lands ~1.6 km along instead of 2.6-4.4 (the
+  S-turn can no longer spend late) -- but doors at 92-102 m/s where the
+  flare commands 2-6 deg, achieves ~2 and contacts at 8-12 m/s sink, pitch
+  -1..+3 (`contact:` line). The flare is too late for a 3 s pitch response:
+  at 72 m with 25 m/s of sink the exponential schedule asks 1.24 g.
+
+**Traps paid:** the `mdl=` field is evaluated at the unsigned alpha (compare
+`act=` against it only with small sideslip); stopping the farm while a
+rotation's last round is still up voided LOG3927-3929; killed partials
+LOG3879-3881.
+
+**Flare bench 3** (2x2 on `FLARE_TAIL_BY_ATTITUDE` + `FLARE_EXP_TAU_S=4`,
+LOG3930-3953; LOG3951, 3952 void -- clobbered by a rotation started on top
+of a running one): base 4/5 intact (with bench 1: **8/11**, against 4/11 for
+the sign fix alone and 0/6 for the defaults); + `FLARE_DOOR_FROM_RESPONSE`
+3/6; + `FLARE_LEAD_BY_RESPONSE` 4/6 (two at 10-11 parts); both 4/5. Neither
+the raised door nor the lead is distinguishable from the base at this n.
+The `contact:` line does not fire from `qs_shuttle_low` (a mid-air save
+never set the gear up, so no main wheel is known) -- read the FLARE ->
+ROLLOUT sink there.
+
+**The old craft had quietly stopped landing.** `qs_plane` had not been flown
+since the shuttle chain became the defaults (2026-09-25); on the current
+defaults it contacted at 15-21 m/s and kept all 23 parts on 1 flight of 12
+(LOG4014; 3877 kept 21; destroyed or broken: 3869, 3875, 3958, 3960, 3962,
+4012, 4016, 4024, 4026, 4028). And
+`qs_cone` (old craft at 12 km) is no bench any more: the cone runs "out of
+height" 5.4 km from the gate on every flight, defaults included (LOG3967
+...3984), and dives in at 140 m/s.
+
+**Flare bench 5** (`14dc04c2`, LOG3992-4009): defaults stall out 5/6 (27-28
+parts); `FLARE_TAIL_BY_ATTITUDE` + `FLARE_EXP_TAU_S=4` +
+`FLARE_DOOR_FROM_SCHEDULE` (new: the door where the exponential schedule
+starts to bind, `tau (sink - td) + T sink`, and the schedule read T ahead)
+**5/6 intact 30/30** (the sixth 28), arrest at 20-27 m, bank <= 3.4 at the
+last tick. + `APPROACH_BANK_BY_ROLL` 0/6: the capped S-turn spends less,
+doors at 87-97 m/s, and there the flare never flies more than ~4 deg --
+commanded 5-8, a standing 3-4 deg pitch deficit for eight seconds (LOG4003).
+The earlier "fast doors don't pull" flights were the same thing, plus (on
+the arms without bank-by-roll) doors entered 12-28 deg banked, where raising
+the nose in the vertical plane needs body *yaw* -- five times slower than
+pitch on this airframe.
+
+**From orbit, both craft** (rotation `14dc04c2`, LOG4010-4033, 6 per arm):
+old craft on the three flare fixes **5/6 intact on the runway** (along
++14..+620, across <= 22 m), contact sink 1.0-4.1 m/s at 50-60 m/s; on the
+defaults 1/6 (contact 15-21 at 37-41). The one loss (LOG4031) contacted at
+4.1 m/s and pitch +8, then the nose fell to -1 in one tick and the nose gear
+broke -- a slam at main-gear contact. The shuttle 0/6 on both arms, every
+failure upstream of the flare: dives (door at 90-140 m/s, 40-100 m/s of
+sink), doors 14-39 deg banked, two departures on the defaults (LOG4018,
+4032). **Made default** (`2deb4b71`): `FLARE_TAIL_BY_ATTITUDE`,
+`FLARE_EXP_TAU_S=4`, `FLARE_DOOR_FROM_SCHEDULE`. Failure 101.
+
+**Built, off:** `ALPHA_TRIM_LOOP` (an outer integral on commanded minus
+signed alpha in APPROACH and FLARE, gated to settled roll and small slip);
+`HAC_FLAP_BRAKE_ON_SURPLUS` (the cone's brake on surplus alone -- it waited
+for the weave to pin at 50 and the weave sat at 44, so it never deployed);
+`APPROACH_BANK_BY_ROLL`; `FLARE_LOAD_LOOP` (refuted on the bench);
+the `contact:` log line (state at the last airborne tick and the first
+grounded one).
+
+**Last rotation** (`d012a11f`, LOG4051-4071; 4072-4074 void): shuttle
+defaults 0/4 intact; + `HAC_FLAP_BRAKE_ON_SURPLUS` + `HAC_FLAP_BRAKE_IGNORES_ROLL`
+0/4 (brake really spends -- LOG4052 exit surplus +594 -- but each deployment
+builds 30-40 m/s of sink in 3 s, and the approach still dives); no S-turn
+(`APPROACH_SCURVE_MAX_DEG=0`) 0/4, mushes to 33-53 m/s at 35 m/s sink
+(LOG4053: the speed law's 0.82 g load floor needs 13-16 deg at 57 m/s --
+built `APPROACH_MUSH_RECOVERY`, unflown). Old craft defaults 2/3 intact (one
+nose-gear loss after a 3.9 m/s contact: the mains are behind the CoM and the
+nose pitches +8.5 -> 0 in one tick); with the user's rollout rules
+(`ROLLOUT_BRAKE_FULL_ON_CONTACT` + `ROLLOUT_STEER_PID`) 1/3 intact, two lost
+an elevon -- but both contacted at 72-74 m/s and 8-9 m/s sink, a different
+arrival, so not yet a verdict on the rollout rules.
+
+## Session, 2026-09-30 afternoon (the cone's budget: a phantom path, a constant glide ratio, and a table that changes)
+
+**`APPROACH_MUSH_RECOVERY` is disconnected on the defaults.** Flown 3 rounds
+of a 4-arm rotation (`ebd6dbb2`, LOG4075-4083, `logs/rot-mush-0930.txt`,
+stopped at the round boundary): on no approach tick of either arm was the
+vehicle below 0.8 x target above 800 m. With the S-turn on, the shuttle's
+approach *dives* (108 -> 132 m/s at 60-70 m/s of sink on each +-40 bank
+reversal, flown bank overshooting to 55 and signed alpha to ~0, LOG4051); it
+only mushes with `APPROACH_SCURVE_MAX_DEG=0` (LOG4053). Re-fly it only on
+that arm.
+
+**The cone always exits high, on both craft, and it is not the cone's
+authority -- it is the cone's arithmetic.** `conesum` over LOG4051-4071: the
+first plan is ~16.2 km on every flight, flown ~20 km, exit +1.1..+2.8 km over
+what the approach needs; `qs_plane` +1.1..+1.4 km on every flight. The
+vehicle arrives *lined up* 16 km before the low gate (`turn=0`; the high gate
+is on the extended centreline), so the "cone" is a straight-in and its only
+spending authority is the weave and the brake. Two defects in the plan hid
+the surplus from both:
+
+1. **Phantom path** (failure 102, `HAC_PATH_WRAP_TO_GATE`, built, off).
+   Lined up and a little outside a wide circle, the tangent point sits just
+   past the rollout; `hac_turn` calls that arrived but `lead` still runs to
+   it, `sqrt(x^2 + 2 R dy)`. Reproduced exactly offline: 190 m outside a
+   16 km circle 955 m before the gate costs 2651 m (LOG4056: `gate=955
+   path=2650`). The radius scan takes the longest fitting path, so it chose
+   those circles: 2.2-3.3 km of phantom through most of the shuttle's cone
+   (LOG4051 `gate=6207 path=9484`), weave at 0. Fixed, `path` tracks
+   `gate` (LOG4086).
+2. **`HAC_LD` 1.86 is a whole-cone average** of a Mach 0.7 entry at 22 deg
+   (flown 1.3-1.5, decelerating) and a subsonic straight-in at 6 deg (flown
+   2.5-3.0; the table agrees at the flown alpha, `ld=` 2.97/2.98). With the
+   phantom gone the cone read itself *short* at 6 km and still rolled out
+   1.1 km high (LOG4086).
+
+**The glide-ratio fix, twice, and why it is off.** `HAC_LD_AT_TARGET`
+first took the table's ratio at the cone's target speed *where the vehicle
+was*: 1.16 at 13 km (thin air), short until 7 km, then weave pinned at 50
+with 5 km left, exit +2.0 km (LOG4091). Rebuilt as a ladder
+(`guidance.hac_ladder`: path = sum over 500 m slices from the gate of the
+ratio at that slice's height). **From `qs_shuttle_low` it reads what it
+should** (4.53 at 2 km -> 1.62 at 12 km, LOG4099) and weaves from entry.
+**From orbit it reads 0.74-1.68** (LOG4100-4102, the `hac ladder` event):
+the in-flight table at M=0.3 needs 5.8-9 deg for the lift STANDBY's table
+makes at 1.3, at 54-69 m^2 of CdA against 11.5 -- and the same cell moves
+between samples 60 s apart (LOG4102 CdA 41.8 -> 58.9 -> 35.7). STANDBY's
+dump is clean and identical on every flight (M=0.3 5 deg 94.4/24.0). So the
+rows `sweep` re-probes in flight are wrong for conditions the vehicle has not
+reached yet; the `mdl=` field agrees with `act=` only once it is there. Not
+explained (candidates: the rows re-aimed by `set_profile` to altitudes where
+KSP's pseudo-Reynolds drag multiplier bites; the probe rotation). **Anything
+that plans on the table ahead of the vehicle inherits this** -- the
+propagator included.
+
+**The cone's other spender is broken by roll.** Flown bank off the command
+by >60 deg on 14-35 of 40-90 subsonic ticks on 7 of 17 recent shuttle
+flights -- continuous rolls at Mach 0.5-0.9 (LOG4075: -64, -76, +109, -114,
+-171, +131 ... at 2 s ticks, commanded 2-22; the damper answers by slowing
+roll to 13 s). Four of five `HAC_FLAP_BRAKE_ON_SURPLUS +
+HAC_FLAP_BRAKE_IGNORES_ROLL` flights are among them: the brake holds the
+elevons the roll needs. `HAC_FLAP_ARREST_EXCESS` (built, off) prices only
+the sink over the cone's own glide (whole, 117-179 m/s read as 1.4-3.2 km
+of arrest and stowed every deployment in 3-7 s) -- but the roll conflict,
+not the arrest, is what has to be solved first. The approach's S-turn has
+the same disease: every reversal is where alpha is lost.
+
+`HAC_SPEND_AS_SPEED` (flown n=2 on wrap+ld, LOG4092 4094): exits +1.3/+1.4
+km; not a verdict.
+
+**`HAC_PATH_WRAP_TO_GATE` vs defaults** (`264d651f`, `logs/rot-wrap-0930.txt`,
+LOG4103-4120; 4121-4123 void, killed when the user stopped the batch):
+`qs_plane` exits defaults +1136..+1504 (6, 5 intact 23/23), wrap +704..+1035
+(5, 3 intact; LOG4112, the lowest exit, contacted at 71 m/s and broke up;
+LOG4110 lost a gear). Shuttle 0 intact on either arm; exits defaults
++1046..+2759, wrap -777..+2317 (LOG4104: at the gate 750 m above need but
+13-17 deg past the centreline, `turn` 343-347, not released, out of height
+3.2 km beyond -- built `HAC_EXIT_PAST_DEG`, off). The shuttle's result is
+set by lateral control, not the plan. **No shuttle flight from orbit has
+landed intact on the runway** (28 today; closest LOG4083 +90 m along, 100 m
+across, 9 parts). The user notes the shuttle's CG is too far aft to move the
+vertical tail further back.
+
+## Session, 2026-09-30 evening: the twin-fin shuttle
+
+The user rebuilt the shuttle (`saves/craft/SPH/shuttle.craft`): the single
+centreline Big-S tail fin replaced by **two on the wingtips** (outer
+elevons, x = +-5.63 m, z = -15.53 against the old fin's -16.91, canted 15
+deg out, mirror-deployed). Everything else identical. Flying it by hand they
+put it on the runway at 50-60 m/s, tanks empty. `actuators.py`: every axis
+live on both fins, limiter 37.5 as before; MoI roll 94k -> 124k (+32%),
+mass 37.50 -> 37.95 t.
+
+**Saves.** `qs_shuttle2` is a splice, not a flight: the craft launched on
+ksp0 (`launch_vessel` hangs on a pre-flight dialog if the named crew is
+already aboard another vessel -- name an unassigned kerbal), saved, and its
+PART blocks put into `qs_shuttle`'s vessel taking structure (parent, attN,
+srfN, sym, positions) from the new save and flight state (modules -- gear
+retracted --, resources, temperatures, crew) from the old; both rudders
+whole from the new. So UT, orbit and fuel equal `qs_shuttle`'s and a pair
+measures the craft alone. `_inc`/`_high` by the old recipe; orbits
+byte-identical to `qs_shuttle_inc`/`_high`.
+
+**Paired batch, defaults `89b7daaf`** (`logs/rot-shuttle2-0930.txt`,
+LOG4124-4135, 6 per arm, ksp0-2, fresh farm). New reader
+`spaceplane/tools/lateralsum.py`: per flight, subsonic ticks with flown bank
+>60 off the command (`bad60` -- *includes reversal lag*, so it does not
+separate the craft), ticks with |sideslip| >10 (`slip10`), peak sideslip,
+the cone's exit surplus, touchdown.
+
+| | old `qs_shuttle` | new `qs_shuttle2` |
+|---|---|---|
+| subsonic `slip10` ticks | 13, 2, 6, 8, 4, 9 | 0, 0, 0\*, 1, 0, 0 |
+| peak subsonic slip, deg | 12-30 | 8.8-11.0 (\*47.8 is on the ground, LOG4129 rollout) |
+| intact | 1 (LOG4128, splashed 2.9 km long) | **1: LOG4135, 31/31, 6.1 m/s sink at 67 m/s**, +1569 along (past the end) |
+| cone exit surplus, m | -6499..+2378 | +959..+5022 |
+
+**The lateral departure is gone on the new craft** -- no continuous rolls,
+sideslip inside +-11 deg on every airborne tick of six flights. LOG4135 is
+the first intact shuttle landing from orbit.
+
+**What now loses it: the flare inherits bank and cannot remove it.** Every
+new-craft loss reaches the flare banked and touches down banked: LOG4129
+handed over at -28 (commanded 0 for 5 s, flown -25..-45, contact at -45, a
+wingtip -- now a fin -- on the runway, then a 30-48 deg slide); LOG4131 -13
+-> -39 -> +87 at contact; LOG4133 +41 at the door. Two sources: the
+centreline capture after the S-turn stop oscillates with a ~25 s period
+against a vehicle whose roll lags 4-6 s (LOG4129: -17, -30, -4, +20, +18,
+-14, -38 commanded down to 130 m) -- measured roll rate 8.5-12.8 deg/s,
+roll `time_to_peak` 5.5 s; and the approach dives (LOG4127: +-40 S-turns
+at alpha 2-6, 128 m/s and 77 m/s of sink at the flare door, struck at 133).
+And the cone exits +1.0 to +5.0 km high (LOG4131 +5022 with laps=0).

@@ -474,3 +474,623 @@ class Brake(object):
             self.changes += 1
             self.last_reason = reason
         return wanted
+
+
+class MeasuredBrake(Armed):
+    """The opposed flaps chosen by measurement, not by geometry.
+
+    **Positive ``Deploy Angle`` is not one direction.**  KSP's deploy sense is
+    a per-part setting, and on the shuttle a positive angle takes one pair of
+    main elevons trailing-edge up (lift -9.1 ClA) and the other pair and the
+    forward pair trailing-edge *down* (lift +4.7, +5.5): the geometric brake
+    deployed all of them at +20 and was half a flap.  The old craft's probe
+    saw the same thing from outside -- its "brake" *raised* L/D
+    hypersonically, 0.88 -> 1.27.
+
+    So each surface is deployed both ways in vacuum and the game's own
+    ``simulate_aerodynamic_wrench_at`` says what it does.  Each keeps the
+    sense that spoils its lift; the surfaces are split by the **sign of the
+    moment they then make** (not by station -- the shuttle's main elevons sit
+    on its centre of mass and pitch by camber, not by arm), and the stronger
+    side is scaled down until the moments cancel.  What is left is a lift
+    spoiler, which is the currency sideslip proved and a drag brake is not.
+    """
+
+    def __init__(self, entries, lift, moment, reasons=(), parts=(),
+                 gains=(1.0, 1.0)):
+        super(MeasuredBrake, self).__init__(reasons=reasons)
+        self.entries = list(entries)     # (record, signed multiplier)
+        self.lift = lift                 # predicted dClA at full deployment
+        self.moment = moment             # predicted residual dCmA
+        # (record, sense, dClA, dCmA) at unit gain, and the (nose-up,
+        # nose-down) side gains -- what ``rebalanced`` needs to correct a
+        # measured residual without re-probing every surface.
+        self.parts = list(parts)
+        self.gains = tuple(gains)
+
+    def slopes(self):
+        """dCmA per unit gain of the nose-up side and the nose-down side."""
+        up = sum(dm for _, _, _, dm in self.parts if dm > 0.0)
+        down = sum(dm for _, _, _, dm in self.parts if dm <= 0.0)
+        return up, down
+
+    def with_gains(self, g_up, g_down):
+        entries, lift, moment = [], 0.0, 0.0
+        for record, sense, dl, dm in self.parts:
+            g = g_up if dm > 0.0 else g_down
+            entries.append((record, sense * g))
+            lift += g * dl
+            moment += g * dm
+        out = MeasuredBrake(entries, lift, moment, self.reasons, self.parts,
+                            (g_up, g_down))
+        out.kind = getattr(self, "kind", "spoiler")
+        return out
+
+    def balance(self):
+        """The two side gains as one number ``x`` in [0, 2]: 0 is the
+        nose-down side alone, 1 both sides full, 2 the nose-up side alone.
+        The moment rises monotonically along it, which is what lets a
+        bracket be searched."""
+        g_up, g_down = self.gains
+        return g_up if g_down >= 1.0 - 1e-9 else 2.0 - g_down
+
+    def at_balance(self, x):
+        x = max(0.0, min(2.0, x))
+        if x <= 1.0:
+            return self.with_gains(x, 1.0)
+        return self.with_gains(1.0, 2.0 - x)
+
+    def rebalanced(self, residual, history=()):
+        """Move the balance against a *measured* residual moment.
+
+        Deflections do not add, and a correction taken from the single-
+        surface slopes overshoots: the shuttle's flap set went 0.92 -> 0.20
+        -> 0.72 -> 0.28 with the moment +78 -> -56 -> +48 -> -42 and never
+        converged.  So once the measured ``history`` of ``(balance,
+        moment)`` brackets zero, the next balance is the **regula falsi**
+        point between the tightest bracket -- the game's wrench closes the
+        balance and the prediction only seeds it.
+        """
+        x = self.balance()
+        pts = list(history) + [(x, residual)]
+        below = [p for p in pts if p[1] < 0.0]
+        above = [p for p in pts if p[1] > 0.0]
+        if below and above:
+            lo = max(below, key=lambda p: p[0])    # most nose-up of the lows
+            hi = min(above, key=lambda p: p[0])    # most nose-down of highs
+            if hi[1] != lo[1]:
+                x_new = lo[0] + (0.0 - lo[1]) * (hi[0] - lo[0]) / (
+                    hi[1] - lo[1])
+                return self.at_balance(x_new)
+        s_up, s_down = self.slopes()
+        # d(moment)/dx: along [0,1] the nose-up gain moves, along [1,2]
+        # the nose-down gain falls
+        slope = s_up if x < 1.0 else -s_down
+        if slope <= 0.0:
+            return self
+        return self.at_balance(x - residual / slope)
+
+    @property
+    def any(self):
+        return bool(self.entries)
+
+    def area(self):
+        return sum(max(0.0, r.area) for r, _ in self.entries)
+
+    def surfaces(self):
+        return list(self.entries)
+
+    def describe(self):
+        kind = getattr(self, "kind", "spoiler")
+        if not self.entries:
+            return "%s (measured): nothing armed -- " % kind + "; ".join(
+                self.reasons)
+        return ("%s (measured): %d surfaces, predicted dClA %+.1f, "
+                "residual dCmA %+.1f | %s"
+                % (kind, len(self.entries), self.lift, self.moment,
+                   " ".join("%s x%+.2f" % (r.title, m)
+                            for r, m in self.entries)))
+
+
+def choose_measured_brake(samples):
+    """The spoiler: see :func:`choose_measured_set`."""
+    return choose_measured_set(samples, spoil=True)
+
+
+def choose_measured_flaps(samples):
+    """The flaps: the same surfaces, each in the sense that *adds* lift.
+
+    The shuttle's tail strikes at 9.1 deg, so its flare cannot buy lift
+    with angle of attack; a flap buys it at the angle it can use.
+    """
+    return choose_measured_set(samples, spoil=False)
+
+
+def choose_measured_set(samples, spoil=True):
+    """``samples``: ``(record, dL_plus, dM_plus, dL_minus, dM_minus)`` per
+    surface, the change in ``ClA`` and pitching ``CmA`` for a deployment of
+    ``+theta`` and ``-theta``.  Each surface takes the sense that spoils its
+    lift (``spoil``) or adds to it; the two moment sides are balanced.
+    Returns a :class:`MeasuredBrake`, empty with a reason when no
+    moment-cancelling set exists.
+    """
+    word = "spoiler" if spoil else "flap"
+    sign = 1.0 if spoil else -1.0        # spoil: most negative lift wins
+    chosen = []
+    for record, lp, mp, lm, mm in samples:
+        if spoil and min(lp, lm) >= 0.0:
+            continue                     # spoils nothing either way
+        if not spoil and max(lp, lm) <= 0.0:
+            continue                     # adds nothing either way
+        if sign * lp <= sign * lm:
+            chosen.append((record, 1.0, lp, mp))
+        else:
+            chosen.append((record, -1.0, lm, mm))
+    pos = [c for c in chosen if c[3] > 0.0]
+    neg = [c for c in chosen if c[3] <= 0.0]
+    m_pos = sum(c[3] for c in pos)
+    m_neg = -sum(c[3] for c in neg)
+    if not pos or not neg or m_pos <= 0.0 or m_neg <= 0.0:
+        return MeasuredBrake([], 0.0, 0.0, reasons=(
+            "no measured %s: every deployment in that sense pitches the "
+            "same way (%d nose-up, %d nose-down)" % (word, len(pos), len(neg)),))
+    g_pos = min(1.0, m_neg / m_pos)
+    g_neg = min(1.0, m_pos / m_neg)
+    parts = [(record, sense, dl, dm) for record, sense, dl, dm in chosen]
+    brake = MeasuredBrake([], 0.0, 0.0, reasons=(
+        "measured: nose-up side x%.2f, nose-down side x%.2f"
+        % (g_pos, g_neg),), parts=parts).with_gains(g_pos, g_neg)
+    if sign * brake.lift >= 0.0:
+        return MeasuredBrake([], 0.0, 0.0, reasons=(
+            "no measured %s: the moment-cancelling set changes lift the "
+            "wrong way (dClA %+.1f)" % (word, brake.lift),))
+    brake.kind = word
+    return brake
+
+
+def simplex_max(c, rows, b, iterations=500):
+    """Maximise ``c . x`` subject to ``rows x <= b``, ``x >= 0``, with every
+    ``b >= 0`` -- so the origin is a feasible vertex and one phase does.
+
+    Dense tableau, Bland's rule (no cycling).  The problems here have a
+    dozen variables; this is not a general LP library and does not try to
+    be one.  Returns ``x`` or None if unbounded.
+    """
+    n, m = len(c), len(rows)
+    if any(bi < 0.0 for bi in b):
+        raise ValueError("simplex_max needs b >= 0")
+    # tableau rows: [a | slack | b]; objective row last, as -c
+    tab = []
+    for i, row in enumerate(rows):
+        slack = [0.0] * m
+        slack[i] = 1.0
+        tab.append(list(row) + slack + [float(b[i])])
+    tab.append([-ci for ci in c] + [0.0] * m + [0.0])
+    basis = [n + i for i in range(m)]
+    eps = 1e-12
+    for _ in range(iterations):
+        obj = tab[-1]
+        col = next((j for j in range(n + m) if obj[j] < -eps), None)
+        if col is None:
+            break
+        best, row = None, None
+        for i in range(m):
+            a = tab[i][col]
+            if a > eps:
+                ratio = tab[i][-1] / a
+                if (best is None or ratio < best - eps
+                        or (abs(ratio - best) <= eps
+                            and basis[i] < basis[row])):
+                    best, row = ratio, i
+        if row is None:
+            return None
+        piv = tab[row][col]
+        tab[row] = [v / piv for v in tab[row]]
+        for i in range(m + 1):
+            if i != row and abs(tab[i][col]) > eps:
+                f = tab[i][col]
+                tab[i] = [v - f * w for v, w in zip(tab[i], tab[row])]
+        basis[row] = col
+    x = [0.0] * (n + m)
+    for i, j in enumerate(basis):
+        x[j] = tab[i][-1]
+    return x[:n]
+
+
+def choose_max_drag_set(samples, lift_weight=1.0, moment_frac=0.1,
+                        spoil=True, lift_band=None):
+    """**Every surface on its own, deflected to buy the most braking with
+    no net moment on any axis.**  The user's suggestion (2026-09-25): the
+    shuttle's rear elevon pair need not move together, and deflecting them
+    apart is more drag.  Stated generally so it is not a shuttle rule: each
+    surface ``i`` may take any fraction ``x_i`` of ``+theta`` or of
+    ``-theta``, the responses superpose (checked afterwards, in the game),
+    and the set maximises
+
+        sum dCdA  -  lift_weight * sum dClA
+
+    -- drag, plus lift dumped onto the wheels -- subject to pitch, roll and
+    yaw each within ``moment_frac`` of the largest single-surface moment on
+    that axis, and (``spoil``) no net lift added.
+
+    ``samples``: ``(record, plus, minus)`` where ``plus``/``minus`` are
+    ``(dClA, dCdA, dPitch, dRoll, dYaw)`` for ``+theta``/``-theta``.
+    ``lift_band`` (a fraction, like ``moment_frac``) is the **in-flight**
+    form: lift held within that band of the largest single-surface lift
+    change instead of only kept from rising, because in the air dumped lift
+    is sink the approach did not ask for.  ``spoil`` is then ignored.
+
+    Returns a :class:`MeasuredBrake` (``kind`` "drag brake", or "air drag
+    brake" with a band), empty with a reason if nothing beats stowed.
+    """
+    if not samples:
+        return MeasuredBrake([], 0.0, 0.0, reasons=("no surfaces probed",))
+    n = len(samples)
+    # variables: p_0..p_n-1 (towards +theta), q_0..q_n-1 (towards -theta)
+    resp = [s[1] for s in samples] + [s[2] for s in samples]
+    c = [r[1] - lift_weight * r[0] for r in resp]
+    rows, b = [], []
+    for i in range(n):                       # p_i + q_i <= 1
+        row = [0.0] * (2 * n)
+        row[i] = row[n + i] = 1.0
+        rows.append(row)
+        b.append(1.0)
+    for axis in (2, 3, 4):                   # |moment| <= limit, each axis
+        largest = max(abs(r[axis]) for r in resp)
+        limit = moment_frac * largest
+        coeff = [r[axis] for r in resp]
+        rows.append(coeff)
+        b.append(limit)
+        rows.append([-v for v in coeff])
+        b.append(limit)
+    if lift_band is not None:                # in flight: lift held
+        limit = lift_band * max(abs(r[0]) for r in resp)
+        rows.append([r[0] for r in resp])
+        b.append(limit)
+        rows.append([-r[0] for r in resp])
+        b.append(limit)
+    elif spoil:                              # no net lift added
+        rows.append([r[0] for r in resp])
+        b.append(0.0)
+    x = simplex_max(c, rows, b)
+    if x is None:
+        return MeasuredBrake([], 0.0, 0.0, reasons=("unbounded LP",))
+    entries, lift, pitch, value = [], 0.0, 0.0, 0.0
+    for i, (record, _, _) in enumerate(samples):
+        mult = x[i] - x[n + i]
+        if abs(mult) < 1e-6:
+            continue
+        entries.append((record, mult))
+    for j, r in enumerate(resp):
+        lift += x[j] * r[0]
+        pitch += x[j] * r[2]
+        value += x[j] * c[j]
+    if not entries or value <= 0.0:
+        return MeasuredBrake([], 0.0, 0.0, reasons=(
+            "no drag brake: nothing beats stowed with the moments held",))
+    out = MeasuredBrake(entries, lift, pitch, reasons=(
+        "LP: drag - %.2f x lift = %+.1f" % (lift_weight, value),))
+    out.kind = "drag brake" if lift_band is None else "air drag brake"
+    out.drag = sum(x[j] * r[1] for j, r in enumerate(resp))
+    return out
+
+
+def mirrored_only(surfaces, cfg=None):
+    """``(kept, dropped)``: only surfaces with a mirror twin.
+
+    **An unpaired surface is never part of the drag brake** (the user's
+    rule, 2026-09-25: "it won't deflect the rudder because there's only one
+    of them").  The LP would balance a lone rudder's yaw against the
+    elevons, on the strength of a linear model -- and a linear model's
+    error on a lone surface is an uncommanded yaw on the runway.  A twin is
+    the same part reflected across the vessel's plane of symmetry: the
+    lateral offsets cancel, the fore-aft and dorsal stations agree, and
+    neither sits on the centreline.  Same tolerances as
+    :func:`find_split_rudder`.
+    """
+    tol = 0.20 if cfg is None else float(
+        getattr(cfg, "AIRBRAKE_PAIR_TOL_M", 0.20))
+    min_offset = 0.20 if cfg is None else float(
+        getattr(cfg, "AIRBRAKE_MIN_OFFSET_M", 0.20))
+    kept, dropped = [], []
+    for a in surfaces:
+        twin = any(
+            b is not a and b.title == a.title
+            and abs(a.position[0] + b.position[0]) <= tol
+            and abs(a.position[1] - b.position[1]) <= tol
+            and abs(a.position[2] - b.position[2]) <= tol
+            and min(abs(a.position[0]), abs(b.position[0])) >= min_offset
+            for b in surfaces)
+        (kept if twin else dropped).append(a)
+    return kept, dropped
+
+
+def drag_brake_fraction(cfg, speed, target, excess, height, was_out):
+    """How far out the in-flight drag brake should be, in [0, 1].
+
+    **For "too fast at the right height"** (the user, 2026-09-25) -- the
+    one surplus the spoiler cannot spend, because a spoiler spends *height*.
+    Out when the approach is ``AIR_DRAG_ON_M_S`` over its own
+    ``target_speed`` and not below its height profile by more than
+    ``AIR_DRAG_LOW_M`` (below it, the speed is the height it is short of
+    and must not be braked away); in again under ``AIR_DRAG_OFF_M_S``
+    (hysteresis) or under ``AIR_DRAG_MIN_H_M``.  Proportional between, in
+    quarters, so the deploy field is written only when the step changes.
+    """
+    if speed is None or target is None:
+        return 0.0
+    over = speed - target
+    if height < cfg.AIR_DRAG_MIN_H_M or excess < -cfg.AIR_DRAG_LOW_M:
+        return 0.0
+    if over < (cfg.AIR_DRAG_OFF_M_S if was_out else cfg.AIR_DRAG_ON_M_S):
+        return 0.0
+    frac = max(0.0, min(1.0, over / cfg.AIR_DRAG_FULL_M_S))
+    return max(0.25, math.ceil(frac * 4.0 - 1e-9) / 4.0)
+
+
+def _pivot(tab, row, col):
+    piv = tab[row][col]
+    tab[row] = [v / piv for v in tab[row]]
+    for i in range(len(tab)):
+        if i != row and tab[i][col] != 0.0:
+            f = tab[i][col]
+            tab[i] = [v - f * w for v, w in zip(tab[i], tab[row])]
+
+
+def _simplex(tab, basis, ncols, iterations, eps=1e-10):
+    """Maximise the last row's objective (stored negated) over the first
+    ``ncols`` columns; Bland's rule.  False if unbounded."""
+    m = len(tab) - 1
+    for _ in range(iterations):
+        obj = tab[-1]
+        col = next((j for j in range(ncols) if obj[j] < -eps), None)
+        if col is None:
+            return True
+        best, row = None, None
+        for i in range(m):
+            a = tab[i][col]
+            if a > eps:
+                ratio = tab[i][-1] / a
+                if (best is None or ratio < best - eps
+                        or (abs(ratio - best) <= eps
+                            and basis[i] < basis[row])):
+                    best, row = ratio, i
+        if row is None:
+            return False
+        _pivot(tab, row, col)
+        basis[row] = col
+    return True
+
+
+def linprog_max(c, rows, b, iterations=2000):
+    """Maximise ``c . x`` subject to ``rows x <= b``, ``x >= 0``, **any sign
+    of b** -- two-phase simplex.  Returns ``x``, or None when infeasible or
+    unbounded.  ``simplex_max`` is the one-phase case (b >= 0)."""
+    n, m = len(c), len(rows)
+    # row i: a.x + s_i = b_i, s_i >= 0; rows with b < 0 are negated,
+    # so the slack enters with -1 and an artificial is needed
+    art = [i for i in range(m) if b[i] < 0.0]
+    ncols = n + m + len(art)
+    tab, basis = [], []
+    for i in range(m):
+        sign = -1.0 if b[i] < 0.0 else 1.0
+        row = [sign * v for v in rows[i]] + [0.0] * (m + len(art)) + [
+            sign * b[i]]
+        row[n + i] = sign
+        if b[i] < 0.0:
+            k = n + m + art.index(i)
+            row[k] = 1.0
+            basis.append(k)
+        else:
+            basis.append(n + i)
+        tab.append(row)
+    if art:
+        # phase 1: maximise -sum(artificials)
+        obj = [0.0] * (ncols + 1)
+        for i in art:
+            obj = [o - v for o, v in zip(obj, tab[i])]
+        for k in range(n + m, ncols):
+            obj[k] = 0.0
+        tab.append(obj)
+        _simplex(tab, basis, ncols, iterations)
+        if tab[-1][-1] < -1e-7:
+            return None                      # infeasible
+        tab.pop()
+        # drive any artificial still basic (at zero) out of the basis
+        for i, j in enumerate(basis):
+            if j >= n + m:
+                col = next((k for k in range(n + m)
+                            if abs(tab[i][k]) > 1e-9), None)
+                if col is not None:
+                    _pivot(tab, i, col)
+                    basis[i] = col
+        for row in tab:                      # retire the artificials
+            for k in range(n + m, ncols):
+                row[k] = 0.0
+    obj = [-ci for ci in c] + [0.0] * (m + len(art)) + [0.0]
+    for i, j in enumerate(basis):            # express in the basis
+        if obj[j] != 0.0:
+            f = obj[j]
+            obj = [o - f * v for o, v in zip(obj, tab[i])]
+    tab.append(obj)
+    if not _simplex(tab, basis, n + m, iterations):
+        return None
+    x = [0.0] * ncols
+    for i, j in enumerate(basis):
+        x[j] = tab[i][-1]
+    return x[:n]
+
+
+class SurfaceEnvelope(object):
+    """**Every lift/drag change the surfaces can make with no net moment,
+    and the deflections that make it** -- the user's spectrum
+    (2026-09-25): not six fixed sets but whatever the moment needs.
+
+    Built from the per-surface probes (``samples``: ``(record, plus,
+    minus)``, each ``(dClA, dCdA, pitch, roll, yaw)`` for a deflection of
+    ``+theta``/``-theta``).  A surface may take any fraction ``x`` of
+    ``+theta`` or ``-theta`` up to ``usable`` (the deploy limit over theta,
+    less a margin left for the attitude controller, which moves the same
+    surfaces).  Responses are taken to superpose; ``lift_scale`` and
+    ``drag_scale`` are what the in-game verification of the corners
+    measured against that, and every request is solved in model units and
+    reported in game units.  In the (dClA, dCdA) plane the reachable set is
+    a convex polygon; ``corners`` is its extremes.
+    """
+
+    def __init__(self, samples, theta, usable, moment_frac=0.1,
+                 control_frac=0.02):
+        self.samples = list(samples)
+        self.theta = float(theta)
+        self.usable = float(usable)
+        self.moment_frac = float(moment_frac)
+        self.control_frac = float(control_frac)
+        self.lift_scale = 1.0
+        self.drag_scale = 1.0
+        resp = [s[1] for s in self.samples] + [s[2] for s in self.samples]
+        self._resp = resp
+        self._limits = []
+        for axis in (2, 3, 4):
+            largest = max(abs(r[axis]) for r in resp) if resp else 0.0
+            self._limits.append(self.moment_frac * largest)
+
+    @property
+    def any(self):
+        return bool(self.samples)
+
+    def _base_rows(self, nextra, usable=None):
+        """Deflection and moment rows over ``2n`` deflections plus
+        ``nextra`` further variables (zero in these rows)."""
+        usable = self.usable if usable is None else float(usable)
+        n = len(self.samples)
+        rows, b = [], []
+        for i in range(n):
+            row = [0.0] * (2 * n + nextra)
+            row[i] = row[n + i] = 1.0
+            rows.append(row)
+            b.append(usable)
+        for k, axis in enumerate((2, 3, 4)):
+            coeff = [r[axis] for r in self._resp] + [0.0] * nextra
+            rows.append(coeff)
+            b.append(self._limits[k])
+            rows.append([-v for v in coeff])
+            b.append(self._limits[k])
+        return rows, b
+
+    def _result(self, x, why):
+        n = len(self.samples)
+        entries, got = [], [0.0] * 5
+        for i, (record, _, _) in enumerate(self.samples):
+            mult = x[i] - x[n + i]
+            if abs(mult) > 1e-6:
+                entries.append((record, mult))
+        for j, r in enumerate(self._resp):
+            for k in range(5):
+                got[k] += x[j] * r[k]
+        return EnvelopePoint(entries, got[0] * self.lift_scale,
+                             got[1] * self.drag_scale, got[2:], self.theta,
+                             why)
+
+    def extreme(self, lift_weight, drag_weight, lift_band=None, usable=None):
+        """The point maximising ``lift_weight * dClA + drag_weight * dCdA``;
+        ``lift_band`` (ClA) holds lift within +-band instead."""
+        rows, b = self._base_rows(0, usable)
+        if lift_band is not None:
+            coeff = [r[0] for r in self._resp]
+            rows.append(coeff)
+            b.append(lift_band)
+            rows.append([-v for v in coeff])
+            b.append(lift_band)
+        eps = 1e-3 * max([abs(r[0]) + abs(r[1]) for r in self._resp] or [1])
+        c = [lift_weight * r[0] + drag_weight * r[1] - eps
+             for r in self._resp]
+        x = linprog_max(c, rows, b)
+        if x is None:
+            return None
+        return self._result(x, "extreme L%+.0f D%+.0f" % (lift_weight,
+                                                          drag_weight))
+
+    def corners(self, usable=None):
+        """The polygon's landmarks: most lift cut, most lift added, most
+        drag with lift held, most drag with lift cut."""
+        band = 0.02 * max([abs(r[0]) for r in self._resp] or [1.0])
+        return {
+            "spoil": self.extreme(-1.0, 0.0, usable=usable),
+            "flap": self.extreme(+1.0, 0.0, usable=usable),
+            "drag": self.extreme(0.0, 1.0, lift_band=band, usable=usable),
+            "brake": self.extreme(-1.0, 1.0, usable=usable),
+        }
+
+    def solve(self, d_lift, d_drag, lift_weight=1.0, drag_weight=1.0,
+              usable=None):
+        """The deflections nearest a requested ``(dClA, dCdA)`` in game
+        units: an L1 fit, each error normalised by the polygon's span on
+        that axis, with a small charge on total deflection so an interior
+        request uses the least surface (the controller shares them)."""
+        n = len(self.samples)
+        if not n:
+            return None
+        rows, b = self._base_rows(4, usable)
+        usable = self.usable if usable is None else float(usable)
+        dl = d_lift / self.lift_scale
+        dd = d_drag / self.drag_scale
+        lift = [r[0] for r in self._resp] + [-1.0, 1.0, 0.0, 0.0]
+        drag = [r[1] for r in self._resp] + [0.0, 0.0, -1.0, 1.0]
+        rows += [lift, [-v for v in lift], drag, [-v for v in drag]]
+        b += [dl, -dl, dd, -dd]
+        span_l = max(1e-6, sum(abs(r[0]) for r in self._resp) * usable)
+        span_d = max(1e-6, sum(abs(r[1]) for r in self._resp) * usable)
+        wl, wd = lift_weight / span_l, drag_weight / span_d
+        cost = self.control_frac / (2 * n * usable)
+        c = [-cost] * (2 * n) + [-wl, -wl, -wd, -wd]
+        x = linprog_max(c, rows, b)
+        if x is None:
+            return None
+        return self._result(x, "request dClA %+.1f dCdA %+.1f"
+                            % (d_lift, d_drag))
+
+    def calibrate(self, predicted, measured):
+        """Scale lift and drag by what the game did at the verified points:
+        the median of measured/predicted, per axis, where predicted is
+        clear of zero."""
+        def ratio(k, floor):
+            got = sorted(m[k] / p[k] for p, m in zip(predicted, measured)
+                         if abs(p[k]) > floor)
+            return got[len(got) // 2] if got else 1.0
+        span = max([abs(r[0]) + abs(r[1]) for r in self._resp] or [1.0])
+        self.lift_scale = max(0.2, min(5.0, ratio(0, 0.05 * span)))
+        self.drag_scale = max(0.2, min(5.0, ratio(1, 0.05 * span)))
+
+    def describe(self):
+        parts = []
+        for name, p in sorted(self.corners().items()):
+            if p is not None:
+                parts.append("%s dClA %+.1f dCdA %+.1f" % (name, p.lift,
+                                                           p.drag))
+        return ("surface envelope: %d surfaces, usable x%.2f of %.0f deg, "
+                "scale L x%.2f D x%.2f | %s"
+                % (len(self.samples), self.usable, self.theta,
+                   self.lift_scale, self.drag_scale, "; ".join(parts)))
+
+
+class EnvelopePoint(object):
+    """One solved deflection set: ``entries`` are ``(record, x)`` with the
+    angle ``theta * x``; ``lift``/``drag`` predicted in game units."""
+
+    def __init__(self, entries, lift, drag, moments, theta, why=""):
+        self.entries = list(entries)
+        self.lift = lift
+        self.drag = drag
+        self.moments = tuple(moments)
+        self.theta = theta
+        self.why = why
+
+    @property
+    def any(self):
+        return bool(self.entries)
+
+    def surfaces(self):
+        return list(self.entries)
+
+    def angles(self):
+        return [(r, self.theta * x) for r, x in self.entries]

@@ -159,6 +159,16 @@ class Config:
     APPROACH_TRIM_FLOOR: bool = True
     GATE_ALT_M: float = 2000.0
     GATE_DIST_M: float = 4000.0             # before the threshold
+    # **Put the gate where the approach's own model needs ``GATE_ALT_M``.**
+    # The cone checks its exit against ``approach_needed = (gate_range +
+    # GATE_DIST_M + TOUCHDOWN_AIM_M) / approach_ld``, which at a 4 km gate is
+    # (4000 + 2400) / 4.2 = 1524 m -- against a gate at 2000.  So every
+    # approach began ~500 m high by construction, more with the cone's own
+    # exit allowance on top (the shuttle: APPROACH at rwy=1046 m, h=2000,
+    # exc=+1222, LOG3567).  True solves ``GATE_ALT_M * approach_ld -
+    # TOUCHDOWN_AIM_M`` once, before the deorbit: 6000 m with today's
+    # constants, and per craft wherever ``approach_ld`` is.
+    GATE_FROM_APPROACH: bool = True     # the shuttle chain, 4/4 landed (LOG3656-3661)
     GATE_CAPTURE_M: float = 1500.0          # hand over to APPROACH within this
 
     # -- the heading alignment cone ----------------------------------------
@@ -268,12 +278,68 @@ class Config:
     # is retuned.
     HAC_SPEED_FACTOR: float = 1.00          # x the approach speed
     HAC_SPEED_KP: float = 0.20              # deg of alpha per m/s of excess
+    # Hold the cone's speed with ``guidance.alpha_for_speed`` (the
+    # approach's two-sided law, ``APPROACH_SPEED_PATH``) rather than ``trim +
+    # HAC_SPEED_KP * error``, which cannot make speed.  The shuttle decays to
+    # 55-80 m/s in the cone under the old law (LOG3029).  Off until paired.
+    HAC_SPEED_PATH: bool = False
+    # ...and let it **climb** to spend excess speed as height (a zoom),
+    # rather than holding the path level and burning the speed on drag.  The
+    # user's point: too much speed and not enough height, so climb.  Needs
+    # ``HAC_SPEED_PATH``; bounded by ``SPEED_PATH_CLIMB_MAX_DEG``.
+    HAC_CLIMB: bool = False
+    # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
+    # commanded alpha until the measured lift matches what the table
+    # promised the law.  The landing's table is untrimmed (shuttle 0.73x,
+    # old craft 1.34x subsonically); a 1.6 g pull-up arrived at ~1.1 g and
+    # the cone's climb never happened (LOG3065-3066).  Cone and approach
+    # only; the flare has its own sink loop and a tail-strike cap.
+    # **The cone's speed target as equivalent airspeed** (``guidance.
+    # eas_scale``): a stall speed is a sea-level quantity and the cone flew
+    # it as true airspeed at 9 km -- ~66 m/s equivalent, near the stall,
+    # held with 19-22 deg of alpha (LOG3071).
+    HAC_SPEED_EAS: bool = False
+    LIFT_LOOP: bool = False
+    LIFT_LOOP_RATE_DEG_S: float = 4.0       # deg/s per unit fractional error
+    LIFT_LOOP_MIN_DEG: float = -8.0
+    LIFT_LOOP_MAX_DEG: float = 15.0
+    # **An outer loop on the angle itself** (``Autopilot.alpha_trim_loop``),
+    # APPROACH and FLARE: kRPC's attitude loop holds a standing pitch error
+    # that grows with q -- fast shuttle flares asked 5-8 deg and flew 2.7-4.1
+    # for eight seconds (LOG3994-4007), S-turning approaches ran 2-7 deg rms
+    # short and dived (LOG3810-3849).  Integrates commanded - signed alpha
+    # while the roll is settled and the slip small.  Off until paired.
+    ALPHA_TRIM_LOOP: bool = False
+    ALPHA_TRIM_MIN_DEG: float = -4.0
+    ALPHA_TRIM_MAX_DEG: float = 8.0
+    ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0
+    ALPHA_TRIM_SLIP_TOL_DEG: float = 5.0
+    LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
+    LIFT_LOOP_MIN_Q_PA: float = 500.0
+    SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is
     # gone -- whichever comes first.  The second is not a fallback, it is the
     # floor the cone is flown above: below the low gate's altitude there is
     # no surplus left to spend and the approach's own geometry takes over.
     HAC_EXIT_TURN_DEG: float = 12.0
+    # **How far past the rollout still counts as arrived.**  ``hac_turn``
+    # wraps into ``[0, 2pi)``, so a vehicle a few degrees past the rollout
+    # reads a whole lap to go; the band that catches that was
+    # ``HAC_EXIT_TURN_DEG``, 12 degrees, on a cone that weaves +-50.  Flown in
+    # the sim (LOG3520): turn 5.1 -> 0.0 -> 6.3 -> 1.6 -> **345.4** as the
+    # weave carried the track 14.6 degrees past the tangent at 3.1 km, then
+    # a lap it could not afford and out of the cone at 2 km pointing away;
+    # the one flight of eight that landed intact (LOG3519) never left turn 0.
+    # 0 keeps the old band.
+    HAC_OVERSHOOT_DEG: float = 0.0
+    # The same band for the **exit test only** (``Autopilot.run_hac``): the
+    # plan keeps its wrap, so a vehicle too high still owes its lap, but one
+    # at the gate with the height the approach can take is let go even with
+    # the weave's last swing past the centreline.  LOG4104: 829 m from the
+    # gate, 750 m above need, turn 343-347 -- flew on and ran out of height
+    # 3.2 km past it.  0 is the committed behaviour.  Off until paired.
+    HAC_EXIT_PAST_DEG: float = 0.0
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one
@@ -354,6 +420,11 @@ class Config:
     HAC_ENERGY_BUDGET: bool = False
 
     HAC_EXIT_SURPLUS_M: float = 500.0
+    # Exit unless the surplus can pay for a lap at the tightest circle the
+    # airframe holds -- ``2 pi R / cone_ld`` -- because a lap it cannot pay
+    # for is the only alternative to leaving.  See
+    # ``Autopilot.hac_exit_surplus``.
+    HAC_EXIT_SURPLUS_DERIVED: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.
@@ -376,11 +447,79 @@ class Config:
     # goes to zero by construction the moment the vehicle is on profile.
     HAC_WEAVE_ON: bool = True
     HAC_WEAVE_MAX_DEG: float = 50.0
+    # **The plan's phantom path** (``guidance.hac_path``).  Lined up and a
+    # little outside the circle, the tangent point sits just past the
+    # rollout and the plan costs the run to it -- ``sqrt(x^2 + 2 R dy)``,
+    # 2.2-3.3 km more than the gate distance through most of the shuttle's
+    # cone (LOG4051 ``gate=6207 path=9484``) and 1.7 km at the old craft's
+    # rollout (LOG4056 ``gate=955 path=2650``).  The radius scan picks the
+    # longest fitting path, so it chose those circles and read on-profile
+    # while 1.1-2.8 km high on every flight of both craft (conesum), with
+    # the weave at 0.  With this on, a tangent point past the rollout costs
+    # the distance to the gate.  Off until paired.
+    HAC_PATH_WRAP_TO_GATE: bool = False
+    # **The cone's glide ratio at the speed and bank it will be flown at**
+    # (``guidance._hac_planned_ld``): the swept table at the cone's target
+    # speed, wings level on the straight legs and at the circle's bank on
+    # the arc, divided by ``airframe.PLANNING_BIAS``.  ``HAC_LD`` 1.86 is a
+    # whole-cone average of a Mach 0.7 entry at 22 deg of alpha (flown 1.4)
+    # and a subsonic straight-in at 6 (2.7-3.0 flown, and the table agrees:
+    # ``ld=`` act/mdl 2.97/2.98 on LOG4051).  With the phantom path gone
+    # (above) the cone read itself short at 6.1 km and still rolled out
+    # 1.1 km high (LOG4086).
+    # **Priced slice by slice down to the gate** (``guidance.hac_ladder``),
+    # each at the target speed at *that* height: the first version took the
+    # ratio where the vehicle was, read 1.16 at 13 km (thin air, high trim
+    # alpha), called itself short, and found its 2 km of surplus below 7 km
+    # with 5 km of path left -- weave pinned at 50, out +2.0 km (LOG4091).
+    # Off until paired.
+    HAC_LD_AT_TARGET: bool = False
+    HAC_LADDER_STEP_M: float = 500.0
+    # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
+    # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the
+    # shuttle it never does (~44 deg), and so never deployed in LOG3846-3875
+    # while the cone exited 1-2 km above what the approach needed on most
+    # flights (conesum: R saturated at 16 km, flown 20 km at L/D 1.9).  With
+    # this on the brake comes out whenever the surplus over the cone's own
+    # profile, less the arrest height of the sink it builds, exceeds
+    # ``HAC_WEAVE_DEADBAND_M``.  Off until paired.
+    HAC_FLAP_BRAKE_ON_SURPLUS: bool = False
+    # ...and **not stowed for the roll** in the cone.  ``FLAP_BRAKE_YIELDS_
+    # TO_ROLL`` was written for the hypersonic glide (LOG3680, 3690: the
+    # elevon brake out, roll authority gone, departure at Mach 5-6); in the
+    # subsonic cone the vehicle is always adjusting its bank, and under
+    # ``HAC_FLAP_BRAKE_ON_SURPLUS`` the brake came out and was stowed 0.4-0.6 s
+    # later "rolling" on every flight (LOG4035, 4037) -- it never spent
+    # anything.  Off until paired.
+    HAC_FLAP_BRAKE_IGNORES_ROLL: bool = False
     HAC_WEAVE_DEADBAND_M: float = 800.0     # surplus worth weaving for
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.
     HAC_WEAVE_PERIOD_S: float = 24.0
+    # **Weave only while a whole cycle of path is left.**  The weave angle
+    # is ``acos(total / available)``, so as the path to the gate goes to
+    # zero with height still in hand it goes to its *maximum*: flown in the
+    # sim, +-50 deg with 1.4 km to the gate at 120 m/s (a 1.2 km turn
+    # radius), the vehicle passed the gate sideways, the gate distance went
+    # 442 -> 1738 m and the cone left "out of height" (LOG3524; all six of
+    # LOG3523-3528).  One cycle is ``speed * HAC_WEAVE_PERIOD_S`` of track;
+    # below that the surplus is left to the approach's speed path.
+    HAC_WEAVE_WHOLE_CYCLE: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **The spoiler as the cone's descent authority** once the weave is
+    # saturated (``autopilot.hac_flap_brake``).  LOG3591 weaved at the full
+    # 50 deg for the last 5 km and still reached the gate 2400 m high, where
+    # a lap at 15-16 km radius costs ~94 km of path: out of height mid-lap.
+    # Needs the measured brake (``AIRBRAKE_OPPOSED_FLAPS``,
+    # ``AIRBRAKE_MEASURED``).
+    HAC_FLAP_BRAKE: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # The pull-up assumed when pricing the height a sink costs to arrest.
+    HAC_FLAP_ARREST_G: float = 0.5
+    # ...priced on the sink **over the cone's own glide**, ``v / sqrt(1 +
+    # cone_ld^2)``, not on all of it: whole, 117-179 m/s at 200 m/s read as
+    # 1.4-3.2 km of arrest and stowed every deployment in 3-7 s (LOG4052,
+    # 4065, 4067).  Off until paired.
+    HAC_FLAP_ARREST_EXCESS: bool = False
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
@@ -479,6 +618,50 @@ class Config:
     # Measured: max lift at 30 deg at every altitude, max L/D at 20 deg, and
     # *zero* lift at 90 -- a cylinder in crossflow has none of that structure.
     ALPHA_MAX_DEG: float = 32.0             # past 30 the lift curve turns over
+    # **The glide's own ceiling, separate from the one the deorbit is aimed
+    # with.**  ``ALPHA_MAX_DEG`` is a lift argument and it is also a corner of
+    # the deorbit search's box, so raising it moves the burn (flown at 40 in
+    # the sim: 6 of 8 never reached the interface).  But below Mach ~3.5 the
+    # shuttle's glide runs out of sink with bank pinned at ``BANK_MAX_DEG``
+    # and alpha pinned at 32 -- ``long`` climbing +500 -> +8000 m in the last
+    # 60 km (LOG3416, LOG3440) -- while its own table offers CdA 145 at 40
+    # deg against 86 at 30 (Mach 3).  Drag is the sink control that needs no
+    # roll, and the learned ceiling (``ratchet_alpha``) still bounds it by what
+    # the vehicle has shown it holds.  0 means ``ALPHA_MAX_DEG``.
+    GLIDE_ALPHA_MAX_DEG: float = 40.0  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **The ceiling from the wing's own lift plateau**, per Mach: the
+    # highest alpha whose ClA is still within this fraction of the row's
+    # peak.  The shuttle's table is flat from 30 to 40 deg at Mach 3-5
+    # (within 4%) while CdA grows ~70%, and falls 18% by 50: drag for free up
+    # to the plateau's edge, lift and control given away past it.  Sim:
+    # fixed 36/40/45 all nulled the arrival; 60 and 90 doubled-to-tripled
+    # the alpha spread and lost landings (LOG3612-3617).  0.05 puts the
+    # shuttle at ~41 hypersonic and ~31 subsonic; a dimensionless fraction
+    # of any wing's own peak.  0 keeps ``GLIDE_ALPHA_MAX_DEG``.
+    GLIDE_ALPHA_PLATEAU: float = 0.0
+    # **The measured flap brake as the glide's third energy control.**
+    # ``autopilot.glide_flap_brake``.  Needs ``AIRBRAKE_OPPOSED_FLAPS`` and
+    # ``AIRBRAKE_MEASURED`` (the set it deploys is the one measured in vacuum
+    # at the start of the flight).  The journal's probe of that set on the
+    # shuttle: L/D 0.62 -> 0.54 at Mach 6, 1.10 -> 1.00 at Mach 2 -- a brake
+    # at every Mach, and a drag control that asks nothing of the yaw axis,
+    # unlike the alpha that ``GLIDE_ALPHA_MAX_DEG`` spends.
+    GLIDE_FLAP_BRAKE: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **The flap brake yields to roll** (``Autopilot.roll_needs_the_flaps``):
+    # it deploys the elevons, which are the roll surfaces, and both glide
+    # losses of control began the tick it went out (LOG3680, LOG3690 -- the
+    # user's "not rolling at all").  Stowed while the flown bank is more than
+    # ``BANK_RATE_SAT_DEG`` off the command or the sideslip passes
+    # ``BANK_RATE_SLIP_TOL_DEG``; not redeployed until the bank has held for
+    # ``FLAP_BRAKE_ROLL_SETTLE_S``.  Applies to the glide and the cone.
+    FLAP_BRAKE_YIELDS_TO_ROLL: bool = True
+    FLAP_BRAKE_ROLL_SETTLE_S: float = 5.0
+    # Long past the reserve by this much before it deploys; it stows when the
+    # brake-stowed prediction is back on the reserve.
+    GLIDE_FLAP_ON_M: float = 1000.0
+    # Only at or below this Mach (0: any).  The trouble it is for is the
+    # terminal glide's (failure 98); the hypersonic one is untested.
+    GLIDE_FLAP_MACH_MAX: float = 0.0
     ALPHA_MIN_DEG: float = 0.0
     # The *solve's* floor, which is not the same number and is the single most
     # important line in this file.  Range against angle of attack is U-shaped:
@@ -767,6 +950,33 @@ class Config:
     # means something.
     SOLVE_BANK_MIN_DEG: float = 30.0
     BANK_RATE_DEG_S: float = 8.0
+    # **Measured at runtime instead** (``rollrate.RollRate``): the 8 above
+    # has no derivation, was set on the old capsule, and the shuttle cannot
+    # follow it -- the command outran the vehicle, kRPC's controller stopped
+    # rolling at 20 deg of pointing error, and the GUI showed no roll input
+    # (LOG3679).  On, the glide's bank command slews at the rate the vehicle
+    # was last seen to deliver, and 8 is only the prior before the first
+    # sample.
+    BANK_RATE_MEASURED: bool = True
+    # A tick counts as a sample only when the command led the flown bank by
+    # at least this -- the vehicle was being asked for more than it gave.
+    BANK_RATE_SAT_DEG: float = 5.0
+    # The airframe's roll tolerance: sideslip past this during a roll means
+    # it was rolled faster than it can take, and the estimate is pulled down
+    # by (tol/|slip|) per BANK_RATE_TAU_S.  Steady holds read ~1 deg;
+    # reversals that went wrong 15-50.
+    BANK_RATE_SLIP_TOL_DEG: float = 5.0
+    # The held peak decays over this much *sampled* time, and a sideslip
+    # past the tolerance pulls it down on the same scale -- a couple of
+    # reversals, so it follows q without one slow tick discarding it.
+    BANK_RATE_TAU_S: float = 20.0
+    # How far above the held peak the command may slew, so the vehicle is
+    # always asked slightly more than it last gave and the peak can climb.
+    BANK_RATE_PROBE: float = 1.25
+    BANK_RATE_MIN_DEG_S: float = 1.0
+    BANK_RATE_MAX_DEG_S: float = 30.0
+    # Two samples further apart than this are not a rate (a warp, a pause).
+    BANK_RATE_MAX_GAP_S: float = 5.0
     # **The duty cycle of a reversing entry, measured by the vehicle.**  See
     # ``Autoland.update_bank_duty`` and the long comment below: the
     # propagation wants the mean of ``cos(bank)`` over the reversals, and
@@ -953,6 +1163,20 @@ class Config:
     # it is permanently in transit, and that is where the flights that still
     # diverge lose it.
     BANK_REVERSAL_SETTLE: bool = True
+    # **The coast reversed on every azimuth crossing, at no dynamic pressure.**
+    # ``run_coast`` leaned toward whichever side the gate was on through
+    # ``bank_toward``, which has no hysteresis: with the ground track near
+    # the bearing to the gate the sign flipped every time they crossed.
+    # Measured on the shuttle (LOG3404/3405 game, LOG3416/3417 sim): **8-9
+    # full +-30 degree reversals in COAST at Mach 7 and q 0-120 Pa**, against
+    # 3 in the whole hypersonic glide -- rolls the air cannot coordinate
+    # (its yaw axis is 15 kN m of wheel and nothing else up there), so the
+    # vehicle reached the interface mid-wallow.  They buy nothing: at that q
+    # the lean moves nothing but the attitude.  True routes the coast's sign
+    # through the glide's own ``_bank_sign`` deadband, seeded from the lean
+    # it already holds, so it is chosen once and reversed only for a real
+    # azimuth error.
+    COAST_BANK_LATCH: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # The azimuth error a reversal waits for, shrinking with range to go.
     # Wide early, so the entry does not chase cross-track it will fly out of
     # anyway; tight at the end, where azimuth *is* the miss.
@@ -1902,6 +2126,60 @@ class Config:
     # the speed it arrives at -- calibrate it against the speed *delivered*.
     # Failure 62; failure 49 is the same knob read before the hold existed.
     APPROACH_SPEED_PROFILE: bool = True
+    # **A high approach flies slower, so the brake can stay out.**  The
+    # approach holds 2.25 x stall (108 m/s) until the profile ramps it to
+    # the flare's 1.75 x near the door, and the airbrake is stowed the
+    # moment the speed dips under that target (``AIRBRAKE_SPEED_GUARD``) or
+    # the sink passes what the flare can arrest (~39 m/s,
+    # ``AIRBRAKE_SINK_GUARD``).  A drag brake can only spend height as speed
+    # or as a steeper path, and at 108 m/s both are forbidden: LOG3775
+    # reached the approach 1.15 km high and the brake came out four times
+    # for 0.2-1.4 s each, stowed on "speed 108 below target 108" and "sink
+    # 39 above the 39".  Over the recent orbital flights the approach spent
+    # a near-fixed 2.4-3.2 km of height in its 6.7 km however much it was
+    # handed, so every metre past ~600 m of HAC-exit surplus landed long.
+    # With this on, surplus past ``APPROACH_SCURVE_M`` lowers the target
+    # toward the door speed (``guidance.spend_as_speed``): ~235 m spent as
+    # speed directly, and at 84 m/s the same 39 m/s sink limit allows a 28
+    # deg path against 21 -- about 1 km more over the final.  Every number
+    # is already the flare's own; nothing new is fitted.
+    APPROACH_SPEND_AS_SPEED: bool = False
+    # **And the cone before it** -- ``APPROACH_SPEND_AS_SPEED`` over 15-20
+    # km of circle instead of the approach's 6.7.  LOG3819 (the whole
+    # package) reached 2.9 km with 1.23 km of surplus; at 84 m/s the
+    # approach still could not spend it, circled beside the threshold and
+    # flared 1.5 km off the centreline.  Height over the cone's own profile
+    # (``GATE_ALT_M + path / cone_ld``) lowers the cone's target speed the
+    # same way, floored at the flare's door speed times sqrt(bank load);
+    # slower is more alpha, and on this polar more alpha is less L/D, so the
+    # circle steepens and the surplus goes where there is room for it.
+    HAC_SPEND_AS_SPEED: bool = False
+    # **The shuttle rolls over on the runway, after a gentle touchdown.**
+    # Wings within 1-4 deg of level at the last flare tick, then 25-57 deg
+    # of bank 1-2 s into the rollout and a ground loop; LOG3781, 3816 and
+    # 3821 ended upside down (173, 179, 168 deg).  8 of 9 orbital flights
+    # that put the ground spoiler out on land rolled past 20 deg; 0 of 12
+    # flights from ``qs_shuttle_low``, where the spoiler is never armed,
+    # rolled past 15 -- at touchdown sinks up to 20 m/s.  The spoiler set
+    # (``measure_flap_brake``) is chosen and verified on lift and pitch
+    # only; nothing measured its roll, and on the ground its elevons are the
+    # roll control the autopilot no longer has.  With this on the set is
+    # deployed once more in vacuum and read with the full wrench; if roll
+    # or yaw exceeds the tolerance pitch is held to, it is not deployed on
+    # the ground (the glide and cone brakes still use it).  Logged either
+    # way as ``spoiler lateral``.
+    AIRBRAKE_SPOILER_LATERAL_CHECK: bool = False
+    # **Full brakes the moment the mains touch** (the user's rule,
+    # 2026-09-29): every main wheel at ``WHEEL_BRAKE_MAX_PCT`` (200%) from
+    # the first tick they report ``grounded`` -- inside the flare if that is
+    # where it happens -- and held; the nose wheel never brakes.  Replaces
+    # ``BRAKE_FOR_DISTANCE`` in the rollout, which gave the mains 0-24% of
+    # full at contact (LOG3810 brk=0.00, LOG3799 0.24) and reached 200% only
+    # below ``BRAKE_SPEED_M_S`` or with the runway running out.  That law was
+    # written against the old 6.9 t craft tearing its gear off at 12 m/s^2;
+    # what would contradict this one is nose slams (docking port and pod
+    # first) or gear lost in the first seconds of the rollout.
+    ROLLOUT_BRAKE_FULL_ON_CONTACT: bool = False
     # How far *above* the flare's trigger height the schedule finishes.  See
     # ``guidance.approach``: a ramp that lands on its target at the trigger
     # arrives still decelerating and overshoots into the stall, which is what
@@ -2017,6 +2295,12 @@ class Config:
     # is the fraction of it the flare may use.  Geometry per airframe, not a
     # number per airframe -- the vehicle after this one has its own tail.
     TAIL_STRIKE_MARGIN: float = 0.8
+    # Cap the attitude the vehicle *reaches*, not the one it is commanded:
+    # the tail cap less the measured pitch overshoot (``pitch_overshoot``).
+    # The shuttle flew 11.2 deg against 6.9 commanded at touchdown on a 9.1
+    # deg tail angle and lost a wing and the RCS blocks in 0.1 s (LOG3596);
+    # every game touchdown of 2026-09-24 lost parts within 0.5 s of contact.
+    TAIL_LIMIT_ACHIEVED: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # Used only while the box has not answered.  Deliberately tight: too
     # little rotation lands hard, too much removes the tail, and only one of
     # those is recoverable.
@@ -2066,6 +2350,142 @@ class Config:
     # down instead of floating, and it is close to one on purpose.
     FLARE_TRACK_LOAD_MIN: float = 0.85
     FLARE_TRACK_LOAD_MAX: float = 2.5
+    # **An exponential bottom under the sink schedule** (0 = off).  The
+    # schedule ``sqrt(td^2 + 2 a h)`` is designed to touch down at
+    # ``FLARE_TOUCHDOWN_SINK_M_S`` (8) and the loop's lag adds to it: the
+    # shuttle contacts at 9-17 m/s (LOG3770-3796, 3846-3869) against wings
+    # and elevons of crashTolerance 15 and an engine of 7, and loses them.
+    # With this set the wanted sink is also capped at
+    # ``FLARE_EXP_TOUCHDOWN_M_S + h / FLARE_EXP_TAU_S`` -- the classic
+    # autoland flare, arresting earlier and settling rather than arriving.
+    # **Default 2026-09-30**, with ``FLARE_EXP_TAU_S=4`` and
+    # ``FLARE_DOOR_FROM_SCHEDULE`` (the three flare fixes together): from
+    # orbit on the old craft (qs_plane, rotation `14dc04c2`, LOG4010-4033)
+    # 5/6 intact on the runway within 22 m of the centreline, contact sink
+    # 1.0-4.1 m/s at 50-60 m/s, against 1/6 on the old defaults (contact
+    # 15-21 m/s at 37-41 -- every flare stalled out); on the shuttle bench
+    # (qs_shuttle_low, LOG3992-4009) 5/6 intact 30/30 against 1/6.  The
+    # shuttle from orbit is 0/6 on both arms -- its failures are upstream.
+    FLARE_EXP_TAU_S: float = 4.0
+    FLARE_EXP_TOUCHDOWN_M_S: float = 2.0
+    # **The door where that schedule starts to bind** (needs
+    # ``FLARE_EXP_TAU_S``): ``tau (sink - td) + T sink``, T the pitch axis's
+    # response (``attitude_settle_s``), and the schedule read T ahead
+    # (``flare_lead_s``) so the two agree.  The old door (50 m + 2.5 s x
+    # sink) opened the old craft at 126 m with 31 m/s of sink (LOG3961); the
+    # schedule still allowed 28 m/s at 107 m, asked 1.1 g, and the pull came
+    # at 45 m -- contact at 74 m/s, nose 4 deg down.  Off until paired.
+    FLARE_DOOR_FROM_SCHEDULE: bool = True   # default 2026-09-30, see FLARE_EXP_TAU_S
+    # **The tail strikes by attitude, not by angle of attack.**  The flare
+    # capped its *angle of attack* at the tail angle (9.1 deg on the
+    # shuttle) at every height, and the body's attitude is angle of attack
+    # less the descent angle -- at the door the shuttle is 25-35 deg nose
+    # down on its path (sink 35-107 m/s at 55-160 m/s, LOG3720-3759), so the
+    # tail is nowhere near the ground and the wing was being held to ~1.6 g
+    # it could have made 3 at.  The sink tracker asks for up to
+    # ``FLARE_TRACK_LOAD_MAX`` when it is behind and never got it: every
+    # shuttle flare touched down at 9-102 m/s of sink.  With this on:
+    #   * the flare's alpha cap is the tail angle *plus the descent angle*,
+    #     which is the same cap at touchdown (descent ~0) and the attitude
+    #     limit everywhere above it; and
+    #   * ``aim_runway`` pitches to ``alpha - descent``, the attitude that
+    #     delivers ``alpha``.  ``AIM_RUNWAY_TRUE_ALPHA`` pitches to
+    #     ``alpha + descent`` -- a sign error that delivers alpha plus
+    #     *twice* the descent, masked because the tail cap on the pitch
+    #     binds (gentle flares fly 7-9 deg above command: LOG3730, 3737).
+    # What would contradict it: flares that balloon (sink going negative
+    # well above the runway), or touchdowns on the tail (the pitch cap is
+    # unchanged, so this should not happen).
+    FLARE_TAIL_BY_ATTITUDE: bool = True   # default 2026-09-30, see FLARE_EXP_TAU_S
+    # **The sink schedule, read one pitch-response ahead.**  ``guidance.
+    # flare`` tracks ``sqrt(td^2 + 2 a h)`` with a first-order loop on the
+    # sink -- memoryless, asking only where the vehicle is now -- and the
+    # shuttle's pitch takes ~3 s (``attitude_settle_s``) to deliver any
+    # load it asks for.  So the loop sits on the schedule all the way down
+    # and falls behind it only at the bottom, where there is no time left:
+    # with the alpha delivered as commanded (``FLARE_TAIL_BY_ATTITUDE``)
+    # LOG3771/3772 were "on schedule" from the door at 112 m and touched
+    # down at 15-17 m/s of sink and 75-79 m/s.  (Under the old sign the
+    # flare delivered ~10 deg over its command, arrested to level at 36 m,
+    # floated from 86 to 33 m/s and fell in at 16: LOG3770/3773.)  With
+    # this on the schedule is read at ``h - T * sink``, T the pitch axis's
+    # own response time -- derived, not fitted -- so the load is asked for
+    # while it can still arrive.  Near the ground the sink is small and the
+    # lead with it.  Meant to fly with ``FLARE_TAIL_BY_ATTITUDE``, which
+    # gives the flare the alpha to follow it.
+    FLARE_LEAD_BY_RESPONSE: bool = False
+    # **A flare door the vehicle can arrest from.**  The door is
+    # ``FLARE_ALT_M + FLARE_LEAD_S * sink`` -- 2.5 s of sink over 50 m -- and
+    # the shuttle's pitch takes ~3 s to deliver anything, after which the
+    # pull-up at the flare's own ``FLARE_TRACK_LOAD_MAX`` still needs
+    # ``(sink^2 - td^2) / (2 (n - 1) g)``: LOG3801 and LOG3803 opened the
+    # door at 163-169 m at 46-48 m/s of sink and touched down 3.5 s later at
+    # the same sink, 89-98 m/s, destroyed.  With this on the door is
+    # ``FLARE_ALT_M + T * sink + arrest``, T the pitch axis's own response
+    # time (``attitude_settle_s``, derived and retuned in the air) -- 258 m
+    # at 46 m/s of sink, 130 at 22.  One function, so the speed profile,
+    # the brake stow and the S-turn stop all move with it.
+    FLARE_DOOR_FROM_RESPONSE: bool = False
+    # **Fly the load, not the table's angle for it** (``Autopilot.
+    # flare_load_loop``).  The flare turns its wanted load into an angle
+    # through the swept table, and on the landing the table is wrong in a
+    # craft-specific direction: LOG3832's flare asked 2-4 deg for 2.5 g at
+    # 149 m/s and the vehicle made 0.3-0.5 of the table's lift (act ClA
+    # 20-34 against mdl 62-73; kRPC's signed alpha -1.5..+0.8) -- no arrest,
+    # 77 m/s into the ground.  The sink loop cannot fix it: it is clamped at
+    # ``FLARE_TRACK_LOAD_MAX`` and trusts the table for the angle.  So the
+    # angle is offset by an integral on (commanded load - measured load),
+    # scaled by the table's own slope and the pitch axis's response time,
+    # and clamped here; the tail cap still applies after it.  Off until
+    # paired.
+    FLARE_LOAD_LOOP: bool = False
+    FLARE_LOAD_LOOP_MIN_DEG: float = -6.0
+    FLARE_LOAD_LOOP_MAX_DEG: float = 15.0
+    FLARE_LOAD_LOOP_T_MIN_S: float = 1.0    # floor on the integrator's time
+    # **A fast, shallow final** (the user's proposal, 2026-09-26): the
+    # Shuttle's own profile -- steep and fast outside, a preflare high up
+    # into a shallow inner glide that bleeds the speed, and a small final
+    # flare -- in place of a door at ``FLARE_ALT_M + FLARE_LEAD_S * sink``
+    # followed by one hard arrest.
+    #
+    # Why this airframe needs it: the shuttle's tail strikes at 9.1 deg, so
+    # the flare is capped near 7 deg of alpha and its only authority is
+    # speed (spare lift at that alpha is ~0.8 g at 100 m/s, ~2 g at 130).
+    # On ``fbe32132`` (LOG3729-3739) every flare door was a 30-32 deg path at
+    # 43-69 m/s of sink, arrested with the wing at the tail limit, and the
+    # touchdowns ran 40-87 m/s with 2-43 m/s of sink; the two gentle ones
+    # (LOG3737, 3739) still lost parts to an alpha that overshot its command
+    # by 6-8 deg in the last two seconds of an arrest that ended at the
+    # ground.  Below ~60 m/s this wing cannot hold 1 g at a tail-safe
+    # attitude at all, so every touchdown under that falls in.
+    #
+    # With this on:
+    #   * the door is *physical*: the height to bring the sink down to the
+    #     inner glide's at ``FLARE_SHALLOW_PULL_LOAD``, plus
+    #     ``FLARE_TRACK_TAU_S`` of lag at the current sink, plus
+    #     ``FLARE_ALT_M`` of inner glide under it (``flare_door``);
+    #   * the flare's sink schedule is capped at the inner glide's
+    #     ``speed * sin(FLARE_INNER_GLIDE_DEG)``, and its bottom is drawn at
+    #     ``FLARE_SHALLOW_FINAL_LOAD`` to ``FLARE_SHALLOW_TOUCHDOWN_SINK_M_S``
+    #     -- so the arrest happens hundreds of metres up and the last part is
+    #     a glide, not a pull;
+    #   * the approach flies faster (``FLARE_SHALLOW_APPROACH_FACTOR``,
+    #     ``FLARE_SHALLOW_DOOR_FACTOR`` x stall in place of
+    #     ``APPROACH_FACTOR``/``APPROACH_FLARE_FACTOR``): the inner glide is
+    #     shallower than the polar's best and pays for it in speed, so the
+    #     door has to carry it.
+    #
+    # What would contradict it: touchdowns no faster than today's, a flare
+    # that still reaches the ground in its pull-up (the ``flare:`` line's
+    # sink at the door vs at touchdown), or rollouts running off the far end
+    # -- stopping from 80 m/s needs ~1.3 km at the spoiler's 2.5 m/s^2.
+    FLARE_SHALLOW: bool = False
+    FLARE_INNER_GLIDE_DEG: float = 5.0
+    FLARE_SHALLOW_PULL_LOAD: float = 1.5
+    FLARE_SHALLOW_FINAL_LOAD: float = 1.15
+    FLARE_SHALLOW_TOUCHDOWN_SINK_M_S: float = 1.5
+    FLARE_SHALLOW_APPROACH_FACTOR: float = 2.7   # x stall at the gate
+    FLARE_SHALLOW_DOOR_FACTOR: float = 2.4       # x stall at the door
     # **``aim_runway`` flies a pitch attitude and the guidance computes an
     # angle of attack.**  They differ by the descent angle -- twenty degrees
     # at the flare's door, zero on the ground -- so the wing was handed more
@@ -2173,6 +2593,67 @@ class Config:
     # change CLAUDE.md's guard rule is about, and the thing it might quietly
     # be doing is holding the nose straight in the first second.
     ROLLOUT_REACTION_WHEELS_OFF: bool = False
+    # **Ground spoiler: the measured lift-spoiling set, fully out, the tick
+    # a main wheel reports ``grounded``.**  The user's rule (2026-09-25).
+    # Dumping lift puts the weight on the braked mains -- the brake can only
+    # use the normal force it is given -- and stops a skip off the mains
+    # onto the nose.  It deploys the set ``AIRBRAKE_MEASURED`` found (the
+    # moment-cancelling one, so no pitch kick onto the nose gear); with
+    # that flag off there is no set and it logs so once.
+    # ``ROLLOUT_SPOILER_DEG`` is the angle for the surface that deflects
+    # most; the rest keep their measured ratio.  25 is the Big-S elevons'
+    # ``ctrlSurfaceRange`` (``deployAngle`` in the save); the log reads the
+    # field back, which is what would disagree with it.
+    ROLLOUT_GROUND_SPOILER: bool = True
+    ROLLOUT_SPOILER_DEG: float = 25.0
+    # **The drag brake: every surface on its own** (the user's suggestion,
+    # 2026-09-25: the rear elevon pair need not move together).
+    # ``airbrake.choose_max_drag_set`` picks each surface's deflection by
+    # LP from its measured wrench -- most ``dCdA - w * dClA`` with pitch,
+    # roll and yaw each held within ``AIRBRAKE_MEASURE_MOMENT_FRAC`` of the
+    # largest single surface -- and the set is verified in the game before
+    # it is armed.  The ground spoiler deploys it in place of the spoiler.
+    # Needs ``AIRBRAKE_MEASURED``.  Unflown; off.
+    AIRBRAKE_MAX_DRAG: bool = False
+    # Weight on lift dumped against drag bought.  On the wheels a newton of
+    # lift removed is a newton of normal force on braked tyres, worth about
+    # the tyre's friction coefficient (~1) in braking -- so 1.0.  What would
+    # disagree: the rollout's ``dec=`` with the brake out against the
+    # predicted ``dCdA``.
+    AIRBRAKE_DRAG_LIFT_WEIGHT: float = 1.0
+    # **And in flight, for "too fast at the right height"** (the user,
+    # 2026-09-25).  A second LP set from the same probes: most drag with lift
+    # held within ``AIR_DRAG_LIFT_BAND`` of the largest single-surface lift
+    # change, since dumped lift in the air is sink nobody asked for.
+    # ``airbrake.drag_brake_fraction`` deploys it in APPROACH, proportional
+    # to the speed over the approach's own ``target_speed``, only while the
+    # vehicle is not below its height profile.  The spoiler (a height
+    # brake) has priority; both stow for the flare.  Needs
+    # ``AIRBRAKE_MAX_DRAG``.  Unflown; off.
+    AIRBRAKE_DRAG_IN_FLIGHT: bool = False
+    AIR_DRAG_LIFT_BAND: float = 0.1
+    AIR_DRAG_ON_M_S: float = 10.0       # over target_speed to deploy
+    AIR_DRAG_OFF_M_S: float = 3.0       # ...and to stow (hysteresis)
+    AIR_DRAG_FULL_M_S: float = 25.0     # fully out at this much over
+    AIR_DRAG_LOW_M: float = 100.0       # not when this far under profile
+    AIR_DRAG_MIN_H_M: float = 150.0     # nor below this height
+    # **The surfaces as a spectrum, not a set of switches** (the user,
+    # 2026-09-25).  ``airbrake.SurfaceEnvelope``: every lift/drag change the
+    # mirrored surfaces can make with pitch, roll and yaw held, solved per
+    # request by LP from the per-surface probes; the corners are deployed
+    # and measured in vacuum at STANDBY and the model rescaled to the game
+    # (refused if a corner's moments exceed ``ENVELOPE_MOMENT_SLACK`` times
+    # the limit).  Replaces, when on: the approach's spoiler switch (its
+    # lift figure is now the envelope's), the air drag brake (drag sized to
+    # shed the speed over ``target_speed`` in ``ENVELOPE_SPEED_TAU_S``), and
+    # the ground brake (the "brake" corner at full travel).  The glide's
+    # and the cone's flap brakes still use the measured spoiler.  Unflown;
+    # off.
+    AIRBRAKE_ENVELOPE: bool = False
+    ENVELOPE_CONTROL_MARGIN: float = 0.2   # travel kept for the controller
+    ENVELOPE_QUANTUM: float = 0.05         # of a corner span, per step
+    ENVELOPE_SPEED_TAU_S: float = 10.0     # shed the overspeed in this time
+    ENVELOPE_MOMENT_SLACK: float = 3.0     # x the limit, in the game
     # **The attitude to hold on the ground, which ROLLOUT was not holding at
     # all.**  ``run_rollout`` commanded brakes and nosewheel and never called
     # ``aim``, so kRPC's autopilot went on holding whatever the flare had
@@ -2234,6 +2715,21 @@ class Config:
     # which means nothing: the autopilot is not written for one craft, and a
     # gear that is found rather than configured costs one query at startup.
     NOSE_BRAKE_OFF: bool = True
+    # **The gear, always: nose wheel no brake (friction: below); every
+    # other wheel full brake torque and manual friction at the maximum.**
+    # The user's rule (2026-09-25).  200% is the game's brake-torque
+    # maximum and 10 the friction slider's (``ModuleWheelBase``'s
+    # ``frictionMultiplier``, 0.01-10); ``apply_brakes``' fraction now
+    # scales 200 rather than 100.  The mains braked at 50% before, and the
+    # shuttle rolled 4.2 km from a 65 m/s touchdown (LOG3609).
+    WHEEL_BRAKE_MAX_PCT: float = 200.0
+    MAIN_WHEEL_FRICTION: float = 10.0
+    # **And the nose wheel's friction control off** (the user, 2026-09-30,
+    # after hand-landing the twin-fin shuttle): its automatic friction is
+    # switched to manual at this multiplier.  1.0 is the slider's value on
+    # both shuttle craft files, so this changes the mode, not the number.
+    # 0 leaves the craft's automatic friction alone (the old behaviour).
+    NOSE_WHEEL_FRICTION: float = 1.0
     ROLLOUT_STEER_GAIN: float = 0.02        # per metre off the centreline
     ROLLOUT_STEER_MAX: float = 0.4
     # **And less of it the faster the wheels are turning.**  A nosewheel
@@ -2249,6 +2745,20 @@ class Config:
     # now touches down within a few metres of the centreline, so there is
     # nothing for hard steering at speed to do.
     ROLLOUT_STEER_FULL_M_S: float = 30.0
+    # **Steer on where it is headed** (the user, 2026-09-29): the law above
+    # is proportional on position alone, so a vehicle already drifting back
+    # toward the centreline gets the same command as one drifting away, and
+    # it weaves -- rollouts stop 30-40 m off (LOG3810 +37.5, LOG3769 -36.7)
+    # against a +-35 m strip.  With this on it is a PID: P on the
+    # cross-track (``ROLLOUT_STEER_GAIN``), D on the measured drift across
+    # the runway (``ROLLOUT_STEER_GAIN * ROLLOUT_STEER_LOOKAHEAD_S`` -- i.e.
+    # steer on the position that many seconds ahead), and a small I for a
+    # steady bias, clamped to ``ROLLOUT_STEER_I_MAX`` of deflection and
+    # frozen while the output is limited.  The speed taper still applies.
+    ROLLOUT_STEER_PID: bool = False
+    ROLLOUT_STEER_LOOKAHEAD_S: float = 2.0
+    ROLLOUT_STEER_KI: float = 0.002         # per metre-second
+    ROLLOUT_STEER_I_MAX: float = 0.1        # of full deflection
     STOPPED_SPEED_M_S: float = 1.0
     # **A rollout that cannot end must still end.**  The stop test is a speed
     # threshold, and a vehicle that arrived 50 km short is not on a runway:
@@ -2824,6 +3334,64 @@ class Config:
     # the units-based reserve could not cover.
     DRAIN_RESERVE_DV_MS: float = 200.0
     DRAIN_RESERVE_MARGIN: float = 1.25
+    # **And then the reserve rode to the runway.**  250 m/s of reserve for a
+    # 26 m/s burn left 376 units -- **1.88 t, 6.5% of the shuttle** -- aboard
+    # from the burn to the wheels, all of it in the one tank that holds any,
+    # the Mk3 adapter at the nose (station +9.8 m).  ``testInstances/cgProbe.py``
+    # prices it: at 70 m/s the elevons spend up to **0.33 of their pitch
+    # authority** holding the flare's alpha with it there, 0.19 with it gone
+    # (the CG moves 0.65 m aft), and 0.12-0.15 had it been pumped into the
+    # empty aft Mk3 tanks instead -- which would carry the 1.88 t to the
+    # ground for another 0.16-0.30 m.  Entry and glide trim cost 1-7% in
+    # every placement, so it is the landing it matters to.
+    #
+    # True dumps what is left once the glide is flying: the valves open on
+    # the first GLIDE tick and close when the tank is empty.  Not in the
+    # COAST -- that is failure 61's place, vacuum after the burn's closed
+    # loop has stopped looking.  The glide re-propagates from ``snap.mass``
+    # every tick, so the impulse and the mass change are both answered for;
+    # and ``entry_mass`` predicts the entry dry, so the burn is solved for the
+    # vehicle that will fly it.  The shuttle's two valves are mirrored
+    # (x = +-1.63 m) and should cancel.
+    #
+    # What would contradict it: a cutoff-to-glide arrival that moves by more
+    # than the flag's own scatter, or a ``residual drain`` line that never
+    # reads "empty".
+    DRAIN_RESIDUAL: bool = False
+    # **Keep only what this flight's burn needs** (``Autopilot.drain_to_burn``,
+    # the user's rule, 2026-09-30): once the deorbit is solved, drain to the
+    # solved dv x ``DRAIN_TO_BURN_MARGIN`` + ``DRAIN_TO_BURN_EXTRA_MS`` and
+    # re-solve at that mass before committing.  The 200 m/s pre-burn budget
+    # above is for the worst orbit; the shuttle's burns are ~26 m/s, and the
+    # difference (1.9 t) landed with it.  What is left after the burn goes
+    # at ``DRAIN_RESIDUAL_MACH_MAX``.  What would contradict it: a
+    # ``burn guard`` exit, or ``F`` falling to zero mid-burn.
+    DRAIN_TO_BURN: bool = False
+    # **And what is left goes to the nose** (``Autopilot.fuel_to_nose``, the
+    # user's rule, 2026-09-30): on the first COAST tick every tank's
+    # contents are pumped into the frontmost tanks that can hold them, so
+    # the leftover rides the hypersonic glide as nose ballast -- the
+    # balance the shuttle is stable with -- and ``DRAIN_RESIDUAL`` dumps it
+    # at Mach 0.8.  Monopropellant too, where there is room forward.
+    FUEL_TO_NOSE: bool = False
+    FUEL_TO_NOSE_RESOURCES: tuple = ("LiquidFuel", "Oxidizer",
+                                     "MonoPropellant")
+    FUEL_TO_NOSE_TIMEOUT_S: float = 30.0
+    DRAIN_TO_BURN_MARGIN: float = 1.25
+    DRAIN_TO_BURN_EXTRA_MS: float = 10.0
+    # **And not in the hypersonic glide: there the reserve is ballast.**
+    # Flown opening on the first GLIDE tick (LOG3743-3745, fingerprint
+    # ``cb8bcf3d``), the drained shuttle departed **3 of 3** -- alpha
+    # overshooting 35 -> 45-48 deg at a Mach 4-7 bank reversal, sideslip
+    # 70-100 deg peak to peak, 19-29 km short -- against 1 of 2 on the
+    # defaults beside it and 0 of 6 the night before.  ``cgProbe.py`` says
+    # why: with the 1.9 t in the nose the hypersonic pitch moment falls
+    # 0.02-0.04 of the surfaces' authority per 20 deg of alpha, drained it is
+    # flat -- neutrally stable exactly where the glide flies 35 deg and
+    # reverses its bank.  Subsonic it is still stable drained (0.11 per
+    # 20 deg at 70-100 m/s).  So the valve waits for this Mach; 0 opens on
+    # the first GLIDE tick, as first flown.
+    DRAIN_RESIDUAL_MACH_MAX: float = 0.8
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and
@@ -2926,7 +3494,7 @@ class Config:
     # of sink and a 147 m trigger, which is 7.3 s), so this is meant to be
     # neutral on its own and is off until that has been flown.
     APPROACH_SCURVE_STOP_S: float = 7.0
-    APPROACH_SCURVE_STOP_BY_TIME: bool = False
+    APPROACH_SCURVE_STOP_BY_TIME: bool = False  # flown with the near aim, which crashed; see TOUCHDOWN_AIM_M
     APPROACH_SCURVE_PERIOD_S: float = 10.0  # half-cycle of the weave clock
 
     # -- the split-rudder airbrake ----------------------------------------
@@ -2988,7 +3556,7 @@ class Config:
     # wheels-only vehicle.  Fly it as an arm and read ``oscsum.py`` and
     # ``alphaceiling.py``, not the arrival alone.
     ENABLE_CONTROL_SURFACES: bool = False
-    AIRBRAKE_OPPOSED_FLAPS: bool = False
+    AIRBRAKE_OPPOSED_FLAPS: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # Stow the brake whenever the sink exceeds what the flare can arrest
     # from its door (``airbrake.Brake.update``).  The opposed flaps moved the
     # touchdown ~600 m earlier on `qs_plane` and broke 3 of 6 vehicles doing
@@ -2998,7 +3566,39 @@ class Config:
     # (`pairfly-flapguard.txt`).  And the extra sink was the speed loop
     # diving to recover the speed the brake took, not the brake itself --
     # see docs/spaceplane/design.md.  Left off.
-    AIRBRAKE_SINK_GUARD: bool = False
+    AIRBRAKE_SINK_GUARD: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **Stow when the vehicle sinks faster than the approach wants.**  The
+    # shuttle's measured set is a lift spoiler (-33 ClA, ~40% of the lift):
+    # flown on a 1300 m surplus (LOG3593) it took the sink from 36 to 106
+    # m/s against a wanted 25 then 11, spent the surplus in 20 s, stowed on
+    # "surplus spent" at 1877 m and left a 110 m/s sink that needs ~1100 m
+    # to arrest -- flare at 162 m/s, sink 149.  The approach already computes
+    # the sink its path wants (``ApproachCommand.wanted_sink``); the brake is
+    # out only while the vehicle is not sinking faster than that plus this.
+    AIRBRAKE_SINK_TRACK: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    AIRBRAKE_SINK_TRACK_M_S: float = 5.0
+    # **Choose each surface's deploy sense by deploying it**, in vacuum,
+    # once, against the game's own wrench (``Autopilot.measure_flap_brake``,
+    # ``airbrake.MeasuredBrake``).  Positive ``Deploy Angle`` is a per-part
+    # direction: on the shuttle it spoils lift on one elevon pair and adds it
+    # on the other two, so the geometric brake was half a flap.  Needs
+    # ``AIRBRAKE_OPPOSED_FLAPS``; replaces its geometry.
+    AIRBRAKE_MEASURED: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    AIRBRAKE_MEASURE_DEG: float = 15.0      # the probe deployment
+    AIRBRAKE_MEASURE_SETTLE_S: float = 0.6  # wall-s for a surface to move
+    AIRBRAKE_MEASURE_ALT_M: float = 1000.0  # the approach's air
+    AIRBRAKE_MEASURE_ALPHA_DEG: float = 5.0
+    # The verified set's residual pitching moment may be at most this share
+    # of the largest single surface's -- beyond it the set is refused.
+    AIRBRAKE_MEASURE_MOMENT_FRAC: float = 0.5
+    # Deflections do not add (a set predicted to cancel measured +55 CmA on
+    # the shuttle), so the balance is re-probed and corrected this often.
+    AIRBRAKE_MEASURE_ITER: int = 5
+    # **Flaps**: the same measured surfaces in their lift-*adding* sense,
+    # balanced and verified the same way, deployed for the flare.  The
+    # shuttle's tail strikes at 9.1 deg, so its flare cannot buy lift with
+    # alpha.  Needs ``AIRBRAKE_MEASURED``.
+    AIRBRAKE_FLAPS: bool = False
     # **The instrument, and it flies before the law does.**  Deploy the
     # opposed flaps at this angle (the aft group; the forward group gets
     # ``angle * ratio``) from COAST down, and read back three things the
@@ -3226,6 +3826,21 @@ class Config:
     # 40-65 degrees below the horizon, and a bound on the *path* says that
     # cannot happen whatever the speed or the mass.  ``cos(35)`` is 0.82 g.
     APPROACH_DIVE_MAX_DEG: float = 35.0
+    # **The way out of a mush** (``guidance.alpha_for_speed``).  The dive
+    # bound also floors the load at ``cos(APPROACH_DIVE_MAX_DEG)`` = 0.82 g,
+    # and at 57 m/s the shuttle makes 0.82 g only at 13-16 deg of alpha, whose
+    # drag holds it there: LOG4053 left the cone at 98 m/s, the law raised
+    # alpha 4.5 -> 17 as the speed fell to 57, and it sank 2 km at 36-40 m/s
+    # on a 40 deg path -- the back-side equilibrium the law cannot leave.
+    # With this on, below ``APPROACH_MUSH_SPEED_FRAC`` of the target speed
+    # and above ``APPROACH_MUSH_MIN_H_M`` the bound is
+    # ``APPROACH_MUSH_DIVE_DEG`` instead, so the wing may unload and the
+    # vehicle accelerate.  The height floor is the old bound's reason (27
+    # flights that unloaded low and arrived nose-down).  Off until paired.
+    APPROACH_MUSH_RECOVERY: bool = False
+    APPROACH_MUSH_SPEED_FRAC: float = 0.8
+    APPROACH_MUSH_DIVE_DEG: float = 60.0
+    APPROACH_MUSH_MIN_H_M: float = 800.0
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
@@ -3248,6 +3863,19 @@ class Config:
     # the best arrival this project has flown.  40 is a small widening for
     # the faster approach, not a licence to bank.
     APPROACH_BANK_MAX_DEG: float = 40.0
+    # **A bank the vehicle can follow, and roll out of before the door**
+    # (``Autopilot.approach_bank``).  The approach's capture and S-turn ask
+    # for +-40 deg as a relay, reversing every 4-8 s, and the shuttle's
+    # roll (~12 deg/s, time_to_peak 4.8 s) never catches the command:
+    # LOG3855 reached the flare door at -51 deg flown against 0 commanded
+    # and touched down at -36 -- a wing lost at 0.04 m/s of sink.  Across
+    # LOG3810-3849 the approaches that S-turned tracked alpha 2-7 deg rms
+    # worse than the straight ones (0.5-1.4) and dived.  With this on the
+    # command slews at the measured roll rate (``bank_rate``) and its
+    # magnitude is capped at ``rate * (time to the door - roll
+    # time_to_peak)``, so the wings are level when the flare opens.  Off
+    # until paired.
+    APPROACH_BANK_BY_ROLL: bool = False
     # **Whether the speed loop knows it is in a turn.**  See
     # ``guidance.alpha_for_speed``: the load it solves for is vertical and
     # the vehicle is banked, so the wing must carry ``1/cos(bank)`` to fly
@@ -3336,6 +3964,16 @@ class Config:
     # 2.08, and part of it is not a ratio at all but the flare's roughly
     # fixed float -- and the honest fix is to model those two separately
     # rather than to aim at the grass.
+    # **400 was flown and crashed 3 of 4 -- back to 2400 (2026-09-25).**
+    # The user's rule is right (aim at the near end so the rollout has the
+    # room) but it cannot be flown yet: the cone hands the approach
+    # 1300-1700 m of surplus height (laps=0 on every flight), and a nearer
+    # aim leaves less final to spend it in, so the approach dives -- flare
+    # at 70 m/s of sink from 220 m (LOG3665, 3668) against 20-35 at 2400;
+    # 4/4 landed at 2400 (LOG3663, 3666, 3667, 3670), 1/4 at 400 (LOG3664,
+    # 3665, 3668, 3669).  Failure 68's mechanism, not cured by the
+    # time-based weave stop or ``GATE_FROM_APPROACH``.  **Make the cone
+    # spend the surplus first (HANDOFF, "SECOND THING"), then move this.**
     TOUCHDOWN_AIM_M: float = 2400.0
     FLARE_RAMP_S: float = 0.4
 
@@ -3529,6 +4167,153 @@ class Config:
     # shuttle, against a flown bracket where 3.0 could not point the vehicle
     # and 6, 9 and 12 all could; the top of that range is untested.
     ATTITUDE_SLEW_FACTOR: float = 1.91
+    # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
+    # The derivation above handed it (pitch, yaw, roll), so the shuttle has
+    # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the
+    # default -- measured by the autotuned gains and a timed roll in orbit.
+    # See ``autopilot.krpc_axes``.  Off reproduces the old flights exactly.
+    # **Default since 2026-09-25**, with ``_FROM_CONE``: the user flew
+    # defaults live twice (LOG3644-3645) and the shuttle would not roll --
+    # +40 commanded through all of APPROACH, -15..+9 flown, 9 km off the
+    # centreline.  Flown before in the chain (game_v2, n=6: HAC +45 -> +52).
+    ATTITUDE_AXES_KRPC_ORDER: bool = True
+    # ...but only from the cone on, keeping the legacy order in the entry:
+    # with roll on its quick wheel-derived figure a hypersonic reversal
+    # overshoots and costs ~30 km (LOG3051-3052).  See ``switch_axes``.
+    # **Off since 2026-09-25 (night):** the legacy order is roll on 22.6 s,
+    # gains cut tenfold, and the user watched the entry bank with the roll
+    # input at zero (LOG3691: -31 -> +27 flown at ~2 deg/s, all yaw).  The
+    # overshoot it guarded against was flown with an 8 deg/s bank command
+    # and kRPC's roll gate shut; the command now slews at the measured rate
+    # (``BANK_RATE_MEASURED``) and the gate is open.  Unflown in this form.
+    ATTITUDE_AXES_FROM_CONE: bool = False
+    # **Roll on full authority** (the user, 2026-09-25): kRPC's roll
+    # ``time_to_peak`` in seconds, replacing the derived 4.8 s (1.91 x the
+    # wheels-only slew time -- a figure that never counted the surfaces).
+    # 1.0 is kRPC's own default: gains high enough that any real bank error
+    # drives the roll input to its stop.  The bank *command* is still
+    # slewed at the measured rate (``BANK_RATE_MEASURED``), which is what
+    # keeps a fast roll at high alpha from turning alpha into sideslip
+    # (LOG3680).  0 leaves the derived figure.
+    # **Back to 0 (derived, 4.8 s on the shuttle) on 2026-09-26.**  Flown at
+    # 1.0 the shuttle lost control in the entry every time: the user's live
+    # LOG3692 and 4/4 on the farm (LOG3693/3696/3699/3702, qs_shuttle, with
+    # and without the damper) -- bank error 125-179 deg, sideslip 41-64.
+    # With yaw on roll's figure (``ATTITUDE_YAW_WITH_ROLL``) 1.0 survived
+    # the entry, but at glide sideslip 31-44 deg against 8-14 at 4.8
+    # (LOG3705-3716).  Full authority is more than this airframe can use at
+    # 35 deg of alpha; the derived figure (1.91 x its own sqrt(I/tau)) is
+    # the general law.
+    ATTITUDE_ROLL_TIME_TO_PEAK_S: float = 0.0
+    # **kRPC drops the roll target outright while the nose is off its own.**
+    # The server's attitude controller blends roll in only below
+    # ``roll_start_angle`` (default 20 deg of *direction* error) and fully
+    # below ``roll_engage_angle`` (15); above that it sends **zero** roll and
+    # swings the nose with pitch and yaw alone.  On a winged vehicle the nose
+    # sits at alpha from the velocity, so a bank change *is* a direction
+    # change of ~2 alpha sin(dbank/2): at the shuttle's 36 deg of entry alpha
+    # any reversal past ~33 deg of bank starts outside the gate, and the
+    # vehicle was yawed round the velocity cone on its weakest axis -- the
+    # user watched the GUI's roll indicator sit at zero (LOG3679: +33 -> -1
+    # commanded, +52 flown, 23 deg of sideslip).  Bank is the control; roll
+    # must never be gated on pointing.  This is the error, in degrees, below
+    # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
+    # capped at 180).  0 leaves kRPC's 15/20.
+    ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
+    # **Yaw on roll's figure** (``autopilot.krpc_axes``), and the damper
+    # below moves both.  The static yaw figure is 22.6 s -- wheels only --
+    # and at 35 deg of alpha a bank change is a rotation about the velocity,
+    # body roll *and* body yaw; a fast body roll is sideslip, which a yaw
+    # axis that slow never removes: LOG3699 held +27..+40 deg of slip for
+    # 30 s about a steady bank command and tumbled at Mach 4.  The legacy
+    # (swapped) order flew yaw on 4.8 by accident and held the entry's slip
+    # under 5.  Measured (qs_shuttle, roll 4.8): glide sideslip max 8-28
+    # deg with yaw on roll's figure against 19-74 with yaw on its own 22.6
+    # (LOG3705-3728) -- but the bank was lost in the cone instead, >60 deg
+    # of error on 92 ticks below Mach 2 against 33 (LOG3717-3728, 6 an
+    # arm; landings 4/6 with parts either way).  **Off**: the hypersonic
+    # gain is real and the subsonic cost is too; ``ATTITUDE_YAW_BY_ALPHA``
+    # is the attempt to keep the one without the other.
+    ATTITUDE_YAW_WITH_ROLL: bool = False
+    # **Yaw for the share of a bank change that is yaw**: roll's figure /
+    # sin(commanded alpha), clamped between roll's and yaw's static figure
+    # (``autopilot.yaw_time_to_peak``).  Yaw on roll's figure everywhere
+    # (above) cured the hypersonic sideslip and lost the bank in the cone,
+    # ~20 deg of alpha below Mach 1: >60 deg of bank error on 92 ticks below
+    # Mach 2 against 33 with yaw on its own 22.6 (LOG3717-3728, 6 an arm).
+    # Overrides nothing when ``ATTITUDE_YAW_WITH_ROLL`` is on.  **Flown
+    # and not adopted** (LOG3729-3740, 6 an arm against the defaults):
+    # bimodal -- four flights at the session's lowest glide slip (10-17
+    # deg) and two hypersonic tumbles (LOG3734, LOG3738: slip building
+    # +7 -> +30 over 25 s about a steady command at Mach 4, 30 km short),
+    # against none on the defaults.  Tumbles over the session: yaw on roll's
+    # 4.8 0/12, yaw 22.6 2/16, this 2/6 -- not a dose-response at these n.
+    ATTITUDE_YAW_BY_ALPHA: bool = False
+    # **The sideslip in a reversal was commanded, not suffered.**  ``aim``
+    # tilted the nose toward the *commanded* lift, so while the roll lagged
+    # its command by some angle the nose target sat asin(sin alpha sin lag)
+    # off the vehicle's own pitch plane -- a sideslip command.  Every
+    # flight, landed or lost, took 12-24 deg of slip in the first reversal
+    # at Mach 6.5 with lags of 10-23 deg (LOG3741, 3742, 3749, 3758); the
+    # live LOG3758 took a second one at Mach 5 and tumbled, 49 km short.
+    # The three entries above re-tuned how fast the loops chase that target;
+    # this changes the target: the nose from the *flown* bank, the roof to
+    # the commanded one (a stability-axis roll).  **Flown, refuted**
+    # (LOG3759-3761, qs_shuttle, pairfly ksp0/1, `44e63da5`): with no slip
+    # commanded the first reversal still made 26 and 31 deg, and both
+    # flights tumbled (28 and 19 km short) against defaults beside them at
+    # 26 deg and landed.  The slip is the body roll outrunning yaw, not the
+    # target; the lead toward the commanded lift was, if anything, helping.
+    AIM_NOSE_FROM_FLOWN_BANK: bool = False
+    # **Yaw on the authority that is actually acting** -- the thrusters.
+    # The static yaw figure (22.6 s on the shuttle) is derived from the
+    # reaction wheels alone: 15 kN m.  The shuttle's RCS makes **290 kN m
+    # of yaw** (STANDBY's ``torque available_rcs_torque`` line), and
+    # ``GLIDE_RCS`` has the valve open through every hypersonic reversal
+    # (LOG3758-3760: on within a tick of the reversal starting) -- but kRPC
+    # schedules the nose's target rate from ``time_to_peak``, so a 22.6 s
+    # yaw asks the thrusters for a wheel's worth of yaw and the body roll
+    # (4.8 s) outruns it into 12-31 deg of sideslip.  With this on, while
+    # the valve is open in GLIDE yaw's figure is ``ATTITUDE_SLEW_FACTOR *
+    # sqrt(I_yaw / (wheel + rcs))`` (5.0 s on the shuttle), never faster
+    # than roll's, and it goes back to the static figure the moment the
+    # valve shuts -- so below ``GLIDE_RCS_MACH_MIN``, where yaw on roll's
+    # figure lost the bank in the cone (``ATTITUDE_YAW_WITH_ROLL``), nothing
+    # changes.  Derived from what kRPC reports, so a craft with no RCS gets
+    # nothing.  And because the tune now follows the valve, the valve is
+    # held open while the bank command leads the flown bank by more than
+    # ``BANK_RATE_SAT_DEG``: a relay on pointing error alone would shut
+    # mid-reversal and hand the turn back to the wheels' figure.
+    # **Default 2026-09-29 (night)**, with the HAC handover fixed (the valve
+    # stays open into the cone until its relay settles): pairfly qs_shuttle
+    # 6 v 6 (`23e33e7b`, LOG3846-3862), hypersonic peak slip 8-13 deg on all
+    # six against 15-70 on the defaults, which departed once (LOG3850, 70
+    # deg, 54 km short -- the user's live spin); no flag flight departed and
+    # two landed 30/30.  Transonic bank overshoot (cmd 37, flown 80-106) is
+    # present on both arms at similar size -- a separate roll problem.
+    ATTITUDE_YAW_WITH_RCS: bool = True
+    # **Slow the lateral axes when the bank diverges, from the vehicle's
+    # own swings.**  ``rollrate.RollDamper``.  Full authority (roll 1.0)
+    # tracked the shuttle to a degree up to q ~700 Pa and then swung about
+    # a steady +30 command with growing amplitude -- 8, 12, 14, 16, 22, 29,
+    # 35 deg past it -- until the nose was lost (the user, live, LOG3692);
+    # the roll figure has been 3.0, 22.6, 4.8 and 1.0 on this one airframe,
+    # so no constant is the answer.  A half-swing is the flown bank's
+    # excursion past a command that did not move, beyond
+    # ``BANK_RATE_SAT_DEG``; when one peaks more than ``ROLL_DAMPER_GROWTH``
+    # times the one before (the loop is diverging), the roll
+    # ``time_to_peak`` -- and yaw's, under ``ATTITUDE_YAW_WITH_ROLL`` -- is
+    # multiplied by ``ROLL_DAMPER_STEP`` (capped at the vehicle's slowest
+    # static axis); while none grows it relaxes back toward the floor over
+    # ``ROLL_DAMPER_RECOVER_S``.  **Growth only**: the first version counted
+    # every crossing and ran to its 22 s ceiling on the shuttle's +-7 deg
+    # lateral wobble, whose amplitude did not change as the tune went
+    # 4.8 -> 20 s (LOG3710) -- an airframe mode, not a loop one, which a
+    # slower loop only makes lag.  Logged as ``roll damper:`` lines.
+    ROLL_DAMPER: bool = True
+    ROLL_DAMPER_GROWTH: float = 1.1
+    ROLL_DAMPER_STEP: float = 1.5
+    ROLL_DAMPER_RECOVER_S: float = 120.0
     # **Re-derive the tune from the torque available now, not at STANDBY.**
     # ``autopilot.live_time_to_peak``: the surfaces are live and their
     # authority grows with q -- 2928 kN m of pitch at 4.7 kPa on the shuttle
@@ -3544,6 +4329,19 @@ class Config:
     # constant was chosen to damp.  Off; do not re-fly without addressing
     # both.
     ATTITUDE_TIME_TO_PEAK_LIVE: bool = False
+    # **Pitch only, from wheels plus smoothed surface torque, floored at
+    # ``ATTITUDE_TIME_TO_PEAK_S``.**  See ``Autopilot.retune_pitch_air``:
+    # the three faults of the live version above, each answered.  The
+    # shuttle's static pitch tune is 19 s against 6000+ kN m of surface in
+    # the cone; it dives in from ``qs_shuttle_cone`` with the pitch input at
+    # +0.08 and the nose 15 deg under its command (LOG3035).  Inert on the
+    # old craft by construction (its static pitch *is* the floor).
+    ATTITUDE_PITCH_AIR: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
+    # Measure the achieved angle of attack signed (kRPC's, in the pitch
+    # plane) rather than as the unsigned nose-to-velocity angle, which reads
+    # a nose below the airflow as above it.  See ``Telemetry``.
+    ALPHA_SIGNED: bool = False
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
@@ -3625,7 +4423,15 @@ class Config:
     # RCS through the glide as well -- off, for the reason ``RCS_Q_MAX_PA``
     # gives.  Raising one without the other changes nothing: the ceiling
     # shuts the valve at 500 Pa whatever the phase permits.
-    GLIDE_RCS: bool = False
+    GLIDE_RCS: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **Where the glide's RCS is for: the supersonic reversals.**  Flown in
+    # the sim with the q ceiling lifted (LOG3463-3466), the valve took the
+    # shuttle's arrival from +1.3 to +0.3 km and its mistracked ticks below
+    # Mach 4 from ~80% to ~31% -- and then emptied the tank, 230 of 429
+    # units subsonic in the cone, because nothing after GLIDE ever closed it.
+    # Below this Mach the glide does not permit it (0: everywhere); the later
+    # phases now close the valve themselves.
+    GLIDE_RCS_MACH_MIN: float = 1.0  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # **Permission is not demand.**  ``COAST_RCS`` and the burn say where RCS
     # is *allowed*; what actually opens the valve is a pointing error that
     # nothing else is closing.  kRPC's autopilot hunts, and a thruster held
@@ -3654,7 +4460,7 @@ class Config:
     # holdability curve is a *wheels-only* curve because this shuts the valve
     # at 500 Pa.  See docs/spaceplane/design.md, "High alpha: what the airframe
     # gives and what it will hold".
-    RCS_Q_MAX_PA: float = 500.0
+    RCS_Q_MAX_PA: float = 20000.0  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # No knob for the deorbit flip any more.  It was flown on reaction wheels
     # to save monopropellant, on the argument that nothing was waiting on it;
     # the measurement says a deorbit window is (114-169 s of flip, and nine
