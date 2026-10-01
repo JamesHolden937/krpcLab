@@ -3452,3 +3452,28 @@ residual + fuel to nose + bank by roll + flare factor 1.45):
   -- watch it in game. The residual +1.2 km: flown cone L/D 2.3-2.6 in the
   sim against `HAC_LD` 1.86 (game measured 1.55-1.65 wet) -- not refitted
   from sim numbers.
+
+**Game check of the Mach 2.5 dump** (`rot-m25-0930`, LOG4240-4243, round 0
+only; 4244-4245 void, killed for swap): both 2.5 flights handed over at
+h=12.0 km by the *altitude* trigger, 10.8-12.5 km before the field -- but
+then ran out of height (-6.0, -2.2), as did the 0.8 arm (-2.7, -2.0) with
+`HAC_SPEED_PATH` on (in the game the speed path runs the cone low; the sim
+said the opposite). LOG4241 landed 31/31 at 52 m/s / 4.8 sink, 12 km short.
+Drained, the game overshoots alpha by **19 deg** at Mach 1-3 (sim 10-13).
+
+**The CG is wrong both ways**: wet flies under its alpha (long, high),
+drained flies over (short, low). Built `DRAIN_RESIDUAL_KEEP_UNITS` /
+`DRAIN_RESIDUAL_FINAL_MACH` (two-stage: keep N units as trim at the first
+opening) and `DRAIN_TRIM_LOOP` (dump 25 units every 6 s while smoothed
+alpha is >2 deg short of command, Mach 3.5..`DRAIN_RESIDUAL_MACH_MAX`; the
+vehicle picks the amount). Sim (LOG4245-4269): keep 330 tracks alpha within
+1-2 deg; the loop leaves 150-250 units with tracking -1..-6. Outcomes
+bimodal **by how the glide hands over**: `HAC_ALT_M` trigger (12 km, 4-6 km
+before the field) -> exits -3.4..-4.7, out of height; 3 km distance
+backstop (~14 km) -> +1.8..+2.5. The same split `cone_affordable`'s
+docstring records from 57 old flights (24/33 out of height on the altitude
+trigger).
+
+**`HAC_ENTRY_AFFORDABLE` (sim, LOG4270-4281): stack + affordable 4/4
+intact, 2 on the runway, exits -191..+990**; + trim loop 0/4 (arrives
+low); trim loop alone 2/4. Game confirmation: `rot-afford-1001`.

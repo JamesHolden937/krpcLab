@@ -3419,6 +3419,11 @@ class Config:
     # rest goes at ``DRAIN_RESIDUAL_MACH_MAX`` (set it to 0.8 with this).
     # Needs ``DRAIN_RESIDUAL``.  Off.
     DRAIN_TRIM_LOOP: bool = False
+    # **Predict the drained vehicle** (``trajectory.predict``): the deorbit
+    # and glide propagations drop the residual's mass at
+    # ``DRAIN_RESIDUAL_MACH_MAX`` instead of flying it wet to the ground.
+    # Not with ``DRAIN_TRIM_LOOP`` (its amount is decided in flight).  Off.
+    PREDICT_RESIDUAL_DUMP: bool = False
     DRAIN_TRIM_MACH_TOP: float = 3.5
     DRAIN_TRIM_SHORT_DEG: float = 2.0
     DRAIN_TRIM_STEP_UNITS: float = 25.0

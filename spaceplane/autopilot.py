@@ -4319,6 +4319,18 @@ class Autopilot:
         reads every tick, so it answers for the valve as the valve runs.  See
         ``Config.DRAIN_RESIDUAL`` for why here and not in the coast.
         """
+        if getattr(self.cfg, "PREDICT_RESIDUAL_DUMP", False):
+            # What the predictor should expect to leave the vehicle, and
+            # where (``trajectory.predict``); cleared once it has gone.
+            pending = (getattr(self.cfg, "DRAIN_RESIDUAL", False)
+                       and self.cfg.DRAIN and self.residual_drain != "done"
+                       and self.state in (DEORBIT, COAST, GLIDE))
+            fuel = snap.liquid_fuel + snap.oxidizer
+            keep = float(getattr(self.cfg, "DRAIN_RESIDUAL_KEEP_UNITS", 0.0))
+            self.env.residual_dump = (
+                (float(self.cfg.DRAIN_RESIDUAL_MACH_MAX),
+                 max(0.0, fuel - keep) * float(self.cfg.RESOURCE_KG_PER_UNIT))
+                if pending and fuel > 1.0 else None)
         if (not getattr(self.cfg, "DRAIN_RESIDUAL", False)
                 or not self.cfg.DRAIN or self.residual_drain == "done"
                 or self.state not in (GLIDE, HAC, APPROACH)):

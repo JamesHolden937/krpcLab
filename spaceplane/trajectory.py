@@ -1109,9 +1109,25 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     entry_r = entry_v = None
     iface_r = iface_v = iface_t = None
     air_r = air_v = None
+    # ``PREDICT_RESIDUAL_DUMP``: **the vehicle that flies the late glide is
+    # the drained one.**  ``DRAIN_RESIDUAL`` dumps the nose fuel at a Mach,
+    # and a prediction made at the wet mass all the way down aims a vehicle
+    # ~2 t heavier than the one that arrives -- every drained flight
+    # arrived short (LOG4140-4144, 4241-4243, 4283-4286).  The autopilot
+    # posts ``env.residual_dump = (mach, kg)`` while the dump is pending.
+    dump = (getattr(env, "residual_dump", None)
+            if getattr(cfg, "PREDICT_RESIDUAL_DUMP", False) else None)
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
         altitude = radius - env.equatorial_radius
+        if dump is not None and altitude < env.atmosphere_depth:
+            try:
+                mach = env.mach(vec.norm(v), altitude)
+            except Exception:                           # noqa: BLE001
+                mach = None
+            if mach is not None and mach <= dump[0]:
+                mass = max(1.0, mass - dump[1])
+                dump = None
         lowest = min(lowest, altitude)
         # A skip is an entry that does not commit.  This airframe holds
         # 30 deg -- *maximum lift* -- through the entry, and if the burn
