@@ -2117,6 +2117,18 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         trim = cfg.GLIDE_ALPHA_DEG
     target = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR
               * stall * math.sqrt(load)) * eas_scale(env, cfg, height)
+    if getattr(cfg, "HAC_POLAR_SPEED", False):
+        # ``HAC_POLAR_SPEED``: the speed whose glide ratio is the one the
+        # plan needs (path over energy height to the gate), off the polar --
+        # the approach's law (``polar_speed``) one phase earlier.  Short, it
+        # slows to best glide and stretches; high, it flies faster and the
+        # weave takes the rest.  At the banked load, as the fixed target was.
+        spend = height + excess_height - cfg.GATE_ALT_M
+        if spend > 1.0:
+            polar = polar_speed(env, cfg, total / spend, height, mass,
+                                gravity, stall)
+            if polar is not None:
+                target = polar * math.sqrt(load)
     if getattr(cfg, "HAC_SPEND_AS_SPEED", False):
         # ``HAC_SPEND_AS_SPEED``: height over the cone's own profile flies
         # the cone slower -- more alpha, less L/D, a steeper circle -- down
@@ -2184,6 +2196,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.short = short
     command.weave_deg = weave_deg
     command.weave_half_s = weave_half_s
+    command.alpha_target_speed = target
     command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M))
                        if rungs is not None and len(rungs) >= 2 else cone_ld)
     command.surplus = surplus

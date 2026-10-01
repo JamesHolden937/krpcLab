@@ -499,6 +499,12 @@ class Config:
     # straight-in at the cone's speed covers per metre of height, once,
     # when the table is ready.  Off.
     HAC_AIM_DERIVED: bool = False
+    # **The cone's speed off the polar** (``guidance.hac``): the speed
+    # whose one-g glide ratio is the plan's path over the energy height left
+    # to the gate (``guidance.polar_speed``), in place of
+    # ``HAC_SPEED_FACTOR * APPROACH_FACTOR`` x stall, the old craft's 108
+    # m/s at which the shuttle cannot stretch a short arrival.  Off.
+    HAC_POLAR_SPEED: bool = False
     HAC_LADDER_STEP_M: float = 500.0
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
     # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the

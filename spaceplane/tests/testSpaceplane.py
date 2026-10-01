@@ -4220,6 +4220,21 @@ class TestTheHeadingAlignmentCone(unittest.TestCase):
         self.assertAlmostEqual(better.plan_ld, 1.2 * same.plan_ld, places=6)
         self.assertLess(better.needed_height, same.needed_height)
 
+    def test_a_short_cone_flies_slower_than_a_high_one(self):
+        """``HAC_POLAR_SPEED``: the same geometry with less height asks for
+        a flatter glide, which is a slower speed on the polar."""
+        side = 1.0
+        _, along, _, _ = self.frame()
+        v = vec.scale(along, 110.0)
+        self.cfg.HAC_POLAR_SPEED = True
+        r_low = self.point(-10000.0, 0.0, 4500.0)
+        r_high = self.point(-10000.0, 0.0, 7000.0)
+        low = guidance.hac(self.env, self.cfg, self.end, r_low, v, 7000.0,
+                           9.81, 4500.0, side)
+        high = guidance.hac(self.env, self.cfg, self.end, r_high, v, 7000.0,
+                            9.81, 7000.0, side)
+        self.assertLess(low.alpha_target_speed, high.alpha_target_speed)
+
     def test_the_derived_aim_is_the_straight_in_ratio(self):
         """``HAC_AIM_DERIVED``: the aim's ratio is the wings-level ladder
         from ``HAC_ALT_M`` to the gate, and ``high_gate`` uses it."""
