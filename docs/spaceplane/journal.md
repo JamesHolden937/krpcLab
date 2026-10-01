@@ -3546,3 +3546,33 @@ Tools: `spaceplane/tools/gatesave.py` (quicksave a farm flight at an
 on-profile cone handover); bench saves `qs_shuttle2_low_{m30,p30,p60}`.
 Trap repeated and stopped: sims beside the farm (load 23 on 16 cores) --
 four sim flights departed in the late glide; don't.
+
+**The chain batches** (all `qs_shuttle2` from orbit; chain = stack + held
+weave + fuel trim + plateau ceiling + measured cone ratio + derived aim +
+polar approach speed):
+- `rot-chain-1001` round 0 (LOG4336-4339): **3/4 intact** (31/31) at 55-66
+  m/s, flare 76-85 m/s, cross at flare <100 m; all short or long on energy
+  (-4.9, -1.3, +1.1 km): the cone held 108 m/s *true* at 6-10 km (alpha
+  17-22, L/D 1.0-1.5) -- short all the way. `ldk` 0.91-1.15: the table is
+  right; the speed law was the problem.
+- `rot-chain2-1001` (+`HAC_POLAR_SPEED`, LOG4344-4347): **refuted** -- the
+  polar is flat near its top; the target stepped tens of m/s, 75-250 m/s
+  phugoid in the cone, flares 87-112.
+- `rot-chain3-1001` (+`HAC_SPEED_EAS`, `ALPHA_RATCHET_ON_SWING`,
+  LOG4351-4358): **4/8 cone exits within +67..+425 m** of what the approach
+  needs (baseline: +-1.5-4 km). The other 4 arrived 10-46 km long: LOG4358
+  departed hypersonically at a Mach 5.1 bank reversal (alpha 38.7 -> 17,
+  long +0.5 -> +11.7 km) and the swing ratchet, at a 6 deg threshold, then
+  lowered the ceiling to 28.7 and kept it long. Threshold now 12 deg
+  (`ALPHA_SWING_TOL_DEG`). Of the good exits: LOG4354 (+202) intact but
+  floated 3.6 km (the polar approach inverted a 4.2 final to ~140 m/s --
+  now one-sided), LOG4351 (+103) flared at 87, broke at 84.
+- **Hypersonic alpha excursions >15 deg at Mach 3-5 on most shuttle flights**
+  (overnight and today): overshoots to 50-58 without reversal, collapses to
+  17-24 in reversals. The airframe's pitch margin at high alpha; the craft
+  question stands.
+- **`qs_shuttle2_gate` is not a valid bench**: loaded in the air the vehicle
+  makes half its table lift from the first tick (elevons saturated
+  nose-up, flown alpha below command) and dives; 12/12 identical crashes at
+  118-175 m/s (`rot-gate-1001`), LOG4371 the same at 1x. The late-glide
+  bench shows the same transient right after loading and recovers.
