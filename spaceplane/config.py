@@ -503,7 +503,12 @@ class Config:
     # whose one-g glide ratio is the plan's path over the energy height left
     # to the gate (``guidance.polar_speed``), in place of
     # ``HAC_SPEED_FACTOR * APPROACH_FACTOR`` x stall, the old craft's 108
-    # m/s at which the shuttle cannot stretch a short arrival.  Off.
+    # m/s at which the shuttle cannot stretch a short arrival.  **Refuted
+    # as built** (``rot-chain2-1001``, LOG4344-4347): near best glide the
+    # polar is flat, so a small change in the needed ratio steps the target
+    # tens of m/s -- the cone flew a 75-250 m/s phugoid at +-170 m/s
+    # vertical and flared at 87-112.  A stepping law.  ``HAC_SPEED_EAS`` is
+    # the general fix for the density part.  Off.
     HAC_POLAR_SPEED: bool = False
     HAC_LADDER_STEP_M: float = 500.0
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
