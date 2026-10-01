@@ -1673,6 +1673,61 @@ def weave_sign(cfg, elapsed, period=None):
     return 1.0 if int(max(0.0, elapsed) / period) % 2 == 0 else -1.0
 
 
+def weave_bank(cfg):
+    """The bank a held weave reverses at (``HAC_WEAVE_BANK_DEG``)."""
+    got = float(getattr(cfg, "HAC_WEAVE_BANK_DEG", 0.0) or 0.0)
+    return got if got > 0.0 else cfg.HAC_BANK_MAX_DEG
+
+
+def weave_reversal_s(cfg, theta_deg, speed, gravity=9.81, roll_rate=None):
+    """Seconds to swing the track from ``+theta`` to ``-theta``: the turn at
+    the weave's bank plus rolling through twice that bank."""
+    bank = weave_bank(cfg)
+    omega = gravity * math.tan(math.radians(bank)) / max(1.0, speed)
+    rate = roll_rate if roll_rate and roll_rate > 0.5 else \
+        cfg.HAC_WEAVE_ROLL_RATE_DEG_S
+    return (2.0 * math.radians(theta_deg) / max(1e-3, omega)
+            + 2.0 * bank / max(0.5, rate))
+
+
+def weave_efficiency(theta_deg, reversal_s, hold_s):
+    """Progress per metre flown over one swing: held at ``theta`` for
+    ``hold_s``, then a reversal whose track sweeps ``+-theta`` uniformly
+    (mean ``sin(t)/t``)."""
+    t = math.radians(theta_deg)
+    sweep = math.sin(t) / t if t > 1e-6 else 1.0
+    total = hold_s + reversal_s
+    if total <= 0.0:
+        return 1.0
+    return (hold_s * math.cos(t) + reversal_s * sweep) / total
+
+
+def weave_angle(cfg, ratio, speed, gravity=9.81, roll_rate=None,
+                time_left=None):
+    """``HAC_WEAVE_HELD``: ``(theta_deg, half_period_s)`` whose swing flies
+    ``1/ratio`` times the progress.
+
+    The smallest angle whose *effective* ratio reaches ``ratio`` (the
+    largest allowed if none does).  ``time_left`` (s of path to the gate)
+    shrinks the hold, and then the angle, so the last swing fits.
+    """
+    hold = cfg.HAC_WEAVE_HOLD_S
+    top = cfg.HAC_WEAVE_MAX_DEG
+    best = (0.0, max(1.0, hold))
+    for i in range(1, int(top) + 1):
+        theta = float(i)
+        rev = weave_reversal_s(cfg, theta, speed, gravity, roll_rate)
+        h = hold
+        if time_left is not None:
+            if rev > time_left:
+                break
+            h = min(hold, time_left - rev)
+        best = (theta, rev + h)
+        if weave_efficiency(theta, rev, h) <= ratio:
+            break
+    return best
+
+
 def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
     """Path per metre of height at ``height``, flying ``speed``, with
     ``share`` of the path on the arc of ``radius`` (at the bank that holds
@@ -1756,7 +1811,7 @@ def eas_scale(env, cfg, height):
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
-        previous=None, max_step=None, weave=0.0):
+        previous=None, max_step=None, weave=0.0, roll_rate=None):
     """Circle down to the gate, and let the radius carry the energy error.
 
     The one control decision here is **how wide to turn**.  The path still to
@@ -1917,15 +1972,24 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # same progress, which is exactly the shape of the shortfall.
     surplus = max(0.0, available - total)
     weave_deg = 0.0
+    weave_half_s = cfg.HAC_WEAVE_PERIOD_S
+    held = getattr(cfg, "HAC_WEAVE_HELD", False)
     # A serpentine spends its surplus over whole cycles; one begun with less
     # than a cycle of path left is a lateral excursion into the gate.  See
-    # ``Config.HAC_WEAVE_WHOLE_CYCLE``.
-    cycle_ok = (not getattr(cfg, "HAC_WEAVE_WHOLE_CYCLE", False)
+    # ``Config.HAC_WEAVE_WHOLE_CYCLE``.  Held, ``weave_angle`` fits the
+    # last swing to the path instead.
+    cycle_ok = (held or not getattr(cfg, "HAC_WEAVE_WHOLE_CYCLE", False)
                 or total >= speed * cfg.HAC_WEAVE_PERIOD_S)
     if (cfg.HAC_WEAVE_ON and cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M
             and total > 1.0):
         ratio = vec.clamp(total / max(1.0, available), 0.0, 1.0)
-        weave_deg = min(cfg.HAC_WEAVE_MAX_DEG, math.degrees(math.acos(ratio)))
+        if held:
+            weave_deg, weave_half_s = weave_angle(
+                cfg, ratio, speed, gravity, roll_rate,
+                time_left=total / max(1.0, speed))
+        else:
+            weave_deg = min(cfg.HAC_WEAVE_MAX_DEG,
+                            math.degrees(math.acos(ratio)))
         phi = math.radians(weave_deg) * (1.0 if weave >= 0.0 else -1.0)
         wx, wy = (wx * math.cos(phi) - wy * math.sin(phi),
                   wx * math.sin(phi) + wy * math.cos(phi))
@@ -1949,8 +2013,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if lead <= cfg.HAC_JOIN_M:
         forward = side * math.degrees(
             math.atan(speed * speed / max(1.0, gravity * radius)))
-    signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error,
-                       -cfg.HAC_BANK_MAX_DEG, cfg.HAC_BANK_MAX_DEG)
+    cap = cfg.HAC_BANK_MAX_DEG
+    if held and weave_deg > 0.0:
+        cap = weave_bank(cfg)
+    signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed
     # ``cross(up, track)`` is the left of the vehicle's own track, and lift
@@ -2040,6 +2106,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.path = total
     command.short = short
     command.weave_deg = weave_deg
+    command.weave_half_s = weave_half_s
     command.surplus = surplus
     command.excess_height = excess_height
     command.lead = lead

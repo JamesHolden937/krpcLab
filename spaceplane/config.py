@@ -517,6 +517,26 @@ class Config:
     # LOG3523-3528).  One cycle is ``speed * HAC_WEAVE_PERIOD_S`` of track;
     # below that the surplus is left to the approach's speed path.
     HAC_WEAVE_WHOLE_CYCLE: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **A weave that is flown, not only commanded** (``guidance.weave_angle``).
+    # Over the eight cones of ``rot-ballast2-1001`` the gate-distance gained
+    # per metre flown was **0.76-0.80 whatever the weave commanded** (cos
+    # 0.55-0.81): reversing the track from +50 to -50 deg at 45 deg of bank
+    # and 125 m/s takes ~23 s of turn plus ~10 s of roll, and the clock
+    # reversed every 24 s, so the vehicle spent each swing turning and never
+    # reached the angle.  The surplus over the profile stayed at +1.3-1.8 km
+    # from cone entry to the gate.  With this on, each swing lasts the
+    # reversal the airframe needs (turn at the weave's bank, roll at the
+    # measured roll rate) plus ``HAC_WEAVE_HOLD_S`` held at the angle, and
+    # the angle is solved for the *effective* path ratio of that swing --
+    # ``(H cos t + T sin(t)/t) / (H + T)`` -- not ``1/cos``.  Near the gate
+    # the hold shrinks and the angle is limited to a swing that still fits.
+    HAC_WEAVE_HELD: bool = False
+    HAC_WEAVE_HOLD_S: float = 20.0
+    # The bank the weave reverses at; 0 is ``HAC_BANK_MAX_DEG``.  A
+    # steeper bank reverses faster and costs lift, both of which spend.
+    HAC_WEAVE_BANK_DEG: float = 0.0
+    # Roll rate the reversal is timed with when none has been measured.
+    HAC_WEAVE_ROLL_RATE_DEG_S: float = 8.0
     # **The spoiler as the cone's descent authority** once the weave is
     # saturated (``autopilot.hac_flap_brake``).  LOG3591 weaved at the full
     # 50 deg for the last 5 km and still reached the gate 2400 m high, where

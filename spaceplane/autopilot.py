@@ -646,6 +646,36 @@ class Autopilot:
         self._static_peak = tuple(peak)
         self._tuned_peak = want
 
+    def hac_weave_sign(self, ut):
+        """Which way the cone's weave leans this tick.
+
+        Off ``HAC_WEAVE_HELD`` it is the phase clock (``weave_sign``).  Held,
+        a swing lasts the half-period the last command solved for -- the
+        reversal the airframe needs plus the hold -- and the clock restarts
+        whenever the weave was off, so the first swing is half a reversal
+        plus the hold.
+        """
+        if not getattr(self.cfg, "HAC_WEAVE_HELD", False):
+            return guidance.weave_sign(self.cfg,
+                                       ut - (self.state_since or ut))
+        last = getattr(self, "hac_command", None)
+        if self.state != "HAC" or last is None \
+                or getattr(last, "weave_deg", 0.0) <= 0.0:
+            self._weave_dir = 1.0
+            self._weave_flip_ut = ut
+            self._weave_first = True
+            return self._weave_dir
+        half = getattr(last, "weave_half_s", self.cfg.HAC_WEAVE_PERIOD_S)
+        if getattr(self, "_weave_first", False):
+            half -= 0.5 * guidance.weave_reversal_s(
+                self.cfg, last.weave_deg, last.speed,
+                self.body.surface_gravity, self.roll_rate.limit())
+        if ut - getattr(self, "_weave_flip_ut", ut) >= half:
+            self._weave_dir = -getattr(self, "_weave_dir", 1.0)
+            self._weave_flip_ut = ut
+            self._weave_first = False
+        return getattr(self, "_weave_dir", 1.0)
+
     def log_roll_rate(self, ut):
         """What the vehicle was measured to roll at, as a phase ends."""
         rr = getattr(self, "roll_rate", None)
@@ -5609,10 +5639,8 @@ class Autopilot:
                                self.hac_side,
                                previous=self.hac_radius,
                                max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
-                               weave=guidance.weave_sign(
-                                   self.cfg,
-                                   snap.ut - (self.state_since
-                                              or snap.ut)))
+                               weave=self.hac_weave_sign(snap.ut),
+                               roll_rate=self.roll_rate.limit())
         if command is None:
             # **No answer, not a zero.**  Degenerate geometry here means over
             # the centre of the circle or stopped; holding the last command
@@ -6752,6 +6780,10 @@ def compact_line(state, snap, run):
                        else ("" if c.on_circle else " join")))
         bits.append("path=%6.0f need=%6.0f wv=%4.1f sink=%5.1f"
                     % (c.path, c.needed_height, c.weave_deg, c.sink))
+        if getattr(run.cfg, "HAC_WEAVE_HELD", False):
+            bits.append("wh=%4.1f wd=%+.0f"
+                        % (getattr(c, "weave_half_s", 0.0),
+                           getattr(run, "_weave_dir", 0.0)))
     if state == APPROACH and getattr(run, "command", None) is not None:
         c = run.command
         bits.append("sink=%5.1f/%5.1f" % (c.sink, c.wanted_sink))

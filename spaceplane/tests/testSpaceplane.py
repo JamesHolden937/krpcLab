@@ -8693,3 +8693,40 @@ class TestTheApproachCanLeaveAMush(unittest.TestCase):
                 57.0, 36.0, 500.0, 30000.0, 9.81, 100.0, 12.0)
         self.assertLess(on, off)
         self.assertAlmostEqual(low, off)
+
+
+class HeldWeave(unittest.TestCase):
+    """``HAC_WEAVE_HELD``: the angle is solved for the swing actually flown."""
+
+    def cfg(self, **kw):
+        return replace(Config(), HAC_WEAVE_HELD=True, HAC_WEAVE_MAX_DEG=75.0,
+                       **kw)
+
+    def test_efficiency_is_cos_when_held_forever(self):
+        self.assertAlmostEqual(guidance.weave_efficiency(60.0, 0.0, 10.0),
+                               0.5, places=6)
+
+    def test_reversal_alone_is_the_sweep_mean(self):
+        t = math.radians(50.0)
+        self.assertAlmostEqual(guidance.weave_efficiency(50.0, 30.0, 0.0),
+                               math.sin(t) / t, places=6)
+
+    def test_angle_exceeds_the_naive_acos(self):
+        # A held swing is less efficient than ``1/cos``: more angle needed.
+        theta, half = guidance.weave_angle(self.cfg(), 0.8, 125.0, 9.81, 8.0)
+        self.assertGreater(theta, math.degrees(math.acos(0.8)))
+        rev = guidance.weave_reversal_s(self.cfg(), theta, 125.0, 9.81, 8.0)
+        self.assertAlmostEqual(half, rev + self.cfg().HAC_WEAVE_HOLD_S)
+
+    def test_last_swing_fits_the_time_left(self):
+        cfg = self.cfg()
+        theta, half = guidance.weave_angle(cfg, 0.5, 125.0, 9.81, 8.0,
+                                           time_left=30.0)
+        self.assertLessEqual(half, 30.0 + 1e-9)
+        self.assertLess(theta, cfg.HAC_WEAVE_MAX_DEG)
+
+    def test_steeper_weave_bank_reverses_faster(self):
+        slow = guidance.weave_reversal_s(self.cfg(), 50.0, 125.0, 9.81, 8.0)
+        fast = guidance.weave_reversal_s(self.cfg(HAC_WEAVE_BANK_DEG=60.0),
+                                         50.0, 125.0, 9.81, 30.0)
+        self.assertLess(fast, slow)
