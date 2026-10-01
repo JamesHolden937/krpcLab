@@ -11,7 +11,7 @@ Defaults fingerprint **`b5de541e`**; flown behaviour = this morning's except
 off, manual at 1; verified in game). **Everything else built tonight is off.**
 Committed through `c3825a5` (plus the final docs commit). Offline suite 828
 OK (spaceplane 656 OK after the last change). Farm **stopped**, inhibitor
-**released**, machine suspended at the end (user's instruction).
+**released**. The suspend was interrupted by the user's return.
 
 **The goal set by the user -- "mostly reliable landings" -- was NOT reached.**
 Best game result tonight is ~1 in 4 intact from orbit for any configuration.
@@ -170,8 +170,15 @@ tree (also copy `kspSim/*.py tools data restart.sh`, symlink `kspSim/models`,
   flew under a kspSim probe on the same instance).
 - `start.sh` reported ksp0 started; it never opened its port (04:00): check
   every port before launching, and pass only live instances.
-- Twelve sim servers beside four instances pushed zram to 7 GB; KDE's
-  `baloo_file` holds ~2.9 GB indexing the 100 MB sim models.
+- **Twelve kspSim servers ran all night unnoticed** (started ~23:10 and
+  ~00:40, found 07:10): the cleanup grepped `kspSim/run.py` but they run as
+  `-m kspSim.run --instance N`, so it killed nothing and printed 0. They are
+  the 7-11 GB of zram, and **every game batch from `rot-m25-0930` on flew
+  beside them** (CPU load 17 on 16 cores, swap) -- arms were paired, but
+  treat those batches' absolute numbers (including the keep-200 +2.2 km)
+  as suspect until re-flown on a clean box. Kill sims with
+  `ps -eo pid,args | grep "[k]spSim\.run --instance"` from a script file.
+  KDE's `baloo_file` also holds ~2.9 GB indexing the 100 MB sim models.
 - Re-run `conesum` before quoting `HAC_LD`: I quoted 1.55-1.65 from memory;
   the night's batches read 1.89 median (configured 1.86).
 - Sim exits on the shuttle are biased (~1.4 km on the bench) and its late
