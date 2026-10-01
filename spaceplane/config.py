@@ -4008,6 +4008,13 @@ class Config:
     # time_to_peak)``, so the wings are level when the flare opens.  Off
     # until paired.
     APPROACH_BANK_BY_ROLL: bool = False
+    # **Lead the capture by the roll-out** (``Autopilot.
+    # approach_heading_lead``): the heading error the lateral law sees is
+    # the one the vehicle will have after rolling level at its measured
+    # roll rate.  LOG4385 commanded level with 27 deg of bank on and turned
+    # on to 20 deg off the runway.  Off.
+    APPROACH_HEADING_LEAD: bool = False
+    APPROACH_HEADING_LEAD_TAU_S: float = 1.0
     # **Whether the speed loop knows it is in a turn.**  See
     # ``guidance.alpha_for_speed``: the load it solves for is vertical and
     # the vehicle is banked, so the wing must carry ``1/cos(bank)`` to fly

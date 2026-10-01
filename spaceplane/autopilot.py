@@ -6034,7 +6034,8 @@ class Autopilot:
             snap.mass, self.body.surface_gravity, height,
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
-                period=self.cfg.APPROACH_SCURVE_PERIOD_S))
+                period=self.cfg.APPROACH_SCURVE_PERIOD_S),
+            heading_lead=self.approach_heading_lead(snap))
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
@@ -6057,6 +6058,44 @@ class Autopilot:
                        % (height, command.speed, command.sink, command.cross))
         elif self.touched_down(snap, height):
             self.enter(ROLLOUT, snap.ut, "touchdown without a flare")
+
+    def approach_heading_lead(self, snap):
+        """``APPROACH_HEADING_LEAD``: degrees the track will still turn if
+        the wings are levelled now -- the measured heading rate times half
+        the time to roll out at the measured roll rate (bank decays about
+        linearly, and so does the turn).  LOG4385: the capture called for
+        level at -0.3 deg with 27 deg of bank still on, and the track went
+        on to +21 before the wings came level; it touched down 20 deg off
+        the runway and rolled 416 m off the side.  0 when off."""
+        if not getattr(self.cfg, "APPROACH_HEADING_LEAD", False):
+            return 0.0
+        last = getattr(self, "command", None)
+        hdg = getattr(last, "heading_error", None) if last is not None \
+            else None
+        prev = getattr(self, "_lead_hdg", None)
+        self._lead_hdg = (snap.ut, hdg)
+        if hdg is None or prev is None or prev[1] is None:
+            return 0.0
+        dt = snap.ut - prev[0]
+        if dt <= 1e-3:
+            return getattr(self, "_lead_out", 0.0)
+        # The heading error read last tick already includes last tick's
+        # lead; difference the raw track instead.
+        raw = hdg - getattr(self, "_lead_out", 0.0)
+        raw_prev = getattr(self, "_lead_raw", None)
+        self._lead_raw = raw
+        if raw_prev is None:
+            return 0.0
+        rate = (raw - raw_prev) / dt
+        k = min(1.0, dt / max(0.1, self.cfg.APPROACH_HEADING_LEAD_TAU_S))
+        self._lead_rate = getattr(self, "_lead_rate", 0.0) + k * (
+            rate - getattr(self, "_lead_rate", 0.0))
+        bank = flown_bank(snap)
+        if math.isnan(bank):
+            return 0.0
+        unroll = abs(bank) / max(1.0, self.bank_rate())
+        self._lead_out = self._lead_rate * 0.5 * unroll
+        return self._lead_out
 
     def approach_bank(self, snap, bank_deg, height, trigger, sink):
         """The approach's bank as commanded -- or, under

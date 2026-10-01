@@ -8909,3 +8909,26 @@ class DerivedTouchdownAim(unittest.TestCase):
         self.assertEqual(airframe.touchdown_aim(env, cfg), 0.0)
         cfg.TOUCHDOWN_AIM_DERIVED = False
         self.assertEqual(airframe.touchdown_aim(env, cfg), cfg.TOUCHDOWN_AIM_M)
+
+
+class ApproachHeadingLead(unittest.TestCase):
+    """``APPROACH_HEADING_LEAD``: the track still to turn while rolling out."""
+
+    def test_a_turn_in_progress_is_led_by_half_the_rollout(self):
+        cfg = replace(Config(), APPROACH_HEADING_LEAD=True,
+                      APPROACH_HEADING_LEAD_TAU_S=0.1)
+        fake = SimpleNamespace(cfg=cfg, command=None,
+                               bank_rate=lambda: 8.0)
+        lead = autopilot_module.Autopilot.approach_heading_lead
+        out = 0.0
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        lambda snap: -24.0):
+            for i in range(20):
+                # The track turns at 2 deg/s; the command saw raw + lead.
+                raw = 2.0 * i * 0.1
+                fake.command = SimpleNamespace(heading_error=raw + out)
+                out = lead(fake, SimpleNamespace(ut=100.0 + i * 0.1))
+        # 24 deg of bank at 8 deg/s is 3 s to level; half of it at 2 deg/s.
+        self.assertAlmostEqual(out, 2.0 * 0.5 * 3.0, delta=0.3)
+        cfg.APPROACH_HEADING_LEAD = False
+        self.assertEqual(lead(fake, SimpleNamespace(ut=200.0)), 0.0)

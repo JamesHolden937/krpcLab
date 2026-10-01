@@ -871,7 +871,8 @@ def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
     return curve[-1][0]
 
 
-def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
+def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
+             heading_lead=0.0):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -930,6 +931,10 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0):
         track = vec.unit(track)
         heading_error = math.degrees(math.atan2(vec.dot(track, across),
                                                 vec.dot(track, along)))
+        # ``APPROACH_HEADING_LEAD``: the heading the vehicle will have once
+        # it has rolled level (``Autopilot.approach_heading_lead``), so the
+        # capture does not command level while the turn is still running.
+        heading_error += heading_lead
 
     sink = -vec.dot(v, up)
     # **The speed the flare needs is a speed at one point, not a speed to
