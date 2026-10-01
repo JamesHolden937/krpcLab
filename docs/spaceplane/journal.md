@@ -3493,3 +3493,56 @@ slip ticks) 0.15.
 exits +2.08 +2.15 +2.22 +2.35 (one -8.0, entered 22 km short); keep 300 ->
 +1.8..+4.4. The first consistent arrival of the session; lost in the
 approach at 82-96 m/s. Next session starts there (HANDOFF).
+
+## Session, 2026-10-01 morning: old-craft constants in the shuttle's chain
+
+The user's direction this session: "what if there's a fixed constant in the
+code you missed", then "replace constants with curves or some general
+solution" -- never re-fit a constant for the shuttle.
+
+**Baseline on a clean box** (`rot-base-1001`, LOG4320-4323, keep-200 stack,
+no sims beside it): exits -1.8 / +4.2 / +1.8 / +1.5 km, 0/4 on the runway.
+Last night's numbers were not only the sim load.
+
+**Over ~150 twin-fin landings** (game and sim): every exit above +1.3 km
+lands long, mostly past the far end; every exit below ~-1 km crashes short;
+inside +-0.8 km the flare still starts at 75-95 m/s and the craft breaks
+above ~70 m/s at touchdown.
+
+Found, each an old-craft constant or a law that never did what it said:
+
+1. **The cone weave did not fly its angle.** Progress per metre flown was
+   0.76-0.80 whatever was commanded (cos 0.55-0.81): reversing +-50 deg at
+   45 deg of bank takes ~33 s and the clock reversed every 24.
+   `HAC_WEAVE_HELD` (swing = reversal + hold, angle solved for the swing's
+   effective ratio). Sim (LOG4327): achieved 0.73 vs commanded 0.73, surplus
+   closed +1.4 -> +0.3 km, landed 31/31.
+2. **`HAC_LD` 1.86 and `HAC_GATE_LD` 1.35 are the old craft's.** The
+   shuttle's cones fly 2.1-2.6 per planned metre; at 1.35 it enters the cone
+   high by construction (LOG4321: 14.6 km at 20 km, weave pinned, +4.2 km).
+   `HAC_LD_MEASURED` (the table ladder scaled by measured/table L/D at the
+   flown alpha), `HAC_AIM_DERIVED` (entry aim from the same wings-level
+   ladder). A re-fit arm (`HAC_GATE_LD=2.4;HAC_LD=2.4`, LOG4332-4335 round
+   0 of `rot-trim-1001`) is a gain check only, not a candidate value.
+3. **The approach speed (`APPROACH_FACTOR` 2.25 x stall = 108 m/s) sits
+   where the shuttle's L/D is 3.0, against a final sized at 4.2.** LOG4281
+   (landed on the runway) read itself 360-620 m low all the way down yet
+   flew alpha 1.1-1.6 at 28-35 m/s of sink to hold 105 m/s, and flared at
+   91. `APPROACH_POLAR_SPEED`: the speed whose 1 g glide ratio is the ratio
+   still needed to the aim, off the table, fast side of best glide.
+4. **The glide's alpha ceiling is 40 deg at every Mach** (`GLIDE_ALPHA_MAX_DEG`,
+   raised for hypersonic sink). At Mach 0.6-1.3 the glide commands 34-40
+   on a wing whose lift peaks at 32; LOG4334 departed: alpha 86-105, slip
+   20-28, bank -153. Alpha tracking below Mach 4 is sd 5-24 deg on every
+   flight. The curve already existed, sim-only: `GLIDE_ALPHA_PLATEAU=0.05`
+   (~41 hypersonic, ~31 subsonic).
+5. **The CG is right at one Mach only.** Keep 200 flew 10-20 deg over the
+   command below Mach 2.9 (LOG4317: 20 commanded, 33-41 flown), keep 300
+   under. `FUEL_TRIM_TRANSFER` pumps LF/Ox nose<->aft (13 m arm) against the
+   interval-mean alpha error, Mach 4 to the residual drain. Verified moving
+   fuel in game (LOG4332-4335).
+
+Tools: `spaceplane/tools/gatesave.py` (quicksave a farm flight at an
+on-profile cone handover); bench saves `qs_shuttle2_low_{m30,p30,p60}`.
+Trap repeated and stopped: sims beside the farm (load 23 on 16 cores) --
+four sim flights departed in the late glide; don't.
