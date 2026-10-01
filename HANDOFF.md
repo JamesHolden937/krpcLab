@@ -3,7 +3,7 @@
 Snapshot of the last session; history is in `docs/spaceplane/journal.md`
 ("Session, 2026-10-01 morning: old-craft constants in the shuttle's chain").
 
-Last written **2026-10-01 ~08:40**, spaceplane, session in progress (the
+Last written **2026-10-01 ~10:50**, spaceplane, session in progress (the
 user asked: keep going until the spaceplane lands mostly reliably). Code
 defaults unchanged from `b5de541e` apart from new flags, **all off**.
 Offline spaceplane suite OK. Farm **up** (4 instances, restarted 08:28),
@@ -25,6 +25,15 @@ Goal not reached yet. Twin-fin shuttle (`qs_shuttle2`) from orbit:
   17-22). Fixed by `HAC_POLAR_SPEED` + density-scaled `polar_speed`, now
   flying as `rot-chain2-1001`.
 
+**Latest (10:50):** `rot-chain3-1001` put 4/8 cone exits within +425 m
+(baseline +-1.5-4 km). `rot-chain4-1001` round 0 (swing threshold 12):
+LOG4375 exited -55 m, on the centreline, touched down inside the runway's
+length -- and broke at 90 m/s because the final aims at
+`TOUCHDOWN_AIM_M`=2400, the far threshold (crossed the midpoint 840 m up).
+`TOUCHDOWN_AIM_DERIVED` (zone less flare float, 42 m for the shuttle) is in
+`rot-chain5-1001`, flying now. LOG4372 landed 31/31, 854 m from the
+midpoint but 342 m off the centreline.
+
 ## Flags built this session (all off)
 
 | flag | what | status |
@@ -35,6 +44,9 @@ Goal not reached yet. Twin-fin shuttle (`qs_shuttle2`) from orbit:
 | `HAC_AIM_DERIVED` | entry aim from the wings-level ladder (3.20 -> 32 km before the gate, was 13.5) | in chain |
 | `APPROACH_POLAR_SPEED` (+`_STEP_M_S`) | approach speed whose 1 g L/D = ratio still needed | flare 76-85 m/s (was 85-95) |
 | `HAC_POLAR_SPEED` | the same law in the cone | flying in chain2 |
+| `ALPHA_RATCHET_ON_SWING` (+`_TAU_S`, `ALPHA_SWING_TOL_DEG`=12) | ceiling backs off on a sustained swing, not only a deficit | at 6 deg it ate hypersonic drag; 12 in chain4/5 |
+| `TOUCHDOWN_AIM_DERIVED` (+`TOUCHDOWN_ZONE_FRACTION`) | final aimed at the touchdown zone less the flare float | in chain5 |
+| `HAC_POLAR_SPEED` | cone speed off the polar | **refuted** (stepping target, phugoid) |
 | `GLIDE_ALPHA_PLATEAU=0.05` (existing, was sim-only) | ceiling at far edge of lift plateau | on this craft it is 41 deg even transonic — see open item 1 |
 
 Chain = stack (`HAC_ENERGY_BUDGET HAC_PATH_WRAP_TO_GATE HAC_PAST_BEFORE_GATE_DEG=60
@@ -55,8 +67,13 @@ HAC_WEAVE_MAX_DEG=75`) + all of the above. Exact string in
 2. Landing chain inside +-0.8 km exits: flare speed still 76-85; touchdown
    >70 m/s breaks the craft.
 3. Re-check the old craft (`qs_plane`) on anything adopted.
-4. `spaceplane/tools/gatesave.py` has not yet caught an on-profile handover
-   (first version ignored already-open logs; fixed with `--after`).
+4. **`qs_shuttle2_gate` is not a valid bench** (loads into half lift,
+   elevons saturated; 12/12 identical dives, `rot-gate-1001`). Don't use it;
+   a valid on-final bench is still missing.
+5. Hypersonic alpha excursions >15 deg at Mach 3-5 on most flights: 5/20
+   follow an RCS valve opening (Mach 5+, unreachable 40 deg command); 15/20
+   are pitch-ups with the bank steady -- the airframe's pitch margin. **Ask
+   the user about a craft fix** (forward ballast / canard).
 
 ## Traps paid this session
 
