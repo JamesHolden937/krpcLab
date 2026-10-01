@@ -4435,6 +4435,114 @@ class Autopilot:
                                % (snap.ut - self.residual_since, remaining,
                                   snap.mass / 1000.0))
 
+    def fuel_trim(self, snap):
+        """``FUEL_TRIM_TRANSFER``: move the CG with the fuel, keep the fuel.
+
+        Between ``FUEL_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX``, in
+        GLIDE: the smoothed alpha error (flown minus commanded) beyond the
+        deadband pumps LF/Ox between the frontmost and the aftmost tanks --
+        forward while over-rotating (tail-heavy), aft while short (nose-
+        heavy).  Fronts and backs are measured along the vessel's own axis,
+        as in ``fuel_to_nose``.  Not blocking; a step waits for the last.
+        """
+        if (not getattr(self.cfg, "FUEL_TRIM_TRANSFER", False)
+                or self.state != GLIDE):
+            return
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return
+        if (mach is None or mach > float(self.cfg.FUEL_TRIM_MACH_TOP)
+                or mach <= float(self.cfg.DRAIN_RESIDUAL_MACH_MAX)):
+            return
+        commanded = float(getattr(self, "commanded_alpha", 0.0) or 0.0)
+        achieved = getattr(snap, "alpha_actual", None)
+        if achieved is None or math.isnan(achieved):
+            return
+        over = float(achieved) - commanded
+        prev = getattr(self, "_fuel_trim_err", None)
+        k = float(self.cfg.FUEL_TRIM_SMOOTH)
+        self._fuel_trim_err = over if prev is None else prev + k * (over
+                                                                    - prev)
+        last = getattr(self, "_fuel_trim_ut", None)
+        if last is not None and snap.ut - last < float(
+                self.cfg.FUEL_TRIM_INTERVAL_S):
+            return
+        moving = getattr(self, "_fuel_trim_moves", None) or []
+        try:
+            if moving and not all(m.complete for m in moving):
+                return
+        except Exception:                               # noqa: BLE001
+            pass
+        err = self._fuel_trim_err
+        band = float(self.cfg.FUEL_TRIM_DEADBAND_DEG)
+        if abs(err) <= band:
+            return
+        units = min(float(self.cfg.FUEL_TRIM_STEP_MAX_UNITS),
+                    float(self.cfg.FUEL_TRIM_UNITS_PER_DEG)
+                    * (abs(err) - band))
+        self._fuel_trim_ut = snap.ut
+        tanks = self._fuel_trim_tanks(snap)
+        if not tanks:
+            return
+        fuel = {"LiquidFuel": snap.liquid_fuel, "Oxidizer": snap.oxidizer}
+        aboard = sum(fuel.values())
+        transfer = self.conn.space_center.ResourceTransfer
+        moves, moved = [], []
+        for name, (front, back) in tanks.items():
+            if aboard <= 0.0:
+                break
+            src, dst = (back, front) if err > 0.0 else (front, back)
+            try:
+                have = src.resources.amount(name)
+                room = dst.resources.max(name) - dst.resources.amount(name)
+            except Exception:                           # noqa: BLE001
+                continue
+            # Each resource moves its share, so the mixture is kept.
+            amount = min(units * fuel.get(name, 0.0) / aboard, have, room)
+            if amount < 0.5:
+                continue
+            try:
+                moves.append(transfer.start(src, dst, name, amount))
+                moved.append("%s %.0f" % (name, amount))
+            except Exception as exc:                    # noqa: BLE001
+                self.logbook.event(snap.ut, "fuel trim: %s FAILED (%s)"
+                                   % (name, exc))
+        self._fuel_trim_moves = moves
+        self.logbook.event(snap.ut, "fuel trim: %+.1f deg %s %.1f at Mach "
+                                    "%.2f -> %s %s"
+                           % (err, "over" if err > 0 else "under",
+                              commanded, mach,
+                              "forward" if err > 0 else "aft",
+                              ", ".join(moved) or "nothing to move"))
+
+    def _fuel_trim_tanks(self, snap):
+        """``{resource: (frontmost tank, aftmost tank)}``, measured once."""
+        got = getattr(self, "_fuel_trim_tank_cache", None)
+        if got is not None:
+            return got
+        got = {}
+        try:
+            frame = self.vessel.reference_frame
+            forward = self.vessel.direction(frame)
+            parts = list(self.vessel.parts.all)
+            for name in ("LiquidFuel", "Oxidizer"):
+                tanks = sorted(((vec.dot(p.position(frame), forward), p)
+                                for p in parts
+                                if p.resources.max(name) > 0.0),
+                               key=lambda t: -t[0])
+                if len(tanks) >= 2:
+                    got[name] = (tanks[0][1], tanks[-1][1])
+            self.logbook.event(snap.ut, "fuel trim tanks: %s" % "; ".join(
+                "%s %s -> %s" % (n, f.title, b.title)
+                for n, (f, b) in got.items()))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "fuel trim: FAILED (%s)" % exc)
+        self._fuel_trim_tank_cache = got
+        return got
+
     def drain_trim(self, snap, remaining):
         """``DRAIN_TRIM_LOOP``: trim the CG with the nose fuel.  True while
         it owns the valves (the residual drain then waits).
@@ -6288,6 +6396,7 @@ class Autopilot:
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
         self.retune_attitude(snap)
+        self.fuel_trim(snap)
         self.drain_residual(snap)
         handler(snap)
         # **Wherever the table happens to become ready.**  The first version

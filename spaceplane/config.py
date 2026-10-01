@@ -3450,6 +3450,28 @@ class Config:
     DRAIN_TRIM_INTERVAL_S: float = 6.0
     DRAIN_TRIM_SMOOTH: float = 0.3
     DRAIN_RESIDUAL_FINAL_MACH: float = 0.8
+    # **Trim by pumping, not dumping** (``Autopilot.fuel_trim``): the
+    # shuttle's tanks sit at both ends (nose adapter +10.8 m from the CoM,
+    # the aft fuselage tank and adapter 2-5 m behind it), so the CG is a
+    # control the vehicle has and never commanded.  A fixed ballast is right
+    # at one Mach only: keeping 200 units below Mach 3.5 flew 10-20 deg
+    # *over* the command from Mach 2.9 down (LOG4317: 20 commanded, 33-41
+    # flown), keeping 300 flew 5-10 *under* (rot-ballast2-1001).  Between
+    # ``FUEL_TRIM_MACH_TOP`` and the residual drain, every
+    # ``FUEL_TRIM_INTERVAL_S`` the smoothed alpha error (flown - commanded)
+    # beyond ``FUEL_TRIM_DEADBAND_DEG`` moves ``FUEL_TRIM_UNITS_PER_DEG``
+    # per degree (at most ``FUEL_TRIM_STEP_MAX_UNITS``) between the
+    # frontmost and the aftmost tanks: over-rotating moves it forward,
+    # under-rotating aft.  Nothing leaves the vehicle until
+    # ``DRAIN_RESIDUAL_MACH_MAX``.  Use with ``FUEL_TO_NOSE`` and
+    # ``DRAIN_RESIDUAL``.  Off.
+    FUEL_TRIM_TRANSFER: bool = False
+    FUEL_TRIM_MACH_TOP: float = 4.0
+    FUEL_TRIM_INTERVAL_S: float = 3.0
+    FUEL_TRIM_DEADBAND_DEG: float = 2.0
+    FUEL_TRIM_UNITS_PER_DEG: float = 2.0
+    FUEL_TRIM_STEP_MAX_UNITS: float = 30.0
+    FUEL_TRIM_SMOOTH: float = 0.4
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and

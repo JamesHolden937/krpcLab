@@ -8730,3 +8730,63 @@ class HeldWeave(unittest.TestCase):
         fast = guidance.weave_reversal_s(self.cfg(HAC_WEAVE_BANK_DEG=60.0),
                                          50.0, 125.0, 9.81, 30.0)
         self.assertLess(fast, slow)
+
+
+class FuelTrimTransfer(unittest.TestCase):
+    """``FUEL_TRIM_TRANSFER`` pumps toward the nose when over-rotating."""
+
+    def run_trim(self, flown, commanded, mach=2.0, **kw):
+        cfg = replace(Config(), FUEL_TRIM_TRANSFER=True, **kw)
+        starts = []
+
+        class Res:
+            def __init__(self, amount, cap):
+                self.a, self.c = amount, cap
+
+            def amount(self, name):
+                return self.a
+
+            def max(self, name):
+                return self.c
+
+        front = SimpleNamespace(title="nose", resources=Res(200.0, 1375.0))
+        back = SimpleNamespace(title="aft", resources=Res(100.0, 1375.0))
+        transfer = SimpleNamespace(
+            start=lambda s, d, n, a: starts.append((s.title, d.title, n, a))
+            or SimpleNamespace(complete=True))
+        fake = SimpleNamespace(
+            cfg=cfg, state=autopilot_module.GLIDE, commanded_alpha=commanded,
+            env=SimpleNamespace(mach=lambda v, h: mach,
+                                equatorial_radius=600000.0),
+            conn=SimpleNamespace(space_center=SimpleNamespace(
+                ResourceTransfer=transfer)),
+            logbook=SimpleNamespace(event=lambda ut, text: None),
+            _fuel_trim_tanks=lambda snap: {"LiquidFuel": (front, back),
+                                           "Oxidizer": (front, back)})
+        snap = SimpleNamespace(velocity=(600.0, 0.0, 0.0),
+                               position=(620000.0, 0.0, 0.0), ut=100.0,
+                               alpha_actual=flown, liquid_fuel=90.0,
+                               oxidizer=110.0)
+        autopilot_module.Autopilot.fuel_trim(fake, snap)
+        return starts
+
+    def test_over_rotating_moves_fuel_forward(self):
+        starts = self.run_trim(flown=35.0, commanded=20.0)
+        self.assertTrue(starts)
+        self.assertTrue(all(s[0] == "aft" and s[1] == "nose" for s in starts))
+
+    def test_under_rotating_moves_fuel_aft(self):
+        starts = self.run_trim(flown=10.0, commanded=25.0)
+        self.assertTrue(starts)
+        self.assertTrue(all(s[0] == "nose" and s[1] == "aft" for s in starts))
+        # The mixture is kept: oxidizer 110/200 of the step.
+        units = {s[2]: s[3] for s in starts}
+        self.assertAlmostEqual(units["Oxidizer"] / units["LiquidFuel"],
+                               110.0 / 90.0)
+
+    def test_inside_deadband_or_out_of_band_mach_does_nothing(self):
+        self.assertEqual(self.run_trim(flown=21.0, commanded=20.0), [])
+        self.assertEqual(self.run_trim(flown=10.0, commanded=25.0, mach=5.0),
+                         [])
+        self.assertEqual(self.run_trim(flown=10.0, commanded=25.0, mach=0.7),
+                         [])
