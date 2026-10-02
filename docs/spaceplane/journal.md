@@ -3681,3 +3681,12 @@ swings 130-178, slip 20-70 (most chain6 departures).
   >10 km misses 2/8 vs 4/8. No intact landing in either (best TOL0 LOG4485
   13/31 at -3.2 km). Direction consistent, p ~0.3; replicate
   `rot-sliptol2-1002` flown next.
+- `rot-sliptol2-1002` (replicate, LOG4487-4502): TOL0 **LOG4498 intact
+  31/31, -1036 m along** (first intact shuttle landing since chain6),
+  LOG4493 30/31 at +2980, LOG4491 31/31 but splashed 4.4 km off the
+  centreline; control none intact on land (two splashed 29/31). Pooled 16 v
+  16: final |along| <= 5 km **11/16 vs 6/16**, median ~3 vs ~10 km, >=30
+  parts 3 vs 0. Alpha collapse at M3.5-5.2 *not* cured (6/8 vs 7/8): the
+  second reversal still slips 13-23 deg at q ~2100. TOL0 arrives at the
+  cone high (15-22 km) and long, and lands better anyway. Next: the same
+  pair on `qs_plane` (`rot-sliptol-plane-1002`) before any default.
