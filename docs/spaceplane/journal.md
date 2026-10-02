@@ -3764,3 +3764,13 @@ The slow crossing is the first thing that has taken the shuttle through Mach
 5-4 with slip under 4 deg, and it does so a third of the time; the rest is a
 lateral-directional divergence near wings level at q > 1500 that a slow roll
 does not prevent.
+
+**`GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG=25`**, `logs/rot-unload-1002.txt`
+(d695195b, sweep v sweep+unload, 8 v 8): **null, and costly.** Four of the
+unload arm's five "clean" crossings reached the cone +182..+194 km long --
+alpha 25 through the crossing cut the drag the plan was counting on (the
+plan does not model the cap) -- so their slip is not comparable. The three
+that flew a normal range (LOG4640, 4645, 4650) slipped 18-22 deg, earlier
+(Mach ~5). Control arm: clean 2/8 (LOG4649, 4654). The sweep's clean
+fraction across three batches is **6/21**; base **0/16**. Roll coupling
+through sin(alpha) is not the discriminator at this size of unload.
