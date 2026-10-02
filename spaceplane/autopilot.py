@@ -936,6 +936,7 @@ class Autopilot:
                 vec.quat_axis_angle(lift, math.radians(slip)), nose))
         set_autopilot_attitude(self.autopilot, nose, lift)
         self.commanded_nose = nose
+        self._aim_frame = (vhat, tilt, lift, slip, alpha_deg)
         self.commanded_alpha = alpha_deg
         self.commanded_bank = bank_deg
         self.commanded_slip = slip
@@ -3281,7 +3282,7 @@ class Autopilot:
         flip.  See ``common.rcs``.
         """
         self.rcs.update(snap.ut if snap is not None else 0.0, permitted,
-                        self.pointing_error(snap),
+                        self.valve_error(snap),
                         None if snap is None else snap.dynamic_pressure,
                         apply=self._apply_rcs,
                         hold=self.reversal_under_way(snap))
@@ -3292,6 +3293,40 @@ class Autopilot:
             self.control.rcs = wanted
         except Exception:                               # noqa: BLE001
             pass
+
+    def valve_error(self, snap):
+        """The pointing error the RCS valve opens on.
+
+        ``RCS_IGNORE_ALPHA_SHORTFALL``: in GLIDE and HAC, a nose *below* its
+        commanded angle of attack is the surfaces' trim limit -- a steady
+        saturation, not a turn -- and is not counted; lateral error and an
+        alpha *overshoot* still are.  The reference is the commanded nose
+        with its alpha lowered to the alpha flown in the commanded plane.
+        Measured: on ~15 shuttle flights the valve opened on exactly that
+        (40.3 commanded, 36 trimmed, ``err 5.0`` at q 1100-2100, Mach
+        4.7-5.4), and the pitch thrusters drove alpha through the trim
+        limit to 48-58 within 4 s (LOG4352, 4354, 4375, 4379, 4383...).
+        ``RCS_PITCH_BY_AUTHORITY`` never saw it: it latches at q ~1650.
+        """
+        if not (getattr(self.cfg, "RCS_IGNORE_ALPHA_SHORTFALL", False)
+                and self.state in (GLIDE, HAC) and snap is not None):
+            return self.pointing_error(snap)
+        frame = getattr(self, "_aim_frame", None)
+        if frame is None or vec.norm(snap.nose) < 0.5:
+            return self.pointing_error(snap)
+        vhat, tilt, lift, slip, alpha_cmd = frame
+        nose = vec.unit(snap.nose)
+        flown = math.degrees(math.atan2(vec.dot(nose, tilt),
+                                        vec.dot(nose, vhat)))
+        if flown >= alpha_cmd:
+            return self.pointing_error(snap)
+        a = math.radians(flown)
+        ref = vec.unit(vec.add(vec.scale(vhat, math.cos(a)),
+                               vec.scale(tilt, math.sin(a))))
+        if abs(slip) > 0.01:
+            ref = vec.unit(vec.quat_rotate(
+                vec.quat_axis_angle(lift, math.radians(slip)), ref))
+        return vec.angle_between(nose, ref)
 
     def pointing_error(self, snap):
         """Degrees between the commanded nose and the real one, or -1."""

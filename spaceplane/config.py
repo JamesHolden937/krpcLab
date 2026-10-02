@@ -4013,6 +4013,15 @@ class Config:
     # pitch-ups on both shuttles.  Off.
     RCS_PITCH_BY_AUTHORITY: bool = False
     RCS_PITCH_GATE_S: float = 2.0
+    # **The valve opens on turns, not on the trim limit** (``Autopilot.
+    # valve_error``).  In GLIDE and HAC the nose sitting *below* its
+    # commanded alpha is a steady saturation of the surfaces; counted as
+    # pointing error it opened the valve at ``err 5.0`` on ~15 shuttle
+    # flights at Mach 4.7-5.4 (40.3 commanded, 36 trimmed) and the pitch
+    # thrusters drove alpha through the trim limit to 48-58 in 4 s
+    # (LOG4352).  Lateral error and alpha overshoot still open it.  The
+    # pitch gate above latches at q ~1650 Pa, after these events.
+    RCS_IGNORE_ALPHA_SHORTFALL: bool = False
     APPROACH_BANK_BY_ROLL: bool = False
     # **Lead the capture by the roll-out** (``Autopilot.
     # approach_heading_lead``): the heading error the lateral law sees is

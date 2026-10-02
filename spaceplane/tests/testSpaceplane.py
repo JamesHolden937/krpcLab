@@ -8984,3 +8984,43 @@ class RcsPitchGate(unittest.TestCase):
         vessel.available_control_surface_torque = ((200e3, 0, 0), (0, 0, 0))
         gate(fake, SimpleNamespace(ut=15.0, dynamic_pressure=3000.0))
         self.assertFalse(any(b.pitch_enabled for b in blocks))
+
+
+class TestValveIgnoresAlphaShortfall(unittest.TestCase):
+    """``RCS_IGNORE_ALPHA_SHORTFALL``: a nose below its commanded alpha is
+    the trim limit, not a turn (LOG4352)."""
+
+    def run_(self, on, state=None):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = SimpleNamespace(RCS_IGNORE_ALPHA_SHORTFALL=on)
+        run.state = autopilot_module.GLIDE if state is None else state
+        vhat, tilt = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
+        a = math.radians(40.0)
+        run.commanded_nose = (math.cos(a), 0.0, math.sin(a))
+        run._aim_frame = (vhat, tilt, tilt, 0.0, 40.0)
+        return run
+
+    @staticmethod
+    def snap(alpha_deg, side_deg=0.0):
+        a, s = math.radians(alpha_deg), math.radians(side_deg)
+        nose = (math.cos(a) * math.cos(s), math.sin(s),
+                math.sin(a) * math.cos(s))
+        return SimpleNamespace(nose=nose)
+
+    def test_a_shortfall_reads_as_no_error(self):
+        self.assertAlmostEqual(self.run_(True).valve_error(self.snap(35.0)),
+                               0.0, places=6)
+        self.assertAlmostEqual(self.run_(False).valve_error(self.snap(35.0)),
+                               5.0, places=3)
+
+    def test_an_overshoot_still_counts(self):
+        self.assertAlmostEqual(self.run_(True).valve_error(self.snap(48.0)),
+                               8.0, places=3)
+
+    def test_lateral_error_still_counts(self):
+        self.assertGreater(self.run_(True).valve_error(self.snap(35.0, 6.0)),
+                           5.5)
+
+    def test_only_in_glide_and_hac(self):
+        run = self.run_(True, autopilot_module.APPROACH)
+        self.assertAlmostEqual(run.valve_error(self.snap(35.0)), 5.0, places=3)
