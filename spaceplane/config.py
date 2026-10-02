@@ -1005,6 +1005,14 @@ class Config:
     # maximum is *larger* than it was at zero bank, and a Newton step on it
     # means something.
     SOLVE_BANK_MIN_DEG: float = 30.0
+    # **The glide's own floor** (0: ``SOLVE_BANK_MIN_DEG``).  The 30 above
+    # is the old airframe's non-monotone range; the shuttle's is monotone
+    # in bank at every Mach (offline from LOG4498's swept table, wings
+    # level always goes furthest), and the floor makes it carry 30 deg
+    # where the solve wants less: LOG4498 sits on it at Mach 5.5-5.2, so
+    # the second reversal there is a +-30 flip energy never asked for.
+    # Glide only; the deorbit keeps its aim.  ``guidance.glide_bank_min``.
+    GLIDE_BANK_MIN_DEG: float = 0.0
     BANK_RATE_DEG_S: float = 8.0
     # **Measured at runtime instead** (``rollrate.RollRate``): the 8 above
     # has no derivation, was set on the old capsule, and the shuttle cannot
@@ -1244,6 +1252,32 @@ class Config:
     # it already holds, so it is chosen once and reversed only for a real
     # azimuth error.
     COAST_BANK_LATCH: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **Reverse once** (the user's idea, 2026-10-02).  The relay below
+    # reverses on two deadbands with no notion of q, so the shuttle's second
+    # reversal lands at Mach 4.5-5, q 2000-3800, where every departure
+    # begins.  True: lean one way, let the track drift, and flip once, at
+    # the tick where a propagation of "flip now and hold that sign to the
+    # gate" (full lateral lift, ``Steer(reversing=False)``) puts the
+    # cross-track on zero.  The range solve keeps the magnitude.  Below
+    # ``GLIDE_SINGLE_REVERSAL_TRIM_MACH`` the relay takes the sign back for
+    # the last trim.  ``guidance.single_reversal_sign``.
+    GLIDE_SINGLE_REVERSAL: bool = False  # offline on LOG4498's table: one flip at M6.1, 21 km off at M2
+    # **One huge reversal** (the user's, 2026-10-02): no fast reversals at
+    # all.  The lean sweeps slowly from one side to the other across the
+    # whole glide, at the rate (solved every tick, ``guidance.sweep_rate``)
+    # whose propagation puts the cross-track at the gate on zero; the range
+    # solve keeps the magnitude, and leans harder early to pay for the time
+    # spent near level.  A roll at a fraction of a degree a second is one
+    # the yaw axis can coordinate, where a 7-10 deg/s reversal at Mach 5
+    # makes 13-23 deg of slip (failure 99).
+    GLIDE_BANK_SWEEP: bool = False
+    GLIDE_BANK_SWEEP_RATE_MAX_DEG_S: float = 1.0
+    GLIDE_BANK_SWEEP_TOL_M: float = 200.0
+    GLIDE_BANK_SWEEP_ITERATIONS: int = 8   # propagations per tick, at most
+    GLIDE_BANK_SWEEP_STEP_DEG_S: float = 0.02  # the bracket's first step
+    GLIDE_BANK_SWEEP_UNTIL_MACH: float = 0.0  # below it the relay trims; 0: the whole glide
+    GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
+    GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.
     # Wide early, so the entry does not chase cross-track it will fly out of
     # anyway; tight at the end, where azimuth *is* the miss.

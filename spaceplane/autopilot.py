@@ -1039,6 +1039,106 @@ class Autopilot:
                    "%.1f" % static[2] if static else "?"))
         return peak
 
+    def sweeping(self, snap):
+        """Is ``Config.GLIDE_BANK_SWEEP`` flying the lean this tick?"""
+        if not self.cfg.GLIDE_BANK_SWEEP:
+            return False
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                                   # noqa: BLE001
+            return False
+        return mach >= self.cfg.GLIDE_BANK_SWEEP_UNTIL_MACH
+
+    def bank_sweep(self, snap, steer):
+        """The solve's command with its lean swept, not reversed.
+
+        ``Config.GLIDE_BANK_SWEEP``.  The magnitude is the solve's; the lean
+        moves from where it is at the rate ``guidance.sweep_rate`` finds,
+        inside that magnitude.  ``bank_side`` follows the lean's own sign, so
+        neither the reversal latch nor ``bank_in_transit`` ever reads a
+        sweep through zero as a reversal in progress.
+        """
+        magnitude = abs(steer.bank)
+        rate, cross = guidance.sweep_rate(
+            self.env, self.cfg, snap.position, snap.velocity, snap.mass,
+            self.end, steer.alpha, self.steer.bank, magnitude,
+            getattr(self, "_sweep_rate", 0.0))
+        self._sweep_rate = rate
+        dt = max(0.05, snap.ut - getattr(self, "_last_glide_ut", snap.ut))
+        bank = vec.clamp(self.steer.bank + rate * dt, -magnitude, magnitude)
+        side = 1.0 if bank >= 0.0 else -1.0
+        if self.bank_side is not None and side != self.bank_side:
+            self.logbook.event(snap.ut, "bank sweep: through zero at Mach "
+                               "%.2f q %.0f" % (self.env.mach(
+                                   vec.norm(snap.velocity),
+                                   vec.norm(snap.position)
+                                   - self.env.equatorial_radius),
+                                   snap.dynamic_pressure))
+        self.bank_side = side
+        if snap.ut - getattr(self, "_sweep_log_ut", -1e9) \
+                >= self.cfg.GLIDE_SIGN_LAW_LOG_S:
+            self._sweep_log_ut = snap.ut
+            self.logbook.event(
+                snap.ut, "bank sweep: rate %+.2f deg/s lean %+.1f of %.1f, "
+                "cross at the gate %s" % (
+                    rate, bank, magnitude,
+                    "none" if cross is None else "%+.0f m" % cross))
+        return Steer(alpha=steer.alpha, bank=bank, cfg=steer.cfg,
+                     mass=steer.mass)
+
+    def single_reversal(self, snap, alpha, wanted):
+        """``wanted`` with its sign from ``guidance.single_reversal_sign``.
+
+        ``Config.GLIDE_SINGLE_REVERSAL``.  Above the trim Mach the side is
+        this law's; below it the relay's sign (already in ``wanted``) is
+        handed back.  Logs every flip, and the two predictions every
+        ``GLIDE_SIGN_LAW_LOG_S`` so the drift can be read against
+        what was flown.
+        """
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                                   # noqa: BLE001
+            return wanted
+        if mach < self.cfg.GLIDE_SINGLE_REVERSAL_TRIM_MACH:
+            if getattr(self, "_sr_side", None) is not None \
+                    and not getattr(self, "_sr_released", False):
+                self._sr_released = True
+                self.logbook.event(snap.ut, "single reversal: trim to the "
+                                   "relay at Mach %.2f" % mach)
+            return wanted
+        first = getattr(self, "_sr_side", None) is None
+        if first:
+            self._sr_side = 1.0 if self.steer.bank >= 0.0 else -1.0
+            self._sr_flipped = False
+            self._sr_log_ut = -1e9
+        side, flipped, hold, flip = guidance.single_reversal_sign(
+            self.env, self.cfg, snap.position, snap.velocity, snap.mass,
+            self.end, alpha, abs(wanted), self._sr_side, self._sr_flipped,
+            first)
+
+        def km(x):
+            return "none" if x is None else "%+.1f" % (x / 1000.0)
+        if side != self._sr_side or flipped != self._sr_flipped:
+            self.logbook.event(
+                snap.ut, "single reversal: %s %+.0f -> %+.0f at Mach %.2f q "
+                "%.0f, cross hold %s flip %s km"
+                % ("flip" if flipped and not self._sr_flipped else "lean",
+                   self._sr_side, side, mach, snap.dynamic_pressure,
+                   km(hold), km(flip)))
+        elif snap.ut - self._sr_log_ut >= self.cfg.GLIDE_SIGN_LAW_LOG_S:
+            self._sr_log_ut = snap.ut
+            self.logbook.event(
+                snap.ut, "single reversal: side %+.0f%s Mach %.2f q %.0f "
+                "cross hold %s flip %s km"
+                % (side, " (flipped)" if flipped else "", mach,
+                   snap.dynamic_pressure, km(hold), km(flip)))
+        self._sr_side, self._sr_flipped = side, flipped
+        return side * abs(wanted)
+
     def reversal_under_way(self, snap):
         """The bank command leads the flown bank by more than
         ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet
@@ -5606,7 +5706,12 @@ class Autopilot:
         # intent.
         self.update_bank_duty(snap)
         bank0 = self.steer.bank
-        if self.cfg.BANK_PREDICT_INTENT and self.bank_intent is not None:
+        sweeping = self.sweeping(snap)
+        if (self.cfg.BANK_PREDICT_INTENT or sweeping) \
+                and self.bank_intent is not None:
+            # Under the sweep always: the lean passes through zero by
+            # design, and the solve's deadband hold would otherwise latch
+            # whatever the sweep happened to be passing through.
             sign = 1.0 if bank0 >= 0.0 else -1.0
             bank0 = sign * max(abs(bank0), abs(self.bank_intent))
         steer, prediction = guidance.solve_glide(
@@ -5614,6 +5719,8 @@ class Autopilot:
             self.end, alpha0, bank0,
             self.alpha_ceiling)
         self.bank_intent = steer.bank
+        if sweeping:
+            steer = self.bank_sweep(snap, steer)
         if prediction is not None:
             self.prediction = prediction
             self.env.set_profile(prediction.profile)
@@ -5694,6 +5801,8 @@ class Autopilot:
         # fifth of the entry mid-transit and the solve spends it reading a
         # wings-level prediction.
         wanted = steer.bank
+        if self.cfg.GLIDE_SINGLE_REVERSAL:
+            wanted = self.single_reversal(snap, alpha, wanted)
         side = 1.0 if wanted >= 0.0 else -1.0
         if self.bank_side is None:
             self.bank_side, self.bank_reversed_ut = side, snap.ut

@@ -9098,3 +9098,57 @@ class HoldableMean(unittest.TestCase):
         for _ in range(60):
             h.observe(36.0, 36.0, 2000.0, 4.0)
         self.assertGreater(h.limit(2000.0), 35.5)
+
+
+class TestTheBankSweep(unittest.TestCase):
+    """``GLIDE_BANK_SWEEP``: one slow reversal, solved for the cross-track.
+
+    The propagator must fly the sweep it is asked about (and leave the
+    caller's ``Steer`` alone), and the rate the solve returns must be the
+    one whose propagation it reports.
+    """
+
+    def setUp(self):
+        from spaceplane.tests import glidesim
+        self.cfg = apply_overrides(Config(), ["GLIDE_BANK_SWEEP=True"])
+        self.env = FakeEnv(self.cfg)
+        lon = glidesim.start_longitude(self.cfg, 60.0)
+        r, v = circular_state(self.env, 80000.0, lon)
+        self.r, self.v = r, vec.add(v, vec.scale(vec.unit(v), -60.0))
+        self.end = self.env.runway.ends["09"]
+        self.gate = self.env.runway.gate(self.end)
+
+    def _cross(self, steer):
+        return trajectory.predict(self.env, self.r, self.v, MASS, self.cfg,
+                                  steer=steer, gate=self.gate, end=self.end,
+                                  target_radius=vec.norm(self.gate)).cross
+
+    def test_the_sweep_moves_the_lean_and_not_the_callers_steer(self):
+        held = Steer(alpha=25.0, bank=40.0, cfg=self.cfg, mass=MASS,
+                     reversing=False)
+        swept = Steer(alpha=25.0, bank=40.0, cfg=self.cfg, mass=MASS,
+                      reversing=False, sweep=-0.5, sweep_limit=40.0)
+        a, b = self._cross(held), self._cross(swept)
+        self.assertEqual(swept.bank, 40.0)
+        self.assertGreater(abs(a - b), 1000.0)
+
+    def test_the_rate_is_the_one_whose_cross_it_reports(self):
+        rate, cross = guidance.sweep_rate(self.env, self.cfg, self.r, self.v,
+                                          MASS, self.end, 25.0, 30.0, 40.0)
+        top = self.cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S
+        self.assertLessEqual(abs(rate), top + 1e-9)
+        self.assertIsNotNone(cross)
+        again = self._cross(Steer(alpha=25.0, bank=30.0, cfg=self.cfg,
+                                  mass=MASS, reversing=False, sweep=rate,
+                                  sweep_limit=40.0))
+        self.assertAlmostEqual(again, cross, delta=1.0)
+        # Inside the bracket the solve gets to the centreline.
+        if abs(rate) < top:
+            self.assertLess(abs(cross), 5.0 * self.cfg.GLIDE_BANK_SWEEP_TOL_M)
+
+    def test_the_glide_floor_moves_the_glide_alone(self):
+        self.assertEqual(guidance.glide_bank_min(Config()),
+                         Config().SOLVE_BANK_MIN_DEG)
+        low = apply_overrides(Config(), ["GLIDE_BANK_MIN_DEG=10"])
+        self.assertEqual(guidance.glide_bank_min(low), 10.0)
+        self.assertEqual(low.SOLVE_BANK_MIN_DEG, Config().SOLVE_BANK_MIN_DEG)

@@ -400,18 +400,30 @@ def _solve_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0,
     if abs(m1[0] - target) <= cfg.SOLVE_DEADBAND_M:
         return alpha, magnitude
 
-    magnitude = max(magnitude, cfg.SOLVE_BANK_MIN_DEG)
+    least = glide_bank_min(cfg)
+    magnitude = max(magnitude, least)
     db = cfg.SOLVE_BANK_PROBE_DEG
     if (magnitude + db > cfg.BANK_MAX_DEG
-            or magnitude + db < cfg.SOLVE_BANK_MIN_DEG):
+            or magnitude + db < least):
         db = -db
     _, _, m2 = _fly(env, r, v, mass, cfg, end, gate, alpha,
                     sign * (magnitude + db))
     slope = (m2[0] - m1[0]) / db
     if abs(slope) * cfg.BANK_MAX_DEG > cfg.SOLVE_MIN_AUTHORITY_M:
         magnitude = vec.clamp(magnitude - (m1[0] - target) / slope,
-                              cfg.SOLVE_BANK_MIN_DEG, cfg.BANK_MAX_DEG)
+                              least, cfg.BANK_MAX_DEG)
     return alpha, magnitude
+
+
+def glide_bank_min(cfg):
+    """The least lean the glide's range solve will fly.
+
+    ``Config.GLIDE_BANK_MIN_DEG`` when set, else ``SOLVE_BANK_MIN_DEG``,
+    which the deorbit search and the coast also use -- so this one moves
+    the glide alone.
+    """
+    least = float(getattr(cfg, "GLIDE_BANK_MIN_DEG", 0.0) or 0.0)
+    return least if least > 0.0 else cfg.SOLVE_BANK_MIN_DEG
 
 
 def bank_in_transit(cfg, command, wanted, side, dt, rate=None):
@@ -560,6 +572,143 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
         return sign
     wanted = bank_toward(r, v, vec.project_out(toward, track), 1.0)
     return wanted if wanted else sign
+
+
+def sweep_rate(env, cfg, r, v, mass, end, alpha, bank, magnitude,
+               guess=0.0):
+    """``(rate, cross)``: the bank sweep that puts the gate on the centreline.
+
+    ``Config.GLIDE_BANK_SWEEP`` -- the user's "one huge reversal".  The
+    lean moves at ``rate`` deg/s from ``bank`` toward the other side, held
+    inside ``+-magnitude`` (which the range solve still owns), and the
+    propagation flies exactly that with the lateral lift in
+    (``reversing=False``).  The cross-track at the gate is monotone in the
+    rate -- the sooner the lean comes round, the further the track goes that
+    way -- but far from linear: from the interface any rate above a few
+    tenths of a degree a second reaches the stop within seconds, so the
+    curve is a steep step between two plateaus and a global regula falsi
+    stalls on it (116 km off, offline).  So the root is bracketed *locally*:
+    from ``guess`` (last tick's rate) step outward, doubling, until the sign
+    changes, then Illinois inside that bracket.  A bracket that reaches
+    ``+-GLIDE_BANK_SWEEP_RATE_MAX_DEG_S`` without a sign change flies that
+    end -- the most lateral authority the rate limit allows.
+
+    ``cross`` is the reported rate's own prediction; ``None`` (rate 0, the
+    lean held) when a propagation did not reach the gate -- a missing answer
+    must not look like a zero crossing.
+    """
+    gate = env.runway.gate(end)
+    top = cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S
+    limit = max(abs(magnitude), 1.0)
+    budget = [max(3, int(cfg.GLIDE_BANK_SWEEP_ITERATIONS))]
+
+    def cross(rate):
+        budget[0] -= 1
+        steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                      reversing=False, sweep=rate or 1e-9, sweep_limit=limit)
+        p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
+                               end=end, target_radius=vec.norm(gate))
+        return p.cross if p.reached and not p.skipped else None
+
+    tolerance = cfg.GLIDE_BANK_SWEEP_TOL_M
+    a = vec.clamp(guess, -top, top)
+    fa = cross(a)
+    if fa is None:
+        return 0.0, None
+    if abs(fa) <= tolerance:
+        return a, fa
+    step = cfg.GLIDE_BANK_SWEEP_STEP_DEG_S
+    b = vec.clamp(a + step, -top, top)
+    if b == a:
+        b = vec.clamp(a - step, -top, top)
+    fb = cross(b)
+    if fb is None:
+        return 0.0, None
+    if fa * fb > 0.0:
+        # Walk from the better end, away from the worse, doubling.
+        if abs(fb) > abs(fa):
+            a, fa, b, fb = b, fb, a, fa
+        while fa * fb > 0.0 and budget[0] > 0:
+            direction = 1.0 if b >= a else -1.0
+            if (direction > 0 and b >= top) or (direction < 0 and b <= -top):
+                return b, fb
+            step *= 2.0
+            a, fa = b, fb
+            b = vec.clamp(b + direction * step, -top, top)
+            fb = cross(b)
+            if fb is None:
+                return a, fa
+            if abs(fb) <= tolerance:
+                return b, fb
+        if fa * fb > 0.0:
+            return (a, fa) if abs(fa) < abs(fb) else (b, fb)
+    # Illinois inside the bracket: plain regula falsi keeps one end and
+    # crawls where the curve bends, so halve the kept end's value whenever
+    # the same end survives twice.
+    rate, f = (a, fa) if abs(fa) < abs(fb) else (b, fb)
+    kept = 0
+    while budget[0] > 0 and fb != fa:
+        guess = a - fa * (b - a) / (fb - fa)
+        fg = cross(guess)
+        if fg is None:
+            break
+        if abs(fg) < abs(f):
+            rate, f = guess, fg
+        if abs(fg) <= tolerance:
+            break
+        if fg * fa > 0.0:
+            a, fa = guess, fg
+            if kept == 1:
+                fb *= 0.5
+            kept = 1
+        else:
+            b, fb = guess, fg
+            if kept == -1:
+                fa *= 0.5
+            kept = -1
+    return rate, f
+
+
+def single_reversal_sign(env, cfg, r, v, mass, end, alpha, magnitude,
+                         side, flipped, first=False):
+    """``(side, flipped, hold, flip)``: the one-reversal sign law.
+
+    ``Config.GLIDE_SINGLE_REVERSAL``.  ``hold`` is the cross-track predicted
+    at the gate if the current lean is held all the way there, ``flip`` the
+    same if it is reversed now and that is held; both with the lateral lift
+    in (``reversing=False``), which is the trajectory this law really flies.
+    The flip is due once ``flip`` has come round to the same side as
+    ``hold`` and is no longer worse: holding any longer would put the
+    reversed arc past the centreline.  While the gate is outside both
+    (``hold`` and ``flip`` on one side, ``hold`` the nearer) the lean stays
+    toward it.  Once ``flipped`` the side is held; the caller hands the
+    sign back to ``_bank_sign`` below the trim Mach.
+
+    ``first`` is the first tick, ``side`` the lean already held: it is kept
+    when the gate is between the two arcs (either side works) and turned
+    toward the gate when it is not -- without spending the one reversal.
+    Either prediction missing (a skip, the arc not reaching the gate) keeps
+    the side: a missing answer must not look like a zero crossing.
+    """
+    gate = env.runway.gate(end)
+    magnitude = max(abs(magnitude), cfg.SOLVE_BANK_MIN_DEG)
+
+    def cross(sign):
+        steer = Steer(alpha=alpha, bank=sign * magnitude, cfg=cfg, mass=mass,
+                      reversing=False)
+        p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
+                               end=end, target_radius=vec.norm(gate))
+        return p.cross if p.reached and not p.skipped else None
+
+    hold, flip = cross(side), cross(-side)
+    if flipped or hold is None or flip is None:
+        return side, flipped, hold, flip
+    if hold * flip > 0.0 and abs(flip) <= abs(hold):
+        # Both on one side and reversing is the nearer: the drift has
+        # carried the reversed arc onto the centreline -- or, on the first
+        # tick, the gate is outside the band and the lean points away.
+        return -side, not first, hold, flip
+    return side, flipped, hold, flip
 
 
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,

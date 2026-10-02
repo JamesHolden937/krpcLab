@@ -24,7 +24,7 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from common import vec
 from . import airframe
@@ -134,6 +134,11 @@ class Steer:
     # so an unsolved switch turns the law off rather than flying its most
     # aggressive setting.
     drag_until: object = None
+    # **A bank that moves.**  ``sweep`` deg/s carries ``bank`` across the
+    # propagation, held inside ``+-sweep_limit`` (``GLIDE_BANK_SWEEP``: one
+    # slow reversal instead of fast ones).  0 is the constant lean.
+    sweep: float = 0.0
+    sweep_limit: float = 0.0
 
     def as_tuple(self):
         return (self.alpha, self.bank)
@@ -1095,6 +1100,14 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     """
     if steer is None:
         steer = Steer()
+    swept = None
+    if steer.sweep:
+        # A private copy whose ``bank`` is moved every step; the caller's is
+        # left as it was handed in.
+        swept = replace(steer)
+        bank0 = steer.bank
+        limit = abs(steer.sweep_limit) or 180.0
+        steer = swept
     r = tuple(r0)
     v = tuple(v0)
     t = 0.0
@@ -1208,6 +1221,11 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         if descending and altitude < env.atmosphere_depth:
             profile.append((speed, altitude))
 
+        if swept is not None:
+            # The bank at the middle of the step: RK4 holds one control
+            # across its four stages.
+            swept.bank = vec.clamp(bank0 + swept.sweep * (t + 0.5 * dt),
+                                   -limit, limit)
         r, v = _step(env, r, v, mass, dt, cfg, steer)
         t += dt
         steps += 1
