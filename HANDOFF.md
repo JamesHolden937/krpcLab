@@ -35,6 +35,22 @@ correlates only weakly with its slip (r -0.30): rate is not the lever.
 
 ## Next, in order
 
+0. **The user's idea, try first: reverse once.** Lean one way, let the track
+   drift off, flip once, hold the new sign to the gate (bank *magnitude*
+   stays free for range). Closed loop, not a plan: each tick propagate
+   "flip now, hold to the gate" and flip when that prediction's cross-track
+   crosses zero. Place the flip where q is low (Mach 6.6, q ~250 slips ~10
+   at worst and recovers; Mach 4.5-5 at q 2000-3800 is where every
+   departure begins); any trim reversal after Mach 2, or left to the cone.
+   Today the sign is a relay on two deadbands (`guidance._bank_sign`:
+   azimuth 0.012 deg/km, cross-track 20 m/km of range to go) with no notion
+   of q, timing or roll time. **Prerequisite:** the propagator models the
+   mean of a reversing entry with *no* lateral lift (`_bank_sign`'s
+   docstring calls a one-lean curve "an artefact"); a signed-bank
+   propagation is needed, and its cross-range accuracy over ~1000 km must be
+   checked against flown logs before trusting it. Screen in kspSim
+   (guidance question), confirm on the farm (the reversal's handling is a
+   sim gap). Built as a flag, off.
 1. **Change the method on the reversal** (three mechanisms tried: pulldown
    fixed, valve hold null, rate weak). The airframe out-rolls its own yaw:
    at q 2100 surfaces give roll 617 / yaw 158 kN m, yaw inertia 22x roll's
