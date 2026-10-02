@@ -7731,6 +7731,20 @@ class TestYawFliesTheThrusters(unittest.TestCase):
         self.assertFalse(self.run_(True, autopilot_module.HAC, False, 20.0)
                          .reversal_under_way(self.snap(-10.0)))
 
+    def test_mid_reversal_holds_from_the_first_tick_of_the_slew(self):
+        """``RCS_HOLD_MID_REVERSAL``: the command still short of the lean
+        the loop wants is a reversal, before it leads the flown bank."""
+        G = autopilot_module.GLIDE
+        for on, expect in ((False, False), (True, True)):
+            run = self.run_(True, G, False, -8.0)
+            run.cfg.RCS_HOLD_MID_REVERSAL = on
+            run.bank_wanted = +30.0
+            self.assertEqual(run.reversal_under_way(self.snap(-10.0)), expect)
+        run = self.run_(True, G, False, -8.0)
+        run.cfg.RCS_HOLD_MID_REVERSAL = True
+        run.bank_wanted = -10.0                 # arrived: nothing to hold
+        self.assertFalse(run.reversal_under_way(self.snap(-10.0)))
+
 
 class TestTheTailStrikesByAttitude(unittest.TestCase):
     """``FLARE_TAIL_BY_ATTITUDE``: the tail limit bounds the body's attitude,

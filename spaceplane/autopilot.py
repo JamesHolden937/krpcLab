@@ -1041,8 +1041,10 @@ class Autopilot:
 
     def reversal_under_way(self, snap):
         """The bank command leads the flown bank by more than
-        ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet.
-        Only under ``ATTITUDE_YAW_WITH_RCS``, only in GLIDE."""
+        ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet
+        -- or, under ``RCS_HOLD_MID_REVERSAL``, the rate-limited command is
+        still that far from the lean the loop wants.  Only under
+        ``ATTITUDE_YAW_WITH_RCS``, only in GLIDE."""
         if not getattr(self.cfg, "ATTITUDE_YAW_WITH_RCS", False):
             return False
         if snap is None or self.state != GLIDE:
@@ -1052,7 +1054,13 @@ class Autopilot:
         if cmd is None or math.isnan(flown):
             return False
         lead = (cmd - flown + 180.0) % 360.0 - 180.0
-        return abs(lead) > float(self.cfg.BANK_RATE_SAT_DEG)
+        if abs(lead) > float(self.cfg.BANK_RATE_SAT_DEG):
+            return True
+        wanted = getattr(self, "bank_wanted", None)
+        if getattr(self.cfg, "RCS_HOLD_MID_REVERSAL", False) \
+                and wanted is not None:
+            return abs(wanted - cmd) > float(self.cfg.BANK_RATE_SAT_DEG)
+        return False
 
     def bank_rate(self):
         """deg/s the bank command may slew at: measured by ``roll_rate``

@@ -4490,6 +4490,15 @@ class Config:
     # two landed 30/30.  Transonic bank overshoot (cmd 37, flown 80-106) is
     # present on both arms at similar size -- a separate roll problem.
     ATTITUDE_YAW_WITH_RCS: bool = True
+    # **Hold the valve for the whole reversal, not from a 5 deg lead.**
+    # ``reversal_under_way`` waited for the command to lead the flown bank
+    # by ``BANK_RATE_SAT_DEG``; on the shuttle's Mach 4.5-5 reversal the
+    # valve then opened 2-3 s before the zero crossing with 6-10 deg of
+    # pointing error already built, and 6 of 8 slipped 13-23 deg and lost
+    # alpha (`rot-sliptol2-1002`).  On, it also holds while the rate-limited
+    # command has not reached the lean the loop wants (``bank_wanted``):
+    # from the first tick of the slew.
+    RCS_HOLD_MID_REVERSAL: bool = False
     # **Slow the lateral axes when the bank diverges, from the vehicle's
     # own swings.**  ``rollrate.RollDamper``.  Full authority (roll 1.0)
     # tracked the shuttle to a degree up to q ~700 Pa and then swung about
