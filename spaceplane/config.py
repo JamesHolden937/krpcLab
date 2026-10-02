@@ -1287,6 +1287,7 @@ class Config:
     GLIDE_BANK_SWEEP_TOL_M: float = 200.0
     GLIDE_BANK_SWEEP_ITERATIONS: int = 6   # propagations per tick, at most
     GLIDE_BANK_SWEEP_UNTIL_MACH: float = 0.0  # below it the relay; 0: the whole glide
+    GLIDE_BANK_SWEEP_FALLBACK_M: float = 10000.0  # no start nulls it: the relay picks the side
     GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
     GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.

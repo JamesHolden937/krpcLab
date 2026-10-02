@@ -1102,6 +1102,20 @@ class Autopilot:
                 *args, self._sw_side, self.bank_rate(),
                 max(0.0, self._sw_start - dt))
             self._sw_start = start
+            # **No crossing nulls it: ask the relay.**  When the best start
+            # still leaves the gate more than ``GLIDE_BANK_SWEEP_FALLBACK_M``
+            # off (or nothing reached it), the plan has no answer, and
+            # holding on that is how the sim's Mach-2 handback flew 36-66 km
+            # off the centreline (LOG4575-4582: "start in 1500 s", +68 km,
+            # all the way down).  The relay's side is the solve's sign
+            # (``_bank_sign``, seeded from this lean); if it is the other
+            # one, cross -- slowly, as always.
+            relay = 1.0 if steer.bank >= 0.0 else -1.0
+            lost = (cross is None
+                    or abs(cross) > cfg.GLIDE_BANK_SWEEP_FALLBACK_M)
+            if lost and relay != self._sw_side:
+                start = 0.0
+                cross = cross if cross is not None else float("nan")
             if cross is not None and start <= dt:
                 self._sw_mode, self._sw_side = "cross", -self._sw_side
                 self._sw_rate = cfg.GLIDE_BANK_SWEEP_RATE_DEG_S
