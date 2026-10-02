@@ -9101,11 +9101,11 @@ class HoldableMean(unittest.TestCase):
 
 
 class TestTheBankSweep(unittest.TestCase):
-    """``GLIDE_BANK_SWEEP``: one slow reversal, solved for the cross-track.
+    """``GLIDE_BANK_SWEEP``: the reversal flown slowly, on a plan.
 
-    The propagator must fly the sweep it is asked about (and leave the
-    caller's ``Steer`` alone), and the rate the solve returns must be the
-    one whose propagation it reports.
+    The plan's lean against time must be the one described, the propagator
+    must fly it (and leave the caller's ``Steer`` alone), and the start and
+    rate the solves return must be the ones whose propagation they report.
     """
 
     def setUp(self):
@@ -9118,33 +9118,61 @@ class TestTheBankSweep(unittest.TestCase):
         self.end = self.env.runway.ends["09"]
         self.gate = self.env.runway.gate(self.end)
 
-    def _cross(self, steer):
-        return trajectory.predict(self.env, self.r, self.v, MASS, self.cfg,
-                                  steer=steer, gate=self.gate, end=self.end,
-                                  target_radius=vec.norm(self.gate)).cross
+    def _cross(self, plan, magnitude=40.0):
+        steer = Steer(alpha=25.0, bank=magnitude, cfg=self.cfg, mass=MASS,
+                      plan=plan)
+        cross = trajectory.predict(self.env, self.r, self.v, MASS, self.cfg,
+                                   steer=steer, gate=self.gate, end=self.end,
+                                   target_radius=vec.norm(self.gate)).cross
+        self.assertEqual(steer.bank, magnitude)
+        return cross
 
-    def test_the_sweep_moves_the_lean_and_not_the_callers_steer(self):
-        held = Steer(alpha=25.0, bank=40.0, cfg=self.cfg, mass=MASS,
-                     reversing=False)
-        swept = Steer(alpha=25.0, bank=40.0, cfg=self.cfg, mass=MASS,
-                      reversing=False, sweep=-0.5, sweep_limit=40.0)
-        a, b = self._cross(held), self._cross(swept)
-        self.assertEqual(swept.bank, 40.0)
-        self.assertGreater(abs(a - b), 1000.0)
+    def test_the_plan_holds_then_crosses_slowly(self):
+        plan = trajectory.BankPlan(lean=30.0, hold=-1.0, start=100.0,
+                                   toward=1.0, rate=1.0, approach=10.0)
+        self.assertAlmostEqual(plan.bank(1.0, 50.0), 20.0)
+        self.assertAlmostEqual(plan.bank(50.0, 50.0), -50.0)
+        self.assertAlmostEqual(plan.bank(130.0, 50.0), -20.0)
+        self.assertAlmostEqual(plan.bank(500.0, 50.0), 50.0)
+        under_way = trajectory.BankPlan(lean=-10.0, toward=1.0, rate=0.5)
+        self.assertAlmostEqual(under_way.bank(20.0, 40.0), 0.0)
 
-    def test_the_rate_is_the_one_whose_cross_it_reports(self):
-        rate, cross = guidance.sweep_rate(self.env, self.cfg, self.r, self.v,
-                                          MASS, self.end, 25.0, 30.0, 40.0)
-        top = self.cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S
-        self.assertLessEqual(abs(rate), top + 1e-9)
+    def test_the_start_moves_the_cross_track(self):
+        early = trajectory.BankPlan(lean=40.0, hold=1.0, start=50.0,
+                                    toward=-1.0, rate=1.0)
+        late = trajectory.BankPlan(lean=40.0, hold=1.0, start=600.0,
+                                   toward=-1.0, rate=1.0)
+        self.assertGreater(abs(self._cross(early) - self._cross(late)),
+                           1000.0)
+
+    def test_the_start_is_the_one_whose_cross_it_reports(self):
+        start, cross = guidance.sweep_start(
+            self.env, self.cfg, self.r, self.v, MASS, self.end, 25.0, 40.0,
+            40.0, 1.0, 8.0, 300.0)
         self.assertIsNotNone(cross)
-        again = self._cross(Steer(alpha=25.0, bank=30.0, cfg=self.cfg,
-                                  mass=MASS, reversing=False, sweep=rate,
-                                  sweep_limit=40.0))
-        self.assertAlmostEqual(again, cross, delta=1.0)
-        # Inside the bracket the solve gets to the centreline.
-        if abs(rate) < top:
-            self.assertLess(abs(cross), 5.0 * self.cfg.GLIDE_BANK_SWEEP_TOL_M)
+        self.assertGreaterEqual(start, 0.0)
+        self.assertLessEqual(start, self.cfg.GLIDE_BANK_SWEEP_HORIZON_S)
+        plan = trajectory.BankPlan(lean=40.0, hold=1.0, start=start,
+                                   toward=-1.0,
+                                   rate=self.cfg.GLIDE_BANK_SWEEP_RATE_DEG_S,
+                                   approach=8.0)
+        self.assertAlmostEqual(self._cross(plan), cross, delta=1.0)
+
+    def test_the_rate_stays_in_its_range(self):
+        rate, cross = guidance.sweep_rate(
+            self.env, self.cfg, self.r, self.v, MASS, self.end, 25.0, 40.0,
+            10.0, -1.0, 1.0)
+        self.assertIsNotNone(cross)
+        self.assertGreaterEqual(rate,
+                                self.cfg.GLIDE_BANK_SWEEP_RATE_MIN_DEG_S)
+        self.assertLessEqual(rate, self.cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S)
+
+    def test_the_solve_posts_the_plan_only_while_it_runs(self):
+        plan = trajectory.BankPlan(lean=30.0, hold=1.0, start=200.0,
+                                   toward=-1.0)
+        guidance.solve_glide(self.env, self.r, self.v, MASS, self.cfg,
+                             self.end, 25.0, 30.0, plan=plan)
+        self.assertIsNone(getattr(self.env, "bank_plan", None))
 
     def test_the_glide_floor_moves_the_glide_alone(self):
         self.assertEqual(guidance.glide_bank_min(Config()),

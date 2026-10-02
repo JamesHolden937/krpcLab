@@ -31,7 +31,10 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     what the glide is solved on.  ``cross`` is the lateral miss at the same
     point, which the bank's sign takes.
     """
-    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass)
+    # ``GLIDE_BANK_SWEEP``: the glide solve flies the planned slow reversal
+    # (``solve_glide(plan=...)`` posts it for the duration of one solve).
+    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                  plan=getattr(env, "bank_plan", None))
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
@@ -202,7 +205,28 @@ def glide_reserve(env, cfg, r):
     return cfg.GLIDE_RESERVE_M * (altitude - bottom) / (top - bottom)
 
 
-def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
+def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None,
+                plan=None):
+    """The angle of attack and bank under ``plan`` (``GLIDE_BANK_SWEEP``).
+
+    With a :class:`trajectory.BankPlan` every propagation of the solve
+    flies it, so the magnitude is solved for the slow reversal the vehicle
+    will fly -- time near wings level included -- rather than for the mean
+    of a reversing entry.  The sign the solve returns is then the relay's
+    and is the caller's to replace.  See ``_solve_glide`` for the rest.
+    """
+    if plan is None:
+        return _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0,
+                            ceiling)
+    env.bank_plan = plan
+    try:
+        return _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0,
+                            ceiling)
+    finally:
+        env.bank_plan = None
+
+
+def _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     """The angle of attack and bank that land the prediction on the gate.
 
     **Decoupled, not a 2x2.**  The first version inverted a measured Jacobian
@@ -574,99 +598,129 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     return wanted if wanted else sign
 
 
-def sweep_rate(env, cfg, r, v, mass, end, alpha, bank, magnitude,
-               guess=0.0):
-    """``(rate, cross)``: the bank sweep that puts the gate on the centreline.
-
-    ``Config.GLIDE_BANK_SWEEP`` -- the user's "one huge reversal".  The
-    lean moves at ``rate`` deg/s from ``bank`` toward the other side, held
-    inside ``+-magnitude`` (which the range solve still owns), and the
-    propagation flies exactly that with the lateral lift in
-    (``reversing=False``).  The cross-track at the gate is monotone in the
-    rate -- the sooner the lean comes round, the further the track goes that
-    way -- but far from linear: from the interface any rate above a few
-    tenths of a degree a second reaches the stop within seconds, so the
-    curve is a steep step between two plateaus and a global regula falsi
-    stalls on it (116 km off, offline).  So the root is bracketed *locally*:
-    from ``guess`` (last tick's rate) step outward, doubling, until the sign
-    changes, then Illinois inside that bracket.  A bracket that reaches
-    ``+-GLIDE_BANK_SWEEP_RATE_MAX_DEG_S`` without a sign change flies that
-    end -- the most lateral authority the rate limit allows.
-
-    ``cross`` is the reported rate's own prediction; ``None`` (rate 0, the
-    lean held) when a propagation did not reach the gate -- a missing answer
-    must not look like a zero crossing.
-    """
+def _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan):
+    """The cross-track at the gate under ``plan``, or ``None``."""
     gate = env.runway.gate(end)
-    top = cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S
-    limit = max(abs(magnitude), 1.0)
-    budget = [max(3, int(cfg.GLIDE_BANK_SWEEP_ITERATIONS))]
+    steer = Steer(alpha=alpha, bank=magnitude, cfg=cfg, mass=mass, plan=plan)
+    p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
+                           end=end, target_radius=vec.norm(gate))
+    return p.cross if p.reached and not p.skipped else None
 
-    def cross(rate):
-        budget[0] -= 1
-        steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
-                      reversing=False, sweep=rate or 1e-9, sweep_limit=limit)
-        p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
-                               end=end, target_radius=vec.norm(gate))
-        return p.cross if p.reached and not p.skipped else None
 
-    tolerance = cfg.GLIDE_BANK_SWEEP_TOL_M
-    a = vec.clamp(guess, -top, top)
-    fa = cross(a)
-    if fa is None:
-        return 0.0, None
-    if abs(fa) <= tolerance:
+def _bracket_root(f, x0, lo, hi, step, tolerance, budget):
+    """``(x, f(x))`` nearest a root of a monotone ``f`` on ``[lo, hi]``.
+
+    Local, not global: the curves this serves are steep steps between
+    plateaus (a sweep rate that reaches the stop in seconds, a start time
+    past the end of the flight), and a global regula falsi stalls on them
+    -- 116 km off, offline.  So from ``x0`` step outward, doubling, until
+    the sign changes, then Illinois inside that bracket.  A bracket that
+    reaches an end without a sign change returns that end.  ``None`` from
+    ``f`` (a propagation that did not reach the gate) returns the best
+    point so far, or ``(x0, None)``.
+    """
+    calls = [budget]
+
+    def g(x):
+        calls[0] -= 1
+        return f(x)
+
+    a = vec.clamp(x0, lo, hi)
+    fa = g(a)
+    if fa is None or abs(fa) <= tolerance:
         return a, fa
-    step = cfg.GLIDE_BANK_SWEEP_STEP_DEG_S
-    b = vec.clamp(a + step, -top, top)
+    b = vec.clamp(a + step, lo, hi)
     if b == a:
-        b = vec.clamp(a - step, -top, top)
-    fb = cross(b)
+        b = vec.clamp(a - step, lo, hi)
+    fb = g(b)
     if fb is None:
-        return 0.0, None
+        return a, fa
     if fa * fb > 0.0:
-        # Walk from the better end, away from the worse, doubling.
         if abs(fb) > abs(fa):
             a, fa, b, fb = b, fb, a, fa
-        while fa * fb > 0.0 and budget[0] > 0:
+        while fa * fb > 0.0 and calls[0] > 0:
             direction = 1.0 if b >= a else -1.0
-            if (direction > 0 and b >= top) or (direction < 0 and b <= -top):
+            if (direction > 0 and b >= hi) or (direction < 0 and b <= lo):
                 return b, fb
             step *= 2.0
             a, fa = b, fb
-            b = vec.clamp(b + direction * step, -top, top)
-            fb = cross(b)
+            b = vec.clamp(b + direction * step, lo, hi)
+            fb = g(b)
             if fb is None:
                 return a, fa
             if abs(fb) <= tolerance:
                 return b, fb
         if fa * fb > 0.0:
             return (a, fa) if abs(fa) < abs(fb) else (b, fb)
-    # Illinois inside the bracket: plain regula falsi keeps one end and
-    # crawls where the curve bends, so halve the kept end's value whenever
-    # the same end survives twice.
-    rate, f = (a, fa) if abs(fa) < abs(fb) else (b, fb)
+    # Illinois: plain regula falsi keeps one end and crawls where the curve
+    # bends, so halve the kept end's value whenever it survives twice.
+    x, fx = (a, fa) if abs(fa) < abs(fb) else (b, fb)
     kept = 0
-    while budget[0] > 0 and fb != fa:
-        guess = a - fa * (b - a) / (fb - fa)
-        fg = cross(guess)
-        if fg is None:
+    while calls[0] > 0 and fb != fa:
+        c = a - fa * (b - a) / (fb - fa)
+        fc = g(c)
+        if fc is None:
             break
-        if abs(fg) < abs(f):
-            rate, f = guess, fg
-        if abs(fg) <= tolerance:
+        if abs(fc) < abs(fx):
+            x, fx = c, fc
+        if abs(fc) <= tolerance:
             break
-        if fg * fa > 0.0:
-            a, fa = guess, fg
+        if fc * fa > 0.0:
+            a, fa = c, fc
             if kept == 1:
                 fb *= 0.5
             kept = 1
         else:
-            b, fb = guess, fg
+            b, fb = c, fc
             if kept == -1:
                 fa *= 0.5
             kept = -1
-    return rate, f
+    return x, fx
+
+
+def sweep_start(env, cfg, r, v, mass, end, alpha, magnitude, lean, side,
+                approach, guess):
+    """``(start, cross)``: when the slow reversal should begin.
+
+    ``Config.GLIDE_BANK_SWEEP``, holding.  The plan is: lean on ``side`` at
+    ``magnitude``, then at ``start`` seconds cross to the other side at
+    ``GLIDE_BANK_SWEEP_RATE_DEG_S`` and stay there.  The cross-track at the
+    gate is monotone in ``start`` -- the longer the lean is held, the
+    further the track goes that way -- and ``start`` is the one that puts it
+    on zero, searched over ``[0, GLIDE_BANK_SWEEP_HORIZON_S]``.  A ``start``
+    at 0 is the crossing being due now; when no start nulls it the nearer
+    end comes back (0: cross now, the most it can do; the horizon: hold).
+    """
+    def f(start):
+        plan = trajectory.BankPlan(
+            lean=lean, hold=side, start=start, toward=-side,
+            rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S, approach=approach)
+        return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
+    return _bracket_root(f, guess, 0.0, cfg.GLIDE_BANK_SWEEP_HORIZON_S,
+                         cfg.GLIDE_BANK_SWEEP_START_STEP_S,
+                         cfg.GLIDE_BANK_SWEEP_TOL_M,
+                         cfg.GLIDE_BANK_SWEEP_ITERATIONS)
+
+
+def sweep_rate(env, cfg, r, v, mass, end, alpha, magnitude, lean, toward,
+               guess):
+    """``(rate, cross)``: how fast the crossing under way should go.
+
+    ``Config.GLIDE_BANK_SWEEP``, crossing.  The lean moves from ``lean``
+    toward ``toward * magnitude`` and stays there; the faster it gets
+    there, the further the track goes that way, so the cross-track at the
+    gate is monotone in the rate, searched over
+    ``[GLIDE_BANK_SWEEP_RATE_MIN_DEG_S, GLIDE_BANK_SWEEP_RATE_MAX_DEG_S]``.
+    """
+    def f(rate):
+        plan = trajectory.BankPlan(lean=lean, hold=0.0, toward=toward,
+                                   rate=rate)
+        return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
+    return _bracket_root(f, guess, cfg.GLIDE_BANK_SWEEP_RATE_MIN_DEG_S,
+                         cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S,
+                         cfg.GLIDE_BANK_SWEEP_STEP_DEG_S,
+                         cfg.GLIDE_BANK_SWEEP_TOL_M,
+                         cfg.GLIDE_BANK_SWEEP_ITERATIONS)
 
 
 def single_reversal_sign(env, cfg, r, v, mass, end, alpha, magnitude,

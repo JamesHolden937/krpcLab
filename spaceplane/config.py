@@ -1262,20 +1262,31 @@ class Config:
     # ``GLIDE_SINGLE_REVERSAL_TRIM_MACH`` the relay takes the sign back for
     # the last trim.  ``guidance.single_reversal_sign``.
     GLIDE_SINGLE_REVERSAL: bool = False  # offline on LOG4498's table: one flip at M6.1, 21 km off at M2
-    # **One huge reversal** (the user's, 2026-10-02): no fast reversals at
-    # all.  The lean sweeps slowly from one side to the other across the
-    # whole glide, at the rate (solved every tick, ``guidance.sweep_rate``)
-    # whose propagation puts the cross-track at the gate on zero; the range
-    # solve keeps the magnitude, and leans harder early to pay for the time
-    # spent near level.  A roll at a fraction of a degree a second is one
-    # the yaw axis can coordinate, where a 7-10 deg/s reversal at Mach 5
-    # makes 13-23 deg of slip (failure 99).
+    # **One huge reversal** (the user's, 2026-10-02): the reversal flown
+    # slowly.  Hold the lean on one side, cross to the other at
+    # ``GLIDE_BANK_SWEEP_RATE_DEG_S`` (7-10 deg/s today, which at Mach 5 is
+    # 13-23 deg of slip: failure 99), hold there.  Every tick the start of
+    # the crossing is solved for the cross-track at the gate
+    # (``guidance.sweep_start``), and once under way its rate is
+    # (``guidance.sweep_rate``); the range solve flies the same plan
+    # (``trajectory.BankPlan``), so it leans harder on either side to pay
+    # for the time near level.  A first version swept the lean continuously
+    # with the solve on the mean model: one crossing at Mach 5.1 at 0.1
+    # deg/s and the cross-track on zero, but the solve sat at the 70 cap
+    # while the vehicle flew -30..+20 and reached the cone 57 km long (sim,
+    # LOG4543-4550: +7..+19 km at the runway against -3..+0.5).  A sweep
+    # that is slow *throughout* cannot shed the energy: +-70 averages cos
+    # 0.77 against the ~0.5 the glide asks for.
     GLIDE_BANK_SWEEP: bool = False
-    GLIDE_BANK_SWEEP_RATE_MAX_DEG_S: float = 1.0
+    GLIDE_BANK_SWEEP_RATE_DEG_S: float = 1.0      # the planned crossing
+    GLIDE_BANK_SWEEP_RATE_MIN_DEG_S: float = 0.3  # the crossing's trim range
+    GLIDE_BANK_SWEEP_RATE_MAX_DEG_S: float = 2.0
+    GLIDE_BANK_SWEEP_HORIZON_S: float = 1500.0    # latest start searched
+    GLIDE_BANK_SWEEP_START_STEP_S: float = 20.0   # the start bracket's first step
+    GLIDE_BANK_SWEEP_STEP_DEG_S: float = 0.1      # the rate bracket's first step
     GLIDE_BANK_SWEEP_TOL_M: float = 200.0
-    GLIDE_BANK_SWEEP_ITERATIONS: int = 8   # propagations per tick, at most
-    GLIDE_BANK_SWEEP_STEP_DEG_S: float = 0.02  # the bracket's first step
-    GLIDE_BANK_SWEEP_UNTIL_MACH: float = 0.0  # below it the relay trims; 0: the whole glide
+    GLIDE_BANK_SWEEP_ITERATIONS: int = 6   # propagations per tick, at most
+    GLIDE_BANK_SWEEP_UNTIL_MACH: float = 0.0  # below it the relay; 0: the whole glide
     GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
     GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.

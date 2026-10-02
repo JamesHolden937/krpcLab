@@ -1051,40 +1051,88 @@ class Autopilot:
             return False
         return mach >= self.cfg.GLIDE_BANK_SWEEP_UNTIL_MACH
 
-    def bank_sweep(self, snap, steer):
-        """The solve's command with its lean swept, not reversed.
+    def sweep_plan(self):
+        """The slow reversal as planned now (``Config.GLIDE_BANK_SWEEP``).
 
-        ``Config.GLIDE_BANK_SWEEP``.  The magnitude is the solve's; the lean
-        moves from where it is at the rate ``guidance.sweep_rate`` finds,
-        inside that magnitude.  ``bank_side`` follows the lean's own sign, so
-        neither the reversal latch nor ``bank_in_transit`` ever reads a
-        sweep through zero as a reversal in progress.
+        Holding: lean on ``_sw_side``, cross at the planned rate after
+        ``_sw_start`` seconds.  Crossing: toward ``_sw_side`` at
+        ``_sw_rate``.  Seeded on the first call from the lean the coast
+        handed over.
         """
+        cfg = self.cfg
+        if getattr(self, "_sw_mode", None) is None:
+            self._sw_mode = "hold"
+            self._sw_side = 1.0 if self.steer.bank >= 0.0 else -1.0
+            self._sw_start = 0.25 * cfg.GLIDE_BANK_SWEEP_HORIZON_S
+            self._sw_rate = cfg.GLIDE_BANK_SWEEP_RATE_DEG_S
+        if self._sw_mode == "hold":
+            return trajectory.BankPlan(
+                lean=self.steer.bank, hold=self._sw_side,
+                start=self._sw_start, toward=-self._sw_side,
+                rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S,
+                approach=self.bank_rate())
+        return trajectory.BankPlan(lean=self.steer.bank, hold=0.0,
+                                   toward=self._sw_side, rate=self._sw_rate)
+
+    def bank_sweep(self, snap, steer):
+        """The solve's command with its lean on the slow-reversal plan.
+
+        ``Config.GLIDE_BANK_SWEEP``.  The magnitude is the solve's (solved
+        under ``sweep_plan``); holding, the lean is that magnitude on the
+        held side and the crossing's start is re-solved for the
+        cross-track (``guidance.sweep_start``) -- when it comes due, the
+        crossing begins; crossing, the lean moves toward the other side at
+        the rate ``guidance.sweep_rate`` finds, and holds once it arrives.
+        ``bank_side`` follows the lean's own sign, so neither the reversal
+        latch nor ``bank_in_transit`` reads a crossing as a fast reversal.
+        """
+        cfg = self.cfg
         magnitude = abs(steer.bank)
-        rate, cross = guidance.sweep_rate(
-            self.env, self.cfg, snap.position, snap.velocity, snap.mass,
-            self.end, steer.alpha, self.steer.bank, magnitude,
-            getattr(self, "_sweep_rate", 0.0))
-        self._sweep_rate = rate
+        lean = self.steer.bank
         dt = max(0.05, snap.ut - getattr(self, "_last_glide_ut", snap.ut))
-        bank = vec.clamp(self.steer.bank + rate * dt, -magnitude, magnitude)
-        side = 1.0 if bank >= 0.0 else -1.0
-        if self.bank_side is not None and side != self.bank_side:
-            self.logbook.event(snap.ut, "bank sweep: through zero at Mach "
-                               "%.2f q %.0f" % (self.env.mach(
-                                   vec.norm(snap.velocity),
-                                   vec.norm(snap.position)
-                                   - self.env.equatorial_radius),
-                                   snap.dynamic_pressure))
-        self.bank_side = side
+        mach = self.env.mach(vec.norm(snap.velocity),
+                             vec.norm(snap.position)
+                             - self.env.equatorial_radius)
+        args = (self.env, cfg, snap.position, snap.velocity, snap.mass,
+                self.end, steer.alpha, magnitude, lean)
+        if self._sw_mode == "hold":
+            start, cross = guidance.sweep_start(
+                *args, self._sw_side, self.bank_rate(),
+                max(0.0, self._sw_start - dt))
+            self._sw_start = start
+            if cross is not None and start <= dt:
+                self._sw_mode, self._sw_side = "cross", -self._sw_side
+                self._sw_rate = cfg.GLIDE_BANK_SWEEP_RATE_DEG_S
+                self.logbook.event(
+                    snap.ut, "bank sweep: crossing to %+.0f at Mach %.2f q "
+                    "%.0f, lean %+.1f of %.1f, cross at the gate %+.0f m"
+                    % (self._sw_side, mach, snap.dynamic_pressure, lean,
+                       magnitude, cross))
+            bank = self._sw_side * magnitude
+            detail = "start in %.0f s" % start
+        else:
+            rate, cross = guidance.sweep_rate(*args, self._sw_side,
+                                              self._sw_rate)
+            self._sw_rate = rate
+            target = self._sw_side * magnitude
+            step = rate * dt
+            bank = lean + vec.clamp(target - lean, -step, step)
+            detail = "rate %.2f deg/s" % rate
+            if abs(target - bank) < 0.5:
+                self._sw_mode = "hold"
+                self._sw_start = 0.25 * cfg.GLIDE_BANK_SWEEP_HORIZON_S
+                self.logbook.event(
+                    snap.ut, "bank sweep: across, holding %+.0f at Mach %.2f "
+                    "q %.0f" % (self._sw_side, mach, snap.dynamic_pressure))
+        self.bank_side = 1.0 if bank >= 0.0 else -1.0
         if snap.ut - getattr(self, "_sweep_log_ut", -1e9) \
-                >= self.cfg.GLIDE_SIGN_LAW_LOG_S:
+                >= cfg.GLIDE_SIGN_LAW_LOG_S:
             self._sweep_log_ut = snap.ut
             self.logbook.event(
-                snap.ut, "bank sweep: rate %+.2f deg/s lean %+.1f of %.1f, "
-                "cross at the gate %s" % (
-                    rate, bank, magnitude,
-                    "none" if cross is None else "%+.0f m" % cross))
+                snap.ut, "bank sweep: %s, %s, lean %+.1f of %.1f, cross at "
+                "the gate %s" % (self._sw_mode, detail, bank, magnitude,
+                                 "none" if cross is None
+                                 else "%+.0f m" % cross))
         return Steer(alpha=steer.alpha, bank=bank, cfg=steer.cfg,
                      mass=steer.mass)
 
@@ -5717,7 +5765,8 @@ class Autopilot:
         steer, prediction = guidance.solve_glide(
             self.env, snap.position, snap.velocity, snap.mass, self.cfg,
             self.end, alpha0, bank0,
-            self.alpha_ceiling)
+            self.alpha_ceiling,
+            plan=self.sweep_plan() if sweeping else None)
         self.bank_intent = steer.bank
         if sweeping:
             steer = self.bank_sweep(snap, steer)

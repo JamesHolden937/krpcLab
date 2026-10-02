@@ -99,6 +99,36 @@ class Prediction:
 
 
 @dataclass
+class BankPlan:
+    """A slow reversal, as a lean against time (``GLIDE_BANK_SWEEP``).
+
+    From ``lean`` (deg) the bank goes to ``hold * magnitude`` at
+    ``approach`` deg/s and stays there until ``start`` seconds, then crosses
+    toward ``toward * magnitude`` at ``rate`` deg/s and stays there.
+    ``hold`` of 0 is a crossing already under way (``start`` 0).  The
+    magnitude is the ``Steer``'s, so the range solve's probes of it fly the
+    plan rather than a constant lean.
+    """
+    lean: float = 0.0
+    hold: float = 0.0
+    start: float = 0.0
+    toward: float = 1.0
+    rate: float = 1.0
+    approach: float = 8.0
+
+    def bank(self, t, magnitude):
+        def move(frm, to, speed, dt):
+            step = speed * max(0.0, dt)
+            return frm + vec.clamp(to - frm, -step, step)
+        if self.hold and t < self.start:
+            return move(self.lean, self.hold * magnitude, self.approach, t)
+        held = (move(self.lean, self.hold * magnitude, self.approach,
+                     self.start) if self.hold else self.lean)
+        return move(held, self.toward * magnitude, self.rate,
+                    t - (self.start if self.hold else 0.0))
+
+
+@dataclass
 class Steer:
     """A commanded angle of attack and bank, held for one propagation.
 
@@ -134,11 +164,11 @@ class Steer:
     # so an unsolved switch turns the law off rather than flying its most
     # aggressive setting.
     drag_until: object = None
-    # **A bank that moves.**  ``sweep`` deg/s carries ``bank`` across the
-    # propagation, held inside ``+-sweep_limit`` (``GLIDE_BANK_SWEEP``: one
-    # slow reversal instead of fast ones).  0 is the constant lean.
-    sweep: float = 0.0
-    sweep_limit: float = 0.0
+    # **A bank that moves** (``GLIDE_BANK_SWEEP``): a :class:`BankPlan`
+    # flown across the propagation, with ``|bank|`` as its magnitude, so a
+    # solve probing magnitudes probes them *under the plan*.  Implies the
+    # lateral lift is in.  ``None`` is the constant lean.
+    plan: object = None
 
     def as_tuple(self):
         return (self.alpha, self.bank)
@@ -1101,12 +1131,11 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     if steer is None:
         steer = Steer()
     swept = None
-    if steer.sweep:
+    if steer.plan is not None:
         # A private copy whose ``bank`` is moved every step; the caller's is
         # left as it was handed in.
-        swept = replace(steer)
-        bank0 = steer.bank
-        limit = abs(steer.sweep_limit) or 180.0
+        swept = replace(steer, reversing=False)
+        plan, magnitude = steer.plan, abs(steer.bank)
         steer = swept
     r = tuple(r0)
     v = tuple(v0)
@@ -1224,8 +1253,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         if swept is not None:
             # The bank at the middle of the step: RK4 holds one control
             # across its four stages.
-            swept.bank = vec.clamp(bank0 + swept.sweep * (t + 0.5 * dt),
-                                   -limit, limit)
+            swept.bank = plan.bank(t + 0.5 * dt, magnitude)
         r, v = _step(env, r, v, mass, dt, cfg, steer)
         t += dt
         steps += 1
