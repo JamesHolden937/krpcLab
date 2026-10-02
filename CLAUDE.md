@@ -29,6 +29,12 @@ from the previous batch's round length times the rounds left.
    what changed, which flags exist and what they measured, the blocker,
    what's next, and the traps. Then the pilot's own `CLAUDE.md`.
    `testInstances/HANDOFF.md` is the farm's build history, not this.
+1a. **Screen in kspSim whenever the question is one it models** (~10x
+   faster, many at once): guidance, propagator, phase logic, anything a
+   learned table or law decides. Fly the farm to confirm a sim result, and
+   go straight to it only where the sim is known not to follow the game
+   (`kspSim/CLAUDE.md`, "Known gaps" -- e.g. the shuttle's high-alpha
+   lateral moments). Say which it was and why. Never sims beside the farm.
 2. **End by rewriting HANDOFF.md.** Also do it before any long pause or when
    the user asks for a summary. Record the date, the defaults fingerprint,
    commit state, where each airframe stands, every flag added and what it
