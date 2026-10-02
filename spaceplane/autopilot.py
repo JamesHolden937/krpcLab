@@ -1151,8 +1151,11 @@ class Autopilot:
                 "the gate %s" % (self._sw_mode, detail, bank, magnitude,
                                  "none" if cross is None
                                  else "%+.0f m" % cross))
-        return Steer(alpha=steer.alpha, bank=bank, cfg=steer.cfg,
-                     mass=steer.mass)
+        alpha = steer.alpha
+        unload = cfg.GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG
+        if unload > 0.0 and self._sw_mode == "cross":
+            alpha = min(alpha, unload)
+        return Steer(alpha=alpha, bank=bank, cfg=steer.cfg, mass=steer.mass)
 
     def single_reversal(self, snap, alpha, wanted):
         """``wanted`` with its sign from ``guidance.single_reversal_sign``.

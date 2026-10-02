@@ -3716,3 +3716,51 @@ swings 130-178, slip 20-70 (most chain6 departures).
   (rate pulldown -- fixed; valve hold -- null; rate -- weak): change the
   method. Candidate: unload alpha through the reversal (body roll's slip
   scales with sin alpha), flown by the propagator too.
+
+## Session, 2026-10-02 morning: the slow reversal (`GLIDE_BANK_SWEEP`)
+
+The user's two ideas, in order. **"Fly lower alpha instead of banking"**:
+offline from LOG4498's swept table the shuttle's range falls monotonically
+with alpha at every Mach (Mach 7 wings level: 1166 km at 0 deg, 439 at 30,
+337 at 45); lower alpha *stretches* the glide (L/D 2.4 at 0, 0.63 at 30), and
+alpha already flies to the plateau edge (~38-41), so alpha cannot take the
+bank's energy job. **"One huge reversal: bank really slowly the whole time,
+steeper early"**: built as `GLIDE_BANK_SWEEP` (off), in three versions.
+
+1. *Continuous sweep, solve on the mean model.* Steers beautifully (one sign
+   change, 0.1 deg/s, cross at the gate within 200 m) but the solve sat at the
+   70 cap while the vehicle flew -30..+20: sim LOG4543-4550 reached the cone
+   +57..+64 km long. A sweep slow *throughout* cannot shed the energy:
+   +-70 averages cos 0.77 against the ~0.5 the glide asks for.
+2. *Planned slow reversal* (`trajectory.BankPlan`): hold a side, cross at
+   ~1 deg/s, hold the other side; the crossing's start
+   (`guidance.sweep_start`) and, under way, its rate (`guidance.sweep_rate`)
+   are solved for the cross-track at the gate; the range solve flies the same
+   plan. Root-finding is a warm-started local bracket + Illinois (a global
+   regula falsi stalled 116 km off on the step-shaped curve). Held to the
+   gate it spirals subsonically (bank 40-54 at 200-250 m/s, ~5 km turn
+   radius): sim cone 1 km low, 50 m/s slow, out of height 7/8. Relay below
+   Mach 1 (`GLIDE_BANK_SWEEP_UNTIL_MACH=1`, with the plan flying the relay's
+   mean there, `BankPlan.until_mach`): sim 5/8 intact vs base 2/8. Below
+   Mach 2 it was 11-16 km long at the cone in every flight -- retired.
+3. Farm, interleaved vs the best stack (chain6 + `RCS_PITCH_OFF_IN_GLIDE`):
+   `logs/rot-sweep-1002.txt` (fingerprint 9bd29b7a, rate cap 2 deg/s) and
+   `logs/rot-sweep2-1002.txt` (8c5a05a9, cap 1 deg/s, fallback after 10
+   lost ticks). **Base: sideslip 17-51 deg in all 16 flights.** Sweep: the
+   crossing (always Mach ~5.8 -> 3.5-4.5, q 1000 -> 3000-5000) is
+   **bimodal -- slip 2.8-3.3 in 4 of 13 (LOG4608, 4624, 4634, 4637), 15-28 in
+   9**. In the bad ones slip is already -2..-5.5 at q ~1500, lean ~-20, and
+   grows steadily even at 0.5 deg/s; the flown bank stalls, runs backwards,
+   then overshoots to 77-92. Not the discriminator: loop rate (all 1.0 s),
+   instance, RCS valve state, crossing rate, fuel trim. Weakly: the roll rate
+   measured in COAST (clean 8.6-14.9, bad 6.1-10.8 deg/s). Three flights in
+   batch 1 crossed at Mach 7 on a first-tick search that ran out of
+   evaluations (fixed: `GLIDE_BANK_SWEEP_FALLBACK_TICKS`) and then crossed
+   back at 0.3 deg/s from q ~700 -- all three clean (<=6 deg), 25 km long.
+   Landing outcome: unresolved at n=8 (within 5 km 5/8 and 4/8 vs base 3/8
+   and 2/8; intact 1/16 vs 0/16).
+
+The slow crossing is the first thing that has taken the shuttle through Mach
+5-4 with slip under 4 deg, and it does so a third of the time; the rest is a
+lateral-directional divergence near wings level at q > 1500 that a slow roll
+does not prevent.

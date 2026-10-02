@@ -1294,6 +1294,12 @@ class Config:
     # evaluations short of the root, and acting on that crossed three farm
     # flights at Mach 7 for a '64 km' miss that was 260 s of hold away.
     GLIDE_BANK_SWEEP_FALLBACK_TICKS: int = 10
+    # **Unload alpha through the crossing** (0: off).  A body roll at alpha
+    # a is sideslip in proportion to sin a (failure 99), and 9 of 13 farm
+    # crossings slipped 15-28 deg even at 0.5-1 deg/s.  Caps the command
+    # while the lean is crossing; the plan's propagations do not model it
+    # (~100 s of the glide), so read the arrival with that in mind.
+    GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG: float = 0.0
     GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
     GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.
