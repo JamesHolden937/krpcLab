@@ -1420,6 +1420,7 @@ class TestTheRollRateIsMeasuredInFlight(unittest.TestCase):
 
     def test_sideslip_past_the_tolerance_pulls_it_down(self):
         cfg = Config()
+        cfg.BANK_RATE_SLIP_TOL_DEG = 5.0    # off by default; the law, armed
         calm, slipping = rollrate_mod.RollRate(cfg), rollrate_mod.RollRate(cfg)
         t = self.roll(calm, 10.0, ticks=3)
         self.roll(slipping, 10.0, ticks=3)
@@ -1427,6 +1428,15 @@ class TestTheRollRateIsMeasuredInFlight(unittest.TestCase):
         self.roll(slipping, 0.0, ticks=20, t0=t,
                   slip=4 * cfg.BANK_RATE_SLIP_TOL_DEG)
         self.assertLess(slipping.rate, 0.5 * calm.rate)
+
+    def test_the_default_tolerance_ignores_sideslip(self):
+        cfg = Config()
+        calm, slipping = rollrate_mod.RollRate(cfg), rollrate_mod.RollRate(cfg)
+        t = self.roll(calm, 10.0, ticks=3)
+        self.roll(slipping, 10.0, ticks=3)
+        self.roll(calm, 0.0, ticks=20, t0=t)
+        self.roll(slipping, 0.0, ticks=20, t0=t, slip=40.0)
+        self.assertEqual(slipping.rate, calm.rate)
 
     def test_one_tick_across_a_discontinuity_is_clamped(self):
         rr = rollrate_mod.RollRate(Config())

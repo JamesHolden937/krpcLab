@@ -1021,7 +1021,18 @@ class Config:
     # it was rolled faster than it can take, and the estimate is pulled down
     # by (tol/|slip|) per BANK_RATE_TAU_S.  Steady holds read ~1 deg;
     # reversals that went wrong 15-50.
-    BANK_RATE_SLIP_TOL_DEG: float = 5.0
+    #
+    # **0 (off) since 2026-10-02.**  At 5 it did most of its pulling in COAST
+    # and the first GLIDE seconds, at q 0-150 Pa, where "sideslip" is the
+    # nose wandering in vacuum: replayed over the logs it cut the shuttle's
+    # limit from 7-10 to 1.3-2.8 deg/s before the first reversal, so the
+    # second one crawled into q ~3000 and departed (LOG4459).  Off, on chain6
+    # + RCS_PITCH_OFF_IN_GLIDE, 16 v 16 (`rot-sliptol-1002`,
+    # `rot-sliptol2-1002`): final |along| <= 5 km 11/16 vs 6/16, intact 3 vs
+    # 0.  Null on `qs_plane` (limit pinned at the 30 ceiling either way,
+    # `rot-sliptol-plane-1002`).  A tolerance that only counts sideslip once
+    # the air can make it would be the law to try if it is wanted back.
+    BANK_RATE_SLIP_TOL_DEG: float = 0.0
     # The held peak decays over this much *sampled* time, and a sideslip
     # past the tolerance pulls it down on the same scale -- a couple of
     # reversals, so it follows q without one slow tick discarding it.

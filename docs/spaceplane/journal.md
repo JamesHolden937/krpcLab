@@ -3690,3 +3690,8 @@ swings 130-178, slip 20-70 (most chain6 departures).
   second reversal still slips 13-23 deg at q ~2100. TOL0 arrives at the
   cone high (15-22 km) and long, and lands better anyway. Next: the same
   pair on `qs_plane` (`rot-sliptol-plane-1002`) before any default.
+- `rot-sliptol-plane-1002` (`qs_plane` defaults vs + TOL0, 8 v 8,
+  LOG4503-4518): **null** -- the old craft's limit sits at the 30 deg/s
+  ceiling in every phase either way; handover -0.5..+0.9 km in both; 4/8
+  vs 3/8 destroyed. -> **`BANK_RATE_SLIP_TOL_DEG` 5 -> 0 is the default**
+  (fingerprint `f1c153ba`). Suite 854 OK.
