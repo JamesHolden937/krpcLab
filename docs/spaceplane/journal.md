@@ -3695,3 +3695,24 @@ swings 130-178, slip 20-70 (most chain6 departures).
   ceiling in every phase either way; handover -0.5..+0.9 km in both; 4/8
   vs 3/8 destroyed. -> **`BANK_RATE_SLIP_TOL_DEG` 5 -> 0 is the default**
   (fingerprint `f1c153ba`). Suite 854 OK.
+- `RCS_HOLD_MID_REVERSAL` (built, off; `reversal_under_way` also holds
+  while the rate-limited command is > `BANK_RATE_SAT_DEG` from
+  `bank_wanted`). `rot-revhold-1002` (chain6 + pitch-off on `925b4729` vs +
+  flag, 8 v 8, LOG4519-4534): **null**. Connected (LOG4520 opened at glide
+  start on err 1.3), but with the pulldown gone the M4.9 command slews
+  12-18 deg/s and the valve already opens within a tick; second-reversal
+  slip 7.6-20.8 vs 7.7-17.8, alpha collapse >=16 deg 4/8 vs 2/8. No intact
+  landing either arm; both arrive at the cone mostly long and high (+4..+29
+  km, h 15-23 km). LOG4521: after a slip-11 reversal at M4.8 the bank pins
+  at the 70 cap at q ~5000 and flies -66..+117 against it, slip -38.
+- Over the 32 pulldown-off flights, the slew limit going into the second
+  reversal against its peak slip: r = -0.30 (limit < 10: 8/15 slip >= 15;
+  >= 10: 5/17). Faster is weakly better; not a lever. A q-gated pulldown
+  (replayed at q >= 500/1000) gives the same limit as off before that
+  reversal -- nothing to gain there.
+- Authority (logged): at q 2100 the surfaces give roll 617 / yaw 158 kN m,
+  RCS yaw 293; yaw inertia is 22x roll's. The airframe out-rolls its own
+  yaw at 35 deg alpha (failure 99). Three mechanisms on this reversal now
+  (rate pulldown -- fixed; valve hold -- null; rate -- weak): change the
+  method. Candidate: unload alpha through the reversal (body roll's slip
+  scales with sin alpha), flown by the propagator too.
