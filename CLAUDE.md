@@ -15,7 +15,9 @@ waiter that prints the summary when the batch finishes (`ROT DONE`), end the
 turn, and do nothing with the batch until that notification arrives. Don't
 poll, don't chain wait calls, don't read mid-flight logs: it wastes tokens,
 and part-batch data (one round, half the arms, a flight still in the glide)
-gets misread as a result.
+gets misread as a result. **Every time you stop to wait, tell the user
+roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
+from the previous batch's round length times the rounds left.
 
 0. **Take the sleep inhibitor first thing**: `testInstances/nosleep.sh start`
    (idempotent; `status` checks it). **Release it last thing**, after the
