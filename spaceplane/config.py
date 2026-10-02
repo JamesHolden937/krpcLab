@@ -1850,6 +1850,13 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
+    # **Learn the mean held, not the peak or the command** (``Holdable.
+    # observe``).  With the pitch thrusters off in the glide
+    # (``RCS_PITCH_OFF_IN_GLIDE``, ``rot-pitchoff-1001``) the shuttle flies
+    # 2-5 deg under a 36-37 command at Mach 2-5, the bins learned ~36, and
+    # every glide arrived 2-34 km long and 19-22 km high at the cone.  Off.
+    HOLDABLE_MEAN: bool = False
+    HOLDABLE_MEAN_SAMPLES: int = 20         # the running mean's memory, ticks
     # **And carry the trend, not the last value, into air it has not
     # reached.**  ``limit`` answers a query denser than anything flown with
     # the lowest ceiling seen so far, which is conservative against a flat

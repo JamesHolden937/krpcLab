@@ -9041,3 +9041,36 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
     def test_only_in_glide_and_hac(self):
         run = self.run_(True, autopilot_module.APPROACH)
         self.assertAlmostEqual(run.valve_error(self.snap(35.0)), 5.0, places=3)
+
+
+class HoldableMean(unittest.TestCase):
+    """``HOLDABLE_MEAN``: a steady trim shortfall is learned as flown."""
+
+    def test_a_wobbling_shortfall_learns_the_mean_not_the_command(self):
+        cfg = replace(Config(), HOLDABLE_MEAN=True, HOLDABLE_MARGIN_DEG=0.0)
+        h = trajectory.Holdable(cfg)
+        for k in range(40):
+            h.observe(37.0, 33.0 + (2.0 if k % 2 else -2.0), 2000.0, 4.0)
+        self.assertAlmostEqual(h.limit(2000.0), 33.0, delta=0.3)
+        old = trajectory.Holdable(replace(cfg, HOLDABLE_MEAN=False))
+        for k in range(40):
+            old.observe(37.0, 33.0 + (2.0 if k % 2 else -2.0), 2000.0, 4.0)
+        self.assertGreater(old.limit(2000.0), 36.0)
+
+    def test_a_lower_command_tracked_is_not_evidence(self):
+        cfg = replace(Config(), HOLDABLE_MEAN=True, HOLDABLE_MARGIN_DEG=0.0)
+        h = trajectory.Holdable(cfg)
+        for _ in range(10):
+            h.observe(37.0, 34.0, 2000.0, 4.0)
+        for _ in range(30):
+            h.observe(20.0, 20.0, 2000.0, 4.0)
+        self.assertAlmostEqual(h.limit(2000.0), 34.0, delta=0.01)
+
+    def test_tracking_at_the_ceiling_lets_it_rise(self):
+        cfg = replace(Config(), HOLDABLE_MEAN=True, HOLDABLE_MARGIN_DEG=0.0)
+        h = trajectory.Holdable(cfg)
+        for _ in range(10):
+            h.observe(37.0, 33.0, 2000.0, 4.0)
+        for _ in range(60):
+            h.observe(36.0, 36.0, 2000.0, 4.0)
+        self.assertGreater(h.limit(2000.0), 35.5)

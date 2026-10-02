@@ -524,7 +524,30 @@ class Holdable:
         index = self._bin(q)
         short = commanded - achieved
         current = self.bins.get(index)
-        if short > float(self.cfg.HOLDABLE_SATURATED_DEG):
+        saturated = short > float(self.cfg.HOLDABLE_SATURATED_DEG)
+        if getattr(self.cfg, "HOLDABLE_MEAN", False):
+            # **The ceiling is what the vehicle holds on average when asked
+            # for at least that much** (``HOLDABLE_MEAN``).  The max below
+            # took one upswing of a wobble as the ceiling, and its tracking
+            # branch raised the bin to the *command* on any tick within 2.5
+            # deg -- so a steady 2-5 deg trim shortfall, straddling that
+            # threshold, learned the command: "learned 36.0" while the
+            # vehicle flew 31-34 (LOG4433, pitch thrusters off).  A tick is
+            # evidence when it saturated or asked for at least the current
+            # estimate; a lower command tracked says nothing about a ceiling.
+            if not (saturated or current is None or commanded >= current[0]):
+                return
+            if current is None:
+                self.bins[index] = current = [achieved, 0]
+            n = min(current[1] + 1, int(self.cfg.HOLDABLE_MEAN_SAMPLES))
+            current[0] += (achieved - current[0]) / n
+            current[1] += 1
+            if saturated and mach is not None and (
+                    self.anchor is None or q > self.anchor[1]):
+                self.anchor = (current[0], q, mach)
+            self.generation += 1
+            return
+        if saturated:
             # Saturated: the vehicle is telling us where its ceiling is.
             value = achieved
             if current is None:
