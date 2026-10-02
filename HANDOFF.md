@@ -1,78 +1,66 @@
 # HANDOFF — read this first, rewrite it last
 
 Snapshot of the last session; history is in `docs/spaceplane/journal.md`
-("Session, 2026-10-01 night: the roll-rate estimator's slip pulldown").
+("Session, 2026-10-02 morning: the slow reversal").
 
-Last written **2026-10-02 ~05:00**, spaceplane. Defaults fingerprint
-**`925b4729`** (one default changed this session, below; one new flag, off).
-Full offline suite OK (854 before the flag; spaceplane 683 after).
-Committed. Farm **stopped**, inhibitor **released**, no sims running.
+Last written **2026-10-02 ~11:50**, spaceplane. Defaults fingerprint
+**`d695195b`** (no default changed this session; the hash moved only because
+new fields were added). Offline suite OK (858). Committed through `138e032`.
+**A farm batch was running at the time of writing**
+(`logs/rot-unload-1002.txt`, below); if this file was not rewritten after it,
+read that log, stop the farm and release the inhibitor.
 
 ## Where it stands
 
-Goal ("lands mostly reliably") **not reached**, but the first intact
-shuttle landings since chain6 came this session. Best measured stack:
-**chain6 + `RCS_PITCH_OFF_IN_GLIDE`** on the new defaults (exact string:
-`arm0` of `logs/rot-revhold-1002.txt`). Over 16 flights with the new default:
-final |along| <= 5 km 11/16, intact 3/16 (LOG4498 31/31 at -1036 m).
+Goal ("lands mostly reliably") **not reached**. The entry scatter is still
+the bank reversal at Mach 5-4 (q 1500-5000): on the best stack
+(chain6 + `RCS_PITCH_OFF_IN_GLIDE`, exact string in `arm0` of
+`logs/rot-sweep-1002.txt`) **every one of 16 base flights today slipped
+17-51 deg**. The farm's absolute level drifted down from last session (within
+5 km 5/16 today vs 11/16 then; intact 0/16 vs 3/16).
 
-**The entry scatter is the second bank reversal** (Mach 4.5-5, q 2000-3000):
-the flown bank lags, sideslip reaches 13-23 deg, alpha collapses 15-30 deg
-below command, the ceiling ratchets down and the glide runs long -- or, at
-q ~5000, the bank pins at the 70 cap and departs laterally (LOG4521). Flights
-whose reversals stay under ~12 deg of slip reach the cone within +-2 km.
+## Built this session (all off)
 
-## Changed this session
-
-| what | measured | status |
+| flag | what | measured |
 |---|---|---|
-| **`BANK_RATE_SLIP_TOL_DEG` 5 -> 0 (default)** | the pulldown fired mostly in COAST at q 0-150 (vacuum "sideslip"), cutting the shuttle's bank slew 7-10 -> 1.3-2.8 deg/s, so the second reversal crawled into q ~3000. Off, 16 v 16 (`rot-sliptol-1002`, `rot-sliptol2-1002`): within 5 km along 11/16 vs 6/16, intact 3 vs 0. Null on `qs_plane` (limit pinned at 30 either way, `rot-sliptol-plane-1002`) | **default**, `8198273` |
-| `RCS_HOLD_MID_REVERSAL` | holds the yaw valve from the first tick of a reversal. Connected, but with the pulldown off the valve already opens within a tick: `rot-revhold-1002` null (collapse 4/8 vs 2/8) | built, **off** |
-| `HOLDABLE_MEAN` | re-flown whole (`rot-holdmean-1002`, 8 v 8): null on arrival and departures | off |
+| **`GLIDE_BANK_SWEEP`** (+`_UNTIL_MACH=1.0` to fly it) | the user's "one huge reversal": hold a side, cross *slowly* (<=1 deg/s, `_RATE_MAX`) to the other, hold; the crossing's start and rate are solved every tick for the cross-track at the gate; the range solve flies the same `trajectory.BankPlan`; relay below Mach 1 | farm 13 crossings (`rot-sweep-1002`, `rot-sweep2-1002`): **slip 2.8-3.3 in 4, 15-28 in 9** (base: 17-51 in all 16). Bimodal, no discriminator found (loop rate, instance, RCS, rate, fuel trim). Landing unresolved at n=8 |
+| `GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG` | cap alpha while crossing (sin alpha coupling) | **in flight** at 25: `rot-unload-1002` (sweep vs sweep+unload, 8 v 8) |
+| `GLIDE_SINGLE_REVERSAL` | one fast flip, timed by a signed propagation | offline: 21 km off at Mach 2 (the post-flip magnitude differs from the planned one). Not flown |
+| `GLIDE_BANK_MIN_DEG` | a glide-only bank floor (the 30 is the old craft's) | not flown; the floor binds 2-27% of hypersonic ticks |
 
-Over 32 pulldown-off flights the slew limit going into the second reversal
-correlates only weakly with its slip (r -0.30): rate is not the lever.
+Settled along the way: **lower alpha does not shorten the shuttle's glide**
+-- range falls monotonically with alpha (offline from LOG4498's table), alpha
+already flies to the plateau edge. A sweep slow *throughout* cannot shed the
+energy (+-70 averages cos 0.77 vs ~0.5 needed: sim +57 km long). Holding one
+side subsonically spirals (5 km turn radius). Handback below Mach 2: 11-16 km
+long at the cone in the sim -- retired.
 
 ## Next, in order
 
-0. **The user's idea, try first: reverse once.** Lean one way, let the track
-   drift off, flip once, hold the new sign to the gate (bank *magnitude*
-   stays free for range). Closed loop, not a plan: each tick propagate
-   "flip now, hold to the gate" and flip when that prediction's cross-track
-   crosses zero. Place the flip where q is low (Mach 6.6, q ~250 slips ~10
-   at worst and recovers; Mach 4.5-5 at q 2000-3800 is where every
-   departure begins); any trim reversal after Mach 2, or left to the cone.
-   Today the sign is a relay on two deadbands (`guidance._bank_sign`:
-   azimuth 0.012 deg/km, cross-track 20 m/km of range to go) with no notion
-   of q, timing or roll time. **Prerequisite:** the propagator models the
-   mean of a reversing entry with *no* lateral lift (`_bank_sign`'s
-   docstring calls a one-lean curve "an artefact"); a signed-bank
-   propagation is needed, and its cross-range accuracy over ~1000 km must be
-   checked against flown logs before trusting it. Screen in kspSim
-   (guidance question), confirm on the farm (the reversal's handling is a
-   sim gap). Built as a flag, off.
-1. **Change the method on the reversal** (three mechanisms tried: pulldown
-   fixed, valve hold null, rate weak). The airframe out-rolls its own yaw:
-   at q 2100 surfaces give roll 617 / yaw 158 kN m, yaw inertia 22x roll's
-   (failure 99). Candidate: **unload alpha through the reversal** (body
-   roll's sideslip scales with sin alpha) -- a guidance change the
-   propagator must fly too; `SOLVE_HOLD_THROUGH_REVERSAL_DEG` and failure 16
-   are the history of alpha-in-reversal. Or reverse only below a q the
-   measured lateral authority can serve. Also worth asking the user about a
-   craft fix (yaw authority: bigger/more fins), as with the pitch trim.
-2. The cone arrival is now mostly **long and high** (+4..+29 km, h 15-23
-   km) on this stack, even without a departure -- read why once the
-   reversal is tamed (pitch-off flies 2-5 deg under command at Mach 2-5).
-3. Why the first reversal (Mach 6.6, q ~250) slips ~10 deg in some flights
-   and ~2 in others regardless of rate: unexplained.
-4. The landing chain on good arrivals (unchanged): lateral capture with bank
-   still on (LOG4385), flare entry 66-95 m/s.
+1. **Read `rot-unload-1002`** (the per-flight table in the journal's awk is
+   the tool: max slip above Mach 1, min alpha Mach 2-6, crossings, cone
+   long/cross/h). If unloading moves the 4/13 clean fraction, keep going on
+   the crossing's alpha (and make the plan model it); if not, the slip is
+   not roll coupling.
+2. **The bimodal crossing.** Clean ones hold slip within +-2 from q 1000 to
+   2400; bad ones are already -2..-5 at q ~1500, lean ~-20, always the same
+   sign (crossing to +1 every time). Something is different as the crossing
+   starts. Weak lead: the roll rate measured in COAST (clean 8.6-14.9, bad
+   6.1-10.8 deg/s). Worth asking the user about yaw authority on the craft
+   (the twin fins were their fix for departures) -- the vehicle cannot hold
+   slip near wings level at q > 1500 in 70% of crossings.
+3. Crossings that started at q ~700 (three, after an accidental Mach-7
+   crossing) were all clean. The start is set by geometry (~0.3 of the
+   glide) and cannot simply be moved; a deliberate early pre-crossing costs
+   ~25 km of range unless the plan models it.
+4. The landing chain on good arrivals (unchanged).
 
 ## Traps paid this session
 
-- **Swap** still grows ~4-5 GB per 80-min batch; restart the farm before
-  every batch (done each time this session, swap back to ~1-3 GB).
-- Scratch `rev.py`/`slip.py`/`dep.py` open `LOG<n>` relative to `logs/`;
-  `replay.py`/`replayq.py` replay `RollRate` over logged ticks from the root.
-  `aoa=` is **cmd/actual** -- I read it backwards once.
-- `syncSaves.sh check` reports ksp5 missing saves; only 0-3 are the farm.
+- `farm start` again left two instances without ports after 10 min;
+  `./start.sh 0 1` on just those brought them up in a minute.
+- Swap reached 8.4 GB after an 85-minute batch: restart before every batch.
+- `&& tail` after `unittest` hides a failure from the chain: one commit went
+  in with a failing source-inspection test (fixed next commit).
+- Sim screening was ~2 min per 8-flight arm and caught three design errors
+  (energy, the subsonic spiral, the Mach-2 handback) before any farm time.
