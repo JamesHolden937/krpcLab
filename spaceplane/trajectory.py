@@ -115,6 +115,11 @@ class BankPlan:
     toward: float = 1.0
     rate: float = 1.0
     approach: float = 8.0
+    # Below this Mach the relay has the sign back
+    # (``GLIDE_BANK_SWEEP_UNTIL_MACH``), so the plan becomes the mean of a
+    # reversing entry there: holding one side to the gate subsonically is a
+    # 5 km turn radius the vehicle never flies.  0: the plan to the end.
+    until_mach: float = 0.0
 
     def bank(self, t, magnitude):
         def move(frm, to, speed, dt):
@@ -1253,7 +1258,15 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         if swept is not None:
             # The bank at the middle of the step: RK4 holds one control
             # across its four stages.
-            swept.bank = plan.bank(t + 0.5 * dt, magnitude)
+            relay = False
+            if plan.until_mach > 0.0:
+                try:
+                    relay = env.mach(speed, altitude) < plan.until_mach
+                except Exception:                       # noqa: BLE001
+                    relay = False
+            swept.reversing = relay
+            swept.bank = (magnitude if relay
+                          else plan.bank(t + 0.5 * dt, magnitude))
         r, v = _step(env, r, v, mass, dt, cfg, steer)
         t += dt
         steps += 1

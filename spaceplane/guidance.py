@@ -694,7 +694,8 @@ def sweep_start(env, cfg, r, v, mass, end, alpha, magnitude, lean, side,
     def f(start):
         plan = trajectory.BankPlan(
             lean=lean, hold=side, start=start, toward=-side,
-            rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S, approach=approach)
+            rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S, approach=approach,
+            until_mach=cfg.GLIDE_BANK_SWEEP_UNTIL_MACH)
         return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
     return _bracket_root(f, guess, 0.0, cfg.GLIDE_BANK_SWEEP_HORIZON_S,
                          cfg.GLIDE_BANK_SWEEP_START_STEP_S,
@@ -714,7 +715,8 @@ def sweep_rate(env, cfg, r, v, mass, end, alpha, magnitude, lean, toward,
     """
     def f(rate):
         plan = trajectory.BankPlan(lean=lean, hold=0.0, toward=toward,
-                                   rate=rate)
+                                   rate=rate,
+                                   until_mach=cfg.GLIDE_BANK_SWEEP_UNTIL_MACH)
         return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
     return _bracket_root(f, guess, cfg.GLIDE_BANK_SWEEP_RATE_MIN_DEG_S,
                          cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S,

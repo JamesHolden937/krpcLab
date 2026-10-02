@@ -1065,14 +1065,16 @@ class Autopilot:
             self._sw_side = 1.0 if self.steer.bank >= 0.0 else -1.0
             self._sw_start = 0.25 * cfg.GLIDE_BANK_SWEEP_HORIZON_S
             self._sw_rate = cfg.GLIDE_BANK_SWEEP_RATE_DEG_S
+        until = cfg.GLIDE_BANK_SWEEP_UNTIL_MACH
         if self._sw_mode == "hold":
             return trajectory.BankPlan(
                 lean=self.steer.bank, hold=self._sw_side,
                 start=self._sw_start, toward=-self._sw_side,
                 rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S,
-                approach=self.bank_rate())
+                approach=self.bank_rate(), until_mach=until)
         return trajectory.BankPlan(lean=self.steer.bank, hold=0.0,
-                                   toward=self._sw_side, rate=self._sw_rate)
+                                   toward=self._sw_side, rate=self._sw_rate,
+                                   until_mach=until)
 
     def bank_sweep(self, snap, steer):
         """The solve's command with its lean on the slow-reversal plan.
