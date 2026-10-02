@@ -3652,3 +3652,32 @@ swings 130-178, slip 20-70 (most chain6 departures).
   killed after round 1 for the user's CPU. 4 v 4: handover h 13.5-14.5 km
   vs 16-17; LOG4444 long +125, LOG4449 -1872; LOG4446 +9.8 km; LOG4447
   departed laterally at M4.1. Not a result. LOG4451-4454 void.
+
+## Session, 2026-10-01 night: the roll-rate estimator's slip pulldown
+
+- `rot-holdmean-1002` (chain6 + `RCS_PITCH_OFF_IN_GLIDE` vs the same +
+  `HOLDABLE_MEAN`, 8 v 8, `5ea40f73`, LOG4455-4470): **null**. Cone
+  handover long ctl -1.5..+17.2 km, HM -15.9..+32.3; 4/8 within 2.1 km in
+  each. No intact landing (LOG4469 19/31 parts, +2.1 km). Swap 5 GB.
+- Mined it instead (scratch `slip.py`, `rev.py`, `replay.py`). **Every
+  flight that slipped past 12 deg did it in the same reversal**: Mach 4.5-4.7,
+  q 2800-3800, + -> - bank, flown bank lagging the command 15-30 deg, alpha
+  collapsing 35 -> 13-23, then the ceiling ratchets down to ~22 and the glide
+  runs low-drag 4-32 km long (LOG4459). The 6 that never slipped all reached
+  the cone within +-2.1 km. Loop rate, drain residual, mass, nose fuel and
+  instance do not separate them.
+- The separator is the bank slew limit (`RollRate.limit()`). Replaying the
+  estimator over the logged ticks: the slip tolerance (`BANK_RATE_SLIP_TOL_DEG`
+  5) has already pulled the limit from 7-10 to 1.3-2.8 deg/s **in COAST and
+  the first seconds of GLIDE, at q 0-150 Pa**, where "sideslip" is the nose
+  wandering in vacuum. Bad flights then reach the second reversal at 3.2-4.3
+  deg/s (clean 5.1-5.9), take 11-17 s over it instead of 7-9, and finish it
+  at q ~3000+. The first reversal (M6.6, q 290) slips ~10 deg in half the
+  flights and ~2 in most others regardless of rate -- cause not found.
+- `rot-sliptol-1002` (chain6 + pitch-off vs + `BANK_RATE_SLIP_TOL_DEG=0`,
+  8 v 8, LOG4471-4486): second reversal at q ~2000 vs ~2800, alpha collapse
+  >=16 deg at M3.5-5.2 **4/8 vs 7/8**, cone within 4 km 5/8 vs 3/8 (but
+  arriving 14.5-23 km high vs ~12), final |along| median ~4 vs ~9 km,
+  >10 km misses 2/8 vs 4/8. No intact landing in either (best TOL0 LOG4485
+  13/31 at -3.2 km). Direction consistent, p ~0.3; replicate
+  `rot-sliptol2-1002` flown next.
