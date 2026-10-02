@@ -1280,7 +1280,9 @@ class Config:
     GLIDE_BANK_SWEEP: bool = False
     GLIDE_BANK_SWEEP_RATE_DEG_S: float = 1.0      # the planned crossing
     GLIDE_BANK_SWEEP_RATE_MIN_DEG_S: float = 0.3  # the crossing's trim range
-    GLIDE_BANK_SWEEP_RATE_MAX_DEG_S: float = 2.0
+    # 2.0 lost it: the crossings that trimmed up to 2 deg/s at q 2500-3600
+    # slipped 25-37 deg, those that stayed under 1 held 6 (farm, LOG4608-4621).
+    GLIDE_BANK_SWEEP_RATE_MAX_DEG_S: float = 1.0
     GLIDE_BANK_SWEEP_HORIZON_S: float = 1500.0    # latest start searched
     GLIDE_BANK_SWEEP_START_STEP_S: float = 20.0   # the start bracket's first step
     GLIDE_BANK_SWEEP_STEP_DEG_S: float = 0.1      # the rate bracket's first step
@@ -1288,6 +1290,10 @@ class Config:
     GLIDE_BANK_SWEEP_ITERATIONS: int = 6   # propagations per tick, at most
     GLIDE_BANK_SWEEP_UNTIL_MACH: float = 0.0  # below it the relay; 0: the whole glide
     GLIDE_BANK_SWEEP_FALLBACK_M: float = 10000.0  # no start nulls it: the relay picks the side
+    # ...for this many ticks running: the first tick's search can run out of
+    # evaluations short of the root, and acting on that crossed three farm
+    # flights at Mach 7 for a '64 km' miss that was 260 s of hold away.
+    GLIDE_BANK_SWEEP_FALLBACK_TICKS: int = 10
     GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
     GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.

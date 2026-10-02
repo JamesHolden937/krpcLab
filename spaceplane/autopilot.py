@@ -1113,7 +1113,9 @@ class Autopilot:
             relay = 1.0 if steer.bank >= 0.0 else -1.0
             lost = (cross is None
                     or abs(cross) > cfg.GLIDE_BANK_SWEEP_FALLBACK_M)
-            if lost and relay != self._sw_side:
+            self._sw_lost = (getattr(self, "_sw_lost", 0) + 1) if lost else 0
+            if (lost and relay != self._sw_side
+                    and self._sw_lost >= cfg.GLIDE_BANK_SWEEP_FALLBACK_TICKS):
                 start = 0.0
                 cross = cross if cross is not None else float("nan")
             if cross is not None and start <= dt:
