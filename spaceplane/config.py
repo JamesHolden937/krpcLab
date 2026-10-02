@@ -310,6 +310,21 @@ class Config:
     # short and dived (LOG3810-3849).  Integrates commanded - signed alpha
     # while the roll is settled and the slip small.  Off until paired.
     ALPHA_TRIM_LOOP: bool = False
+    # **An integral on the angle at the actuator, not on the command**
+    # (``Autopilot.pitch_assist``).  kRPC *adds* a client's manual pitch to
+    # its attitude controller's output (``PilotAddon.OnFlyByWire``), so a
+    # manual pitch integrated on the pitch pointing error is the integral
+    # term kRPC's own loop lacks against an aerodynamic restoring moment: in
+    # the game the shuttle's flares asked 9-16 deg and flew 3-4 for their
+    # whole length (LOG4610, 4639, 4647), and the approach dives on the same
+    # standing error.  The sim follows its command there and does not show
+    # it.  HAC, APPROACH and FLARE; decays out over the pitch tune in ROLLOUT.
+    PITCH_ASSIST: bool = False
+    # The error, in degrees, that integrates to full input over one pitch
+    # ``time_to_peak`` -- slower than kRPC's own loop by construction.
+    PITCH_ASSIST_FULL_DEG: float = 10.0
+    # kRPC's own attenuation band: errors inside it are its to hold.
+    PITCH_ASSIST_DEADBAND_DEG: float = 2.0
     ALPHA_TRIM_MIN_DEG: float = -4.0
     ALPHA_TRIM_MAX_DEG: float = 8.0
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0

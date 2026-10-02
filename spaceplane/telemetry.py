@@ -53,6 +53,11 @@ class Snapshot:
     # inside it; these two separate it.
     krpc_aoa: float = 0.0
     sideslip: float = 0.0
+    # The pitch input the vessel is actually getting: kRPC's
+    # ``Control.pitch`` reads back the *sum* of the game's state, this
+    # client's manual input and the attitude controller's output
+    # (``PilotAddon.OnFlyByWire``), so +-1 is a saturated elevator.
+    pitch_input: float = 0.0
     # The nose, in the body's rotating frame.  Already streamed for
     # ``alpha_actual``; carried whole because the pointing *error* -- nose
     # against the commanded nose -- is a two-axis quantity and the angle to
@@ -189,6 +194,10 @@ class Telemetry:
         # you.
         self.krpc_aoa = stream(getattr, flight, "angle_of_attack")
         self.sideslip = stream(getattr, flight, "sideslip_angle")
+        try:
+            self.pitch_input = stream(getattr, vessel.control, "pitch")
+        except Exception:                                   # noqa: BLE001
+            self.pitch_input = None
         self.aero_force = stream(getattr, flight, "aerodynamic_force")
         self.air_density = stream(getattr, flight, "atmosphere_density")
         self.dynamic_pressure = stream(getattr, flight, "dynamic_pressure")
@@ -339,6 +348,8 @@ class Telemetry:
             parts_now=self._count_parts(ut),
             krpc_aoa=self._scalar(self.krpc_aoa),
             sideslip=self._scalar(self.sideslip),
+            pitch_input=(self._scalar(self.pitch_input)
+                         if self.pitch_input is not None else 0.0),
             aero_force=self._vector(self.aero_force),
             air_density=self._scalar(self.air_density),
             dynamic_pressure=self._scalar(self.dynamic_pressure))

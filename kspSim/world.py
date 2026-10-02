@@ -1045,7 +1045,10 @@ class Vessel:
                 body.to_bf(vec.sub(self.w, body.spin), w.t)
             torque = self.available_torque(env)
             p, r, y = self.autopilot.update(w.t, dt, q_ap, w_rel, torque, self.moi())
-            cmd = [p, r, y]
+            # kRPC adds a client's manual inputs to the attitude
+            # controller's output (PilotAddon.OnFlyByWire), it does not
+            # replace them.
+            cmd = [p + ctrl.pitch, r + ctrl.roll, y + ctrl.yaw]
         else:
             cmd = [ctrl.pitch, ctrl.roll, ctrl.yaw]
         for i in range(3):

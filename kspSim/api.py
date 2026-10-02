@@ -1010,8 +1010,16 @@ def orbit_ttp(w, o):
 
 # -- Control -------------------------------------------------------------------
 
+_AXIS = {"pitch": 0, "roll": 1, "yaw": 2}
+
+
 def _ctl_prop(name, cast=float):
     def getter(w, c):
+        # kRPC reads back the summed input (game + manual + attitude
+        # controller, PilotAddon.Get), not the manual one alone.
+        cmd = getattr(w.vessel, "command", None)
+        if name in _AXIS and cmd is not None and w.vessel.autopilot.engaged:
+            return float(cmd[_AXIS[name]])
         return getattr(c, name)
 
     def setter(w, c, value):

@@ -6819,6 +6819,7 @@ class Autopilot:
         self.fuel_trim(snap)
         self.drain_residual(snap)
         handler(snap)
+        self.pitch_assist(snap)
         # **Wherever the table happens to become ready.**  The first version
         # reported from STANDBY, which ``--autostart`` leaves on the tick
         # before the sweep finishes -- so on every harness flight, which is
@@ -6834,6 +6835,69 @@ class Autopilot:
         self.frozen_early(snap)
         self.log_line(snap)
         return snap
+
+    def pitch_error(self, snap):
+        """The pitch-plane pointing error kRPC's loop is closing, degrees:
+        the commanded nose against the roof, positive for nose-up wanted.
+        Logged as the third ``pin=`` number on every flight."""
+        nose = getattr(self, "commanded_nose", None)
+        roof = getattr(snap, "roof", None)
+        if nose is None or not roof or len(roof) != 3:
+            return None
+        return math.degrees(math.asin(vec.clamp(
+            vec.dot(vec.unit(nose), vec.unit(roof)), -1.0, 1.0)))
+
+    def pitch_assist(self, snap):
+        """``PITCH_ASSIST``: a manual pitch input, integrated on the pitch
+        pointing error, added to kRPC's attitude controller (kRPC sums the
+        two).
+
+        kRPC's loop leaves a standing pitch error against the airframe's
+        restoring moment that grows with dynamic pressure; its integral runs
+        on a clock scaled to an available torque the surfaces do not deliver.
+        This is the missing integral, on **the error kRPC's own loop is
+        closing** -- the commanded nose against the roof -- so the two share
+        one zero (integrated on commanded minus kRPC's signed alpha instead,
+        it chased a 2 deg difference between that angle and the nose kRPC
+        was holding, and the two integrators wound each other to +-1, sim
+        LOG4680).  Errors inside ``PITCH_ASSIST_DEADBAND_DEG`` are kRPC's
+        attenuation band and are left to it (integrating them wound the trim
+        to +1 against kRPC's -0.8, LOG4695).  Rate: the error past the band
+        over ``PITCH_ASSIST_FULL_DEG * pitch time_to_peak``, held while the
+        total input is saturated the same way.  HAC, APPROACH and FLARE; it
+        decays over the same time in ROLLOUT and is zero elsewhere."""
+        error = self.pitch_error(snap)
+        self._pitch_assist_err = error
+        if not getattr(self.cfg, "PITCH_ASSIST", False):
+            return
+        trim = getattr(self, "_pitch_assist", 0.0)
+        last = getattr(self, "_pitch_assist_ut", None)
+        self._pitch_assist_ut = snap.ut
+        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
+        peak = getattr(self, "_tuned_peak", None)
+        tp = max(0.5, float(peak[0]) if peak else
+                 float(self.cfg.ATTITUDE_TIME_TO_PEAK_S))
+        if self.state in (HAC, APPROACH, FLARE):
+            if error is not None and dt > 0.0 and snap.dynamic_pressure > 50:
+                band = float(self.cfg.PITCH_ASSIST_DEADBAND_DEG)
+                past = math.copysign(max(0.0, abs(error) - band), error)
+                step = (vec.clamp(past, -20.0, 20.0) * dt
+                        / (float(self.cfg.PITCH_ASSIST_FULL_DEG) * tp))
+                total = float(getattr(snap, "pitch_input", 0.0) or 0.0)
+                if not (abs(total) >= 0.98 and step * total > 0.0):
+                    trim = vec.clamp(trim + step, -1.0, 1.0)
+        elif self.state == ROLLOUT:
+            trim -= trim * min(1.0, dt / tp)
+        else:
+            trim = 0.0
+        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
+                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
+            try:
+                self.control.pitch = trim
+                self._pitch_assist_sent = trim
+            except Exception:                           # noqa: BLE001
+                pass
+        self._pitch_assist = trim
 
     def retune_attitude(self, snap):
         """``ATTITUDE_TIME_TO_PEAK_LIVE``: follow the torque the air provides.
@@ -7207,6 +7271,10 @@ def compact_line(state, snap, run):
                          else getattr(run, "_lift_delta", 0.0))
                         + getattr(run, "_alpha_trim", 0.0)),
         "slip=%+5.1f" % snap.sideslip,
+        "pin=%+5.2f/%+5.2f/%+4.1f" % (
+            getattr(snap, "pitch_input", 0.0) or 0.0,
+            getattr(run, "_pitch_assist", 0.0),
+            getattr(run, "_pitch_assist_err", None) or 0.0),
         # **Commanded slip is its own column, and only when something asks
         # for one.**  ``slip=`` has always meant the achieved angle and two
         # analyses already parse it; changing that column into ``cmd/actual``
