@@ -8959,6 +8959,25 @@ class ApproachEnergyExcess(unittest.TestCase):
 class RcsPitchGate(unittest.TestCase):
     """``RCS_PITCH_BY_AUTHORITY``: pitch thrusters off once surfaces win."""
 
+    @staticmethod
+    def run_(cfg, vessel):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg, run.state, run.vessel = cfg, autopilot_module.GLIDE, vessel
+        run.logbook = SimpleNamespace(event=lambda u, t: 0)
+        return run
+
+    def test_off_in_glide_needs_no_comparison(self):
+        cfg = replace(Config(), RCS_PITCH_OFF_IN_GLIDE=True)
+        blocks = [SimpleNamespace(pitch_enabled=True) for _ in range(3)]
+        vessel = SimpleNamespace(parts=SimpleNamespace(rcs=blocks))
+        run = self.run_(cfg, vessel)
+        run.state = autopilot_module.COAST
+        run.rcs_pitch_gate(SimpleNamespace(ut=0.0, dynamic_pressure=100.0))
+        self.assertTrue(all(b.pitch_enabled for b in blocks))
+        run.state = autopilot_module.GLIDE
+        run.rcs_pitch_gate(SimpleNamespace(ut=1.0, dynamic_pressure=130.0))
+        self.assertFalse(any(b.pitch_enabled for b in blocks))
+
     def test_pitch_thrusters_follow_the_authority(self):
         cfg = replace(Config(), RCS_PITCH_BY_AUTHORITY=True)
         blocks = [SimpleNamespace(pitch_enabled=True) for _ in range(3)]
@@ -8966,9 +8985,7 @@ class RcsPitchGate(unittest.TestCase):
             available_control_surface_torque=((100e3, 0, 0), (0, 0, 0)),
             available_rcs_torque=((290e3, 0, 0), (0, 0, 0)),
             parts=SimpleNamespace(rcs=blocks))
-        fake = SimpleNamespace(cfg=cfg, state=autopilot_module.GLIDE,
-                               vessel=vessel,
-                               logbook=SimpleNamespace(event=lambda u, t: 0))
+        fake = self.run_(cfg, vessel)
         gate = autopilot_module.Autopilot.rcs_pitch_gate
         gate(fake, SimpleNamespace(ut=0.0, dynamic_pressure=500.0))
         self.assertTrue(all(b.pitch_enabled for b in blocks))

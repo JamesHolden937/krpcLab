@@ -3231,9 +3231,18 @@ class Autopilot:
         ``available_control_surface_torque`` against the thrusters' pitch
         torque, remembered from whenever it was last readable.
         """
-        if (not getattr(self.cfg, "RCS_PITCH_BY_AUTHORITY", False)
+        always = getattr(self.cfg, "RCS_PITCH_OFF_IN_GLIDE", False)
+        if (not (always or getattr(self.cfg, "RCS_PITCH_BY_AUTHORITY", False))
                 or self.state not in (GLIDE, HAC)):
             return
+        if always:
+            # ``RCS_PITCH_OFF_IN_GLIDE``: no comparison, off from the first
+            # GLIDE tick and latched -- the valve is open there for yaw.
+            if not getattr(self, "_rcs_pitch_on", True):
+                return
+            self._rcs_gate_ut = snap.ut
+            surf, self._rcs_pitch_torque = 0.0, 0.0
+            return self._set_rcs_pitch(snap, False, surf)
         last = getattr(self, "_rcs_gate_ut", None)
         if last is not None and snap.ut - last < self.cfg.RCS_PITCH_GATE_S:
             return
@@ -3256,6 +3265,9 @@ class Autopilot:
             return
         if want:
             return
+        self._set_rcs_pitch(snap, want, surf)
+
+    def _set_rcs_pitch(self, snap, want, surf):
         changed = 0
         try:
             for block in self.vessel.parts.rcs:

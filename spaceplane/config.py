@@ -4022,6 +4022,14 @@ class Config:
     # (LOG4352).  Lateral error and alpha overshoot still open it.  The
     # pitch gate above latches at q ~1650 Pa, after these events.
     RCS_IGNORE_ALPHA_SHORTFALL: bool = False
+    # **Not built for its own purpose:** ``rot-shortfall-1001`` (8 v 8) showed
+    # the valve opening on *lateral* error -- reversals at Mach 4.7-4.8
+    # (LOG4411, 4413, 4426), a 5 deg bank lag at Mach 7.1 with the flag on
+    # (LOG4415: alpha 26 -> 53 against 35) -- and the pitch thrusters
+    # driving alpha through the trim limit every time.  Whatever opens the
+    # valve, pitch thrust is the pitch-up.  So: **pitch thrusters off for the
+    # whole glide and cone** (``rcs_pitch_gate``), yaw and roll keep them.
+    RCS_PITCH_OFF_IN_GLIDE: bool = False
     APPROACH_BANK_BY_ROLL: bool = False
     # **Lead the capture by the roll-out** (``Autopilot.
     # approach_heading_lead``): the heading error the lateral law sees is
