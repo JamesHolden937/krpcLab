@@ -35,6 +35,21 @@ long at the cone in the sim -- retired.
 
 ## Next, in order
 
+0. **The user's call, try first: a single *fast* reversal, timed by the
+   slow reversal's planner.** The slow crossing starts at Mach ~5.8, q ~1000
+   and lingers near level ~100 s while q climbs to 3000-5000; the bad
+   crossings begin slipping at q ~1500, part-way through. A fast flip
+   started at the same moment is done in 10-15 s, before q 1500 -- and the
+   three crossings that started at q ~700 were all clean. No new code: the
+   `GLIDE_BANK_SWEEP` planner at full roll rate *is* the single reversal,
+   with the plan-aware range solve that the offline `GLIDE_SINGLE_REVERSAL`
+   lacked (it flipped on a 30 deg plan and the solve then flew 18: 21 km off
+   at Mach 2). Fly, interleaved against the 1 deg/s version (8 v 8, both on
+   the best stack + `GLIDE_BANK_SWEEP=True;GLIDE_BANK_SWEEP_UNTIL_MACH=1.0`):
+   `GLIDE_BANK_SWEEP_RATE_DEG_S=8;GLIDE_BANK_SWEEP_RATE_MIN_DEG_S=6;GLIDE_BANK_SWEEP_RATE_MAX_DEG_S=10`.
+   Screen 8 in kspSim first (~2 min) to check the planner still converges
+   at that rate. Read slip in the crossing (the journal's awk), the q at
+   which the lean passes zero, and the cone arrival.
 1. **The bimodal crossing** (three mechanisms now refuted on it: rate,
    RCS state, alpha unload -- change the method: record the crossing with
    `kspSim/tools/flighttest.py --attach` on a farm flight and look at the
