@@ -1,11 +1,12 @@
 """In-game launcher: one button per autopilot.
 
 ``./run.sh`` with no ``--pilot`` runs this.  It puts a small panel on the
-game's screen with a button per entry in ``PILOTS``; pressing one hides the
-panel and runs that autopilot as a child process with ``--autostart``, so the
-button *is* the start command.  The autopilot's own panel (telemetry and
-TERMINATE) takes over for the flight, and when it exits the launcher comes
-back, showing how the last flight ended and which log it wrote.
+game's screen with a button per entry in ``PILOTS``; pressing one runs that
+autopilot as a child process with ``--autostart``, so the button *is* the
+start command.  The autopilot's own panel (telemetry and TERMINATE) opens in
+the same window (``common.panel``) and the launcher's hides under it; when
+the flight exits the launcher comes back, showing how it ended and which log
+it wrote.
 
 Adding an autopilot is one line in ``PILOTS``; the module has to accept
 ``--address``/``--rpc-port``/``--stream-port`` and ``--autostart``.
@@ -25,7 +26,7 @@ import time
 
 import krpc
 
-from common import paths
+from common import panel, paths
 
 # (button label, run.sh --pilot name, module to run)
 PILOTS = [
@@ -37,6 +38,7 @@ PILOTS = [
 ALIASES = {"plane": "spaceplane", "booster": "boosterland"}
 
 POLL_S = 0.2
+HANDOVER_S = 3.0
 CHILD_EXIT_GRACE_S = 30.0
 
 
@@ -50,41 +52,33 @@ def module_for(name):
 
 
 class LauncherPanel:
-    WIDTH = 260
     BUTTON_H = 34
 
     def __init__(self, conn):
         self.ui = conn.ui
-        canvas = self.ui.stock_canvas
-        screen = canvas.rect_transform.size
-        height = 120 + (len(PILOTS) + 1) * (self.BUTTON_H + 8)
-
-        self.panel = canvas.add_panel()
-        rect = self.panel.rect_transform
-        rect.size = (self.WIDTH, height)
-        # Right-hand side: the autopilots' own panels sit on the left.
-        rect.position = (screen[0] / 2 - self.WIDTH / 2 - 30, 0)
+        self.panel = panel.window(conn)
+        top = panel.HEIGHT / 2
 
         title = self.panel.add_text("krpcLab")
-        title.rect_transform.position = (0, height / 2 - 22)
-        title.rect_transform.size = (self.WIDTH - 20, 24)
+        title.rect_transform.position = (0, top - 25)
+        title.rect_transform.size = (panel.WIDTH - 20, 24)
         title.size = 16
         title.color = (0.6, 1.0, 0.6)
         title.alignment = self.ui.TextAnchor.middle_center
 
         self.status = self.panel.add_text("choose an autopilot")
-        self.status.rect_transform.position = (0, height / 2 - 62)
-        self.status.rect_transform.size = (self.WIDTH - 24, 52)
+        self.status.rect_transform.position = (0, top - 70)
+        self.status.rect_transform.size = (panel.WIDTH - 24, 52)
         self.status.size = 12
-        self.status.color = (1.0, 1.0, 1.0)
+        self.status.color = panel.TEXT
         self.status.alignment = self.ui.TextAnchor.upper_center
 
         self.buttons = []
-        y = height / 2 - 110
+        y = top - 125
         for label, _, _ in PILOTS + [("QUIT LAUNCHER", None, None)]:
             button = self.panel.add_button(label)
             button.rect_transform.position = (0, y)
-            button.rect_transform.size = (self.WIDTH - 40, self.BUTTON_H)
+            button.rect_transform.size = (panel.WIDTH - 40, self.BUTTON_H)
             self.buttons.append(button)
             y -= self.BUTTON_H + 8
         self.clicked = [conn.add_stream(getattr, b, "clicked")
@@ -102,6 +96,10 @@ class LauncherPanel:
         if status is not None:
             self.status.content = status
         self.panel.visible = visible
+
+    def show_buttons(self, visible):
+        for button in self.buttons:
+            button.visible = visible
 
     def close(self):
         for stream in self.clicked:
@@ -122,13 +120,26 @@ def log_names():
         return set()
 
 
-def fly(module, connection_args):
-    """Run one autopilot to completion; returns (exit code, new log names)."""
+def fly(module, connection_args, started):
+    """Run one autopilot to completion; returns (exit code, new log names).
+
+    ``started`` is called once the autopilot's log exists plus
+    ``HANDOVER_S``, by when its own panel has replaced the launcher's.
+    """
     before = log_names()
     command = [sys.executable, "-m", module, "--autostart"] + connection_args
     child = subprocess.Popen(command, cwd=paths.ROOT)
+    handover = None
     try:
-        code = child.wait()
+        while child.poll() is None:
+            if started is not None:
+                if handover is None and log_names() - before:
+                    handover = time.monotonic() + HANDOVER_S
+                if handover is not None and time.monotonic() >= handover:
+                    started()
+                    started = None
+            time.sleep(POLL_S)
+        code = child.returncode
     except KeyboardInterrupt:
         # The child got the same SIGINT and is shutting down; let it hand the
         # vessel back before the launcher disappears.
@@ -164,26 +175,30 @@ def main(argv=None):
         forward += ["--stream-port", str(args.stream_port)]
 
     conn = krpc.connect(**kwargs)
-    panel = LauncherPanel(conn)
+    window = LauncherPanel(conn)
     try:
         while True:
-            choice = panel.pressed()
+            choice = window.pressed()
             if choice is None:
                 time.sleep(POLL_S)
                 continue
             if choice >= len(PILOTS):
                 return 0
             label, name, module = PILOTS[choice]
-            panel.show(False)
-            conn.ui.message("krpcLab: %s" % label.lower(), duration=3.0)
-            code, logs = fly(module, forward)
+            # The autopilot's panel opens where this one is, so the window
+            # reads as switching to the flight: the launcher stays up, saying
+            # so, until the autopilot is drawing, and comes back after.
+            window.show_buttons(False)
+            window.show(True, "starting %s ..." % label.lower())
+            code, logs = fly(module, forward, lambda: window.show(False))
             ended = "finished" if code == 0 else "exited %d" % code
-            panel.show(True, "%s %s\n%s" % (
+            window.show_buttons(True)
+            window.show(True, "%s %s\n%s" % (
                 name, ended, ", ".join(logs) if logs else "no log written"))
     except KeyboardInterrupt:
         return 0
     finally:
-        panel.close()
+        window.close()
         try:
             conn.close()
         except Exception:                               # noqa: BLE001

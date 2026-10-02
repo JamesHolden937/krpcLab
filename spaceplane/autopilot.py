@@ -7173,6 +7173,7 @@ def main(argv=None):
             conn = krpc.connect(**kwargs)
             run = Autopilot(conn, cfg, logbook)
             if args.autostart:
+                run.panel.hide_start()
                 # **Through ``engage``, not straight into DEORBIT.**  This
                 # path bypassed ``run_standby`` entirely, so a vehicle handed
                 # over below the interface went looking for a deorbit burn it

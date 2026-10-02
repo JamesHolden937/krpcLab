@@ -5,23 +5,17 @@ presses are read through kRPC streams (cheap polling) and the ``clicked`` flag
 is reset by us, exactly as in the kRPC user-interface tutorial.
 """
 
-from common import vec
+from common import panel, vec
 
 
 class ControlPanel:
-    WIDTH = 300
-    HEIGHT = 400
+    WIDTH = panel.WIDTH
+    HEIGHT = panel.HEIGHT
 
     def __init__(self, conn):
         self.conn = conn
         self.ui = conn.ui
-        canvas = self.ui.stock_canvas
-        screen = canvas.rect_transform.size
-
-        self.panel = canvas.add_panel()
-        rect = self.panel.rect_transform
-        rect.size = (self.WIDTH, self.HEIGHT)
-        rect.position = (self.WIDTH / 2 + 30 - screen[0] / 2, 0)
+        self.panel = panel.window(conn)
 
         self.title = self.panel.add_text("BOOSTERLAND")
         self.title.rect_transform.position = (0, self.HEIGHT / 2 - 25)
@@ -34,7 +28,7 @@ class ControlPanel:
         self.body.rect_transform.position = (0, 20)
         self.body.rect_transform.size = (self.WIDTH - 24, self.HEIGHT - 130)
         self.body.size = 13
-        self.body.color = (1.0, 1.0, 1.0)
+        self.body.color = panel.TEXT
         self.body.alignment = self.ui.TextAnchor.upper_left
 
         self.start_button = self.panel.add_button("START AUTOLAND")
@@ -62,6 +56,10 @@ class ControlPanel:
             self.stop_button.clicked = False
             return True
         return False
+
+    def hide_start(self):
+        """``--autostart``: the flight is already running, so no START."""
+        self.start_button.visible = False
 
     def set_start_label(self, text):
         self.start_button.text.content = text

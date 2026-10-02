@@ -48,6 +48,7 @@ class Widget:
         self.size = 12
         self.color = (1, 1, 1)
         self.alignment = None
+        self.line_spacing = 1.0
         self.visible = True
 
     def remove(self):
@@ -64,7 +65,13 @@ class Button(Widget):
 class Panel:
     def __init__(self):
         self.rect_transform = RectTransform()
-        self.texts, self.buttons = [], []
+        self.texts, self.buttons, self.panels = [], [], []
+        self.visible = True
+
+    def add_panel(self):
+        panel = Panel()
+        self.panels.append(panel)
+        return panel
 
     def add_text(self, content=""):
         widget = Widget(content)

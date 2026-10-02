@@ -1095,6 +1095,8 @@ def main(argv=None):
                             stream_port=args.stream_port)
         run = Autoland(conn, cfg, log)
         run.autostart = args.autostart
+        if args.autostart:
+            run.gui.hide_start()
         run.run()
         reason = run.exit_reason or "complete"
     except KeyboardInterrupt:
