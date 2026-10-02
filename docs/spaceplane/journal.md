@@ -3617,3 +3617,38 @@ alpha 66-88. The pitch-up is the end of a high-alpha lateral departure
 (failure 99), common to both Mk3 shuttles. Forward ballast
 (`rot-ballast3-1001`, round 0 only): 0/2 departures but commanded alpha
 only 18-25 -- a different regime. Not fixed; HANDOFF item 1.
+
+## Session, 2026-10-01 evening: the pitch-up is the pitch thrusters
+
+Mined ~320 shuttle logs (scratch scripts). Bank-reversal roll rate, alpha,
+Mach and q did **not** separate slipping reversals from clean ones (168
+reversals, ~50% "bad" in every bin). The valve's lag did: reversals where
+the RCS opened 6-12 s after the command started moving had median peak slip
+15.8 deg vs ~9 (358 reversals) -- `reversal_under_way` needs a 5 deg lead,
+which a slow slew never builds (LOG4409).
+
+First departure tick per flight (flown alpha > commanded + 15, M>1.2) splits
+into three classes: **A** Mach 4.7-7, slip <5, `rcs on` 0-5 s before, alpha
+40 -> 56 in 4 s (LOG4352: commanded 40.3, trimmed 36, `err 5.0` from the
+shortfall alone opened the valve, pitch thrusters drove alpha through the
+trim limit); **B** residual drain at Mach 2-3.3 (LOG4298-4307 are sim
+flights -- thinner game evidence than it looked); **C** lateral, roll damper
+swings 130-178, slip 20-70 (most chain6 departures).
+
+- `rot-shortfall-1001` (chain6 vs + `RCS_IGNORE_ALPHA_SHORTFALL`, 8 v 8,
+  `23a608af`): class A 3/8 vs 0/8, but the control's three opened on
+  reversals (err 7.9-8.9) and LOG4415 (flag) opened on lateral error at
+  Mach 7.1 and still pitched 26 -> 53. Intact 3/8 vs 0/8 (LOG4426 +742 m).
+  Swap 5.3 GB at the end.
+- `rot-pitchoff-1001` (chain6 vs + `RCS_PITCH_OFF_IN_GLIDE`, 8 v 8,
+  `b87b111e`): glide departures M>2 **6/8 vs 1/8**. Flag arm flew 2-5 deg
+  under command at Mach 2-5 (control within ~1) and arrived at the cone
+  +2.4..+34 km long, 19-22 km high; 0 intact. The thrusters were trimming
+  beyond the surfaces' limit -- which is where it departs. Swap 10.4 GB.
+- `Holdable` learned the command ("learned 36.0" flying 31-34): max while
+  saturated, and the *command* on any tick within 2.5 deg. ->
+  `HOLDABLE_MEAN`.
+- `rot-holdmean-1001` (both pitch-off; vs + `HOLDABLE_MEAN`, `5ea40f73`):
+  killed after round 1 for the user's CPU. 4 v 4: handover h 13.5-14.5 km
+  vs 16-17; LOG4444 long +125, LOG4449 -1872; LOG4446 +9.8 km; LOG4447
+  departed laterally at M4.1. Not a result. LOG4451-4454 void.
