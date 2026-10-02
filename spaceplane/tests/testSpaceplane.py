@@ -2266,7 +2266,7 @@ class TestTheCrossTrackHasAuthorityOfItsOwn(unittest.TestCase):
         """Taken before the range solve, so the angle of attack is solved
         against the trajectory the vehicle will fly and not against one with
         no lean in it."""
-        source = inspect.getsource(guidance.solve_glide)
+        source = inspect.getsource(guidance._solve_glide)
         before = source.index("cross_bank_floor")
         self.assertLess(before, source.index("_solve_range"))
 
