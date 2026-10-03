@@ -27,8 +27,8 @@ APPROACH_ALPHA_AT_TARGET=True;APPROACH_SCURVE_STOP_M=4000;
 APPROACH_CAPTURE_MARGIN=0.15
 ```
 
-None of it is a default yet. It has not been flown from orbit, nor on the old
-craft (`qs_plane`). Both are required before promoting any of it.
+None of it is a default yet. It has been flown from orbit only at n=4 per
+arm (below). Both craft need n>=8 before any of it is promoted.
 
 **`FLARE_PITCH_P=0.08` on top of it: 13 intact of 24** from the cone saves
 (manual pitch input proportional to the flare's pitch error, summed with
