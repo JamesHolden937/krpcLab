@@ -33,7 +33,7 @@ are refined from the prediction's own once there is one.
 """
 import math
 
-from common import vec
+from common import krpcbatch, vec
 
 
 class Table:
@@ -583,21 +583,23 @@ class Environment:
         position = vec.scale(up, self.equatorial_radius + altitude)
         weight = self.cfg.AERO_SMOOTHING
         got = False
-        for column, alpha_deg in enumerate(self._alphas):
+        directions = []
+        for alpha_deg in self._alphas:
             alpha = math.radians(alpha_deg)
             # Positive angle of attack: the wind arrives from ahead and below,
             # so the velocity is the nose rotated away from the dorsal.  Lift
             # then acts along the dorsal.
-            direction = vec.unit(vec.sub(
+            directions.append(vec.unit(vec.sub(
                 vec.scale(nose, math.cos(alpha)),
-                vec.scale(dorsal, math.sin(alpha))))
-            velocity = vec.scale(direction, speed)
-            try:
-                force = self.flight.simulate_aerodynamic_force_at(
-                    self.body, tuple(position), tuple(velocity),
-                    tuple(rotation))
-            except Exception:                           # noqa: BLE001
-                continue
+                vec.scale(dorsal, math.sin(alpha)))))
+        # The whole row in one round trip (``Config.RPC_BATCH``).
+        forces = krpcbatch.ask(self.conn, [
+            (self.flight.simulate_aerodynamic_force_at,
+             (self.body, tuple(position),
+              tuple(vec.scale(direction, speed)), tuple(rotation)))
+            for direction in directions],
+            batched=getattr(self.cfg, "RPC_BATCH", False))
+        for column, (direction, force) in enumerate(zip(directions, forces)):
             if force is None:
                 continue
             flow = direction

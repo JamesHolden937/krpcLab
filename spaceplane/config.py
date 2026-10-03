@@ -4369,6 +4369,13 @@ class Config:
     # The ceiling is computed from a mean tick cost and what binds is the tail:
     # a tick twice as expensive as the mean must still fit inside the interval.
     TIMESCALE_GOVERNOR_MARGIN: float = 0.7
+    # **Read-only kRPC calls asked together go in one round trip**
+    # (``common.krpcbatch``): an aero-table row is fourteen
+    # ``SimulateAerodynamicForceAt`` calls, and one at a time they cost 10-45
+    # ms of a loaded farm's frames against 6-7 batched -- the same numbers to
+    # the bit (measured on ksp0, CPython and PyPy).  The row refresh was every
+    # HAC tick's peak, and the governor serves the peak.  False: one at a time.
+    RPC_BATCH: bool = True
     # How often to count the parts still attached.  Polled, not streamed:
     # ``parts.all`` is a list transfer and this loop does not carry those.
     # Seconds is plenty -- a breakup takes seconds, and what the log needs is

@@ -26,6 +26,7 @@ import socket
 from kspSim import fastpb
 
 _ORIGINAL = {}
+_CALL_BYTES = []    # [call_bytes] once installed: client, service, procedure, args, types -> bytes
 
 
 def _compile_encoder(typ, orig):
@@ -198,7 +199,8 @@ def install():
     Encoder.encode = classmethod(encode)
     Decoder.decode = classmethod(decode)
 
-    def _invoke(self, service, procedure, args, param_names, param_types, return_type):
+    def call_bytes(self, service, procedure, args, param_types):
+        """One ``ProcedureCall``, serialised (``common.krpcbatch`` joins them)."""
         body = [fastpb._ld(1, service.encode("utf-8")), fastpb._ld(2, procedure.encode("utf-8"))]
         for i, (value, typ) in enumerate(zip(args, param_types)):
             if isinstance(value, DefaultArgument):
@@ -214,7 +216,12 @@ def install():
             arg = (b"\x08" + fastpb.varint(i) if i else b"") + \
                 (fastpb._ld(2, data) if data else b"")
             body.append(fastpb._ld(3, arg))
-        request = fastpb._ld(1, b"".join(body))
+        return b"".join(body)
+
+    _CALL_BYTES.append(call_bytes)
+
+    def _invoke(self, service, procedure, args, param_names, param_types, return_type):
+        request = fastpb._ld(1, call_bytes(self, service, procedure, args, param_types))
         conn = self._rpc_connection
         with self._rpc_connection_lock:
             conn.send(fastpb.frame(request))

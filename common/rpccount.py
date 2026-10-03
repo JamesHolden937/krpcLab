@@ -36,7 +36,14 @@ class RpcCounter:
                 row[0] += 1
                 row[1] += time.monotonic() - started
         conn._invoke = invoke
+        conn._rpc_counter = self
         return self
+
+    def batched(self, calls):
+        """One round trip carrying ``calls`` (``common.krpcbatch``)."""
+        row = self.calls.setdefault(self.phase, {}).setdefault(
+            "batch%d" % len(calls), [0, 0.0])
+        row[0] += 1
 
     def tick(self, phase, ut=None):
         """The loop is starting a tick of ``phase`` (``ut``: the last known)."""

@@ -2759,11 +2759,11 @@ class Autopilot:
             got = []
             for angle in (theta, -theta):
                 self._deploy_surface(r, angle, True)
-                time.sleep(settle)
+                self.settle_game(settle)
                 w = self._probe_wrench_full(alt, speed, alpha)
                 got.append(tuple(wi - bi for wi, bi in zip(w, base)))
             self._deploy_surface(r, 0.0, False)
-            time.sleep(settle)
+            self.settle_game(settle)
             samples.append((r, got[0], got[1]))
             self.logbook.event(
                 snap.ut, "drag probe %s: +%.0f dClA %+.2f dCdA %+.2f "
@@ -2795,11 +2795,11 @@ class Autopilot:
                 continue
             for r, angle in point.angles():
                 self._deploy_surface(r, angle, True)
-            time.sleep(settle)
+            self.settle_game(settle)
             w = self._probe_wrench_full(alt, speed, alpha)
             for r, _ in point.angles():
                 self._deploy_surface(r, 0.0, False)
-            time.sleep(settle)
+            self.settle_game(settle)
             got = tuple(wi - bi for wi, bi in zip(w, base))
             predicted.append((point.lift, point.drag))
             measured.append((got[0], got[1]))
@@ -2929,11 +2929,11 @@ class Autopilot:
             return None
         for r, m in chosen.surfaces():
             self._deploy_surface(r, theta * m, True)
-        time.sleep(settle)
+        self.settle_game(settle)
         w = self._probe_wrench_full(alt, speed, alpha)
         for r, _ in chosen.surfaces():
             self._deploy_surface(r, 0.0, False)
-        time.sleep(settle)
+        self.settle_game(settle)
         got = tuple(wi - bi for wi, bi in zip(w, base))
         if in_flight:
             band = float(self.cfg.AIR_DRAG_LIFT_BAND) * max(
@@ -2968,11 +2968,11 @@ class Autopilot:
             base = self._probe_wrench_full(alt, speed, alpha)
             for r, m in spoiler.surfaces():
                 self._deploy_surface(r, theta * m, True)
-            time.sleep(settle)
+            self.settle_game(settle)
             w = self._probe_wrench_full(alt, speed, alpha)
             for r, _ in spoiler.surfaces():
                 self._deploy_surface(r, 0.0, False)
-            time.sleep(settle)
+            self.settle_game(settle)
         except Exception as exc:                        # noqa: BLE001
             self.logbook.event(snap.ut, "spoiler lateral: probe failed (%s)"
                                         " -- not checked" % exc)
@@ -3035,11 +3035,11 @@ class Autopilot:
                 got = []
                 for angle in (theta, -theta):
                     self._deploy_surface(r, angle, True)
-                    time.sleep(settle)
+                    self.settle_game(settle)
                     w = self._probe_wrench(alt, speed, alpha)
                     got.append((w[0] - base[0], w[1] - base[1]))
                 self._deploy_surface(r, 0.0, False)
-                time.sleep(settle)
+                self.settle_game(settle)
                 samples.append((r, got[0][0], got[0][1], got[1][0],
                                 got[1][1]))
                 self.logbook.event(
@@ -3061,12 +3061,12 @@ class Autopilot:
                         break
                     for r, m in chosen.surfaces():
                         self._deploy_surface(r, theta * m, True)
-                    time.sleep(settle)
+                    self.settle_game(settle)
                     w = self._probe_wrench(alt, speed, alpha)
                     verified = (w[0] - base[0], w[1] - base[1])
                     for r, _ in chosen.surfaces():
                         self._deploy_surface(r, 0.0, False)
-                    time.sleep(settle)
+                    self.settle_game(settle)
                     self.logbook.event(
                         snap.ut, "%s (measured) set %d, gains nose-up x%.2f "
                                  "nose-down x%.2f: dClA %+.2f dCmA %+.2f"
@@ -7107,6 +7107,7 @@ class Autopilot:
         wait = sleeper(self.cfg, lambda: self.conn.space_center.ut, self.conn)
         interval = self.cfg.ORBIT_TICK_S
         governor = self.scale_governor()
+        self.governor = governor
         while self.running:
             started = time.monotonic()
             if self.rpc is not None:
@@ -7151,6 +7152,33 @@ class Autopilot:
                 governor.serve(interval, cost)
             wait(interval, ut)
         return self.finished_reason
+
+    def settle_game(self, seconds):
+        """Wait ``seconds`` of *game* time for a surface to move.
+
+        It was a wall-clock sleep, which is the same thing at 1x and fifteen
+        wall-seconds of an idle farm at the DRAIN tick's 1x: the brake and
+        envelope probes deploy surfaces ~25 times, in vacuum, with nothing to
+        command between.  So the governor is asked for its ceiling and the
+        wait is on ``ut``.  A clock that does not move (a paused game) falls
+        back to the old wall sleep rather than hanging.
+        """
+        governor = getattr(self, "governor", None)
+        if governor is not None:
+            governor.hold_ceiling()
+        try:
+            start = self.conn.space_center.ut
+        except Exception:                               # noqa: BLE001
+            time.sleep(seconds)
+            return
+        deadline = time.monotonic() + max(5.0, 5.0 * seconds)
+        while time.monotonic() < deadline:
+            time.sleep(min(0.02, seconds))
+            try:
+                if self.conn.space_center.ut - start >= seconds:
+                    return
+            except Exception:                           # noqa: BLE001
+                return
 
     def scale_governor(self):
         """The time-scale governor, or ``None`` when nobody asked for one.

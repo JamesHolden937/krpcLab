@@ -310,6 +310,30 @@ class ScaleGovernor:
         self.announced = None
         self.cost = None
 
+    def _write(self, scale):
+        try:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as fh:
+                fh.write("mode = fixed\nscale = %.4f\nmax_scale = %.4f\n"
+                         "quant_s = %.4f\n"
+                         % (scale, self.maximum, self.quant_s))
+            os.replace(tmp, self.path)
+            return True
+        except OSError:
+            # A farm concern must never take the flight down with it.
+            self.path = None
+            return False
+
+    def hold_ceiling(self):
+        """Ask for the ceiling now, for work that only waits on game time.
+
+        A probe that deflects a surface and waits for it to move has nothing
+        to command in between, so the scale it runs at changes nothing but
+        the wall time it costs.  The next ``serve`` takes over again.
+        """
+        if self.path and self._write(self.maximum):
+            self.commanded = self.maximum
+
     def serve(self, wanted, busy):
         """Command the fastest scale that still puts a command every ``wanted``."""
         if not self.path or busy is None or busy <= 0.0 or wanted <= 0.0:
@@ -325,16 +349,7 @@ class ScaleGovernor:
         if (self.commanded is not None
                 and abs(scale - self.commanded) < 0.15 * self.commanded):
             return self.commanded
-        try:
-            tmp = self.path + ".tmp"
-            with open(tmp, "w") as fh:
-                fh.write("mode = fixed\nscale = %.4f\nmax_scale = %.4f\n"
-                         "quant_s = %.4f\n"
-                         % (scale, self.maximum, self.quant_s))
-            os.replace(tmp, self.path)
-        except OSError:
-            # A farm concern must never take the flight down with it.
-            self.path = None
+        if not self._write(scale):
             return self.commanded
         previous, self.commanded = self.commanded, scale
         # Announce a *change*, not a wobble: the scale tracks a noisy cost and
