@@ -4656,9 +4656,11 @@ class Config:
     # old craft by construction (its static pitch *is* the floor).
     ATTITUDE_PITCH_AIR: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
-    # kRPC's pitch ``deceleration_time`` from the cone on, seconds (0 = off,
-    # kRPC's default 5).  See ``Autopilot.pitch_decel``.
-    ATTITUDE_PITCH_DECEL_S: float = 0.0
+    # Switch off kRPC's oscillation mitigations from the cone on.  See
+    # ``Autopilot.osc_mitigation``.  (``deceleration_time`` does not exist
+    # in this kRPC build: ATTITUDE_PITCH_DECEL_S was a disconnected knob,
+    # rot-decel-1003.)
+    ATTITUDE_OSC_MITIGATION_OFF: bool = False
     # Measure the achieved angle of attack signed (kRPC's, in the pitch
     # plane) rather than as the unsigned nose-to-velocity angle, which reads
     # a nose below the airflow as above it.  See ``Telemetry``.

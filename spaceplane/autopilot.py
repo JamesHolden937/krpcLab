@@ -6953,7 +6953,7 @@ class Autopilot:
         by half again since the last line, so the log shows the schedule
         without a line per second.
         """
-        self.pitch_decel(snap)
+        self.osc_mitigation(snap)
         if getattr(self.cfg, "ATTITUDE_PITCH_AIR", False) and not getattr(
                 self.cfg, "ATTITUDE_TIME_TO_PEAK_LIVE", False):
             self.retune_pitch_air(snap)
@@ -6990,31 +6990,50 @@ class Autopilot:
                          "(pitch %.1f, roll %.1f, yaw %.1f) s as applied"
                 % ((snap.dynamic_pressure,) + tuple(want)))
 
-    def pitch_decel(self, snap):
-        """``ATTITUDE_PITCH_DECEL_S``: kRPC's pitch ``deceleration_time``
-        from the cone on.  kRPC turns an attitude error into a target rate of
-        about error / deceleration_time (default 5 s) and runs its rate PID
-        on that, so a 10 deg flare error asks for 2 deg/s, which the
-        restoring moment eats: LOG4927 commanded 6.7-11.8 deg of alpha for
-        six seconds, flew 2.1-2.6, at a flat +0.24 of pitch input.  Roll and
-        yaw keep kRPC's default.  Set once; logged."""
-        want = float(getattr(self.cfg, "ATTITUDE_PITCH_DECEL_S", 0.0))
-        if (want <= 0.0 or getattr(self, "_pitch_decel_set", False)
+    def osc_mitigation(self, snap):
+        """``ATTITUDE_OSC_MITIGATION_OFF``: from the cone on, switch off this
+        kRPC build's oscillation mitigations (bandwidth floor, feedforward,
+        output notch) and its pitch/yaw rate filter.
+
+        Its detector latches during the approach's swings -- pitch
+        ``oscillation_level`` 0.93, ``pitch_yaw_oscillation_latched`` True,
+        ``pitch_yaw_control_oscillation`` 0.41 on a vessel just landed -- and
+        a filtered pitch output is what every flare shows: 6.7-11.8 deg
+        commanded for six seconds, 2.1-2.6 flown, the input flat at +0.24
+        (LOG4927).  Set once; the detector's state at that moment is logged,
+        so the log says whether it was engaged."""
+        if (not getattr(self.cfg, "ATTITUDE_OSC_MITIGATION_OFF", False)
+                or getattr(self, "_osc_off_set", False)
                 or not self.autopilot_engaged
                 or self.state not in (HAC, APPROACH, FLARE)):
             return
-        self._pitch_decel_set = True
+        self._osc_off_set = True
+        ap = self.autopilot
         try:
-            had = tuple(self.autopilot.deceleration_time)
-            self.autopilot.deceleration_time = (want, had[1], had[2])
-            now = tuple(self.autopilot.deceleration_time)
+            before = "level %s latched %s control %.2f" % (
+                tuple(round(x, 2) for x in ap.oscillation_level),
+                ap.pitch_yaw_oscillation_latched,
+                ap.pitch_yaw_control_oscillation)
+        except Exception:                               # noqa: BLE001
+            before = "unreadable"
+        try:
+            mode = self.conn.space_center.MitigationMode.off
+            ap.oscillation_bandwidth_floor_mode = mode
+            ap.oscillation_feedforward_mode = mode
+            ap.oscillation_output_filter_mode = mode
+            ap.pitch_yaw_rate_filter_mode = \
+                self.conn.space_center.RateFilterMode.off
+            after = "%s/%s/%s rate %s" % (
+                ap.oscillation_bandwidth_floor_mode,
+                ap.oscillation_feedforward_mode,
+                ap.oscillation_output_filter_mode,
+                ap.pitch_yaw_rate_filter_mode)
         except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(snap.ut, "pitch deceleration_time not set: %s"
-                               % exc)
+            self.logbook.event(snap.ut, "oscillation mitigation not "
+                                        "switched off: %s" % exc)
             return
-        self.logbook.event(
-            snap.ut, "attitude deceleration_time (%.1f, %.1f, %.1f) -> "
-                     "(%.1f, %.1f, %.1f) s as kRPC applies it" % (had + now))
+        self.logbook.event(snap.ut, "kRPC oscillation mitigation off (was "
+                                    "%s): %s" % (before, after))
 
     def retune_pitch_air(self, snap):
         """``ATTITUDE_PITCH_AIR``: pitch follows the authority the air adds.
