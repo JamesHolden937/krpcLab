@@ -661,7 +661,7 @@ class Autopilot:
                      * float(self.cfg.RESOURCE_KG_PER_UNIT))
         try:
             got = guidance.straight_in_reach(self.env, self.cfg, mass,
-                                             self.body.surface_gravity)
+                                             self.surface_gravity)
         except Exception as exc:                        # noqa: BLE001
             got = None
             self.logbook.event(snap.ut, "hac aim: FAILED (%s)" % exc)
@@ -727,7 +727,7 @@ class Autopilot:
         if getattr(self, "_weave_first", False):
             half -= 0.5 * guidance.weave_reversal_s(
                 self.cfg, last.weave_deg, last.speed,
-                self.body.surface_gravity, self.roll_rate.limit())
+                self.surface_gravity, self.roll_rate.limit())
         if ut - getattr(self, "_weave_flip_ut", ut) >= half:
             self._weave_dir = -getattr(self, "_weave_dir", 1.0)
             self._weave_flip_ut = ut
@@ -1719,7 +1719,7 @@ class Autopilot:
         dt = 0.0 if last is None else max(0.0, snap.ut - last)
         q = snap.dynamic_pressure
         speed = vec.norm(snap.velocity)
-        weight = max(1.0, snap.mass * self.body.surface_gravity)
+        weight = max(1.0, snap.mass * self.surface_gravity)
         lift_dir = trajectory.lift_direction(snap.position, snap.velocity, 0.0)
         if dt > 0.0 and q > self.cfg.LIFT_LOOP_MIN_Q_PA and lift_dir:
             try:
@@ -1812,7 +1812,7 @@ class Autopilot:
                                      snap.position, snap.velocity)
             command = guidance.hac(self.env, self.cfg, self.end,
                                    snap.position, snap.velocity, snap.mass,
-                                   self.body.surface_gravity, height, side)
+                                   self.surface_gravity, height, side)
         except Exception:                               # noqa: BLE001
             return None
         if command is None or getattr(command, "needed", None) is None:
@@ -3313,7 +3313,7 @@ class Autopilot:
             getattr(command, "excess", 0.0), height, flare_trigger, sink,
             getattr(command, "speed", None),
             getattr(command, "target_speed", None),
-            gravity=self.body.surface_gravity)
+            gravity=self.surface_gravity)
         # **A spoiler serves the approach's descent, it does not replace
         # it.**  See ``Config.AIRBRAKE_SINK_TRACK``.
         track = float(getattr(self.cfg, "AIRBRAKE_SINK_TRACK_M_S", 0.0))
@@ -3604,7 +3604,7 @@ class Autopilot:
                          + self.cfg.GATE_ALT_M
                          * airframe.approach_ld(
                              self.env, self.cfg, self.cfg.GATE_ALT_M,
-                             self.vessel.mass, self.body.surface_gravity))
+                             self.vessel.mass, self.surface_gravity))
                 try:
                     out = trajectory.surface_distance(
                         self.env, position, self.end["threshold"])
@@ -3684,7 +3684,7 @@ class Autopilot:
         mass = snap.mass if landing else self.entry_mass(snap)
         try:
             measured = airframe.measure(self.env, mass,
-                                        self.body.surface_gravity)
+                                        self.surface_gravity)
         except Exception as exc:                            # noqa: BLE001
             self.airframe = airframe.Airframe()
             self.logbook.event(snap.ut, "airframe: could not be read (%r)"
@@ -3710,7 +3710,7 @@ class Autopilot:
             # so the geometry the entry is solved to never moves.
             ratio = airframe.approach_ld(self.env, self.cfg,
                                          self.cfg.GATE_ALT_M, mass,
-                                         self.body.surface_gravity)
+                                         self.surface_gravity)
             dist = max(self.cfg.GATE_CAPTURE_M,
                        self.cfg.GATE_ALT_M * ratio
                        - airframe.touchdown_aim(self.env, self.cfg))
@@ -5376,10 +5376,10 @@ class Autopilot:
         speed = vec.norm(snap.velocity)
         radius = max(self.cfg.HAC_RADIUS_MIN_M,
                      guidance.hac_hold_radius(self.cfg, speed,
-                                              self.body.surface_gravity))
+                                              self.surface_gravity))
         height = vec.norm(snap.position) - self.env.equatorial_radius
         ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
-                                 snap.mass, self.body.surface_gravity)
+                                 snap.mass, self.surface_gravity)
         lap = 2.0 * math.pi * radius / max(0.1, ratio)
         return max(self.cfg.HAC_EXIT_SURPLUS_M, lap)
 
@@ -5411,11 +5411,11 @@ class Autopilot:
         if getattr(self.cfg, "HAC_FLAP_ARREST_EXCESS", False):
             ratio = airframe.cone_ld(self.env, self.cfg, vec.norm(snap.velocity),
                                      height, snap.mass,
-                                     self.body.surface_gravity)
+                                     self.surface_gravity)
             nominal = vec.norm(snap.velocity) / math.sqrt(1.0 + ratio * ratio)
         arrest = (max(0.0, sink * sink - nominal * nominal)
                   / (2.0 * max(0.1, self.cfg.HAC_FLAP_ARREST_G)
-                     * self.body.surface_gravity))
+                     * self.surface_gravity))
         surplus = height - needed
         saturated = (getattr(command, "weave_deg", 0.0)
                      >= self.cfg.HAC_WEAVE_MAX_DEG - 0.5)
@@ -5844,7 +5844,7 @@ class Autopilot:
         limit = trajectory.alpha_limit_for_speed(
             self.env, self.cfg, vec.norm(snap.velocity),
             vec.norm(snap.position) - self.env.equatorial_radius,
-            snap.mass, self.body.surface_gravity)
+            snap.mass, self.surface_gravity)
         alpha = min(alpha, limit)
         # And the floor underneath it, which is the same law: see
         # ``alpha_floor_for_speed``.  The learned ceiling still wins, because
@@ -5852,7 +5852,7 @@ class Autopilot:
         alpha = max(alpha, trajectory.alpha_floor_for_speed(
             self.env, self.cfg, vec.norm(snap.velocity),
             vec.norm(snap.position) - self.env.equatorial_radius,
-            snap.mass, self.body.surface_gravity))
+            snap.mass, self.surface_gravity))
         alpha = min(alpha, self.alpha_ceiling)
         hot = self.max_drag_alpha(snap)
         if hot is not None:
@@ -6020,7 +6020,7 @@ class Autopilot:
             # one the cone may fly.  ``None`` means the derivation is off
             # and the Mach constant is still the veto.
             derived = guidance.hac_enterable(
-                self.cfg, speed, self.body.surface_gravity)
+                self.cfg, speed, self.surface_gravity)
             can_turn = (mach <= self.cfg.HAC_ENTRY_MACH if derived is None
                         else derived)
             # **Entered when it can pay for itself, not at an altitude.**
@@ -6124,7 +6124,7 @@ class Autopilot:
         self._last_hac_ut = snap.ut
         command = guidance.hac(self.env, self.cfg, self.end, snap.position,
                                snap.velocity, snap.mass,
-                               self.body.surface_gravity, height,
+                               self.surface_gravity, height,
                                self.hac_side,
                                previous=self.hac_radius,
                                max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
@@ -6223,7 +6223,7 @@ class Autopilot:
         self._hac_ladder_ut = snap.ut
         stall = airframe.stall(self.env, self.cfg)
         base = self.cfg.HAC_SPEED_FACTOR * self.cfg.APPROACH_FACTOR * stall
-        g = self.body.surface_gravity
+        g = self.surface_gravity
         bits = []
         h = self.cfg.GATE_ALT_M
         while h <= height + 1.0:
@@ -6320,7 +6320,7 @@ class Autopilot:
         height = snap.landing_height
         command = guidance.approach(
             self.env, self.cfg, self.end, snap.position, snap.velocity,
-            snap.mass, self.body.surface_gravity, height,
+            snap.mass, self.surface_gravity, height,
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.cfg.APPROACH_SCURVE_PERIOD_S),
@@ -6420,7 +6420,7 @@ class Autopilot:
         elapsed = snap.ut - (self.flare_since or snap.ut)
         alpha, sink, needed = guidance.flare(
             self.env, self.cfg, snap.position, snap.velocity, snap.mass,
-            self.body.surface_gravity, height, elapsed, self.flare_lead_s())
+            self.surface_gravity, height, elapsed, self.flare_lead_s())
         cap = min(self.alpha_ceiling, self.cfg.FLARE_ALPHA_DEG,
                   self.flare_tail_cap(snap))
         alpha = self.flare_load_loop(alpha, needed, elapsed, cap, snap)
@@ -6442,7 +6442,7 @@ class Autopilot:
             lateral = guidance.approach(self.env, self.cfg, self.end,
                                         snap.position, snap.velocity,
                                         snap.mass,
-                                        self.body.surface_gravity, height)
+                                        self.surface_gravity, height)
             bank = vec.clamp(lateral.bank, -limit, limit)
         self.steer = Steer(alpha=alpha, bank=bank)
         # **Below the levelling height the reference is the runway, not the
@@ -7145,6 +7145,8 @@ class Autopilot:
             # not the wait.  The governor divides the interval this phase asked
             # for by that work; everything else is the plugin's problem.
             self.loop_rate.sample(self.state, ut, time.monotonic() - started)
+            if self.rpc is not None:
+                self.rpc.tick_done(time.monotonic() - started, ut)
             if governor is not None:
                 cost = self.loop_rate.busy(self.state)
                 if getattr(self.cfg, "GOVERN_ON_PEAK", False):
@@ -7152,6 +7154,16 @@ class Autopilot:
                 governor.serve(interval, cost)
             wait(interval, ut)
         return self.finished_reason
+
+    @property
+    def surface_gravity(self):
+        """``body.surface_gravity``, read once per body: a constant that cost
+        two to four round trips a tick on final."""
+        body = self.body
+        if getattr(self, "_gravity_body", None) is not body:
+            self._gravity = body.surface_gravity
+            self._gravity_body = body
+        return self._gravity
 
     def settle_game(self, seconds):
         """Wait ``seconds`` of *game* time for a surface to move.
@@ -7217,6 +7229,7 @@ class Autopilot:
         if self.rpc is not None:
             self.logbook.event(self.last_ut or 0.0, self.rpc.report())
             self.logbook.event(self.last_ut or 0.0, self.rpc.wall_report())
+            self.logbook.event(self.last_ut or 0.0, self.rpc.slow_report())
         """Hand back to the player, deliberately, rather than try to save it."""
         try:
             self.logbook.event(self.conn.space_center.ut,

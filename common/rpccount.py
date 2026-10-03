@@ -20,8 +20,11 @@ class RpcCounter:
         self.top = top
         self.calls = {}         # phase -> {procedure: [count, wall]}
         self.ticks = {}         # phase -> ticks
+        self._this_wall = 0.0
         self.span = {}          # phase -> [wall s, game s] from tick to tick
         self._last = None       # (phase, monotonic, ut) of the last tick
+        self._this = {}         # procedure -> count, this tick only
+        self.slow = {}          # phase -> [(busy, ut, rpc wall, {proc: n})], worst first
 
     def install(self, conn):
         inner = conn._invoke
@@ -35,6 +38,8 @@ class RpcCounter:
                     procedure, [0, 0.0])
                 row[0] += 1
                 row[1] += time.monotonic() - started
+                self._this[procedure] = self._this.get(procedure, 0) + 1
+                self._this_wall += time.monotonic() - started
         conn._invoke = invoke
         conn._rpc_counter = self
         return self
@@ -44,6 +49,29 @@ class RpcCounter:
         row = self.calls.setdefault(self.phase, {}).setdefault(
             "batch%d" % len(calls), [0, 0.0])
         row[0] += 1
+        key = "batch%d" % len(calls)
+        self._this[key] = self._this.get(key, 0) + 1
+
+    def tick_done(self, busy, ut, keep=3):
+        """The tick just ended after ``busy`` wall-s: keep it if among the
+        phase's ``keep`` slowest, with the calls it made."""
+        worst = self.slow.setdefault(self.phase, [])
+        if len(worst) < keep or busy > worst[-1][0]:
+            worst.append((busy, ut, self._this_wall, dict(self._this)))
+            worst.sort(key=lambda w: -w[0])
+            del worst[keep:]
+
+    def slow_report(self):
+        """Each phase's slowest ticks: what the governor's peak is made of."""
+        bits = []
+        for phase, worst in self.slow.items():
+            for busy, ut, wall, procs in worst:
+                top = sorted(procs.items(), key=lambda kv: -kv[1])[:5]
+                bits.append("%s %.0fms@%s rpc %.0fms/%d [%s]" % (
+                    phase, 1000.0 * busy, "--" if ut is None else "%.0f" % ut,
+                    1000.0 * wall, sum(procs.values()),
+                    " ".join("%s:%d" % kv for kv in top)))
+        return "slowest ticks: " + " | ".join(bits)
 
     def tick(self, phase, ut=None):
         """The loop is starting a tick of ``phase`` (``ut``: the last known)."""
@@ -55,6 +83,8 @@ class RpcCounter:
             if ut is not None and then_ut is not None and ut >= then_ut:
                 row[1] += ut - then_ut
         self._last = (phase, now, ut)
+        self._this = {}
+        self._this_wall = 0.0
         self.phase = phase
         self.ticks[phase] = self.ticks.get(phase, 0) + 1
 
