@@ -83,6 +83,11 @@ rather than a stored plan.
    `--instance`, `--timescale`), and the saves it flies in `saves/`.
 6. `<name>/CLAUDE.md` for its current state, `docs/<name>/` for the rest.
    Run `testInstances/actuators.py` on the new craft before anything else.
+7. Write its loop and its scripts by [docs/loopCost.md](docs/loopCost.md):
+   a tick's wall cost is the farm's speed. Batch reads, cache constants,
+   wait in game time, nothing under rails warp, keep one-off work out of
+   fine-interval phases, and install `common.rpccount` so every log says
+   what each phase cost.
 
 ## Commands
 
@@ -351,6 +356,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [spaceplane/CLAUDE.md](spaceplane/CLAUDE.md) | anything in `spaceplane/`: where it stands, what is next, what is refuted |
 | [boosterland/CLAUDE.md](boosterland/CLAUDE.md) | anything in `boosterland/` |
 | [docs/testInstances.md](docs/testInstances.md) | running the parallel-instance farm, or when instances die |
+| [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
 | [saves/README.md](saves/README.md) | which save is which vehicle and state; adding a save |
