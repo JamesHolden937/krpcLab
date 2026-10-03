@@ -4058,6 +4058,10 @@ class Config:
     # ``APPROACH_TRIM_FLOOR`` are then unused, and the speed floor becomes a
     # floor under the *target* rather than a clamp on the angle.
     APPROACH_SPEED_PATH: bool = True
+    # A rate term on the speed law, per unit of measured dv/dt over g (0 =
+    # off): damps the approach's phugoid.  See ``guidance.alpha_for_speed``.
+    APPROACH_SPEED_KD: float = 0.0
+    APPROACH_ACCEL_TAU_S: float = 1.0
     # How long a speed error is given to disappear.  A time, not a gain: it
     # multiplies nothing that has to be re-fitted when the mass, the air or
     # the approach speed changes.

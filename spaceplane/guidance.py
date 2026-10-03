@@ -895,7 +895,7 @@ class ApproachCommand:
 
 
 def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
-                    trim, bank_deg=0.0, climb_ok=False):
+                    trim, bank_deg=0.0, climb_ok=False, accel=None):
     """The angle of attack that holds ``target`` airspeed, on a glider.
 
     **A glider cannot choose its speed and its path independently**, which the
@@ -1001,6 +1001,15 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
         drag = cda * q / mass
         # Hold the speed against drag, and spend the difference on the error.
         wanted = (drag + (target - speed) / tau) / gravity
+        # ``APPROACH_SPEED_KD``: the measured along-path acceleration as a
+        # rate term.  Proportional on speed alone the approach flew an
+        # undamped phugoid -- 81 -> 102 -> 80 -> 121 -> 53 m/s on a ~50 s
+        # period (LOG4848; pi sqrt(2) v / g is 45 s at 100 m/s) -- and the
+        # door speed was wherever the cycle happened to be.  Speeding up
+        # asks for less descent, slowing for more.
+        kd = float(getattr(cfg, "APPROACH_SPEED_KD", 0.0))
+        if kd > 0.0 and accel is not None:
+            wanted -= kd * accel / gravity
         # **A glider with too much speed can climb.**  The floor at zero
         # meant the law's answer to 270 m/s against a 128 target was "hold
         # the path level" and the surplus went into drag at 22 deg of alpha;
@@ -1077,7 +1086,7 @@ def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             heading_lead=0.0):
+             heading_lead=0.0, accel=None):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -1255,7 +1264,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         # to, where "never less alpha than trim" was a command it could not
         # recover from.
         alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
-                                max(target, floor), trim)
+                                max(target, floor), trim, accel=accel)
         alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
                                                   -cfg.APPROACH_PATH_LIMIT_M,
                                                   cfg.APPROACH_PATH_LIMIT_M)

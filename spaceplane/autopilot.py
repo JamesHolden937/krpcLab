@@ -6328,6 +6328,7 @@ class Autopilot:
         command = guidance.approach(
             self.env, self.cfg, self.end, snap.position, snap.velocity,
             snap.mass, self.surface_gravity, height,
+            accel=self.path_accel(snap),
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.cfg.APPROACH_SCURVE_PERIOD_S),
@@ -6354,6 +6355,23 @@ class Autopilot:
                        % (height, command.speed, command.sink, command.cross))
         elif self.touched_down(snap, height):
             self.enter(ROLLOUT, snap.ut, "touchdown without a flare")
+
+    def path_accel(self, snap):
+        """dv/dt along the path, m/s^2, smoothed over
+        ``APPROACH_ACCEL_TAU_S`` of game time -- the rate term of
+        ``APPROACH_SPEED_KD``.  None until two ticks have been seen."""
+        speed = vec.norm(snap.velocity)
+        prev = getattr(self, "_accel_prev", None)
+        self._accel_prev = (snap.ut, speed)
+        if prev is None or snap.ut - prev[0] <= 1e-3:
+            return getattr(self, "_accel", None)
+        dt = snap.ut - prev[0]
+        raw = (speed - prev[1]) / dt
+        tau = max(0.05, float(getattr(self.cfg, "APPROACH_ACCEL_TAU_S", 1.0)))
+        old = getattr(self, "_accel", None)
+        self._accel = raw if old is None else old + (raw - old) * min(
+            1.0, dt / tau)
+        return self._accel
 
     def approach_heading_lead(self, snap):
         """``APPROACH_HEADING_LEAD``: degrees the track will still turn if
