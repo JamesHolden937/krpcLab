@@ -7108,6 +7108,7 @@ class Autopilot:
         interval = self.cfg.ORBIT_TICK_S
         governor = self.scale_governor()
         self.governor = governor
+        governed_phase = None
         while self.running:
             started = time.monotonic()
             if self.rpc is not None:
@@ -7144,13 +7145,29 @@ class Autopilot:
             # Measured at the *bottom* of the tick, so ``busy`` is the work and
             # not the wait.  The governor divides the interval this phase asked
             # for by that work; everything else is the plugin's problem.
-            self.loop_rate.sample(self.state, ut, time.monotonic() - started)
+            busy = time.monotonic() - started
             if self.rpc is not None:
-                self.rpc.tick_done(time.monotonic() - started, ut)
-            if governor is not None:
+                self.rpc.tick_done(busy, ut)
+            # **A tick under rails warp is not a governed tick.**  The game's
+            # warp owns the clock then, and its frames make every round trip
+            # slow (COAST: 19 calls in 160-215 ms, against 13 ms out of
+            # warp), so sampling them taught the governor a cost the phase
+            # does not have once the warp ends.
+            warping = bool(getattr(self, "warp_factor", 0))
+            if not warping:
+                self.loop_rate.sample(self.state, ut, busy)
+            if governor is not None and not warping:
+                # The governor's own decaying estimate must not carry one
+                # phase's cost into the next: DRAIN's 5 s probe tick held the
+                # deorbit's wait near 1x for fifty game-seconds.
+                if self.state != governed_phase:
+                    governor.cost = None
+                    governed_phase = self.state
                 cost = self.loop_rate.busy(self.state)
                 if getattr(self.cfg, "GOVERN_ON_PEAK", False):
-                    cost = self.loop_rate.peak(self.state) or cost
+                    cost = self.loop_rate.peak_after(
+                        self.state,
+                        getattr(self.cfg, "GOVERN_PEAK_SKIP", 0)) or cost
                 governor.serve(interval, cost)
             wait(interval, ut)
         return self.finished_reason

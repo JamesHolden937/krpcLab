@@ -3309,6 +3309,11 @@ class Config:
     # the whole price of a thirteenfold reduction in arrival scatter.
     # Spaceplane failure 91.
     GOVERN_ON_PEAK: bool = True
+    # How many of a phase's slowest ticks the peak sets aside: a one-off (the
+    # fuel-to-nose scan, a phase's setup tick) pinned whole phases at 1-4x
+    # when every other tick could serve 20x.  0 is the old undecayed peak.
+    # ``LoopRate.peak_after``.
+    GOVERN_PEAK_SKIP: int = 1
     DEORBIT_ALIGN_DEG: float = 8.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.

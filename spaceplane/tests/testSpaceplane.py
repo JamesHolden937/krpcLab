@@ -5937,6 +5937,30 @@ class TestLoopRate(unittest.TestCase):
         self.assertAlmostEqual(rate.interval("GLIDE"), before, places=6)
 
 
+class TestPeakAfter(unittest.TestCase):
+    """One slow tick is an event; the governor serves the ones that recur."""
+
+    def test_a_one_off_is_set_aside_and_a_recurring_one_is_not(self):
+        from common.pacing import LoopRate
+        rate = LoopRate()
+        rate.sample("COAST", 0.0, 0.300)                # the fuel scan
+        for i in range(50):
+            rate.sample("COAST", 2.0 * (i + 1), 0.013)
+        self.assertAlmostEqual(rate.peak("COAST"), 0.300)
+        self.assertAlmostEqual(rate.peak_after("COAST", 1), 0.013)
+        rate.sample("DEORBIT", 0.0, 0.8)
+        rate.sample("DEORBIT", 0.1, 0.5)
+        rate.sample("DEORBIT", 0.2, 0.02)
+        self.assertAlmostEqual(rate.peak_after("DEORBIT", 1), 0.5)
+
+    def test_a_phase_with_one_tick_governs_on_it(self):
+        from common.pacing import LoopRate
+        rate = LoopRate()
+        rate.sample("GLIDE", 0.0, 0.13)
+        self.assertAlmostEqual(rate.peak_after("GLIDE", 1), 0.13)
+        self.assertIsNone(rate.peak_after("HAC", 1))
+
+
 class TestScaleGovernor(unittest.TestCase):
     """The time scale is what serves the control interval, not a setting."""
 

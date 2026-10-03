@@ -187,6 +187,7 @@ class LoopRate:
 
     def __init__(self):
         self.phases = {}            # phase -> [interval, busy, ticks]
+        self.tops = {}              # phase -> its slowest ticks, worst first
         self._last_ut = None
         self._last_phase = None
 
@@ -196,6 +197,10 @@ class LoopRate:
         row[2] += 1
         row[1] = _blend(row[1], busy, self.FORGET)
         row[3] = busy if row[3] is None else max(row[3], busy)
+        tops = self.tops.setdefault(phase, [])
+        tops.append(busy)
+        tops.sort(reverse=True)
+        del tops[8:]
         if self._last_ut is not None and phase == self._last_phase:
             step = ut - self._last_ut
             # A phase change, a reverted save or a warp can put anything here;
@@ -234,6 +239,22 @@ class LoopRate:
         """
         row = self.phases.get(phase)
         return row[3] if row and len(row) > 3 else None
+
+    def peak_after(self, phase, skip):
+        """The phase's slowest tick once its ``skip`` worst are set aside.
+
+        **One tick is an event, two are a property of the phase.**  The
+        undecayed ``peak`` let a single one-off pin a whole phase: the coast
+        governed at 4.4x for 320 game-seconds because one tick moved fuel to
+        the nose (300 ms, 457 calls, once per flight) when every other tick
+        cost 13 ms; the glide's peak is the RCS gate on its first tick.  A
+        tick that recurs -- the deorbit burn's propagations, 0.8 s and 0.5 s
+        -- still governs at ``skip`` 1, which is what failure 91 needs.
+        """
+        tops = self.tops.get(phase)
+        if not tops:
+            return None
+        return tops[min(int(skip), len(tops) - 1)]
 
     def interval(self, phase):
         row = self.phases.get(phase)
