@@ -1253,8 +1253,11 @@ class Autopilot:
         response time, only while the roll is settled and the slip small (a
         reversal is not a trim error), bounded by ``ALPHA_TRIM_MIN_DEG`` /
         ``ALPHA_TRIM_MAX_DEG``."""
+        states = ((HAC, APPROACH, FLARE)
+                  if getattr(self.cfg, "ALPHA_TRIM_IN_HAC", False)
+                  else (APPROACH, FLARE))
         if (not getattr(self.cfg, "ALPHA_TRIM_LOOP", False)
-                or self.state not in (APPROACH, FLARE)):
+                or self.state not in states):
             return alpha_deg
         delta = getattr(self, "_alpha_trim", 0.0)
         last = getattr(self, "_alpha_trim_ut", None)
@@ -1273,7 +1276,11 @@ class Autopilot:
                     and snap.dynamic_pressure > self.cfg.LIFT_LOOP_MIN_Q_PA):
                 settle = max(1.0, float(getattr(self, "attitude_settle_s",
                                                 0.0) or 2.0))
-                error = vec.clamp((alpha_deg + delta) - achieved, -5.0, 5.0)
+                # The *wanted* angle against the flown one.  Integrating the
+                # offset command against it (as first built, never flown)
+                # integrates kRPC's own standing error, which the offset
+                # never closes, and winds to the bound regardless.
+                error = vec.clamp(alpha_deg - achieved, -5.0, 5.0)
                 delta = vec.clamp(delta + error * dt / settle,
                                   float(self.cfg.ALPHA_TRIM_MIN_DEG),
                                   float(self.cfg.ALPHA_TRIM_MAX_DEG))

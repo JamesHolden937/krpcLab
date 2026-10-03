@@ -329,6 +329,10 @@ class Config:
     ALPHA_TRIM_MAX_DEG: float = 8.0
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0
     ALPHA_TRIM_SLIP_TOL_DEG: float = 5.0
+    # ``ALPHA_TRIM_LOOP`` in the cone as well: the dive that hands the
+    # approach 100+ m/s of sink starts there (LOG4803: commanded 2-10 deg,
+    # kRPC's signed alpha -3, pitch input +0.07).
+    ALPHA_TRIM_IN_HAC: bool = False
     LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
     LIFT_LOOP_MIN_Q_PA: float = 500.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
