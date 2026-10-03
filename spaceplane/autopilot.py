@@ -6953,6 +6953,7 @@ class Autopilot:
         by half again since the last line, so the log shows the schedule
         without a line per second.
         """
+        self.pitch_decel(snap)
         if getattr(self.cfg, "ATTITUDE_PITCH_AIR", False) and not getattr(
                 self.cfg, "ATTITUDE_TIME_TO_PEAK_LIVE", False):
             self.retune_pitch_air(snap)
@@ -6988,6 +6989,32 @@ class Autopilot:
                 snap.ut, "attitude retune at q=%.0f Pa: time_to_peak "
                          "(pitch %.1f, roll %.1f, yaw %.1f) s as applied"
                 % ((snap.dynamic_pressure,) + tuple(want)))
+
+    def pitch_decel(self, snap):
+        """``ATTITUDE_PITCH_DECEL_S``: kRPC's pitch ``deceleration_time``
+        from the cone on.  kRPC turns an attitude error into a target rate of
+        about error / deceleration_time (default 5 s) and runs its rate PID
+        on that, so a 10 deg flare error asks for 2 deg/s, which the
+        restoring moment eats: LOG4927 commanded 6.7-11.8 deg of alpha for
+        six seconds, flew 2.1-2.6, at a flat +0.24 of pitch input.  Roll and
+        yaw keep kRPC's default.  Set once; logged."""
+        want = float(getattr(self.cfg, "ATTITUDE_PITCH_DECEL_S", 0.0))
+        if (want <= 0.0 or getattr(self, "_pitch_decel_set", False)
+                or not self.autopilot_engaged
+                or self.state not in (HAC, APPROACH, FLARE)):
+            return
+        self._pitch_decel_set = True
+        try:
+            had = tuple(self.autopilot.deceleration_time)
+            self.autopilot.deceleration_time = (want, had[1], had[2])
+            now = tuple(self.autopilot.deceleration_time)
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "pitch deceleration_time not set: %s"
+                               % exc)
+            return
+        self.logbook.event(
+            snap.ut, "attitude deceleration_time (%.1f, %.1f, %.1f) -> "
+                     "(%.1f, %.1f, %.1f) s as kRPC applies it" % (had + now))
 
     def retune_pitch_air(self, snap):
         """``ATTITUDE_PITCH_AIR``: pitch follows the authority the air adds.
