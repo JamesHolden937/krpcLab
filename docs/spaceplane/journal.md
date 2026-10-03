@@ -3774,3 +3774,42 @@ that flew a normal range (LOG4640, 4645, 4650) slipped 18-22 deg, earlier
 (Mach ~5). Control arm: clean 2/8 (LOG4649, 4654). The sweep's clean
 fraction across three batches is **6/21**; base **0/16**. Roll coupling
 through sin(alpha) is not the discriminator at this size of unload.
+
+## Session, 2026-10-02 afternoon: the flare does not flare; the farm gets PyPy
+
+**The flare never reaches its alpha in the game.** Over ~80 game shuttle2
+flights the flare commands 9-16 deg and flies 3-4 (LOG4610, 4639, 4647);
+doors are entered at 20-40 m/s of sink, touchdowns at 65-107 m/s and 7-25 m/s
+of sink. The sim tracks the same commands within ~1 deg, so only the farm
+can see it. New `pin=total/assist/err` column (kRPC's `Control.pitch` reads
+back the *sum* of game, manual and autopilot input -- decompiled
+`PilotAddon.OnFlyByWire`): base flares sit at **+0.13..+0.31 total input**
+with a 1-7 deg lag -- kRPC is not saturated, it simply under-commands
+(rot-assist*, LOG4700-4720).
+
+**`PITCH_ASSIST` (off): refuted as built.** kRPC *adds* client manual input
+to its output, so a manual pitch integrated on the pitch pointing error
+(commanded nose . roof) was meant to supply the missing integral. Sim: v1 on
+(cmd - signed alpha) wound both integrators to +-1 (LOG4680); v2 on the
+pointing error wound up on kRPC's ~1-2 deg attenuation band (LOG4695); v3
+with a 2 deg deadband landed 2/2 intact on the low bench vs 0/2 (LOG4696-4699).
+Game, 8 v 8 from orbit (`rot-assist-1002` CPython rounds 0-1,
+`rot-assist2-1002` PyPy rounds 0-1; fingerprint 29664148/aed153ef, fields
+added only): **the assist ran to -0.9..-1.0 (full nose-down) in 6/8**, dove
+out of the cone 3.5-6.4 km short, doors at 55-91 m/s of sink. Base 8: cone
+exits mostly "out of height" too, 3 landed on land with parts left (LOG4700
+523 m from the midpoint, 8 parts; LOG4718 959 m along, 6 parts). The
+runaway in the game but not the sim says the sign of manual pitch or of the
+roof differs between them -- verify directly before any re-fly (HANDOFF).
+
+**kspSim**: `world.py` now sums manual and autopilot inputs as kRPC does;
+`Control.pitch/roll/yaw` getters return the total.
+
+**Farm**: PyPy for the autopilot (`rotfly.sh` `PYPY=1`): propagator 20 s vs
+120 s offline, cone ticks 21 -> 8 ms; a round from orbit 8 min vs 20.
+Textures stripped from every clone (GameData 2.4 -> 1.1 GB; RSS unchanged
+at ~3.6-4.0 GB, the 4 GB is anonymous heap). `-nographics` hangs. Six
+instances ran together at 6 GB free, cores 23-49% user, swap 1.5 GB after.
+Benches `qs_shuttle2_low` and `qs_shuttle2_gate` are invalid in the game
+(the former crashes 6-8 km off the centreline into hills, the latter starts
+643 m from the gate).

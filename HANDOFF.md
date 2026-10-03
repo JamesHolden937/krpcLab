@@ -1,77 +1,83 @@
 # HANDOFF — read this first, rewrite it last
 
 Snapshot of the last session; history is in `docs/spaceplane/journal.md`
-("Session, 2026-10-02 morning: the slow reversal").
+("Session, 2026-10-02 afternoon").
 
-Last written **2026-10-02 ~13:15**, spaceplane. Defaults fingerprint
-**`d695195b`** (no default changed this session; the hash moved only because
-new fields were added). Offline suite OK (858). Committed (this file is the last commit).
-Farm **stopped**, inhibitor **released**, no sims running.
+Last written **2026-10-02 ~17:50**, spaceplane + farm. Defaults fingerprint
+**`aed153ef`** (no default changed; fields added). Offline suite OK (861).
+Committed (this file is the last commit). Farm **stopped**, inhibitor
+**released**, no sims running.
 
 ## Where it stands
 
-Goal ("lands mostly reliably") **not reached**. The entry scatter is still
-the bank reversal at Mach 5-4 (q 1500-5000): on the best stack
-(chain6 + `RCS_PITCH_OFF_IN_GLIDE`, exact string in `arm0` of
-`logs/rot-sweep-1002.txt`) **every one of 16 base flights today slipped
-17-51 deg**. The farm's absolute level drifted down from last session (within
-5 km 5/16 today vs 11/16 then; intact 0/16 vs 3/16).
+Goal (lands on the runway reliably) **not reached**. Two blockers, in order
+of what caps the success rate:
 
-## Built this session (all off)
+1. **The landing chain.** Even arrivals within 1-2 km break up: the flare
+   commands 9-16 deg of alpha and the game flies 3-4 with only +0.13..+0.31
+   of pitch input -- kRPC under-commands against the airframe's restoring
+   moment (the sim does not show it). Doors 20-40 m/s of sink.
+2. **The hypersonic bank reversal** (unchanged from the morning, see the
+   journal): slip 17-51 deg on every base flight, `GLIDE_BANK_SWEEP` clean
+   6/21.
 
-| flag | what | measured |
+## Built this session
+
+| flag / tool | what | measured |
 |---|---|---|
-| **`GLIDE_BANK_SWEEP`** (+`_UNTIL_MACH=1.0` to fly it) | the user's "one huge reversal": hold a side, cross *slowly* (<=1 deg/s, `_RATE_MAX`) to the other, hold; the crossing's start and rate are solved every tick for the cross-track at the gate; the range solve flies the same `trajectory.BankPlan`; relay below Mach 1 | farm 13 crossings (`rot-sweep-1002`, `rot-sweep2-1002`): **slip 2.8-3.3 in 4, 15-28 in 9** (base: 17-51 in all 16). Bimodal, no discriminator found (loop rate, instance, RCS, rate, fuel trim). Landing unresolved at n=8 |
-| `GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG` | cap alpha while crossing (sin alpha coupling) | **null at 25**, `rot-unload-1002`: the three normal-range flights slipped 18-22; four others ran +182..+194 km long (the plan does not model the cap). Sweep clean fraction over three batches **6/21**, base 0/16 |
-| `GLIDE_SINGLE_REVERSAL` | one fast flip, timed by a signed propagation | offline: 21 km off at Mach 2 (the post-flip magnitude differs from the planned one). Not flown |
-| `GLIDE_BANK_MIN_DEG` | a glide-only bank floor (the 30 is the old craft's) | not flown; the floor binds 2-27% of hypersonic ticks |
-
-Settled along the way: **lower alpha does not shorten the shuttle's glide**
--- range falls monotonically with alpha (offline from LOG4498's table), alpha
-already flies to the plateau edge. A sweep slow *throughout* cannot shed the
-energy (+-70 averages cos 0.77 vs ~0.5 needed: sim +57 km long). Holding one
-side subsonically spirals (5 km turn radius). Handback below Mach 2: 11-16 km
-long at the cone in the sim -- retired.
+| `PITCH_ASSIST` (off) | manual pitch, integrated on (commanded nose . roof) past a 2 deg band, added to kRPC's output (kRPC sums them) | sim fine; **game: runs to -1 (full nose-down) in 6/8**, dives out of the cone. Refuted as built -- sign suspect |
+| `pin=total/assist/err` | log column on every flight | base flares +0.13..+0.31 total |
+| kspSim | manual + autopilot inputs summed; getters return the total | |
 
 ## Next, in order
 
-0. **The user's call, try first: a single *fast* reversal, timed by the
-   slow reversal's planner.** The slow crossing starts at Mach ~5.8, q ~1000
-   and lingers near level ~100 s while q climbs to 3000-5000; the bad
-   crossings begin slipping at q ~1500, part-way through. A fast flip
-   started at the same moment is done in 10-15 s, before q 1500 -- and the
-   three crossings that started at q ~700 were all clean. No new code: the
-   `GLIDE_BANK_SWEEP` planner at full roll rate *is* the single reversal,
-   with the plan-aware range solve that the offline `GLIDE_SINGLE_REVERSAL`
-   lacked (it flipped on a 30 deg plan and the solve then flew 18: 21 km off
-   at Mach 2). Fly, interleaved against the 1 deg/s version (8 v 8, both on
-   the best stack + `GLIDE_BANK_SWEEP=True;GLIDE_BANK_SWEEP_UNTIL_MACH=1.0`):
-   `GLIDE_BANK_SWEEP_RATE_DEG_S=8;GLIDE_BANK_SWEEP_RATE_MIN_DEG_S=6;GLIDE_BANK_SWEEP_RATE_MAX_DEG_S=10`.
-   Screen 8 in kspSim first (~2 min) to check the planner still converges
-   at that rate. Read slip in the crossing (the journal's awk), the q at
-   which the lean passes zero, and the cone arrival.
-1. **The bimodal crossing** (three mechanisms now refuted on it: rate,
-   RCS state, alpha unload -- change the method: record the crossing with
-   `kspSim/tools/flighttest.py --attach` on a farm flight and look at the
-   lateral moments, rather than a fifth flag). Clean ones hold slip within +-2 from q 1000 to
-   2400; bad ones are already -2..-5 at q ~1500, lean ~-20, always the same
-   sign (crossing to +1 every time). Something is different as the crossing
-   starts. Weak lead: the roll rate measured in COAST (clean 8.6-14.9, bad
-   6.1-10.8 deg/s). Worth asking the user about yaw authority on the craft
-   (the twin fins were their fix for departures) -- the vehicle cannot hold
-   slip near wings level at q > 1500 in 70% of crossings.
-2. Crossings that started at q ~700 (three, after an accidental Mach-7
-   crossing) were all clean. The start is set by geometry (~0.3 of the
-   glide) and cannot simply be moved; a deliberate early pre-crossing costs
-   ~25 km of range unless the plan models it.
-3. The landing chain on good arrivals (unchanged).
+0. **Check the sign before anything else** (10 min, one instance): on a
+   flight, autopilot engaged holding a fixed attitude, set
+   `vessel.control.pitch = +0.3` and read whether alpha rises or falls; and
+   check `snap.roof` against the nose's up component.  The sim says + is
+   nose-up; the game's runaway to -1 says one of them disagrees.  If it is
+   the sign, fix it and fly 8 v 8 again.
+1. If the sign is right: replace the trim with a direct gain change --
+   kRPC's pitch PID gains (`auto_tune` off, kp/ki computed for the measured
+   surface torque) in APPROACH/FLARE only -- or a full own pitch loop.
+2. Then the approach: doors at 20-40 m/s sink are a design choice (steep
+   final); with a working flare it may be enough.
+3. The hypersonic reversal (morning's list, unchanged).
+
+## Farm: how to make it faster (state and next steps)
+
+Now: **PyPy** for the autopilot (`PYPY=1 ./spaceplane/tools/rotfly.sh ...`;
+6x cheaper propagation, a round from orbit **8 min vs 20**), textures
+stripped from clones (`mkclone.sh` does it), and `rotfly.sh`'s time-scale
+ceiling is `TS` (default **20**; the governor holds each phase to its control
+interval -- read the `loop rate` line). **Six instances (0-5) ran together**
+with 6 GB free, cores 23-49% user, swap 1.5 GB after: use six.
+Speeds achieved per flight: 1.0-5.6x, ~3x mean; the game always delivered
+what was asked (`common/timescale.status`), so the **governor is the limit**:
+ticks cost 13-83 ms wall against a 0.1 game-s interval on final.
+
+To make it faster, in order:
+1. **kRPC calls per tick.** The tick cost is now round trips, not maths --
+   approach ticks went 9 -> 20 ms going from 4 to 6 instances (frames slower
+   under load).  Count the non-stream RPCs per tick in each phase (wrap the
+   connection) and turn repeated reads into streams, batch the writes, skip
+   writes that do not change (`set_direction_and_up`, `time_to_peak`, gear,
+   brakes, flaps, `control.*`).  kRPC server settings are already
+   `oneRPCPerUpdate=False`, `blockingRecv`, `maxTimePerUpdate=10000`.
+2. **The one-off stalls**: a ~15 s DRAIN tick every flight and DEORBIT ticks
+   of 180-260 ms that drop the governor to 1x (it governs on the worst tick).
+3. **A seventh instance** if cores stay <90% (each KSP ~2 cores, ~3.8 GB).
+4. RAM per instance: the 4 GB is anonymous heap (Mono + Unity), not DLLs or
+   textures; `-nographics` hangs; part stripping (`partstrip.py`, 4.3 -> 2.0
+   GB) needs the cross-mod texture fix in docs/testInstances.md.
+5. A compiled propagator only once 1-2 leave the maths as the limit again.
 
 ## Traps paid this session
 
-- `farm start` again left two instances without ports after 10 min;
-  `./start.sh 0 1` on just those brought them up in a minute.
-- Swap reached 8.4 GB after an 85-minute batch: restart before every batch.
-- `&& tail` after `unittest` hides a failure from the chain: one commit went
-  in with a failing source-inspection test (fixed next commit).
-- Sim screening was ~2 min per 8-flight arm and caught three design errors
-  (energy, the subsonic spiral, the Mach-2 handback) before any farm time.
+- A tool call the user "rejected" had already run (kwinRun.sh edit, ksp4
+  booted with -nographics, mkclone.sh edited) -- check state after a reject.
+- Editing `rotfly.sh` while a batch runs it can garble the batch's tail:
+  bash reads scripts incrementally. Edit a copy.
+- Idle kspSim servers again sat beside the farm; kill them before a batch.
+- `kwinRun.sh`'s exec line: the comment inside the continuation ends the
+  command, so instances run with `-force-d3d11` only (left as is).
