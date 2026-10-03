@@ -3,7 +3,7 @@
 Snapshot of the last session. History is in `docs/spaceplane/journal.md`
 ("Session, 2026-10-02 night -> 10-03: landing from cone saves").
 
-Last written **2026-10-03 ~01:05**, mid-session checkpoint. Defaults
+Last written **2026-10-03 ~02:05**, mid-session checkpoint. Defaults
 fingerprint is **`f6a13fa5`**. It changed only by new fields (all off) and one
 bug fix in an off flag (`ALPHA_TRIM_LOOP`). No default flight law changed.
 Offline spaceplane suite OK. Committed. The farm may still be **up**, and the
@@ -30,6 +30,16 @@ APPROACH_CAPTURE_MARGIN=0.15
 None of it is a default yet. It has not been flown from orbit, nor on the old
 craft (`qs_plane`). Both are required before promoting any of it.
 
+**`FLARE_PITCH_P=0.08` on top of it: 13 intact of 24** from the cone saves
+(manual pitch input proportional to the flare's pitch error, summed with
+kRPC's; 0.12 is worse). It is the first lever with both a mechanism (flare
+alpha error 5.5-6.7 -> 2.6-4.0 deg) and an outcome.
+
+From orbit (`rot-orbit-1003`): the **old craft loses 4/4 on the defaults**
+and lands 4/4 with 18-21/23 parts on the stack + `FLARE_PITCH_P=0.08` (hard
+8 m/s contacts, ~100 m rollout drift). The shuttle from orbit is still
+limited by the arrival (+5.5, +11 km on two of four).
+
 ## Flags added this session (all off by default)
 
 | flag | measured |
@@ -47,21 +57,17 @@ Also: `APPROACH_CAPTURE_MARGIN` 0.35 -> 0.15 took the door cross-track from
 
 ## Blocker and next step
 
-**The flare does not pull up.** It commands 7-12 deg and flies 2-3 deg at a
-flat +0.24-0.4 of pitch input (LOG4927). This is not the oscillation
-mitigation (null), and a stiffer kRPC tune departs. Next, in order:
-
-1. **Own the pitch axis in the flare** (method change). kRPC adds client
-   manual input to its output, so `PITCH_ASSIST`-style feedforward is
-   possible. A *feedforward* (input proportional to commanded alpha minus
-   trim alpha) has no integrator to wind; `PITCH_ASSIST` wound to -1.
-   Alternatively disengage kRPC for the flare's ~8 s and fly PD on pitch,
-   holding roll level and yaw to the runway. Screen whatever is built in
-   kspSim first.
-2. Door energy: doors at 77-170 m and 15-35 m/s sink. The intact ones
-   entered at 95-120 m/s from 310-520 m.
-3. Then: the cone's high handover on defaults, and the stack from orbit and
-   on `qs_plane`.
+1. **Promote the stack + `FLARE_PITCH_P=0.08` toward defaults**, one
+   comparison at a time, on both craft. The defaults lose the old craft
+   4/4 from orbit, so the stack is better than the baseline there. Confirm
+   with n>=8 per craft from orbit before committing a default.
+2. The old craft: contacts at 8 m/s every flight (flare saturated at
+   alpha 14-15?), and ~100 m of rollout drift.
+3. The shuttle from orbit: the arrival scatter (+5.5..+11 km), the old
+   blocker 2, the hypersonic reversal.
+4. kRPC's pitch under-command is now patched by `FLARE_PITCH_P` in the
+   flare only. The same proportional assist in the approach is untested.
+   Stiffening kRPC's own tune there departs.
 
 ## Traps paid this session
 

@@ -3933,3 +3933,30 @@ Findings, in the order they were found:
 **Pooled, the capture stack lands 6 intact of 36** (capture, decel, oscoff),
 against 0/12 on defaults. The rest are: flares that do not pull up (kRPC
 tracking), doors low on energy (77-170 m, 15-35 m/s sink), and departures.
+
+**`FLARE_PITCH_P` -- the first lever with a mechanism and an outcome.**
+kRPC sums a client's manual pitch with its own output, so a manual input
+proportional to the flare's pitch pointing error (no integrator, nothing to
+wind) supplies the authority kRPC's tune leaves out. On the capture stack,
+cone saves:
+
+| batch | gain | intact (31/31) | flare alpha error mean / rms |
+|---|---|---|---|
+| capture, decel, oscoff | 0 | 6 / 36 | 5.5-6.7 / 8.3-9.7 |
+| rot-flarep-1003 (LOG4979-90) | 0.04 | 5 / 12 | 4.0 / 6.4 |
+| rot-flarep2-1003 (LOG4991-5014) | 0.04 | 5 / 12 | 4.2 / 5.8 |
+| rot-flarep2-1003 | 0.08 | 6 / 12 | 2.6 / 4.4 |
+| save-flarep3-1003 (LOG5015-38) | 0.08 | 7 / 12 | 4.0 / 11.9 |
+| save-flarep3-1003 | 0.12 | 4 / 12 (1 lost) | 4.1 / 8.5 |
+
+0.08 pooled: **13/24 intact**. (rot-flarep2 was unbalanced across saves --
+`rotfly.sh` with 12 arms on 6 instances flies only arms 0-8; savefly in the
+scratchpad pins save i to instance i and alternates the arm.)
+
+**From orbit** (`rot-orbit-1003`, LOG5039-50, 4 each): `qs_plane` on the
+defaults **lost 4/4** (touchdowns 61-65 m/s); `qs_plane` with the stack +
+`FLARE_PITCH_P=0.08` put 4/4 down with 18-21/23 parts (doors +17..+30 m off
+the centreline, contacts 8 m/s at 44 m/s every time, then ~100 m of drift
+in the rollout); `qs_shuttle2` with the stack 0/4 intact -- two arrivals
++5.5 and +11 km (the entry, upstream of tonight), the two near ones 16 and
+18/31.
