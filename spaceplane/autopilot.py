@@ -6499,7 +6499,13 @@ class Autopilot:
                 and self.main_wheels_grounded()):
             self.brakes_full(snap)
         self.ground_spoiler(snap)
-        if self.touched_down(snap, height):
+        # ``ROLLOUT_ON_MAIN_CONTACT``: the mains reporting ``grounded`` is
+        # the touchdown.  KSP's ``situation`` said "landed" 1.4 s later on
+        # LOG4836, and for that 1.4 s the flare pulled the nose up on the
+        # wheels (+0.44 input), bounced, and came down at 6.7 m/s.
+        mains = (getattr(self.cfg, "ROLLOUT_ON_MAIN_CONTACT", False)
+                 and self.main_wheels_grounded())
+        if mains or self.touched_down(snap, height):
             self.touchdown_ut = snap.ut
             self.touchdown_speed = vec.norm(snap.velocity)
             self.enter(ROLLOUT, snap.ut, "sink=%.2f speed=%.1f" %
@@ -6540,9 +6546,20 @@ class Autopilot:
         # differ by fifty degrees and only one of them is where the wheels
         # are going.  ``aim`` here commanded the vehicle to yaw into its own
         # slip and it spun.
-        self.aim_runway(guidance.rollout_alpha(
+        ground_alpha = guidance.rollout_alpha(
             self.cfg, speed, snap.ut - (self.state_since or snap.ut),
-            self.rollout_entry_alpha, env=self.env), snap)
+            self.rollout_entry_alpha, env=self.env)
+        # ``ROLLOUT_HOLD_TAIL_FRACTION``: the hold is a fraction of this
+        # airframe's own tail-strike angle, not the old craft's 8 deg -- on
+        # the shuttle (tail 11.0 deg) 8 deg held on the wheels at 70 m/s
+        # plus kRPC's overshoot put the tail down (LOG4819: 22-27 deg).
+        frac = float(getattr(self.cfg, "ROLLOUT_HOLD_TAIL_FRACTION", 0.0))
+        if frac > 0.0:
+            tail = getattr(self.telemetry, "tail_angle_deg", None)
+            if tail is None:
+                tail = self.cfg.TAIL_ANGLE_FALLBACK_DEG
+            ground_alpha = min(ground_alpha, frac * float(tail))
+        self.aim_runway(ground_alpha, snap)
         up = vec.unit(snap.position)
         along = self.env.runway.horizontal(self.end, self.end["along"])
         across = vec.unit(vec.cross(up, along))

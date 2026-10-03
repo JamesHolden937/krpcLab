@@ -2857,6 +2857,12 @@ class Config:
     # it sits on its tail instead -- 15.2 degrees did that and scraped
     # twenty parts off -- so this is deliberately shallow.
     ROLLOUT_HOLD_ALPHA_DEG: float = 8.0
+    # The hold capped at this fraction of the measured tail-strike angle
+    # (0 = off).  See ``Autopilot.run_rollout``.
+    ROLLOUT_HOLD_TAIL_FRACTION: float = 0.0
+    # Enter ROLLOUT when the main wheels report ``grounded`` rather than
+    # waiting for KSP's ``situation`` (see ``Autopilot.run_flare``).
+    ROLLOUT_ON_MAIN_CONTACT: bool = False
     # **And the ramp that was supposed to deliver it never ran once**, which
     # is the same fix failing twice.  It was written against a touchdown at
     # "60-100 m/s" -- the speeds an ``APPROACH_FACTOR`` of 2.40 produced --
