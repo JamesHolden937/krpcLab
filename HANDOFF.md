@@ -15,7 +15,7 @@ reached**.
 
 | from orbit, current defaults | intact | damaged, on the ground | destroyed |
 |---|---|---|---|
-| shuttle `qs_shuttle2` (n=14: rot-orbit2 stack arm + rot-newdef) | 2 | 8 | 4 (incl. +9.5 km arrivals) |
+| shuttle `qs_shuttle2` (n=14: rot-orbit2 stack arm + rot-newdef) | 2 | 10 (6-28/31 parts) | 2 (one from a +9.5 km arrival) |
 | old craft `qs_plane` (n=14) | 5 | 9 (6-22/23 parts) | 0 |
 | *both, on the defaults before tonight* | 0 | 1 | 11 of 12 |
 
