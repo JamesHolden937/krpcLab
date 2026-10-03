@@ -4661,6 +4661,9 @@ class Config:
     # in this kRPC build: ATTITUDE_PITCH_DECEL_S was a disconnected knob,
     # rot-decel-1003.)
     ATTITUDE_OSC_MITIGATION_OFF: bool = False
+    # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
+    # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
+    ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
     # Measure the achieved angle of attack signed (kRPC's, in the pitch
     # plane) rather than as the unsigned nose-to-velocity angle, which reads
     # a nose below the airflow as above it.  See ``Telemetry``.

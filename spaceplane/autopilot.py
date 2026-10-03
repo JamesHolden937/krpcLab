@@ -7085,8 +7085,14 @@ class Autopilot:
             return
         pitch = float(self.cfg.ATTITUDE_SLEW_FACTOR) * math.sqrt(
             inertia / total)
-        pitch = min(static[0], max(float(self.cfg.ATTITUDE_TIME_TO_PEAK_S),
-                                   pitch))
+        # ``ATTITUDE_PITCH_AIR_FLOOR_S``: this retune's own floor (0 = the
+        # static ``ATTITUDE_TIME_TO_PEAK_S``).  On the shuttle the air figure
+        # sits under the 3 s floor all the way down, and kRPC's tune at 3 s
+        # (gains 2.7/1.25/0) leaves the flare 5-7 deg short at +0.3-0.4 of
+        # input (rot-decel-1003, rot-oscoff-1003).
+        floor = float(getattr(self.cfg, "ATTITUDE_PITCH_AIR_FLOOR_S", 0.0)
+                      or self.cfg.ATTITUDE_TIME_TO_PEAK_S)
+        pitch = min(static[0], max(floor, pitch))
         have = self._tuned_peak[0] if self._tuned_peak else static[0]
         if (self._retune_ut is not None and snap.ut - self._retune_ut
                 < float(self.cfg.ATTITUDE_RETUNE_S)):
