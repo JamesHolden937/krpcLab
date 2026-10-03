@@ -5937,6 +5937,18 @@ class TestLoopRate(unittest.TestCase):
         self.assertAlmostEqual(rate.interval("GLIDE"), before, places=6)
 
 
+class TestQuantumFollowsInterval(unittest.TestCase):
+    def test_the_glide_gets_a_coarser_frame_than_final(self):
+        from common.pacing import ScaleGovernor
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "timescale.txt")
+        gov = ScaleGovernor(path, maximum=20.0, quant_fraction=0.2)
+        gov.serve(1.0, 0.01)
+        self.assertIn("quant_s = 0.2000", open(path).read())
+        gov.serve(0.1, 0.01)
+        self.assertIn("quant_s = 0.0500", open(path).read())
+
+
 class TestPeakAfter(unittest.TestCase):
     """One slow tick is an event; the governor serves the ones that recur."""
 

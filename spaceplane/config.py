@@ -4378,6 +4378,11 @@ class Config:
     # The ceiling is computed from a mean tick cost and what binds is the tail:
     # a tick twice as expensive as the mean must still fit inside the interval.
     TIMESCALE_GOVERNOR_MARGIN: float = 0.7
+    # The plugin's frame quantum as a fraction of the phase's control
+    # interval (never below 0.05 s): the glide's 1 s tick gets 0.2 s per
+    # frame, the 0.1 s phases keep 0.05.  0 is a fixed 0.05 s.
+    # ``ScaleGovernor.quant_fraction``.
+    TIMESCALE_QUANT_FRACTION: float = 0.2
     # **Read-only kRPC calls asked together go in one round trip**
     # (``common.krpcbatch``): an aero-table row is fourteen
     # ``SimulateAerodynamicForceAt`` calls, and one at a time they cost 10-45

@@ -7224,16 +7224,19 @@ class Autopilot:
         def announce(previous, scale):
             self.logbook.event(
                 self.last_ut or 0.0,
-                "time scale: %s -> %.2fx for a %s tick (%.0f ms of work)"
+                "time scale: %s -> %.2fx for a %s tick (%.0f ms of work, "
+                "quantum %.2f s)"
                 % ("--" if previous is None else "%.2fx" % previous, scale,
-                   self.state, 1000.0 * (self.loop_rate.busy(self.state) or 0.0)))
+                   self.state, 1000.0 * (self.loop_rate.busy(self.state) or 0.0),
+                   getattr(getattr(self, "governor", None), "quant_now", 0.0)))
 
         return ScaleGovernor(
             path,
             maximum=self.cfg.TIMESCALE_GOVERNOR_MAX,
             minimum=self.cfg.TIMESCALE_GOVERNOR_MIN,
             margin=self.cfg.TIMESCALE_GOVERNOR_MARGIN,
-            on_change=announce)
+            on_change=announce,
+            quant_fraction=getattr(self.cfg, "TIMESCALE_QUANT_FRACTION", 0.0))
 
     def shutdown(self, reason):
         try:

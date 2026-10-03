@@ -341,7 +341,7 @@ class ScaleGovernor:
     DECAY = 0.9
 
     def __init__(self, path, maximum=8.0, minimum=1.0, margin=0.8,
-                 quant_s=0.05, on_change=None):
+                 quant_s=0.05, on_change=None, quant_fraction=0.0):
         self.path = path
         self.maximum = float(maximum)
         self.minimum = float(minimum)
@@ -350,6 +350,17 @@ class ScaleGovernor:
         # inside the interval.  This is that headroom.
         self.margin = float(margin)
         self.quant_s = float(quant_s)
+        # **The frame quantum follows the control interval.**  The plugin's
+        # ceiling is ``quantum x fps``, and a fixed 0.05 s quantum held the
+        # glide -- one command a game-second -- to 4.5x at the 90-170 fps a
+        # loaded instance renders in the air, when the governor was asking
+        # for 9-19x.  Physics stays at its fixed 0.02 s step and kRPC's
+        # attitude loop runs every step; the quantum only says how much game
+        # time one rendered frame (one kRPC service) may cover.  A fifth of
+        # the interval keeps a command's landing jitter small beside the
+        # interval it serves; ``quant_s`` stays the floor.
+        self.quant_fraction = float(quant_fraction)
+        self.quant_now = self.quant_s
         self.on_change = on_change
         self.commanded = None
         self.announced = None
@@ -361,7 +372,7 @@ class ScaleGovernor:
             with open(tmp, "w") as fh:
                 fh.write("mode = fixed\nscale = %.4f\nmax_scale = %.4f\n"
                          "quant_s = %.4f\n"
-                         % (scale, self.maximum, self.quant_s))
+                         % (scale, self.maximum, self.quant_now))
             os.replace(tmp, self.path)
             return True
         except OSError:
@@ -387,6 +398,10 @@ class ScaleGovernor:
                      else max(busy, self.DECAY * self.cost))
         scale = self.margin * wanted / self.cost
         scale = max(self.minimum, min(self.maximum, scale))
+        quant = max(self.quant_s, self.quant_fraction * wanted)
+        if quant != self.quant_now:
+            self.quant_now = quant
+            self.commanded = None       # a new quantum is always written
         # Only rewrite on a real change: the plugin re-reads twice a second
         # and a file being rewritten every tick is a file it reads half
         # written.  (It tolerates that -- see ``TimeScale.ReadConfig`` -- but
