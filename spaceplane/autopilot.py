@@ -31,6 +31,7 @@ import krpc
 from common import rcs, vec
 from common.logbook import Logbook
 from common.pacing import LoopRate, ScaleGovernor, sleeper
+from common.rpccount import RpcCounter
 from . import airbrake as airbrake_mod
 from . import airframe
 from . import guidance, rollrate, trajectory
@@ -463,6 +464,7 @@ class Autopilot:
         # What the control loop is achieving, per phase.  Written at shutdown
         # so that every log says which controller flew it -- see failure 63.
         self.loop_rate = LoopRate()
+        self.rpc = None             # common.rpccount.RpcCounter, set by main
         self.running = True
         self.finished_reason = None
         self.autopilot_engaged = False
@@ -7107,6 +7109,8 @@ class Autopilot:
         governor = self.scale_governor()
         while self.running:
             started = time.monotonic()
+            if self.rpc is not None:
+                self.rpc.tick(self.state)
             snap = self.tick()
             if self.state == DEORBIT and (
                     self.deorbit_dv is not None
@@ -7182,6 +7186,8 @@ class Autopilot:
             self.logbook.event(self.last_ut or 0.0, self.loop_rate.report())
         except Exception:                               # noqa: BLE001
             pass
+        if self.rpc is not None:
+            self.logbook.event(self.last_ut or 0.0, self.rpc.report())
         """Hand back to the player, deliberately, rather than try to save it."""
         try:
             self.logbook.event(self.conn.space_center.ut,
@@ -7473,7 +7479,9 @@ def main(argv=None):
         run = None
         try:
             conn = krpc.connect(**kwargs)
+            rpc = RpcCounter().install(conn)
             run = Autopilot(conn, cfg, logbook)
+            run.rpc = rpc
             if args.autostart:
                 run.panel.hide_start()
                 # **Through ``engage``, not straight into DEORBIT.**  This
