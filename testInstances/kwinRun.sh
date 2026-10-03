@@ -38,7 +38,7 @@ export DXVK_STATE_CACHE=1 DXVK_STATE_CACHE_PATH="$PREFIX"
 export WINEDEBUG=-all
 mkdir -p "\$__GL_SHADER_DISK_CACHE_PATH"
 cd "$DIR"
-exec umu-run "$DIR/KSP_x64.exe" -force-d3d11 \\
+exec umu-run "$DIR/KSP_x64.exe" -force-d3d11 ${KSP_EXTRA:-} \\
 # -popupwindow is KEPT.  Dropping it was tried and is worse: the load then
 # stalls at 1208 log lines instead of reaching the menu, so the popup window
 # hint is not what costs the window its focus.

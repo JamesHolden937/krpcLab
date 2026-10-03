@@ -133,6 +133,14 @@ exec gamescope \\
 LAUNCH
 chmod +x "$DIR/run-ksp.sh"
 
+# Part textures are not physics: drop them from the clone (its own hardlinks
+# only; base/ keeps them).  2026-10-02: GameData 2.4 -> 1.1 GB, boots in 40 s,
+# flies the bench as before; RSS ~unchanged at TEXTURE_QUALITY 3.
+find "$DIR/GameData" -iname "*.dds" -delete
+find "$DIR/GameData" -iname "*.png" -not -path "*kRPC*" \
+  -not -path "*Boosterland*" -not -path "*000_*" -delete
+rm -rf "$DIR/GameData/KSPCommunityFixes/PluginData/TextureCache"
+
 printf '%s\n' "$RPC" > "$DIR/.rpc_port"
 printf '%s\n' "$STREAM" > "$DIR/.stream_port"
 

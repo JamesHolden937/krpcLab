@@ -539,3 +539,26 @@ leaving one file holding an interleaving of two flights, which still looks
 exactly like a log. The claim is now `O_CREAT | O_EXCL`
 (`test_concurrent_logbooks_never_share_a_file`). Be sceptical of any
 parallel-flight log read before this.
+
+### RAM: where an instance's 4 GB is (2026-10-02)
+
+Measured on ksp4 in the flight scene with `qs_shuttle2` loaded (`/proc/PID/smaps`):
+**4.07 GB anonymous** (Mono heap plus Unity's native allocations) and ~250 MB
+file-backed, of which every DLL -- Unity's `Managed/` is 29 MB on disk -- is a
+few tens of MB.  Deleting DLLs is not a lever.
+
+- **Part textures deleted** from every clone (`*.dds`, non-plugin `*.png`, the
+  KSPCommunityFixes texture cache; `mkclone.sh` now does it): GameData 2.4 ->
+  1.1 GB on disk, boots to its port in 40 s, flies the bench as before (LOG4712),
+  same eight ReStock exceptions as an unstripped clone -- but RSS is ~unchanged
+  (4.0 GB): at `TEXTURE_QUALITY 3` the textures were never the weight.
+- **`-nographics`** (`KSP_EXTRA=-nographics ./start.sh N`, `kwinRun.sh` passes
+  `KSP_EXTRA` through): **hangs** -- the process sits at 76 MB for 5+ min and
+  never writes KSP.log.  Dead end.
+- What is left is the 489 compiled parts (`partstrip.py`, above: 4.26 -> 1.97
+  GB but wedged on a cross-mod texture reference).
+
+Note `kwinRun.sh`'s exec line: the comment between its continuation lines ends
+the command, so instances launch with `-force-d3d11` alone and the
+`-screen-*`/`-popupwindow` arguments after it are never passed.  Left as is --
+every measurement on the farm was taken that way.
