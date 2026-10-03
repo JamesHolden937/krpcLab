@@ -7090,8 +7090,13 @@ class Autopilot:
         # sits under the 3 s floor all the way down, and kRPC's tune at 3 s
         # (gains 2.7/1.25/0) leaves the flare 5-7 deg short at +0.3-0.4 of
         # input (rot-decel-1003, rot-oscoff-1003).
-        floor = float(getattr(self.cfg, "ATTITUDE_PITCH_AIR_FLOOR_S", 0.0)
-                      or self.cfg.ATTITUDE_TIME_TO_PEAK_S)
+        # Final and flare only: in the cone too it left three of six saves
+        # 0.6-1.0 km short and two 2.7-3.3 km across (rot-pfloor-1003) --
+        # the cone's constants were fitted to the softer pitch.
+        floor = float(self.cfg.ATTITUDE_TIME_TO_PEAK_S)
+        if self.state in (APPROACH, FLARE):
+            floor = float(getattr(self.cfg, "ATTITUDE_PITCH_AIR_FLOOR_S",
+                                  0.0) or floor)
         pitch = min(static[0], max(floor, pitch))
         have = self._tuned_peak[0] if self._tuned_peak else static[0]
         if (self._retune_ut is not None and snap.ut - self._retune_ut
