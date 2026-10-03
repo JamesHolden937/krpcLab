@@ -325,6 +325,10 @@ class Config:
     PITCH_ASSIST_FULL_DEG: float = 10.0
     # kRPC's own attenuation band: errors inside it are its to hold.
     PITCH_ASSIST_DEADBAND_DEG: float = 2.0
+    # Manual pitch input per degree of pitch pointing error in the FLARE,
+    # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
+    FLARE_PITCH_P: float = 0.0
+    FLARE_PITCH_P_MAX: float = 0.5
     ALPHA_TRIM_MIN_DEG: float = -4.0
     ALPHA_TRIM_MAX_DEG: float = 8.0
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0

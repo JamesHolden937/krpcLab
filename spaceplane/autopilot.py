@@ -6912,6 +6912,9 @@ class Autopilot:
         decays over the same time in ROLLOUT and is zero elsewhere."""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
+        if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
+            self.flare_pitch_p(snap, error)
+            return
         if not getattr(self.cfg, "PITCH_ASSIST", False):
             return
         trim = getattr(self, "_pitch_assist", 0.0)
@@ -6932,6 +6935,38 @@ class Autopilot:
                     trim = vec.clamp(trim + step, -1.0, 1.0)
         elif self.state == ROLLOUT:
             trim -= trim * min(1.0, dt / tp)
+        else:
+            trim = 0.0
+        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
+                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
+            try:
+                self.control.pitch = trim
+                self._pitch_assist_sent = trim
+            except Exception:                           # noqa: BLE001
+                pass
+        self._pitch_assist = trim
+
+    def flare_pitch_p(self, snap, error):
+        """``FLARE_PITCH_P``: manual pitch input proportional to the pitch
+        pointing error, FLARE only -- kRPC sums it with its own output.
+
+        The flare commands 7-12 deg and flies 2-3 at a flat +0.24-0.4 of
+        kRPC's input (LOG4927); the oscillation mitigation is not why
+        (rot-oscoff-1003), and a stiffer kRPC tune departs (rot-pfloor2-1003).
+        A proportional term has nothing to wind up, which is what sank
+        ``PITCH_ASSIST``.  Positive is nose-up: kRPC's own input is positive
+        on the same error.  Capped at ``FLARE_PITCH_P_MAX``; decays over
+        ``ROLLOUT_RAMP_S`` in ROLLOUT, zero elsewhere."""
+        trim = getattr(self, "_pitch_assist", 0.0)
+        last = getattr(self, "_pitch_assist_ut", None)
+        self._pitch_assist_ut = snap.ut
+        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
+        if self.state == FLARE and error is not None:
+            cap = float(self.cfg.FLARE_PITCH_P_MAX)
+            trim = vec.clamp(float(self.cfg.FLARE_PITCH_P) * error, -cap, cap)
+        elif self.state == ROLLOUT:
+            trim -= trim * min(1.0, dt / max(0.1, float(
+                self.cfg.ROLLOUT_RAMP_S)))
         else:
             trim = 0.0
         if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
