@@ -4061,6 +4061,9 @@ class Config:
     # A rate term on the speed law, per unit of measured dv/dt over g (0 =
     # off): damps the approach's phugoid.  See ``guidance.alpha_for_speed``.
     APPROACH_SPEED_KD: float = 0.0
+    # Fly the one-g angle at the target speed on final rather than a speed
+    # law (see ``guidance.approach``).
+    APPROACH_ALPHA_AT_TARGET: bool = False
     APPROACH_ACCEL_TAU_S: float = 1.0
     # How long a speed error is given to disappear.  A time, not a gain: it
     # multiplies nothing that has to be re-fitted when the mass, the air or

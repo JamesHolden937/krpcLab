@@ -1258,7 +1258,22 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``cos(18) = 0.95``.  So the command is the descent angle that holds the
     # speed, flown as the load that flies that angle.
     two_sided = getattr(cfg, "APPROACH_SPEED_PATH", False)
-    if two_sided:
+    at_target = getattr(cfg, "APPROACH_ALPHA_AT_TARGET", False)
+    if at_target:
+        # ``APPROACH_ALPHA_AT_TARGET``: the one-g angle *at the target
+        # speed*, plus a proportional pull-up when fast.  The airframe's own
+        # speed stability then holds the speed.  Both laws before it fed
+        # energy into the phugoid: trim at the *current* speed rises as the
+        # vehicle slows (failure 65), and the descent-for-speed law swung
+        # the door 43-122 m/s on a ~50 s period with or without a rate term
+        # (LOG4848, rot-kd-1002, rot-trim4-1002).
+        held = max(target, floor)
+        at = alpha_for_load(env, held, height, mass, gravity, 1.0)
+        if at is None:
+            at = trim
+        alpha = at + cfg.APPROACH_SPEED_KP * (speed - held)
+        two_sided = True        # the floor below is the target's, as above
+    elif two_sided:
         # The floor is not a clamp on the angle any more, it is a floor under
         # the *target*: "never slower than this" is a speed the law can fly
         # to, where "never less alpha than trim" was a command it could not
