@@ -309,7 +309,7 @@ class Config:
     # for eight seconds (LOG3994-4007), S-turning approaches ran 2-7 deg rms
     # short and dived (LOG3810-3849).  Integrates commanded - signed alpha
     # while the roll is settled and the slip small.  Off until paired.
-    ALPHA_TRIM_LOOP: bool = False
+    ALPHA_TRIM_LOOP: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # **An integral on the angle at the actuator, not on the command**
     # (``Autopilot.pitch_assist``).  kRPC *adds* a client's manual pitch to
     # its attitude controller's output (``PilotAddon.OnFlyByWire``), so a
@@ -327,16 +327,16 @@ class Config:
     PITCH_ASSIST_DEADBAND_DEG: float = 2.0
     # Manual pitch input per degree of pitch pointing error in the FLARE,
     # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
-    FLARE_PITCH_P: float = 0.0
+    FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
     FLARE_PITCH_P_MAX: float = 0.5
-    ALPHA_TRIM_MIN_DEG: float = -4.0
-    ALPHA_TRIM_MAX_DEG: float = 8.0
+    ALPHA_TRIM_MIN_DEG: float = -2.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
+    ALPHA_TRIM_MAX_DEG: float = 4.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0
-    ALPHA_TRIM_SLIP_TOL_DEG: float = 5.0
+    ALPHA_TRIM_SLIP_TOL_DEG: float = 15.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # ``ALPHA_TRIM_LOOP`` in the cone as well: the dive that hands the
     # approach 100+ m/s of sink starts there (LOG4803: commanded 2-10 deg,
     # kRPC's signed alpha -3, pitch input +0.07).
-    ALPHA_TRIM_IN_HAC: bool = False
+    ALPHA_TRIM_IN_HAC: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
     LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
     LIFT_LOOP_MIN_Q_PA: float = 500.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
@@ -2863,10 +2863,10 @@ class Config:
     ROLLOUT_HOLD_ALPHA_DEG: float = 8.0
     # The hold capped at this fraction of the measured tail-strike angle
     # (0 = off).  See ``Autopilot.run_rollout``.
-    ROLLOUT_HOLD_TAIL_FRACTION: float = 0.0
+    ROLLOUT_HOLD_TAIL_FRACTION: float = 0.4  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # Enter ROLLOUT when the main wheels report ``grounded`` rather than
     # waiting for KSP's ``situation`` (see ``Autopilot.run_flare``).
-    ROLLOUT_ON_MAIN_CONTACT: bool = False
+    ROLLOUT_ON_MAIN_CONTACT: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # **And the ramp that was supposed to deliver it never ran once**, which
     # is the same fix failing twice.  It was written against a touchdown at
     # "60-100 m/s" -- the speeds an ``APPROACH_FACTOR`` of 2.40 produced --
@@ -3733,7 +3733,7 @@ class Config:
     # the clock, reverses it.  The capture arrests this much offset in about
     # 1.4 km at the approach speed, which is why the S-turn stops there.
     APPROACH_SCURVE_CROSS_M: float = 300.0
-    APPROACH_SCURVE_STOP_M: float = 1500.0  # no weaving inside this of the aim
+    APPROACH_SCURVE_STOP_M: float = 4000.0  # no weaving inside this of the aim [default 2026-10-03, rot-orbit2-1003]
     # The same condition as a time to the flare's door rather than a distance
     # to the aim -- see ``guidance.approach``.  7.0 s is what the 1500 m was
     # delivering on ``logs/LOG2384`` (the weave stopped at 564 m with 57 m/s
@@ -4067,7 +4067,7 @@ class Config:
     APPROACH_SPEED_KD: float = 0.0
     # Fly the one-g angle at the target speed on final rather than a speed
     # law (see ``guidance.approach``).
-    APPROACH_ALPHA_AT_TARGET: bool = False
+    APPROACH_ALPHA_AT_TARGET: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
     APPROACH_ACCEL_TAU_S: float = 1.0
     # How long a speed error is given to disappear.  A time, not a gain: it
     # multiplies nothing that has to be re-fitted when the mass, the air or
@@ -4151,7 +4151,7 @@ class Config:
     # valve, pitch thrust is the pitch-up.  So: **pitch thrusters off for the
     # whole glide and cone** (``rcs_pitch_gate``), yaw and roll keep them.
     RCS_PITCH_OFF_IN_GLIDE: bool = False
-    APPROACH_BANK_BY_ROLL: bool = False
+    APPROACH_BANK_BY_ROLL: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # **Lead the capture by the roll-out** (``Autopilot.
     # approach_heading_lead``): the heading error the lateral law sees is
     # the one the vehicle will have after rolling level at its measured
@@ -4240,7 +4240,7 @@ class Config:
     # six seconds with the bank pinned at its limit throughout, and the
     # flare then froze it wings-level at +101.  The margin is what accounts
     # for the roll the law's own algebra assumes away.
-    APPROACH_CAPTURE_MARGIN: float = 0.35
+    APPROACH_CAPTURE_MARGIN: float = 0.15  # default 2026-10-03: the landing stack, rot-orbit2-1003
     # Past the threshold.  The offline landing touches down about 340 m short
     # of wherever this points, so 600 puts the wheels ~260 m in -- clear of
     # the threshold with 2.1 km of tarmac left, which at 53 m/s needs

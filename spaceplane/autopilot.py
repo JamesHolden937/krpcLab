@@ -1257,7 +1257,7 @@ class Autopilot:
                   if getattr(self.cfg, "ALPHA_TRIM_IN_HAC", False)
                   else (APPROACH, FLARE))
         if (not getattr(self.cfg, "ALPHA_TRIM_LOOP", False)
-                or self.state not in states):
+                or getattr(self, "state", None) not in states):
             return alpha_deg
         delta = getattr(self, "_alpha_trim", 0.0)
         last = getattr(self, "_alpha_trim_ut", None)

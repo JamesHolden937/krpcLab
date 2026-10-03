@@ -2456,7 +2456,8 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = Config()
+        # The capture law as written against LOG1366 (default 0.15 since 2026-10-03).
+        self.cfg = Config(APPROACH_CAPTURE_MARGIN=0.35)
         self.env = FakeEnv(self.cfg)
 
     def state(self, cross, lateral_rate, speed=115.0, height=1000.0,
@@ -5368,7 +5369,8 @@ class TestTheApproachNeverUnloadsTheWing(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = Config()
+        # The speed-path law (APPROACH_ALPHA_AT_TARGET replaced it 2026-10-03).
+        self.cfg = Config(APPROACH_ALPHA_AT_TARGET=False)
         self.env = FakeEnv(self.cfg)
 
     def test_the_floor_is_on_by_default(self):
@@ -6071,7 +6073,8 @@ class TestTwoSidedSpeed(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = Config()
+        # The speed-path law (APPROACH_ALPHA_AT_TARGET replaced it 2026-10-03).
+        self.cfg = Config(APPROACH_ALPHA_AT_TARGET=False)
         self.env = FakeEnv(self.cfg)
         self.mass, self.g = 6930.0, 9.81
 
