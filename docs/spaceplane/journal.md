@@ -3960,3 +3960,16 @@ the centreline, contacts 8 m/s at 44 m/s every time, then ~100 m of drift
 in the rollout); `qs_shuttle2` with the stack 0/4 intact -- two arrivals
 +5.5 and +11 km (the entry, upstream of tonight), the two near ones 16 and
 18/31.
+
+**From orbit at n=8, then promoted** (`rot-orbit2-1003`, LOG5051-74):
+`qs_shuttle2` on the old defaults 0 intact, **7/8 destroyed**, touchdowns
+60-170 m/s; on the stack + `FLARE_PITCH_P=0.08` 1 intact, 3 with 19-23/31,
+**none destroyed**, touchdowns 39-67; `qs_plane` on the stack 3/8 intact,
+all eight 20+/23. Promoted all twelve settings (bc2c494, fingerprint
+**6640ccdc**); three tests of the replaced laws now pin their configuration,
+and `alpha_trim_loop` reads `state` with a getattr (a bare test Autopilot has
+none). Verified on the committed defaults with no `--set`
+(`rot-newdef-1003`, LOG5075-86, 6 each): shuttle 1 intact + 28, 17, 16/31,
+two destroyed (one from a +9.5 km arrival); old craft 2 intact + 21, 20/23,
+two broken up to 6-7 parts in the rollout. Old-craft rollouts end 100-200 m
+off the centreline. Full suite 865 OK.
