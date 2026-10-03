@@ -5953,6 +5953,21 @@ class TestPeakAfter(unittest.TestCase):
         rate.sample("DEORBIT", 0.2, 0.02)
         self.assertAlmostEqual(rate.peak_after("DEORBIT", 1), 0.5)
 
+    def test_a_window_forgets_the_start_but_not_a_recent_solve(self):
+        from common.pacing import LoopRate
+        rate = LoopRate()
+        for i in range(3):
+            rate.sample("GLIDE", float(i), 0.12)        # start-up ticks
+        for i in range(3, 200):
+            rate.sample("GLIDE", float(i), 0.015)
+        self.assertAlmostEqual(rate.peak_after("GLIDE", 1, 60.0), 0.015)
+        self.assertAlmostEqual(rate.peak_after("GLIDE", 1), 0.12)
+        rate.sample("DEORBIT", 0.0, 0.8)
+        rate.sample("DEORBIT", 0.1, 0.5)
+        for i in range(2, 400):
+            rate.sample("DEORBIT", 0.1 * i, 0.02)
+        self.assertAlmostEqual(rate.peak_after("DEORBIT", 1, 60.0), 0.5)
+
     def test_a_phase_with_one_tick_governs_on_it(self):
         from common.pacing import LoopRate
         rate = LoopRate()

@@ -7167,7 +7167,8 @@ class Autopilot:
                 if getattr(self.cfg, "GOVERN_ON_PEAK", False):
                     cost = self.loop_rate.peak_after(
                         self.state,
-                        getattr(self.cfg, "GOVERN_PEAK_SKIP", 0)) or cost
+                        getattr(self.cfg, "GOVERN_PEAK_SKIP", 0),
+                        getattr(self.cfg, "GOVERN_PEAK_WINDOW_S", 0.0)) or cost
                 governor.serve(interval, cost)
             wait(interval, ut)
         return self.finished_reason

@@ -16,6 +16,8 @@ The cost is one ``space_center.ut`` round trip per sleep, which is why this
 estimates the current time ratio and sleeps most of the way in one shot rather
 than polling in a tight loop.
 """
+import collections
+import heapq
 import os
 import time
 
@@ -188,6 +190,7 @@ class LoopRate:
     def __init__(self):
         self.phases = {}            # phase -> [interval, busy, ticks]
         self.tops = {}              # phase -> its slowest ticks, worst first
+        self.recent = {}            # phase -> deque of (ut, busy)
         self._last_ut = None
         self._last_phase = None
 
@@ -201,6 +204,10 @@ class LoopRate:
         tops.append(busy)
         tops.sort(reverse=True)
         del tops[8:]
+        recent = self.recent.setdefault(phase, collections.deque())
+        recent.append((ut, busy))
+        while recent and ut - recent[0][0] > self.WINDOW_KEEP_S:
+            recent.popleft()
         if self._last_ut is not None and phase == self._last_phase:
             step = ut - self._last_ut
             # A phase change, a reverted save or a warp can put anything here;
@@ -240,7 +247,10 @@ class LoopRate:
         row = self.phases.get(phase)
         return row[3] if row and len(row) > 3 else None
 
-    def peak_after(self, phase, skip):
+    # The longest window ``peak_after`` can be asked for.
+    WINDOW_KEEP_S = 600.0
+
+    def peak_after(self, phase, skip, window_s=0.0):
         """The phase's slowest tick once its ``skip`` worst are set aside.
 
         **One tick is an event, two are a property of the phase.**  The
@@ -251,7 +261,21 @@ class LoopRate:
         tick that recurs -- the deorbit burn's propagations, 0.8 s and 0.5 s
         -- still governs at ``skip`` 1, which is what failure 91 needs.
         """
-        tops = self.tops.get(phase)
+        if window_s and window_s > 0.0:
+            # **Only the last ``window_s`` game-seconds.**  The glide's
+            # slowest ticks are its first few (90-130 ms against a 13-17 ms
+            # mean thereafter), and a whole-phase peak held all 500 seconds
+            # of it at 4x for them.  A window in game time, not ticks, so the
+            # deorbit's pre-ignition solve still governs the whole 3 s burn
+            # that follows it.
+            recent = self.recent.get(phase)
+            if not recent:
+                return None
+            newest = recent[-1][0]
+            costs = [b for u, b in recent if newest - u <= window_s]
+            tops = heapq.nlargest(int(skip) + 1, costs)
+        else:
+            tops = self.tops.get(phase)
         if not tops:
             return None
         return tops[min(int(skip), len(tops) - 1)]

@@ -3314,6 +3314,10 @@ class Config:
     # when every other tick could serve 20x.  0 is the old undecayed peak.
     # ``LoopRate.peak_after``.
     GOVERN_PEAK_SKIP: int = 1
+    # ... over only the last this-many game-seconds of the phase; 0 is the
+    # whole phase.  Long enough that the deorbit's pre-ignition solve (0.8 s,
+    # ~2 game-s before ignition) still governs the burn after it.
+    GOVERN_PEAK_WINDOW_S: float = 60.0
     DEORBIT_ALIGN_DEG: float = 8.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
