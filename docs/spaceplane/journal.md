@@ -3813,3 +3813,52 @@ instances ran together at 6 GB free, cores 23-49% user, swap 1.5 GB after.
 Benches `qs_shuttle2_low` and `qs_shuttle2_gate` are invalid in the game
 (the former crashes 6-8 km off the centreline into hills, the latter starts
 643 m from the gate).
+
+## Session, 2026-10-02 evening: farm speed, round 643 s -> ~450 s
+
+Farm throughput only; no flight-law change. Six instances, PyPy, one arm
+(the afternoon's base arm on `qs_shuttle2`), one flight per instance per
+round. The practices are written up in `docs/loopCost.md`.
+
+**Instruments added.** `common/rpccount.py` makes four lines at the end of every
+log: kRPC calls and wall-ms per tick by phase, wall seconds per phase
+(the real farm cost), and each phase's three slowest ticks with their calls.
+The `loop rate` line now gives `pk=`, each phase's worst tick.
+
+**Baseline** (`rot-rpc2`, LOG4733-4738, fresh farm): round 643 s, flights
+475-627 s (mean 533). COAST ~150 s at 5x, GLIDE ~145 s at 3.5x, HAC 1.1-1.4x,
+DEORBIT ~80 s, DRAIN 18 s.
+
+**Changes, each measured on its own round:**
+
+| commit | change | round |
+|---|---|---|
+| `RPC_BATCH` | aero-table row = one kRPC request (`common.krpcbatch`); 14 calls 6-7 ms vs 10-45 ms, bit-identical | 643 -> 544 |
+| `settle_game` | surface probes wait 0.6 game-s at the governor ceiling, not 0.6 wall-s at 1x (DRAIN 18 -> 6 s) | (same round) |
+| `GOVERN_PEAK_SKIP=1`, warp ticks ignored, cost reset per phase | one fuel-scan tick held COAST at 4.4x for 320 game-s; DRAIN's 5 s tick held DEORBIT near 1x for 50 game-s | 548 -> 449 |
+| `GOVERN_PEAK_WINDOW_S=60` | peak over the last 60 game-s of the phase | 446, **null** (GLIDE unchanged) |
+| `TIMESCALE_QUANT_FRACTION=0.2` | frame quantum 0.2 x the control interval | GLIDE unchanged, **null** for speed |
+| surface gravity cached | 2-4 round trips a tick | small |
+
+**Final** (`rot-final-1002`, LOG4781-4792, two rounds, fresh farm but 10 GB
+zram at boot): rounds 472 and 435 s; flights 318-438 s (mean 381). That is
+**1.42x the throughput** (~34 -> ~48 flights an hour). HAC, APPROACH and FLARE
+all held 0.10-0.11 game-s per tick.
+
+**What limits it now is the game, not the autopilot.** In GLIDE the governor asks for
+9-19x and the instance delivers ~4.5x at ~23 fps on a 0.2-0.5 s quantum:
+~235 physics steps a second, ~4 ms each. The KSP main thread is at 75-99% in
+`top -H` whether the instance keeps up or not (Unity frames are uncapped),
+so that percentage cannot show saturation; fps against the quantum can
+(`logs/farmcpu-1002.txt`, 192 samples). HAC's slow ticks are game-side:
+`AvailableControlSurfaceTorque`, `AvailableReactionWheelTorque` and
+`MomentOfInertia` taking 40-60 ms on some ticks. DEORBIT's ~80 s includes about
+23 game-s at 1x slewing to burn attitude, governed by the 0.8 and 0.5 s solve
+ticks before ignition. That is failure 91's protection, left alone.
+
+**Seven instances**: `ksp6` was cloned (matches `base/`; kRPC ports
+50112/50113) and booted. Seven booting together saturated the CPU (load
+31.5 on 16 threads, instances at 90-215% each). The user stopped it, so it
+was never flown, and we are back to six. Six already put 8-13 GB in zram
+(~4 GB per instance). That contradicts the afternoon's "6 GB free", which was
+measured before the instances had grown.

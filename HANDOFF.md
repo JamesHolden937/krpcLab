@@ -1,83 +1,102 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the last session; history is in `docs/spaceplane/journal.md`
-("Session, 2026-10-02 afternoon").
+Snapshot of the last session. History is in `docs/spaceplane/journal.md`
+("Session, 2026-10-02 evening: farm speed"), and the practices are in
+`docs/loopCost.md`.
 
-Last written **2026-10-02 ~17:50**, spaceplane + farm. Defaults fingerprint
-**`aed153ef`** (no default changed; fields added). Offline suite OK (861).
-Committed (this file is the last commit). Farm **stopped**, inhibitor
-**released**, no sims running.
+Last written **2026-10-02 ~20:25**, farm speed only. Defaults fingerprint is
+**`03f34fd6`**: new fields only, and no flight law changed. The new defaults
+govern the farm: `RPC_BATCH`, `GOVERN_PEAK_SKIP`, `GOVERN_PEAK_WINDOW_S` and
+`TIMESCALE_QUANT_FRACTION`. Offline suite OK (865). Committed; this file is
+the last commit. Farm **stopped**, inhibitor **released**, no sims running.
 
 ## Where it stands
 
-Goal (lands on the runway reliably) **not reached**. Two blockers, in order
-of what caps the success rate:
+The spaceplane goal (land on the runway reliably) is **not reached**. Its
+blockers are unchanged from the afternoon, in order:
 
-1. **The landing chain.** Even arrivals within 1-2 km break up: the flare
-   commands 9-16 deg of alpha and the game flies 3-4 with only +0.13..+0.31
-   of pitch input -- kRPC under-commands against the airframe's restoring
-   moment (the sim does not show it). Doors 20-40 m/s of sink.
-2. **The hypersonic bank reversal** (unchanged from the morning, see the
-   journal): slip 17-51 deg on every base flight, `GLIDE_BANK_SWEEP` clean
-   6/21.
+1. **The landing chain.** Even arrivals within 1-2 km break up. The flare
+   commands 9-16 deg of alpha and gets 3-4; kRPC under-commands against the
+   restoring moment. `PITCH_ASSIST` is refuted as built (it runs to -1). The
+   sign check comes first (see Next).
+2. **The hypersonic bank reversal:** 17-51 deg of slip on every base flight.
 
-## Built this session
+This session's base-arm flights broke up in 3-5 of 6 per round, the same rate
+as before, and that is still blocker 1.
 
-| flag / tool | what | measured |
+## Farm: what changed this session
+
+A round of six flights from orbit went **643 s -> ~453 s**, from 1.42x the
+throughput (~34 -> ~48 flights an hour). Per flight the mean went from 533 s
+to 381 s. HAC, APPROACH and FLARE still get 0.10-0.11 game-s per tick
+(`rot-rpc2` against `rot-final-1002`, LOG4733-38 against LOG4781-92).
+
+| what | measured |
+|---|---|
+| `common/rpccount.py`: four end-of-log lines (calls per tick, wall per phase, slowest ticks; `pk=` in `loop rate`) | the instrument; read these first |
+| `RPC_BATCH` (`common/krpcbatch.py`): an aero row is one request | 14 calls take 6-7 ms against 10-45, bit-identical; COAST 150 -> 98 s |
+| `settle_game`: probes wait in game time at the ceiling | DRAIN 18 -> 6 s |
+| `GOVERN_PEAK_SKIP=1`, warp ticks ignored, cost reset per phase | COAST 98 -> 72 s, HAC 1.1-1.4x -> 2-2.8x |
+| `GOVERN_PEAK_WINDOW_S=60` | **null** for speed. Kept: harmless, and the DEORBIT burn is still governed |
+| `TIMESCALE_QUANT_FRACTION=0.2` | **null** for speed. GLIDE is physics-bound |
+| `kspSim/fastclient.py`: `call_bytes` factored out for batching | bytes unchanged (`testPhysics`) |
+
+**The limit now is the game's main thread, not the autopilot.**
+- GLIDE: asked for 9-19x, delivers ~4.5x at ~23 fps, about 4 ms per physics
+  step.
+- `top -H` shows the main thread at 75-99% whether or not the instance keeps
+  up, so that figure can't show saturation. Compare `achieved` with
+  `commanded` in `testInstances/kspN/timescale-status.txt`.
+
+Per flight now:
+
+| phase | wall s | speed |
 |---|---|---|
-| `PITCH_ASSIST` (off) | manual pitch, integrated on (commanded nose . roof) past a 2 deg band, added to kRPC's output (kRPC sums them) | sim fine; **game: runs to -1 (full nose-down) in 6/8**, dives out of the cone. Refuted as built -- sign suspect |
-| `pin=total/assist/err` | log column on every flight | base flares +0.13..+0.31 total |
-| kspSim | manual + autopilot inputs summed; getters return the total | |
+| GLIDE | ~125 | 4.2x |
+| HAC | 25-120 | ~2x |
+| DEORBIT | 80 | 6x (23 game-s of it at 1x, slewing) |
+| COAST | 75 | 10x |
+| the rest | 20-40 | — |
 
-## Next, in order
+## Farm: next, if more speed is wanted (the user said this is good enough unless a fix is cheap)
 
-0. **Check the sign before anything else** (10 min, one instance): on a
-   flight, autopilot engaged holding a fixed attitude, set
-   `vessel.control.pitch = +0.3` and read whether alpha rises or falls; and
-   check `snap.roof` against the nose's up component.  The sim says + is
-   nose-up; the game's runaway to -1 says one of them disagrees.  If it is
-   the sign, fix it and fly 8 v 8 again.
-1. If the sign is right: replace the trim with a direct gain change --
-   kRPC's pitch PID gains (`auto_tune` off, kp/ki computed for the measured
-   surface torque) in APPROACH/FLARE only -- or a full own pitch loop.
-2. Then the approach: doors at 20-40 m/s sink are a design choice (steep
-   final); with a working flare it may be enough.
-3. The hypersonic reversal (morning's list, unchanged).
+1. **Fewer parts / less RAM** (`partstrip.py`, 4.3 -> 2.0 GB; needs the
+   cross-mod texture fix in docs/testInstances.md). It cuts physics cost per
+   step and frees RAM for more instances.
+2. **HAC's torque reads**: `AvailableControlSurfaceTorque`,
+   `AvailableReactionWheelTorque` and `MomentOfInertia` are read every tick,
+   and some ticks take 40-60 ms game-side. Reading them every N ticks is a
+   behaviour change, so put it behind a flag and fly 8 v 8.
+3. **The DEORBIT slew** (~20 s per flight at 1x before ignition). Only with
+   the scale dropped *before* ignition: failure 91.
+4. Fuel reads after DRAIN, and the user's COAST warp-to-drop-out idea. Both
+   are small now (rails warp is already ~20 s of COAST).
 
-## Farm: how to make it faster (state and next steps)
+## Spaceplane: next, in order (unchanged)
 
-Now: **PyPy** for the autopilot (`PYPY=1 ./spaceplane/tools/rotfly.sh ...`;
-6x cheaper propagation, a round from orbit **8 min vs 20**), textures
-stripped from clones (`mkclone.sh` does it), and `rotfly.sh`'s time-scale
-ceiling is `TS` (default **20**; the governor holds each phase to its control
-interval -- read the `loop rate` line). **Six instances (0-5) ran together**
-with 6 GB free, cores 23-49% user, swap 1.5 GB after: use six.
-Speeds achieved per flight: 1.0-5.6x, ~3x mean; the game always delivered
-what was asked (`common/timescale.status`), so the **governor is the limit**:
-ticks cost 13-83 ms wall against a 0.1 game-s interval on final.
-
-To make it faster, in order:
-1. **kRPC calls per tick.** The tick cost is now round trips, not maths --
-   approach ticks went 9 -> 20 ms going from 4 to 6 instances (frames slower
-   under load).  Count the non-stream RPCs per tick in each phase (wrap the
-   connection) and turn repeated reads into streams, batch the writes, skip
-   writes that do not change (`set_direction_and_up`, `time_to_peak`, gear,
-   brakes, flaps, `control.*`).  kRPC server settings are already
-   `oneRPCPerUpdate=False`, `blockingRecv`, `maxTimePerUpdate=10000`.
-2. **The one-off stalls**: a ~15 s DRAIN tick every flight and DEORBIT ticks
-   of 180-260 ms that drop the governor to 1x (it governs on the worst tick).
-3. **A seventh instance** if cores stay <90% (each KSP ~2 cores, ~3.8 GB).
-4. RAM per instance: the 4 GB is anonymous heap (Mono + Unity), not DLLs or
-   textures; `-nographics` hangs; part stripping (`partstrip.py`, 4.3 -> 2.0
-   GB) needs the cross-mod texture fix in docs/testInstances.md.
-5. A compiled propagator only once 1-2 leave the maths as the limit again.
+0. **Check the sign before anything else** (10 min, one instance). On a
+   flight with the autopilot holding a fixed attitude, set
+   `vessel.control.pitch = +0.3` and read whether alpha rises. Check
+   `snap.roof` against the nose's up component. If the sign is wrong, fix it
+   and fly `PITCH_ASSIST` 8 v 8 again.
+1. If the sign is right, change kRPC's pitch PID gains in APPROACH/FLARE only,
+   or write our own pitch loop.
+2. The approach's 20-40 m/s sink at the doors.
+3. The hypersonic reversal.
 
 ## Traps paid this session
 
-- A tool call the user "rejected" had already run (kwinRun.sh edit, ksp4
-  booted with -nographics, mkclone.sh edited) -- check state after a reject.
-- Editing `rotfly.sh` while a batch runs it can garble the batch's tail:
-  bash reads scripts incrementally. Edit a copy.
-- Idle kspSim servers again sat beside the farm; kill them before a batch.
-- `kwinRun.sh`'s exec line: the comment inside the continuation ends the
-  command, so instances run with `-force-d3d11` only (left as is).
+- **Six instances swap.** zram holds 8-13 GB right after boot (~4 GB per
+  instance), and it grew to 14 GB over three rounds without a restart; that
+  round ran 514 s against ~430. **Restart the farm before every comparison.**
+- **A seventh instance** (`ksp6` exists: cloned, matches `base/`, ports
+  50112/50113) saturated the CPU while booting with the others (load 31 on
+  16 threads). The user stopped it. Don't start seven without asking.
+- **A rejected tool call had already run** (the 7-instance start). Check state
+  after a reject, again.
+- **A background script that `cd`s needs absolute paths.** The CPU sampler
+  wrote nowhere and would have looped forever. `pkill -f` matched its own
+  shell (exit 144).
+- **The suite was run once beside an idle farm.** Don't: stop the farm first.
+- **Old waiters from earlier sessions fire task notifications.** Check the
+  file name before reading anything into one.
