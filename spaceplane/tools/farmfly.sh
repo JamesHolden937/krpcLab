@@ -32,8 +32,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
 SAVE="${SAVE:-qs_plane}"
 N="${N:-8}"
-TS="${TS:-6.0}"
-INSTANCES="${INSTANCES:-0 1 2 3}"
+TS="${TS:-20}"
+INSTANCES="${INSTANCES:-0 1 2 3 4 5}"
 SETS="${SETS:-}"
 # GOVERN=--no-govern turns the time-scale governor off, so --timescale means
 # a fixed multiplier for the whole flight -- the old meaning.  Only for
@@ -60,7 +60,7 @@ fi
 : > "$OUT"
 echo "save=$SAVE n=$N timescale=$TS instances='$INSTANCES' sets='$SETS'" >> "$OUT"
 for i in $INSTANCES; do
-  ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" --save "$SAVE" \
+  ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" $( [ "${PYPY:-1}" = 0 ] && echo --cpython ) --save "$SAVE" \
       --instance "$i" -n "$N" --timescale "$TS" ${GOVERN:+$GOVERN} "${args[@]}" 2>&1 \
       | sed "s|^|ksp$i |" >> "$OUT" ) &
   sleep 6

@@ -6,14 +6,14 @@
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 SAVE="${SAVE:-qs_plane}"
-TS="${TS:-8.0}"
+TS="${TS:-20}"
 n=0
 for spec in "$@"; do
   args=()
   IFS=';' read -ra parts <<< "$spec"
   for pp in "${parts[@]}"; do [ -n "$pp" ] && args+=(--set "$pp"); done
   echo "ksp$n: ${args[*]}"
-  ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" --save "$SAVE" \
+  ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" $( [ "${PYPY:-1}" = 0 ] && echo --cpython ) --save "$SAVE" \
       --instance "$n" -n 1 --timescale "$TS" "${args[@]}" \
       | sed "s/^/ksp$n ${spec} /" ) &
   n=$((n+1)); sleep 8

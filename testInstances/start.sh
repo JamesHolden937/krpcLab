@@ -15,7 +15,7 @@
 # that script for the two signatures a suspend leaves in these logs.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ $# -eq 0 ] && set -- 0 1 2 3
+[ $# -eq 0 ] && set -- 0 1 2 3 4 5     # six: the standard since 2026-10-02
 for N in "$@"; do
   [ -d "$HERE/ksp$N" ] || { echo "no instance ksp$N -- ./mkclone.sh $N" >&2; continue; }
   systemctl --user stop "ksp$N-boosterland.scope" 2>/dev/null
@@ -31,7 +31,7 @@ Each takes about three minutes to reach its kRPC port.  Wait for all of them
 before starting a sweep -- a sweep compares columns, and a column flown with
 three instances is not the same configuration as one flown with four:
 
-  until [ "$(for n in 0 1 2 3; do p=$(cat ksp$n/.rpc_port);
-             ss -ltn | grep -c ":$p"; done | grep -c '^1$')" = 4 ]
+  until [ "$(for n in 0 1 2 3 4 5; do p=$(cat ksp$n/.rpc_port);
+             ss -ltn | grep -c ":$p "; done | grep -c '^1$')" = 6 ]
   do sleep 10; done
 NOTE

@@ -58,6 +58,16 @@ Per flight now:
 | COAST | 75 | 10x |
 | the rest | 20-40 | — |
 
+**Harness defaults now match what was measured.** These scripts fly PyPy
+(`PYPY=0` / `--cpython` opts out):
+- `quickglide.py`: on an `--instance`, `--timescale` defaults to 20.
+- `rotfly.sh`, `armfly.sh`, `farmfly.sh`, `pairfly.sh`: `TS` defaults to 20.
+- `start.sh`, `farmfly.sh`, `pairfly.sh`: six instances (0-5) by default.
+
+The defaults were checked by syntax and `--help`, not yet by a flight. The
+first batch next session is that check: its header line should say
+`pypy=1 ts=20`.
+
 ## Farm: next, if more speed is wanted (the user said this is good enough unless a fix is cheap)
 
 1. **Fewer parts / less RAM** (`partstrip.py`, 4.3 -> 2.0 GB; needs the

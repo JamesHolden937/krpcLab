@@ -278,7 +278,11 @@ def fly(args, index):
     # kspSim/CLAUDE.md), whose propagator runs several times faster.  On a
     # simulated instance that is wall time saved; the governor still makes
     # every tick's interval be served.
-    venv = ".venv-pypy" if args.pypy else ".venv"
+    # **PyPy is the default** wherever ``.venv-pypy`` exists (2026-10-02):
+    # the farm's numbers are measured with it.  ``--cpython`` opts out.
+    pypy = (args.pypy or not args.cpython) and os.path.exists(
+        os.path.join(ROOT, ".venv-pypy", "bin", "python"))
+    venv = ".venv-pypy" if pypy else ".venv"
     command = [os.path.join(ROOT, venv, "bin", "python"), "-m",
                "spaceplane.autopilot", "--autostart"]
     if rpc:
@@ -446,9 +450,12 @@ def main():
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
     p.add_argument("--pypy", action="store_true",
-                   help="run the autopilot under PyPy (.venv-pypy)")
+                   help="run the autopilot under PyPy (.venv-pypy; the default)")
+    p.add_argument("--cpython", action="store_true",
+                   help="run the autopilot under CPython (.venv) instead")
     p.add_argument("--timescale", default=None, metavar="SPEC",
-                   help="off | max | a multiplier such as 4.0")
+                   help="off | max | a multiplier such as 4.0; on a farm "
+                        "instance the default is 20, the governor's ceiling")
     p.add_argument("--no-govern", action="store_true",
                    help="do not let the autopilot hold the time scale down to "
                         "what its control loop can serve (see "
@@ -456,6 +463,13 @@ def main():
                         "a fixed scale for the whole flight, which is what "
                         "fitted the landing chain to the farm's loop rate")
     args = p.parse_args()
+    # **A farm instance flies governed at a ceiling of 20 unless told
+    # otherwise** (2026-10-02): the governor holds every phase to its own
+    # control interval, so the ceiling only says how fast the cheap phases
+    # may go.  A flight against the player's own game (no --instance) is
+    # left at 1x.
+    if args.timescale is None and args.instance is not None:
+        args.timescale = "20"
     _install_reaper()
 
     results = []

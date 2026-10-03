@@ -57,8 +57,8 @@ SAVE="${SAVE:-qs_plane}"
 SAVE_A="${SAVE_A:-$SAVE}"
 SAVE_B="${SAVE_B:-$SAVE}"
 ROUNDS="${ROUNDS:-4}"
-TS="${TS:-6.0}"
-INSTANCES="${INSTANCES:-0 1 2 3}"
+TS="${TS:-20}"
+INSTANCES="${INSTANCES:-0 1 2 3 4 5}"
 OUT="${OUT:-$ROOT/logs/pairfly.txt}"
 
 # **Killing this script must kill the round.**  The flights run in
@@ -117,7 +117,7 @@ for (( round=0; round<ROUNDS; round++ )); do
     args=()
     IFS=';' read -ra parts <<< "$spec"
     for pp in "${parts[@]}"; do [ -n "$pp" ] && args+=(--set "$pp"); done
-    ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" --save "$save" \
+    ( "$ROOT/.venv/bin/python" "$HERE/quickglide.py" $( [ "${PYPY:-1}" = 0 ] && echo --cpython ) --save "$save" \
         --instance "$i" -n 1 --timescale "$TS" "${args[@]}" 2>&1 \
         | sed "s|^|$name ksp$i |" >> "$OUT" ) &
     idx=$((idx+1))

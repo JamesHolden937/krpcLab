@@ -108,13 +108,15 @@ python3 -m unittest boosterland.tests.testFlightSim   # one module
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `cd testInstances && ./nosleep.sh start && ./start.sh 0 1 2 3`, wait for the
+# `cd testInstances && ./nosleep.sh start && ./start.sh` (six, 0-5), wait for the
 # ports, fly; `./stop.sh` when the suite has to run or the session ends.
 #
-# **Four instances at most, and never beside the test suite.**  Three hold
-# ~18 GB with flights running and leave ~12 GB free; a fourth fits, a fifth
-# swaps (8 GB into zram, measured), and swap biases the results.  Check
-# `swapon --show` after each batch.  `python3 -m unittest` on top of the farm
+# **Six instances (0-5), and never beside the test suite.**  Six put 8-13 GB
+# into zram at ~4 GB each; a seventh saturated the CPU at boot (2026-10-02).
+# Restart the farm before every comparison -- swap grows round by round and
+# biases the results.  Harness defaults: PyPy (PYPY=0 / --cpython for
+# CPython), time-scale ceiling 20, six instances.  Check `swapon --show`
+# after each batch.  `python3 -m unittest` on top of the farm
 # is killed by memory pressure: stop the farm, run the suite, restart, fly.
 cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 GB)
 ./mkclone.sh 0 && ./kwinRun.sh 0       # an unattended instance, invisible
