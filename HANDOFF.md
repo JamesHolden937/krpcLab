@@ -1,117 +1,82 @@
 # HANDOFF — read this first, rewrite it last
 
 Snapshot of the last session. History is in `docs/spaceplane/journal.md`
-("Session, 2026-10-02 evening: farm speed"), and the practices are in
-`docs/loopCost.md`.
+("Session, 2026-10-02 night -> 10-03: landing from cone saves").
 
-Last written **2026-10-02 ~20:25**, farm speed only. Defaults fingerprint is
-**`03f34fd6`**: new fields only, and no flight law changed. The new defaults
-govern the farm: `RPC_BATCH`, `GOVERN_PEAK_SKIP`, `GOVERN_PEAK_WINDOW_S` and
-`TIMESCALE_QUANT_FRACTION`. Offline suite OK (865). Committed; this file is
-the last commit. Farm **stopped**, inhibitor **released**, no sims running.
+Last written **2026-10-03 ~01:05**, mid-session checkpoint. Defaults
+fingerprint is **`f6a13fa5`**. It changed only by new fields (all off) and one
+bug fix in an off flag (`ALPHA_TRIM_LOOP`). No default flight law changed.
+Offline spaceplane suite OK. Committed. The farm may still be **up**, and the
+inhibitor may still be **held**. Check `testInstances/nosleep.sh status`.
 
 ## Where it stands
 
-The spaceplane goal (land on the runway reliably) is **not reached**. Its
-blockers are unchanged from the afternoon, in order:
+The goal (land the shuttle on the runway reliably) is **not reached**. It is
+now measured from **in-game cone saves** `qs_s2_hac0`-`5`, not from orbit:
+six cone-entry states, ~5 min per round of six. Work backwards from the
+landing to the arrival.
 
-1. **The landing chain.** Even arrivals within 1-2 km break up. The flare
-   commands 9-16 deg of alpha and gets 3-4; kRPC under-commands against the
-   restoring moment. `PITCH_ASSIST` is refuted as built (it runs to -1). The
-   sign check comes first (see Next).
-2. **The hypersonic bank reversal:** 17-51 deg of slip on every base flight.
+**Best stack** ("capture"), 6 intact of 36 (3 batches) against 0/12 on
+defaults:
 
-This session's base-arm flights broke up in 3-5 of 6 per round, the same rate
-as before, and that is still blocker 1.
+```
+ALPHA_TRIM_LOOP=True;ALPHA_TRIM_IN_HAC=True;ALPHA_TRIM_SLIP_TOL_DEG=15;
+ALPHA_TRIM_MAX_DEG=4;ALPHA_TRIM_MIN_DEG=-2;APPROACH_BANK_BY_ROLL=True;
+ROLLOUT_ON_MAIN_CONTACT=True;ROLLOUT_HOLD_TAIL_FRACTION=0.4;
+APPROACH_ALPHA_AT_TARGET=True;APPROACH_SCURVE_STOP_M=4000;
+APPROACH_CAPTURE_MARGIN=0.15
+```
 
-## Farm: what changed this session
+None of it is a default yet. It has not been flown from orbit, nor on the old
+craft (`qs_plane`). Both are required before promoting any of it.
 
-A round of six flights from orbit went **643 s -> ~453 s**, from 1.42x the
-throughput (~34 -> ~48 flights an hour). Per flight the mean went from 533 s
-to 381 s. HAC, APPROACH and FLARE still get 0.10-0.11 game-s per tick
-(`rot-rpc2` against `rot-final-1002`, LOG4733-38 against LOG4781-92).
+## Flags added this session (all off by default)
 
-| what | measured |
+| flag | measured |
 |---|---|
-| `common/rpccount.py`: four end-of-log lines (calls per tick, wall per phase, slowest ticks; `pk=` in `loop rate`) | the instrument; read these first |
-| `RPC_BATCH` (`common/krpcbatch.py`): an aero row is one request | 14 calls take 6-7 ms against 10-45, bit-identical; COAST 150 -> 98 s |
-| `settle_game`: probes wait in game time at the ceiling | DRAIN 18 -> 6 s |
-| `GOVERN_PEAK_SKIP=1`, warp ticks ignored, cost reset per phase | COAST 98 -> 72 s, HAC 1.1-1.4x -> 2-2.8x |
-| `GOVERN_PEAK_WINDOW_S=60` | **null** for speed. Kept: harmless, and the DEORBIT burn is still governed |
-| `TIMESCALE_QUANT_FRACTION=0.2` | **null** for speed. GLIDE is physics-bound |
-| `kspSim/fastclient.py`: `call_bytes` factored out for batching | bytes unchanged (`testPhysics`) |
+| `ALPHA_TRIM_LOOP` (**bug fixed**: integrated kRPC's error against the offset command) + `ALPHA_TRIM_IN_HAC` | the one clear win: handover surplus +0.8..4.4 -> +0.2..0.7 km, contact sink halved (rot-atrim-1002). Unbounded it drives the phugoid; bound -2..+4 |
+| `ROLLOUT_ON_MAIN_CONTACT`, `ROLLOUT_HOLD_TAIL_FRACTION` | tail-strike angle is 11.0 deg; the rollout held 8 and FLARE flew 1.4 s on the wheels (LOG4836). No total losses in that batch |
+| `APPROACH_SPEED_KD` | bunched door speeds, did not stop the ~50 s phugoid; superseded by `APPROACH_ALPHA_AT_TARGET` |
+| `APPROACH_ALPHA_AT_TARGET` | one-g alpha *at the target speed* plus P pull-up. No speed law on final. Smoother |
+| `ATTITUDE_OSC_MITIGATION_OFF` | this kRPC build's oscillation detector (latched 0.93 on a landed vessel). Off: **tracking unchanged**. Null |
+| `ATTITUDE_PITCH_AIR_FLOOR_S` | stiffer pitch halved approach alpha error, but in the cone it broke the handover. On final and flare only: **4 departures**. Refuted |
+| ~~`ATTITUDE_PITCH_DECEL_S`~~ | removed: `deceleration_time` does not exist in this kRPC 0.6.0 build. rot-decel-1003 flew it disconnected (a replicate) |
 
-**The limit now is the game's main thread, not the autopilot.**
-- GLIDE: asked for 9-19x, delivers ~4.5x at ~23 fps, about 4 ms per physics
-  step.
-- `top -H` shows the main thread at 75-99% whether or not the instance keeps
-  up, so that figure can't show saturation. Compare `achieved` with
-  `commanded` in `testInstances/kspN/timescale-status.txt`.
+Also: `APPROACH_CAPTURE_MARGIN` 0.35 -> 0.15 took the door cross-track from
+100-600 m to within +-170 m. The capture limit-cycled on a roll that lags.
 
-Per flight now:
+## Blocker and next step
 
-| phase | wall s | speed |
-|---|---|---|
-| GLIDE | ~125 | 4.2x |
-| HAC | 25-120 | ~2x |
-| DEORBIT | 80 | 6x (23 game-s of it at 1x, slewing) |
-| COAST | 75 | 10x |
-| the rest | 20-40 | — |
+**The flare does not pull up.** It commands 7-12 deg and flies 2-3 deg at a
+flat +0.24-0.4 of pitch input (LOG4927). This is not the oscillation
+mitigation (null), and a stiffer kRPC tune departs. Next, in order:
 
-**Everything runs under PyPy** when `.venv-pypy` exists: `run.sh` (your live
-flights and the launcher), every tool via `common.paths.use_venv`, and the
-harnesses. `KRPCLAB_CPYTHON=1` opts out. The offline suite takes 19 s under
-PyPy against 131 s (`.venv-pypy/bin/python -m unittest`).
-
-**Harness defaults now match what was measured.** These scripts fly PyPy
-(`PYPY=0` / `--cpython` opts out):
-- `quickglide.py`: on an `--instance`, `--timescale` defaults to 20.
-- `rotfly.sh`, `armfly.sh`, `farmfly.sh`, `pairfly.sh`: `TS` defaults to 20.
-- `start.sh`, `farmfly.sh`, `pairfly.sh`: six instances (0-5) by default.
-
-The defaults were checked by syntax and `--help`, not yet by a flight. The
-first batch next session is that check: its header line should say
-`pypy=1 ts=20`.
-
-## Farm: next, if more speed is wanted (the user said this is good enough unless a fix is cheap)
-
-1. **Fewer parts / less RAM** (`partstrip.py`, 4.3 -> 2.0 GB; needs the
-   cross-mod texture fix in docs/testInstances.md). It cuts physics cost per
-   step and frees RAM for more instances.
-2. **HAC's torque reads**: `AvailableControlSurfaceTorque`,
-   `AvailableReactionWheelTorque` and `MomentOfInertia` are read every tick,
-   and some ticks take 40-60 ms game-side. Reading them every N ticks is a
-   behaviour change, so put it behind a flag and fly 8 v 8.
-3. **The DEORBIT slew** (~20 s per flight at 1x before ignition). Only with
-   the scale dropped *before* ignition: failure 91.
-4. Fuel reads after DRAIN, and the user's COAST warp-to-drop-out idea. Both
-   are small now (rails warp is already ~20 s of COAST).
-
-## Spaceplane: next, in order (unchanged)
-
-0. **Check the sign before anything else** (10 min, one instance). On a
-   flight with the autopilot holding a fixed attitude, set
-   `vessel.control.pitch = +0.3` and read whether alpha rises. Check
-   `snap.roof` against the nose's up component. If the sign is wrong, fix it
-   and fly `PITCH_ASSIST` 8 v 8 again.
-1. If the sign is right, change kRPC's pitch PID gains in APPROACH/FLARE only,
-   or write our own pitch loop.
-2. The approach's 20-40 m/s sink at the doors.
-3. The hypersonic reversal.
+1. **Own the pitch axis in the flare** (method change). kRPC adds client
+   manual input to its output, so `PITCH_ASSIST`-style feedforward is
+   possible. A *feedforward* (input proportional to commanded alpha minus
+   trim alpha) has no integrator to wind; `PITCH_ASSIST` wound to -1.
+   Alternatively disengage kRPC for the flare's ~8 s and fly PD on pitch,
+   holding roll level and yaw to the runway. Screen whatever is built in
+   kspSim first.
+2. Door energy: doors at 77-170 m and 15-35 m/s sink. The intact ones
+   entered at 95-120 m/s from 310-520 m.
+3. Then: the cone's high handover on defaults, and the stack from orbit and
+   on `qs_plane`.
 
 ## Traps paid this session
 
-- **Six instances swap.** zram holds 8-13 GB right after boot (~4 GB per
-  instance), and it grew to 14 GB over three rounds without a restart; that
-  round ran 514 s against ~430. **Restart the farm before every comparison.**
-- **A seventh instance** (`ksp6` exists: cloned, matches `base/`, ports
-  50112/50113) saturated the CPU while booting with the others (load 31 on
-  16 threads). The user stopped it. Don't start seven without asking.
-- **A rejected tool call had already run** (the 7-instance start). Check state
-  after a reject, again.
-- **A background script that `cd`s needs absolute paths.** The CPU sampler
-  wrote nowhere and would have looped forever. `pkill -f` matched its own
-  shell (exit 144).
-- **The suite was run once beside an idle farm.** Don't: stop the farm first.
-- **Old waiters from earlier sessions fire task notifications.** Check the
-  file name before reading anything into one.
+- **`start.sh` leaves an instance hung at texture load** roughly every
+  third restart (log stops; port never opens). Kill it with
+  `pgrep -f "testInstances/ks[p]N/" | xargs kill` (the bracket stops
+  pgrep matching its own shell; plain `ksp4/` returned exit 144). Then run
+  `setsid ./kwinRun.sh N`.
+- **A kRPC attribute that does not exist fails at runtime, not import.**
+  The flag logged "not set" in every flight. Read the log line before
+  reading the batch. List the client's attributes with
+  `dir(vessel.auto_pilot)`: this build has oscillation, attenuation and
+  `max_angular_velocity` controls, and no `deceleration_time`.
+- **Fit a phase only after the phase above it is fixed.** A stiffer pitch in
+  the cone moved its handover 0.6-1 km short, because the cone's constants
+  were fitted to the soft pitch.
+- n=12 resolves "0 vs 3 of 12" weakly. Read the mechanism (alpha tracking,
+  door cross-track, door speed) before the intact count.

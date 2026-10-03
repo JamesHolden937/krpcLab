@@ -3862,3 +3862,74 @@ ticks before ignition. That is failure 91's protection, left alone.
 was never flown, and we are back to six. Six already put 8-13 GB in zram
 (~4 GB per instance). That contradicts the afternoon's "6 GB free", which was
 measured before the instances had grown.
+
+## Session, 2026-10-02 night -> 10-03: landing from cone saves, working backwards
+
+**Method change: landings measured from in-game cone saves, not from orbit.**
+`qs_s2_hac0`-`5` (`saves/`, commit f31fb53): six default `qs_shuttle2`
+flights (LOG4793-98) saved by `entrysave.py --alt 13500 --low 11500` just
+inside the cone. A flight from one costs ~4-5 min wall; six saves are six
+cone-entry states (arrivals -0.2..+5.0 km). Every batch below is
+`rotfly.sh` over the six saves x 2 rounds = 12 flights, fresh farm each.
+Note the orbital defaults arrived within 2 km on all six (LOG4793-98), where
+last session's "best stack" from orbit read +17 km sd 10 (LOG4781-92).
+
+| batch (`logs/rot-*.txt`) | LOGs | change on top of the previous arm | intact / 19-30 parts / lost |
+|---|---|---|---|
+| hacbase-1002 | 4799-4810 | defaults | 0 / 2 / 7 |
+| atrim-1002 | 4811-4822 | `ALPHA_TRIM_LOOP` fixed + `ALPHA_TRIM_IN_HAC`, slip tol 15, max 12 | 1 / 0 / 4 |
+| slow-1002 | 4823-4834 | + approach 1.8x, floor 1.6x, door 1.45x stall | 1 / 1 / 3 |
+| mid-1002 | 4835-4846 | instead 2.0 / 1.8 / 1.8x | 0 / 0 / 9 |
+| bankroll-1002 | 4847-4858 | trim + `APPROACH_BANK_BY_ROLL` (default speeds) | 1 / 2 / 4 |
+| ground-1002 | 4859-4870 | + `ROLLOUT_ON_MAIN_CONTACT`, `ROLLOUT_HOLD_TAIL_FRACTION=0.4` | 1 / 0 / 0 |
+| kd-1002 | 4871-4882 | + `APPROACH_SPEED_KD=1` | 0 / 3 / 0 |
+| trim4-1002 | 4883-4894 | + trim bounded -2..+4 | 1 / 3 / 4 |
+| attgt-1002 | 4895-4906 | + `APPROACH_ALPHA_AT_TARGET` | 0 / 2 / 2 |
+| stop4k-1003 | 4907-4918 | + `APPROACH_SCURVE_STOP_M=4000` | 1 / 3 / 2 |
+| **capture-1003** | 4919-4930 | + `APPROACH_CAPTURE_MARGIN=0.15` | **2 / 2 / 4** |
+| decel-1003 | 4931-4942 | + `ATTITUDE_PITCH_DECEL_S` -- **disconnected** (no such kRPC attribute): a replicate | 1 / 2 / 2 |
+| oscoff-1003 | 4943-4954 | capture + `ATTITUDE_OSC_MITIGATION_OFF` | 3 / 4 / 1 |
+| pfloor-1003 | 4955-4966 | capture + `ATTITUDE_PITCH_AIR_FLOOR_S=1` (cone too) | 0 / 5 / 4 |
+| pfloor2-1003 | 4967-4978 | same, approach and flare only | 2 / 0 / 8 |
+
+Findings, in the order they were found:
+
+1. **The cone hands over 1.5-4.4 km high and the approach dives it off**
+   (baseline: doors at 650-870 m and 95-126 m/s of sink). kRPC flew -3 deg
+   of signed alpha against 2-10 commanded at +0.07 input (LOG4803).
+2. **`ALPHA_TRIM_LOOP` was built wrong and never flown**: it integrated
+   `(alpha + delta) - achieved`, kRPC's error against the offset command,
+   which can only wind up. Fixed to `alpha - achieved` (49f3858). With it in
+   the cone and on final the handover surplus fell to +0.2..+0.7 km and
+   contact sinks to 1.5-10 m/s in half the flights.
+3. **Every intact landing entered the flare fast and high**: LOG4816
+   110 m/s / 367 m, LOG4823 102/371, LOG4857 122/523. Doors under ~90 m/s
+   could not arrest the sink. The stall-factor speeds were swept and are
+   noise-dominated (slow, mid); retired as a method.
+4. **The approach flies a ~50 s phugoid** (LOG4848: 81-102-80-121-53 m/s;
+   pi sqrt(2) v/g = 45 s at 100 m/s), and the trim loop wound to its bounds
+   in phase with it. `APPROACH_SPEED_KD` bunched door speeds (44-78) but
+   did not stop the cycle; bounding the trim to -2..+4 and
+   `APPROACH_ALPHA_AT_TARGET` (alpha at the target speed, not a speed law)
+   smoothed it. Door sinks fell to 16-35 m/s.
+5. **Touchdowns after a gentle contact broke on the ground**: the craft's
+   tail-strike angle is **11.0 deg**, the rollout held 8, and FLARE flew
+   1.4 s on the wheels before KSP said "landed" (LOG4836). Two flags.
+6. **Doors were 100-600 m off the centreline**: the capture law limit-cycled
+   +-500 m with the flown bank far behind the command (LOG4915). The
+   S-turn stop did nothing; `APPROACH_CAPTURE_MARGIN` 0.35 -> 0.15 put 11/12
+   doors within +-170 m.
+7. **The flare still flies 2-3 deg against 7-12 commanded at a flat +0.24
+   input** (LOG4927). This kRPC 0.6.0 build has no `deceleration_time` (the
+   flag flew disconnected) but has an oscillation detector with automatic
+   notch/bandwidth/feedforward mitigation, latched at level 0.93 on a
+   landed vessel. Switched off from the cone on: **tracking unchanged**
+   (flare error 6.7 deg vs 5.5), so the 3 intact are noise. A stiffer pitch
+   (`ATTITUDE_PITCH_AIR_FLOOR_S=1`, applied 1.5 s): approach error halved
+   (rms 6.1 -> 3.3) in the cone-too arm, but the cone's fitted constants
+   moved three handovers short; restricted to final and flare it **departed
+   4 flights in the flare** (pitch +90) -- refuted.
+
+**Pooled, the capture stack lands 6 intact of 36** (capture, decel, oscoff),
+against 0/12 on defaults. The rest are: flares that do not pull up (kRPC
+tracking), doors low on energy (77-170 m, 15-35 m/s sink), and departures.
