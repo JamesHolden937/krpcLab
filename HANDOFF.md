@@ -58,6 +58,11 @@ Per flight now:
 | COAST | 75 | 10x |
 | the rest | 20-40 | — |
 
+**Everything runs under PyPy** when `.venv-pypy` exists: `run.sh` (your live
+flights and the launcher), every tool via `common.paths.use_venv`, and the
+harnesses. `KRPCLAB_CPYTHON=1` opts out. The offline suite takes 19 s under
+PyPy against 131 s (`.venv-pypy/bin/python -m unittest`).
+
 **Harness defaults now match what was measured.** These scripts fly PyPy
 (`PYPY=0` / `--cpython` opts out):
 - `quickglide.py`: on an `--instance`, `--timescale` defaults to 20.

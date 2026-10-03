@@ -24,6 +24,15 @@ cd "$(dirname "$0")"
 
 VENV=".venv"
 PY="$VENV/bin/python"
+# **PyPy when it is set up** (kspSim/tools/pypysetup.sh makes .venv-pypy):
+# the same code with ticks several times cheaper, so the loop's state is
+# fresher when its command lands.  The launcher starts each autopilot with
+# its own interpreter, so they fly PyPy too.  KRPCLAB_CPYTHON=1 opts out.
+if [ -z "${KRPCLAB_CPYTHON:-}" ] && [ -x .venv-pypy/bin/python ] \
+        && .venv-pypy/bin/python -c "import krpc" 2>/dev/null; then
+    VENV=".venv-pypy"
+    PY="$VENV/bin/python"
+fi
 
 if [ ! -x "$PY" ]; then
     echo "creating venv in $VENV"

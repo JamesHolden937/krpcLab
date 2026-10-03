@@ -17,7 +17,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTANCES = os.path.join(ROOT, "testInstances")
 LOGS = os.path.join(ROOT, "logs")
 SAVES = os.path.join(ROOT, "saves")
-VENV_PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
+# PyPy when ``.venv-pypy`` exists (kspSim/tools/pypysetup.sh), CPython's
+# ``.venv`` otherwise; ``KRPCLAB_CPYTHON=1`` forces CPython.  Same code, ticks
+# and propagations several times cheaper, the offline suite 19 s against 131.
+_PYPY_PYTHON = os.path.join(ROOT, ".venv-pypy", "bin", "python")
+_CPYTHON_PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
+VENV_PYTHON = (_PYPY_PYTHON if os.path.exists(_PYPY_PYTHON)
+               and not os.environ.get("KRPCLAB_CPYTHON") else _CPYTHON_PYTHON)
 
 
 def instance_dir(instance):
@@ -39,7 +45,7 @@ def ports(instance):
 
 
 def use_venv():
-    """Re-exec under ``.venv/bin/python`` if ``krpc`` is not importable here."""
+    """Re-exec under ``VENV_PYTHON`` if ``krpc`` is not importable here."""
     try:
         import krpc  # noqa: F401
         return
@@ -47,6 +53,6 @@ def use_venv():
         pass
     if (os.path.exists(VENV_PYTHON)
             and os.path.realpath(sys.prefix) != os.path.realpath(
-                os.path.join(ROOT, ".venv"))):
+                os.path.dirname(os.path.dirname(VENV_PYTHON)))):
         os.execv(VENV_PYTHON, [VENV_PYTHON] + sys.argv)
     raise SystemExit("no krpc: run ./run.sh once to create %s" % VENV_PYTHON)

@@ -97,8 +97,8 @@ rather than a stored plan.
 ./run.sh --pilot booster --autostart --set LOG_INTERVAL_UT=1
 ./run.sh --address 192.168.1.5         # kRPC server on another machine
 
-python3 -m unittest                    # every offline test, no KSP needed
-python3 -m unittest boosterland.tests.testFlightSim   # one module
+.venv-pypy/bin/python -m unittest      # every offline test, no KSP needed: 19 s (CPython: 131)
+.venv-pypy/bin/python -m unittest boosterland.tests.testFlightSim   # one module
 
 ./tools/bundle.py plane                # one runnable file -> dist/ (or: booster)
 ./tools/savegen.py -o hot --prograde 60   # a different entry state, written to a save
@@ -116,7 +116,7 @@ python3 -m unittest boosterland.tests.testFlightSim   # one module
 # Restart the farm before every comparison -- swap grows round by round and
 # biases the results.  Harness defaults: PyPy (PYPY=0 / --cpython for
 # CPython), time-scale ceiling 20, six instances.  Check `swapon --show`
-# after each batch.  `python3 -m unittest` on top of the farm
+# after each batch.  The unittest suite on top of the farm
 # is killed by memory pressure: stop the farm, run the suite, restart, fly.
 cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 GB)
 ./mkclone.sh 0 && ./kwinRun.sh 0       # an unattended instance, invisible
@@ -127,10 +127,13 @@ cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 G
 ```
 
 Tools are run from the root. Each puts the root on `sys.path` itself and
-re-executes under `.venv` if the interpreter has no `krpc`, so
-`./spaceplane/tools/quickglide.py` works from any shell. `run.sh` creates
-`.venv` on first use (`krpc` pinned to the server mod's 0.6.0) and runs it by
-path. The flight runs in the foreground, so Ctrl-C reaches it and it hands
+re-executes under the project venv if the interpreter has no `krpc`, so
+`./spaceplane/tools/quickglide.py` works from any shell. **Everything runs
+under PyPy** when `.venv-pypy` exists (`kspSim/tools/pypysetup.sh`): `run.sh`,
+the launcher's autopilots, every tool through `common.paths.use_venv`, and
+the farm harnesses. `KRPCLAB_CPYTHON=1` (or `--cpython` / `PYPY=0` on the
+harnesses) falls back to `.venv`, which `run.sh` creates on first use (`krpc`
+pinned to the server mod's 0.6.0) and runs by path. The flight runs in the foreground, so Ctrl-C reaches it and it hands
 the vessel back. `--set FIELD=VALUE` overrides a field of `Config` with type
 coercion; unknown fields raise. No linter or formatter is configured. Tests
 need no third-party packages.
