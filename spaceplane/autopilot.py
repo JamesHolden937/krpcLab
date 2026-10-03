@@ -7110,7 +7110,7 @@ class Autopilot:
         while self.running:
             started = time.monotonic()
             if self.rpc is not None:
-                self.rpc.tick(self.state)
+                self.rpc.tick(self.state, self.last_ut)
             snap = self.tick()
             if self.state == DEORBIT and (
                     self.deorbit_dv is not None
@@ -7188,6 +7188,7 @@ class Autopilot:
             pass
         if self.rpc is not None:
             self.logbook.event(self.last_ut or 0.0, self.rpc.report())
+            self.logbook.event(self.last_ut or 0.0, self.rpc.wall_report())
         """Hand back to the player, deliberately, rather than try to save it."""
         try:
             self.logbook.event(self.conn.space_center.ut,

@@ -20,6 +20,8 @@ class RpcCounter:
         self.top = top
         self.calls = {}         # phase -> {procedure: [count, wall]}
         self.ticks = {}         # phase -> ticks
+        self.span = {}          # phase -> [wall s, game s] from tick to tick
+        self._last = None       # (phase, monotonic, ut) of the last tick
 
     def install(self, conn):
         inner = conn._invoke
@@ -36,10 +38,25 @@ class RpcCounter:
         conn._invoke = invoke
         return self
 
-    def tick(self, phase):
-        """The loop is starting a tick of ``phase``."""
+    def tick(self, phase, ut=None):
+        """The loop is starting a tick of ``phase`` (``ut``: the last known)."""
+        now = time.monotonic()
+        if self._last is not None:
+            was, then, then_ut = self._last
+            row = self.span.setdefault(was, [0.0, 0.0])
+            row[0] += now - then
+            if ut is not None and then_ut is not None and ut >= then_ut:
+                row[1] += ut - then_ut
+        self._last = (phase, now, ut)
         self.phase = phase
         self.ticks[phase] = self.ticks.get(phase, 0) + 1
+
+    def wall_report(self):
+        """Where the flight's wall-clock went: the farm's real cost per phase."""
+        total = sum(r[0] for r in self.span.values())
+        return "wall per phase (wall s / game s = speed): total %.0fs " % total + " ".join(
+            "%s %.0f/%.0f=%.1fx" % (p, r[0], r[1], r[1] / r[0] if r[0] else 0.0)
+            for p, r in self.span.items())
 
     def report(self):
         bits = []

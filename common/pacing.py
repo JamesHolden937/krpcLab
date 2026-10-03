@@ -248,12 +248,13 @@ class LoopRate:
         against the shortfall.
         """
         bits = []
-        for phase, (interval, busy, ticks, _peak) in self.phases.items():
-            bits.append("%s %s/%s n=%d"
+        for phase, (interval, busy, ticks, peak) in self.phases.items():
+            bits.append("%s %s/%s n=%d pk=%s"
                         % (phase,
                            "--" if interval is None else "%.2f" % interval,
                            "--" if busy is None else "%.3f" % busy,
-                           ticks))
+                           ticks,
+                           "--" if peak is None else "%.3f" % peak))
         return "loop rate, game-s per tick / wall-s of work: " + " ".join(bits)
 
 
