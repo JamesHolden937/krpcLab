@@ -343,8 +343,8 @@ class Config:
     # deg of bank and ~10 above 50, with the pitch input at 0.5-0.7 -- not
     # saturated.  The hard-banking flights reach the cone 4-15 km long and
     # 5 km high, 9 of 24 in rot-phantom-1003.  ``ALPHA_TRIM_GLIDE_MAX_DEG``
-    # bounds the offset there: a safety bound, not a fit.  Off until flown.
-    ALPHA_TRIM_IN_GLIDE: bool = False
+    # bounds the offset there: a safety bound, not a fit.
+    ALPHA_TRIM_IN_GLIDE: bool = True  # default 2026-10-04: rot-glidetrim-1003 + rot-glidetrim2-1004, intact on land 9 vs 5 of 36
     ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
     LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
     LIFT_LOOP_MIN_Q_PA: float = 500.0

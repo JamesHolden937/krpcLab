@@ -4116,3 +4116,93 @@ read. Re-fly it in full (HANDOFF). `60` is a tolerance, not a fit. The
 constant-free form is "any wrap before the gate costs the run to the gate".
 
 Telemetry: `ral=` (2888089), the signed along-runway position.
+
+## Session, 2026-10-03/04 night: the glide's long arrivals are bank-coupled alpha, and the phantom batch
+
+Defaults unchanged (fingerprint 6e854d9f). Two flags added, both off:
+`HAC_WRAP_BEFORE_GATE` (4e5af16) and `ALPHA_TRIM_IN_GLIDE` (6c3d68c).
+
+**`rot-phantom-1003`** (LOG5255-5278, shuttle from orbit, 12 per arm):
+defaults vs `HAC_PATH_WRAP_TO_GATE` + `HAC_PAST_BEFORE_GATE_DEG=60`. Can't be
+read. 9 of 24 flights reached the cone 4-15 km long and ~5 km high, and the
+flag arm drew more of them. Intact (31 parts) 2 vs 1 (+1 splashed whole),
+lost (0 parts) 0 vs 3, exits "out of height" 4 vs 6. Also, the HANDOFF's
+phantom count (`turn= 3xx`) includes real laps flown past the gate after
+a high arrival (LOG5265, 5275). Check `distance*cos(angle)` (before or past
+the gate) before calling a line a phantom.
+
+**The high arrivals.** The deorbit is identical on every flight (26.2 m/s,
+same window). The cone handover splits into two groups, `long` ~+500 at
+h ~15 km, or +3..+15 km at h ~19-21 km. Loop rates are clean (1.00 s
+everywhere). The split happens below Mach 4 and comes from **bank**. Flights
+that arrive long fly |bank| 42-60 between Mach 1.2 and 4, against 20-30 for
+the good ones. Pooled over 630 glide ticks at fixed q, the alpha shortfall is
+~4-5 deg below 35 deg of bank and ~10 above 50. The pitch input in the long
+flights is 0.5-0.7 and rarely saturated, against 0.8-0.93 in the good ones.
+So the controller isn't using the authority it has. This is in the code, not
+the craft. It amends the 2026-10-01 "pitch trim / CG" diagnosis.
+
+**`rot-glidetrim-1003`** (LOG5279-5314, 18 per arm): defaults vs
+`ALPHA_TRIM_IN_GLIDE` (the alpha trim loop extended into GLIDE, bound
+`ALPHA_TRIM_GLIDE_MAX_DEG` 10). The trim wound to +6..+9 deg at high bank.
+Achieved alpha went from 26-33 to 33-35 there, the same as at low bank, and
+the pitch input then saturates. So ~34-35 deg is the real ceiling below
+Mach 4. The long tail shrank: long arrivals (>1.5 km) 10/18 averaging
++6.4 km (worst +12.5) became 8/18 averaging +2.6 (worst +3.6). The landing
+didn't improve: intact 6 vs 5, lost (0 parts) 0 vs 3. The three lost flights
+left the cone 2.3-4 km above the height they needed. Not promoted.
+
+**Refuted on the same data: late reversals as the cause.** Long arrivals
+reverse *fewer* times in the last 150 km (5-6 vs 7-13), with the same peak
+cross (~3.2 km). This is the "reversal count is a saturation symptom"
+finding again. The real difference is that the range solve asks for 45-70
+deg of bank because the prediction expects drag at high bank that the
+vehicle doesn't make. LOG5308: `long=` holds +500 down to 30 km out, then
+climbs to +3.5 km.
+
+**`save-wrap-1004`** (LOG5315-5350, cone saves, 18 per arm): defaults vs
+`HAC_WRAP_BEFORE_GATE`. A wash. On the runway (|along from the midpoint| <
+1200) 10 vs 9, intact 5 vs 5 (+1 vs +3 splashed whole). The per-save
+effect changes sign: hac5 lands ~1 km nearer (-466..-4 vs +885..+1216),
+hac1 and hac3 hand over 100-160 m higher and splash +2.1..+2.5 km where
+defaults landed. hac0 *gains* a phantom with the flag (LOG5321). That one
+is **inside the circle** (`distance <= radius`, the `hac_turn` branch),
+which the flag doesn't cover. Three tries on the phantom have now come
+back null (WRAP+PAST60 from orbit, swamped; WRAP_BEFORE_GATE from saves, a
+wash). Whether the cone reads a phantom matters less than what the
+approach does with any surplus. hac4 hands over 5.8 km high and splashes
++6.6..+7.8 km in both arms. Note: the defaults fingerprint is now
+**83592105**. Adding the off flags changed the hash, not the behaviour.
+
+**The approach's brake is a disconnected knob.** From orbit it arms (the
+measured opposed-flap set) and deploys on "S-turn saturated 100% with
++1253..+4780 m left". The **speed guard stows it on the next tick**:
+"speed 108 below target 108" (7 of 7 deployments in rot-glidetrim-1003).
+`APPROACH_SPEED_PATH` holds speed *at* the target, so a guard at 1.0x trips
+on rounding. Under the speed path, the brake's drag should become a steeper
+descent at the held speed, which is the dissipation the approach lacks.
+Probe: `AIRBRAKE_SPEED_GUARD=0.9` (rot-brakeguard-1004).
+
+**`rot-brakeguard-1004`** (LOG5351-5386, from orbit, 18 per arm, both arms
+`ALPHA_TRIM_IN_GLIDE`): adding `AIRBRAKE_SPEED_GUARD=0.9` doesn't connect
+the brake. It now **relays against `AIRBRAKE_SINK_TRACK`**. Out on "S-turn
+saturated", and within ~1.5 s the sink is 5-6 m/s past what the approach
+wants, so it's stowed. Out again 2 s later (LOG5361: eight cycles from 2.5 km
+down to the door). The measured set is a lift spoiler: it buys sink, not
+drag. To make it a speedbrake, the alpha has to rise while it's out (lift
+held, induced drag up). That's a design job. Arm 1 landed worse (1 intact vs
+9), but it also drew more long glide arrivals (11/18 vs 7/18), so it can't
+be read cleanly. Not promoted.
+
+Pooled glide arrivals (the brake can't reach the glide). Defaults, 42
+flights: 55% arrive >1.5 km long, those average ~7 km. `ALPHA_TRIM_IN_GLIDE`,
+54 flights: 48%, averaging ~3 km. Arm 0 here landed 6 intact on land, 5 on
+the runway. Confirmation batch: rot-glidetrim2-1004.
+
+**`rot-glidetrim2-1004`** (LOG5387-5422, 18 per arm, paired, fresh farm):
+defaults vs `ALPHA_TRIM_IN_GLIDE`. Intact on land **3 vs 6**, on the runway
+(|along| < 1200, not lost) **4 vs 8**, lost (0 parts) 4 vs 2, arrivals
+>1.5 km long 11 vs 7. Over both paired batches (36 a side): intact on land
+5 vs 9, long arrivals 21 vs 15, lost 4 vs 5. **Promoted**, fingerprint
+**cdb701a0**. Three geometry tests that call `aim` in GLIDE with a minimal
+snapshot are pinned to `ALPHA_TRIM_IN_GLIDE=False`.

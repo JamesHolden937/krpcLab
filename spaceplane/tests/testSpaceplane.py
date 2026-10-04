@@ -5298,7 +5298,8 @@ class TestTheBroadsideProbeReachesTheVehicle(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = apply_overrides(Config(), ["BROADSIDE_PROBE_DEG=90"])
+        self.cfg = apply_overrides(Config(), ["BROADSIDE_PROBE_DEG=90",
+                                                "ALPHA_TRIM_IN_GLIDE=False"])
         self.run = object.__new__(autopilot_module.Autopilot)
         self.run.cfg = self.cfg
         self.run.autopilot = SimpleNamespace(
@@ -5346,7 +5347,7 @@ class TestTheBroadsideProbeReachesTheVehicle(unittest.TestCase):
         runway, so the default has to be the one that flies."""
         self.assertEqual(Config().BROADSIDE_PROBE_DEG, 0.0)
         run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = Config()
+        run.cfg = replace(Config(), ALPHA_TRIM_IN_GLIDE=False)
         run.state = autopilot_module.GLIDE
         run.autopilot = SimpleNamespace(target_direction=None,
                                         target_roll=0.0,
@@ -5370,7 +5371,8 @@ class TestTheNoseFollowsTheFlownBank(unittest.TestCase):
 
     def run_(self, on):
         run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), AIM_NOSE_FROM_FLOWN_BANK=on)
+        run.cfg = replace(Config(), AIM_NOSE_FROM_FLOWN_BANK=on,
+                          ALPHA_TRIM_IN_GLIDE=False)
         run.state = autopilot_module.GLIDE
         run.autopilot = SimpleNamespace(target_direction=None,
                                         target_roll=0.0,
