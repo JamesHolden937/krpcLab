@@ -27,15 +27,6 @@ PREFIX="$HERE/prefix$N"
 # the smallest size that is readable.  Override with RES=WxH to compare.
 RES="${RES:-160x100}"; W="${RES%x*}"; H="${RES#*x}"
 
-# **NTSync off by default.**  GE-Proton 10 turns on wineserver's NTSync
-# (/dev/ntsync, "wineserver: NTSync up and running!" in the boot log) unless
-# PROTON_NO_NTSYNC is set.  Under it, a random one of six instances died
-# mid-load, silently, at the same ReStock line in KSP.log -- 3 deaths in 5
-# farm starts on 2026-10-03/04, with no OOM and no error, while a lone retry
-# always came up.  NTSYNC=1 puts it back for comparison; the measurement is
-# in docs/testInstances.md.
-if [ "${NTSYNC:-0}" = 1 ]; then NTSYNC_ENV=""; else NTSYNC_ENV="export PROTON_NO_NTSYNC=1"; fi
-
 cat > "$DIR/.inner.sh" <<INNER
 #!/usr/bin/env bash
 set -euo pipefail
@@ -45,7 +36,6 @@ export WINEPREFIX="$PREFIX"
 export __GL_SHADER_DISK_CACHE=1 __GL_SHADER_DISK_CACHE_PATH="$PREFIX/nvcache"
 export DXVK_STATE_CACHE=1 DXVK_STATE_CACHE_PATH="$PREFIX"
 export WINEDEBUG=-all
-${NTSYNC_ENV}
 mkdir -p "\$__GL_SHADER_DISK_CACHE_PATH"
 cd "$DIR"
 exec umu-run "$DIR/KSP_x64.exe" -force-d3d11 ${KSP_EXTRA:-} \\
