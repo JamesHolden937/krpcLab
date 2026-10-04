@@ -4225,6 +4225,40 @@ class TestTheHeadingAlignmentCone(unittest.TestCase):
                                   radius=radius)[0]
         self.assertAlmostEqual(before, after, delta=1.0)
 
+    def test_a_wrap_before_the_gate_is_the_run_to_it(self):
+        """``HAC_WRAP_BEFORE_GATE``: before the gate, a tangent point past
+        the rollout by any angle costs the run to the gate, not a lap
+        (LOG4152: 347 deg / 106 km to go, 16 km before the gate).  Past the
+        gate the lap stands, and a real turn before it is untouched."""
+        side = 1.0
+        radius = 8000.0
+        def path(along_m, across_m):
+            state = guidance.hac_state(self.env, self.cfg, self.end,
+                                       self.point(along_m, across_m, 3000.0),
+                                       side, radius)
+            return guidance.hac_path(self.cfg, *state[:3], side=side,
+                                     radius=radius)
+        cases = [(-5000.0, -side * 1500.0), (-1000.0, -side * 3000.0),
+                 (-500.0, -side * 6000.0)]
+        for along_m, across_m in cases:
+            old, turn, _ = path(along_m, across_m)
+            self.assertGreater(old, 40000.0)
+            self.assertGreater(math.degrees(turn), 300.0)
+        self.cfg.HAC_WRAP_BEFORE_GATE = True
+        for along_m, across_m in cases:
+            new, turn, _ = path(along_m, across_m)
+            self.assertAlmostEqual(new, math.hypot(along_m, across_m),
+                                   delta=0.02 * new)
+            self.assertEqual(turn, 0.0)
+        # Past the gate the lap is a lap.
+        lap, turn, _ = path(3000.0, side * 2000.0)
+        self.assertGreater(lap, 30000.0)
+        # A turn still to fly before the gate is untouched.
+        self.cfg.HAC_WRAP_BEFORE_GATE = False
+        before = path(-5000.0, side * 6000.0)
+        self.cfg.HAC_WRAP_BEFORE_GATE = True
+        self.assertEqual(before, path(-5000.0, side * 6000.0))
+
     def test_a_straight_in_is_priced_at_the_wings_level_ratio(self):
         """``HAC_LD_AT_TARGET``: lined up, the path left is flown wings
         level at the cone's speed, so the profile is lower than ``HAC_LD``

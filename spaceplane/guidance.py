@@ -1793,6 +1793,20 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
     # path is the run to it; a lap that is really needed is the scan's
     # ``laps``, priced as a lap.  Past the gate the wrap stands: that is a
     # lap being flown.
+    #
+    # ``HAC_WRAP_BEFORE_GATE`` is the same rule without the tolerance: before
+    # the gate, *any* tangent point past the rollout costs the run to the
+    # gate.  "Past" is the wrap itself -- the arc from the tangent point to
+    # the rollout, taken the way the turn goes, is longer than half a
+    # circle -- so no angle is chosen.  Before the gate a vehicle is
+    # approaching the rollout, not flying away from it, and the lap the
+    # wrap prices (50-55 km on an 8 km circle, against a few to the gate)
+    # is one nobody would fly; a lap that is really wanted is the scan's
+    # ``laps``.  Past the gate the wrap stands.
+    if (getattr(cfg, "HAC_WRAP_BEFORE_GATE", False)
+            and distance * math.cos(angle) < 0.0
+            and (side * (exit_angle - tangent)) % (2.0 * math.pi) > math.pi):
+        return to_gate, 0.0, tangent
     past_deg = float(getattr(cfg, "HAC_PAST_BEFORE_GATE_DEG", 0.0))
     if (past_deg > 0.0
             and turn > 2.0 * math.pi - math.radians(past_deg)

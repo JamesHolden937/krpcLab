@@ -487,6 +487,11 @@ class Config:
     # deg turn, the plan called itself short, stopped weaving and handed
     # over 5.4 km high.  0 is the committed behaviour.
     HAC_PAST_BEFORE_GATE_DEG: float = 0.0
+    # **The same rule with no tolerance** (``guidance.hac_path``): before the
+    # gate, any tangent point past the rollout -- the wrap itself, not an
+    # angle -- costs the run to the gate.  The constant-free form of
+    # ``HAC_PAST_BEFORE_GATE_DEG``.  Off until flown.
+    HAC_WRAP_BEFORE_GATE: bool = False
     # **Price a lap at the speed it will be flown** (``guidance.hac_radius``):
     # laps take their radius floor from the cone's target speed, not the
     # entry speed.  At 270 m/s the floor is 7.4 km and no lap ever fits, so
