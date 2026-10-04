@@ -92,19 +92,6 @@ in, out again 2 s later (LOG5361, eight cycles). The measured set is a
 
 ## Traps paid this session
 
-- **The farm's boot dies silently at random.** Three times tonight one
-  instance (ksp0, ksp3, ksp0) died mid-load, at the same ReStock line in
-  `KSP.log`, with nothing in the journal and no OOM. `./start.sh N` on that
-  one instance alone came up every time. Check all six ports before a batch.
-  A launch chained on a timed-out port wait will start a 5-instance batch.
-  **Suspect: the compatibility layer** (the user's suggestion). The
-  instances run under Proton via `umu-run` (`kwinRun.sh`), and the boot
-  log says `wineserver: NTSync up and running!`. A race in a new sync layer
-  while Unity loads assets on several threads fits: a random instance, the
-  same busy load stage, no error anywhere, a lone retry always works.
-  Test it: start the farm a few times with NTSync off (Proton-GE:
-  `PROTON_USE_NTSYNC=0`; check the build's variable name) and count deaths
-  against 3 in 5 starts on 2026-10-03/04.
 - A batch's `turn= 3xx` count includes real laps flown past the gate after a
   high arrival. Check `ral=` against the gate before calling it a phantom.
 - Adding an off flag changes the defaults fingerprint (6e854d9f ->

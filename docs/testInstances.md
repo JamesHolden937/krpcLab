@@ -63,6 +63,14 @@ no CPU, no log line. Before bisecting a mod list for a hang, diff
 compositor: no visible window, no display contention. `run-ksp.sh N`
 (gamescope, `BACKEND=sdl|headless|none`) is for watching one interactively.
 `start.sh` launches each in its own `systemd-run --user --scope`.
+It then waits until every named port is open, relaunching any instance that
+crashes at boot (up to 3 times; `START_WAIT=0` returns at once). About one boot
+in twenty-five crashes natively in DXVK's `d3d11.dll` just after "Preloading
+Asset Bundle Definitions" (Player.log: `Crash!!!` and a d3d11 stack; KSP.log
+ends on a ReStock "Removing ..." line). The game exits and its compositor
+stays, so before this nothing noticed and batches started on five instances.
+Not VRAM (six peak at 5.5 of 16 GB) and not NTSync (5 crashes in 66 boots
+with `PROTON_NO_NTSYNC=1`, 2026-10-04); a lone relaunch has always come up.
 
 **Flights can run faster than real time without coarsening the physics step.**
 `testInstances/timescaleSrc` raises `Time.timeScale` while leaving

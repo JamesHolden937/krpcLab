@@ -108,8 +108,9 @@ rather than a stored plan.
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `cd testInstances && ./nosleep.sh start && ./start.sh` (six, 0-5), wait for the
-# ports, fly; `./stop.sh` when the suite has to run or the session ends.
+# `cd testInstances && ./nosleep.sh start && ./start.sh` (six, 0-5; it returns
+# when every port is up, relaunching boot crashes), fly; `./stop.sh` when the
+# suite has to run or the session ends.
 #
 # **Six instances (0-5), and never beside the test suite.**  Six put 8-13 GB
 # into zram at ~4 GB each; a seventh saturated the CPU at boot (2026-10-02).
