@@ -2240,6 +2240,52 @@ class Autopilot:
                    getattr(snap, "krpc_aoa", float("nan")),
                    getattr(snap, "sideslip", float("nan")) or 0.0))
 
+    def wheel_watch(self, snap):
+        """``WHEEL_WATCH_S``: every wheel's grounded / broken / deflated /
+        stress, logged whenever it changes, from main-gear contact for this
+        many game seconds.  An instrument: 2/3 of the shuttle's level
+        touchdowns (sink 4-10, pitch 0-6) roll 11-180 deg within a second
+        and lose a wingtip, with or without the ground spoiler and the brake
+        (rot-gspoiler-1004), and nothing read the gear."""
+        span = float(getattr(self.cfg, "WHEEL_WATCH_S", 0.0))
+        if span <= 0.0 or not getattr(self, "_contact_logged", False):
+            return
+        start = getattr(self, "_wheel_watch_ut", None)
+        if start is None:
+            start = self._wheel_watch_ut = snap.ut
+        if snap.ut - start > span:
+            return
+        try:
+            wheels = getattr(self, "_watch_wheels", None)
+            if wheels is None:
+                frame = self.vessel.reference_frame
+                wheels = []
+                for w in self.vessel.parts.wheels:
+                    x, y, z = w.part.position(frame)
+                    wheels.append(("%s(%+.1f,%+.1f)" % (w.part.title[:10], x,
+                                                        y), w))
+                self._watch_wheels = wheels
+            states = []
+            for name, w in wheels:
+                try:
+                    states.append("%s g%d b%d d%d s%.0f%%" % (
+                        name, w.grounded, w.broken, w.deflated,
+                        w.stress_percentage))
+                except Exception:                       # noqa: BLE001
+                    states.append("%s gone" % name)
+        except Exception as exc:                        # noqa: BLE001
+            states = ["wheels unreadable (%s)" % exc]
+        # The stress figure moves every tick; log on a change of the flags,
+        # or of any stress by a tenth of its tolerance.
+        key = tuple((st.rsplit(" s", 1)[0],
+                     int(float(st.rsplit(" s", 1)[1].rstrip("%")) // 10)
+                     if " s" in st else 0) for st in states)
+        if key != getattr(self, "_wheel_watch_key", None):
+            self._wheel_watch_key = key
+            self.logbook.event(snap.ut, "wheels t+%.1f bnk=%+.1f: %s"
+                               % (snap.ut - start, flown_bank(snap),
+                                  " | ".join(states)))
+
     def ground_spoiler(self, snap, landed=False):
         """``ROLLOUT_GROUND_SPOILER``: the spoiler fully out on main-gear
         contact, and left out.
@@ -2252,6 +2298,7 @@ class Autopilot:
         same surfaces and are simply overridden.
         """
         self.log_contact(snap)
+        self.wheel_watch(snap)
         if (getattr(self, "_ground_spoiler_done", False)
                 or not getattr(self.cfg, "ROLLOUT_GROUND_SPOILER", False)):
             return

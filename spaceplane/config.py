@@ -2931,6 +2931,9 @@ class Config:
     # scales 200 rather than 100.  The mains braked at 50% before, and the
     # shuttle rolled 4.2 km from a 65 m/s touchdown (LOG3609).
     WHEEL_BRAKE_MAX_PCT: float = 200.0
+    # ``Autopilot.wheel_watch``: log every wheel's state for this many game
+    # seconds from main-gear contact (0 = off).  An instrument.
+    WHEEL_WATCH_S: float = 0.0
     MAIN_WHEEL_FRICTION: float = 10.0
     # **And the nose wheel's friction control off** (the user, 2026-09-30,
     # after hand-landing the twin-fin shuttle): its automatic friction is

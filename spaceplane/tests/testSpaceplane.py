@@ -8862,6 +8862,33 @@ class TestTheSpoilerHoldsLift(unittest.TestCase):
         self.assertAlmostEqual(run.spoiler_lift_hold(6.0, self.snap()), 8.0)
 
 
+class TestTheWheelWatch(unittest.TestCase):
+    """``WHEEL_WATCH_S`` logs on a change after contact, and only then."""
+
+    def test_logs_a_break(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), WHEEL_WATCH_S=5.0)
+        run._contact_logged = True
+        wheel = SimpleNamespace(
+            grounded=True, broken=False, deflated=False, stress_percentage=40.0,
+            part=SimpleNamespace(title="LY-35 Gear",
+                                 position=lambda f: (1.0, -2.0, 0.0)))
+        run.vessel = SimpleNamespace(reference_frame=None,
+                                     parts=SimpleNamespace(wheels=[wheel]))
+        events = []
+        run.logbook = SimpleNamespace(event=lambda ut, m: events.append(m))
+        snap = lambda ut: SimpleNamespace(ut=ut)
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        return_value=0.0):
+            run.wheel_watch(snap(10.0))
+            run.wheel_watch(snap(10.1))
+            wheel.broken = True
+            run.wheel_watch(snap(10.2))
+            run.wheel_watch(snap(20.0))     # past the span
+        self.assertEqual(len(events), 2)
+        self.assertIn("b1", events[1])
+
+
 class TestTheExponentialFlare(unittest.TestCase):
     """``FLARE_EXP_TAU_S``: the sink schedule no faster than td + h/tau."""
 
