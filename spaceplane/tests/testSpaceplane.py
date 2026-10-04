@@ -2574,7 +2574,7 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
     def test_off_or_unknown_lag_is_the_old_law(self):
         old = self.lagged(+800.0, +5.0, 5.3, on=False).bank
         self.assertEqual(self.lagged(+800.0, +5.0, None).bank, old)
-        self.assertFalse(Config().APPROACH_CAPTURE_LAG_AWARE)
+        self.assertTrue(Config().APPROACH_CAPTURE_LAG_AWARE)
 
     def test_the_weave_asks_less_when_the_door_is_near(self):
         far = self.lagged(0.0, 0.0, 5.3, height=2500.0, distance=3000.0,
@@ -4745,7 +4745,10 @@ class TestTheWeaveSpendsExactlyTheSurplus(unittest.TestCase):
     aligned, and it has to go to zero by itself once there is none."""
 
     def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
+        # On profile in *height*: the speed is not at the cone's reference,
+        # which ``HAC_ENERGY_BUDGET`` (default) would count as surplus.
+        self.cfg = apply_overrides(Config(), ["HAC_ON=True",
+                                              "HAC_ENERGY_BUDGET=False"])
         self.env = FakeEnv(self.cfg)
         self.end = self.env.runway.ends["09"]
 
@@ -4800,7 +4803,10 @@ class TestTheEntryIsAimedAtTheProfileNotAtTheRollout(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
+        # On profile in *height*: the speed is not at the cone's reference,
+        # which ``HAC_ENERGY_BUDGET`` (default) would count as surplus.
+        self.cfg = apply_overrides(Config(), ["HAC_ON=True",
+                                              "HAC_ENERGY_BUDGET=False"])
         self.env = FakeEnv(self.cfg)
         self.end = self.env.runway.ends["09"]
 

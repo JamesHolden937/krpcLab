@@ -3973,3 +3973,70 @@ none). Verified on the committed defaults with no `--set`
 two destroyed (one from a +9.5 km arrival); old craft 2 intact + 21, 20/23,
 two broken up to 6-7 parts in the rollout. Old-craft rollouts end 100-200 m
 off the centreline. Full suite 865 OK.
+
+## Session, 2026-10-03 evening: the rollout steered the wrong way, and the approach relayed
+
+The user, at the start of the session: the old craft is a wingless flying brick.
+A bad result there is the design, not the autopilot. It is a regression check
+only, and the shuttle is the target (`spaceplane/CLAUDE.md`, "Priority").
+
+**Every "intact" shuttle landing of the last session was off the runway
+sideways.** save-flarep3-1003's 31/31 flights stopped 200-600 m from the
+centreline, on a 70 m strip. There were two causes, one after the other.
+
+1. **The nosewheel steered away from the centreline.** `across =
+   cross(up, along)` points to the vehicle's *right* in kRPC's left-handed
+   body frame. At KSC, facing east, it comes out south. `wheel_steering`
+   is +1 to the left, so `-gain * cross` steered further out. It showed as
+   sideways speed *growing* while the vehicle slowed (LOG5021: 9 -> 24 m/s).
+   **`ROLLOUT_STEER_ACROSS_IS_RIGHT`**, save-steer-1003 (LOG5087-98): the
+   new `st=`/`trk=` columns show the track turning back (LOG5090, 5093:
+   trk -6 -> +33, xt -103 -> -19) where the old sign turns away (LOG5087:
+   trk -7 -> -64). **Default** (fingerprint e06a83a7). `ROLLOUT_STEER_PID`
+   (save-steerpid-1003, LOG5099-5110) could not be told apart from the
+   default, because touchdowns were already 5-390 m off.
+2. **The approach handed the flare a vehicle 60-525 m off the centreline.**
+   `APPROACH_CAPTURE_KP` 2 deg per m/s gives the rate loop a 2.9 s lag. The
+   shuttle's roll arrives in 5.3 s (time_to_peak), at 5-8 deg/s. The result
+   was a relay: +-40 deg alternating, the flown bank overshooting to 61. On
+   top of that, the S-turn stopped at a distance, still running ~44 m/s
+   sideways (LOG5096, door +525 m).
+   **`APPROACH_CAPTURE_LAG_AWARE`**: the gain is set so the loop's lag is
+   2 x roll's time_to_peak (0.55 on the shuttle), and the S-turn asks for
+   no more sideways rate than `lateral * (t_door - lag) / 2` can take back.
+   save-lag-1003 (LOG5111-22): **doors 1-22 m off on 5 of 6** (defaults
+   4-473), stops 21-61 m off. **But 4 of 6 overshot 1.8-6.7 km into the
+   sea.** The relay had been the approach's only dissipation, and at the
+   gentle gain the weave banked 15-25 deg against 45 asked.
+   **`APPROACH_SCURVE_FULL_GAIN`** gives the weave back its full gain.
+   save-fullgain-1003 (LOG5135-46): **every stop within 73 m of the
+   centreline, 9 of 12 on the strip**. Along: +0.9..+1.8 km on most, and
+   +4.5..+7.4 on hac1/hac4. One flight landed on the runway with 31/31
+   parts (LOG5141, +861/-27).
+
+**The energy comes from the cone.** 10 of 12 cones roll out with +840 to
++3935 m of surplus (conesum, LOG5135-46: the fit would be HAC_LD 1.40 sd
+0.15 against 1.86 planned). `HAC_EXIT_SURPLUS_DERIVED` hands the approach
+anything less than a lap, and a lap is ~4-7 km of height. The approach
+spends height only by banking. `HAC_RADIUS_MIN_M=1000` (save-rmin-1003,
+LOG5123-34) changed nothing: still laps=0. The airframe's hold radius at
+~100 m/s is ~1.3 km, and a lap there still costs more than the surplus.
+
+**Constants replaced by runtime measurement** (the user's request; all off
+by default):
+- `FLARE_LEAN_BY_ROLL`: `FLARE_WINGS_LEVEL_M` / `FLARE_BANK_TAPER_M` as
+  times, from the measured roll rate plus roll's time_to_peak.
+- `FLARE_ALIGN_BY_YAW`: `FLARE_ALIGN_ALT_M` as yaw's time_to_peak (19.7 s
+  on the shuttle, against the 3 s its comment assumed).
+- `APPROACH_SCURVE_PERIOD_BY_ROLL`: the weave's half-cycle as 2 x the bank
+  reversal time.
+
+All three together were not separable at n=6 (save-fullgain-1003 arm 1).
+`HAC_LD` is not substituted by the achieved ratio, because that failed on
+the old craft (journal 2026-09-21). `HAC_LD_MEASURED` scales the table's
+ladder by the measured L/D and is in flight now (save-ldmeas-1003).
+
+**From the cone saves the shuttle never has a speedbrake.** The brake is
+measured in vacuum, and the saves start at 13 km ("no brake armed", "no
+measured spoiler set"). From orbit it is armed and the approach never
+deploys it either (`ab=--` on all 50 lines of LOG5075).

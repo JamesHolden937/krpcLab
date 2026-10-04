@@ -440,7 +440,7 @@ class Config:
     # ``APPROACH_SPEED_FLOOR_FACTOR`` x stall = 96 -- both outside that
     # window -- so the good landings happened only where the vehicle was too
     # starved to obey.  That is the knob to move, and it is an existing one.
-    HAC_ENERGY_BUDGET: bool = False
+    HAC_ENERGY_BUDGET: bool = True  # default 2026-10-03: on the shuttle, exit surplus median +1200 -> +500 m, on the runway 6/12 vs 3/12, splashed 2 vs 4 (save-energy-1003, save-energy2-1003)
 
     HAC_EXIT_SURPLUS_M: float = 500.0
     # Exit unless the surplus can pay for a lap at the tightest circle the
@@ -4240,12 +4240,12 @@ class Config:
     # ``lateral * (time to the door - that lag) / 2`` can take back.  On the
     # shuttle (roll 5.3 s) KP 2.0 relayed +-40 deg and left the flare door
     # 60-525 m off the centreline (save-steer-1003, LOG5087-98).
-    APPROACH_CAPTURE_LAG_AWARE: bool = False
+    APPROACH_CAPTURE_LAG_AWARE: bool = True  # default 2026-10-03: with SCURVE_FULL_GAIN + HAC_ENERGY_BUDGET, save-energy-1003 + save-energy2-1003
     APPROACH_CAPTURE_LAG_FACTOR: float = 2.0
     # ...but not for the S-turn, which is a dissipator and needs its bank
     # (``guidance.approach``).  Lag-aware alone: doors 1-22 m off, 4 of 6
     # long by 1.8-6.7 km (save-lag-1003, save-rmin-1003).
-    APPROACH_SCURVE_FULL_GAIN: bool = False
+    APPROACH_SCURVE_FULL_GAIN: bool = True  # default 2026-10-03: save-fullgain-1003, save-energy-1003
     # **1.0 -- inert, and the story of why is worth more than the knob.**
     # ``logs/LOG912`` is a flight that did everything right: touchdown at
     # 1.35 m/s of sink, on the runway's length, from a gate handover 7 m off
