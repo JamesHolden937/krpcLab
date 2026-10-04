@@ -21,6 +21,18 @@ comes from that fresh prediction.
 | [docs/spaceplane/design.md](../docs/spaceplane/design.md) | the runway, the airframe measurements, the architecture phase by phase, entry states |
 | [docs/spaceplane/failures.md](../docs/spaceplane/failures.md) | **before undoing anything** -- numbered failures, cited everywhere by number |
 
+## Priority: the shuttle, not the old craft (the user, 2026-10-03)
+
+**The old craft (`qs_plane`) is a flying brick with no real wings. Don't
+spend effort on it.** If it lands badly, assume the airframe's design is the
+cause, not the autopilot. Don't tune for it. Fly it only as a regression
+check, to confirm a change didn't break something that used to work. The
+shuttle (`qs_shuttle2`) is the target. One thing was seen and not chased on
+2026-10-03: the old craft's rollouts veer 100-200 m sideways once the nose
+comes down at ~33 m/s (LOG5080/5081: xt -6 -> -188 m in 10 s). The shuttle
+also stops 300-480 m off the centreline (LOG5075, 5079), so the rollout
+steering is worth a look **on the shuttle**.
+
 ## Where it stands (2026-09-23, fingerprint `64268a58`)
 
 > **Superseded by the root [HANDOFF.md](../HANDOFF.md)** for the latest

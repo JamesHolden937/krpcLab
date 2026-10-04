@@ -48,7 +48,7 @@ there is no `deceleration_time` in this kRPC build.
 
 ## Next, in order
 
-1. **Old craft rollout.** It ends 100-200 m off the centreline, and two of
+1. ~~Old craft rollout~~ -- deprioritised by the user 2026-10-03 (a wingless brick; see spaceplane/CLAUDE.md). **Shuttle rollout steering instead**: it stops 300-480 m off the centreline. It ends 100-200 m off the centreline, and two of
    six broke up to 6-7 parts on the ground. Contacts are 8 m/s at 44 m/s
    every flight, which suggests its flare is saturated at alpha 14-15. Read
    `oscsum.py` and the ROLLOUT lines. A cone/final save for the old craft
