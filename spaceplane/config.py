@@ -2456,6 +2456,16 @@ class Config:
     FLARE_BANK_MAX_DEG: float = 12.0
     FLARE_WINGS_LEVEL_M: float = 60.0
     FLARE_BANK_TAPER_M: float = 150.0
+    # **The three heights above as times, from this airframe's measured
+    # roll and yaw** (2026-10-03).  60 m, 150 m and 140 m were set on the
+    # old craft (roll 25 deg/s, ~1 s lag; "yaw tuned to a 3 s time to
+    # peak").  The shuttle rolls at 7.4 deg/s with a 5.3 s lag and yaws on
+    # 19.7 s.  ``FLARE_LEAN_BY_ROLL``: lean while the time to the ground
+    # exceeds ``Autopilot.roll_out_s(FLARE_BANK_MAX_DEG)``, tapered over
+    # one more of it.  ``FLARE_ALIGN_BY_YAW``: aim down the runway from
+    # yaw's time to peak out, but not while the lean is allowed.
+    FLARE_LEAN_BY_ROLL: bool = False
+    FLARE_ALIGN_BY_YAW: bool = False
     FLARE_MARGIN: float = 1.3               # ask for more load than the sum says
     FLARE_ALPHA_DEG: float = 30.0           # maximum lift
     # **The tail is a hard limit and the flare did not know about it.**
@@ -3748,6 +3758,11 @@ class Config:
     APPROACH_SCURVE_STOP_S: float = 7.0
     APPROACH_SCURVE_STOP_BY_TIME: bool = False  # flown with the near aim, which crashed; see TOUCHDOWN_AIM_M
     APPROACH_SCURVE_PERIOD_S: float = 10.0  # half-cycle of the weave clock
+    # ``Autopilot.scurve_half_period_s``: the half-cycle as this factor x
+    # the time to reverse the bank at the measured roll rate (~4 s on the
+    # old craft, ~16 s on the shuttle), not 10 s.  2026-10-03, unflown.
+    APPROACH_SCURVE_PERIOD_BY_ROLL: bool = False
+    APPROACH_SCURVE_PERIOD_FACTOR: float = 2.0
 
     # -- the split-rudder airbrake ----------------------------------------
     # **Correction, 2026-09-23: the surfaces are NOT disabled** -- every

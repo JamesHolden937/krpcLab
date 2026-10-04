@@ -6347,7 +6347,7 @@ class Autopilot:
             accel=self.path_accel(snap),
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
-                period=self.cfg.APPROACH_SCURVE_PERIOD_S),
+                period=self.scurve_half_period_s()),
             heading_lead=self.approach_heading_lead(snap),
             roll_lag_s=self.roll_lag_s())
         self.command = command
@@ -6436,6 +6436,33 @@ class Autopilot:
         except (TypeError, IndexError, ValueError):
             return None
 
+    def yaw_lag_s(self):
+        """Yaw's ``time_to_peak`` as kRPC applies it, or ``None``."""
+        peak = getattr(self, "_tuned_peak", None)
+        try:
+            return float(peak[2]) if peak else None
+        except (TypeError, IndexError, ValueError):
+            return None
+
+    def roll_out_s(self, bank_deg):
+        """Seconds to take ``bank_deg`` off: the slew at the measured roll
+        rate plus roll's time to peak.  The quantity the flare's
+        wings-level and taper heights stood for, on the old craft's 25
+        deg/s roll -- the shuttle rolls at 7 with a 5.3 s lag."""
+        return (abs(bank_deg) / max(1.0, self.bank_rate())
+                + (self.roll_lag_s() or 0.0))
+
+    def scurve_half_period_s(self):
+        """``APPROACH_SCURVE_PERIOD_BY_ROLL``: the weave's half-cycle as
+        ``APPROACH_SCURVE_PERIOD_FACTOR`` x the time to reverse the bank
+        (``2 x APPROACH_BANK_MAX_DEG`` at the measured roll rate, plus
+        roll's time to peak).  A half-cycle shorter than the reversal never
+        reaches its bank.  Else ``APPROACH_SCURVE_PERIOD_S``."""
+        if not getattr(self.cfg, "APPROACH_SCURVE_PERIOD_BY_ROLL", False):
+            return self.cfg.APPROACH_SCURVE_PERIOD_S
+        return (float(self.cfg.APPROACH_SCURVE_PERIOD_FACTOR)
+                * self.roll_out_s(2.0 * self.cfg.APPROACH_BANK_MAX_DEG))
+
     def approach_bank(self, snap, bank_deg, height, trigger, sink):
         """The approach's bank as commanded -- or, under
         ``APPROACH_BANK_BY_ROLL``, as the vehicle can fly it: slewed at the
@@ -6484,10 +6511,26 @@ class Autopilot:
         # the same discipline as sharing the throttle law with the
         # propagator.
         bank = 0.0
-        if height > self.cfg.FLARE_WINGS_LEVEL_M:
+        # ``FLARE_LEAN_BY_ROLL``: the wings-level point and the taper as
+        # times to the ground against the time this airframe needs to roll
+        # ``FLARE_BANK_MAX_DEG`` out (``roll_out_s``), not as heights fitted
+        # on a 25 deg/s roll.  Time to the ground is ``height / sink``,
+        # which overstates nothing: the flare only slows the sink.
+        lean_by_roll = getattr(self.cfg, "FLARE_LEAN_BY_ROLL", False)
+        sink_now = max(1.0, -vec.dot(snap.velocity,
+                                     vec.unit(snap.position)))
+        to_ground = height / sink_now
+        level_s = self.roll_out_s(self.cfg.FLARE_BANK_MAX_DEG)
+        if lean_by_roll:
+            leaning = to_ground > level_s
+            taper = vec.clamp((to_ground - level_s) / max(0.5, level_s),
+                              0.0, 1.0)
+        else:
+            leaning = height > self.cfg.FLARE_WINGS_LEVEL_M
             taper = vec.clamp((height - self.cfg.FLARE_WINGS_LEVEL_M)
                               / max(1.0, self.cfg.FLARE_BANK_TAPER_M),
                               0.0, 1.0)
+        if leaning:
             limit = self.cfg.FLARE_BANK_MAX_DEG * taper
             lateral = guidance.approach(self.env, self.cfg, self.end,
                                         snap.position, snap.velocity,
@@ -6498,7 +6541,20 @@ class Autopilot:
         self.steer = Steer(alpha=alpha, bank=bank)
         # **Below the levelling height the reference is the runway, not the
         # airflow.**  See ``aim_runway``: this is where the crab comes out.
-        if height <= self.cfg.FLARE_ALIGN_ALT_M:
+        # ``FLARE_ALIGN_BY_YAW``: align when the time to the ground is
+        # yaw's time to peak -- the settling time ``FLARE_ALIGN_ALT_M``'s
+        # comment assumed was 3 s; on the shuttle it is 19.7 -- but never
+        # while the lean is still allowed, because ``aim_runway`` flies
+        # wings level and would end the lateral correction early.
+        if getattr(self.cfg, "FLARE_ALIGN_BY_YAW", False) \
+                and self.yaw_lag_s() is not None:
+            align_s = self.yaw_lag_s()
+            if lean_by_roll:
+                align_s = min(align_s, level_s)
+            aligned = to_ground <= align_s
+        else:
+            aligned = height <= self.cfg.FLARE_ALIGN_ALT_M
+        if aligned:
             self.aim_runway(alpha, snap)
         else:
             self.aim(alpha, bank, snap)

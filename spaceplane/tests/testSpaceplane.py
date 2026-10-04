@@ -8223,6 +8223,45 @@ class TestTheRolloutSteersTowardTheCentreline(unittest.TestCase):
         self.assertTrue(Config().ROLLOUT_STEER_ACROSS_IS_RIGHT)
 
 
+class TestTimingFromTheMeasuredRollAndYaw(unittest.TestCase):
+    """``FLARE_LEAN_BY_ROLL``, ``FLARE_ALIGN_BY_YAW``,
+    ``APPROACH_SCURVE_PERIOD_BY_ROLL``: times from the airframe's measured
+    roll rate and kRPC's time to peak, not heights fitted on the old craft."""
+
+    def run_(self, rate, peak, **kw):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), BANK_RATE_MEASURED=False,
+                          BANK_RATE_DEG_S=rate, **kw)
+        run._tuned_peak = peak
+        return run
+
+    def test_roll_out_is_slew_plus_lag(self):
+        shuttle = self.run_(7.4, (19.3, 5.3, 19.7))
+        self.assertAlmostEqual(shuttle.roll_out_s(12.0), 12.0 / 7.4 + 5.3)
+        self.assertAlmostEqual(shuttle.yaw_lag_s(), 19.7)
+
+    def test_a_slow_roll_weaves_slower(self):
+        on = dict(APPROACH_SCURVE_PERIOD_BY_ROLL=True)
+        brick = self.run_(25.5, (3.0, 1.0, 3.0), **on)
+        shuttle = self.run_(7.4, (19.3, 5.3, 19.7), **on)
+        self.assertLess(brick.scurve_half_period_s(),
+                        shuttle.scurve_half_period_s())
+        self.assertGreater(shuttle.scurve_half_period_s(), 20.0)
+
+    def test_off_is_the_constant(self):
+        run = self.run_(7.4, (19.3, 5.3, 19.7))
+        self.assertEqual(run.scurve_half_period_s(),
+                         Config().APPROACH_SCURVE_PERIOD_S)
+        self.assertFalse(Config().FLARE_LEAN_BY_ROLL)
+        self.assertFalse(Config().FLARE_ALIGN_BY_YAW)
+        self.assertFalse(Config().APPROACH_SCURVE_PERIOD_BY_ROLL)
+
+    def test_no_tune_known_means_no_lag(self):
+        run = self.run_(8.0, None)
+        self.assertIsNone(run.yaw_lag_s())
+        self.assertAlmostEqual(run.roll_out_s(8.0), 1.0)
+
+
 class TestTheValveHoldsThroughATurn(unittest.TestCase):
     """``rcs.Valve.update(hold=True)``: open whatever the error, and the
     settle clock restarts, so it shuts ``RCS_SETTLE_S`` after the turn."""
