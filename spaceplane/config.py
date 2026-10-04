@@ -337,6 +337,15 @@ class Config:
     # approach 100+ m/s of sink starts there (LOG4803: commanded 2-10 deg,
     # kRPC's signed alpha -3, pitch input +0.07).
     ALPHA_TRIM_IN_HAC: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
+    # ``ALPHA_TRIM_LOOP`` in the GLIDE as well (``Autopilot.alpha_trim_loop``).
+    # The shuttle's alpha shortfall below Mach 4 is a function of *bank*, not
+    # only of q: at 2.5-4.5 kPa it flies 4-5 deg under its command below 35
+    # deg of bank and ~10 above 50, with the pitch input at 0.5-0.7 -- not
+    # saturated.  The hard-banking flights reach the cone 4-15 km long and
+    # 5 km high, 9 of 24 in rot-phantom-1003.  ``ALPHA_TRIM_GLIDE_MAX_DEG``
+    # bounds the offset there: a safety bound, not a fit.  Off until flown.
+    ALPHA_TRIM_IN_GLIDE: bool = False
+    ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
     LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
     LIFT_LOOP_MIN_Q_PA: float = 500.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0

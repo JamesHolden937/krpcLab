@@ -8930,6 +8930,24 @@ class TestTheAlphaTrimLoop(unittest.TestCase):
         self.assertEqual(self.run_(False).alpha_trim_loop(
             7.0, self.snap(100, 4.0)), 7.0)
 
+    def test_the_glide_under_its_own_bound(self):
+        """``ALPHA_TRIM_IN_GLIDE``: the glide integrates past the landing's
+        bound, and what it wound up is clamped back on leaving it."""
+        run = self.run_()
+        run.state = autopilot_module.GLIDE
+        with unittest.mock.patch.object(autopilot_module, "flown_bank",
+                                        lambda s: s.flown_bank):
+            off = run.alpha_trim_loop(36.0, self.snap(100, 26.0))
+            self.assertEqual(off, 36.0)
+            run.cfg = replace(run.cfg, ALPHA_TRIM_IN_GLIDE=True)
+            for i in range(200):
+                out = run.alpha_trim_loop(36.0, self.snap(101 + 0.1 * i, 26.0))
+            self.assertGreater(out, 36.0 + run.cfg.ALPHA_TRIM_MAX_DEG + 1.0)
+            self.assertLessEqual(out, 36.0 + run.cfg.ALPHA_TRIM_GLIDE_MAX_DEG)
+            run.state = autopilot_module.HAC
+            out = run.alpha_trim_loop(12.0, self.snap(130, 12.0))
+            self.assertLessEqual(out, 12.0 + run.cfg.ALPHA_TRIM_MAX_DEG)
+
 
 class TestTheApproachCanLeaveAMush(unittest.TestCase):
     """``APPROACH_MUSH_RECOVERY``: well below target speed and high, the

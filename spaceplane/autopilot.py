@@ -1256,10 +1256,23 @@ class Autopilot:
         states = ((HAC, APPROACH, FLARE)
                   if getattr(self.cfg, "ALPHA_TRIM_IN_HAC", False)
                   else (APPROACH, FLARE))
+        # ``ALPHA_TRIM_IN_GLIDE``: the glide too, under its own bound.  At
+        # one dynamic pressure the shuttle flies ~4 deg under its command
+        # below 35 deg of bank and ~10 above 50, with the pitch input at
+        # 0.5-0.7 -- authority left unused -- and the flights that bank hard
+        # arrive at the cone 4-15 km long and 5 km high (rot-phantom-1003).
+        glide = getattr(self.cfg, "ALPHA_TRIM_IN_GLIDE", False)
+        if glide:
+            states = states + (GLIDE,)
         if (not getattr(self.cfg, "ALPHA_TRIM_LOOP", False)
                 or getattr(self, "state", None) not in states):
             return alpha_deg
-        delta = getattr(self, "_alpha_trim", 0.0)
+        top = (float(self.cfg.ALPHA_TRIM_GLIDE_MAX_DEG)
+               if glide and self.state == GLIDE
+               else float(self.cfg.ALPHA_TRIM_MAX_DEG))
+        # What the glide wound up is not the landing's to inherit.
+        delta = vec.clamp(getattr(self, "_alpha_trim", 0.0),
+                          float(self.cfg.ALPHA_TRIM_MIN_DEG), top)
         last = getattr(self, "_alpha_trim_ut", None)
         self._alpha_trim_ut = snap.ut
         dt = 0.0 if last is None else max(0.0, snap.ut - last)
@@ -1282,8 +1295,7 @@ class Autopilot:
                 # never closes, and winds to the bound regardless.
                 error = vec.clamp(alpha_deg - achieved, -5.0, 5.0)
                 delta = vec.clamp(delta + error * dt / settle,
-                                  float(self.cfg.ALPHA_TRIM_MIN_DEG),
-                                  float(self.cfg.ALPHA_TRIM_MAX_DEG))
+                                  float(self.cfg.ALPHA_TRIM_MIN_DEG), top)
         except (TypeError, ValueError):
             pass
         self._alpha_trim = delta
