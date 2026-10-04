@@ -1,88 +1,108 @@
 # HANDOFF — read this first, rewrite it last
 
 Snapshot of the last session. History is in `docs/spaceplane/journal.md`
-("Session, 2026-10-02 night -> 10-03: landing from cone saves").
+("Session, 2026-10-03 evening: the rollout steered the wrong way, and the
+approach relayed").
 
-Last written **2026-10-03 ~03:05**, end of session. Defaults fingerprint is
-**`6640ccdc`**: **the landing stack became the default** (bc2c494). Full
-offline suite OK (865). Everything is committed; this file is the last
-commit. Farm **stopped**, inhibitor **released**, no sims running.
+Last written **2026-10-03 ~20:25**. Defaults fingerprint **`6e854d9f`**.
+Full offline suite OK (875). Everything is committed; this file is in the
+last commit. Farm **stopped**, inhibitor **released**.
+
+**The user, this session:** the old craft (`qs_plane`) is a wingless flying
+brick. A bad result there is design, not autopilot. Use it as a regression
+check only; the shuttle is the target (`spaceplane/CLAUDE.md`, "Priority").
+They also asked for fitted constants to be replaced by runtime
+measurements wherever they appear.
 
 ## Where it stands
 
-The goal (land on the runway reliably, both craft) is **closer, and not
-reached**.
+| from orbit, current defaults (rot-newdef2-1003) | intact on runway | damaged | broken up | in the sea |
+|---|---|---|---|---|
+| shuttle `qs_shuttle2` (n=6) | 1 | 2 | 1 (1.8 km short) | 2 (+2.2 km long) |
+| old craft `qs_plane` (n=6) | **6, all on the strip** | 0 | 0 | 0 |
 
-| from orbit, current defaults | intact | damaged, on the ground | destroyed |
-|---|---|---|---|
-| shuttle `qs_shuttle2` (n=14: rot-orbit2 stack arm + rot-newdef) | 2 | 10 (6-28/31 parts) | 2 (one from a +9.5 km arrival) |
-| old craft `qs_plane` (n=14) | 5 | 9 (6-22/23 parts) | 0 |
-| *both, on the defaults before tonight* | 0 | 1 | 11 of 12 |
+From the shuttle cone saves `qs_s2_hac0-5` (n=12, save-energy*): 6/12 on
+the runway, every stop within ~110 m of the centreline, 2 in the sea (both
+hac4). **The shuttle lands on the centreline now and lands long**, usually
+stopping +0.9..+1.6 km, past the far end.
 
-From the shuttle's cone saves, the stack lands **13/24 intact**. So the
-landing chain works about half the time once the arrival is near. From orbit
-the arrival still scatters (+3 to +11 km on a third of flights).
+## What became default this session (all measured)
 
-## What became default (all measured; journal has the batches)
+1. `ROLLOUT_STEER_ACROSS_IS_RIGHT`: **a sign bug.** `across = cross(up,
+   along)` points *right* in kRPC's left-handed frame, and `wheel_steering`
+   is +1 left, so the nosewheel steered away from the centreline. Every
+   "intact" landing last session stopped 200-600 m off. Rollout lines now
+   log `st=` (the command) and `trk=` (the track angle off the runway).
+2. `APPROACH_CAPTURE_LAG_AWARE`: the capture gain is set from roll's
+   time_to_peak (5.3 s on the shuttle, so 0.55 against 2.0). The old gain
+   relayed +-40 deg and left the flare door 60-525 m off. The S-turn's
+   sideways rate is capped by what the time to the door can take back.
+3. `APPROACH_SCURVE_FULL_GAIN`: the weave keeps the full gain. It is the
+   approach's only dissipator; at the gentle gain it spent nothing and 4/6
+   went into the sea.
+4. `HAC_ENERGY_BUDGET`: the cone counts speed over its reference as height.
+   The shuttle enters at ~270 m/s against ~100, about 3 km of energy height
+   that the plan never priced and that surfaced as a climb near the gate.
+   Exit surplus median +1200 -> +500 m.
 
-- `ALPHA_TRIM_LOOP` (**bug fixed**: it integrated kRPC's error against its own
-  offset), `ALPHA_TRIM_IN_HAC`, slip tol 15, bounds -2..+4 (unbounded it
-  drove the approach phugoid).
-- `FLARE_PITCH_P=0.08`: manual pitch input proportional to the flare's pitch
-  pointing error, summed with kRPC's output. The flare used to fly 2-3 deg
-  against 7-12 commanded. **This is the lever**: 6/36 -> 13/24.
-- `APPROACH_ALPHA_AT_TARGET`: the one-g alpha at the *target* speed plus a P
-  pull-up, in place of the speed-path law (a ~50 s phugoid swung door speeds
-  43-122 m/s).
-- `APPROACH_CAPTURE_MARGIN` 0.35 -> 0.15. The capture limit-cycled
-  +-500 m on a lagging roll; doors are now within +-170 m.
-  `APPROACH_SCURVE_STOP_M` 1500 -> 4000. `APPROACH_BANK_BY_ROLL`.
-- `ROLLOUT_ON_MAIN_CONTACT` and `ROLLOUT_HOLD_TAIL_FRACTION=0.4`. The
-  shuttle's tail strikes at 11.0 deg, the rollout held 8, and FLARE flew
-  1.4 s on the wheels.
+## Built, not default
 
-Built and **not** default: `APPROACH_SPEED_KD` (superseded),
-`ATTITUDE_OSC_MITIGATION_OFF` (null on tracking),
-`ATTITUDE_PITCH_AIR_FLOOR_S` (departs). `ATTITUDE_PITCH_DECEL_S` was removed:
-there is no `deceleration_time` in this kRPC build.
+- **Runtime-measured replacements** (the user's request), unseparated at
+  n=6 (save-fullgain-1003 arm 1):
+  - `FLARE_LEAN_BY_ROLL` (wings-level and taper heights as roll times)
+  - `FLARE_ALIGN_BY_YAW` (align height as yaw's time_to_peak, 19.7 s on
+    the shuttle)
+  - `APPROACH_SCURVE_PERIOD_BY_ROLL` (weave half-cycle from the bank
+    reversal time)
+
+  Fly them again on the new defaults, n=12.
+- `ROLLOUT_STEER_PID`: null at n=6. Touchdowns were 5-390 m off before
+  steering mattered. Worth re-flying now that touchdowns are near the line.
+
+## Refuted this session
+
+- `HAC_RADIUS_MIN_M=1000`: still laps=0, nothing changed.
+- `HAC_LD_MEASURED`: wired, but raises the plan ratio to 2.2-2.7 where 1.4
+  fits. The gap is tracking (flown/planned path 1.3-1.4), not L/D.
+- `TOUCHDOWN_AIM_DERIVED`: 0 intact, 2 destroyed, doors 1.7-4.8 km off at
+  44-50 m/s. A near aim leaves the approach too little final.
 
 ## Next, in order
 
-1. ~~Old craft rollout~~ -- deprioritised by the user 2026-10-03 (a wingless brick; see spaceplane/CLAUDE.md). **Shuttle rollout steering instead**: it stops 300-480 m off the centreline. It ends 100-200 m off the centreline, and two of
-   six broke up to 6-7 parts on the ground. Contacts are 8 m/s at 44 m/s
-   every flight, which suggests its flare is saturated at alpha 14-15. Read
-   `oscsum.py` and the ROLLOUT lines. A cone/final save for the old craft
-   would make this fast. Make it in game with `entrysave.py`.
-2. **Shuttle's remaining landing losses** from the cone saves (11/24). They
-   are doors low on energy (77-170 m, 15-35 m/s sink) and touchdowns at
-   60-75 m/s. Use `spaceplane/tools/savefly.sh`.
-3. **The arrival from orbit** (old blocker 2, the hypersonic reversal; +3 to
-   +11 km on a third of shuttle flights).
-4. The same proportional pitch assist in APPROACH is untested. Stiffening
-   kRPC's tune departs; a manual P term might not.
+1. **The long landing.** The flare door is ~2.2 km past the threshold
+   because the aim is the far threshold (2400). The derived aim crashed,
+   so move it in steps (1800, 1200) **now that the cone exits with ~500 m**,
+   and read the door's `rwy=` and speed as well as the stop. Several
+   touchdowns are a float, then a stall onto the ground at 37-40 m/s and
+   14-24 m/s of sink. The flare may be too high or too long; read the
+   FLARE lines' `h`/`v`/`vs`.
+2. **hac4**: exits the cone at +3.6-3.9 km with no lap that fits, and is in
+   the sea every time. Laps are priced at the 2 km floor; check what a lap
+   costs at the hold radius with the energy budget on.
+3. **The approach can't reach its commanded alpha** (asks 20-29, flies
+   12-15; LOG5139): the shuttle's pitch trim (memory: shuttle-pitch-trim).
+4. Re-fly the three roll/yaw-timing flags and `ROLLOUT_STEER_PID` on the new
+   defaults.
+5. Rollout steering gain from a measured ground-turn response (not built).
 
-## How to measure landing work now
+## How to measure landing work
 
-`spaceplane/tools/savefly.sh ROUNDS OUT "setsA" "setsB"`: instance i flies
-`qs_s2_hac<i>` (or `SAVE=<prefix>`), and arms alternate by round, so every
-save sees every arm. ~5 min per round of six. Restart the farm between
-batches: swap reaches 12-15 GB after 2-4 rounds.
+`spaceplane/tools/savefly.sh ROUNDS OUT "setsA" "setsB"` from
+`qs_s2_hac0-5`: ~10 min per 2-round batch of 12. Restart the farm between
+batches (swap 10-12 GB after one). Verify promotions from orbit with
+`rotfly.sh "0 1 2 3 4 5" 2 OUT . "qs_shuttle2|" "qs_plane|"` (~25 min).
 
 ## Traps paid this session
 
-- **`start.sh` hangs one instance at texture load** about every third
-  restart. The log stops and the port never opens. Kill it with
-  `pgrep -f "testInstances/ks[p]N/" | xargs kill` (the bracket keeps pgrep
-  off its own shell, which gave exit 144), then `setsid ./kwinRun.sh N`.
-- **A kRPC attribute that doesn't exist fails at runtime, not import.** One
-  arm flew disconnected. Read the flag's own log line before the batch.
-  `dir(vessel.auto_pilot)` lists what this build has (oscillation
-  mitigations, attenuation angles, `max_angular_velocity`; no
-  `deceleration_time`).
-- **`rotfly.sh` with more arms than instances flies only some arms.** Use
-  `savefly.sh`.
-- **A stiffer pitch in the cone broke the cone.** Its constants were fitted
-  to the soft pitch. Fix a phase only below a phase that is already settled.
-- **Today's defaults no longer land the old craft at all** (4/4 destroyed
-  before the promotion). Every change made for the shuttle since
-  2026-09-23 went in untested on it. Fly both craft.
+- **A sign that only shows in the right column.** The steering sign was
+  wrong for weeks. "Stopped 30-40 m off" read as weave, not divergence.
+  Log the command beside the response (`st=`/`trk=`) for any actuator.
+- **The cone saves have no speedbrake.** It is measured in vacuum, and
+  they start at 13 km. From orbit it is armed but the approach never
+  deploys it either (`ab=--`).
+- **A dissipator can hide inside a bug.** The approach's +-40 deg relay was
+  spending the cone's surplus. Fixing the relay alone put 4/6 into the sea.
+- `start.sh` still hangs one instance at texture load about every third
+  restart. Kill it with `pgrep -f "testInstances/ks[p]N/" | xargs -r kill`,
+  relaunch with `setsid ./kwinRun.sh N`. Wrap `start.sh` in `timeout 300`.
+- `git cherry-pick -q` is not an option in this git.

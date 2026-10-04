@@ -4040,3 +4040,37 @@ ladder by the measured L/D and is in flight now (save-ldmeas-1003).
 measured in vacuum, and the saves start at 13 km ("no brake armed", "no
 measured spoiler set"). From orbit it is armed and the approach never
 deploys it either (`ab=--` on all 50 lines of LOG5075).
+
+**`HAC_LD_MEASURED`** (save-ldmeas-1003, LOG5147-58) is wired (`ldk`
+0.5-0.9) but moves the plan the wrong way: `pld` 1.6-2.7 against the 1.40
+that fits. The fit's gap is a tracking factor of 1.3-1.4, not the L/D, so
+the exit surplus was unchanged. **The surplus is kinetic.** The cone is
+entered at ~270 m/s against a ~100 m/s reference, ~3.2 km of energy height
+that the height-only plan never priced. Near the gate it shows as a climb
+(LOG5155: 4403 -> 4774 m). **`HAC_ENERGY_BUDGET`** prices it. Two batches,
+arms swapped (save-energy-1003 LOG5159-70, save-energy2-1003): exit surplus
+median +1200 -> +500 m, **on the runway 6/12 vs 3/12, splashed 2 vs 4**,
+hac1 landed both times where the stack alone splashed both. On the old
+craft (LOG1941-52, old approach) it was null; the shuttle enters the cone
+at three times its reference speed.
+
+**Promoted** (5e30f7a, fingerprint **6e854d9f**):
+`APPROACH_CAPTURE_LAG_AWARE`, `APPROACH_SCURVE_FULL_GAIN`,
+`HAC_ENERGY_BUDGET`. Two cone tests pinned to `HAC_ENERGY_BUDGET=False`
+(they build a state on profile in height at a speed above the reference).
+**From orbit on the committed defaults** (rot-newdef2-1003, LOG5183-94):
+`qs_plane` **6/6 intact, all on the strip** (across within 27 m, along
++494..+686; last session 2 broken up and 100-200 m off: the steering
+sign). `qs_shuttle2`: 1 intact on the runway (+928/+28), 2 splashed long
+(+2.2 km), 2 damaged, 1 broken up 1.8 km short. Sideways within 181 m.
+
+**Still long, and the reason is the aim.** `TOUCHDOWN_AIM_M` = 2400 is the
+far threshold, so the flare door is ~2.2 km down the runway (LOG5183:
+`rwy=2201` at 127 m) and the float runs off the end over falling ground. Its
+comment says to move it once the cone spends the surplus.
+**`TOUCHDOWN_AIM_DERIVED`** (save-aim-1003, LOG5195-5206) is **refuted**:
+0 intact, 2 destroyed, doors 1.7-4.8 km off the centreline at 44-50 m/s.
+That is the same mechanism as 400 on 2026-09-25: a near aim leaves too
+little final to spend what is left. Defaults in that batch: 2/6 on the
+runway. Several shuttle touchdowns are a stall onto the ground at 37-40
+m/s and 14-24 m/s of sink, after a float.

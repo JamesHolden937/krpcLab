@@ -33,7 +33,19 @@ comes down at ~33 m/s (LOG5080/5081: xt -6 -> -188 m in 10 s). The shuttle
 also stops 300-480 m off the centreline (LOG5075, 5079), so the rollout
 steering is worth a look **on the shuttle**.
 
-## Where it stands (2026-09-23, fingerprint `64268a58`)
+## Where it stands (2026-10-03 evening, fingerprint `6e854d9f`)
+
+See the root HANDOFF.md and the journal's last section. In short, the
+shuttle now lands on the centreline: every stop from the cone saves is
+within ~100 m, and from orbit within 181 m. It still lands **long**,
+because `TOUCHDOWN_AIM_M` = 2400 is the far threshold. Its touchdowns are
+often a stall after a float. The old craft lands 6/6 intact on the strip
+from orbit. **Fixed this session:** the nosewheel steered away from the
+centreline (left-handed `across`). The approach's lateral capture relayed
+against the shuttle's 5.3 s roll. The cone didn't count its entry speed as
+energy.
+
+## Where it stood (2026-09-23, fingerprint `64268a58`)
 
 > **Superseded by the root [HANDOFF.md](../HANDOFF.md)** for the latest
 > session (2026-09-23 evening): the shuttle's attitude axes, measured
