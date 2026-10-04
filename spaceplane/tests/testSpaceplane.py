@@ -8169,6 +8169,31 @@ class TestTheRolloutSteersOnWhereItIsGoing(unittest.TestCase):
         self.assertFalse(Config().ROLLOUT_STEER_PID)
 
 
+class TestTheRolloutSteersTowardTheCentreline(unittest.TestCase):
+    """``ROLLOUT_STEER_ACROSS_IS_RIGHT``: ``across = cross(up, along)``
+    points right in kRPC's left-handed body frame (x lon 0, y north, z lon
+    90 E), and ``wheel_steering`` is +1 left."""
+
+    def test_across_points_right_in_a_left_handed_frame(self):
+        lon = math.radians(-74.6)                       # KSC, on the equator
+        up = (math.cos(lon), 0.0, math.sin(lon))
+        east = (-math.sin(lon), 0.0, math.cos(lon))
+        across = vec.cross(up, east)
+        # facing east, the right hand is south: -y
+        self.assertAlmostEqual(across[1], -1.0)
+
+    def test_right_of_the_centreline_steers_left(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), ROLLOUT_STEER_ACROSS_IS_RIGHT=True)
+        self.assertEqual(run.steer_sign(), 1.0)     # +cross (right) -> +left
+        run.cfg = replace(run.cfg, ROLLOUT_STEER_PID=True)
+        self.assertGreater(run.rollout_steer_pid(SimpleNamespace(ut=0.0),
+                                                 10.0, 0.0, 0.4), 0.0)
+
+    def test_off_by_default(self):
+        self.assertFalse(Config().ROLLOUT_STEER_ACROSS_IS_RIGHT)
+
+
 class TestTheValveHoldsThroughATurn(unittest.TestCase):
     """``rcs.Valve.update(hold=True)``: open whatever the error, and the
     settle clock restarts, so it shuts ``RCS_SETTLE_S`` after the turn."""

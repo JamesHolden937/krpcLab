@@ -2135,7 +2135,7 @@ class Autopilot:
         kp = float(cfg.ROLLOUT_STEER_GAIN)
         kd = kp * float(cfg.ROLLOUT_STEER_LOOKAHEAD_S)
         ki = float(cfg.ROLLOUT_STEER_KI)
-        raw = -(kp * cross + kd * drift + ki * integral)
+        raw = self.steer_sign() * (kp * cross + kd * drift + ki * integral)
         cmd = vec.clamp(raw, -limit, limit)
         if dt > 0.0 and abs(raw) < limit:
             imax = float(cfg.ROLLOUT_STEER_I_MAX) / max(1e-9, ki)
@@ -2143,6 +2143,22 @@ class Autopilot:
         self._steer_int = integral
         self.rollout_drift = drift
         return cmd
+
+    def steer_sign(self):
+        """The sign that turns "metres off the centreline" into a
+        ``wheel_steering`` command *back toward* it.
+
+        ``across`` is ``cross(up, along)`` in kRPC's left-handed body frame,
+        which points to the vehicle's **right** (at KSC, facing east, it
+        comes out south).  kRPC's ``wheel_steering`` is +1 to the left.  So
+        a vehicle right of the centreline (``cross`` > 0) wants a positive
+        command, and the original ``-gain * cross`` steered it further out:
+        every shuttle rollout from the cone saves stopped 200-600 m off the
+        centreline with its sideways speed *growing* as it slowed (LOG5021,
+        9 -> 24 m/s), and the old craft turned ~80 deg off (LOG5080).
+        ``ROLLOUT_STEER_ACROSS_IS_RIGHT`` is the fix; off, the old sign."""
+        return (1.0 if getattr(self.cfg, "ROLLOUT_STEER_ACROSS_IS_RIGHT",
+                               False) else -1.0)
 
     def brakes_full(self, snap):
         """``ROLLOUT_BRAKE_FULL_ON_CONTACT``: every main wheel at
@@ -6595,8 +6611,16 @@ class Autopilot:
             steer_cmd = self.rollout_steer_pid(
                 snap, cross, vec.dot(snap.velocity, across), limit)
         else:
-            steer_cmd = vec.clamp(-self.cfg.ROLLOUT_STEER_GAIN * cross,
+            steer_cmd = vec.clamp(self.steer_sign()
+                                  * self.cfg.ROLLOUT_STEER_GAIN * cross,
                                   -limit, limit)
+        self.rollout_steer_cmd = steer_cmd
+        # The track's angle off the runway, signed like ``cross`` (positive
+        # heading right): with the steering command beside it the log says
+        # whether the wheels are turning the vehicle toward the centreline.
+        self.rollout_track_deg = math.degrees(math.atan2(
+            vec.dot(snap.velocity, across),
+            max(1e-6, vec.dot(snap.velocity, along))))
         try:
             self.control.wheel_steering = steer_cmd
         except Exception:                               # noqa: BLE001
@@ -7620,9 +7644,11 @@ def compact_line(state, snap, run):
             left = run.runway_remaining(snap)
         except Exception:                               # noqa: BLE001
             left = float("nan")
-        bits.append("xt=%+6.1f brk=%4.2f left=%+6.0f"
+        bits.append("xt=%+6.1f brk=%4.2f left=%+6.0f st=%+5.2f trk=%+5.1f"
                     % (getattr(run, "rollout_cross", 0.0),
-                       getattr(run, "brake_fraction", 0.0), left))
+                       getattr(run, "brake_fraction", 0.0), left,
+                       getattr(run, "rollout_steer_cmd", 0.0),
+                       getattr(run, "rollout_track_deg", 0.0)))
     return " ".join(bits)
 
 

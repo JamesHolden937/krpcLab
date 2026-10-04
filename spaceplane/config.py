@@ -2940,6 +2940,12 @@ class Config:
     # steady bias, clamped to ``ROLLOUT_STEER_I_MAX`` of deflection and
     # frozen while the output is limited.  The speed taper still applies.
     ROLLOUT_STEER_PID: bool = False
+    # **The steering's sign** (2026-10-03).  ``across`` points to the
+    # vehicle's right in kRPC's left-handed frame and ``wheel_steering`` is
+    # +1 left, so ``-gain * cross`` steered *away* from the centreline: every
+    # shuttle rollout from the cone saves stopped 200-600 m off it, sideways
+    # speed growing as it slowed.  See ``Autopilot.steer_sign``.
+    ROLLOUT_STEER_ACROSS_IS_RIGHT: bool = False
     ROLLOUT_STEER_LOOKAHEAD_S: float = 2.0
     ROLLOUT_STEER_KI: float = 0.002         # per metre-second
     ROLLOUT_STEER_I_MAX: float = 0.1        # of full deflection
