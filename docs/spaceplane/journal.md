@@ -4074,3 +4074,45 @@ That is the same mechanism as 400 on 2026-09-25: a near aim leaves too
 little final to spend what is left. Defaults in that batch: 2/6 on the
 runway. Several shuttle touchdowns are a stall onto the ground at 37-40
 m/s and 14-24 m/s of sink, after a float.
+
+## Session, 2026-10-03 night: the long landing is the approach, and the cone's phantom lap
+
+Short session; the user asked to wrap up before the second batch finished.
+No defaults changed (fingerprint 6e854d9f).
+
+**`rot-aim-1004`** (LOG5207-5242, shuttle from orbit, 3 arms x 12):
+defaults (aim 2400) 3 intact, 1 lost, stops median ~2200 m past the
+threshold; `TOUCHDOWN_AIM_M=1200` 3 intact, 1 lost, ~1960;
+`TOUCHDOWN_AIM_DERIVED` (computes to 0) 1 intact, 3 lost at 57-76 m/s
+touchdown, ~1250. Nothing promoted.
+
+**Last session's refutation of the derived aim was a save artifact.**
+`GATE_FROM_APPROACH` re-places the gate at engage (`2000 * 4.2 - aim`), so
+from `qs_s2_hac*` an aim of 0 moved the gate 6000 -> 8400 m (LOG5196) under
+a cone planned for 6000. Aim, gate and approach-ratio changes have to be
+flown from orbit.
+
+**The decomposition** (signed door positions read off the rwy trend; now
+logged as `ral=`):
+- Float, door to wheels: 1.0-1.3 km, matching `(h + (v^2-v_td^2)/2g) * L/D`
+  with L/D ~3 (LOG5183: 133 m, 84.6 -> 37 m/s, predicted ~1.25 km, flew
+  1.16-1.24).
+- Door relative to the aim: -2.1..+0.9 km (aim 2400), -4.1..+2.1 km
+  (aim 0). The approach gets +800..+1260 m from the cone and its weave is
+  held to `APPROACH_SCURVE_CROSS_M`=+-300 m. At the shuttle's ~1.2 km turn
+  radius that allows ~28 deg of track (LOG5233: `sc=45 sat=1.00`, hdg
+  +-15..28). It crossed the threshold 1100 m up and landed 1.9 km past
+  the aim.
+- The cone's phantom lap: `turn=` alternating 0 / ~347 deg, `need` 40-50
+  km, ` short `, `wv=0`, in 13 of 36 flights. Counted with:
+  `grep -E '^\[.*\] HAC ' LOG | grep -cE 'turn= *3[0-9][0-9]\.'`.
+  `HAC_PATH_WRAP_TO_GATE` and `HAC_PAST_BEFORE_GATE_DEG` (2026-09-30)
+  were never separated or promoted.
+- Separately, 7 of 36 reach the cone 4-8 km long and exit 6-10 km high.
+
+**`rot-phantom-1003-void`** (LOG5243-5248): defaults against WRAP+PAST=60,
+killed after round 0 when the session was wrapped up. 3 per arm, not
+read. Re-fly it in full (HANDOFF). `60` is a tolerance, not a fit. The
+constant-free form is "any wrap before the gate costs the run to the gate".
+
+Telemetry: `ral=` (2888089), the signed along-runway position.
