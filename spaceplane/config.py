@@ -3858,6 +3858,13 @@ class Config:
     # out only while the vehicle is not sinking faster than that plus this.
     AIRBRAKE_SINK_TRACK: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0
+    # **Hold the lift while the spoiler is out** (``Autopilot.
+    # spoiler_lift_hold``), so the spoiled lift becomes induced drag at the
+    # held speed: a speedbrake, not a sink maker.  With the commanded alpha
+    # unchanged the set took ``cla=`` 120 -> 80 and the sink track stowed it
+    # within ~1.5 s, eight times a flight (LOG5361).  Off until paired.
+    AIRBRAKE_HOLD_LIFT: bool = False
+    AIRBRAKE_HOLD_LIFT_STEP_DEG: float = 0.25
     # **Choose each surface's deploy sense by deploying it**, in vacuum,
     # once, against the game's own wrench (``Autopilot.measure_flap_brake``,
     # ``airbrake.MeasuredBrake``).  Positive ``Deploy Angle`` is a per-part

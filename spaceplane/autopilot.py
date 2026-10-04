@@ -3120,6 +3120,10 @@ class Autopilot:
                 # not add; a set predicted to cancel that does not is an
                 # uncommanded pitch input, so it is refused, not flown.
                 ok = sign * verified[0] > 0.0 and abs(verified[1]) <= limit
+                # What the set did, at the angle it did it -- the lift
+                # ``spoiler_lift_hold`` has to buy back with alpha.
+                chosen.verified_lift = verified[0]
+                chosen.verified_deg = theta
                 self.logbook.event(
                     snap.ut, "%s (measured) verified at %.0f deg: dClA "
                              "%+.2f, dCmA %+.2f (largest single surface "
@@ -6367,6 +6371,7 @@ class Autopilot:
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
                                       self.env)
         alpha = min(command.alpha, self.alpha_ceiling)
+        alpha = self.spoiler_lift_hold(alpha, snap)
         bank = self.approach_bank(snap, command.bank, height, trigger, sink)
         self.steer = Steer(alpha=alpha, bank=bank)
         self.aim(alpha, bank, snap)
@@ -6384,6 +6389,47 @@ class Autopilot:
                        % (height, command.speed, command.sink, command.cross))
         elif self.touched_down(snap, height):
             self.enter(ROLLOUT, snap.ut, "touchdown without a flare")
+
+    def spoiler_lift_hold(self, alpha_deg, snap):
+        """``AIRBRAKE_HOLD_LIFT``: while the spoiler is out, the alpha whose
+        table lift is the commanded alpha's plus the lift the set spoils.
+
+        The measured set takes ~1/3 of the lift (``cla=`` 80 out against 120
+        in, rot-brakeguard-1004), so at the commanded alpha it is a sink
+        maker, and ``AIRBRAKE_SINK_TRACK`` stows it within ~1.5 s, eight
+        times a flight (LOG5361).  Held at the same lift, what it spoils
+        becomes drag at the same load: a speedbrake.  The set's lift is the
+        one verified in vacuum at ``verified_deg``, scaled linearly to the
+        angle it is deployed at.  Capped at ``APPROACH_ALPHA_MAX_DEG`` and
+        the learned ceiling."""
+        brake = getattr(self, "flap_brake", None)
+        if (not getattr(self.cfg, "AIRBRAKE_HOLD_LIFT", False)
+                or not getattr(self, "flap_brake_out", False)
+                or brake is None
+                or getattr(brake, "verified_lift", None) is None):
+            self._lift_hold = 0.0
+            return alpha_deg
+        lost = -float(brake.verified_lift) * (
+            float(self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
+            / max(1.0, float(brake.verified_deg)))
+        if lost <= 0.0:
+            self._lift_hold = 0.0
+            return alpha_deg
+        speed = vec.norm(snap.velocity)
+        altitude = vec.norm(snap.position) - self.env.equatorial_radius
+        cap = min(float(self.cfg.APPROACH_ALPHA_MAX_DEG), self.alpha_ceiling)
+        try:
+            want = self.env.coefficients(alpha_deg, speed, altitude)[0] + lost
+            held = alpha_deg
+            step = float(self.cfg.AIRBRAKE_HOLD_LIFT_STEP_DEG)
+            while held < cap and self.env.coefficients(
+                    held, speed, altitude)[0] < want:
+                held = min(cap, held + step)
+        except Exception:                               # noqa: BLE001
+            held = alpha_deg
+        held = max(alpha_deg, held)
+        self._lift_hold = held - alpha_deg
+        return held
 
     def path_accel(self, snap):
         """dv/dt along the path, m/s^2, smoothed over
@@ -7713,6 +7759,8 @@ def compact_line(state, snap, run):
                         % ("out" if brake.extended else
                            ("in " if run.airbrake_pair is not None else "-- "),
                            brake.saturated))
+            if getattr(run.cfg, "AIRBRAKE_HOLD_LIFT", False):
+                bits.append("hold=%+4.1f" % getattr(run, "_lift_hold", 0.0))
     if state == FLARE:
         bits.append("sink=%5.2f n=%4.2f" % (getattr(run, "flare_sink", 0.0),
                                             getattr(run, "flare_needed", 1.0)))

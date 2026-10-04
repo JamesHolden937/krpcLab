@@ -8826,6 +8826,42 @@ class TestTheLiftLoopIsConnected(unittest.TestCase):
         self.assertGreater(out, 4.5)
 
 
+class TestTheSpoilerHoldsLift(unittest.TestCase):
+    """``AIRBRAKE_HOLD_LIFT``: with the spoiler out the alpha rises until
+    the table's lift covers what the verified set spoils."""
+
+    def run_(self, on=True, out=True):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), AIRBRAKE_HOLD_LIFT=on)
+        run.alpha_ceiling = 40.0
+        run.flap_brake_out = out
+        run.flap_brake = SimpleNamespace(verified_lift=-30.0,
+                                         verified_deg=15.0)
+        run.env = SimpleNamespace(equatorial_radius=600000.0,
+                                  coefficients=lambda a, s, h: (10.0 * a, 1.0))
+        return run
+
+    def snap(self):
+        return SimpleNamespace(position=(601000.0, 0.0, 0.0),
+                               velocity=(0.0, 100.0, 0.0))
+
+    def test_out_raises_alpha_by_the_lost_lift(self):
+        # 30 ClA at 15 deg -> 40 at the deploy angle's 20; slope 10/deg.
+        got = self.run_().spoiler_lift_hold(6.0, self.snap())
+        self.assertAlmostEqual(got, 10.0)
+
+    def test_in_or_off_changes_nothing(self):
+        self.assertEqual(self.run_(out=False).spoiler_lift_hold(
+            6.0, self.snap()), 6.0)
+        self.assertEqual(self.run_(on=False).spoiler_lift_hold(
+            6.0, self.snap()), 6.0)
+
+    def test_capped(self):
+        run = self.run_()
+        run.alpha_ceiling = 8.0
+        self.assertAlmostEqual(run.spoiler_lift_hold(6.0, self.snap()), 8.0)
+
+
 class TestTheExponentialFlare(unittest.TestCase):
     """``FLARE_EXP_TAU_S``: the sink schedule no faster than td + h/tau."""
 
