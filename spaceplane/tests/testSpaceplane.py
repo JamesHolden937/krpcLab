@@ -8145,15 +8145,15 @@ class TestTheRolloutSteersOnWhereItIsGoing(unittest.TestCase):
         back = self.cmd(self.run_(), 0.0, 10.0, -3.0)
         away = self.cmd(self.run_(), 0.0, 10.0, +3.0)
         self.assertLess(abs(back), abs(away))
-        # the P-only law gives both -0.2
-        self.assertAlmostEqual(away, -(0.02 * 10 + 0.04 * 3))
+        # the P-only law gives both +0.2 (right of centre -> steer left)
+        self.assertAlmostEqual(away, +(0.02 * 10 + 0.04 * 3))
 
     def test_it_counter_steers_when_closing_fast(self):
         # 5 m off but closing at 5 m/s: the look-ahead point is 5 m past
-        self.assertGreater(self.cmd(self.run_(), 0.0, 5.0, -5.0), 0.0)
+        self.assertLess(self.cmd(self.run_(), 0.0, 5.0, -5.0), 0.0)
 
     def test_the_output_is_limited(self):
-        self.assertEqual(self.cmd(self.run_(), 0.0, 500.0, 0.0, 0.1), -0.1)
+        self.assertEqual(self.cmd(self.run_(), 0.0, 500.0, 0.0, 0.1), 0.1)
 
     def test_the_integral_is_clamped_and_does_not_wind_up(self):
         run = self.run_()
@@ -8190,8 +8190,8 @@ class TestTheRolloutSteersTowardTheCentreline(unittest.TestCase):
         self.assertGreater(run.rollout_steer_pid(SimpleNamespace(ut=0.0),
                                                  10.0, 0.0, 0.4), 0.0)
 
-    def test_off_by_default(self):
-        self.assertFalse(Config().ROLLOUT_STEER_ACROSS_IS_RIGHT)
+    def test_on_by_default(self):
+        self.assertTrue(Config().ROLLOUT_STEER_ACROSS_IS_RIGHT)
 
 
 class TestTheValveHoldsThroughATurn(unittest.TestCase):
