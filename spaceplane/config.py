@@ -4242,6 +4242,10 @@ class Config:
     # 60-525 m off the centreline (save-steer-1003, LOG5087-98).
     APPROACH_CAPTURE_LAG_AWARE: bool = False
     APPROACH_CAPTURE_LAG_FACTOR: float = 2.0
+    # ...but not for the S-turn, which is a dissipator and needs its bank
+    # (``guidance.approach``).  Lag-aware alone: doors 1-22 m off, 4 of 6
+    # long by 1.8-6.7 km (save-lag-1003, save-rmin-1003).
+    APPROACH_SCURVE_FULL_GAIN: bool = False
     # **1.0 -- inert, and the story of why is worth more than the knob.**
     # ``logs/LOG912`` is a flight that did everything right: touchdown at
     # 1.35 m/s of sink, on the runway's length, from a gate handover 7 m off

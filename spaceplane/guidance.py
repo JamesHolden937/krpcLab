@@ -1479,7 +1479,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         cross_rate = rate
         error = wanted_rate - rate
         kp = cfg.APPROACH_CAPTURE_KP
-        if lag is not None:
+        # ``APPROACH_SCURVE_FULL_GAIN``: the weave keeps the full gain.  It
+        # is the approach's only dissipation, and at the lag-matched gain it
+        # banked 15-25 deg where it asked 45 and spent nothing -- 4 of 6
+        # long by 1.8-6.7 km into the sea (save-lag-1003).  The rate cap
+        # above still bounds what it hands back to the capture.
+        weave_full = (scurve_deg > 0.0
+                      and getattr(cfg, "APPROACH_SCURVE_FULL_GAIN", False))
+        if lag is not None and not weave_full:
             # **A gain the roll axis can follow.**  Bank ``k * error`` makes
             # the rate loop a lag of ``180 / (pi g k)`` seconds -- 2.9 s at
             # 2.0 -- and on a vehicle whose roll takes 5.3 s to arrive (the
