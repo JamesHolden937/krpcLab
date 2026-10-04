@@ -7606,6 +7606,10 @@ def compact_line(state, snap, run):
         # with the game reporting none, and the log used to say nothing.
         "n=%2d" % snap.parts_now,
         "rwy=%5.0f" % run.runway_distance(snap),
+        # The same, signed along the centreline: ``rwy`` is a distance and
+        # cannot tell a door 800 m short of the threshold from one 800 m
+        # past it.  Negative short, past ``RUNWAY_LENGTH_M`` off the far end.
+        "ral=%+6.0f" % (run.cfg.RUNWAY_LENGTH_M - run.runway_remaining(snap)),
     ]
     # **What the air actually did, beside what the table said it would.**
     # ``cla``/``cda`` above are the model's, at the *commanded* angle; these
