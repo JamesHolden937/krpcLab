@@ -1086,7 +1086,7 @@ def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             heading_lead=0.0, accel=None):
+             heading_lead=0.0, accel=None, roll_lag_s=None):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -1414,6 +1414,13 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         trigger = flare_door(cfg, sink, speed, env)
         to_flare = max(0.0, height - trigger) / max(1.0, sink)
         in_flare = 2.0 * min(height, trigger) / max(1.0, sink)
+        # ``APPROACH_CAPTURE_LAG_AWARE``: the time the roll axis takes to
+        # deliver a bank, times ``APPROACH_CAPTURE_LAG_FACTOR``.  ``None``
+        # (not known, or the flag off) leaves the law as it was.
+        lag = None
+        if (getattr(cfg, "APPROACH_CAPTURE_LAG_AWARE", False)
+                and roll_lag_s is not None and roll_lag_s > 0.0):
+            lag = float(cfg.APPROACH_CAPTURE_LAG_FACTOR) * float(roll_lag_s)
         # **Be centred at the flare's door, not at the wheels.**  Spending
         # the last of the correction inside the flare is what the ``in_flare``
         # term was for, and it works -- the cross-track at rest is within
@@ -1458,10 +1465,29 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
             wanted_rate = lean_side * min(
                 speed * math.sin(math.radians(scurve_deg)),
                 math.sqrt(2.0 * lateral * room))
+            # **And no faster than the time left can take back.**  The weave
+            # stops at a distance and hands the capture whatever sideways
+            # rate it was running: LOG5096 left it at ~44 m/s ten seconds
+            # from the door, ~800 m of stopping at ``lateral``, and the
+            # flare started 525 m off.  Arresting a rate w and returning
+            # takes about ``2 w / lateral``, after the roll lag.
+            if lag is not None:
+                cap = 0.5 * lateral * max(0.0, cross_time - lag)
+                wanted_rate = math.copysign(min(abs(wanted_rate), cap),
+                                            wanted_rate)
         rate = vec.dot(v, across)
         cross_rate = rate
         error = wanted_rate - rate
-        magnitude = abs(cfg.APPROACH_CAPTURE_KP * error)
+        kp = cfg.APPROACH_CAPTURE_KP
+        if lag is not None:
+            # **A gain the roll axis can follow.**  Bank ``k * error`` makes
+            # the rate loop a lag of ``180 / (pi g k)`` seconds -- 2.9 s at
+            # 2.0 -- and on a vehicle whose roll takes 5.3 s to arrive (the
+            # shuttle) that is a relay: +-40 deg alternating, the bank
+            # overshooting to 61, doors 60-525 m off (save-steer-1003).  So
+            # the loop's lag is set to ``lag`` and the constant is a cap.
+            kp = min(kp, 180.0 / (math.pi * max(0.1, gravity) * lag))
+        magnitude = abs(kp * error)
         # Lift toward +across accelerates the vehicle toward +across, so the
         # side to lean is the sign of the rate error and not of the offset.
         want = vec.scale(across, 1.0 if error > 0.0 else -1.0)

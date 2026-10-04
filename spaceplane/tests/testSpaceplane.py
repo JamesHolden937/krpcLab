@@ -2557,6 +2557,35 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
                         * self.scurve(0.0, 0.0, -1.0).bank, 0.0,
                         "the weave clock did not reverse it")
 
+    # -- ``APPROACH_CAPTURE_LAG_AWARE`` -----------------------------------
+    def lagged(self, cross, rate, lag, on=True, weave=0.0, **kw):
+        end, r, v, _ = self.state(cross, rate, **kw)
+        cfg = replace(self.cfg, APPROACH_CAPTURE_LAG_AWARE=on)
+        return guidance.approach(self.env, cfg, end, r, v, MASS, GRAVITY,
+                                 kw.get("height", 1000.0), roll_lag_s=lag,
+                                 weave=weave)
+
+    def test_a_slow_roll_gets_a_gentler_gain_same_side(self):
+        stiff = self.lagged(+800.0, +5.0, 0.5).bank
+        slow = self.lagged(+800.0, +5.0, 5.3).bank
+        self.assertGreater(stiff * slow, 0.0)
+        self.assertLess(abs(slow), abs(stiff))
+
+    def test_off_or_unknown_lag_is_the_old_law(self):
+        old = self.lagged(+800.0, +5.0, 5.3, on=False).bank
+        self.assertEqual(self.lagged(+800.0, +5.0, None).bank, old)
+        self.assertFalse(Config().APPROACH_CAPTURE_LAG_AWARE)
+
+    def test_the_weave_asks_less_when_the_door_is_near(self):
+        far = self.lagged(0.0, 0.0, 5.3, height=2500.0, distance=3000.0,
+                          weave=+1.0)
+        self.assertGreater(far.scurve_deg, 0.0)
+        # a lag that eats the whole time to the door leaves no weave rate:
+        # the command is then the capture's, which is quiet on the line
+        none = self.lagged(0.0, 0.0, 1e4, height=2500.0, distance=3000.0,
+                           weave=+1.0)
+        self.assertLess(abs(none.bank), abs(far.bank))
+
     def test_the_weave_stays_inside_an_offset_it_can_take_back(self):
         """The band, not the clock, at the edge: a weave that keeps leaning
         out builds a cross-track the flare inherits, which is how

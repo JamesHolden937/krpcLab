@@ -4218,6 +4218,15 @@ class Config:
     # every term in it is a speed or an acceleration.
     APPROACH_LATERAL_CAPTURE: bool = True
     APPROACH_CAPTURE_KP: float = 2.0        # deg of bank per m/s of rate error
+    # **The capture and the S-turn against the roll axis's lag** (2026-10-03).
+    # ``guidance.approach``: the rate loop's gain is set so its own lag is
+    # ``APPROACH_CAPTURE_LAG_FACTOR`` x roll's time_to_peak (KP above becomes
+    # a cap), and the S-turn asks for no more sideways rate than
+    # ``lateral * (time to the door - that lag) / 2`` can take back.  On the
+    # shuttle (roll 5.3 s) KP 2.0 relayed +-40 deg and left the flare door
+    # 60-525 m off the centreline (save-steer-1003, LOG5087-98).
+    APPROACH_CAPTURE_LAG_AWARE: bool = False
+    APPROACH_CAPTURE_LAG_FACTOR: float = 2.0
     # **1.0 -- inert, and the story of why is worth more than the knob.**
     # ``logs/LOG912`` is a flight that did everything right: touchdown at
     # 1.35 m/s of sink, on the runway's length, from a gate handover 7 m off

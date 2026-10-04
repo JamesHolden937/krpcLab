@@ -6348,7 +6348,8 @@ class Autopilot:
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.cfg.APPROACH_SCURVE_PERIOD_S),
-            heading_lead=self.approach_heading_lead(snap))
+            heading_lead=self.approach_heading_lead(snap),
+            roll_lag_s=self.roll_lag_s())
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
@@ -6427,6 +6428,14 @@ class Autopilot:
         self._lead_out = self._lead_rate * 0.5 * unroll
         return self._lead_out
 
+    def roll_lag_s(self):
+        """Roll's ``time_to_peak`` as kRPC applies it, or ``None``."""
+        peak = getattr(self, "_tuned_peak", None)
+        try:
+            return float(peak[1]) if peak else None
+        except (TypeError, IndexError, ValueError):
+            return None
+
     def approach_bank(self, snap, bank_deg, height, trigger, sink):
         """The approach's bank as commanded -- or, under
         ``APPROACH_BANK_BY_ROLL``, as the vehicle can fly it: slewed at the
@@ -6483,7 +6492,8 @@ class Autopilot:
             lateral = guidance.approach(self.env, self.cfg, self.end,
                                         snap.position, snap.velocity,
                                         snap.mass,
-                                        self.surface_gravity, height)
+                                        self.surface_gravity, height,
+                                        roll_lag_s=self.roll_lag_s())
             bank = vec.clamp(lateral.bank, -limit, limit)
         self.steer = Steer(alpha=alpha, bank=bank)
         # **Below the levelling height the reference is the runway, not the
