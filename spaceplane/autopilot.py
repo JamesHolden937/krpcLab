@@ -2241,8 +2241,7 @@ class Autopilot:
                    getattr(snap, "sideslip", float("nan")) or 0.0))
 
     def wheel_watch(self, snap):
-        """``WHEEL_WATCH_S``: every wheel's grounded / broken / deflated /
-        stress, logged whenever it changes, from main-gear contact for this
+        """``WHEEL_WATCH_S``: every wheel's grounded / broken / stress, logged whenever it changes, from main-gear contact for this
         many game seconds.  An instrument: 2/3 of the shuttle's level
         touchdowns (sink 4-10, pitch 0-6) roll 11-180 deg within a second
         and lose a wingtip, with or without the ground spoiler and the brake
@@ -2268,11 +2267,12 @@ class Autopilot:
             states = []
             for name, w in wheels:
                 try:
-                    states.append("%s g%d b%d d%d s%.0f%%" % (
-                        name, w.grounded, w.broken, w.deflated,
-                        w.stress_percentage))
-                except Exception:                       # noqa: BLE001
-                    states.append("%s gone" % name)
+                    # kRPC 0.6.0's Wheel has no ``deflated``; reading it
+                    # made every wheel read "gone" (rot-wheels-1004).
+                    states.append("%s g%d b%d s%.0f%%" % (
+                        name, w.grounded, w.broken, w.stress_percentage))
+                except Exception as exc:                # noqa: BLE001
+                    states.append("%s unreadable (%s)" % (name, exc))
         except Exception as exc:                        # noqa: BLE001
             states = ["wheels unreadable (%s)" % exc]
         # The stress figure moves every tick; log on a change of the flags,

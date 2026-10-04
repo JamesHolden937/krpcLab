@@ -8870,7 +8870,7 @@ class TestTheWheelWatch(unittest.TestCase):
         run.cfg = replace(Config(), WHEEL_WATCH_S=5.0)
         run._contact_logged = True
         wheel = SimpleNamespace(
-            grounded=True, broken=False, deflated=False, stress_percentage=40.0,
+            grounded=True, broken=False, stress_percentage=40.0,
             part=SimpleNamespace(title="LY-35 Gear",
                                  position=lambda f: (1.0, -2.0, 0.0)))
         run.vessel = SimpleNamespace(reference_frame=None,
