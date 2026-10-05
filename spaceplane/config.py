@@ -2962,6 +2962,23 @@ class Config:
     # instrument.
     WHEEL_WATCH_S: float = 0.0
     WHEEL_WATCH_RELIST_S: float = 0.5
+    # **The landing geometry measured with the gear down**
+    # (``Telemetry.measure_gear_geometry``).  The first-sample box is read
+    # with the gear up on every save, so on the shuttle the "wheels" were
+    # the belly (1.82 m; the tyres are 3.72) and the tail-strike angle 11.0
+    # deg (the engine bell reaches the runway at ~25 about the mains).  On:
+    # re-measured from every part's box once the mains report deployed, and
+    # the clearance and the tail angle replaced.
+    GEAR_GEOMETRY_DEPLOYED: bool = False
+    # ``Autopilot.ground_watch``: every part's lowest point above the
+    # terrain, and the flex of the four closest, from wheels-6-m until this
+    # many game seconds after contact (0 = off).  An instrument.
+    GROUND_WATCH_S: float = 0.0
+    # **No wheel brake for this long after main-gear contact** (0 = off).
+    # GROUND_WATCH (LOG5747) saw both wings leave at the root within 0.1 s
+    # of a 4 m/s contact with every other part >1 m clear: is it the brake
+    # torque arriving with the load?
+    ROLLOUT_BRAKE_DELAY_S: float = 0.0
     MAIN_WHEEL_FRICTION: float = 10.0
     # **And the nose wheel's friction control off** (the user, 2026-09-30,
     # after hand-landing the twin-fin shuttle): its automatic friction is

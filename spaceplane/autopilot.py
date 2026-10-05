@@ -2104,6 +2104,15 @@ class Autopilot:
         fraction and the achieved ``dec=`` can be read against each other,
         which is what would disagree with ``BRAKE_DECEL_FULL_M_S2``.
         """
+        delay = float(getattr(self.cfg, "ROLLOUT_BRAKE_DELAY_S", 0.0))
+        since = (getattr(self, "_contact_ut", None)
+                 or getattr(self, "state_since", None)) if delay > 0.0 else None
+        if since is not None and snap.ut - since < delay:
+            # ``ROLLOUT_BRAKE_DELAY_S``: no wheel brake until the tyres have
+            # spun up and the gear has taken the weight.
+            self.brake_fraction = 0.0
+            self.control.brakes = False
+            return
         if getattr(self.cfg, "ROLLOUT_BRAKE_FULL_ON_CONTACT", False):
             self.brakes_full(snap)
             return
@@ -2221,6 +2230,7 @@ class Autopilot:
             self._pre_contact = state
             return
         self._contact_logged = True
+        self._contact_ut = snap.ut
         before = getattr(self, "_pre_contact", None)
         self.logbook.event(
             snap.ut, "contact: before (%s), at (%s), %s"
@@ -2304,6 +2314,95 @@ class Autopilot:
                                   getattr(self, "_watch_parts", 0),
                                   " | ".join(states)))
 
+    def gear_geometry(self, snap):
+        """Once the main wheels report deployed: measure the landing
+        geometry with the gear down (``Telemetry.measure_gear_geometry``).
+        Applied with ``GEAR_GEOMETRY_DEPLOYED``; measured (for the log and
+        ``ground_watch``) whenever either is on."""
+        apply = bool(getattr(self.cfg, "GEAR_GEOMETRY_DEPLOYED", False))
+        watch = float(getattr(self.cfg, "GROUND_WATCH_S", 0.0)) > 0.0
+        if getattr(self, "_gear_geometry_done", False) or not (apply or watch):
+            return
+        mains = self._brake_wheels()
+        try:
+            if not mains or not all(w.deployed for w in mains):
+                return
+        except Exception:                               # noqa: BLE001
+            return
+        self._gear_geometry_done = True
+        self._ground_rows = self.telemetry.measure_gear_geometry(
+            snap.ut, [w.part for w in mains], apply)
+
+    def ground_watch(self, snap):
+        """``GROUND_WATCH_S``: from the wheels 6 m up until this many game
+        seconds after contact, every tick, the lowest point of every part
+        above the terrain -- the rigid geometry measured at gear-down,
+        turned by the vessel's attitude now -- and, for the parts that come
+        closest, how far the real part has moved from where the rigid
+        vessel would put it (flex).  An instrument: which part reaches the
+        runway, and whether the airframe bends to get it there.
+
+        At 40-50 m/s any part over its crash tolerance (15 m/s for the
+        wings, elevons and RCS blocks) that touches the runway explodes;
+        the game's own log says the shuttle's first part to go at a gentle
+        contact is usually an RV-105 block, while the rigid geometry keeps
+        every non-wheel part >= 1.5 m clear at the contact attitude."""
+        span = float(getattr(self.cfg, "GROUND_WATCH_S", 0.0))
+        rows = getattr(self, "_ground_rows", None)
+        if span <= 0.0 or not rows:
+            return
+        if getattr(self, "_ground_watch_ut", None) == snap.ut:
+            return
+        self._ground_watch_ut = snap.ut
+        contact = getattr(self, "_contact_logged", False)
+        start = getattr(self, "_ground_contact_ut", None)
+        if contact and start is None:
+            start = self._ground_contact_ut = snap.ut
+        if start is not None and snap.ut - start > span:
+            return
+        main_z = [max(c[2] for c in r[5]) for r in rows if r[3]]
+        clearance = sum(main_z) / len(main_z)
+        if start is None and snap.surface_altitude - clearance > 6.0:
+            return
+        sc = self.conn.space_center
+        try:
+            vframe = self.vessel.reference_frame
+            sframe = self.vessel.surface_reference_frame
+            ups = [sc.transform_direction(e, vframe, sframe)[0]
+                   for e in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+            alt = snap.surface_altitude
+            parts_now = len(self.vessel.parts.all)
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "ground watch unreadable (%s)" % exc)
+            return
+
+        def height(p):
+            return alt + p[0] * ups[0] + p[1] * ups[1] + p[2] * ups[2]
+
+        lows = []
+        for title, part, is_wheel, is_main, origin, corners in rows:
+            lows.append((min(height(c) for c in corners), title, part,
+                         is_wheel, is_main, origin))
+        mains = ["%+.2f" % low for low, _, _, _, m, _ in lows if m]
+        others = sorted(l for l in lows if not l[3])
+        if getattr(self, "_ground_flex_parts", None) is None:
+            self._ground_flex_parts = others[:4]
+        flex = []
+        for _, title, part, _, _, origin in self._ground_flex_parts:
+            try:
+                real = part.position(sframe)[0] + alt
+                flex.append("%s %+.2f" % (title[:8], real - height(origin)))
+            except Exception:                           # noqa: BLE001
+                flex.append("%s gone" % title[:8])
+        when = ("t%+.2f" % (snap.ut - start) if start is not None
+                else "pre")
+        self.logbook.event(
+            snap.ut, "ground %s n=%d mains %s | low %s | flex %s"
+            % (when, parts_now, "/".join(mains),
+               ", ".join("%s %+.2f" % (t[:12], low)
+                         for low, t, _, _, _, _ in others[:4]),
+               ", ".join(flex)))
+
     def ground_spoiler(self, snap, landed=False):
         """``ROLLOUT_GROUND_SPOILER``: the spoiler fully out on main-gear
         contact, and left out.
@@ -2316,7 +2415,9 @@ class Autopilot:
         same surfaces and are simply overridden.
         """
         self.log_contact(snap)
+        self.gear_geometry(snap)
         self.wheel_watch(snap)
+        self.ground_watch(snap)
         if (getattr(self, "_ground_spoiler_done", False)
                 or not getattr(self.cfg, "ROLLOUT_GROUND_SPOILER", False)):
             return
@@ -7013,6 +7114,7 @@ class Autopilot:
         *spring and damper*, not when it comes down).
         """
         if self.gear_down:
+            self.gear_geometry(snap)
             self.wheel_watch(snap)
             return
         trigger = self.cfg.GEAR_ALT_M

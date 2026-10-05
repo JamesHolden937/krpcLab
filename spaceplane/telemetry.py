@@ -405,6 +405,68 @@ class Telemetry:
             return None
         return aft if aft > 0.0 else None
 
+    def measure_gear_geometry(self, ut, mains, apply):
+        """The landing geometry with the gear *down*, from every part's box.
+
+        ``_refresh_wheel_clearance`` reads the vessel's box on the first
+        sample, and every save this vehicle flies from has the gear up -- so
+        on the shuttle it measured the fuselage's belly (1.82 m) as the
+        wheels, and the tail-strike angle (11.0 deg) about a belly the
+        vehicle never rolls on.  Gear down, the LY-60s put the tyres 3.72 m
+        under the CoM and the first thing aft of them to reach the runway
+        is the engine bell, at ~25 deg.  The flare flew 1.9 m of phantom
+        height (contact at ``h 2.2``, every shuttle log) and capped its
+        pitch at 8.8 deg.
+
+        ``mains`` are the braked wheels' parts.  Returns the per-part
+        corner table (vessel frame) for ``Autopilot.ground_watch``, or None.
+        Sets ``wheel_clearance`` and ``tail_angle_deg`` only when ``apply``
+        (``GEAR_GEOMETRY_DEPLOYED``)."""
+        frame = self.vessel.reference_frame
+        try:
+            wheel_parts = [w.part for w in self.vessel.parts.wheels]
+            rows = []
+            for part in self.vessel.parts.all:
+                lo, hi = part.bounding_box(frame)
+                corners = [(x, y, z) for x in (lo[0], hi[0])
+                           for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+                rows.append((part.title, part, part in wheel_parts,
+                             part in mains, tuple(part.position(frame)),
+                             corners))
+        except Exception:                               # noqa: BLE001
+            return None
+        main_rows = [r for r in rows if r[3]]
+        if not main_rows:
+            return None
+        ground_z = sum(max(c[2] for c in r[5]) for r in main_rows) / len(
+            main_rows)
+        axle_y = sum(r[4][1] for r in main_rows) / len(main_rows)
+        tail, tail_part = None, None
+        for title, _, is_wheel, _, _, corners in rows:
+            if is_wheel:
+                continue
+            for x, y, z in corners:
+                if y < axle_y - 0.3:
+                    angle = math.degrees(math.atan2(ground_z - z, axle_y - y))
+                    if tail is None or angle < tail:
+                        tail, tail_part = angle, title
+        sane = 0.1 <= ground_z <= self.cfg.WHEEL_CLEARANCE_MAX_M
+        if self.logbook:
+            self.logbook.event(
+                ut, "gear-down geometry: tyres %.2f m under the CoM (was "
+                    "%.2f), mains %.2f m aft, tail strike %s (%s)%s"
+                % (ground_z, self.wheel_clearance, -axle_y,
+                   "?" if tail is None else "%.1f deg" % tail, tail_part,
+                   " -- applied" if apply and sane else
+                   (" -- NOT sane, ignored" if not sane else
+                    " -- logged only")))
+        if apply and sane:
+            self.wheel_clearance = ground_z
+            self._clearance_measured = True
+            if tail is not None and 1.0 <= tail <= 45.0:
+                self.tail_angle_deg = tail
+        return rows
+
     def _refresh_wheel_clearance(self, ut):
         """Centre of mass down to the tyres, re-measured until it is sane.
 
