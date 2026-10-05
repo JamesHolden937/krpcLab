@@ -3812,7 +3812,11 @@ class Autopilot:
         ``run_standby`` -- it forced DEORBIT directly, so the change looked
         like it did nothing.
         """
-        if height <= self.cfg.ENTRY_INTERFACE_M:
+        if (height <= self.cfg.ENTRY_INTERFACE_M
+                if not getattr(self.cfg, "ENTRY_INTERFACE_AT_AIR", False)
+                else trajectory.past_interface(
+                    self.env, self.cfg,
+                    vec.norm(position) - self.env.equatorial_radius)):
             self.end = self.env.runway.choose(position, velocity)
             self.steer = Steer(alpha=min(self.cfg.ENTRY_ALPHA_DEG,
                                          self.alpha_ceiling),
@@ -5843,7 +5847,11 @@ class Autopilot:
         # ``run_glide`` inverts around, so leaving it at bank 0 would hand the
         # first solve the very baseline this is here to remove.
         self.steer = Steer(alpha=alpha, bank=bank)
-        if snap.height_above_runway <= self.cfg.ENTRY_INTERFACE_M:
+        if (snap.height_above_runway <= self.cfg.ENTRY_INTERFACE_M
+                if not getattr(self.cfg, "ENTRY_INTERFACE_AT_AIR", False)
+                else trajectory.past_interface(
+                    self.env, self.cfg,
+                    vec.norm(snap.position) - self.env.equatorial_radius)):
             # Belt and braces: the altitude release above has already fired
             # 12 km higher, and a phase that hands over in warp is a phase
             # whose successor cannot point the vehicle.
@@ -5890,7 +5898,12 @@ class Autopilot:
             self.logbook.event(snap.ut, "coast warp released at %.0f km, "
                                         "%.0f km of vacuum coast left"
                                % (altitude / 1000.0,
-                                  (altitude - self.cfg.ENTRY_INTERFACE_M)
+                                  (altitude - (
+                                      self.env.atmosphere_depth
+                                      if getattr(self.cfg,
+                                                 "ENTRY_INTERFACE_AT_AIR",
+                                                 False)
+                                      else self.cfg.ENTRY_INTERFACE_M))
                                   / 1000.0))
 
     def check_thermal(self, snap):

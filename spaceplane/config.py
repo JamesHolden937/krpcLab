@@ -1705,6 +1705,13 @@ class Config:
 
     # -- entry -------------------------------------------------------------
     ENTRY_INTERFACE_M: float = 58000.0      # where to stop coasting and fly
+    # **The interface at the top of the air** (``trajectory.past_interface``):
+    # the glide takes over where the body's atmosphere begins, as the game
+    # reports it, instead of at 58 km -- a Kerbin altitude in the initial
+    # commit with no recorded reason, which means nothing on another body.
+    # The glide's solve propagates the whole remaining entry, so it is well
+    # posed from the first air.  Off until paired.
+    ENTRY_INTERFACE_AT_AIR: bool = False
     # -- the upper entry, where the solve has leverage but no authority ----
     # **The scatter is made here and it is made by the commanded bank.**
     # Seventeen flights from one byte-identical quicksave, with a deorbit

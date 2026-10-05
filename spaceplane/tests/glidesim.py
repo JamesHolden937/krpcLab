@@ -103,7 +103,9 @@ def fly(cfg, dv, longitude=0.0, verbose=True, jitter=0.0):
             if height <= 1.15 * cfg.GATE_ALT_M \
                     and distance <= cfg.GATE_CAPTURE_M:
                 break
-        if height <= cfg.ENTRY_INTERFACE_M:
+        if (height <= cfg.ENTRY_INTERFACE_M
+                if not getattr(cfg, "ENTRY_INTERFACE_AT_AIR", False)
+                else trajectory.past_interface(env, cfg, altitude)):
             new, prediction = guidance.solve_glide(env, r, v, MASS, cfg, end,
                                                    steer.alpha, steer.bank)
             solved += 1

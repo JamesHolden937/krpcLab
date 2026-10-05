@@ -191,6 +191,23 @@ _LOAD_CACHE_KEY = None
 _ENV_SERIAL = 0
 
 
+def past_interface(env, cfg, altitude):
+    """Whether ``altitude`` (above the body's datum) is inside the entry,
+    where the glide flies rather than the coast.
+
+    ``ENTRY_INTERFACE_M`` (58 km) is a Kerbin altitude with no recorded
+    reason.  Under ``ENTRY_INTERFACE_AT_AIR`` the interface is the top of
+    the atmosphere the game reports for the body: the glide's solve
+    propagates the whole remaining entry at the bank it commands, so it is
+    well posed from the first air, and thin air only makes the bank cheap.
+    """
+    if getattr(cfg, "ENTRY_INTERFACE_AT_AIR", False):
+        depth = getattr(env, "atmosphere_depth", None)
+        if depth:
+            return altitude < float(depth)
+    return altitude < float(cfg.ENTRY_INTERFACE_M)
+
+
 def _env_identity(env):
     global _ENV_SERIAL
     serial = getattr(env, "_alpha_cache_serial", None)
@@ -1206,7 +1223,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         # leaves on another orbit.  It is not a range error and the range
         # solve cannot see it, because the arc does eventually come down and
         # the propagation dutifully reports where.
-        if iface_r is None and altitude < float(cfg.ENTRY_INTERFACE_M):
+        if iface_r is None and past_interface(env, cfg, altitude):
             iface_r, iface_v, iface_t = r, v, t
         # **The true vacuum/aero boundary, not the skip threshold.**
         # ``entry_r`` is taken ``SKIP_ENTER_MARGIN_M`` *below* the
