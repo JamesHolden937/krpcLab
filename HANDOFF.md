@@ -4,8 +4,9 @@ Snapshot of the last session. History is in `docs/spaceplane/journal.md`
 ("Session, 2026-10-04 night / 10-05: the wings come off because of rigid
 attachment").
 
-Last written **2026-10-05 ~09:30** (machine clock). Defaults fingerprint
-**`c574d6f3`** (was db95a67f; changed only by off flags). Offline
+Last written **2026-10-05 ~12:55** (machine clock). Defaults fingerprint
+**`9fb6cdb8`**: `FLARE_ALIGN_ALT_M` 140 -> 30 and `APPROACH_AIM_SHIFT_M`
+(new) 0 -> 1000 promoted this session. Offline
 spaceplane suite OK. Everything committed. Farm **up** (0-5), ksp6 is the
 camera instance (1280x720, its own settings.cfg).
 
@@ -53,7 +54,24 @@ collisions (artefacts: impulse 0 / after the break), gear on the fuselage
 - `ROLLOUT_BRAKE_DELAY_S`: null on wing loss.
 - `MAIN_GEAR_SPRING` / `MAIN_GEAR_DAMPER`: null.
 
-## Where the landing stands (rigoff saves, 30 flights)
+## Promoted 2026-10-05 midday (journal, "the touchdown point")
+
+- `FLARE_ALIGN_ALT_M=30`: touchdown cross-track halved (median 27 -> 13-20).
+- `APPROACH_AIM_SHIFT_M=1000`: the approach aims 1 km nearer; cone/gate
+  keep `TOUCHDOWN_AIM_M`; S-turn stop measured from the unshifted aim.
+  Rigoff cone saves on the runway **13/15 vs 5/15** (hac4 excluded).
+  Regression: old craft 4/4 on runway; orbit 2/8 vs 2/8.
+
+**Now the blocker is the cone from orbit**: ~1 in 8 orbital shuttle
+flights lands on the runway. Two mechanisms (journal): the derived exit
+allowance hands over up to a lap's height (~8 km) of surplus; and the cone
+prices its exit via a gate 6 km out while a 9 km circle has the vehicle
+beside the field, so "out of height" exits read +500 m to the approach.
+Make the cone's exit ask `guidance.approach` for the excess (one model).
+Running at handoff: rot-exit-1005 (defaults vs HAC_EXIT_SURPLUS_DERIVED=False,
+three rigoff orbits).
+
+## Where the landing stood before those (rigoff saves, 30 flights)
 
 On the runway and intact: hac0 5/5, hac2 3/5, hac5 2/5, hac1 0/5, hac3
 0/5, hac4 0/5 -- **10/30**. What misses now is the arrival, not the gear:
