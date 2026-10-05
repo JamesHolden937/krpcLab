@@ -2732,7 +2732,40 @@ def inner_glide_sink(cfg, speed):
     return max(0.0, speed) * math.sin(math.radians(cfg.FLARE_INNER_GLIDE_DEG))
 
 
-def flare(env, cfg, r, v, mass, gravity, height, elapsed, lead_s=0.0):
+def flare_touchdown_sink(cfg, height, float_s=None):
+    """The exponential schedule's touchdown sink, ``td`` in ``td + h/tau``.
+
+    ``FLARE_EXP_TOUCHDOWN_M_S`` unless ``float_s`` -- the game-seconds the
+    flare can still fly before its speed reaches the floor
+    (``FLARE_SPEED_BUDGET``) -- is shorter than the schedule takes to reach
+    the ground.  The schedule's time from ``h`` is ``tau ln(1 + h/(tau td))``;
+    solved for ``td`` it is the gentlest touchdown that still arrives in
+    time, capped at ``FLARE_SPEED_TD_MAX_M_S``.
+
+    Why: the shuttle's main gear is on the wings, 5.6 m out, and a contact
+    at 8-10 m/s of sink takes both wings off at the root (10 parts in 0.4 s,
+    sav-wheels3-1004).  Those contacts are all one shape -- the flare
+    settles at ~5 m/s of sink near 20 m, floats while the speed falls from
+    47 to 38 m/s, reaches the tail-limited alpha with nothing left, and the
+    sink grows to 9.  The intact ones touched at 47 m/s and 4.  A firmer
+    sink chosen while the wing still flies is softer than the one it falls
+    into.
+    """
+    td = float(cfg.FLARE_EXP_TOUCHDOWN_M_S)
+    tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
+    if float_s is None or tau <= 0.0:
+        return td
+    top = max(td, float(getattr(cfg, "FLARE_SPEED_TD_MAX_M_S", 5.0)))
+    if float_s <= 0.0:
+        return top
+    grow = math.expm1(min(50.0, float_s / tau))
+    if grow <= 0.0:
+        return top
+    return vec.clamp(max(0.0, height) / (tau * grow), td, top)
+
+
+def flare(env, cfg, r, v, mass, gravity, height, elapsed, lead_s=0.0,
+          float_s=None):
     """Arrest the sink, and do not ask for more than the wing has.
 
     The angle is ramped rather than snapped to maximum lift.  At 16 m and
@@ -2813,7 +2846,8 @@ def flare(env, cfg, r, v, mass, gravity, height, elapsed, lead_s=0.0):
         # shuttle, 9-17 m/s at contact, wings and engine lost).
         exp_tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
         if exp_tau > 0.0:
-            wanted = min(wanted, float(cfg.FLARE_EXP_TOUCHDOWN_M_S)
+            wanted = min(wanted, flare_touchdown_sink(cfg, scheduled,
+                                                      float_s)
                          + scheduled / exp_tau)
         tau = max(0.2, float(getattr(cfg, "FLARE_TRACK_TAU_S", 2.0)))
         needed = 1.0 + (sink - wanted) / (tau * gravity)

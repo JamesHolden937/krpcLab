@@ -8918,6 +8918,42 @@ class TestTheWheelWatch(unittest.TestCase):
         self.assertEqual(self.events, [])
 
 
+class TestTheFlareSpeedBudget(unittest.TestCase):
+    """``FLARE_SPEED_BUDGET``: a short budget raises the touchdown sink."""
+
+    cfg = replace(Config(), FLARE_EXP_TAU_S=4.0, FLARE_EXP_TOUCHDOWN_M_S=2.0,
+                  FLARE_SPEED_TD_MAX_M_S=5.0)
+
+    def test_off_or_ample_is_the_configured_sink(self):
+        f = guidance.flare_touchdown_sink
+        self.assertEqual(f(self.cfg, 40.0, None), 2.0)
+        self.assertEqual(f(self.cfg, 40.0, 60.0), 2.0)
+
+    def test_the_schedule_arrives_inside_the_budget(self):
+        td = guidance.flare_touchdown_sink(self.cfg, 35.0, 4.4)
+        self.assertGreater(td, 2.0)
+        self.assertLess(td, 5.0)
+        # tau ln(1 + h / (tau td)) is the schedule's time to the ground.
+        self.assertAlmostEqual(4.0 * math.log(1.0 + 35.0 / (4.0 * td)), 4.4,
+                               places=6)
+
+    def test_spent_is_the_cap(self):
+        f = guidance.flare_touchdown_sink
+        self.assertEqual(f(self.cfg, 20.0, -1.0), 5.0)
+        self.assertEqual(f(self.cfg, 20.0, 0.1), 5.0)
+
+    def test_the_autopilot_measures_the_deceleration(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(self.cfg, FLARE_SPEED_BUDGET=True)
+        run.env = SimpleNamespace(stall_speed=55.6)   # -> 48 in factor units
+        run.logbook = SimpleNamespace(event=lambda ut, m: None)
+        snap = lambda ut, v: SimpleNamespace(
+            ut=ut, velocity=(v, 0.0, 0.0), landing_height=30.0)
+        self.assertIsNone(run.flare_speed_budget(snap(0.0, 60.0)))
+        budget = run.flare_speed_budget(snap(1.0, 57.0))
+        self.assertAlmostEqual(budget, (57.0 - 48.0) / 3.0)
+
+
 class TestTheExponentialFlare(unittest.TestCase):
     """``FLARE_EXP_TAU_S``: the sink schedule no faster than td + h/tau."""
 

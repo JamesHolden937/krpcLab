@@ -2570,6 +2570,20 @@ class Config:
     # shuttle from orbit is 0/6 on both arms -- its failures are upstream.
     FLARE_EXP_TAU_S: float = 4.0
     FLARE_EXP_TOUCHDOWN_M_S: float = 2.0
+    # **The flare's speed budget** (needs ``FLARE_EXP_TAU_S``).  Every tick,
+    # the game-seconds left before the speed falls to
+    # ``FLARE_SPEED_FLOOR_FACTOR`` x stall (``airframe.stall``, the units of
+    # every other speed factor; 45.5 m/s on the shuttle at landing mass) at
+    # the deceleration measured over the last second; if the schedule needs
+    # longer than that to reach the ground, its touchdown sink is raised to
+    # the value that arrives in time, at most ``FLARE_SPEED_TD_MAX_M_S``.
+    # See ``guidance.flare_touchdown_sink``: the shuttle loses both wings at
+    # 8-10 m/s of sink after floating to 38 m/s, and keeps them at 4 m/s
+    # and 47 (sav-wheels3-1004).  ``bud=``, ``fdc=`` (the deceleration)
+    # and ``td=`` in the FLARE telemetry.
+    FLARE_SPEED_BUDGET: bool = False
+    FLARE_SPEED_FLOOR_FACTOR: float = 1.0
+    FLARE_SPEED_TD_MAX_M_S: float = 5.0
     # **The door where that schedule starts to bind** (needs
     # ``FLARE_EXP_TAU_S``): ``tau (sink - td) + T sink``, T the pitch axis's
     # response (``attitude_settle_s``), and the schedule read T ahead

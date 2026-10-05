@@ -6611,6 +6611,50 @@ class Autopilot:
         self._app_bank, self._app_bank_ut = bank, snap.ut
         return bank
 
+    def flare_speed_budget(self, snap):
+        """``FLARE_SPEED_BUDGET``: game-seconds before the speed falls to
+        ``FLARE_SPEED_FLOOR_FACTOR`` x stall, at the deceleration measured
+        over about the last second; None when off or not yet measured.
+
+        Measured rather than modelled: the subsonic lift and drag tables
+        have been wrong by more than this margin before (failure 13), and
+        the deceleration is one subtraction of two speeds the loop already
+        has."""
+        if not getattr(self.cfg, "FLARE_SPEED_BUDGET", False):
+            return None
+        speed = vec.norm(snap.velocity)
+        last = getattr(self, "_flare_v_last", None)
+        self._flare_v_last = (snap.ut, speed)
+        decel = getattr(self, "_flare_decel", None)
+        if last is not None and snap.ut - last[0] > 1e-3:
+            dt = snap.ut - last[0]
+            rate = (last[1] - speed) / dt
+            share = min(1.0, dt / 1.0)
+            decel = rate if decel is None else decel + share * (rate - decel)
+            self._flare_decel = decel
+        if decel is None:
+            return None
+        # The craft's own stall at the landing mass (``report_airframe`` on
+        # final), in the units the speed factors were fitted in -- not
+        # ``airframe.stall``, which returns the transcribed 48 for every
+        # craft while ``AIRFRAME_DERIVED`` is off.
+        stall = getattr(self.env, "stall_speed", None)
+        reference = float(getattr(self.cfg, "STALL_CALIBRATION_M_S", 0.0)
+                          or 0.0)
+        if stall and stall > 0.0 and reference > 0.0:
+            stall *= self.cfg.STALL_SPEED_M_S / reference
+        else:
+            stall = airframe.stall(self.env, self.cfg)
+        floor = float(self.cfg.FLARE_SPEED_FLOOR_FACTOR) * stall
+        budget = (speed - floor) / max(0.5, decel)
+        self.flare_budget = budget
+        if (budget < 0.0 and not getattr(self, "_flare_floor_logged", False)):
+            self._flare_floor_logged = True
+            self.logbook.event(snap.ut, "flare speed budget spent: %.1f m/s "
+                               "against a floor of %.1f, h %.1f"
+                               % (speed, floor, snap.landing_height))
+        return budget
+
     def run_flare(self, snap):
         """The last fifteen metres, which are their own problem."""
         # Nothing below the glide permits RCS; close what it left open.
@@ -6620,7 +6664,8 @@ class Autopilot:
         elapsed = snap.ut - (self.flare_since or snap.ut)
         alpha, sink, needed = guidance.flare(
             self.env, self.cfg, snap.position, snap.velocity, snap.mass,
-            self.surface_gravity, height, elapsed, self.flare_lead_s())
+            self.surface_gravity, height, elapsed, self.flare_lead_s(),
+            float_s=self.flare_speed_budget(snap))
         cap = min(self.alpha_ceiling, self.cfg.FLARE_ALPHA_DEG,
                   self.flare_tail_cap(snap))
         alpha = self.flare_load_loop(alpha, needed, elapsed, cap, snap)
@@ -7830,6 +7875,13 @@ def compact_line(state, snap, run):
     if state == FLARE:
         bits.append("sink=%5.2f n=%4.2f" % (getattr(run, "flare_sink", 0.0),
                                             getattr(run, "flare_needed", 1.0)))
+        if getattr(run.cfg, "FLARE_SPEED_BUDGET", False):
+            budget = getattr(run, "flare_budget", None)
+            bits.append("bud=%5.1f fdc=%4.1f td=%3.1f" % (
+                float("nan") if budget is None else budget,
+                getattr(run, "_flare_decel", None) or float("nan"),
+                guidance.flare_touchdown_sink(
+                    run.cfg, snap.landing_height, budget)))
     if state in (ROLLOUT, STOPPED):
         # ``brk`` is the commanded brake fraction and ``left`` the tarmac the
         # law computed it from.  Both are printed beside ``dec=`` on purpose:
