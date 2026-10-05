@@ -4313,3 +4313,48 @@ wing; sometimes the wing first. Neither wing is favoured (kept + 10, - 15).
 
 Two nulls on the wing loss from the autopilot side. Next is a different
 method (HANDOFF).
+
+## Session, 2026-10-04 night / 10-05: the wings come off because of rigid attachment
+
+Cone saves `qs_s2_hac0-5`, `savefly.sh`, fingerprint 1d14ddc8 (all new
+flags off).  Instruments added: `GROUND_WATCH_S` (each part's lowest point
+above the runway, every tick near contact), `contactsum.py`, `gearProbe.py`,
+`shoot.py` (screenshots through kRPC's `SpaceCenter.screenshot`; F1 over
+XTEST does not reach the game under Wine), and the **CollisionSpy** plugin
+(`testInstances/collisionSpySrc`, on every instance): every collision of the
+active vessel's parts, every joint break, and per physics step near the
+ground the wing attach joints' force/torque against their break limits
+(`jointsum.py`).
+
+**The finding.** With rigid attachment off on the two `wingShuttleDelta`
+parts (`saves/qs_s2_rigoff0-5`, two lines per save), **22 of 24 touchdowns
+kept both wings** (14/14 gentle, 8/10 hard at 8-10 m/s), against ~8/24 on
+the stock saves in the same interleaved batches (sav-rigoff-1005 LOG5932-
+5967, sav-rigconf-1005 LOG5968-6003).  Rigid off on every wing part
+(`qs_s2_rigwing`) was no better (7/9).
+
+How it was found, and what was wrong on the way (each retracted):
+- The geometry: nothing but the wheels reaches the runway at contact
+  (GROUND_WATCH, LOG5747; screenshots LOG5815, LOG5852/5854): the wing
+  separates in one piece and stands on its own gear.
+- Brake at contact: 5/5 intact delayed (sav-root-1004), then 6/9 lost with
+  the brakes confirmed off (sav-geom-1004).  Small-n luck.
+- Contact state: over 90 gentle contacts sink/pitch/bank/slip/nose-drop
+  /time scale all AUC 0.49-0.56; only speed leans, mostly between saves.
+- Autostrut on the wings (qs_s2_strut): null.  Suspension spring/damper
+  (MAIN_GEAR_SPRING/DAMPER 3/2 and 0.6/0.5): null.
+- "The gear body hits the runway" and "the gear collides with the elevon"
+  (CollisionSpy): the first has impulse 0 and happens on intact landings
+  too; the second happens after the delta has already gone (its children
+  become separate debris).  Same-vessel collisions are off (the user).
+- Gear moved to the fuselage (qs_s2_gfuse): the wings *still* came off,
+  now without their gear -- the touchdown jolt alone breaks a rigid wing
+  root.  That pointed at rigid attachment.
+- CollisionSpy: both wing joints break 3-5 physics steps after the wheels
+  touch, at logged force/torque well under the 1760 limits (the spike is
+  inside the breaking step).
+
+Also found: the landing geometry (wheel clearance 1.82 m, tail strike
+11.0 deg) is measured with the gear up; gear-down it is 3.72 m and ~25 deg
+(engine bell).  `GEAR_GEOMETRY_DEPLOYED` (off) fixes it: contact height
+reads 0.1 instead of 2.2.  Unpromoted: flown one batch, wing loss swamped it.
