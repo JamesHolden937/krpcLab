@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Screenshots of a touchdown, taken by KSP itself.
+"""Screenshots of a touchdown, taken by the game through kRPC.
 
-Each farm instance runs inside its own nested KWin with its own Xwayland
-(kwinRun.sh), where KSP is the only client and always has focus.  So a key
-sent over XTEST to that Xwayland reaches the game: F2 hides the UI and F1
-(``TAKE_SCREENSHOT`` in settings.cfg) writes ``ksp<N>/Screenshots/*.png``.
+``SpaceCenter.screenshot`` (flight scene only) writes the frame KSP is
+rendering, HUD included -- the altimeter and the speed in the frame are a
+check on the log.  Run the instance at a resolution worth looking at
+(ksp6: ``SCREEN_RESOLUTION_*`` in its settings.cfg, which beats ``RES``,
+and ``RES=960x540 ./start.sh 6``) and the flight at a low time scale.
+
+(F1 sent over XTEST into the instance's nested Xwayland does not reach the
+game under Wine; that was tried first.)
 
 ``--watch`` is a read-only kRPC client beside the autopilot: it waits for the
-active vessel to come down through ``--from-m`` above the terrain, shoots
-every ``--every`` wall seconds until ``--after-s`` game seconds after it
-lands (or is lost), then moves the new PNGs to ``logs/shots/LOG<n>/``,
-<n> being the newest log when the burst began.  Run the instance at a
-resolution worth looking at (``RES=960x540 ./kwinRun.sh 6``) and the flight
-at a low time scale, or the burst samples the touchdown sparsely.
+active vessel to come down through ``--from-m`` above the terrain, swings the
+camera low and to the side (``--cam-pitch``, ``--cam-heading`` relative to
+the default, ``--cam-distance``), shoots every ``--every`` wall seconds until
+``--after-s`` game seconds after the vessel lands or loses parts for good,
+and writes ``logs/shots/LOG<n>/NNN_t<ut>.png``, <n> being the newest log when
+the burst began.  The game writes the files itself, so the path is given in
+its own (Wine) form: the drive letter maps to the directory above the repo.
 
     testInstances/shoot.py 6               # one screenshot now
     testInstances/shoot.py 6 --watch       # a burst through the next touchdown
@@ -21,50 +26,15 @@ import argparse
 import glob
 import os
 import re
-import shutil
-import subprocess
-import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 
-def xdisplay(n):
-    """The Xwayland display of instance n's nested KWin, found by process
-    ancestry: the kwin_wayland with ``--socket ksp<n>-wl`` and its child."""
-    ps = subprocess.run(["ps", "-eo", "pid,ppid,args"], capture_output=True,
-                        text=True).stdout.splitlines()
-    kwin = None
-    for line in ps:
-        pid, ppid, args = line.split(None, 2) if len(line.split(None, 2)) == 3 else (None, None, "")
-        if args.startswith("kwin_wayland") and "--socket ksp%s-wl" % n in args:
-            kwin = pid
-    for line in ps:
-        parts = line.split(None, 2)
-        if len(parts) == 3 and parts[1] == kwin and "Xwayland" in parts[2]:
-            m = re.search(r"Xwayland (:\d+)", parts[2])
-            if m:
-                return m.group(1)
-    raise SystemExit("no nested Xwayland for ksp%s" % n)
-
-
-class Keys:
-    def __init__(self, disp):
-        from Xlib import display, XK, X
-        from Xlib.ext import xtest
-        self.X, self.xtest = X, xtest
-        self.d = display.Display(disp)
-        self.code = {k: self.d.keysym_to_keycode(XK.string_to_keysym(k))
-                     for k in ("F1", "F2")}
-
-    def press(self, key):
-        code = self.code[key]
-        self.xtest.fake_input(self.d, self.X.KeyPress, code)
-        self.d.sync()
-        time.sleep(0.03)
-        self.xtest.fake_input(self.d, self.X.KeyRelease, code)
-        self.d.sync()
+def wine_path(path, drive="X:"):
+    rel = os.path.relpath(os.path.abspath(path), os.path.dirname(ROOT))
+    return drive + "\\" + rel.replace("/", "\\")
 
 
 def newest_log():
@@ -73,35 +43,45 @@ def newest_log():
                default=None)
 
 
-def watch(n, keys, args):
+def connect(n):
     import krpc
     base = os.path.join(HERE, "ksp%s" % n)
-    conn = krpc.connect(name="shoot",
-                        rpc_port=int(open(os.path.join(base, ".rpc_port")).read()),
-                        stream_port=int(open(os.path.join(base, ".stream_port")).read()))
+    return krpc.connect(
+        name="shoot",
+        rpc_port=int(open(os.path.join(base, ".rpc_port")).read()),
+        stream_port=int(open(os.path.join(base, ".stream_port")).read()))
+
+
+def watch(conn, args):
     sc = conn.space_center
-    shots = os.path.join(base, "Screenshots")
-    os.makedirs(shots, exist_ok=True)
-    while True:                       # wait for a vessel low over the ground
+    while True:                       # a vessel low over the ground
         try:
             v = sc.active_vessel
-            if v.flight().surface_altitude < args.from_m and \
-                    "flying" in str(v.situation).lower():
+            if (v.flight().surface_altitude < args.from_m
+                    and "flying" in str(v.situation).lower()):
                 break
         except Exception:
             pass
-        time.sleep(0.5)
-    before = set(os.listdir(shots))
+        time.sleep(0.3)
     log = newest_log()
-    if args.hide_ui:
-        keys.press("F2")
-    landed_ut = None
+    dest = os.path.join(ROOT, "logs", "shots",
+                        os.path.basename(log) if log else "unknown")
+    os.makedirs(dest, exist_ok=True)
+    try:
+        cam = sc.camera
+        cam.pitch = args.cam_pitch
+        cam.heading = cam.heading + args.cam_heading
+        cam.distance = args.cam_distance
+    except Exception:
+        pass
+    landed_ut, i = None, 0
     t_end = time.time() + args.max_wall_s
     while time.time() < t_end:
-        keys.press("F1")
-        time.sleep(args.every)
         try:
             ut = sc.ut
+            sc.screenshot(wine_path(os.path.join(
+                dest, "%03d_t%.2f.png" % (i, ut))), 1)
+            i += 1
             sit = str(sc.active_vessel.situation).lower()
         except Exception:
             break
@@ -109,18 +89,8 @@ def watch(n, keys, args):
             landed_ut = ut
         if landed_ut is not None and ut - landed_ut > args.after_s:
             break
-    if args.hide_ui:
-        keys.press("F2")
-    time.sleep(1.0)                   # the last PNG is written a frame later
-    new = sorted(set(os.listdir(shots)) - before,
-                 key=lambda f: os.path.getmtime(os.path.join(shots, f)))
-    dest = os.path.join(ROOT, "logs", "shots",
-                        os.path.basename(log) if log else "unknown")
-    os.makedirs(dest, exist_ok=True)
-    for i, f in enumerate(new):
-        shutil.move(os.path.join(shots, f),
-                    os.path.join(dest, "%03d_%s" % (i, f)))
-    print("%d screenshots -> %s" % (len(new), dest))
+        time.sleep(args.every)
+    print("%d screenshots -> %s" % (i, dest))
 
 
 def main():
@@ -128,16 +98,22 @@ def main():
     p.add_argument("instance")
     p.add_argument("--watch", action="store_true")
     p.add_argument("--from-m", type=float, default=40.0)
-    p.add_argument("--every", type=float, default=0.2)
+    p.add_argument("--every", type=float, default=0.1)
     p.add_argument("--after-s", type=float, default=5.0)
-    p.add_argument("--max-wall-s", type=float, default=120.0)
-    p.add_argument("--hide-ui", action="store_true")
+    p.add_argument("--max-wall-s", type=float, default=180.0)
+    p.add_argument("--cam-pitch", type=float, default=2.0)
+    p.add_argument("--cam-heading", type=float, default=60.0)
+    p.add_argument("--cam-distance", type=float, default=40.0)
+    p.add_argument("-o", "--out", default=None, help="one shot to this file")
     args = p.parse_args()
-    keys = Keys(xdisplay(args.instance))
+    conn = connect(args.instance)
     if args.watch:
-        watch(args.instance, keys, args)
+        watch(conn, args)
     else:
-        keys.press("F1")
+        out = args.out or os.path.join(ROOT, "logs", "shots", "now.png")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        conn.space_center.screenshot(wine_path(out), 1)
+        print(out)
 
 
 if __name__ == "__main__":

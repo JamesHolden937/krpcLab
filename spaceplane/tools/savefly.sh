@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# savefly.sh ROUNDS OUT "sets A" "sets B" ... : instance i flies ${SAVE:-qs_s2_hac}<i>;
+# savefly.sh ROUNDS OUT "sets A" "sets B" ... : instance i flies ${SAVE:-qs_s2_hac}<i>
+# (an arm may carry SAVE=<prefix> to fly its own saves);
 # the arm alternates by (round + i) so every save sees every arm.
 set -u
 # Each save is pinned to one instance, so every arm sees every save -- rotfly.sh
@@ -14,9 +15,11 @@ for a in "${!ARMS[@]}"; do echo "arm$a='${ARMS[$a]}'" >> "$OUT"; done
 for (( r=0; r<R; r++ )); do
   echo "-- round $r" >> "$OUT"
   for i in 0 1 2 3 4 5; do
-    a=$(( (r + i) % NA )); args=(); IFS=';' read -ra parts <<< "${ARMS[$a]}"
-    for pp in "${parts[@]}"; do [ -n "$pp" ] && args+=(--set "$pp"); done
-    ( .venv/bin/python spaceplane/tools/quickglide.py --save "${SAVE:-qs_s2_hac}$i" --instance $i -n 1 --timescale 20 "${args[@]}" 2>&1 | sed "s|^|arm$a ksp$i |" >> "$OUT" ) &
+    a=$(( (r + i) % NA )); args=(); save="${SAVE:-qs_s2_hac}"; IFS=';' read -ra parts <<< "${ARMS[$a]}"
+    for pp in "${parts[@]}"; do
+      case "$pp" in SAVE=*) save="${pp#SAVE=}";; "") ;; *) args+=(--set "$pp");; esac
+    done
+    ( .venv/bin/python spaceplane/tools/quickglide.py --save "$save$i" --instance $i -n 1 --timescale 20 "${args[@]}" 2>&1 | sed "s|^|arm$a ksp$i |" >> "$OUT" ) &
     sleep 8
   done
   wait
