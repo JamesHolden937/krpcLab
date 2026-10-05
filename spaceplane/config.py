@@ -2466,7 +2466,12 @@ class Config:
     # -- the attitude controller is tuned to a 3 s time to peak -- and low
     # enough that the flare is still flying the airflow where that is what
     # matters.
-    FLARE_ALIGN_ALT_M: float = 140.0
+    # **30, default 2026-10-05**: aligning from 140 m left the velocity's
+    # track error to drift the shuttle 25-55 m sideways through the flare
+    # (sideslip to +8 deg); aligned only in the last 30 m the touchdown
+    # cross-track halved, median 27 -> 13-20 m over 48 flights
+    # (sav-flarelat-1005, sav-aim-1005, sav-sstop-1005; rigoff cone saves).
+    FLARE_ALIGN_ALT_M: float = 30.0
     FLARE_BANK_MAX_DEG: float = 12.0
     FLARE_WINGS_LEVEL_M: float = 60.0
     FLARE_BANK_TAPER_M: float = 150.0
@@ -4393,7 +4398,10 @@ class Config:
     # put hac0/1/2 9/9 on the runway but moved the cone, which ran out of
     # height mid-turn on hac5 (sav-aim-1005).  This moves only
     # ``guidance.approach``'s aim -- its profile and its S-turn stop.
-    APPROACH_AIM_SHIFT_M: float = 0.0
+    # **1000, default 2026-10-05** (with the S-turn stop measured from the
+    # unshifted aim): on the rigoff cone saves, on the runway intact 13/15
+    # against 5/15, interleaved (sav-shift3-1005, LOG6244-6279).
+    APPROACH_AIM_SHIFT_M: float = 1000.0
     TOUCHDOWN_ZONE_FRACTION: float = 0.25
     FLARE_RAMP_S: float = 0.4
 
