@@ -4385,6 +4385,15 @@ class Config:
     # glide.  The cone now exits within a few hundred metres (rot-chain3),
     # which is the condition the comment above set for moving it.  Off.
     TOUCHDOWN_AIM_DERIVED: bool = False
+    # **The approach's aim nearer, the cone's left alone** (metres; 0 =
+    # off).  Flown 2026-10-05 on the rigoff cone saves with
+    # FLARE_ALIGN_ALT_M=30: every save that missed missed *long* -- they
+    # fly the profile to the aim, which is the far threshold, and the flare
+    # floats 300-500 m past it (sav-sstop-1005).  ``TOUCHDOWN_AIM_M`` 1800
+    # put hac0/1/2 9/9 on the runway but moved the cone, which ran out of
+    # height mid-turn on hac5 (sav-aim-1005).  This moves only
+    # ``guidance.approach``'s aim -- its profile and its S-turn stop.
+    APPROACH_AIM_SHIFT_M: float = 0.0
     TOUCHDOWN_ZONE_FRACTION: float = 0.25
     FLARE_RAMP_S: float = 0.4
 

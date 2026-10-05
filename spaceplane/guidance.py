@@ -1132,8 +1132,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     up = vec.unit(r)
     along = env.runway.horizontal(end, end["along"])
     across = vec.unit(vec.cross(up, along))
+    # ``APPROACH_AIM_SHIFT_M``: the approach's own aim this much nearer
+    # than ``TOUCHDOWN_AIM_M``, which the cone and the gate keep -- moving
+    # the shared aim moves the cone's geometry too, and at 1800 the cone ran
+    # out of height mid-turn on one save (sav-aim-1005, hac5).
     aim = vec.add(end["threshold"],
-                  vec.scale(along, airframe.touchdown_aim(env, cfg)))
+                  vec.scale(along, airframe.touchdown_aim(env, cfg)
+                            - float(getattr(cfg, "APPROACH_AIM_SHIFT_M",
+                                            0.0))))
 
     offset = vec.sub(vec.scale(vec.unit(r), vec.norm(end["threshold"])), aim)
     distance = -vec.dot(offset, along)          # positive: still short of aim
