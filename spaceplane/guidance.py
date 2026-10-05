@@ -1359,7 +1359,12 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``logs/LOG2384``), so turning this on is meant to change nothing by
     # itself.  That is the point: it has to be verified neutral before the
     # aim can be moved against it.
-    scurve_stop = distance > cfg.APPROACH_SCURVE_STOP_M
+    # Measured from the *unshifted* aim: ``APPROACH_AIM_SHIFT_M`` moves the
+    # profile's target, not where dissipation stops -- shifted with it, the
+    # weave ended 1 km earlier and arrivals with kilometres of surplus
+    # landed 1-2 km longer (rot-orbit-1005).
+    scurve_stop = (distance + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0))
+                   > cfg.APPROACH_SCURVE_STOP_M)
     if getattr(cfg, "APPROACH_SCURVE_STOP_BY_TIME", False):
         stop_trigger = flare_door(cfg, sink, speed, env)
         scurve_stop = ((max(0.0, height - stop_trigger) / max(1.0, sink))
