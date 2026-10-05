@@ -8863,30 +8863,59 @@ class TestTheSpoilerHoldsLift(unittest.TestCase):
 
 
 class TestTheWheelWatch(unittest.TestCase):
-    """``WHEEL_WATCH_S`` logs on a change after contact, and only then."""
+    """``WHEEL_WATCH_S`` logs on a change from gear-down, re-reading the
+    list, and stops a span after contact."""
 
-    def test_logs_a_break(self):
+    def run_(self):
         run = object.__new__(autopilot_module.Autopilot)
         run.cfg = replace(Config(), WHEEL_WATCH_S=5.0)
-        run._contact_logged = True
-        wheel = SimpleNamespace(
-            grounded=True, broken=False, stress_percentage=40.0,
-            part=SimpleNamespace(title="LY-35 Gear",
-                                 position=lambda f: (1.0, -2.0, 0.0)))
-        run.vessel = SimpleNamespace(reference_frame=None,
-                                     parts=SimpleNamespace(wheels=[wheel]))
-        events = []
-        run.logbook = SimpleNamespace(event=lambda ut, m: events.append(m))
-        snap = lambda ut: SimpleNamespace(ut=ut)
+        run.gear_down = True
+        self.wheels = [SimpleNamespace(
+            grounded=False, broken=False, deployed=True,
+            state="WheelState.deployed",
+            part=SimpleNamespace(title="LY-60 Gear",
+                                 position=lambda f, x=x: (x, -4.0, 0.0)))
+            for x in (-5.6, 5.6)]
+        run.vessel = SimpleNamespace(
+            reference_frame=None,
+            parts=SimpleNamespace(wheels=list(self.wheels), all=[0] * 31))
+        self.events = []
+        run.logbook = SimpleNamespace(
+            event=lambda ut, m: self.events.append(m))
+        return run
+
+    def fly(self, run, *uts):
         with unittest.mock.patch.object(autopilot_module, "flown_bank",
                                         return_value=0.0):
-            run.wheel_watch(snap(10.0))
-            run.wheel_watch(snap(10.1))
-            wheel.broken = True
-            run.wheel_watch(snap(10.2))
-            run.wheel_watch(snap(20.0))     # past the span
-        self.assertEqual(len(events), 2)
-        self.assertIn("b1", events[1])
+            for ut in uts:
+                run.wheel_watch(SimpleNamespace(ut=ut))
+
+    def test_a_wheel_leaving_the_list_before_contact(self):
+        run = self.run_()
+        self.fly(run, 1.0, 1.1, 1.2)
+        run.vessel.parts.wheels = self.wheels[:1]
+        self.fly(run, 1.3, 1.6)            # the list is re-read at 1.6
+        self.assertEqual(len(self.events), 2)
+        self.assertIn("pre-contact", self.events[1])
+        self.assertIn("1 wheels, 31 parts", self.events[1])
+
+    def test_a_break_after_contact_then_silence(self):
+        run = self.run_()
+        self.fly(run, 1.0)
+        run._contact_logged = True
+        self.wheels[0].grounded = True
+        self.fly(run, 10.0, 10.1)
+        self.wheels[0].broken = True
+        self.fly(run, 10.2, 10.2, 20.0)    # a repeated tick; past the span
+        self.assertEqual(len(self.events), 3)
+        self.assertIn("t+0.0", self.events[1])
+        self.assertIn("b1", self.events[2])
+
+    def test_off_before_gear_down(self):
+        run = self.run_()
+        run.gear_down = False
+        self.fly(run, 1.0)
+        self.assertEqual(self.events, [])
 
 
 class TestTheExponentialFlare(unittest.TestCase):

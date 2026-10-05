@@ -2241,22 +2241,38 @@ class Autopilot:
                    getattr(snap, "sideslip", float("nan")) or 0.0))
 
     def wheel_watch(self, snap):
-        """``WHEEL_WATCH_S``: every wheel's grounded / broken / stress, logged whenever it changes, from main-gear contact for this
-        many game seconds.  An instrument: 2/3 of the shuttle's level
-        touchdowns (sink 4-10, pitch 0-6) roll 11-180 deg within a second
-        and lose a wingtip, with or without the ground spoiler and the brake
-        (rot-gspoiler-1004), and nothing read the gear."""
+        """``WHEEL_WATCH_S``: the wheel list and every wheel's state, logged
+        whenever it changes, from gear-down until this many game seconds
+        after main-gear contact.  An instrument.
+
+        2/3 of the shuttle's level touchdowns roll 11-180 deg within a
+        second (rot-gspoiler-1004), and at 5 of ~20 contacts kRPC listed
+        only one LY-60 main gear (rot-wheels2-1004) although no part had
+        been lost (31 of 31 until contact).  So the list is re-read, not
+        cached -- at most every ``WHEEL_WATCH_RELIST_S`` -- with the part
+        count beside it, from the moment the gear comes down: is a gear
+        missing from the list, broken, or never deployed?  (``stress`` is
+        left out: it read 0% on every wheel, every tick.)"""
         span = float(getattr(self.cfg, "WHEEL_WATCH_S", 0.0))
-        if span <= 0.0 or not getattr(self, "_contact_logged", False):
+        if span <= 0.0 or not getattr(self, "gear_down", False):
             return
+        if getattr(self, "_wheel_watch_last_ut", None) == snap.ut:
+            return                        # FLARE calls it twice a tick
+        self._wheel_watch_last_ut = snap.ut
+        contact = getattr(self, "_contact_logged", False)
         start = getattr(self, "_wheel_watch_ut", None)
-        if start is None:
+        if contact and start is None:
             start = self._wheel_watch_ut = snap.ut
-        if snap.ut - start > span:
+        if start is not None and snap.ut - start > span:
+            return
+        listed = getattr(self, "_wheel_watch_list_ut", None)
+        relist = (listed is None or snap.ut - listed
+                  >= float(getattr(self.cfg, "WHEEL_WATCH_RELIST_S", 0.5)))
+        if not (relist or contact):
             return
         try:
-            wheels = getattr(self, "_watch_wheels", None)
-            if wheels is None:
+            if relist:
+                self._wheel_watch_list_ut = snap.ut
                 frame = self.vessel.reference_frame
                 wheels = []
                 for w in self.vessel.parts.wheels:
@@ -2264,26 +2280,28 @@ class Autopilot:
                     wheels.append(("%s(%+.1f,%+.1f)" % (w.part.title[:10], x,
                                                         y), w))
                 self._watch_wheels = wheels
+                self._watch_parts = len(self.vessel.parts.all)
             states = []
-            for name, w in wheels:
+            for name, w in self._watch_wheels:
                 try:
-                    # kRPC 0.6.0's Wheel has no ``deflated``; reading it
-                    # made every wheel read "gone" (rot-wheels-1004).
-                    states.append("%s g%d b%d s%.0f%%" % (
-                        name, w.grounded, w.broken, w.stress_percentage))
+                    states.append("%s %s d%d g%d b%d" % (
+                        name, str(w.state).rsplit(".", 1)[-1], w.deployed,
+                        w.grounded, w.broken))
                 except Exception as exc:                # noqa: BLE001
                     states.append("%s unreadable (%s)" % (name, exc))
         except Exception as exc:                        # noqa: BLE001
             states = ["wheels unreadable (%s)" % exc]
-        # The stress figure moves every tick; log on a change of the flags,
-        # or of any stress by a tenth of its tolerance.
-        key = tuple((st.rsplit(" s", 1)[0],
-                     int(float(st.rsplit(" s", 1)[1].rstrip("%")) // 10)
-                     if " s" in st else 0) for st in states)
+        # Positions move with the centre of mass; key on the states alone.
+        key = (len(states), getattr(self, "_watch_parts", 0),
+               tuple(s.split(") ", 1)[-1] for s in states))
         if key != getattr(self, "_wheel_watch_key", None):
             self._wheel_watch_key = key
-            self.logbook.event(snap.ut, "wheels t+%.1f bnk=%+.1f: %s"
-                               % (snap.ut - start, flown_bank(snap),
+            when = ("t+%.1f" % (snap.ut - start) if start is not None
+                    else "pre-contact")
+            self.logbook.event(snap.ut, "wheels %s bnk=%+.1f, %d wheels, "
+                               "%d parts: %s"
+                               % (when, flown_bank(snap), len(states),
+                                  getattr(self, "_watch_parts", 0),
                                   " | ".join(states)))
 
     def ground_spoiler(self, snap, landed=False):
@@ -6920,6 +6938,7 @@ class Autopilot:
         *spring and damper*, not when it comes down).
         """
         if self.gear_down:
+            self.wheel_watch(snap)
             return
         trigger = self.cfg.GEAR_ALT_M
         if (getattr(self.cfg, "GEAR_FOR_ENERGY", False)
