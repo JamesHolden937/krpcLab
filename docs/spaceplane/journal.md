@@ -4256,3 +4256,60 @@ inside the first 1000 m). Brakes don't (rolls at brk 0.00, intact at 1.00).
 Also seen, not chased: ~half of all touchdowns are past the runway's far
 end (`TOUCHDOWN_AIM_M` 2400 is the far threshold); ~12 flights stalled in
 the flare at 50-97 m, 51-57 m/s, sinking 37-45 (nose first).
+
+## Session, 2026-10-04 evening: it is not a rollover -- the wings come off
+
+Fingerprints e4679374 / db95a67f (two off flags added; defaults unchanged
+in behaviour). All from the cone saves `qs_s2_hac0-5` with `savefly.sh`,
+`WHEEL_WATCH_S=6;LOG_INTERVAL_UT=0.1` on every arm.
+
+**The "one main gear" lead is closed.** `wheel_watch` now starts at
+gear-down and re-reads the wheel list and part count every 0.5 s
+(cbed8f0). sav-wheels3-1004 (LOG5639-5674): 3 wheels and 31 parts on
+every flight until contact; the "2 wheels, 26 parts" listings are read on
+the contact tick itself, after the parts have gone. Nothing is lost
+before touchdown.
+
+**What breaks is the wing.** In `saves/qs_s2_hac1.sfs` each LY-60
+(`GearMedium`) is attached to a `wingShuttleDelta` at x = +-5.6 m, and
+each wing carries elevon 2, elevon 1, the tail fin (on elevon 1) and the
+gear: 5 parts a side. "Lost 10 of 31" in 0.4 s (LOG5658) is both wings;
+"lost 5" is one. The bank that follows is the fuselage with one wing or
+none. The farm's own `ksp<N>/KSP.log` says how: parts **"Exploded!!"**
+(a collision over crash tolerance, not a joint break). The first part to
+go is usually an RV-105 RCS block, then the outboard elevon, then the
+wing; sometimes the wing first. Neither wing is favoured (kept + 10, - 15).
+
+**Two populations, set by the save.**
+- hac1/hac3: door at ~75 m/s (hac3 at 100 m with 15 m/s of sink), +7 deg
+  of slip through the whole flare on hac1, a float at ~20 m while the
+  speed bleeds 47 -> 38, alpha at the tail cap with full pitch input, and
+  contact at 37-39 m/s and **8-10 m/s of sink**: broken ~10 of 12.
+- hac0/hac5 (and hac2 when it lands): contact at 47-50 m/s, 3-5 m/s,
+  pitch +5. Intact 13/14 in the first batch, but only ~half in the next
+  two -- gentle touchdowns also lose a wing. hac4 mostly never contacts
+  (no `contact:` line) or arrives nose-down.
+
+**Two fixes, both null:**
+- `FLARE_SPEED_BUDGET` (sav-budget-1004, LOG5675-5710): raise the
+  exponential flare's touchdown sink when the time to the stall floor
+  (craft's own landing-mass stall in factor units, 45.5 m/s; deceleration
+  measured over the last second) is shorter than the schedule's time to
+  the ground. Wired (`td=` rises to 5 from h 28 m), but on hac1/hac3
+  contact moved only 37.5 -> 38.5 m/s, sink 10 -> 9. The deceleration
+  grows from 1.4 to 3.6 m/s^2 as the speed falls (induced drag, ~1/v^2),
+  so the budget is optimistic early, and from a 76 m/s door there isn't
+  the energy anyway. **The door speed is the lever, not the flare.**
+- `ROLLOUT_RAMP_FROM_ATTITUDE` (sav-ramp-1004, LOG5711-5746): found that
+  `ROLLOUT_HOLD_TAIL_FRACTION` caps the rollout alpha *after* the ramp, so
+  the first ground tick steps 10-14 -> 4.4 deg (failure 31's step again).
+  The flag caps the schedule inside the ramp and starts from the contact
+  pitch. Wired (LOG5717 "ramps from the pitch at contact, 5.5 deg"), but
+  gentle touchdowns intact 3/8 vs 5/9 on defaults. **Null.** The signed
+  alpha (`aoak`, not `aoa`'s unsigned second figure) falls +9 -> -2..-6
+  within 0.4 s of contact on every touchdown, with the pitch input at full
+  nose-up: the mains are 4.0 m behind the centre of mass, and the contact
+  pitches the nose onto its wheel whatever the rollout commands.
+
+Two nulls on the wing loss from the autopilot side. Next is a different
+method (HANDOFF).
