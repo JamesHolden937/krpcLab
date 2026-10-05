@@ -5,7 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Session procedure (standing, every session)
 
 **Work autonomously.** Don't ask whether to go on to the next batch, fix or
-experiment. Pick the best next step, do it, and report what you did and why.
+experiment. **Only ask permission for things that affect disk space outside
+this directory**; anything confined to krpcLab (craft/save variants, farm
+instances, venv installs, commits) needs no asking. Pick the best next step, do it, and report what you did and why.
 Interrupting is the user's job, not asking permission. **Commit before
 anything risky**: a default change, a batch on new code, a refactor or a
 scripted edit, so it can always be undone.
