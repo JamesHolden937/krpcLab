@@ -2980,6 +2980,13 @@ class Config:
     # torque arriving with the load?
     ROLLOUT_BRAKE_DELAY_S: float = 0.0
     MAIN_WHEEL_FRICTION: float = 10.0
+    # **The main gear's suspension, off auto** (``_set_suspension``; 0 =
+    # leave the game's auto spring/damper, 1.11 / 1.0 on the shuttle).
+    # CollisionSpy saw both LY-60 bodies hit the runway at 47 m/s in the
+    # physics step both wing roots broke (LOG5855): the 0.5 m of travel
+    # bottoms at 3-5 m/s of sink on 30 t.
+    MAIN_GEAR_SPRING: float = 0.0
+    MAIN_GEAR_DAMPER: float = 0.0
     # **And the nose wheel's friction control off** (the user, 2026-09-30,
     # after hand-landing the twin-fin shuttle): its automatic friction is
     # switched to manual at this multiplier.  1.0 is the slider's value on

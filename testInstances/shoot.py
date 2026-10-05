@@ -69,8 +69,14 @@ def watch(conn, args):
     os.makedirs(dest, exist_ok=True)
     try:
         cam = sc.camera
+        if args.cam_mode:
+            # locked: heading and pitch are relative to the vessel's own
+            # axes (90 = looking at the nose, ~180 = from the side)
+            cam.mode = getattr(type(cam.mode), args.cam_mode)
+            cam.heading = args.cam_heading
+        else:
+            cam.heading = cam.heading + args.cam_heading
         cam.pitch = args.cam_pitch
-        cam.heading = cam.heading + args.cam_heading
         cam.distance = args.cam_distance
     except Exception:
         pass
@@ -89,7 +95,8 @@ def watch(conn, args):
             landed_ut = ut
         if landed_ut is not None and ut - landed_ut > args.after_s:
             break
-        time.sleep(args.every)
+        if args.every > 0:
+            time.sleep(args.every)
     print("%d screenshots -> %s" % (i, dest))
 
 
@@ -104,6 +111,7 @@ def main():
     p.add_argument("--cam-pitch", type=float, default=2.0)
     p.add_argument("--cam-heading", type=float, default=60.0)
     p.add_argument("--cam-distance", type=float, default=40.0)
+    p.add_argument("--cam-mode", default=None, help="e.g. locked")
     p.add_argument("-o", "--out", default=None, help="one shot to this file")
     args = p.parse_args()
     conn = connect(args.instance)

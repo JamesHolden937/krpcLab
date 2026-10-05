@@ -2575,6 +2575,10 @@ class Autopilot:
                 pass
             if target > 0.0:
                 what.append(self._set_friction(wheel, target))
+            spring = float(getattr(self.cfg, "MAIN_GEAR_SPRING", 0.0))
+            damper = float(getattr(self.cfg, "MAIN_GEAR_DAMPER", 0.0))
+            if spring > 0.0 or damper > 0.0:
+                what.append(self._set_suspension(wheel, spring, damper))
             done.append("%s: %s" % (wheel.part.title, ", ".join(what)))
         self.logbook.event(ut, "main gear: " + " | ".join(done))
         nose_target = float(self.cfg.NOSE_WHEEL_FRICTION)
@@ -2595,6 +2599,36 @@ class Autopilot:
                                                      forward))
         except Exception:                               # noqa: BLE001
             return None
+
+    def _set_suspension(self, wheel, spring, damper):
+        """``MAIN_GEAR_SPRING`` / ``MAIN_GEAR_DAMPER``: the suspension off
+        auto and at these strengths (0 leaves that one as it is).
+
+        CollisionSpy (LOG5855): at a 4 m/s contact both LY-60 *bodies* hit
+        the runway at 47 m/s in the step both wing roots broke -- the
+        suspension bottomed and the leg dragged on the tarmac.  Like
+        friction, the strengths are fields kRPC lists only once the
+        ``Spring/Damper`` toggle is off auto.  Says what it set."""
+        try:
+            for module in wheel.part.modules:
+                if module.name != "ModuleWheelSuspension":
+                    continue
+                if not any("spring" in n.lower() for n in module.fields):
+                    for event in module.events:
+                        if "spring" in event.lower() and "auto" in event.lower():
+                            module.trigger_event(event)
+                fields = list(module.fields)
+                for want, value in (("spring", spring), ("damper", damper)):
+                    if value <= 0.0:
+                        continue
+                    for name in fields:
+                        if want in name.lower():
+                            module.set_field_float(name, value)
+                return "suspension %s" % ", ".join(
+                    "%s %s" % (k, v) for k, v in module.fields.items())
+        except Exception as exc:                        # noqa: BLE001
+            return "suspension not set (%s)" % exc
+        return "no suspension module"
 
     def _set_friction(self, wheel, target):
         """Manual friction at ``target`` on one wheel; says what happened."""
