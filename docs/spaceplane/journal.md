@@ -4206,3 +4206,53 @@ defaults vs `ALPHA_TRIM_IN_GLIDE`. Intact on land **3 vs 6**, on the runway
 5 vs 9, long arrivals 21 vs 15, lost 4 vs 5. **Promoted**, fingerprint
 **cdb701a0**. Three geometry tests that call `aim` in GLIDE with a minimal
 snapshot are pinned to `ALPHA_TRIM_IN_GLIDE=False`.
+
+## Session, 2026-10-04 afternoon: the brake costs pitch authority, and the shuttle rolls over after a level touchdown
+
+All shuttle, `qs_shuttle2`, from orbit with `rotfly.sh`, 36 flights a batch.
+The farm was restarted before every batch; swap still reached 15-17 GB by
+each batch's end.
+
+**The approach brake.** On brake-out ticks the pitch input saturates
+(+1.00) and the vehicle flies 3-4 deg of alpha against a commanded 11-13.
+The measured spoiler set is the main elevons, the pitch control, deployed
+20 of their 25 deg. The "lift spoiler" seen on 2026-10-04 morning was the
+nose dropping. Added `AIRBRAKE_HOLD_LIFT` (off; e7ed115): while the
+spoiler is out, raise alpha until the table's lift covers the verified
+set's dClA, scaled to the deploy angle; `hold=` in the log.
+- rot-holdlift-1004 (5423-5458), guard 0.9 vs guard 0.9 + HOLD_LIFT: hold
+  averaged 1.5 deg. The brake still stowed in a median 1.1 s. A null on
+  the mechanism; landings were swamped by four 6-8 km long arrivals in arm 0.
+- rot-deploy10-1004 (5459-5494), both HOLD_LIFT + guard 0.9, deploy 20 vs
+  10: brake-out ticks read `aoak` 1.3 vs 5.0. More authority left at 10.
+  Still stowed in ~1.3 s, now mostly on the speed guard (dec 6-10 m/s^2).
+- rot-pkg-1004 (5495-5530), defaults vs guard 0.9 + HOLD_LIFT + deploy 10:
+  intact on land 4 vs 4, runway 8/17 vs 5/16. **Null.** The brake is out
+  a few seconds a flight; nothing it does can show. Three nulls; the
+  method changes next time (split rudder on the tail fins, or guards
+  referenced to the braked path).
+
+**The rollover.** Over ~140 orbital flights, level touchdowns (sink 4-10,
+38-48 m/s, pitch 0-6, bank < 5) split cleanly: every intact flight stays
+within 5 deg of bank for 4 s; the broken ones roll 11-180 deg within ~1 s
+and lose the wingtip RCS block, tail fin or elevon. The contact states are
+indistinguishable. Touchdown position doesn't explain it (11 of 15 broke
+inside the first 1000 m). Brakes don't (rolls at brk 0.00, intact at 1.00).
+- rot-gspoiler-1004 (5531-5566), defaults vs ROLLOUT_GROUND_SPOILER=False:
+  level touchdowns rolled 4/6 vs 6/8. **Not the spoiler.**
+- rot-wheels-1004 (5567-5602), WHEEL_WATCH_S=6 vs + MAIN_WHEEL_FRICTION=1:
+  the instrument read every wheel "gone" (it asked for `Wheel.deflated`,
+  which kRPC 0.6.0 doesn't have; fixed a8f4927). Friction 1 was worse:
+  intact 5/18 vs 12/19. Friction 10 stays.
+- rot-wheels2-1004 (5603-5638), defaults + WHEEL_WATCH_S=6: **5 of ~20
+  contacts list only one LY-60 main** at contact (LOG5608, 5611, 5620,
+  5623, 5627), and those roll toward the missing side. Nothing logs a gear
+  being lost earlier (gear parts carry no skin sensor), so whether it
+  detached or kRPC just doesn't list it is open. In two-main rollovers
+  (LOG5612, 5619, 5626) one main lifts (`g0`), unbroken, as the bank
+  builds to 13-20 deg within 1 s. `stress_percentage` reads 0% on every
+  wheel every tick, so that column is dead.
+
+Also seen, not chased: ~half of all touchdowns are past the runway's far
+end (`TOUCHDOWN_AIM_M` 2400 is the far threshold); ~12 flights stalled in
+the flare at 50-97 m, 51-57 m/s, sinking 37-45 (nose first).
