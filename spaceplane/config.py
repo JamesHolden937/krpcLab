@@ -371,7 +371,13 @@ class Config:
     # the weave's last swing past the centreline.  LOG4104: 829 m from the
     # gate, 750 m above need, turn 343-347 -- flew on and ran out of height
     # 3.2 km past it.  0 is the committed behaviour.  Off until paired.
-    HAC_EXIT_PAST_DEG: float = 0.0
+    # **25, default 2026-10-05.**  Paired at last (rot-past-1005, three
+    # rigoff orbits): "out of height" exits 0/12 against 4/12 -- each of
+    # those had overshot the rollout 14-23 deg, read a lap owed, widened the
+    # circle chasing it and left at the 2 km floor beside the field with
+    # 0.5-1.2 km of surplus (LOG6224, 6305, 6309, 6314).  On the runway 2/12
+    # vs 0/12.
+    HAC_EXIT_PAST_DEG: float = 25.0
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one
