@@ -6779,6 +6779,20 @@ class Autopilot:
             self.enter(ROLLOUT, snap.ut, "sink=%.2f speed=%.1f" %
                        (sink, self.touchdown_speed))
 
+    def ground_pitch(self, snap):
+        """The nose's elevation above the horizon, degrees; None unreadable.
+
+        ``ROLLOUT_RAMP_FROM_ATTITUDE``: on the wheels the velocity is level,
+        so this is the angle of attack the rollout holds, and the attitude
+        its ramp has to start from."""
+        try:
+            pitch = math.degrees(math.asin(vec.clamp(
+                vec.dot(vec.unit(snap.nose), vec.unit(snap.position)),
+                -1.0, 1.0)))
+        except Exception:                               # noqa: BLE001
+            return None
+        return None if math.isnan(pitch) else pitch
+
     def run_rollout(self, snap):
         """Brakes and nosewheel, and stop before the tarmac runs out.
 
@@ -6798,11 +6812,21 @@ class Autopilot:
         self.release_reaction_wheels(snap.ut)
         self.ground_spoiler(snap, landed=True)
         self.apply_brakes(snap, speed)
+        ramped = getattr(self.cfg, "ROLLOUT_RAMP_FROM_ATTITUDE", False)
         if self.rollout_entry_alpha is None:
             # Whatever the flare finished holding -- the command ramps out of
             # *that*, not out of nothing.  ``self.steer`` is the last thing
             # commanded and the last thing the vehicle was flying.
             self.rollout_entry_alpha = self.steer.alpha
+            # ``ROLLOUT_RAMP_FROM_ATTITUDE``: from the attitude it touched
+            # down in, which on the wheels is the angle of attack -- the
+            # flare's last command (~13) is past the 11 deg tail angle.
+            pitch = (self.ground_pitch(snap) if ramped else None)
+            if pitch is not None:
+                self.rollout_entry_alpha = pitch
+                self.logbook.event(snap.ut, "rollout ramps from the pitch "
+                                   "at contact, %.1f deg (flare commanded "
+                                   "%.1f)" % (pitch, self.steer.alpha))
         # **Put the nose down, but fly it down.**  Nothing here commanded an
         # attitude at first, so the autopilot went on holding the flare's 15
         # degrees nose-up on the ground at 52 m/s and sat on its tail; the
@@ -6814,19 +6838,25 @@ class Autopilot:
         # differ by fifty degrees and only one of them is where the wheels
         # are going.  ``aim`` here commanded the vehicle to yaw into its own
         # slip and it spun.
-        ground_alpha = guidance.rollout_alpha(
-            self.cfg, speed, snap.ut - (self.state_since or snap.ut),
-            self.rollout_entry_alpha, env=self.env)
         # ``ROLLOUT_HOLD_TAIL_FRACTION``: the hold is a fraction of this
         # airframe's own tail-strike angle, not the old craft's 8 deg -- on
         # the shuttle (tail 11.0 deg) 8 deg held on the wheels at 70 m/s
         # plus kRPC's overshoot put the tail down (LOG4819: 22-27 deg).
+        # Applied after the ramp it *is* a step to the cap on the first
+        # tick; ``ROLLOUT_RAMP_FROM_ATTITUDE`` hands it to the schedule.
+        cap = None
         frac = float(getattr(self.cfg, "ROLLOUT_HOLD_TAIL_FRACTION", 0.0))
         if frac > 0.0:
             tail = getattr(self.telemetry, "tail_angle_deg", None)
             if tail is None:
                 tail = self.cfg.TAIL_ANGLE_FALLBACK_DEG
-            ground_alpha = min(ground_alpha, frac * float(tail))
+            cap = frac * float(tail)
+        ground_alpha = guidance.rollout_alpha(
+            self.cfg, speed, snap.ut - (self.state_since or snap.ut),
+            self.rollout_entry_alpha, env=self.env,
+            cap=cap if ramped else None)
+        if cap is not None and not ramped:
+            ground_alpha = min(ground_alpha, cap)
         self.aim_runway(ground_alpha, snap)
         up = vec.unit(snap.position)
         along = self.env.runway.horizontal(self.end, self.end["along"])

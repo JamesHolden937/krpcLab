@@ -8918,6 +8918,21 @@ class TestTheWheelWatch(unittest.TestCase):
         self.assertEqual(self.events, [])
 
 
+class TestTheRolloutRampUnderTheTailCap(unittest.TestCase):
+    """``ROLLOUT_RAMP_FROM_ATTITUDE``: the cap bounds the target, not the
+    ramp, so the first tick is the entry attitude rather than the cap."""
+
+    def test_the_first_tick_is_the_entry(self):
+        cfg = Config()
+        first = guidance.rollout_alpha(cfg, 47.0, 0.0, 6.0, cap=4.4)
+        self.assertAlmostEqual(first, 6.0)
+        half = guidance.rollout_alpha(cfg, 47.0, 0.5 * cfg.ROLLOUT_RAMP_S,
+                                      6.0, cap=4.4)
+        self.assertAlmostEqual(half, 5.2)
+        self.assertLessEqual(guidance.rollout_alpha(cfg, 47.0, 10.0, 6.0,
+                                                    cap=4.4), 4.4)
+
+
 class TestTheFlareSpeedBudget(unittest.TestCase):
     """``FLARE_SPEED_BUDGET``: a short budget raises the touchdown sink."""
 

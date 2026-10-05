@@ -2572,7 +2572,8 @@ def touchdown_alpha_cap(cfg, height, sink=0.0):
             + share * (cfg.FLARE_ALPHA_DEG - cfg.FLARE_TOUCHDOWN_ALPHA_DEG))
 
 
-def rollout_alpha(cfg, speed, elapsed=None, entry_alpha=None, env=None):
+def rollout_alpha(cfg, speed, elapsed=None, entry_alpha=None, env=None,
+                  cap=None):
     """The angle of attack to hold on the ground at ``speed``.
 
     **The schedule lives here so that the test and the flight cannot use
@@ -2585,7 +2586,9 @@ def rollout_alpha(cfg, speed, elapsed=None, entry_alpha=None, env=None):
 
     ``elapsed``/``entry_alpha`` ramp the command out of whatever attitude the
     flare finished in, because arriving at the schedule is itself a step if
-    it happens in one tick.
+    it happens in one tick.  ``cap`` (``ROLLOUT_RAMP_FROM_ATTITUDE``) limits
+    the schedule the ramp heads for, not the ramp: capping its output, as
+    ``run_rollout`` did, is a step to the cap on the first tick.
     """
     # ``env`` is optional here alone: the offline tests call this
     # directly with no environment, and with none it reads exactly the
@@ -2596,6 +2599,8 @@ def rollout_alpha(cfg, speed, elapsed=None, entry_alpha=None, env=None):
     share = vec.clamp((speed - full_down) / band, 0.0, 1.0)
     alpha = (cfg.ROLLOUT_ALPHA_DEG
              + share * (cfg.ROLLOUT_HOLD_ALPHA_DEG - cfg.ROLLOUT_ALPHA_DEG))
+    if cap is not None:
+        alpha = min(alpha, cap)
     if entry_alpha is None or elapsed is None:
         return alpha
     ramp = vec.clamp(elapsed / max(0.01, cfg.ROLLOUT_RAMP_S), 0.0, 1.0)

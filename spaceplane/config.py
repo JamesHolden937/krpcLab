@@ -2905,6 +2905,17 @@ class Config:
     # Enter ROLLOUT when the main wheels report ``grounded`` rather than
     # waiting for KSP's ``situation`` (see ``Autopilot.run_flare``).
     ROLLOUT_ON_MAIN_CONTACT: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
+    # **The tail cap above is applied after the ramp, so the ramp never
+    # runs**: the first ROLLOUT tick commands 0.4 x 11 = 4.4 deg from the
+    # flare's 10-14 (``aoa=4.4/10.2`` at LOG5692's contact), the pitch input
+    # swings full down and full up within half a second at 47 m/s, and the
+    # first part KSP reports exploding is usually a rear RV-105 block, then
+    # the outboard elevon, then the wing (sav-budget-1004, KSP.log).  With
+    # this the cap bounds the schedule inside ``guidance.rollout_alpha`` and
+    # the ramp starts from the pitch attitude at contact
+    # (``Autopilot.ground_pitch``), which on the wheels is the angle of
+    # attack.  Failure 31's step, re-introduced by a later cap.
+    ROLLOUT_RAMP_FROM_ATTITUDE: bool = False
     # **And the ramp that was supposed to deliver it never ran once**, which
     # is the same fix failing twice.  It was written against a touchdown at
     # "60-100 m/s" -- the speeds an ``APPROACH_FACTOR`` of 2.40 produced --
