@@ -4358,3 +4358,34 @@ Also found: the landing geometry (wheel clearance 1.82 m, tail strike
 11.0 deg) is measured with the gear up; gear-down it is 3.72 m and ~25 deg
 (engine bell).  `GEAR_GEOMETRY_DEPLOYED` (off) fixes it: contact height
 reads 0.1 instead of 2.2.  Unpromoted: flown one batch, wing loss swamped it.
+
+### 2026-10-05 midday: the touchdown point, on the rigoff saves
+
+Scored with `rwysum.py` (on the runway = intact and stopped inside
++-1200 m along, +-35 m across).  All on `SAVE=qs_s2_rigoff`.
+- `GEAR_GEOMETRY_DEPLOYED`: null (3/12 vs 4/12, sav-rig3-1005).
+- `TOUCHDOWN_AIM_DERIVED`: crashes 5-9 km short on four saves.  Off.
+- **`FLARE_ALIGN_ALT_M` 140 -> 30**: the flare aligned the nose from 140 m
+  and flew wings level, so the velocity's track error drifted the vehicle
+  25-55 m sideways (slip to +8).  Median touchdown |xt| 27 -> 13-20 m over
+  48 flights (sav-flarelat/aim/sstop-1005).  `FLARE_LEAN_BY_ROLL` worse.
+- Every remaining miss was **long**: the approach flies its profile to the
+  aim (the far threshold) and the flare floats 300-500 m past.
+  `TOUCHDOWN_AIM_M=1800` fixed hac0/1/2 (9/9) but moved the cone, which ran
+  out of height mid-turn on hac5 (crashes 2 km off).  `APPROACH_SCURVE_STOP_M
+  =4600` fixed hac1's -100 m capture but landed it 1 km long.
+- **`APPROACH_AIM_SHIFT_M` (new) = 1000**: only the approach's aim moves;
+  the cone and gate keep `TOUCHDOWN_AIM_M`, and (after rot-orbit-1005 showed
+  the weave ending 1 km early on big-surplus arrivals) the S-turn stop stays
+  measured from the unshifted aim.  13/15 vs 5/15 on the runway, hac4
+  excluded (sav-shift3-1005, LOG6244-6279).
+- Both promoted (fingerprint 9fb6cdb8).  Regression (rot-regress-1005): old
+  craft 8/8 intact, on runway 4/4 vs 3/4; shuttle from orbit 2/8 vs 2/8.
+
+**From orbit the shuttle still lands ~1 in 8 on the runway** -- the cone
+hands over anything from 6.7 km of surplus (LOG6226: arrived over the field
+at 20.5 km, rolled out with laps=0 because `HAC_EXIT_SURPLUS_DERIVED` lets
+through any surplus under a lap's cost, ~8 km on a 3.9 km circle) to "out of
+height" exits that the approach then reads as +530 m surplus (LOG6224: the
+cone prices the path via its gate 6 km out while its 9.3 km circle has the
+vehicle 1.1 km from the threshold).  Two models of one quantity.

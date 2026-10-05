@@ -22,6 +22,17 @@ LINE = re.compile(r"^(arm\d+) ksp\d+ +\d+ +(\S+) .*along +([-+]\d+) +across +"
                   r"([-+]\d+) .* (\d+) parts .*(LOG\d+)")
 
 
+def parts_at_start(log):
+    try:
+        for line in open(os.path.join(ROOT, "logs", log), errors="replace"):
+            m = re.search(r"vessel: .* (\d+) parts", line)
+            if m:
+                return int(m.group(1))
+    except OSError:
+        pass
+    return 31
+
+
 def touchdown(log):
     try:
         for line in open(os.path.join(ROOT, "logs", log), errors="replace"):
@@ -49,7 +60,7 @@ def main():
             if m:
                 arm, save, al, ac, parts, log = m.groups()
                 rwy, xt = touchdown(log)
-                ok = (int(parts) == 31 and abs(int(al)) <= half_l
+                ok = (int(parts) == parts_at_start(log) and abs(int(al)) <= half_l
                       and abs(int(ac)) <= half_w)
                 rows.append((arm, save, int(al), int(ac), int(parts), log,
                              rwy, xt, ok))
