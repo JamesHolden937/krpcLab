@@ -4389,3 +4389,26 @@ through any surplus under a lap's cost, ~8 km on a 3.9 km circle) to "out of
 height" exits that the approach then reads as +530 m surplus (LOG6224: the
 cone prices the path via its gate 6 km out while its 9.3 km circle has the
 vehicle 1.1 km from the threshold).  Two models of one quantity.
+
+### 2026-10-05 afternoon: the cone from orbit
+
+Three rigoff orbits (`qs_shuttle2{,_inc,_high}_rigoff`), 12 flights an arm,
+`rotfly.sh`, scored with `rwysum.py`.  From orbit ~2-4 of 12 land on the
+runway whatever the arm; the cone dominates.
+- `HAC_EXIT_SURPLUS_DERIVED=False` (fixed 500 m): intact 10/12 vs 5/12 but
+  on the runway 1/12 vs 2/12 -- the "out of height" exits it produces land
+  2.7-5.7 km long (rot-exit-1005).  Again in rot-surplus-1005: 1/12 vs 3/12.
+  Derived stays.
+- **`HAC_EXIT_PAST_DEG` 0 -> 25, promoted**: "out of height" exits 0/12 vs
+  4/12 (rot-past-1005).  Those exits had overshot the rollout 14-23 deg
+  (``turn`` is the angle still to turn: 344 = 16 deg past), read a lap
+  owed, widened the circle chasing the receding rollout point (R
+  8576 -> 9296 m in 2 s at `HAC_RADIUS_RATE_M_S` 400) and left at the 2 km
+  floor beside the field with 0.5-1.2 km of surplus (LOG6224, 6305, 6309,
+  6314).  Overshoots beyond `HAC_ROLLOUT_M` (900 m) on 10-14 km circles
+  still do it.
+- `HAC_RADIUS_MAX_M=8000`: 2/12 vs 4/12, laps still 0 on every flight
+  (rot-rmax-1005).  The cone is not short of path; **it arrives at the
+  rollout 300-3500 m high on almost every orbital flight** (laps=0, circle
+  2-16 km).  It burns less height than it plans -- measure planned against
+  flown turning L/D (`conesum.py`) before changing anything else.

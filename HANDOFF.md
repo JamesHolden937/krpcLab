@@ -4,8 +4,8 @@ Snapshot of the last session. History is in `docs/spaceplane/journal.md`
 ("Session, 2026-10-04 night / 10-05: the wings come off because of rigid
 attachment").
 
-Last written **2026-10-05 ~12:55** (machine clock). Defaults fingerprint
-**`9fb6cdb8`**: `FLARE_ALIGN_ALT_M` 140 -> 30 and `APPROACH_AIM_SHIFT_M`
+Last written **2026-10-05 ~14:50** (machine clock). Defaults fingerprint
+**`9e64c23f`**: `FLARE_ALIGN_ALT_M` 140 -> 30, `HAC_EXIT_PAST_DEG` 0 -> 25 and `APPROACH_AIM_SHIFT_M`
 (new) 0 -> 1000 promoted this session. Offline
 spaceplane suite OK. Everything committed. Farm **up** (0-5), ksp6 is the
 camera instance (1280x720, its own settings.cfg).
@@ -68,8 +68,11 @@ allowance hands over up to a lap's height (~8 km) of surplus; and the cone
 prices its exit via a gate 6 km out while a 9 km circle has the vehicle
 beside the field, so "out of height" exits read +500 m to the approach.
 Make the cone's exit ask `guidance.approach` for the excess (one model).
-Running at handoff: rot-exit-1005 (defaults vs HAC_EXIT_SURPLUS_DERIVED=False,
-three rigoff orbits).
+Since then (journal, "the cone from orbit"): `HAC_EXIT_PAST_DEG` 0 -> 25
+promoted (out-of-height exits 0/12 vs 4/12). Fixed exit allowance and an
+8 km radius cap both null/worse. **Next: the cone arrives at the rollout
+300-3500 m high on almost every orbital flight with laps=0 -- measure the
+planned vs flown turning L/D (`conesum.py --settled`) on rot-*-1005 logs.**
 
 ## Where the landing stood before those (rigoff saves, 30 flights)
 
