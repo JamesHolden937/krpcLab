@@ -4,11 +4,23 @@ Snapshot of the last session. History is in `docs/spaceplane/journal.md`
 ("Session, 2026-10-04 night / 10-05: the wings come off because of rigid
 attachment").
 
-Last written **2026-10-05 ~14:50** (machine clock). Defaults fingerprint
+Last written **2026-10-05 ~15:35** (machine clock). Defaults fingerprint
 **`9e64c23f`**: `FLARE_ALIGN_ALT_M` 140 -> 30, `HAC_EXIT_PAST_DEG` 0 -> 25 and `APPROACH_AIM_SHIFT_M`
 (new) 0 -> 1000 promoted this session. Offline
-spaceplane suite OK. Everything committed. Farm **up** (0-5), ksp6 is the
-camera instance (1280x720, its own settings.cfg).
+spaceplane suite OK. Everything committed. Farm **stopped**, inhibitor
+**released**. ksp6 is the camera instance (1280x720 in its own
+settings.cfg; start it alone with `RES=1280x720 ./start.sh 6`).
+
+**Stopped mid-batch at the user's request:** rot-hacld-1005 (defaults vs
+`HAC_LD_AT_TARGET=True;HAC_LD_MEASURED=True`, three rigoff orbits) was
+killed in round 3 of 4 -- read rounds 0-2 only as a first look, and
+**restart the farm before the next batch** (a killed batch contaminates the
+next; memory note). That pair is the next thing to fly properly.
+
+**Latest defaults check** (sav-final-1005, LOG6400-6435, pure defaults on
+the rigoff cone saves): on the runway intact **23/36; 23/30 without hac4**
+(hac0 6/6, hac2 6/6, hac3 4/6, hac5 4/6, hac1 3/6 -- its misses stop
+41-44 m off, just outside the 35 m half-width).
 
 ## The finding: rigid attachment breaks the wings at touchdown
 
