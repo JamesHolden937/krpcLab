@@ -364,6 +364,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [spaceplane/CLAUDE.md](spaceplane/CLAUDE.md) | anything in `spaceplane/`: where it stands, what is next, what is refuted |
 | [boosterland/CLAUDE.md](boosterland/CLAUDE.md) | anything in `boosterland/` |
 | [docs/testInstances.md](docs/testInstances.md) | running the parallel-instance farm, or when instances die |
+| [docs/farmSetup.md](docs/farmSetup.md) | building the farm from scratch on a new machine (the game copies are not in git) |
 | [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |

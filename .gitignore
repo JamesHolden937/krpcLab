@@ -1,4 +1,7 @@
+# Python: the CPython and PyPy venvs (run.sh / kspSim/tools/pypysetup.sh rebuild them).
 .venv/
+.venv-pypy/
+.pypy/
 __pycache__/
 *.pyc
 
@@ -15,12 +18,10 @@ dist/
 testInstances/base/
 testInstances/ksp[0-9]*/
 testInstances/prefix[0-9]*/
-*.log
+testInstances/*.log
 
 # kspSim: probed models (regenerate with kspSim/tools/probe.py, 1-5 min each)
 # and the simulated/proxy instances' port directories.
 kspSim/models/
 testInstances/kspsim[0-9]*/
 testInstances/kspproxy[0-9]*/
-.venv-pypy/
-.pypy/

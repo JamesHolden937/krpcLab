@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """flaresum.py OUTFILE -- per flight of a rotfly result: the flare, tick by tick summarised."""
 import re, sys, os
+LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "logs")
 out = sys.argv[1]
 arms = dict(re.findall(r"^(arm\d+)='([^']*)'", open(out).read(), re.M))
 rows = re.findall(r"^(arm\d+) (ksp\d).*?(LOG\d+)", open(out).read(), re.M)
 T = re.compile(r"^\[\s*([0-9.]+)\] (FLARE|APPROACH)\s+alt=\s*-?\d+ h=\s*(-?[0-9.]+) v=\s*([0-9.]+) M=\s*[0-9.]+ vs=\s*([+-]?[0-9.]+) aoa=\s*([0-9.]+)/\s*([0-9.]+) aoak=\s*([+-]?[0-9.]+) dal=\s*([+-]?[0-9.]+).*?bank=\s*([+-]?[0-9.]+) bnk=\s*([+-]?[0-9.]+)")
 by = {}
 for arm, ksp, log in rows:
-    txt = open(os.path.join("/home/holden/krpcLab/logs", log), errors="replace").read()
+    txt = open(os.path.join(LOGS, log), errors="replace").read()
     fl = [m for m in (T.match(l) for l in txt.splitlines()) if m and m.group(2) == "FLARE"]
     if not fl: print(arm, log, "no flare"); continue
     f = lambda m, i: float(m.group(i))
