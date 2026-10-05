@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How the Spaceplane Lander Works</title>
+<link rel="stylesheet" href="../howItWorks.css">
+</head>
+<body>
+
+<div class="kicker">krpcLab &middot; spaceplane</div>
+<h1>How the spaceplane lander works</h1>
+<p class="subtitle">From low Kerbin orbit to a stop on the KSC runway: one deorbit burn and then 1,500&nbsp;km of unpowered flight, from a kRPC script</p>
+
+<p class="lede">The vehicle starts in orbit with an engine, a little propellant and no further thrust after one burn. The autopilot chooses when and how hard to burn, flies a hypersonic entry with angle of attack and bank, spirals off its leftover energy in a circle over the field, glides down final, flares and brakes to a stop. The runway is 2.4&nbsp;km long and 70&nbsp;m wide. On the target vehicle, a Mk3 shuttle, it lands intact on the runway in about three flights of four from a save taken over the field. From orbit it is still the open problem.</p>
+
+<figure>
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="10.5">
+  <defs>
+    <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f5f99"/></marker>
+  </defs>
+  <rect width="700" height="300" fill="#fafcfe"/>
+  <!-- ground -->
+  <line x1="10" y1="266" x2="690" y2="266" stroke="#8a949e" stroke-width="1.5"/>
+  <rect x="600" y="262" width="80" height="4" fill="#1d232b"/>
+  <text x="640" y="282" text-anchor="middle" fill="#5b6672">runway</text>
+  <!-- interface line -->
+  <line x1="10" y1="96" x2="690" y2="96" stroke="#c7d0d8" stroke-dasharray="3 4"/>
+  <text x="684" y="90" text-anchor="end" fill="#8a949e">entry interface, 58 km</text>
+  <!-- orbit -->
+  <path d="M10,40 C 60,26 110,22 160,22" fill="none" stroke="#9aa4ad" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="14" y="18" fill="#8a949e">orbit</text>
+  <!-- deorbit burn -->
+  <path d="M120,22 L160,22" stroke="#b4532a" stroke-width="5"/>
+  <text x="140" y="44" text-anchor="middle" fill="#b4532a" font-weight="600">deorbit burn</text>
+  <!-- coast -->
+  <path d="M160,22 C 210,24 250,50 280,96" fill="none" stroke="#1f5f99" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="232" y="34" fill="#1f5f99" font-weight="600">coast</text>
+  <!-- glide -->
+  <path d="M280,96 C 310,140 360,150 420,160 C 470,168 505,176 540,182" fill="none" stroke="#1f5f99" stroke-width="2.6"/>
+  <text x="300" y="198" fill="#1f5f99" font-weight="600">glide</text>
+  <text x="300" y="212" fill="#5b6672">Mach 7 &#8594; 1.5: alpha brakes,</text>
+  <text x="300" y="225" fill="#5b6672">bank steers, reversals</text>
+  <text x="300" y="238" fill="#5b6672">keep it on course</text>
+  <!-- HAC spiral -->
+  <g fill="none" stroke="#1f5f99" stroke-width="2.2">
+    <path d="M540,182 C 600,178 640,190 620,200 C 590,212 520,206 528,196 C 538,186 610,192 618,206 C 626,220 580,226 560,220"/>
+  </g>
+  <text x="560" y="164" fill="#1f5f99" font-weight="600">HAC: spiral</text>
+  <text x="560" y="152" fill="#5b6672">~12 km over the field</text>
+  <!-- approach -->
+  <path d="M560,220 C 575,232 590,248 606,260" fill="none" stroke="#1f5f99" stroke-width="2.4"/>
+  <text x="470" y="244" fill="#1f5f99" font-weight="600">approach</text>
+  <path d="M606,260 C 612,264 618,265 626,265" fill="none" stroke="#b4532a" stroke-width="2.6"/>
+  <text x="602" y="248" fill="#b4532a" font-weight="600">flare</text>
+  <path d="M626,265 L668,265" stroke="#1d232b" stroke-width="2.6" marker-end="url(#ab)"/>
+  <text x="650" y="256" fill="#1d232b" font-weight="600">rollout</text>
+</svg>
+<div class="caption">Figure 1. The flight profile, heavily not to scale: the glide covers well over a thousand kilometres, the circle over the field a few tens. Only the deorbit burn uses the engine.</div>
+</figure>
+
+<h2>The architecture</h2>
+<p>The spaceplane shares the booster lander's skeleton. One phase machine (<code>autopilot.py</code>) is the only code that talks to the game. <b>Every tick it re-propagates the vehicle to the ground</b> with a local RK4 integrator (<code>trajectory.py</code>) that models gravity, lift, drag and the planet's rotation, and every phase decision comes from that fresh prediction rather than from a stored plan. The control laws are pure functions in <code>guidance.py</code>. <code>environment.py</code> holds the air, the runway and the airframe's aerodynamic table, so the integrator never makes a remote call.</p>
+
+<figure>
+<svg viewBox="0 0 700 84" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="9.6">
+  <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6672"/></marker></defs>
+  <g font-weight="600" text-anchor="middle">
+    <rect x="2" y="8" width="70" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="37" y="25">STANDBY</text>
+    <rect x="90" y="8" width="72" height="26" rx="4" fill="#fbf1eb" stroke="#d9a58c"/><text x="126" y="25">DEORBIT</text>
+    <rect x="180" y="8" width="60" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="210" y="25">DRAIN</text>
+    <rect x="258" y="8" width="62" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="289" y="25">COAST</text>
+    <rect x="338" y="8" width="62" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="369" y="25">GLIDE</text>
+    <rect x="418" y="8" width="52" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="444" y="25">HAC</text>
+    <rect x="488" y="8" width="84" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="530" y="25">APPROACH</text>
+    <rect x="590" y="8" width="62" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="621" y="25">FLARE</text>
+    <rect x="520" y="52" width="78" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="559" y="69">ROLLOUT</text>
+    <rect x="414" y="52" width="78" height="26" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="453" y="69">STOPPED</text>
+  </g>
+  <g stroke="#5b6672" stroke-width="1.2" fill="none">
+    <line x1="72" y1="21" x2="88" y2="21" marker-end="url(#a2)"/>
+    <line x1="162" y1="21" x2="178" y2="21" marker-end="url(#a2)"/>
+    <line x1="240" y1="21" x2="256" y2="21" marker-end="url(#a2)"/>
+    <line x1="320" y1="21" x2="336" y2="21" marker-end="url(#a2)"/>
+    <line x1="400" y1="21" x2="416" y2="21" marker-end="url(#a2)"/>
+    <line x1="470" y1="21" x2="486" y2="21" marker-end="url(#a2)"/>
+    <line x1="572" y1="21" x2="588" y2="21" marker-end="url(#a2)"/>
+    <path d="M621,34 L621,65 L600,65" marker-end="url(#a2)"/>
+    <line x1="520" y1="65" x2="494" y2="65" marker-end="url(#a2)"/>
+  </g>
+</svg>
+<div class="caption">Figure 2. The phase machine. With the default <code>DRAIN_BEFORE_BURN</code>, DRAIN runs just before the burn: surplus propellant is dumped in orbit, leaving a reserve the burn spends. Phases hand over at altitudes and geometry, never at a miss distance.</div>
+</figure>
+
+<p>Three ideas recur through the whole design.</p>
+<ul>
+  <li><b>Measure the airframe; don't type it in.</b> The lift and drag table is swept in STANDBY with kRPC's <code>simulate_aerodynamic_force_at</code>, 182 probe calls in under a second, so the first prediction already uses this vehicle's coefficients. The probe takes the airflow as an argument, so each cell is measured at exactly the angle of attack it tabulates. The vehicle's own axes are checked against <code>Vessel.direction</code> before anything is trusted. The highest angle of attack the airframe can actually <i>hold</i> is learned in flight (see the glide).</li>
+  <li><b>Surplus energy is recoverable; a deficit is not.</b> A glider can always throw energy away by banking, pitching up or S-turning, but it can never make more. So every aim in the flight sits deliberately on the long side, and the gates are placed above the best glide from them, not below.</li>
+  <li><b>The predictor flies the law the vehicle flies.</b> The speed cap, the bank-reversal behaviour and the alpha ceiling are applied inside the propagator as well as in the control loop. A prediction of a law nobody flies is a prediction of a trajectory nobody flies.</li>
+</ul>
+
+<h2>Deorbit: choosing the one burn</h2>
+<p>In orbit the autopilot asks each tick whether the runway is within deorbit range, time-warping while it isn't. Inside the range it searches candidate burn sizes, propagating a full entry for each, and commits when one works. What &ldquo;works&rdquo; means is the important part.</p>
+<p>The glide that follows has a finite <b>window</b> of reachable arrivals. Its shortest is the steepest, highest-drag entry the glide solver is allowed to fly, and its longest is the most lifting one. <code>guidance.deorbit_window</code> propagates those two corners, and the burn is chosen to put the target <b>in the middle of the window</b>. Because the corners are exactly the commands the glide may issue, the window is the glide's real authority rather than a guess about the airframe. This replaced a fitted &ldquo;aim long by X% of the arc&rdquo; constant that had to be re-fitted five times in one session, each time forced by an unrelated change elsewhere.</p>
+<p>The burn itself is closed-loop: it points retrograde, and instead of asking &ldquo;how much more?&rdquo; it asks each tick whether the trajectory <i>already</i> does the job (one propagation, not sixteen). The engine's thrust limiter is turned down so small burns last at least three seconds and can be cut off accurately. The flip to burn attitude uses RCS, because it is on the critical path; flying it on reaction wheels alone cost 50&nbsp;km on every arrival.</p>
+
+<div class="box warm"><div class="box-title">Why the burn matters so much</div>
+<p>One metre per second at the entry interface is worth roughly 11&nbsp;km on the ground. Fifteen flights from three saves taken <i>at</i> the interface repeated to within 2.3&nbsp;km, against 14.8&nbsp;km for whole flights from orbit: as variance, <b>97.6% of the along-track scatter is made before the entry starts</b>. The single largest fix to it was not in guidance at all. The propellant drain valve had been firing <i>after</i> the burn's closed loop stopped looking, giving a small, unmeasured push. Draining before the burn closed the gap between entry states.</p></div>
+
+<h3>Coast</h3>
+<p>After the burn the vehicle falls to the 58&nbsp;km entry interface. It is already in the entry attitude (22&deg; angle of attack), because an attitude set up in vacuum costs nothing to hold, while one set up in thickening air has to be fought for. RCS is permitted, and time warp is used where nothing needs control.</p>
+
+<h2>Glide: angle of attack brakes, bank steers</h2>
+<p>From the interface down to about Mach 1.5, the glide re-solves its two controls every tick to arrive over the field. The work is split between them because the measurements force it:</p>
+<table>
+<tr><th style="width:26%">control</th><th>what it does</th></tr>
+<tr><td><b>angle of attack</b></td><td>Downrange and energy. Drag at 30&deg; is ten times drag at 0&deg;. Solved against the predicted along-track miss.</td></tr>
+<tr><td><b>bank magnitude</b></td><td>Rolling lift off the vertical lets the vehicle sink into thicker air, which is what really slows it. Takes whatever the angle of attack leaves.</td></tr>
+<tr><td><b>bank sign</b></td><td>The <i>only</i> cross-track authority in the whole flight. The sign flips (a bank reversal) whenever the heading error to the runway leaves a deadband, and the deadband narrows as the range shrinks.</td></tr>
+</table>
+<p>The obvious design, solving both controls together through a 2&times;2 Jacobian as the booster's wing does, failed here. The sensitivity of range to angle of attack <b>changes sign during the entry</b>: at 80&nbsp;km more alpha lengthens the flight, and by 45&nbsp;km it shortens it. Range is also non-monotone in both controls at the shallow end: maximum L/D gives the <i>shortest</i> flight, and a little bank lengthens it. The solver brackets to stay on the monotone side of each.</p>
+<p>The propagator models a reversing entry as its average: vertical lift reduced by cos(bank), with no net sideways lift. Modelling one fixed lean instead predicted a huge curving arc whose cross-track sign flipped every cycle, which commanded a vehicle rolling through 40&deg; twice a second.</p>
+
+<h3>The ceiling the airframe will actually hold</h3>
+<p>In dense air the vehicle doesn't hold what it is told: asked for 20&deg; at Mach 4 it delivers 15&ndash;18&deg;, and the shortfall grows with dynamic pressure. That is a <b>saturation</b>, <i>achieved&nbsp;=&nbsp;min(command, holdable(q))</i>, not a gain, and the difference matters. With a proportional model the solver simply asks for more, the factor cancels, and the prediction believes a lift that never arrives. kRPC won't report a pitching moment, so the ceiling can't be probed. <code>trajectory.Holdable</code> learns it instead from every tick's command-versus-achieved pair, binned by dynamic pressure. A bin with no evidence returns <code>None</code>, and queries beyond anything seen extrapolate <i>downward</i> only. Predicting too little lift makes the burn larger, and surplus is the recoverable side.</p>
+
+<h3>Arriving at the right speed</h3>
+<p>Hold the entry angle of attack to the end and the vehicle slows to that angle's equilibrium speed, which is below stall. A speed cap therefore takes over near the end and uses angle of attack to hold the approach speed. It is two-sided below a set Mach number, because a one-sided cap disengages exactly when the vehicle dives, and a dive turns surplus height into speed that nothing after the gate can spend. One flight arrived at the approach doing 219&nbsp;m/s, 74&deg; off the runway heading.</p>
+
+<h2>HAC: stop asking the entry for an exact energy</h2>
+<p>This is the change that took the landing from tens of kilometres to hundreds of metres. It works by changing what the entry is asked to do, not by doing it more accurately. A straight-in arrival has to be at one point, one height and one energy after 1,500&nbsp;km of unpowered flight, and the burn alone scatters that by ~15&nbsp;km. The Space Shuttle didn't try. It arrived <i>over</i> the field with height in hand and spent the surplus turning round a <b>heading alignment cone</b> (HAC), a circle tangent to the extended centreline. Rolling out of the circle <i>is</i> lining up, so alignment and energy management become the same manoeuvre.</p>
+
+<figure>
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="10.5">
+  <defs>
+    <marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f5f99"/></marker>
+    <marker id="ak" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6672"/></marker>
+  </defs>
+  <rect width="700" height="250" fill="#fafcfe"/>
+  <!-- centreline -->
+  <line x1="150" y1="210" x2="690" y2="210" stroke="#c7d0d8" stroke-dasharray="6 4"/>
+  <text x="156" y="228" fill="#8a949e">extended centreline</text>
+  <!-- runway -->
+  <rect x="520" y="204" width="130" height="12" fill="#1d232b"/>
+  <text x="585" y="236" text-anchor="middle" fill="#5b6672">runway (2.4 km)</text>
+  <text x="524" y="198" fill="#5b6672">threshold</text>
+  <!-- circles: alternative radii -->
+  <circle cx="400" cy="160" r="50" fill="none" stroke="#c7d0d8" stroke-width="1"/>
+  <circle cx="400" cy="140" r="70" fill="none" stroke="#c7d0d8" stroke-width="1"/>
+  <!-- chosen circle -->
+  <circle cx="400" cy="115" r="95" fill="none" stroke="#1f5f99" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="400" y1="115" x2="400" y2="210" stroke="#5b6672" stroke-width="1" marker-end="url(#ak)"/>
+  <text x="406" y="160" fill="#5b6672">R</text>
+  <circle cx="400" cy="115" r="2.5" fill="#5b6672"/>
+  <text x="408" y="112" fill="#5b6672">centre, abeam the gate</text>
+  <!-- arrival and flown path -->
+  <path d="M690,40 C 600,26 480,20 400,20" fill="none" stroke="#1f5f99" stroke-width="2.4"/>
+  <text x="560" y="18" fill="#1f5f99" font-weight="600">arrival from the glide</text>
+  <path d="M400,20 A95,95 0 0 0 305,115 A95,95 0 0 0 400,210" fill="none" stroke="#1f5f99" stroke-width="2.4" marker-end="url(#ac)"/>
+  <path d="M400,210 L516,210" fill="none" stroke="#1f5f99" stroke-width="2.4"/>
+  <circle cx="400" cy="210" r="4.5" fill="#b4532a"/>
+  <text x="400" y="244" text-anchor="middle" fill="#b4532a" font-weight="600">gate / rollout</text>
+  <text x="430" y="203" fill="#1f5f99">approach</text>
+  <!-- equation -->
+  <g font-size="10.5">
+    <text x="16" y="30" font-weight="700" fill="#1d232b">Solve for R each tick:</text>
+    <text x="16" y="50" fill="#1d232b">path still to fly = run-in + R &#215; turn left</text>
+    <text x="16" y="66" fill="#1d232b">path affordable = (h &#8722; gate height) &#215; L/D</text>
+    <text x="16" y="88" fill="#5b6672">Too much energy: a wider circle.</text>
+    <text x="16" y="102" fill="#5b6672">Even the widest is short of path:</text>
+    <text x="16" y="116" fill="#5b6672">another lap.</text>
+    <text x="16" y="136" fill="#5b6672">Grey circles: other radii. The centre</text>
+    <text x="16" y="150" fill="#5b6672">moves with R so every circle stays</text>
+    <text x="16" y="164" fill="#5b6672">tangent at the gate.</text>
+  </g>
+</svg>
+<div class="caption">Figure 3. Plan view of the heading alignment cone. An energy error becomes a radius, and a radius is something the vehicle can just fly. The circle is entered only below Mach 1.5: turn radius goes as v&sup2;, about 9&nbsp;km at Mach 0.9 and 250&nbsp;km at Mach 4.7.</div>
+</figure>
+
+<p>Making this work cost several flights, and each lesson is now a rule in the code:</p>
+<ul>
+  <li><b>The centre moves with the radius.</b> With the centre pinned 8&nbsp;km abeam, every other radius missed the gate sideways by (8&nbsp;km&nbsp;&minus;&nbsp;R). Three flights landed 0.2&ndash;1.6&nbsp;km off the centreline of a 70&nbsp;m runway. With the centre moved, the next four landed within 200&nbsp;m.</li>
+  <li><b>The tangent point is reached travelling the right way round.</b> Both tangent points satisfy the arithmetic. With the wrong sign, a vehicle already lined up 30&nbsp;km out was costed a 149&deg; turn and abandoned the cone.</li>
+  <li><b>Lined up is not ready.</b> Reaching the rollout with a lap still owed, or with more height than the approach can lose, is not an exit. Two early flights handed the approach a vehicle 12&nbsp;km up and floated 10&nbsp;km past the field.</li>
+  <li><b>The entry's target moves up.</b> The glide now aims at a point ~12&nbsp;km over the gate instead of at the gate itself. The vehicle crosses the field at Mach 2.9 at 19&nbsp;km, so the cone has to be delivered where it can be flown, and the raised target gives back ~19&nbsp;km of required range the entry was carrying as surplus anyway.</li>
+</ul>
+
+<h2>Approach: hold speed, not path</h2>
+<p>A glider can't choose its speed and its flight path independently: pick an angle of attack and the polar fixes both. The one to choose is <b>speed</b>, because arriving slow can't be recovered. The first approach law used the throttle-aircraft logic of commanding alpha from sink-rate error, which is backwards here. Arriving high, it unloaded the wing and traded the height for speed, and offline reached the threshold at 102&nbsp;m/s and 36&nbsp;m/s of sink.</p>
+<p>The current law commands the <i>descent angle</i> that holds the target speed, from <i>dv/dt&nbsp;=&nbsp;g&nbsp;sin&theta;&nbsp;&minus;&nbsp;D/m</i>. That lets it make speed by steepening as well as lose it. Surplus height is spent with S-turns that command a track angle, acos(straight path / path the height can pay for), rather than a bank. The target speed is deliberately <b>fast</b>, 2.25&times; stall. The load factor available to arrest the sink in the flare grows as the <i>square</i> of speed (<i>n</i><sub>max</sub>&nbsp;=&nbsp;(V/V<sub>s</sub>)&sup2;), while the sink to be arrested grows only linearly, so a faster approach makes the flare strictly easier. Horizontal speed is the cheap axis, and the runway is where it is meant to go.</p>
+
+<h2>Flare and rollout: no law may step</h2>
+<p>Four separate laws in the last few hundred metres were commanding <i>steps</i>, and each one destroyed the vehicle on a runway it had already reached. The common rule: <b>ramp every command, and near the ground reference it to the runway, not the airflow.</b></p>
+<ul>
+  <li><b>Flare (from 50&nbsp;m).</b> The flare tracks a sink rate of &radic;(<i>v</i><sub>td</sub>&sup2;&nbsp;+&nbsp;2<i>ah</i>), easing smoothly to the touchdown rate. Its arrest demand divides by height, so a floor stops it from demanding maximum lift over the last two ticks, and a touchdown attitude caps pitch short of a tail strike. Below 30&nbsp;m it aligns the nose with the runway, not with the velocity. Pointing at the velocity landed the vehicle crabbed: 23&deg; of sideslip at the first rollout tick, 51&deg; two seconds later, gear torn off.</li>
+  <li><b>Centreline capture.</b> The approach asks for the lateral closure that brings cross-track to zero <i>when the wheels arrive</i>, not just &ldquo;inside the offset left&rdquo;. The flare has only about 1.5&nbsp;s of lateral authority, so it inherits whatever drift it is handed.</li>
+  <li><b>Rollout.</b> Ramp the nose down from the attitude it touched down in, instead of commanding zero alpha at 90&nbsp;m/s (a nose-over) or nothing at all (a tail scrape). Full main-gear braking from touchdown, nosewheel steering onto the centreline, ground spoilers. STOPPED hands the vehicle back.</li>
+</ul>
+
+<h2>Where it stands (2026-10-05)</h2>
+<table>
+<tr><th style="width:28%">segment</th><th>state</th></tr>
+<tr><td>deorbit + entry</td><td>Works on both airframes. The shuttle's arrival error went from +111&nbsp;km to +3&nbsp;km after attitude and burn fixes, including the engine thrust limiter, which had never been commanded.</td></tr>
+<tr><td>landing, from saves over the field</td><td>Shuttle on the runway intact in <b>23 of 30</b> flights across five save states (36 with a sixth, hard one included: 23/36). Touchdown cross-track is now a median of 13&ndash;20&nbsp;m.</td></tr>
+<tr><td>landing, from orbit</td><td><b>The current blocker:</b> about 1 orbital flight in 8 lands on the runway. The cone reaches the rollout 300&ndash;3,500&nbsp;m too high, and its exit prices energy against a gate 6&nbsp;km out while the vehicle is already beside the field.</td></tr>
+<tr><td>touchdown survival</td><td>The shuttle's wings were breaking off on contact. The cause was the <code>rigidAttachment</code> flag on the two delta-wing parts: with it off, 22 of 24 touchdowns kept both wings, against ~8 of 24.</td></tr>
+</table>
+
+<h2>How it is measured</h2>
+<p>Changes are flown on a farm of six headless KSP instances, with the autopilot unmodified. A batch is <i>n</i> flights of one configuration, not one flight of <i>n</i> configurations: one unchanged configuration scatters 10&ndash;15&nbsp;km along-track from orbit, and an 8-flight batch resolves a factor of two and nothing finer. Arms are interleaved round by round so drift in the farm cancels. Every log records the settings that differ from the defaults <i>and</i> a fingerprint of the defaults, and ends with a <code>loop rate</code> line showing whether each phase's control loop actually ran at the interval it asked for. Landing work is flown from saves taken over the field, since a landing can't be measured through 15&nbsp;km of entry scatter. A headless simulator (<code>kspSim</code>) screens ideas about ten times faster, and the farm confirms them.</p>
+
+<div class="footer-note">Written 2026-10-05 from <code>docs/spaceplane/design.md</code>, <code>failures.md</code>, <code>journal.md</code>, <code>HANDOFF.md</code> and the code at commit <code>8ae26ff</code> (defaults fingerprint <code>9e64c23f</code>). Figures are from the logs cited in those documents.</div>
+</body>
+</html>

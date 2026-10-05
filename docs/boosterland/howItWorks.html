@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How the Booster Lander Works</title>
+<link rel="stylesheet" href="../howItWorks.css">
+</head>
+<body>
+
+<div class="kicker">krpcLab &middot; boosterland</div>
+<h1>How the booster lander works</h1>
+<p class="subtitle">Bringing a spent first stage back to the KSC launch pad, Super Heavy style, from a kRPC script</p>
+
+<p class="lede">The booster separates at about 20 km, still moving downrange at several hundred metres per second. The autopilot flips it, burns back toward the pad, falls through the atmosphere using the body as a weak wing, and lights the engines once more for a suicide burn that puts the legs on a pad about 20 m across. Over five different separation states, with no calibration constant, it lands a median of <b>4 m</b> from the target and <b>7 m</b> at worst.</p>
+
+<figure>
+<svg viewBox="0 0 700 270" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="11">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d232b"/></marker>
+    <marker id="arb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f5f99"/></marker>
+  </defs>
+  <rect x="0" y="0" width="700" height="270" fill="#fafcfe"/>
+  <line x1="20" y1="236" x2="690" y2="236" stroke="#8a949e" stroke-width="1.5"/>
+  <rect x="70" y="230" width="26" height="6" fill="#1d232b"/>
+  <text x="83" y="254" text-anchor="middle" fill="#5b6672">pad</text>
+  <!-- ascent -->
+  <path d="M83,230 C 95,140 250,90 440,74" fill="none" stroke="#9aa4ad" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="200" y="128" fill="#8a949e">ascent (not flown by this script)</text>
+  <!-- upper stage continues -->
+  <path d="M440,74 C 520,62 600,50 680,40" fill="none" stroke="#9aa4ad" stroke-width="1.2" stroke-dasharray="2 4"/>
+  <text x="610" y="34" fill="#8a949e">upper stage</text>
+  <!-- separation & flip -->
+  <circle cx="440" cy="74" r="4" fill="#1d232b"/>
+  <text x="428" y="96" text-anchor="end" fill="#1d232b">separation</text>
+  <!-- boostback burn -->
+  <path d="M440,74 C 470,64 498,58 512,64 C 520,70 512,80 498,80" fill="none" stroke="#b4532a" stroke-width="4"/>
+  <text x="692" y="96" text-anchor="end" fill="#b4532a" font-weight="600">boostback burn</text>
+  <text x="692" y="110" text-anchor="end" fill="#5b6672">flip under power, burn until</text>
+  <text x="692" y="123" text-anchor="end" fill="#5b6672">the predicted touchdown is the pad</text>
+  <!-- coast -->
+  <path d="M498,80 C 420,40 260,40 180,110 C 140,145 118,175 108,196" fill="none" stroke="#1f5f99" stroke-width="2.4" marker-end="url(#arb)"/>
+  <text x="24" y="26" fill="#1f5f99" font-weight="600">coast</text>
+  <text x="24" y="40" fill="#5b6672">engines off; below 25 km</text>
+  <text x="24" y="53" fill="#5b6672">the body is flown as a wing</text>
+  <text x="24" y="66" fill="#5b6672">(CORRECTION relights if needed)</text>
+  <!-- landing burn -->
+  <path d="M108,196 C 100,212 92,222 84,229" fill="none" stroke="#b4532a" stroke-width="4"/>
+  <text x="122" y="206" fill="#b4532a" font-weight="600">landing burn</text>
+  <text x="122" y="219" fill="#5b6672">suicide burn, steer, then null sideways speed</text>
+</svg>
+<div class="caption">Figure 1. The flight profile, not to scale. Orange is engine-on; blue is unpowered. Every part of it is re-decided each tick from a fresh prediction of where the booster will touch down.</div>
+</figure>
+
+<h2>The one idea: re-predict the landing every tick</h2>
+<p>There is no stored plan. About twenty times a second the autopilot reads the booster's position and velocity, then <b>integrates the rest of the flight to the ground</b> in local Python: gravity, drag, body lift, the planet's rotation, and the landing burn itself. Whatever it decides that tick, it decides from that fresh prediction: which way to point, how much throttle, when boostback is done, when to light the landing burn, which way to steer. A disturbance that sends the booster off course shows up in the next prediction, so it gets corrected without anything having to detect it as a disturbance.</p>
+
+<p>The code is organised around that idea. <code>autoland.py</code> is the phase machine and the only code that talks to the game. <code>trajectory.py</code> is the propagator. <code>guidance.py</code> holds the control laws as pure functions that can be tested without KSP. <code>environment.py</code> keeps the world data the propagator needs: air density, speed of sound, a drag curve and a lift slope. It caches all of it so the integration loop makes no remote calls at all.</p>
+
+<h3>What the predictor has to get right</h3>
+<ul>
+  <li><b>It flies the landing burn too.</b> The prediction coasts to where the suicide burn will start, then keeps integrating with the engines on, using the same throttle law the vehicle will fly (<code>trajectory.landing_command</code> is shared by both). Braking sheds horizontal speed, so the real touchdown is short of the ballistic impact point, by kilometres for a fast booster. A boostback that aimed at the ballistic point would overshoot every time.</li>
+  <li><b>RK4, not Euler.</b> Drag goes as <i>v</i>&sup2; through a density that changes by a factor of <i>e</i> every 5 km. A first-order step over a hundred-second descent <i>biases</i> the answer instead of just adding noise. That bias was 60&ndash;100 m of overshoot, which a hand-fitted aim correction had been quietly cancelling.</li>
+  <li><b>Drag is a curve against Mach, not a number.</b> One flight measured Cd&middot;A at 15 m&sup2; subsonic, 50 m&sup2; near Mach 1.2 and 20 m&sup2; at Mach 2.5. The curve is probed with kRPC's <code>simulate_aerodynamic_force_at</code>, which takes the velocity to evaluate as an argument, so the whole curve can be measured from one position. It is re-swept once the booster is falling nose-first, because a drag area measured broadside during boostback is wrong for the descent.</li>
+  <li><b>The planet's rotation is measured, not assumed.</b> kRPC frames are left-handed, so the sign of a cross product is a trap. The rotation vector is found by comparing the vessel's velocity in the rotating and inertial frames and picking the one that matches.</li>
+  <li><b>Heights are measured from the feet.</b> The trigger height uses the terrain under the legs, clamped against the pad's own radius. One poisoned sensor reading had ended four flights.</li>
+</ul>
+
+<h2>The flight, phase by phase</h2>
+<figure>
+<svg viewBox="0 0 700 92" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="10.5">
+  <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6672"/></marker></defs>
+  <g font-weight="600">
+    <rect x="4" y="14" width="88" height="30" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="48" y="33" text-anchor="middle">STANDBY</text>
+    <rect x="118" y="14" width="98" height="30" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="167" y="33" text-anchor="middle">SEPARATION</text>
+    <rect x="242" y="14" width="98" height="30" rx="4" fill="#fbf1eb" stroke="#d9a58c"/><text x="291" y="33" text-anchor="middle">BOOSTBACK</text>
+    <rect x="366" y="14" width="76" height="30" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="404" y="33" text-anchor="middle">COAST</text>
+    <rect x="468" y="14" width="118" height="30" rx="4" fill="#fbf1eb" stroke="#d9a58c"/><text x="527" y="33" text-anchor="middle">LANDING_BURN</text>
+    <rect x="608" y="14" width="88" height="30" rx="4" fill="#eef3f8" stroke="#9fb6cc"/><text x="652" y="33" text-anchor="middle">TOUCHDOWN</text>
+    <rect x="352" y="60" width="104" height="26" rx="4" fill="#fbf1eb" stroke="#d9a58c"/><text x="404" y="77" text-anchor="middle">CORRECTION</text>
+  </g>
+  <g stroke="#5b6672" stroke-width="1.3" fill="none">
+    <line x1="92" y1="29" x2="116" y2="29" marker-end="url(#a2)"/>
+    <line x1="216" y1="29" x2="240" y2="29" marker-end="url(#a2)"/>
+    <line x1="340" y1="29" x2="364" y2="29" marker-end="url(#a2)"/>
+    <line x1="442" y1="29" x2="466" y2="29" marker-end="url(#a2)"/>
+    <line x1="586" y1="29" x2="606" y2="29" marker-end="url(#a2)"/>
+    <path d="M392,44 L392,58" marker-end="url(#a2)"/>
+    <path d="M416,58 L416,46" marker-end="url(#a2)"/>
+  </g>
+</svg>
+<div class="caption">Figure 2. The phase machine. Orange phases burn the engines. CORRECTION is a short relight that COAST can enter and return from.</div>
+</figure>
+
+<div class="phase"><div class="phase-name">STANDBY<small>waits for START</small></div><div>
+<p>Idle until the in-game panel's START button. Then: RCS on, action group 2 (grid fins and airbrakes), and the autopilot engaged on the current attitude.</p></div></div>
+
+<div class="phase"><div class="phase-name">SEPARATION<small>a few seconds</small></div><div>
+<p>The question is <i>when it is safe to flip</i>. The first version waited three seconds, which is wrong in both directions: too short and the booster turns into its own upper stage; too long and every second is more downrange distance the boostback has to undo. <code>proximity.py</code> asks directly. It wraps each nearby craft in a sphere and marches the booster's motion forward against each one, both coasting and at full thrust along the boostback aim. The phase ends on the first tick where nothing is in the way.</p>
+<p>One subtlety drives the whole model. A moment before separation the two stages were one vehicle, so their spheres overlap at <i>t</i>&nbsp;=&nbsp;0 by construction. The keep-out distance is therefore capped at the gap they are already sitting at, which is demonstrably survivable. Only getting <i>closer</i> counts as a conflict. A 5&nbsp;s backstop goes anyway: a booster that never flips is certainly lost.</p></div></div>
+
+<div class="phase"><div class="phase-name">BOOSTBACK<small>flip and burn</small></div><div>
+<p>Aim opposite the predicted horizontal miss and go to <b>full throttle on the first tick, before the turn is finished</b>. The gimbal is the strongest attitude actuator the booster has, and it exists only while the engines are running. An early version flipped a 30&nbsp;t booster at 19&nbsp;km and 584&nbsp;m/s with the engines off and wallowed through 150&deg; on wheels and RCS. Big turns are routed <i>over the top</i>: kRPC turns along the shortest arc, and for a near-180&deg; flip that is a coin toss which can swing the engines down into the airstream.</p>
+<p>Throttle tapers off as the remaining &Delta;v falls, and the burn ends when the predicted touchdown, landing burn included, is within 190&nbsp;m of the pad. Roll is commanded as well as pointing, so the grid fins sit in the plane they steer in.</p></div></div>
+
+<div class="phase"><div class="phase-name">COAST<small>engines off</small></div><div>
+<p>Fall back toward the pad, watching for the moment the landing burn has to start. Above 25&nbsp;km it holds retrograde. Below 25&nbsp;km it <b>flies the body as a wing</b> (next section), which is the single largest accuracy gain in the project.</p></div></div>
+
+<div class="phase"><div class="phase-name">CORRECTION<small>relight, if needed</small></div><div>
+<p>If the predicted miss grows past 60&nbsp;m while there is still height to use, a throttled-down relight closes it to under 15&nbsp;m and returns to COAST. A falling booster can't hold boostback's horizontal attitude in thick air, so it steers within 50&deg; of retrograde. Before each burn it <i>propagates twice</i> to measure how many metres of miss one m/s actually closes, and it never fires a burn that would make the miss worse. If the booster is stuck off-aim and not turning, it lights at 25% throttle so the gimbal can turn it.</p></div></div>
+
+<div class="phase"><div class="phase-name">LANDING_BURN<small>suicide burn</small></div><div>
+<p>Gear down on the first tick. Throttle follows a constant-deceleration profile (feed-forward plus a proportional trim) that blends into a constant-rate final descent, so the legs arrive at 2&nbsp;m/s. The burn also steers, with ZEM/ZEV terminal guidance aimed at the propagator's predicted touchdown. Below 250&nbsp;m it <b>stops aiming and only nulls sideways velocity</b> (see &ldquo;Aim, then stop&rdquo;).</p></div></div>
+
+<div class="phase"><div class="phase-name">TOUCHDOWN<small>hand back</small></div><div>
+<p>Throttle zero, log the distance from the pad, exit. Every exit path (TERMINATE, Ctrl-C, a crash) runs the same shutdown: throttle zero, autopilot off, SAS on, panel removed, connection closed.</p></div></div>
+
+<h2>Flying the coast as a wing</h2>
+<p>Every other actuator is the engine, and engine burns can only <i>shorten</i> the flight: CORRECTION steers near retrograde and the landing burn thrusts against the velocity. An undershoot was therefore a miss nothing could fix. One separation state kept landing 130&ndash;160&nbsp;m short, and the prediction showed it from 34&nbsp;km up with fuel still aboard. Meanwhile the booster spends a minute falling through air thick enough to decelerate it at more than 1&nbsp;g. Held a few degrees off retrograde, that air is an actuator that pushes in <b>both</b> directions, costs no propellant, and acts for the whole time the miss is already known.</p>
+
+<figure>
+<svg viewBox="0 0 700 170" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Noto Sans, DejaVu Sans, sans-serif" font-size="11">
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect width="700" height="170" fill="#fafcfe"/>
+  <!-- booster body, tilted alpha off its velocity -->
+  <g transform="translate(200,90) rotate(139)">
+    <rect x="-75" y="-10" width="150" height="20" rx="4" fill="#dfe6ed" stroke="#5b6672"/>
+    <rect x="75" y="-8" width="12" height="16" fill="#5b6672"/>
+  </g>
+  <text x="70" y="44" fill="#5b6672">booster, engines first</text>
+  <g color="#1d232b"><line x1="200" y1="90" x2="92" y2="145" stroke="#1d232b" stroke-width="2" marker-end="url(#a3)"/></g>
+  <text x="40" y="128" fill="#1d232b">velocity</text>
+  <g color="#1f5f99"><line x1="200" y1="90" x2="232" y2="152" stroke="#1f5f99" stroke-width="2.4" marker-end="url(#a3)"/></g>
+  <text x="240" y="152" fill="#1f5f99" font-weight="600">side force</text>
+  <path d="M136.9,122.1 A70,70 0 0 0 147.2,136" fill="none" stroke="#b4532a" stroke-width="1.6"/>
+  <text x="118" y="112" fill="#b4532a" font-weight="600">&alpha;</text>
+  <!-- text right -->
+  <g font-size="11" fill="#1d232b">
+    <text x="360" y="36" font-weight="700" fill="#1f5f99">Solve, then verify</text>
+    <text x="360" y="56">1. Measure the side-force slope with the same probe</text>
+    <text x="374" y="70">that measures drag (no lift found = hold retrograde).</text>
+    <text x="360" y="88">2. Propagate small test angles in-plane and out-of-plane;</text>
+    <text x="374" y="102">invert the 2&#215;2 to null downrange and cross-track.</text>
+    <text x="360" y="120">3. Propagate the answer. Keep it only if it lands nearer</text>
+    <text x="374" y="134">than doing nothing (else halve it once, then give up).</text>
+  </g>
+</svg>
+<div class="caption">Figure 3. Tilting the booster a few degrees off its velocity turns the airflow into a sideways force. The force goes roughly as &alpha;&middot;|&alpha;| (a cylinder in crossflow, not a wing), so both the propagator and the solver are quadratic in the angle.</div>
+</figure>
+
+<p>Nothing assumes the booster has lift. The slope is <i>measured</i> each flight, and a vehicle with none is simply not steered. What this booster has turned out to be body lift rather than grid-fin lift (fins stowed and deployed give identical side force; what the fins change is drag), with a lift-to-drag ratio of only about 0.04. That is still ample: 0.4&nbsp;m/s&sup2; over the last 40&nbsp;s is about 300&nbsp;m of authority against a typical 130&nbsp;m error.</p>
+
+<div class="box"><div class="box-title">Two guards the result depends on</div>
+<p><b>Wait for the prediction to settle.</b> The wing starts at 25&nbsp;km, not at the boostback exit. Right after boostback the prediction still walks by up to ~180&nbsp;m while the drag curve is re-measured nose-first. A wing that steered against that walk removed an error that was going to correct itself, and steering immediately cost about 100&nbsp;m.</p>
+<p><b>Check the answer before flying it.</b> Near the ground the sensitivity collapses, so an already-closed miss divided by almost nothing comes back as the maximum angle. One flight held the miss at 0&ndash;5&nbsp;m from 32&nbsp;km and then threw it to 19&nbsp;m in a single step. Re-propagating the command and refusing one that lands further away is free, because that prediction is computed anyway.</p></div>
+
+<table>
+<tr><th>separation state</th><th class="num">no wing (m)</th><th class="num">with wing (m)</th></tr>
+<tr><td><code>quicksave</code></td><td class="num">25</td><td class="num">3</td></tr>
+<tr><td><code>qs_hot</code></td><td class="num">68</td><td class="num">3</td></tr>
+<tr><td><code>qs_cold</code></td><td class="num">14</td><td class="num">2</td></tr>
+<tr><td><code>qs_north</code></td><td class="num">15</td><td class="num">3</td></tr>
+<tr><td><code>qs_steep</code></td><td class="num">151</td><td class="num">4</td></tr>
+</table>
+<div class="caption" style="margin-top:-6pt">Table 1. Distance from the pad, two in-game flights per cell, aim bias zeroed so this is guidance error rather than calibration.</div>
+
+<h2>Aim, then stop</h2>
+<p>The landing burn steers with ZEM/ZEV (zero-effort-miss / zero-effort-velocity) guidance. Its gains, 6 and 4, come from the energy-optimal solution rather than from tuning, and the tilt is capped so that steering never takes thrust away from braking. When it was first flown it <b>toppled the booster</b>. Neither the gains nor the cap was the problem. The steering simply switched off at 15&nbsp;m, and the sideways speed it had built while aiming was still on the vehicle when the legs arrived: 3.4&nbsp;m/s at 16&nbsp;m up, against 0.1 for a pure retrograde burn.</p>
+<p>So below 250&nbsp;m the position term is dropped and the same law runs on its velocity term alone, down to 4&nbsp;m. Aiming and stopping are different jobs, and the last stretch belongs to stopping. A sim log shows the mechanism in its horizontal-speed column: 3.5, 5.0, <b>9.6</b> (aiming), 5.8, 0.7, 0.1, 0.0. The simulator scores the guard as costing 17&nbsp;m, because its vehicle points instantly and cannot fall over. The configuration it prefers is the one that broke the booster in game.</p>
+
+<h2>Smaller rules that each cost a flight</h2>
+<ul>
+  <li><b>Burn for the gimbal.</b> If CORRECTION is far off its aim <i>and not turning toward it</i> (under 3&nbsp;&deg;/s), it lights at 25% throttle rather than waiting. One flight spent 36&nbsp;s pointed 45&ndash;72&deg; away, did nothing, and watched the miss grow from 341 to 966&nbsp;m. The rate test matters: burning whenever the booster is merely off-aim wastes propellant on a turn RCS was already making.</li>
+  <li><b>RCS is a relay, not a phase setting.</b> Thrusters open when the pointing error is large and close once it has <i>stayed</i> small for a moment. A single threshold would chatter at the frequency of the oscillation they are damping.</li>
+  <li><b>Roll is held, not left free.</b> The roof is rolled into the trajectory plane so the grid fins steer the axis that matters. The roll reference is seeded from the zenith once and then carried forward; re-deciding it every tick would flip it 180&deg; as the nose passes vertical and command a barrel roll.</li>
+  <li><b>The landing burn does not divert.</b> An early version used the landing burn to remove the remaining miss and landed the booster on its side. Boostback and the coast remove the miss; the landing burn stops the vehicle.</li>
+</ul>
+
+<h2>How it is measured</h2>
+<p>Each flight writes a numbered log (<code>logs/LOG&lt;n&gt;</code>). Telemetry is paced in <i>game</i> time, so a paused game logs nothing and time warp still gives one line per interval. Every log records which settings differ from the defaults <i>and</i> a fingerprint of the defaults themselves, so a flight can always be filed under the right configuration. Tunables live only in <code>config.py</code>; <code>--set FIELD=VALUE</code> overrides any of them for one flight.</p>
+<p>Five reference saves (<code>quicksave</code>, <code>qs_hot</code>, <code>qs_cold</code>, <code>qs_steep</code>, <code>qs_north</code>) give five different separation states, and <code>tools/savegen.py</code> writes more. An offline simulator (<code>tests/fakeksp</code>) runs the full closed loop with no game, but it models a point mass with near-instant pointing and no aerodynamic torque. Six changes that improved a sim sweep made the real flight worse, so every sim result is treated as a hypothesis and confirmed by flying it in KSP (<code>tools/quickfly.py</code>, or the multi-instance farm in <code>testInstances/</code>).</p>
+
+<div class="footer-note">Written 2026-10-05 from <code>docs/boosterland/design.md</code>, <code>failures.md</code> and the code at commit <code>8ae26ff</code>. Configuration values quoted are the committed defaults in <code>boosterland/config.py</code>.</div>
+</body>
+</html>
