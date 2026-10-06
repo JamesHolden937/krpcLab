@@ -341,6 +341,13 @@ class Config:
     HAC_WEAVE_BANK_DEG: float = 0.0
     # Roll rate the reversal is timed with when none has been measured.
     HAC_WEAVE_ROLL_RATE_DEG_S: float = 8.0
+    # The weave's first swing leans the way the vehicle is already banked.
+    # Off, the phase clock starts every cone on the same swing, which on
+    # qs_shuttle2 is a -45 bank whatever the glide handed over: an arrival
+    # banked +50..+70 is commanded a 100-115 deg reversal at alpha ~42, Mach
+    # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
+    # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
+    HAC_WEAVE_FIRST_WITH_BANK: bool = False
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
     # How fast the commanded circle may change size.  The radius is the

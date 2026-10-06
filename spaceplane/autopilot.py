@@ -596,6 +596,45 @@ class Autopilot:
                 / max(1.0, float(self.cfg.HAC_LD_MEASURED_TAU_S)))
         self.hac_ld_scale = prev + k * (inst - prev)
 
+    def hac_weave_phase(self, snap):
+        """``HAC_WEAVE_FIRST_WITH_BANK``: +1 or -1, which swing the weave
+        clock starts on, locked on the first cone tick where the weave
+        changes the command at all: the one whose bank agrees in sign with
+        the bank the vehicle is flying, so the cone never opens with a
+        reversal.  Chosen by trying both rather than by reasoning about the
+        sign, as ``bank_toward`` is.  1 when off or until locked.
+        """
+        if not getattr(self.cfg, "HAC_WEAVE_FIRST_WITH_BANK", False):
+            return 1.0
+        phase = getattr(self, "_weave_phase", None)
+        if phase is not None:
+            return phase
+        flying = self.steer.bank if self.steer is not None else 0.0
+        if abs(flying) < 5.0:
+            self._weave_phase = 1.0
+            return 1.0
+        base = self.hac_weave_sign(snap.ut)
+        banks = []
+        for sign in (1.0, -1.0):
+            got = guidance.hac(self.env, self.cfg, self.end, snap.position,
+                               snap.velocity, snap.mass, self.surface_gravity,
+                               snap.height_above_runway, self.hac_side,
+                               previous=self.hac_radius, max_step=0.0,
+                               weave=sign * base,
+                               roll_rate=self.roll_rate.limit(),
+                               ld_scale=getattr(self, "hac_ld_scale", None))
+            banks.append(None if got is None else got.bank)
+        if None in banks or abs(banks[0] - banks[1]) < 1.0:
+            return 1.0
+        self._weave_phase = min(
+            (1.0, -1.0), key=lambda s: abs(banks[0 if s > 0 else 1] - flying))
+        self.logbook.event(snap.ut, "cone weave: first swing %+.0f deg "
+                           "(flying %+.0f, the other swing %+.0f)"
+                           % (banks[0 if self._weave_phase > 0 else 1],
+                              flying, banks[1 if self._weave_phase > 0
+                                           else 0]))
+        return self._weave_phase
+
     def hac_weave_sign(self, ut):
         """Which way the cone's weave leans this tick.
 
@@ -4355,7 +4394,8 @@ class Autopilot:
                                self.hac_side,
                                previous=self.hac_radius,
                                max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
-                               weave=self.hac_weave_sign(snap.ut),
+                               weave=self.hac_weave_phase(snap)
+                               * self.hac_weave_sign(snap.ut),
                                roll_rate=self.roll_rate.limit(),
                                ld_scale=getattr(self, "hac_ld_scale", None))
         if command is None:
