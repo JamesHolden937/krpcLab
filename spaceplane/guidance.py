@@ -2306,7 +2306,16 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     reference = cone_speed(env, cfg, stall, height)
     excess_height = 0.0
     if getattr(cfg, "HAC_ENERGY_BUDGET", False) and gravity > 0.0:
-        excess_height = max(0.0, (speed * speed - reference * reference)
+        # **Against the speed the cone ends at, not the one it holds here.**
+        # Held at one IAS the true speed falls with height -- 280 m/s at 12
+        # km to ~120 at the gate for 108 IAS -- and every metre per second
+        # of that is height the plan has to spend.  Measured against the
+        # target where the vehicle is, the budget never saw it: the cone
+        # reached the rollout 1.5 km high, overran it, and ran out of height
+        # a lap later 7 km from the gate (LOG6476, rot-cone-1005).  Under a
+        # constant true-airspeed target the two are the same number.
+        final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
+        excess_height = max(0.0, (speed * speed - final * final)
                             / (2.0 * gravity))
     available = (max(0.0, height + excess_height - cfg.GATE_ALT_M)
                  * cone_ld)
