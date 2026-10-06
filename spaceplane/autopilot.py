@@ -3934,16 +3934,28 @@ class Autopilot:
         if (snap is None):
             return self.cfg.HAC_EXIT_SURPLUS_M
         speed = vec.norm(snap.velocity)
+        height = vec.norm(snap.position) - self.env.equatorial_radius
+        at_target = getattr(self.cfg, "HAC_EXIT_LAP_AT_TARGET", False)
+        if at_target:
+            # ``HAC_EXIT_LAP_AT_TARGET``: the lap the plan prices -- at the
+            # cone's target speed, not the speed the gate is reached at.
+            stall = airframe.stall(self.env, self.cfg)
+            if stall is not None:
+                speed = min(speed, guidance.cone_speed(self.env, self.cfg,
+                                                       stall, height))
         radius = max(self.cfg.HAC_RADIUS_MIN_M,
                      guidance.hac_hold_radius(self.cfg, speed,
                                               self.surface_gravity))
-        height = vec.norm(snap.position) - self.env.equatorial_radius
         ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
                                  snap.mass, self.surface_gravity)
         lap = 2.0 * math.pi * radius / max(0.1, ratio)
         # ``HAC_EXIT_LAP_FRACTION``: past this share of a lap, the lap is
         # the nearer answer.
         lap *= float(getattr(self.cfg, "HAC_EXIT_LAP_FRACTION", 1.0))
+        if at_target:
+            # Lap once the surplus passes a lap less what the approach can
+            # spend: the lap then leaves the approach no more than that.
+            lap -= self.cfg.HAC_EXIT_SURPLUS_M
         return max(self.cfg.HAC_EXIT_SURPLUS_M, lap)
 
     def hac_flap_brake(self, snap, command, height):

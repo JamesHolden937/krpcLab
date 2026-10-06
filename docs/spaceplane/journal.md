@@ -4519,3 +4519,61 @@ both null on the sim; the farm tail it was for (`_inc`) is upstream.
 - sim runaways (deorbit ending on the 60 s burn guard, coasting an orbit,
   600 MB logs) held two screens for 100 min; `simarms.sh` now times a
   flight out at 600 s.
+
+## Session, 2026-10-06 morning: the rollout weave, and the cone's gap measured on the cone saves
+
+Fingerprint at start `d91cd0ad`.
+
+**The rollout weaved off the tarmac.**  rot-newdef-1006's losses read
+again: 5 of the 17 shuttle failures touched down within 30 m of the
+centreline and stopped 40-55 m off it (runway half-width 35).  Every
+shuttle rollout weaved: LOG6831 +22 -> -41 -> +51 m with the track
+swinging -17..+26 deg, period ~20 s, amplitude growing.  The law was
+proportional on cross-track alone acting on a double integrator, which has
+no damping.  `ROLLOUT_STEER_LEAD_S` adds the cross-track rate times a lead
+time.  Measured on `qs_s2_rigoff2` copied to every instance as
+`qs_s2_rwy0-5` (it lands on the runway), sav-lead2-1006, 12 an arm: lead 0
+weave spans 24-176 m; lead 3 and 6 close monotonically and stop within 7 m.
+**Promoted, lead 3** (fingerprint `6a226a64`).  The five off-axis crashes in
+the lead arms were cone exits out of height 1.3-1.8 km from the gate after
+roll swings to 179 deg early in the cone, upstream of the flag (LOG7060,
+7083, 7089, 7061).  The `qs_s2_rwy*` copies live only in the instances
+(regenerate: copy `saves/qs_s2_rigoff2.sfs`).
+
+**The cone saves are no longer cone saves.**  With `HAC_AIM_DERIVED` the
+`qs_s2_rigoff0-5` states (glide at 12.7 km, 12.8 km out) arrive ~2 km and
+more high: handover +1.6..+5.0 km, **sd < 150 m per save**, landing 3-13
+km long (sav-lead-1006, sav-spend-1006, sav-bank-1006).  Not what orbit
+delivers now, but a deterministic testbed for a cone with surplus.  Flown
+against it, 12 an arm:
+- `HAC_FLAP_BRAKE_ON_SURPLUS + _IGNORES_ROLL`: **disconnected** -- the flap
+  brake is measured only in vacuum, and from an air-start save it is
+  never armed ("glide flap brake: no brake armed").  Null by construction.
+- `+ HAC_WEAVE_HELD`: null to worse.
+- `HAC_EXIT_LAP_FRACTION` 0.5 (new, off): only `rigoff4` (+4.9 km) lapped,
+  and the lap came out -1.6 km and crashed.  A lap costs ~6.5 km of height
+  at the gate; the surplus that strands the cone is 1.5-5 km.
+- `HAC_WEAVE_MAX_DEG` 70: two saves tipped into laps ending -1.5 km.
+- `HAC_BANK_MAX_DEG` 60: every save's handover lower by 0.1-1.2 km
+  (rigoff5 +2286 -> +1047, rigoff4 +4948 -> +3898).  Partial; in flight
+  from orbit now (rot-bank-1006).
+
+**What the cone cannot do.**  An arrival lined up with the runway is costed
+the run to the gate at any radius (no turn to lengthen), and the next
+answer is a lap (12.6 km of path at R 2000, ~6.5 km of height).  Between
+them only the weave (capped 50 deg, 1/cos = 1.55x) and drag spend, and the
+weave stops inside one period of the gate.  LOG6964: the plan held laps=1
+and fitting at 10.7 km, dropped it a tick later as the entry's
+deceleration spent ~2 km of energy for 1 km of path, pinned the weave at
+50 and reached the gate +4.5 km.  `HAC_CHOOSE_BY_ENERGY` (new, off): choose
+the end/hand by the planner's fit, not the cheapest -- offline, the other
+end from a lined-up arrival costs more than a lap, so it does not fill the
+gap; unflown.
+
+**From orbit the same disease** (rot-newdef-1006 re-read): LOG6826, 6850,
+6855 left the cone 6-8 km high (rolled out with the plan reading laps=1 and
+fitting, because the exit's allowance is a whole lap priced at the current
+speed's hold radius -- 9-14 km); the approach dived at alpha 20-25 to 50
+m/s and all three flared at 39-41 m/s of sink.  `_inc`: the short cones fly
+L/D 1.43-1.55 against 1.69-1.92 for the ones that land, at 1-2 deg more
+alpha and twice the sideslip (|slip| 3.8-4.9 vs 1.6-3.3).

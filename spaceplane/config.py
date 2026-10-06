@@ -260,6 +260,14 @@ class Config:
     # 0.5 is the symmetric choice, and a short lap can still cut to the
     # gate where a high rollout cannot lose height.  1.0 is the old rule.
     HAC_EXIT_LAP_FRACTION: float = 1.0
+    # **Price the exit's lap as the plan prices it.**  The exit took the
+    # hold radius at the speed the gate is reached at (~140 m/s, 2.7 km)
+    # where the plan flies laps at the cone's target speed (2.0 km): 9-14
+    # km of height against the ~6.5 a lap at the gate costs (cone save
+    # rigoff4: +4.9 km lapped to -1.6).  rot-bank-1006: 6 of the 8 rigoff
+    # losses rolled out 4-8 km high and broke at the flare.  With this on
+    # the exit allowance is that lap less ``HAC_EXIT_SURPLUS_M``.  Off.
+    HAC_EXIT_LAP_AT_TARGET: bool = False
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.
