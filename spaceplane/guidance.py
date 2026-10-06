@@ -2231,8 +2231,8 @@ def cone_ias(env, cfg):
     """
     if not getattr(cfg, "HAC_IAS_FROM_STALL", False):
         return None
-    vs = getattr(env, "stall_speed", None)
-    vmd = getattr(env, "best_speed", None)
+    vs = airframe.stall(env, cfg)
+    vmd = airframe.at_mass(env, getattr(env, "best_speed", None))
     if not vs or vs <= 0.0:
         return None
     load = 1.0 / max(0.2, math.cos(math.radians(
@@ -3336,7 +3336,7 @@ def drag_switch_for(env, r, v2, mass, cfg, end, gate, needed):
     # sized on, which is the same ``GLIDE_ARRIVAL_FACTOR x stall`` the glide
     # already caps itself with.  A prediction that cannot be landed is not a
     # bound on anything.
-    floor = cfg.GLIDE_ARRIVAL_FACTOR * airframe.stall(env, cfg)
+    floor = cfg.GLIDE_ARRIVAL_FACTOR * (airframe.stall(env, cfg) or 0.0)
 
     def arc_for(until):
         steer = Steer(alpha=cfg.ENTRY_ALPHA_DEG, bank=cfg.SOLVE_BANK_MIN_DEG,

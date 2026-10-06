@@ -177,6 +177,9 @@ class Runway:
                                                                 e["along"])))
 
 
+FAKE_STALL = 48.0
+
+
 class FakeEnv:
     """The measured tables, an exponential atmosphere, and a runway."""
 
@@ -194,6 +197,9 @@ class FakeEnv:
         self.omega = (0.0, w, 0.0)
         self._build_tables(cfg)
         self.probe_calls = 0
+        # The stall of the aircraft this models (the old craft's 48 m/s),
+        # where the flight puts the table's (``report_airframe``).
+        self.stall_speed = FAKE_STALL
 
     # -- air ---------------------------------------------------------------
     # The densities the probe itself reported, at the altitudes it reported

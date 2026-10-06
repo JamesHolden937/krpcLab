@@ -3261,7 +3261,10 @@ class Autopilot:
         theta = float(self.cfg.AIRBRAKE_MEASURE_DEG)
         settle = float(self.cfg.AIRBRAKE_MEASURE_SETTLE_S)
         alt = float(self.cfg.AIRBRAKE_MEASURE_ALT_M)
-        speed = self.cfg.APPROACH_FACTOR * airframe.stall(self.env, self.cfg)
+        vs = airframe.stall(self.env, self.cfg)
+        if vs is None:
+            return
+        speed = self.cfg.APPROACH_FACTOR * vs
         alpha = float(self.cfg.AIRBRAKE_MEASURE_ALPHA_DEG)
         try:
             base = self._probe_wrench(alt, speed, alpha)
@@ -3944,6 +3947,7 @@ class Autopilot:
         # this line they were measured, printed, compared against the
         # configured constants -- and discarded.
         self.env.stall_speed = measured.stall_speed
+        self.env.stall_mass = mass
         self.env.best_ld = measured.best_ld
         self.env.best_speed = measured.best_speed
         self.env.stall_alpha = measured.stall_alpha
@@ -3985,8 +3989,6 @@ class Autopilot:
         if measured.stall_speed is None:
             return
         for name, configured, derived in (
-                ("STALL_SPEED_M_S", self.cfg.STALL_SPEED_M_S,
-                 measured.stall_speed),
                 ("APPROACH_BEST_LD", self.cfg.APPROACH_BEST_LD,
                  measured.best_ld)):
             if configured <= 0.0 or derived is None:
@@ -6793,17 +6795,7 @@ class Autopilot:
             self._flare_decel = decel
         if decel is None:
             return None
-        # The craft's own stall at the landing mass (``report_airframe`` on
-        # final), in the units the speed factors were fitted in -- not
-        # ``airframe.stall``, which returns the transcribed 48 for every
-        # craft while ``AIRFRAME_DERIVED`` is off.
-        stall = getattr(self.env, "stall_speed", None)
-        reference = float(getattr(self.cfg, "STALL_CALIBRATION_M_S", 0.0)
-                          or 0.0)
-        if stall and stall > 0.0 and reference > 0.0:
-            stall *= self.cfg.STALL_SPEED_M_S / reference
-        else:
-            stall = airframe.stall(self.env, self.cfg)
+        stall = airframe.stall(self.env, self.cfg)
         floor = float(self.cfg.FLARE_SPEED_FLOOR_FACTOR) * stall
         budget = (speed - floor) / max(0.5, decel)
         self.flare_budget = budget
@@ -7318,6 +7310,12 @@ class Autopilot:
         # before the sweep finishes -- so on every harness flight, which is
         # every flight that gets measured, it never ran at all.  A check that
         # only fires in the configuration nobody uses is not a check.
+        # ``airframe.stall`` scales the table's stall to this -- from the
+        # glide on.  Before it the vehicle is still wet and every
+        # prediction is made at the drained entry mass the table was read
+        # at, so the reading stands unscaled.
+        if self.state in (GLIDE, HAC, APPROACH, FLARE, ROLLOUT):
+            self.env.vehicle_mass = snap.mass
         if self.airframe is None and self.env.ready():
             self.report_airframe(snap)
         self.derive_hac_aim(snap)

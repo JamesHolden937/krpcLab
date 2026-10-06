@@ -2198,7 +2198,8 @@ class Config:
     # the vehicle up **on the runway, 13 m off the centreline**
     # (``logs/LOG803``).  At 1.90 there are 3.6 g, which is the difference
     # between a manoeuvre with margin and one that stalls partway through.
-    STALL_SPEED_M_S: float = 48.0           # measured in flight, not probed
+    # (``STALL_SPEED_M_S``, the old craft's 48 m/s taken in flight as a true
+    # airspeed, was removed 2026-10-05: ``airframe.stall`` is the table's.)
     # **Flown by hand at 100+ m/s, and that is the number to design to.**
     # 1.90 was still anchored on the flare study in ``planeprobe``, whose
     # multiples are of a 37.1 m/s stall that does not exist -- and every
@@ -4059,24 +4060,10 @@ class Config:
     # and moves the gate, the flare and the touchdown with it.  That has to
     # be flown as an arm, not assumed.  ``pairfly.sh`` with
     # ``--set AIRFRAME_DERIVED=True`` is the measurement.
-    # **The derived stall of the aircraft the speed factors were fitted on.**
-    # ``GLIDE_ARRIVAL_FACTOR``, ``APPROACH_FACTOR``, ``APPROACH_FLARE_FACTOR``,
-    # ``APPROACH_FLARE_FLOOR_FACTOR``, ``APPROACH_SPEED_FLOOR_FACTOR`` and the
-    # two ``ROLLOUT_DEROTATE`` factors are all multiples of a stall speed, and
-    # all of them were fitted against ``STALL_SPEED_M_S`` = 48 while this
-    # airframe's own table says 55.6 at the landing mass.  Only the products
-    # were ever measured, so ``airframe.stall`` divides by this to keep them.
-    #
-    # Measured on ``logs/LOG2757`` and every flight of that batch: "at the
-    # landing mass 6.93 t ... stall 55.6 m/s".  Re-take it from that line if
-    # ``MARGIN``, ``ALPHA_BINS`` or the reference craft change -- it is the
-    # one number here that is about *this* aircraft on purpose, and it exists
-    # so that nothing else has to be.
-    STALL_CALIBRATION_M_S: float = 55.6
     # Flying the vehicle's own numbers stopped being safe to bundle with the
     # lift discount, which was refuted in flight -- see
-    # ``airframe.lift_discount``.  This flag now covers the stall (rescaled
-    # above), the cone's glide ratio and the alpha ceiling.
+    # ``airframe.lift_discount``.  This flag now covers the cone's glide
+    # ratio and the alpha ceiling; the stall is always the table's.
     AIRFRAME_DERIVED: bool = False
     # ``airframe.lift_discount``: measured, flown, and wrong.  Off, and the
     # docstring there says what would have to change before it is worth

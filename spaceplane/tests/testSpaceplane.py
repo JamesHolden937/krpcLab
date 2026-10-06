@@ -40,7 +40,11 @@ from spaceplane import autopilot as autopilot_module     # noqa: E402
 from spaceplane import rollrate as rollrate_mod           # noqa: E402
 from spaceplane.config import Config, apply_overrides, differences  # noqa: E402
 from spaceplane.trajectory import Steer                 # noqa: E402
-from spaceplane.tests.fakeplane import FakeEnv, circular_state     # noqa: E402
+from spaceplane.tests.fakeplane import FakeEnv, circular_state, FAKE_STALL  # noqa: E402
+import types  # noqa: E402
+# An environment that knows only the fake airframe's stall, for the laws
+# that read nothing else from it.
+STALL_ENV = types.SimpleNamespace(stall_speed=FAKE_STALL)
 
 MASS = 6715.0
 GRAVITY = 9.81
@@ -295,7 +299,7 @@ class TestTheGuidanceEntryPoints(unittest.TestCase):
         what starved the cone.
         """
         cfg = replace(self.cfg, APPROACH_SPEED_PROFILE=True)
-        stall = cfg.STALL_SPEED_M_S
+        stall = FAKE_STALL
         sink = 25.0
         trigger = cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink
 
@@ -342,7 +346,7 @@ class TestTheGuidanceEntryPoints(unittest.TestCase):
         r = vec.scale(vec.unit(r),
                       self.env.equatorial_radius + self.cfg.HAC_ALT_M)
         reference = (self.cfg.HAC_SPEED_FACTOR * self.cfg.APPROACH_FACTOR
-                     * self.cfg.STALL_SPEED_M_S)
+                     * FAKE_STALL)
         gravity = self.env.mu / (vec.norm(r) ** 2)
 
         def plan(cfg, speed):
@@ -2046,7 +2050,7 @@ class TestTheSpeedFloorIsTheOtherHalfOfTheHold(unittest.TestCase):
         # key on -- not ``APPROACH_FACTOR``, which is the touchdown speed and
         # a different job.  See ``Config.GLIDE_ARRIVAL_FACTOR``.
         self.approach = (self.cfg.GLIDE_ARRIVAL_FACTOR
-                         * self.cfg.STALL_SPEED_M_S)
+                         * FAKE_STALL)
 
     def floor(self, speed, altitude=3000.0):
         return trajectory.alpha_floor_for_speed(
@@ -2967,10 +2971,8 @@ class TestTheAirframeReadsItsOwnTable(unittest.TestCase):
         report = source[source.index("def report_airframe"):
                         source.index("def run_deorbit")]
         self.assertIn("DISAGREES", report)
-        self.assertIn("STALL_SPEED_M_S", report)
         self.assertIn("APPROACH_BEST_LD", report)
         # ... and does not quietly adopt them.
-        self.assertNotIn("self.cfg.STALL_SPEED_M_S =", report)
         self.assertNotIn("self.cfg.APPROACH_BEST_LD =", report)
 
 
@@ -3073,54 +3075,27 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         self.env.stall_speed = self.measured.stall_speed
         self.env.best_ld = self.measured.best_ld
 
-    def test_off_it_is_exactly_the_constant_it_always_was(self):
-        """The flag has to be inert with it off, or the committed
-        configuration -- which lands 88% intact -- is not the thing the
-        baseline arm of a comparison flies."""
-        self.cfg.AIRFRAME_DERIVED = False
-        self.assertEqual(airframe.stall(self.env, self.cfg),
-                         self.cfg.STALL_SPEED_M_S)
-        self.assertEqual(airframe.glide_ld(self.env, self.cfg),
-                         self.cfg.APPROACH_BEST_LD)
+    def test_the_stall_is_the_tables_own(self):
+        """No configured stall and no rescale to another aircraft's units:
+        ``STALL_SPEED_M_S`` and ``STALL_CALIBRATION_M_S`` are gone."""
+        self.assertAlmostEqual(airframe.stall(self.env, self.cfg),
+                               self.measured.stall_speed)
+        self.assertFalse(hasattr(self.cfg, "STALL_SPEED_M_S"))
+        self.assertFalse(hasattr(self.cfg, "STALL_CALIBRATION_M_S"))
 
-    def test_on_it_is_the_table_rescaled_to_the_calibration_aircraft(self):
-        """``stall`` returns the table's answer in the units the speed
-        factors were fitted in -- see ``STALL_CALIBRATION_M_S``.  It is the
-        *ratio* that carries the aircraft, not the absolute number."""
-        self.cfg.AIRFRAME_DERIVED = True
-        got = airframe.stall(self.env, self.cfg)
-        expect = (self.measured.stall_speed * self.cfg.STALL_SPEED_M_S
-                  / self.cfg.STALL_CALIBRATION_M_S)
-        self.assertAlmostEqual(got, expect)
-        self.assertAlmostEqual(airframe.glide_ld(self.env, self.cfg),
-                               self.measured.best_ld)
-        # If these agreed there would be nothing to switch on.
-        self.assertNotAlmostEqual(self.measured.stall_speed,
-                                  self.cfg.STALL_SPEED_M_S, places=1)
+    def test_it_scales_with_the_square_root_of_the_mass(self):
+        """The STANDBY reading is taken at the entry mass; the vehicle that
+        flies the cone is lighter."""
+        self.env.stall_mass = 30000.0
+        self.env.vehicle_mass = 30000.0 * 1.21
+        self.assertAlmostEqual(airframe.stall(self.env, self.cfg),
+                               1.1 * self.measured.stall_speed)
 
-    def test_the_rescale_is_inert_on_the_aircraft_it_was_calibrated_on(self):
-        """The property the whole change rests on: with
-        ``STALL_CALIBRATION_M_S`` set to what this aircraft derives,
-        deriving the stall returns exactly the constant it replaces, so the
-        flag carries generality and no tuning perturbation."""
-        cfg = Config()
-        cfg.AIRFRAME_DERIVED = True
-        cfg.STALL_CALIBRATION_M_S = self.measured.stall_speed
-        self.assertAlmostEqual(airframe.stall(self.env, cfg),
-                               cfg.STALL_SPEED_M_S)
-
-    def test_a_failed_sweep_retreats_to_the_constant_not_to_an_invention(self):
-        """``measure`` answers ``None`` rather than a plausible number, and
-        the retreat from ``None`` is to the transcribed constant -- a known
-        wrong number beats an unknown one, and the log says which was
-        flown."""
+    def test_a_failed_sweep_is_no_answer_not_an_invention(self):
+        """No table, no stall: ``None``, which no threshold accepts."""
         class Blank:
             pass
-        self.cfg.AIRFRAME_DERIVED = True
-        self.assertEqual(airframe.stall(Blank(), self.cfg),
-                         self.cfg.STALL_SPEED_M_S)
-        self.assertEqual(airframe.glide_ld(Blank(), self.cfg),
-                         self.cfg.APPROACH_BEST_LD)
+        self.assertIsNone(airframe.stall(Blank(), self.cfg))
 
     def test_the_cone_ratio_reproduces_the_constant_it_replaces(self):
         """**The reason to believe the derivation.**
@@ -3190,7 +3165,7 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         # is meant to be measures 3.96 sd 0.41 in flight; the derivation
         # omits the flare's flat 400-500 m.  Pinned so the gap cannot be
         # forgotten, not because 2.33 is correct.
-        self.assertAlmostEqual(got, 2.66, delta=0.30)
+        self.assertAlmostEqual(got, 2.33, delta=0.30)
         self.assertLess(got, 3.96 - 0.41)
 
     def test_the_approach_ratio_has_its_own_switch(self):
@@ -3385,7 +3360,7 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         for name in ("guidance.py", "trajectory.py", "environment.py"):
             with open(os.path.join(here, "spaceplane", name)) as fh:
                 source = fh.read()
-            for const in ("cfg.STALL_SPEED_M_S", "cfg.APPROACH_BEST_LD",
+            for const in ("FAKE_STALL", "cfg.APPROACH_BEST_LD",
                           "cfg.HAC_LD"):
                 self.assertNotIn(const, source,
                                  "%s reads %s directly" % (name, const))
@@ -3753,7 +3728,7 @@ class TestTheFloorOnlySpendsSurplus(unittest.TestCase):
         self.cfg = Config()
         self.env = FakeEnv(self.cfg)
         self.approach = (self.cfg.GLIDE_ARRIVAL_FACTOR
-                         * self.cfg.STALL_SPEED_M_S)
+                         * FAKE_STALL)
 
     def floor(self, spending):
         self.env.spending = spending
@@ -5013,7 +4988,7 @@ class TestTheRolloutDerotatesRatherThanStepping(unittest.TestCase):
         # this class passed for the life of a ramp that never ran: it agreed
         # with the code about the arithmetic and neither of them was asked
         # about the speed the vehicle actually touches down at.
-        return guidance.rollout_alpha(self.cfg, speed)
+        return guidance.rollout_alpha(self.cfg, speed, env=STALL_ENV)
 
     def test_the_nose_is_held_up_at_touchdown_speed(self):
         self.assertGreater(self.commanded(95.0),
@@ -5025,20 +5000,20 @@ class TestTheRolloutDerotatesRatherThanStepping(unittest.TestCase):
         hold has to still be holding.  Measured touchdowns: 41, 47.9, 50.5,
         51.2 m/s against a stall of 48."""
         for speed in (0.85, 1.0, 1.1):
-            held = self.commanded(speed * self.cfg.STALL_SPEED_M_S)
+            held = self.commanded(speed * FAKE_STALL)
             self.assertGreater(
                 held, 0.5 * self.cfg.ROLLOUT_HOLD_ALPHA_DEG,
                 "the nose is dropped at %.0f m/s, which is a touchdown speed"
-                % (speed * self.cfg.STALL_SPEED_M_S))
+                % (speed * FAKE_STALL))
 
     def test_the_command_ramps_out_of_the_flare_attitude(self):
         """A step to the schedule is still a step.  At touchdown the command
         is what the flare was holding; a second later it is the schedule."""
-        speed = self.cfg.STALL_SPEED_M_S
-        first = guidance.rollout_alpha(self.cfg, speed, elapsed=0.0,
+        speed = FAKE_STALL
+        first = guidance.rollout_alpha(self.cfg, speed, env=STALL_ENV, elapsed=0.0,
                                        entry_alpha=16.0)
         self.assertAlmostEqual(first, 16.0, places=6)
-        settled = guidance.rollout_alpha(self.cfg, speed,
+        settled = guidance.rollout_alpha(self.cfg, speed, env=STALL_ENV,
                                          elapsed=10.0 * self.cfg.ROLLOUT_RAMP_S,
                                          entry_alpha=16.0)
         self.assertAlmostEqual(settled, self.commanded(speed), places=6)
@@ -8924,12 +8899,12 @@ class TestTheRolloutRampUnderTheTailCap(unittest.TestCase):
 
     def test_the_first_tick_is_the_entry(self):
         cfg = Config()
-        first = guidance.rollout_alpha(cfg, 47.0, 0.0, 6.0, cap=4.4)
+        first = guidance.rollout_alpha(cfg, 47.0, 0.0, 6.0, env=STALL_ENV, cap=4.4)
         self.assertAlmostEqual(first, 6.0)
         half = guidance.rollout_alpha(cfg, 47.0, 0.5 * cfg.ROLLOUT_RAMP_S,
-                                      6.0, cap=4.4)
+                                      6.0, env=STALL_ENV, cap=4.4)
         self.assertAlmostEqual(half, 5.2)
-        self.assertLessEqual(guidance.rollout_alpha(cfg, 47.0, 10.0, 6.0,
+        self.assertLessEqual(guidance.rollout_alpha(cfg, 47.0, 10.0, 6.0, env=STALL_ENV,
                                                     cap=4.4), 4.4)
 
 
@@ -8960,7 +8935,7 @@ class TestTheFlareSpeedBudget(unittest.TestCase):
     def test_the_autopilot_measures_the_deceleration(self):
         run = object.__new__(autopilot_module.Autopilot)
         run.cfg = replace(self.cfg, FLARE_SPEED_BUDGET=True)
-        run.env = SimpleNamespace(stall_speed=55.6)   # -> 48 in factor units
+        run.env = SimpleNamespace(stall_speed=48.0)
         run.logbook = SimpleNamespace(event=lambda ut, m: None)
         snap = lambda ut, v: SimpleNamespace(
             ut=ut, velocity=(v, 0.0, 0.0), landing_height=30.0)
@@ -9324,7 +9299,7 @@ class ApproachEnergyExcess(unittest.TestCase):
         off = guidance.approach(env, cfg, end, r, v, 7000.0, 9.81, 1500.0)
         cfg.APPROACH_ENERGY_EXCESS = True
         on = guidance.approach(env, cfg, end, r, v, 7000.0, 9.81, 1500.0)
-        door = 1.45 * cfg.STALL_SPEED_M_S
+        door = 1.45 * FAKE_STALL
         self.assertAlmostEqual(on.excess - off.excess,
                                (vec.norm(v) ** 2 - door ** 2) / (2 * 9.81),
                                delta=1.0)

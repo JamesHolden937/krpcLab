@@ -336,7 +336,10 @@ def alpha_limit_for_speed(env, cfg, speed, altitude, mass, gravity):
         return cfg_default_max(cfg)
     # The *glide's* arrival speed, not the approach's touchdown speed: see
     # ``Config.GLIDE_ARRIVAL_FACTOR``.
-    approach = cfg.GLIDE_ARRIVAL_FACTOR * airframe.stall(env, cfg)
+    vs = airframe.stall(env, cfg)
+    if vs is None:                  # no table yet: no speed hold either
+        return glide_alpha_max(cfg, env, speed, altitude)
+    approach = cfg.GLIDE_ARRIVAL_FACTOR * vs
     if speed >= cfg.SPEED_HOLD_FACTOR * approach:
         return glide_alpha_max(cfg, env, speed, altitude)
     trim = alpha_for_load(env, speed, altitude, mass, gravity, 1.0)
@@ -373,7 +376,10 @@ def alpha_floor_for_speed(env, cfg, speed, altitude, mass, gravity):
     if (getattr(cfg, "SPEED_FLOOR_WHEN_LONG", False)
             and getattr(env, "spending", True) is False):
         return cfg.ALPHA_MIN_DEG
-    approach = cfg.GLIDE_ARRIVAL_FACTOR * airframe.stall(env, cfg)
+    vs = airframe.stall(env, cfg)
+    if vs is None:                  # no table yet: no floor either
+        return cfg.ALPHA_MIN_DEG
+    approach = cfg.GLIDE_ARRIVAL_FACTOR * vs
     if speed <= approach:
         return cfg.ALPHA_MIN_DEG
     try:

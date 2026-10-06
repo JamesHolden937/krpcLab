@@ -218,41 +218,35 @@ def _derived(env, cfg, field, fallback):
     return fallback
 
 
-def stall(env, cfg):
-    """The stall speed the landing chain is sized on.
+def at_mass(env, speed):
+    """``speed``, read off the table at ``env.stall_mass``, scaled to the
+    vehicle's mass now (``env.vehicle_mass``): a speed at fixed lift
+    coefficient goes as the square root of the weight.  Unscaled when either
+    mass is unknown."""
+    if speed is None:
+        return None
+    m0 = getattr(env, "stall_mass", None)
+    m = getattr(env, "vehicle_mass", None)
+    if m0 and m and m0 > 0.0 and m > 0.0:
+        return speed * math.sqrt(m / m0)
+    return speed
 
-    Read off the table at the *landing* mass, so it is the stall speed of the
-    aircraft that lands rather than of the one that entered carrying
-    propellant it throws away.  ``Autopilot.read_airframe`` re-takes it on
-    final for exactly that reason.
+
+def stall(env, cfg):
+    """The vehicle's stall speed (equivalent airspeed) at its mass now, off
+    its own swept table -- or ``None`` before the table has been read.
+
+    There is no configured fallback.  ``STALL_SPEED_M_S`` (48) was the old
+    craft's, taken in flight as a *true* airspeed, and with
+    ``STALL_CALIBRATION_M_S`` it rescaled every craft's table to the old
+    craft's units; both are gone (the user, 2026-10-05).  The STANDBY
+    reading is taken at the entry mass, 18% above the shuttle that flies
+    the cone, hence ``at_mass``.
     """
-    got = _derived(env, cfg, "stall_speed", None)
-    if got is None:
-        return cfg.STALL_SPEED_M_S
-    # **Expressed in the units the speed factors were fitted in.**
-    #
-    # Every speed on final is ``some_FACTOR * stall``, and those factors were
-    # fitted over dozens of flights against ``STALL_SPEED_M_S`` = 48 on an
-    # aircraft whose table actually says 55.6.  Only the *products* were ever
-    # measured -- 2.25 x 48 = 108 m/s is the approach speed 41 flights were
-    # flown at -- so handing the same factors a 16% larger stall changes
-    # every one of them and calls it generality.
-    #
-    # It is not a hypothetical: flown, 8 against 8 on ``qs_plane``, the
-    # unrenormalised version landed +1405 sd 364 against +900 sd 184.
-    # (Most of that was ``lift_discount``, since retired -- but the 16% was
-    # underneath it and would have remained.)
-    #
-    # So the derived stall is rescaled by the reference aircraft's own ratio.
-    # On that aircraft this returns exactly ``STALL_SPEED_M_S`` and the
-    # change is inert by construction; on any other it scales with that
-    # aircraft's stall, which is the whole point.  The alternative -- moving
-    # all eight factors -- is the same arithmetic spread over eight
-    # constants, where it cannot be checked in one place.
-    reference = float(getattr(cfg, "STALL_CALIBRATION_M_S", 0.0) or 0.0)
-    if reference <= 0.0:
-        return got
-    return got * cfg.STALL_SPEED_M_S / reference
+    got = getattr(env, "stall_speed", None)
+    if got is None or got <= 0.0:
+        return None
+    return at_mass(env, got)
 
 
 def glide_ld(env, cfg):
@@ -435,7 +429,10 @@ def approach_ld(env, cfg, altitude, mass, gravity):
     """
     if not getattr(cfg, "APPROACH_LD_DERIVED", False):
         return cfg.APPROACH_BEST_LD
-    speed = cfg.APPROACH_FACTOR * stall(env, cfg)
+    vs = stall(env, cfg)
+    if vs is None:
+        return cfg.APPROACH_BEST_LD
+    speed = cfg.APPROACH_FACTOR * vs
     got = turning_ld(env, cfg, speed, altitude, mass, gravity, 0.0)
     if got is None:
         return cfg.APPROACH_BEST_LD
@@ -461,7 +458,9 @@ def touchdown_aim(env, cfg):
         return cfg.TOUCHDOWN_AIM_M
     # The table's own numbers when it has been read, whatever
     # ``AIRFRAME_DERIVED`` says: this quantity has no fitted history to keep.
-    v_stall = getattr(env, "stall_speed", None) or stall(env, cfg)
+    v_stall = stall(env, cfg)
+    if v_stall is None:
+        return cfg.TOUCHDOWN_AIM_M
     v_door = cfg.APPROACH_FLARE_FACTOR * v_stall
     ratio = getattr(env, "best_ld", None) or glide_ld(env, cfg)
     decel = 9.81 / max(1.0, ratio)
