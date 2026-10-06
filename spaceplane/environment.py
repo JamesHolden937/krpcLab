@@ -196,9 +196,7 @@ class LiftTrim:
 
     def factor(self, mach):
         """The correction for this Mach, or ``None`` where nothing is known."""
-        if not self.cfg.LIFT_TRIM_ON:
-            return None
-        return self.measured(mach)
+        return None
 
     def report(self):
         """One line for the log: every bin that has an answer."""

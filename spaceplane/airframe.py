@@ -91,15 +91,7 @@ def lift_discount(env, cfg):
     # ``LIFT_TRIM_DISCOUNT`` is off and should stay off until the objection
     # below is answered; it is a switch rather than a deletion because the
     # measurement is real and only the *use* of it was wrong.
-    if not getattr(cfg, "LIFT_TRIM_DISCOUNT", False):
-        return None
-    trim = getattr(env, "lift_trim", None)
-    if trim is None or not getattr(cfg, "AIRFRAME_DERIVED", False):
-        return None
-    try:
-        return trim.measured(SEA_LEVEL_MACH)
-    except Exception:                                       # noqa: BLE001
-        return None
+    return None
 
 
 class Airframe:

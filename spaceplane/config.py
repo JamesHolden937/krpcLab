@@ -283,11 +283,6 @@ class Config:
     # HAC_SPEED_KP * error``, which cannot make speed.  The shuttle decays to
     # 55-80 m/s in the cone under the old law (LOG3029).  Off until paired.
     HAC_SPEED_PATH: bool = False
-    # ...and let it **climb** to spend excess speed as height (a zoom),
-    # rather than holding the path level and burning the speed on drag.  The
-    # user's point: too much speed and not enough height, so climb.  Needs
-    # ``HAC_SPEED_PATH``; bounded by ``SPEED_PATH_CLIMB_MAX_DEG``.
-    HAC_CLIMB: bool = False
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,
@@ -305,10 +300,6 @@ class Config:
     # held as indicated airspeed from the top of the cone to the gate.
     # Implies the EAS scaling.  Off until paired.
     HAC_IAS_FROM_STALL: bool = False
-    LIFT_LOOP: bool = False
-    LIFT_LOOP_RATE_DEG_S: float = 4.0       # deg/s per unit fractional error
-    LIFT_LOOP_MIN_DEG: float = -8.0
-    LIFT_LOOP_MAX_DEG: float = 15.0
     # **An outer loop on the angle itself** (``Autopilot.alpha_trim_loop``),
     # APPROACH and FLARE: kRPC's attitude loop holds a standing pitch error
     # that grows with q -- fast shuttle flares asked 5-8 deg and flew 2.7-4.1
@@ -316,21 +307,6 @@ class Config:
     # short and dived (LOG3810-3849).  Integrates commanded - signed alpha
     # while the roll is settled and the slip small.  Off until paired.
     ALPHA_TRIM_LOOP: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
-    # **An integral on the angle at the actuator, not on the command**
-    # (``Autopilot.pitch_assist``).  kRPC *adds* a client's manual pitch to
-    # its attitude controller's output (``PilotAddon.OnFlyByWire``), so a
-    # manual pitch integrated on the pitch pointing error is the integral
-    # term kRPC's own loop lacks against an aerodynamic restoring moment: in
-    # the game the shuttle's flares asked 9-16 deg and flew 3-4 for their
-    # whole length (LOG4610, 4639, 4647), and the approach dives on the same
-    # standing error.  The sim follows its command there and does not show
-    # it.  HAC, APPROACH and FLARE; decays out over the pitch tune in ROLLOUT.
-    PITCH_ASSIST: bool = False
-    # The error, in degrees, that integrates to full input over one pitch
-    # ``time_to_peak`` -- slower than kRPC's own loop by construction.
-    PITCH_ASSIST_FULL_DEG: float = 10.0
-    # kRPC's own attenuation band: errors inside it are its to hold.
-    PITCH_ASSIST_DEADBAND_DEG: float = 2.0
     # Manual pitch input per degree of pitch pointing error in the FLARE,
     # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
     FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
@@ -352,7 +328,6 @@ class Config:
     # bounds the offset there: a safety bound, not a fit.
     ALPHA_TRIM_IN_GLIDE: bool = True  # default 2026-10-04: rot-glidetrim-1003 + rot-glidetrim2-1004, intact on land 9 vs 5 of 36
     ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
-    LIFT_LOOP_TRACK_DEG: float = 3.0        # learn only while tracking
     LIFT_LOOP_MIN_Q_PA: float = 500.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
@@ -491,17 +466,6 @@ class Config:
     # goes to zero by construction the moment the vehicle is on profile.
     HAC_WEAVE_ON: bool = True
     HAC_WEAVE_MAX_DEG: float = 50.0
-    # **The plan's phantom path** (``guidance.hac_path``).  Lined up and a
-    # little outside the circle, the tangent point sits just past the
-    # rollout and the plan costs the run to it -- ``sqrt(x^2 + 2 R dy)``,
-    # 2.2-3.3 km more than the gate distance through most of the shuttle's
-    # cone (LOG4051 ``gate=6207 path=9484``) and 1.7 km at the old craft's
-    # rollout (LOG4056 ``gate=955 path=2650``).  The radius scan picks the
-    # longest fitting path, so it chose those circles and read on-profile
-    # while 1.1-2.8 km high on every flight of both craft (conesum), with
-    # the weave at 0.  With this on, a tangent point past the rollout costs
-    # the distance to the gate.  Off until paired.
-    HAC_PATH_WRAP_TO_GATE: bool = False
     # **The same phantom, one degree outside the band** (``guidance.hac_path``):
     # before the gate, a tangent point up to this far past the rollout costs
     # the run to the gate, not a lap.  LOG4152: 13 deg past read as a 347
@@ -548,17 +512,6 @@ class Config:
     # straight-in at the cone's speed covers per metre of height, once,
     # when the table is ready.  Off.
     HAC_AIM_DERIVED: bool = False
-    # **The cone's speed off the polar** (``guidance.hac``): the speed
-    # whose one-g glide ratio is the plan's path over the energy height left
-    # to the gate (``guidance.polar_speed``), in place of
-    # ``HAC_SPEED_FACTOR * APPROACH_FACTOR`` x stall, the old craft's 108
-    # m/s at which the shuttle cannot stretch a short arrival.  **Refuted
-    # as built** (``rot-chain2-1001``, LOG4344-4347): near best glide the
-    # polar is flat, so a small change in the needed ratio steps the target
-    # tens of m/s -- the cone flew a 75-250 m/s phugoid at +-170 m/s
-    # vertical and flared at 87-112.  A stepping law.  ``HAC_SPEED_EAS`` is
-    # the general fix for the density part.  Off.
-    HAC_POLAR_SPEED: bool = False
     HAC_LADDER_STEP_M: float = 500.0
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
     # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the
@@ -620,11 +573,6 @@ class Config:
     HAC_FLAP_BRAKE: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
-    # ...priced on the sink **over the cone's own glide**, ``v / sqrt(1 +
-    # cone_ld^2)``, not on all of it: whole, 117-179 m/s at 200 m/s read as
-    # 1.4-3.2 km of arrest and stowed every deployment in 3-7 s (LOG4052,
-    # 4065, 4067).  Off until paired.
-    HAC_FLAP_ARREST_EXCESS: bool = False
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
@@ -637,28 +585,6 @@ class Config:
     # nothing for the heading loop, and this airframe holds 0.74 of a
     # commanded angle in dense air.
     HAC_HOLD_MARGIN: float = 1.30
-    # **The cone's radius model assumes a level turn, and the cone is a
-    # descending spiral.**  ``R = v^2 / (g tan(bank))`` is level-turn
-    # arithmetic: it assumes the wing pulls ``1/cos(bank)`` -- 1.41 g at the
-    # committed 45 degrees, 2.00 at 60.  Measured over 634 HAC ticks this
-    # airframe pulls a median **1.06** (p90 1.36, max 1.91), so the planned
-    # circle is about a third too tight at 45 and nearly twice too tight at
-    # 60.  The error grows with bank, which is exactly where raising the cap
-    # would put it -- so this is the fix that has to land *before* the cap
-    # moves, not after.
-    #
-    # On: lateral acceleration is ``n g sin(bank)`` with ``n`` the load the
-    # wing can actually make at the cone's own alpha limit
-    # (``airframe.turn_load``, computed from the swept table and the state --
-    # **not** the measured 1.06, which is the load the vehicle *is* pulling
-    # while trimmed lazily and is a different quantity wearing the same
-    # name).
-    #
-    # It also closes failure 33's clamp in this phase: where the ``tan`` form
-    # shrinks the planned circle without limit as the cap rises, this one
-    # blows the radius up when the wing cannot pay, so ``hac_enterable``
-    # refuses rather than printing an ``R=`` nothing can fly.
-    HAC_LOAD_MODEL: bool = False
     # Close enough to the circle to stop flying the join leg and start
     # tracking the turn.  Not zero: the join is a straight line at a tangent,
     # so the two laws agree in the limit and a band avoids chattering between
@@ -688,36 +614,6 @@ class Config:
     # airframe can hold at Mach 1.5 is 21 km at 45 degrees of bank, which
     # is the wide end.
     HAC_ENTRY_MACH: float = 1.50
-    # **The same veto, computed instead of transcribed.**  What decides
-    # whether there is a cone to fly is the circle the airframe can hold --
-    # ``HAC_HOLD_MARGIN * v^2 / (g tan(bank))`` -- against the circle the
-    # cone may fly, ``HAC_RADIUS_MAX_M``.  Neither of those is a Mach
-    # number, and the constant above is one because the arithmetic in its
-    # comment was done by hand and then rounded into the nearest quantity
-    # the code had.
-    #
-    # It recovers 1.10, which is what ``HAC_ENTRY_MACH`` was before it was
-    # raised.  So this is *stricter* than what is committed -- and the
-    # flights that land do not use the difference: ``logs/LOG2747`` entered
-    # at Mach 0.9 needing 10.3 km of radius against 16.0 available, on the
-    # ``HAC_ENTRY_DIST_M`` backstop rather than on speed at all.  What 1.50
-    # permits is the other case: ``logs/LOG2756`` entered at Mach 1.50 and
-    # 441 m/s, needing **25.7 km**, and ``hac_radius`` handed it 16.0 km on
-    # its first tick because it clamps its own floor to the maximum.  That
-    # flight flew a circle it could not hold, from the first tick, and the
-    # log said ``R=16000`` throughout.
-    #
-    # Turning this on also retires that clamp, which is the point: under the
-    # derived veto the floor always fits, so the clamp can only ever be
-    # hiding the case it hid.
-    HAC_ENTRY_DERIVED: bool = False
-    # **Enter the cone when it can pay for itself, not at an altitude.**
-    # ``HAC_ALT_M`` as a handover trigger hands the phase a vehicle that
-    # cannot fly the circle it is about to plan; ``Autopilot.cone_affordable``
-    # asks the cone's own ``needed`` instead, which is the expression
-    # ``run_hac`` already leaves on.  Over 57 flights the split is 21/3
-    # where the cone was affordable at entry and 9/24 where it was not.
-    HAC_ENTRY_AFFORDABLE: bool = False
 
     # -- angle of attack ---------------------------------------------------
     # Measured: max lift at 30 deg at every altitude, max L/D at 20 deg, and
@@ -826,124 +722,7 @@ class Config:
     # cheaply; if they hold twenty, it is a bigger lever than the split
     # rudder by an order of magnitude.
     SLIP_PROBE_DEG: float = 0.0
-    # **Sideslip as a glide-ratio spoiler, which is what the probe found it
-    # to be.**  Measured subsonic over HAC and APPROACH on the four probe
-    # flights: at ~15 degrees of held slip ``ClA`` falls 15.7 -> 10.9 with
-    # ``CdA`` flat, so L/D goes **1.64 -> 1.23** and the airspeed is
-    # untouched.  ``tan(gamma) = D/L``: less lift at the same drag is a
-    # steeper path at the same speed, which is precisely what a surplus of
-    # height needs spent -- and precisely what the split rudder could not do,
-    # because drag spends *speed* and a glider buys speed back by diving
-    # (``AIRBRAKE_SPEED_GUARD``, two vehicles destroyed).
-    #
-    # Off until flown.  Hypersonically it does nothing (the glide is already
-    # at 32 degrees of alpha and the body is broadside before any yaw is
-    # added), so this is an approach control and not an entry one.
-    APPROACH_SLIP_FOR_ENERGY: bool = False
-    # Degrees of slip per metre of surplus height, above a deadband that is
-    # the S-turn's own (``APPROACH_SCURVE_M``-shaped, but its own constant
-    # because the S-turn keeps its authority: these two spend the same
-    # surplus and the guidance must not double-count it).
-    SLIP_ENERGY_KP: float = 0.02
-    SLIP_ENERGY_DEADBAND_M: float = 200.0
-    # A hard ceiling on top of the learned one.  20 is what the approach's
-    # own dynamic pressure (median 5300 Pa) was measured to hold; the learned
-    # ``Holdable`` limit will pull it lower whenever the air says so.
-    SLIP_MAX_DEG: float = 20.0
-    # **Ramped, never stepped** -- this law steers the nose, and a step in
-    # yaw at 100 m/s is failure 34's shape.  Degrees per second, both ways.
-    SLIP_RATE_DEG_S: float = 5.0
-    # **The slip's side force is a lateral control, not a side effect.**
-    # Measured over four flights: the cross-track moves in the slip's own
-    # sign at about **50 m per degree** over an approach (mean slip +6.8 ->
-    # cross +372 m; -7.1 -> -477; +8.1 -> +367; +9.1 -> +411).  That is too
-    # much to leave open-loop -- ``logs/LOG2846`` held one side from cross
-    # -259 through zero to +301 at the flare door and was destroyed -- so the
-    # sign is feedback on the cross-track now, and this is the band around
-    # the centreline inside which it stops switching.  Wide enough that the
-    # capture's own last few metres do not make it hunt; narrow against the
-    # 70 m at which this vehicle starts losing wings.
-    SLIP_CROSS_DEADBAND_M: float = 25.0
-    # **Which cross-track the sign is taken from: the one at the flare's
-    # door, not the one under the nose.**  With the side chosen from the
-    # present offset the law measured -473 m of overshoot and half the
-    # scatter (9 an arm) but cost the lateral: door cross-track median 26 m
-    # against the defaults' 14, and the arm's two wrecks were its two
-    # highest-slip flights, arriving at +151 and +176.  At ~50 m per degree
-    # a sign that is still leaning when the offset reaches zero rides
-    # through it -- the same failure as ``logs/LOG2846``, one order smaller.
-    # ``APPROACH_LATERAL_CAPTURE`` already reasons in the right currency
-    # ("what rate puts the offset at zero when the flare starts"), and it
-    # now publishes ``cross_rate`` and ``cross_time`` so this law can use
-    # the same prediction.  **Do not answer the lateral cost by shrinking
-    # the magnitude** -- the magnitude is the energy control and delivered
-    # 6-8 degrees where 15 was measured to be worth a quarter of the glide
-    # ratio.  Set False to fly the offset-now sign the 9-flight arm used.
-    SLIP_CROSS_PREDICT: bool = True
     ENTRY_ALPHA_DEG: float = 22.0# hot phase: maximum drag with lift
-    # **Fly the hot entry at the most angle of attack the vehicle can hold,
-    # which is a drag stop and not a lift one.**
-    #
-    # ``ENTRY_ALPHA_DEG`` is 22 because a *range* sweep has a plateau at
-    # 20-22, and ``ALPHA_MAX_DEG`` is 32 because "past 30 the lift curve
-    # turns over".  Both are lift arguments bounding a phase whose job is to
-    # destroy energy.  This airframe's own swept table, at entry Mach:
-    #
-    #     alpha    ClA    CdA    L/D
-    #       22     6.9    5.7    1.21      <- what it flies
-    #       35     9.3   14.4    0.65
-    #       65     4.1   27.7    0.15
-    #       90     0.0   28.2    0         <- 5x the drag, and no lift at all
-    #
-    # So the entry has **five times its drag** available and has never asked
-    # for any of it.  Three things fall out of that, and they are one change:
-    #
-    # * **Less propellant.**  Drag the atmosphere supplies is drag the tanks
-    #   do not.  The test craft has fuel to spare; the next one will not, and
-    #   the deorbit burn is the only irreversible decision in the flight.
-    # * **No skip.**  ``ClA`` at 90 degrees measures *exactly zero at every
-    #   Mach in the table*, so a broadside entry has nothing to bounce on.
-    #   The shallowest capture is therefore a broadside one, which is the
-    #   other half of this design (see ``DEORBIT_SHALLOWEST``).
-    # * **No steering either**, for the same reason -- bank needs a force
-    #   across the flow.  Which is why the targeting moves to *when* the burn
-    #   is lit rather than how big it is.
-    #
-    # **This looks refuted and is not.**  docs/spaceplane/design.md, "High alpha:
-    # what the airframe gives and what it will hold", closed high alpha as an
-    # entry mode on a measured curve: wheels-only, the vehicle holds 90
-    # degrees only to about 500 Pa, 48 at 1 kPa and 26 at 4 kPa -- "available
-    # above roughly 45 km and nowhere below it".  That is a fact about the
-    # airframe and it stands.  What it refuted was high alpha *on a committed
-    # entry*, which crosses that band in seconds.  A **shallow** entry is
-    # defined by living in it.  The measurement and this law disagree about
-    # nothing; they are about different trajectories.
-    #
-    # And the guard is the measurement itself: the command is never the
-    # ceiling below, it is ``Holdable``'s -- learned live from what the yaw
-    # and pitch axes give back, with ``HOLDABLE_PROBE`` as the prior.  The
-    # vehicle is never asked to hold something it has been seen to refuse, so
-    # there is no shortfall for the ratchet to fight and no RCS spent
-    # arguing (measured: the entire tank buys 3 km, LOG1616).
-    ENTRY_MAX_DRAG: bool = False
-    # The stop, and it is the table's stop rather than the lift curve's.
-    # 90 is true broadside: peak ``CdA`` and zero ``ClA``.
-    ENTRY_ALPHA_CEILING_DEG: float = 90.0
-    # **Where the entry stops making drag and starts making lift is solved,
-    # not configured** -- see ``guidance.drag_switch_for``.  This was a fitted
-    # Mach 3 and that was the wrong shape: the handover is not a property of
-    # the air, it is the answer to "can I still reach the runway if I keep
-    # spending?", which is a statement about the range still to run and which
-    # the propagator can answer.  It also has to be answered *before* the
-    # burn, because the entry's arc depends on where the switch falls and the
-    # arc is what decides where the burn goes.
-    #
-    # Kept as a floor, inert at 0: a Mach below which the vehicle is never
-    # asked to fly broadside whatever the energy says.  Set it only if some
-    # airframe turns out to need one; this one does not, because the learned
-    # ceiling has already walked the command back to about 22 degrees by the
-    # time the air is thick enough for it to matter.
-    ENTRY_MAX_DRAG_MACH: float = 0.0
     GLIDE_ALPHA_DEG: float = 20.0           # max L/D, for range
     ALPHA_RATE_DEG_S: float = 3.0           # how fast the command may move
     # Above this multiple of the approach speed the angle of attack is free to
@@ -1101,65 +880,6 @@ class Config:
     BANK_RATE_MAX_DEG_S: float = 30.0
     # Two samples further apart than this are not a rate (a warp, a pause).
     BANK_RATE_MAX_GAP_S: float = 5.0
-    # **The duty cycle of a reversing entry, measured by the vehicle.**  See
-    # ``Autoland.update_bank_duty`` and the long comment below: the
-    # propagation wants the mean of ``cos(bank)`` over the reversals, and
-    # neither the instantaneous command nor the intended lean is it.  This is
-    # the ratio of the two, time-averaged, which is.
-    GLIDE_BANK_DUTY_ON: bool = False
-    # A couple of reversal periods.  In the 42-28 km band reversals come
-    # about every twenty seconds, so this averages over several and is long
-    # enough that a single slew cannot move it far.
-    GLIDE_BANK_DUTY_TAU_S: float = 60.0
-    # 1/cos(70) is 2.9, so a duty above about 1.5 is not a reversing entry,
-    # it is a measurement gone wrong.  Bounded for the same reason the bank
-    # compensation is.
-    GLIDE_BANK_DUTY_MAX: float = 1.5
-    # **What the propagation should believe the bank is, mid-reversal.**
-    # ``solve_glide`` is handed the bank the vehicle is *currently* holding
-    # and flies it for the whole remaining entry.  A reversal takes about
-    # seventeen seconds to slew between the stops at ``BANK_RATE_DEG_S``, and
-    # for four of them the vehicle is near wings level -- so for four seconds
-    # in every reversal the propagator predicts a wings-level entry, which on
-    # this airframe is hundreds of kilometres longer.
-    #
-    # It is not a small artefact and it is not hypothetical.  Measured in the
-    # 42-28 km band, where reversals come every twenty seconds, ``long``
-    # reads within +-50 m at the stops and spikes to **+16, +20, +22 km**
-    # every time the command passes through zero, on flights that are
-    # tracking perfectly:
-    #
-    #   bank  -60.5  -35.3  -14.8   +8.1  +30.5  +51.8  +61.5
-    #   long    -15     +1  +3661 +20049 +11350   -175    +23
-    #
-    # Usually the spike passes before the solve can act on it.  Sometimes it
-    # does not: in ``logs/LOG789`` the angle of attack was pulled off 32 to
-    # the 20 degree floor during one of them and the flight never recovered,
-    # holding +10 to +22 km with the bank against its stop for the rest of
-    # the entry.  Five flights of one configuration landed -0.5, -0.9, +4.8,
-    # +12.7 and +17.7 km, and the ones that diverged are the ones that
-    # diverged *here*.
-    #
-    # The propagator already models the sign of a reversing entry as a mean
-    # (it carries no lateral lift at all, deliberately).  This does the same
-    # for the magnitude: predict the lean the solve *intends* to hold rather
-    # than the transient the rate limiter is passing through, because a
-    # fifteen-second transient flown for the remaining thousand seconds is
-    # the model being wrong by sixty times the duration.
-    # **Flown, and it is worse.**  Two flights against three of the control:
-    # +11.1 and +39.8 km against -1.4, -1.1 and +17.3, with the miss the
-    # glide inherited reading -22 km instead of -7.  The second number is the
-    # explanation: mid-reversal the vehicle really *is* near wings level and
-    # really is sinking less, so telling the solve it is at 70 degrees makes
-    # the prediction too short, the glide asks for more range, and it lands
-    # long.  The entry spends a real fraction of its time in the transit and
-    # pretending it spends none is the same error with the sign flipped.
-    #
-    # Left in at False, like ``ALPHA_TRACKING`` and ``CROSS_DEADBAND_PER_KM``,
-    # because the *observation* is solid and worth not re-measuring: what the
-    # propagation wants is the mean of the reversing entry **including its
-    # duty cycle**, which is neither of the two banks available here.
-    BANK_PREDICT_INTENT: bool = False
     # **The other way to answer failure 16: do not act on the spike.**
     # Replacing the bank the propagation is shown was tried and is worse (see
     # above), because the transit is real and pretending it away biases the
@@ -1301,32 +1021,6 @@ class Config:
     # it already holds, so it is chosen once and reversed only for a real
     # azimuth error.
     COAST_BANK_LATCH: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
-    # **Reverse once** (the user's idea, 2026-10-02).  The relay below
-    # reverses on two deadbands with no notion of q, so the shuttle's second
-    # reversal lands at Mach 4.5-5, q 2000-3800, where every departure
-    # begins.  True: lean one way, let the track drift, and flip once, at
-    # the tick where a propagation of "flip now and hold that sign to the
-    # gate" (full lateral lift, ``Steer(reversing=False)``) puts the
-    # cross-track on zero.  The range solve keeps the magnitude.  Below
-    # ``GLIDE_SINGLE_REVERSAL_TRIM_MACH`` the relay takes the sign back for
-    # the last trim.  ``guidance.single_reversal_sign``.
-    GLIDE_SINGLE_REVERSAL: bool = False  # offline on LOG4498's table: one flip at M6.1, 21 km off at M2
-    # **One huge reversal** (the user's, 2026-10-02): the reversal flown
-    # slowly.  Hold the lean on one side, cross to the other at
-    # ``GLIDE_BANK_SWEEP_RATE_DEG_S`` (7-10 deg/s today, which at Mach 5 is
-    # 13-23 deg of slip: failure 99), hold there.  Every tick the start of
-    # the crossing is solved for the cross-track at the gate
-    # (``guidance.sweep_start``), and once under way its rate is
-    # (``guidance.sweep_rate``); the range solve flies the same plan
-    # (``trajectory.BankPlan``), so it leans harder on either side to pay
-    # for the time near level.  A first version swept the lean continuously
-    # with the solve on the mean model: one crossing at Mach 5.1 at 0.1
-    # deg/s and the cross-track on zero, but the solve sat at the 70 cap
-    # while the vehicle flew -30..+20 and reached the cone 57 km long (sim,
-    # LOG4543-4550: +7..+19 km at the runway against -3..+0.5).  A sweep
-    # that is slow *throughout* cannot shed the energy: +-70 averages cos
-    # 0.77 against the ~0.5 the glide asks for.
-    GLIDE_BANK_SWEEP: bool = False
     GLIDE_BANK_SWEEP_RATE_DEG_S: float = 1.0      # the planned crossing
     GLIDE_BANK_SWEEP_RATE_MIN_DEG_S: float = 0.3  # the crossing's trim range
     # 2.0 lost it: the crossings that trimmed up to 2 deg/s at q 2500-3600
@@ -1350,7 +1044,6 @@ class Config:
     # (~100 s of the glide), so read the arrival with that in mind.
     GLIDE_BANK_SWEEP_CROSS_ALPHA_DEG: float = 0.0
     GLIDE_SIGN_LAW_LOG_S: float = 20.0  # game s between the sign laws' prediction lines
-    GLIDE_SINGLE_REVERSAL_TRIM_MACH: float = 2.0
     # The azimuth error a reversal waits for, shrinking with range to go.
     # Wide early, so the entry does not chase cross-track it will fly out of
     # anyway; tight at the end, where azimuth *is* the miss.
@@ -1440,33 +1133,6 @@ class Config:
     CROSS_DEADBAND_MIN_M: float = 500.0     # the runway's own scale
     CROSS_DEADBAND_MAX_M: float = 40000.0
 
-    # **The cross-track sets the sign of a magnitude nobody gives it.**  The
-    # division of labour in ``solve_glide`` is alpha for the downrange miss,
-    # bank magnitude for what is left of it, bank *sign* for the cross-track.
-    # Read the last clause again: the only cross-track authority in the
-    # flight is a sign, and the thing it multiplies belongs to the range
-    # solve.  When the range solve is satisfied -- which is the normal case,
-    # and the whole point of it -- ``solve_glide`` short-circuits with
-    # ``magnitude = abs(bank0)`` and the cross-track gets whatever bank the
-    # range happened to leave lying around.
-    #
-    # Measured, two flights of the same configuration off the same save:
-    # ``logs/LOG777`` had a range solve asking for 70 degrees, the sign
-    # pointed the right way, and the predicted offset came down 2417 -> 1800
-    # -> 835 -> 198 -> 14 m at the gate.  ``logs/LOG776`` had its range
-    # solved, so the bank sat at **+10.3 degrees** while the offset held
-    # between 6.7 and 7.6 km for the entire lower glide and never moved.  It
-    # landed 5.5 km off the centreline.  Same code, same config, same save;
-    # the difference is whether the range solve happened to be asking for
-    # bank at the moment the cross-track needed some.
-    #
-    # So the cross-track gets a *floor* on the magnitude, taken before the
-    # range solve rather than after it, so the angle of attack is solved
-    # against the trajectory the vehicle is actually going to fly.  The
-    # threshold is the same range-scaled band the reversal uses -- inside the
-    # band there is nothing to correct -- and the floor is capped below
-    # ``BANK_MAX_DEG`` so the range solve keeps authority above it.
-    CROSS_BANK_ON: bool = False
     # **The lean has to be off before the gate, because the approach cannot
     # turn.**  The glide spends surplus range with bank, and bank is also the
     # one thing that must be small at handover: a vehicle arriving in a hard
@@ -1494,8 +1160,6 @@ class Config:
     # long rather than short, so there is surplus to hand over.
     GLIDE_ALIGN_RANGE_M: float = 15000.0
     GLIDE_ALIGN_BANK_DEG: float = 15.0
-    CROSS_BANK_KP: float = 0.03             # deg of bank per m outside the band
-    CROSS_BANK_MAX_DEG: float = 50.0
 
     # -- the glide solve ---------------------------------------------------
     # Same shape as boosterland's solve_steer: propagate, measure the
@@ -1505,157 +1169,7 @@ class Config:
     SOLVE_BANK_PROBE_DEG: float = 15.0
     SOLVE_DEADBAND_M: float = 60.0          # metres of height over the gate
     SOLVE_MIN_AUTHORITY_M: float = 50.0
-    SOLVE_VERIFY: bool = True
 
-    # **Fly the whole glide on the surplus side, and give the surplus back
-    # on a schedule.**  The glide solves its angle of attack and bank to put
-    # the predicted arrival *on* the gate, at every altitude, which sounds
-    # like the obvious target and puts the vehicle on the wrong side of its
-    # own authority for the entire entry.  A vehicle that is exactly on the
-    # gate at 40 km has, by definition, no margin: any over-prediction of the
-    # range between there and the ground -- and the propagator's errors are
-    # biased that way (failure 8, and ``Holdable``) -- leaves it *short*, and
-    # short is the one error this vehicle cannot answer.
-    #
-    # It cannot answer it because stretching costs an angle of attack the
-    # airframe stops being able to hold exactly where the shortfall shows
-    # up.  Measured on this vehicle, ``logs/LOG1015``: the ceiling the flight
-    # learned for itself was **17.9 deg at 6.8 kPa and 14.9 at 10 kPa**,
-    # against a solve whose floor is ``SOLVE_ALPHA_MIN_DEG`` = 20.  Below
-    # about 26 km the command and the achievable part company and the
-    # predicted miss bleeds out -- failures 22 and 23 are both that bleed,
-    # found from two different directions.
-    #
-    # Shortening, by contrast, is abundant and monotone the whole way down:
-    # bank rolls lift off the vertical, drag goes as ``rho v^2`` and both of
-    # those are *rising* as the vehicle descends.  Bleeding surplus energy is
-    # cheap; manufacturing range is not.  So aim long deliberately and plan
-    # to spend it.
-    #
-    # The reserve is an along-track distance the solve *adds to its target*:
-    # it nulls ``long - reserve`` rather than ``long``.  It is full at
-    # ``GLIDE_RESERVE_FROM_ALT_M`` and taken linearly to zero by
-    # ``GLIDE_RESERVE_TO_ALT_M``, so the vehicle is deliberately long high up,
-    # sheds the margin through the altitudes where shedding is cheapest, and
-    # arrives at the gate aiming at the gate.  The schedule is the point: a
-    # constant reserve would simply land long, which is no better than short.
-    #
-    # **Flown, on two entry states, three flights per arm, all three arms
-    # in the air at once on matched instances off the same save.**
-    # Along-track at the gate, which on this vehicle is the landing miss to
-    # within a kilometre or two:
-    #
-    #   qs_plane        f1       f2       f3      mean
-    #   off          -20.1 km -34.5 km -12.1 km  -22.2
-    #   8 km          -2.0     +0.2     -1.7      -1.2
-    #   16 km        -17.7    -12.7     +0.7      -9.9
-    #
-    #   qs_plane_inc
-    #   off          -19.8    -19.5     -4.9     -14.7
-    #   8 km          -2.8     -7.2     -1.0      -3.7
-    #   12 km        -10.3     -2.7     -8.3      -7.1
-    #
-    # Six flights of the reserve against six of the default: -2.5 km mean
-    # against -18.4.  **And that comparison is worthless, because the
-    # scatter was never established first.**  Nine flights of one
-    # configuration -- the reserve at 8 km, three on each of three matched
-    # instances -- then landed at -5.4, -48.1, -2.3, -21.1, -4.6, -28.0,
-    # -12.2, -43.9 and -5.4 km: mean -19.0, and *indistinguishable from the
-    # arm it was supposed to have beaten*.  The tight -2.0/+0.2/-1.7 that
-    # looked like a result was three draws from a distribution 46 km wide.
-    #
-    # That is CLAUDE.md's rule, violated in the way it warns about: one
-    # flight per configuration is not a measurement, and neither is three
-    # against a scatter nobody had measured.  The instance means from those
-    # nine (-18.6, -17.9, -20.5) also retire the other suspicion the batch
-    # raised: there is no instance effect, and the wall clocks agree to 16 s.
-    #
-    # Off, pending an arm large enough to resolve 15 km against a 17 km
-    # standard deviation.
-    #
-    # **It is a peak, not a gain.**  16 km is worse than 8 and 12 is worse
-    # than 8, which is the same shape ``DEORBIT_WINDOW_BIAS`` has and
-    # probably for a related reason: past some reserve the glide arrives near
-    # the gate with energy it no longer has the altitude to spend, and the
-    # last 25 km become a different problem rather than an easier one.  The
-    # peak between 8 and 12 has not been resolved.
-    #
-    # Still short, everywhere: no arm produced a mean overshoot.
-    #
-    # **Re-measured against a scatter that can resolve it, and it is the one
-    # thing that works.**  The verdict above was taken when the along-track
-    # spread was 17-46 km; it is now sub-kilometre, so the same question is
-    # worth thirty times what it was.  Twelve flights, two arms rotated
-    # across three instances (``logs/LOG1917-1928``), the reserve held
-    # constant to the gate (``GLIDE_RESERVE_FROM_ALT_M`` at the cone's
-    # altitude, so it does not decay):
-    #
-    #     off    -3.2 km  sd 1.3   0 of 6 on the runway
-    #     4 km   -0.4 km  sd 0.5   5 of 6 inside the along-track window
-    #
-    # **5.2 standard errors**, and the mechanism shows in the cone's exit
-    # reason rather than only in the average: every control flight leaves the
-    # cone "out of height" and every reserve flight "rolled out".  Starved,
-    # the cone falls through its floor from wherever it happens to be; fed,
-    # it flies the rollout it was designed around.  That is the architecture
-    # working, and it is what the reserve buys.
-    #
-    # **Why it works when better-motivated fixes did not.**  Two candidates
-    # that reason about the shortfall from evidence -- ``SOLVE_MAX_RANGE_ON``
-    # and ``HOLDABLE_EXTRAPOLATE`` -- both measured inert, because the
-    # deficit is committed above 26 km and neither has anything to say until
-    # below it.  The reserve is open-loop and therefore early, which on this
-    # problem beats being correct and late.
-    #
-    # **It is a calibration and must be treated as one.**  4000 is this
-    # airframe's propagator bias on this save at this loop rate; batch 3
-    # wanted 6000 when the loop was coarser and the arrivals 4 km further
-    # short.  CLAUDE.md's rule applies in full -- fit it from several entry
-    # states, never from one flight's residual -- and the constant is
-    # standing in for the missing model named at ``HOLDABLE_EXTRAPOLATE``: a
-    # pessimistic prior on the alpha ceiling, which would make the propagator
-    # honest and retire this number.
-    # **What to fly when the gate is out of reach.**  ``solve_glide`` nulls a
-    # miss, and a miss only exists if the propagated arc gets down to the
-    # gate's altitude; when it grounds first, the solve used to return the
-    # command it was handed.  Measured on ``logs/LOG1860-1877``, that is
-    # thirty consecutive ticks of byte-identical alpha and bank from 23.5 km
-    # to 15.5 km while the predicted arrival walks out to -4 km, and it is
-    # the whole of this vehicle's landing bias: the touchdown is
-    # ``+118 m + 0.324 * arrival`` over those eighteen flights, so an arrival
-    # centred on zero needs nothing else.
-    #
-    # On, the vehicle brackets its angle of attack and flies whichever arc
-    # the propagator says travels furthest -- a law, not a number, and the
-    # best-glide angle it lands on is the one the swept table gives at that
-    # Mach rather than one transcribed here.  See ``guidance.max_range``.
-    #
-    # **Flown, and it is very nearly inert on this airframe -- off by
-    # default because of that, not because the reasoning was wrong.**
-    # Fifteen flights, three arms rotated across four instances
-    # (``logs/LOG1890-1904``): control -7.1 km sd 2.7, this -5.9 km sd 4.0,
-    # a difference of 0.6 standard errors.
-    #
-    # The log says why, and it is worth keeping.  ``slv=max`` engages for
-    # about fifty ticks and then commands a *constant* angle -- 18.8 degrees
-    # from 22.6 km to 15.7 km in ``logs/LOG1891`` -- because the bracket's
-    # optimum is at its **top**, against the learned alpha ceiling.  The
-    # vehicle wants more angle of attack to stretch and the airframe will not
-    # hold it; opening the bracket downward offers nothing it wants.  The
-    # frozen command was already sitting at the constrained optimum, so
-    # freeing it changed the command hardly at all.
-    #
-    # What it does still buy is the bank: being short now spends no lean it
-    # is not asked for (``bank=+0.0`` against ``-1.0`` held).  That is small
-    # and it is right, and it is why this is kept rather than deleted -- on a
-    # vehicle whose ceiling is not the binding constraint the bracket is the
-    # difference between gliding and falling.
-    #
-    # **The real lever is upstream and this measurement is what found it.**
-    # By 22 km the range is already lost; what loses it is the propagator
-    # being optimistic while the solve still has the authority to fix a
-    # shortfall.  See ``HOLDABLE_EXTRAPOLATE``.
-    SOLVE_MAX_RANGE_ON: bool = False
     # How finely to bracket.  A bracket rather than a gradient because range
     # against angle of attack has an interior optimum on this airframe and a
     # Newton step walks away from the answer as happily as towards it -- the
@@ -1719,50 +1233,11 @@ class Config:
     # posed from the first air.  Off until paired.
     ENTRY_INTERFACE_AT_AIR: bool = False
     # -- the upper entry, where the solve has leverage but no authority ----
-    # **The scatter is made here and it is made by the commanded bank.**
-    # Seventeen flights from one byte-identical quicksave, with a deorbit
-    # burn identical to 0.1 m/s and 5 km in 2250, arrive over the field with
-    # sd **14.5 km**.  They agree on speed to 1 m/s at 50 km and to 10 m/s
-    # at 45; the spread then grows to 36 m/s by 30 km and 14.5 km at the
-    # ground.  Over the same flights the mean bank magnitude above 45 km
-    # spans 14.6 to 43.6 degrees.
-    #
-    # Above about Mach 4 the solve is nulling a miss 1500 km away that it
-    # cannot actually move much, while the lean it commands to do it sets
-    # how fast the vehicle descends -- and therefore how much energy the
-    # thin air takes out of it.  It is leverage without authority, and
-    # per-tick re-solving in that regime is what a drag-reference schedule
-    # exists to avoid.  Holding a fixed magnitude trades an unbiased scatter
-    # for a repeatable bias, which the deorbit aim can null and the cone can
-    # absorb.
-    #
-    # Off by default until the arm is flown: this is a hypothesis with a
-    # measurement behind it, not a result.
-    GLIDE_UPPER_HOLD: bool = False
-    GLIDE_UPPER_BANK_DEG: float = 45.0
-    GLIDE_UPPER_UNTIL_MACH: float = 4.0
-    # Measured: below 0.05 m/s^2 of drag nothing is happening and the solve
-    # has no authority to speak of, so it holds the schedule instead.
-    GLIDE_MIN_DRAG_ACCEL: float = 0.05
     # Holdability is discovered, not computed: simulate_aerodynamic_force_at
     # returns a force and not a moment, so the pitching moment at an attitude
     # the vessel is not in is not available at any price.  The command is
     # ratcheted against what the vehicle actually achieves.
     ALPHA_TRACK_TOLERANCE_DEG: float = 6.0
-    # **Back the ceiling off on a swing as well as a deficit**
-    # (``Autopilot.ratchet_alpha``): the mean |alpha error| over
-    # ``ALPHA_SWING_TAU_S`` beyond the tolerance lowers the ceiling by
-    # ``ALPHA_BACKOFF_DEG`` below what was commanded, at most once per tau.
-    # Transonic departures (LOG4334, 4338) were overshoots the deficit test
-    # cannot see.  Off.
-    ALPHA_RATCHET_ON_SWING: bool = False
-    ALPHA_SWING_TAU_S: float = 8.0
-    # The swing that counts.  At the tracking tolerance (6) it fired on the
-    # routine 6-7.5 deg swings of the hypersonic glide (q 3-5 kPa) and took
-    # the ceiling 40 -> 33, the drag the glide needed: three of four arrived
-    # 10-46 km long (``rot-chain3-1001`` round 1).  The departures it is for
-    # swung 13-19 deg mean (LOG4334, 4338, 4353).
-    ALPHA_SWING_TOL_DEG: float = 12.0
     ALPHA_BACKOFF_DEG: float = 2.0
     # **And the floor under it has to be a statement about the plant.**  It
     # was ``GLIDE_ALPHA_DEG`` -- 20 degrees, the angle the *guidance* wants
@@ -1975,164 +1450,9 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **Learn the mean held, not the peak or the command** (``Holdable.
-    # observe``).  With the pitch thrusters off in the glide
-    # (``RCS_PITCH_OFF_IN_GLIDE``, ``rot-pitchoff-1001``) the shuttle flies
-    # 2-5 deg under a 36-37 command at Mach 2-5, the bins learned ~36, and
-    # every glide arrived 2-34 km long and 19-22 km high at the cone.  Off.
-    HOLDABLE_MEAN: bool = False
-    HOLDABLE_MEAN_SAMPLES: int = 20         # the running mean's memory, ticks
-    # **And carry the trend, not the last value, into air it has not
-    # reached.**  ``limit`` answers a query denser than anything flown with
-    # the lowest ceiling seen so far, which is conservative against a flat
-    # plant and badly optimistic against this one: the ceiling falls about
-    # 26 degrees per decade of dynamic pressure (``logs/LOG1015``:
-    # 2154 Pa: 31.9, 3162: 27.0, 4642: 24.0, 6813: 17.9, 10000: 14.9), so
-    # early in an entry -- where nothing has saturated and ``min(below)`` is
-    # whatever the thin air allowed -- the propagator predicts the vehicle
-    # holding 32 degrees at ten times the q it has seen.
-    #
-    # The error has a direction and it is the expensive one: the prediction
-    # is optimistic about range through the whole part of the entry where the
-    # solve could still fix a shortfall, and becomes honest only below 25 km
-    # where the controls are saturated and cannot.  Measured over 34 flights,
-    # the predicted miss holds near zero to 27 km and then falls off a cliff;
-    # a flight still positive at 27 km lands a median 1.7 km out and one
-    # already negative lands 21.5 km out.
-    #
-    # Only ever used to lower a ceiling, and an upward-sloping fit is
-    # discarded rather than believed.
-    #
-    # **Measured in game at last, and it does not do what it was written
-    # for.**  Twelve flights, two arms rotated across three instances
-    # (``logs/LOG1905-1916``): control -3.0 km sd 1.5, this -2.7 km sd 0.7.
-    # The mean moves **0.45 standard errors** -- nothing -- though the
-    # scatter does halve.  And survival goes the wrong way: **five of six
-    # were destroyed in ROLLOUT against two of six**, which is not
-    # conclusive at that n but is not the direction a fix points.
-    #
-    # **Why it cannot work, and this is the useful part.**  The estimator
-    # needs evidence before it can be pessimistic: ``HOLDABLE_MIN_SAMPLES``
-    # saturated samples in each of ``HOLDABLE_FIT_MIN_BINS`` bins before
-    # there is a trend to carry.  The vehicle does not reliably produce a
-    # saturated sample until deep into the entry -- 31.8 km in
-    # ``logs/LOG1905`` -- and the range deficit starts accruing at about
-    # 26 km.  The evidence arrives at roughly the moment it stops being
-    # actionable, so the fit is still extrapolating only a little past what
-    # it has measured exactly when a lot of pessimism is what is needed.
-    # Compare the traces of ``logs/LOG1905`` and ``logs/LOG1906``: they are
-    # near-identical the whole way down, same frozen command and all.
-    #
-    # **What the diagnosis actually points at.**  With no trusted bin,
-    # ``limit`` returns ``None`` -- *no limit* -- so the propagator assumes
-    # this airframe will hold whatever it is commanded in air it has never
-    # met.  The default is optimism and optimism is the unrecoverable
-    # direction.  The fix is not a better estimator but a different default:
-    # a **pessimistic prior** that relaxes toward measurement as evidence
-    # arrives, rather than an optimistic one that tightens.  The vehicle has
-    # what it needs to compute one in STANDBY without a transcribed number --
-    # the swept table gives normal force against angle and Mach, and
-    # ``dump_torque`` already measures the reaction-wheel and RCS torque the
-    # attitude is held with; the ceiling is where the aerodynamic moment
-    # overcomes that torque, and the one unknown is the effective moment arm
-    # (measured once at about 0.55 m, and boundable from the vessel's own
-    # geometry).  That is the open item, and it is why ``GLIDE_RESERVE_M``
-    # currently stands in for it.
-    # **A pessimistic prior from one saturated sample, with the airframe's
-    # unknowns cancelled out.**  ``HOLDABLE_EXTRAPOLATE`` above needs eight
-    # ticks of saturation before it has a trend and the vehicle does not
-    # reliably give them until below 32 km -- after the deficit is made.
-    # This needs *one*: the angle is lost where ``q * Cn(alpha) * arm`` meets
-    # the control torque, so one observed saturation fixes the product and
-    # the ceiling everywhere denser follows from the swept table alone.  The
-    # moment arm and the torque divide out, which is why there is no number
-    # about this vehicle here.  See ``trajectory.Holdable.prior``.
-    #
-    # Off until flown.  What it is aimed at is spaceplane failure 50: the
-    # reserve that fixes ``qs_plane`` is 4 km and ``qs_plane_inc`` needs more
-    # than 60, deterministically per entry, because a longer or steeper entry
-    # spends more of itself in air the vehicle has not yet met and the
-    # propagator is optimistic about all of it.
-    #
-    # **Off, and refuted offline before it ever flew -- in two ways.**
-    #
-    # First, the cancellation does not hold on this airframe.  It assumes the
-    # restoring torque is a constant, which is true of reaction wheels and
-    # false of elevons, whose torque also goes as ``q``.  Fitted against the
-    # ceiling curve the vehicle actually learned, ``Cn = 25369*(1/q) + 5.44``
-    # with R^2 0.89: a constant-torque law needs that intercept to be zero
-    # and it is not.  The real law has two terms and therefore needs *two*
-    # anchors at different ``q``, which is more evidence arriving later --
-    # back toward the problem it was meant to solve.  Anchored on one sample
-    # it predicts 12.5, 9.1 and 8.0 degrees where the vehicle held 26.4,
-    # 23.2 and 21.0.
-    #
-    # Second, and worse, **the curve it would anchor on is not a measurement
-    # of the airframe** where it matters.  ``Holdable`` records a ceiling
-    # only where the vehicle was commanded past one; in thinner air the bin
-    # records whatever was asked.  Over 98 flights of one airframe and one
-    # save the learned value has sd **5.7 and 4.5 degrees** at 2154 and
-    # 3162 Pa (range 14.6 to 32.0) and sd **1.1, 0.7 and 0.4** at 4642, 6813
-    # and 10000 -- rock solid exactly where the vehicle is genuinely pinned,
-    # noise everywhere above it.  That is failure 13's shape once more, and
-    # it explains ``HOLDABLE_EXTRAPOLATE`` measuring inert and harmful: it
-    # fits a trend through the noisy half.
-    #
-    # **So no in-flight estimator can be honest in time, and this family is
-    # closed.**  The ceiling is a two-parameter property of the airframe and
-    # it has to be *probed* rather than picked up incidentally during a
-    # landing entry -- which this project already knows how to do:
-    # ``BROADSIDE_PROBE_DEG`` flew exactly that sweep and produced exactly
-    # this curve (docs/spaceplane/design.md, "High alpha: what the airframe gives"). Two probe flights per
-    # vehicle would fix ``A`` and ``B``, after which the propagator is honest
-    # from the first tick of every entry, and ``GLIDE_RESERVE_M`` retires.
-    # The probe is general: any vehicle can fly it, and it measures rather
-    # than transcribes.  See spaceplane failure 51.
-    HOLDABLE_PRIOR: bool = False
 
     # -- the ceiling, measured by a probe instead of inferred in flight ----
-    # **What failure 51 concluded, as a table.**  The vehicle cannot learn
-    # its own alpha ceiling in time: it only records one where it was
-    # commanded past one, so the curve it builds during an entry is solid
-    # below about 28 km and noise above it, and by the time it is solid the
-    # range is gone.  So measure it once, deliberately, with a flight whose
-    # whole job is to be refused: ``BROADSIDE_PROBE_DEG=90`` commands 90
-    # degrees from COAST down and lets ``Holdable`` watch what comes back.
-    # Every bin is then a real saturation because the command never stops
-    # exceeding the ceiling.
-    #
-    # This is ``logs/LOG1615`` -- one flight, wheels only, RCS shut.
-    #
-    # **It is validated, which is the part that makes it a measurement
-    # rather than a transcription.**  Against 98 landing flights of this
-    # airframe, in the three bins where a landing genuinely pins the vehicle
-    # and can therefore measure the ceiling itself:
-    #
-    #     q = 4642 Pa   probe 23.5   landings 23.0 sd 1.1   0.5 deg apart
-    #     q = 6813 Pa   probe 20.0   landings 20.2 sd 0.7   0.2 deg apart
-    #     q = 10000 Pa  probe 14.8   landings 14.7 sd 0.4   0.1 deg apart
-    #
-    # and in the bins above it the landings read 5.7 and 4.5 degrees of
-    # scatter, so there is nothing there to disagree with.  ``logs/LOG1616``
-    # is the independent check the docs already drew: flown at 65 degrees
-    # with RCS, its tail falls back onto this curve once the tank is dry --
-    # two flights, two configurations, one curve.
-    #
-    # **What would disagree with it**, which failure 13 says every
-    # transcribed number must state: the stable bins of any landing flight.
-    # If ``holdable alpha, learned:`` reports 4642/6813/10000 Pa more than
-    # about a degree from these, the airframe has changed and the probe must
-    # be re-flown -- one flight, and ``glidesum`` prints the comparison.
-    HOLDABLE_PROBE: tuple = ((681.0, 84.9), (1000.0, 49.4), (1468.0, 45.4),
-                             (2154.0, 35.9), (3162.0, 28.7), (4642.0, 23.5),
-                             (6813.0, 20.0), (10000.0, 14.8))
-    # Use it for any dynamic pressure this flight has no trusted evidence
-    # at.  Evidence from the flight in hand always wins where it exists: the
-    # probe describes the airframe, the flight describes today.
-    HOLDABLE_PROBE_ON: bool = False
 
-    HOLDABLE_EXTRAPOLATE: bool = False
-    HOLDABLE_FIT_MIN_BINS: int = 2
 
     # -- approach and flare ------------------------------------------------
     # Measured, at 6.715 t: stall 37.1 m/s at 30 deg, and the flare *stalls*
@@ -2329,69 +1649,6 @@ class Config:
     # the speed it arrives at -- calibrate it against the speed *delivered*.
     # Failure 62; failure 49 is the same knob read before the hold existed.
     APPROACH_SPEED_PROFILE: bool = True
-    # **The approach's speed off the polar** (``guidance.polar_speed``):
-    # the speed whose one-g glide ratio is the ratio still needed to the
-    # aim (distance over height), on the fast side of best glide; the floor
-    # comes down under it.  ``APPROACH_FACTOR`` x stall is the old craft's
-    # fit: the shuttle flies L/D 3.0 there and its final needs 4.2, so it
-    # dove at 1.4 deg of alpha and reached every flare at 85-95 m/s.  The
-    # flare ramp (``APPROACH_SPEED_PROFILE``) still ends at the door.  Off.
-    APPROACH_POLAR_SPEED: bool = False
-    APPROACH_POLAR_STEP_M_S: float = 2.0
-    # **A high approach flies slower, so the brake can stay out.**  The
-    # approach holds 2.25 x stall (108 m/s) until the profile ramps it to
-    # the flare's 1.75 x near the door, and the airbrake is stowed the
-    # moment the speed dips under that target (``AIRBRAKE_SPEED_GUARD``) or
-    # the sink passes what the flare can arrest (~39 m/s,
-    # ``AIRBRAKE_SINK_GUARD``).  A drag brake can only spend height as speed
-    # or as a steeper path, and at 108 m/s both are forbidden: LOG3775
-    # reached the approach 1.15 km high and the brake came out four times
-    # for 0.2-1.4 s each, stowed on "speed 108 below target 108" and "sink
-    # 39 above the 39".  Over the recent orbital flights the approach spent
-    # a near-fixed 2.4-3.2 km of height in its 6.7 km however much it was
-    # handed, so every metre past ~600 m of HAC-exit surplus landed long.
-    # With this on, surplus past ``APPROACH_SCURVE_M`` lowers the target
-    # toward the door speed (``guidance.spend_as_speed``): ~235 m spent as
-    # speed directly, and at 84 m/s the same 39 m/s sink limit allows a 28
-    # deg path against 21 -- about 1 km more over the final.  Every number
-    # is already the flare's own; nothing new is fitted.
-    APPROACH_SPEND_AS_SPEED: bool = False
-    # **And the cone before it** -- ``APPROACH_SPEND_AS_SPEED`` over 15-20
-    # km of circle instead of the approach's 6.7.  LOG3819 (the whole
-    # package) reached 2.9 km with 1.23 km of surplus; at 84 m/s the
-    # approach still could not spend it, circled beside the threshold and
-    # flared 1.5 km off the centreline.  Height over the cone's own profile
-    # (``GATE_ALT_M + path / cone_ld``) lowers the cone's target speed the
-    # same way, floored at the flare's door speed times sqrt(bank load);
-    # slower is more alpha, and on this polar more alpha is less L/D, so the
-    # circle steepens and the surplus goes where there is room for it.
-    HAC_SPEND_AS_SPEED: bool = False
-    # **The shuttle rolls over on the runway, after a gentle touchdown.**
-    # Wings within 1-4 deg of level at the last flare tick, then 25-57 deg
-    # of bank 1-2 s into the rollout and a ground loop; LOG3781, 3816 and
-    # 3821 ended upside down (173, 179, 168 deg).  8 of 9 orbital flights
-    # that put the ground spoiler out on land rolled past 20 deg; 0 of 12
-    # flights from ``qs_shuttle_low``, where the spoiler is never armed,
-    # rolled past 15 -- at touchdown sinks up to 20 m/s.  The spoiler set
-    # (``measure_flap_brake``) is chosen and verified on lift and pitch
-    # only; nothing measured its roll, and on the ground its elevons are the
-    # roll control the autopilot no longer has.  With this on the set is
-    # deployed once more in vacuum and read with the full wrench; if roll
-    # or yaw exceeds the tolerance pitch is held to, it is not deployed on
-    # the ground (the glide and cone brakes still use it).  Logged either
-    # way as ``spoiler lateral``.
-    AIRBRAKE_SPOILER_LATERAL_CHECK: bool = False
-    # **Full brakes the moment the mains touch** (the user's rule,
-    # 2026-09-29): every main wheel at ``WHEEL_BRAKE_MAX_PCT`` (200%) from
-    # the first tick they report ``grounded`` -- inside the flare if that is
-    # where it happens -- and held; the nose wheel never brakes.  Replaces
-    # ``BRAKE_FOR_DISTANCE`` in the rollout, which gave the mains 0-24% of
-    # full at contact (LOG3810 brk=0.00, LOG3799 0.24) and reached 200% only
-    # below ``BRAKE_SPEED_M_S`` or with the runway running out.  That law was
-    # written against the old 6.9 t craft tearing its gear off at 12 m/s^2;
-    # what would contradict this one is nose slams (docking port and pod
-    # first) or gear lost in the first seconds of the rollout.
-    ROLLOUT_BRAKE_FULL_ON_CONTACT: bool = False
     # How far *above* the flare's trigger height the schedule finishes.  See
     # ``guidance.approach``: a ramp that lands on its target at the trigger
     # arrives still decelerating and overshoots into the stall, which is what
@@ -2401,12 +1658,6 @@ class Config:
     # deceleration happened to be passing through.  200 m is about five
     # seconds at the measured sink rates.
     APPROACH_PROFILE_HOLD_M: float = 200.0
-    # Nothing reads this: the approach flies a speed and lets the path
-    # follow (see ``guidance.approach``), so the glide angle is an
-    # *outcome*.  Kept because it is the number the gate's placement is
-    # argued from, and marked because a tunable no control path reads is
-    # a fact filed in the wrong place.
-    APPROACH_GLIDE_DEG: float = 25.0        # measured best glide is L/D 2.1
     # Measured: the flare needs 12 m gear-up and 14.6 m gear-down from a
     # 1.7 Vs approach.  Started at a fixed height it is late whenever the
     # arrival is faster than nominal, so the trigger leads on the sink rate
@@ -2495,16 +1746,6 @@ class Config:
     FLARE_BANK_MAX_DEG: float = 12.0
     FLARE_WINGS_LEVEL_M: float = 60.0
     FLARE_BANK_TAPER_M: float = 150.0
-    # **The three heights above as times, from this airframe's measured
-    # roll and yaw** (2026-10-03).  60 m, 150 m and 140 m were set on the
-    # old craft (roll 25 deg/s, ~1 s lag; "yaw tuned to a 3 s time to
-    # peak").  The shuttle rolls at 7.4 deg/s with a 5.3 s lag and yaws on
-    # 19.7 s.  ``FLARE_LEAN_BY_ROLL``: lean while the time to the ground
-    # exceeds ``Autopilot.roll_out_s(FLARE_BANK_MAX_DEG)``, tapered over
-    # one more of it.  ``FLARE_ALIGN_BY_YAW``: aim down the runway from
-    # yaw's time to peak out, but not while the lean is allowed.
-    FLARE_LEAN_BY_ROLL: bool = False
-    FLARE_ALIGN_BY_YAW: bool = False
     FLARE_MARGIN: float = 1.3               # ask for more load than the sum says
     FLARE_ALPHA_DEG: float = 30.0           # maximum lift
     # **The tail is a hard limit and the flare did not know about it.**
@@ -2595,19 +1836,6 @@ class Config:
     # shuttle from orbit is 0/6 on both arms -- its failures are upstream.
     FLARE_EXP_TAU_S: float = 4.0
     FLARE_EXP_TOUCHDOWN_M_S: float = 2.0
-    # **The flare's speed budget** (needs ``FLARE_EXP_TAU_S``).  Every tick,
-    # the game-seconds left before the speed falls to
-    # ``FLARE_SPEED_FLOOR_FACTOR`` x stall (``airframe.stall``, the units of
-    # every other speed factor; 45.5 m/s on the shuttle at landing mass) at
-    # the deceleration measured over the last second; if the schedule needs
-    # longer than that to reach the ground, its touchdown sink is raised to
-    # the value that arrives in time, at most ``FLARE_SPEED_TD_MAX_M_S``.
-    # See ``guidance.flare_touchdown_sink``: the shuttle loses both wings at
-    # 8-10 m/s of sink after floating to 38 m/s, and keeps them at 4 m/s
-    # and 47 (sav-wheels3-1004).  ``bud=``, ``fdc=`` (the deceleration)
-    # and ``td=`` in the FLARE telemetry.
-    FLARE_SPEED_BUDGET: bool = False
-    FLARE_SPEED_FLOOR_FACTOR: float = 1.0
     FLARE_SPEED_TD_MAX_M_S: float = 5.0
     # **The door where that schedule starts to bind** (needs
     # ``FLARE_EXP_TAU_S``): ``tau (sink - td) + T sink``, T the pitch axis's
@@ -2638,51 +1866,6 @@ class Config:
     # well above the runway), or touchdowns on the tail (the pitch cap is
     # unchanged, so this should not happen).
     FLARE_TAIL_BY_ATTITUDE: bool = True   # default 2026-09-30, see FLARE_EXP_TAU_S
-    # **The sink schedule, read one pitch-response ahead.**  ``guidance.
-    # flare`` tracks ``sqrt(td^2 + 2 a h)`` with a first-order loop on the
-    # sink -- memoryless, asking only where the vehicle is now -- and the
-    # shuttle's pitch takes ~3 s (``attitude_settle_s``) to deliver any
-    # load it asks for.  So the loop sits on the schedule all the way down
-    # and falls behind it only at the bottom, where there is no time left:
-    # with the alpha delivered as commanded (``FLARE_TAIL_BY_ATTITUDE``)
-    # LOG3771/3772 were "on schedule" from the door at 112 m and touched
-    # down at 15-17 m/s of sink and 75-79 m/s.  (Under the old sign the
-    # flare delivered ~10 deg over its command, arrested to level at 36 m,
-    # floated from 86 to 33 m/s and fell in at 16: LOG3770/3773.)  With
-    # this on the schedule is read at ``h - T * sink``, T the pitch axis's
-    # own response time -- derived, not fitted -- so the load is asked for
-    # while it can still arrive.  Near the ground the sink is small and the
-    # lead with it.  Meant to fly with ``FLARE_TAIL_BY_ATTITUDE``, which
-    # gives the flare the alpha to follow it.
-    FLARE_LEAD_BY_RESPONSE: bool = False
-    # **A flare door the vehicle can arrest from.**  The door is
-    # ``FLARE_ALT_M + FLARE_LEAD_S * sink`` -- 2.5 s of sink over 50 m -- and
-    # the shuttle's pitch takes ~3 s to deliver anything, after which the
-    # pull-up at the flare's own ``FLARE_TRACK_LOAD_MAX`` still needs
-    # ``(sink^2 - td^2) / (2 (n - 1) g)``: LOG3801 and LOG3803 opened the
-    # door at 163-169 m at 46-48 m/s of sink and touched down 3.5 s later at
-    # the same sink, 89-98 m/s, destroyed.  With this on the door is
-    # ``FLARE_ALT_M + T * sink + arrest``, T the pitch axis's own response
-    # time (``attitude_settle_s``, derived and retuned in the air) -- 258 m
-    # at 46 m/s of sink, 130 at 22.  One function, so the speed profile,
-    # the brake stow and the S-turn stop all move with it.
-    FLARE_DOOR_FROM_RESPONSE: bool = False
-    # **Fly the load, not the table's angle for it** (``Autopilot.
-    # flare_load_loop``).  The flare turns its wanted load into an angle
-    # through the swept table, and on the landing the table is wrong in a
-    # craft-specific direction: LOG3832's flare asked 2-4 deg for 2.5 g at
-    # 149 m/s and the vehicle made 0.3-0.5 of the table's lift (act ClA
-    # 20-34 against mdl 62-73; kRPC's signed alpha -1.5..+0.8) -- no arrest,
-    # 77 m/s into the ground.  The sink loop cannot fix it: it is clamped at
-    # ``FLARE_TRACK_LOAD_MAX`` and trusts the table for the angle.  So the
-    # angle is offset by an integral on (commanded load - measured load),
-    # scaled by the table's own slope and the pitch axis's response time,
-    # and clamped here; the tail cap still applies after it.  Off until
-    # paired.
-    FLARE_LOAD_LOOP: bool = False
-    FLARE_LOAD_LOOP_MIN_DEG: float = -6.0
-    FLARE_LOAD_LOOP_MAX_DEG: float = 15.0
-    FLARE_LOAD_LOOP_T_MIN_S: float = 1.0    # floor on the integrator's time
     # **A fast, shallow final** (the user's proposal, 2026-09-26): the
     # Shuttle's own profile -- steep and fast outside, a preflare high up
     # into a shallow inner glide that bleeds the speed, and a small final
@@ -2720,11 +1903,7 @@ class Config:
     # that still reaches the ground in its pull-up (the ``flare:`` line's
     # sink at the door vs at touchdown), or rollouts running off the far end
     # -- stopping from 80 m/s needs ~1.3 km at the spoiler's 2.5 m/s^2.
-    FLARE_SHALLOW: bool = False
     FLARE_INNER_GLIDE_DEG: float = 5.0
-    FLARE_SHALLOW_PULL_LOAD: float = 1.5
-    FLARE_SHALLOW_FINAL_LOAD: float = 1.15
-    FLARE_SHALLOW_TOUCHDOWN_SINK_M_S: float = 1.5
     FLARE_SHALLOW_APPROACH_FACTOR: float = 2.7   # x stall at the gate
     FLARE_SHALLOW_DOOR_FACTOR: float = 2.4       # x stall at the door
     # **``aim_runway`` flies a pitch attitude and the guidance computes an
@@ -2737,31 +1916,15 @@ class Config:
     # ``alpha + descent``, which is the attitude that delivers ``alpha``, and
     # the heading stays on the runway -- the crab fix is untouched.
     AIM_RUNWAY_TRUE_ALPHA: bool = True
-    # **Be on the centreline when the flare starts, not when the wheels
-    # touch.**  Finishing the lateral capture inside the flare puts the
-    # cross-track at rest within 33 m -- and takes a wingtip doing it.  Over
-    # eighteen flights of the working arm the wrecks and the survivors split
-    # on this one number: every flare entered inside 70 m of the centreline
-    # kept its parts, every one outside it was ``destroyed in ROLLOUT`` with
-    # a wing and an elevon the first parts lost.  See ``guidance.approach``.
-    APPROACH_CAPTURE_BY_FLARE: bool = False
     # How much of the flare the lateral capture may still use, 0 to 1.  The
     # two ends are both measured and both wrong: 1.0 (finish at the wheels)
     # lands within 33 m of the centreline and sheds a wing getting there,
     # 0.0 (finish at the door) enters the flare on the centreline and drifts
     # 60-80 m during it.  ``APPROACH_CAPTURE_BY_FLARE`` is the hard 0.
     APPROACH_CAPTURE_FLARE_SHARE: float = 1.0
-    TOUCHDOWN_SINK_M_S: float = 1.5
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
     GEAR_ALT_M: float = 800.0
-    # **The gear is a speedbrake, and dropping it early is the only
-    # dissipation lever on final that has never been tried.**  See
-    # ``Autopilot.landing_gear``.  The four already refuted against the
-    # +900 m overshoot are the aim (68, 84), the S-turn stop as a time
-    # (84), the brake law (82) and the gear's spring and damper (83) --
-    # that last one is the suspension, not the deployment.
-    GEAR_FOR_ENERGY: bool = False
     # What the gear costs, as a fraction of the glide ratio.  **Measured in
     # flight at 0.03, not the 0.19 this was transcribed from.**  Controlled
     # for altitude and phase (the 900-1700 m band, APPROACH only, a gear-down
@@ -2776,13 +1939,6 @@ class Config:
     # ``GEAR_FOR_ENERGY`` divides by this, so the honest value makes its
     # trigger saturate at ``GEAR_ALT_MAX_M`` for any surplus over about 30 m
     # -- which is the correct reading of the flown batch (+800 vs +947, 8 an
-    # arm, the ratio moving 4.12 -> 3.76 but the distance under the noise):
-    # dropping the gear as early as the phase allows is all this lever has,
-    # and it is worth ~150 m, not the ~900 the 0.19 arithmetic promised.
-    GEAR_DRAG_FRACTION: float = 0.03
-    # The approach begins at ``GATE_ALT_M`` (2000), so there is no earlier
-    # to go; this leaves the last 200 m of that for the phase to settle in.
-    GEAR_ALT_MAX_M: float = 1800.0
 
     # -- rollout -----------------------------------------------------------
     # **From touchdown, not from 60 m/s.**  The rollout is where the
@@ -2828,12 +1984,6 @@ class Config:
     # predicted before the batch.  Paired with APPROACH_BANK_COMPENSATION,
     # which is what the cross-track column is really reporting.
     BRAKE_FOR_DISTANCE: bool = True
-    # **Whether the reaction wheels keep their authority on the ground.**
-    # See ``Autoland.release_reaction_wheels``.  Default off until it has
-    # been flown: turning off a control authority is exactly the kind of
-    # change CLAUDE.md's guard rule is about, and the thing it might quietly
-    # be doing is holding the nose straight in the first second.
-    ROLLOUT_REACTION_WHEELS_OFF: bool = False
     # **Ground spoiler: the measured lift-spoiling set, fully out, the tick
     # a main wheel reports ``grounded``.**  The user's rule (2026-09-25).
     # Dumping lift puts the weight on the braked mains -- the brake can only
@@ -2847,54 +1997,13 @@ class Config:
     # field back, which is what would disagree with it.
     ROLLOUT_GROUND_SPOILER: bool = True
     ROLLOUT_SPOILER_DEG: float = 25.0
-    # **The drag brake: every surface on its own** (the user's suggestion,
-    # 2026-09-25: the rear elevon pair need not move together).
-    # ``airbrake.choose_max_drag_set`` picks each surface's deflection by
-    # LP from its measured wrench -- most ``dCdA - w * dClA`` with pitch,
-    # roll and yaw each held within ``AIRBRAKE_MEASURE_MOMENT_FRAC`` of the
-    # largest single surface -- and the set is verified in the game before
-    # it is armed.  The ground spoiler deploys it in place of the spoiler.
-    # Needs ``AIRBRAKE_MEASURED``.  Unflown; off.
-    AIRBRAKE_MAX_DRAG: bool = False
-    # Weight on lift dumped against drag bought.  On the wheels a newton of
-    # lift removed is a newton of normal force on braked tyres, worth about
-    # the tyre's friction coefficient (~1) in braking -- so 1.0.  What would
-    # disagree: the rollout's ``dec=`` with the brake out against the
-    # predicted ``dCdA``.
-    AIRBRAKE_DRAG_LIFT_WEIGHT: float = 1.0
-    # **And in flight, for "too fast at the right height"** (the user,
-    # 2026-09-25).  A second LP set from the same probes: most drag with lift
-    # held within ``AIR_DRAG_LIFT_BAND`` of the largest single-surface lift
-    # change, since dumped lift in the air is sink nobody asked for.
-    # ``airbrake.drag_brake_fraction`` deploys it in APPROACH, proportional
-    # to the speed over the approach's own ``target_speed``, only while the
-    # vehicle is not below its height profile.  The spoiler (a height
-    # brake) has priority; both stow for the flare.  Needs
-    # ``AIRBRAKE_MAX_DRAG``.  Unflown; off.
-    AIRBRAKE_DRAG_IN_FLIGHT: bool = False
-    AIR_DRAG_LIFT_BAND: float = 0.1
     AIR_DRAG_ON_M_S: float = 10.0       # over target_speed to deploy
     AIR_DRAG_OFF_M_S: float = 3.0       # ...and to stow (hysteresis)
     AIR_DRAG_FULL_M_S: float = 25.0     # fully out at this much over
     AIR_DRAG_LOW_M: float = 100.0       # not when this far under profile
     AIR_DRAG_MIN_H_M: float = 150.0     # nor below this height
-    # **The surfaces as a spectrum, not a set of switches** (the user,
-    # 2026-09-25).  ``airbrake.SurfaceEnvelope``: every lift/drag change the
-    # mirrored surfaces can make with pitch, roll and yaw held, solved per
-    # request by LP from the per-surface probes; the corners are deployed
-    # and measured in vacuum at STANDBY and the model rescaled to the game
-    # (refused if a corner's moments exceed ``ENVELOPE_MOMENT_SLACK`` times
-    # the limit).  Replaces, when on: the approach's spoiler switch (its
-    # lift figure is now the envelope's), the air drag brake (drag sized to
-    # shed the speed over ``target_speed`` in ``ENVELOPE_SPEED_TAU_S``), and
-    # the ground brake (the "brake" corner at full travel).  The glide's
-    # and the cone's flap brakes still use the measured spoiler.  Unflown;
-    # off.
-    AIRBRAKE_ENVELOPE: bool = False
-    ENVELOPE_CONTROL_MARGIN: float = 0.2   # travel kept for the controller
     ENVELOPE_QUANTUM: float = 0.05         # of a corner span, per step
     ENVELOPE_SPEED_TAU_S: float = 10.0     # shed the overspeed in this time
-    ENVELOPE_MOMENT_SLACK: float = 3.0     # x the limit, in the game
     # **The attitude to hold on the ground, which ROLLOUT was not holding at
     # all.**  ``run_rollout`` commanded brakes and nosewheel and never called
     # ``aim``, so kRPC's autopilot went on holding whatever the flare had
@@ -2930,17 +2039,6 @@ class Config:
     # Enter ROLLOUT when the main wheels report ``grounded`` rather than
     # waiting for KSP's ``situation`` (see ``Autopilot.run_flare``).
     ROLLOUT_ON_MAIN_CONTACT: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
-    # **The tail cap above is applied after the ramp, so the ramp never
-    # runs**: the first ROLLOUT tick commands 0.4 x 11 = 4.4 deg from the
-    # flare's 10-14 (``aoa=4.4/10.2`` at LOG5692's contact), the pitch input
-    # swings full down and full up within half a second at 47 m/s, and the
-    # first part KSP reports exploding is usually a rear RV-105 block, then
-    # the outboard elevon, then the wing (sav-budget-1004, KSP.log).  With
-    # this the cap bounds the schedule inside ``guidance.rollout_alpha`` and
-    # the ramp starts from the pitch attitude at contact
-    # (``Autopilot.ground_pitch``), which on the wheels is the angle of
-    # attack.  Failure 31's step, re-introduced by a later cap.
-    ROLLOUT_RAMP_FROM_ATTITUDE: bool = False
     # **And the ramp that was supposed to deliver it never ran once**, which
     # is the same fix failing twice.  It was written against a touchdown at
     # "60-100 m/s" -- the speeds an ``APPROACH_FACTOR`` of 2.40 produced --
@@ -3033,26 +2131,12 @@ class Config:
     # now touches down within a few metres of the centreline, so there is
     # nothing for hard steering at speed to do.
     ROLLOUT_STEER_FULL_M_S: float = 30.0
-    # **Steer on where it is headed** (the user, 2026-09-29): the law above
-    # is proportional on position alone, so a vehicle already drifting back
-    # toward the centreline gets the same command as one drifting away, and
-    # it weaves -- rollouts stop 30-40 m off (LOG3810 +37.5, LOG3769 -36.7)
-    # against a +-35 m strip.  With this on it is a PID: P on the
-    # cross-track (``ROLLOUT_STEER_GAIN``), D on the measured drift across
-    # the runway (``ROLLOUT_STEER_GAIN * ROLLOUT_STEER_LOOKAHEAD_S`` -- i.e.
-    # steer on the position that many seconds ahead), and a small I for a
-    # steady bias, clamped to ``ROLLOUT_STEER_I_MAX`` of deflection and
-    # frozen while the output is limited.  The speed taper still applies.
-    ROLLOUT_STEER_PID: bool = False
     # **The steering's sign** (2026-10-03).  ``across`` points to the
     # vehicle's right in kRPC's left-handed frame and ``wheel_steering`` is
     # +1 left, so ``-gain * cross`` steered *away* from the centreline: every
     # shuttle rollout from the cone saves stopped 200-600 m off it, sideways
     # speed growing as it slowed.  See ``Autopilot.steer_sign``.
     ROLLOUT_STEER_ACROSS_IS_RIGHT: bool = True  # default 2026-10-03: save-steer-1003, track turns back (LOG5090, 5093) where defaults turn away (LOG5087)
-    ROLLOUT_STEER_LOOKAHEAD_S: float = 2.0
-    ROLLOUT_STEER_KI: float = 0.002         # per metre-second
-    ROLLOUT_STEER_I_MAX: float = 0.1        # of full deflection
     STOPPED_SPEED_M_S: float = 1.0
     # **A rollout that cannot end must still end.**  The stop test is a speed
     # threshold, and a vehicle that arrived 50 km short is not on a runway:
@@ -3091,75 +2175,6 @@ class Config:
     DEORBIT_DV_MIN: float = 10.0
     DEORBIT_DV_MAX: float = 400.0
     DEORBIT_SEARCH_STEPS: int = 26
-    # How far past the aim a solution may land and still be taken.  It used
-    # to be ``max(500, abs(DEORBIT_LONG_BIAS_M))`` -- derived from the aim --
-    # which is why raising the aim never moved a landing: the band widened
-    # underneath it by the same amount.  See ``deorbit_solution``, where the
-    # band is also now one-sided, since a burn that lands short of the aim is
-    # not a solution at all.
-    # **The aim, the tolerance band and the one-sided acceptance rule below
-    # are all replaced when this is on.**  See ``guidance.deorbit_window``.
-    # Instead of aiming a fitted distance past the gate and accepting
-    # anything within a band of it, the search propagates the two *corners of
-    # the solve's own search box* -- the shortest entry the glide is allowed
-    # to fly and the longest -- and takes the burn that puts the gate in the
-    # middle of what is then reachable.
-    #
-    # That is the same intent the aim had ("arrive with room to correct")
-    # expressed as a quantity the search computes rather than one a human
-    # fits, and it is symmetric rather than one-sided because the model error
-    # it is guarding against has never been shown to have a reliable sign --
-    # ``DEORBIT_LONG_BIAS_FRACTION`` was re-fitted five times in one session
-    # and moved in both directions.
-    # **Adopted.**  Three flights each off one save, everything else equal:
-    # the fitted aim gave along +19.5 km with a standard deviation of 24.9
-    # and a 5.20 km median cross-track; the window gave -19.7 km with a
-    # standard deviation of **0.9** and 0.23 km.  The scatter is what
-    # matters and it is a factor of twenty-five.  The bias that remained
-    # turned out mostly not to be the window -- see ``SPEED_FLOOR_WHEN_LONG``
-    # and the best-glide candidate in ``_solve_range``.
-    # **The shallowest burn that still captures, with the clock doing the
-    # targeting.**  See ``guidance.deorbit_shallowest``.
-    #
-    # Every other rule in this file picks the burn by *range* -- which is not
-    # monotone in dv on this airframe, so it needs a grid, a window and a
-    # tolerance.  This one picks it by a predicate that is: more retrograde
-    # dv lowers the periapsis and nothing about that reverses.  A bisection
-    # on "does this commit?" resolves the threshold to a tenth of a m/s in a
-    # dozen propagations, and the answer is a property of the vehicle and the
-    # air rather than of a constant somebody fitted.
-    #
-    # It buys propellant, which the test craft does not need and the next
-    # vehicle will: the burn is the only irreversible decision in the flight
-    # and the only one with a tank behind it.  Measured offline against the
-    # committed entry, the smallest committing burn is ~16 m/s; with
-    # ``ENTRY_MAX_DRAG`` it is ~12.  The two flags are one design -- a
-    # broadside entry has ``ClA`` exactly zero, so there is nothing to skip
-    # on, and it is the lift that makes a shallow entry bounce.
-    #
-    # **What it gives up, and where that goes.**  With the dv pinned there is
-    # no range authority left in the burn, and at 90 degrees of alpha there
-    # is no bank steering either.  So the targeting moves to the ignition
-    # *time*: the entry's arc is a property of the trajectory, the arc still
-    # to run shrinks as the vehicle coasts, and the difference crosses zero
-    # once per revolution.  That crossing is when to light it.
-    DEORBIT_SHALLOWEST: bool = False
-    # A dozen halvings takes the 10-400 m/s bracket to under 0.1 m/s.
-    DEORBIT_SHALLOW_PASSES: int = 12
-    # The same halving, on the drag/lift switch speed.  Twelve passes takes a
-    # 0-5000 m/s bracket to about a metre per second, which is far finer than
-    # the burn can be flown anyway.
-    DRAG_SWITCH_PASSES: int = 12
-    # **Not a tuning parameter: the burn's own execution error.**  The shallow
-    # side of the threshold is a cliff -- the vehicle skips and comes down a
-    # revolution later somewhere else -- so the margin has to cover how far
-    # the burn can miss its commanded dv, and nothing else.  2 m/s is a
-    # placeholder standing in for a number the log already collects: every
-    # flight prints a ``cutoff drift`` line giving the energy the burn
-    # actually delivered against what it was asked for.  **Replace this with
-    # that number once there are enough flights to quote it**, and if the
-    # measured drift is larger than this, this is wrong and not the drift.
-    DEORBIT_SKIP_MARGIN_MS: float = 2.0
     DEORBIT_AUTHORITY_WINDOW: bool = True
     # **Where in that window to sit, as a fraction of its own width.**  0 is
     # the centre; **+1 puts the gate at the *short* edge of what the glide
@@ -3201,38 +2216,6 @@ class Config:
     # on a 2-4 km window, and the bias it has to cancel is +5.3 km.  Zero
     # until an arm says what it should be.
     DEORBIT_CENTRE_BIAS_M: float = 0.0
-    # **How much range authority the burn has to leave the glide.**  See
-    # ``deorbit_centring``: the window is the span of arrivals the glide can
-    # still reach, and a burn that leaves a 3 km span has handed the entry
-    # no steering at all -- which is measurably what happens today, on every
-    # flight, and is the whole of the 10 km arrival scatter.  Zero restores
-    # the old behaviour (accept the smallest burn that centres).
-    #
-    # This is a *requirement*, not a fit: it says the entry must be flyable,
-    # in the same sense ``DEORBIT_MAX_TIME_TO_GO_S`` says it must not be so
-    # shallow that the propagator cannot be trusted.  Those two now bound
-    # the burn from both sides, which is the pair failure 21 was missing.
-    # **The corners were the wrong diagonal of the search box.**  The window
-    # is meant to be the span the glide can actually reach, and it is built
-    # from two propagations at the extremes of ``solve_glide``'s own command
-    # box -- alpha in ``[SOLVE_ALPHA_MIN_DEG, ALPHA_MAX_DEG]``, bank in
-    # ``[SOLVE_BANK_MIN_DEG, BANK_MAX_DEG]``.  The original pairing was
-    # ``(alpha_min, bank_max)`` and ``(alpha_max, bank_min)``, which assumes
-    # more alpha means more range.  On this airframe it does not: over the
-    # whole solve range, range *falls* with alpha (offline, dv 32, bank 30:
-    # alpha 20 -> 3204 km, 22 -> 3092, 32 -> 2345).  So both of the old
-    # corners are mid-box trajectories that happen to land near each other,
-    # and the "window" they span is a 30-60 km sliver of a real authority
-    # more than a thousand kilometres wide.  Centring the gate in a sliver is
-    # centring it in nothing, which is why ``DEORBIT_WINDOW_BIAS`` -- a share
-    # of the width -- could never move the aim by more than half a kilometre.
-    #
-    # With this on, the corners are the true ones: longest is
-    # ``(SOLVE_ALPHA_MIN_DEG, SOLVE_BANK_MIN_DEG)`` and shortest is
-    # ``(ALPHA_MAX_DEG, BANK_MAX_DEG)``.  Nothing else changes; the same
-    # centring rule then places the arrival where the glide has the most room
-    # to be wrong in either direction, which is what it always claimed to do.
-    DEORBIT_WINDOW_CORNERS_FIXED: bool = False
     # The long corner is by construction the slowest entry in the box, so
     # ``DEORBIT_MAX_TIME_TO_GO_S`` vetoes it for every burn once the corners
     # are honest and the deorbit never commits at all.  The clock's real job
@@ -3400,17 +2383,6 @@ class Config:
     # *after* the burn, so a search run at ``snap.mass`` is aiming a
     # trajectory the vehicle never flies.
     RESOURCE_KG_PER_UNIT: float = 5.0
-    # **Pace the whole DEORBIT phase at the burn's interval, not just the
-    # burn.**  See the comment at the interval switch in ``Autoland.fly``:
-    # the time-scale governor writes a file the plugin polls at 2 Hz, so a
-    # slowdown asked for on the burn's first tick lands three game-seconds
-    # late at 6x, and the phase's cheap waiting ticks are exactly what let
-    # the governor ramp to 6x in the first place.  Measured over 32
-    # `qs_plane_inc` flights, the achieved DEORBIT interval is bimodal at
-    # 0.10-0.14 against 0.24-0.32 game-seconds and the arrival follows it
-    # with nothing in between (+-4 km against -10 to -25 km).  Spaceplane
-    # failure 91.
-    DEORBIT_PACE_WHOLE_PHASE: bool = False
     # **Govern the time scale on the phase's worst tick, not its average.**
     # See ``common.pacing.LoopRate.peak``.  ``ScaleGovernor`` keeps a
     # decaying maximum because "what binds is the tail", and it was being fed
@@ -3505,7 +2477,6 @@ class Config:
     # point is *not* the large term, the aim is, and a finer warp step buys
     # wall-clock cost for nothing.  Left at 50 km.
     WARP_MAX_ARC_M: float = 50000.0
-    WARP_RELEASE_LEAD_M: float = 300000.0
 
     # **And warp the ballistic fall as well, which is a third of the flight.**
     # Measured on ``logs/LOG1015``: the deorbit wait is 275 s of game time
@@ -3637,117 +2608,6 @@ class Config:
     # the units-based reserve could not cover.
     DRAIN_RESERVE_DV_MS: float = 200.0
     DRAIN_RESERVE_MARGIN: float = 1.25
-    # **And then the reserve rode to the runway.**  250 m/s of reserve for a
-    # 26 m/s burn left 376 units -- **1.88 t, 6.5% of the shuttle** -- aboard
-    # from the burn to the wheels, all of it in the one tank that holds any,
-    # the Mk3 adapter at the nose (station +9.8 m).  ``testInstances/cgProbe.py``
-    # prices it: at 70 m/s the elevons spend up to **0.33 of their pitch
-    # authority** holding the flare's alpha with it there, 0.19 with it gone
-    # (the CG moves 0.65 m aft), and 0.12-0.15 had it been pumped into the
-    # empty aft Mk3 tanks instead -- which would carry the 1.88 t to the
-    # ground for another 0.16-0.30 m.  Entry and glide trim cost 1-7% in
-    # every placement, so it is the landing it matters to.
-    #
-    # True dumps what is left once the glide is flying: the valves open on
-    # the first GLIDE tick and close when the tank is empty.  Not in the
-    # COAST -- that is failure 61's place, vacuum after the burn's closed
-    # loop has stopped looking.  The glide re-propagates from ``snap.mass``
-    # every tick, so the impulse and the mass change are both answered for;
-    # and ``entry_mass`` predicts the entry dry, so the burn is solved for the
-    # vehicle that will fly it.  The shuttle's two valves are mirrored
-    # (x = +-1.63 m) and should cancel.
-    #
-    # What would contradict it: a cutoff-to-glide arrival that moves by more
-    # than the flag's own scatter, or a ``residual drain`` line that never
-    # reads "empty".
-    DRAIN_RESIDUAL: bool = False
-    # **Keep only what this flight's burn needs** (``Autopilot.drain_to_burn``,
-    # the user's rule, 2026-09-30): once the deorbit is solved, drain to the
-    # solved dv x ``DRAIN_TO_BURN_MARGIN`` + ``DRAIN_TO_BURN_EXTRA_MS`` and
-    # re-solve at that mass before committing.  The 200 m/s pre-burn budget
-    # above is for the worst orbit; the shuttle's burns are ~26 m/s, and the
-    # difference (1.9 t) landed with it.  What is left after the burn goes
-    # at ``DRAIN_RESIDUAL_MACH_MAX``.  What would contradict it: a
-    # ``burn guard`` exit, or ``F`` falling to zero mid-burn.
-    DRAIN_TO_BURN: bool = False
-    # **And what is left goes to the nose** (``Autopilot.fuel_to_nose``, the
-    # user's rule, 2026-09-30): on the first COAST tick every tank's
-    # contents are pumped into the frontmost tanks that can hold them, so
-    # the leftover rides the hypersonic glide as nose ballast -- the
-    # balance the shuttle is stable with -- and ``DRAIN_RESIDUAL`` dumps it
-    # at Mach 0.8.  Monopropellant too, where there is room forward.
-    FUEL_TO_NOSE: bool = False
-    FUEL_TO_NOSE_RESOURCES: tuple = ("LiquidFuel", "Oxidizer",
-                                     "MonoPropellant")
-    FUEL_TO_NOSE_TIMEOUT_S: float = 30.0
-    DRAIN_TO_BURN_MARGIN: float = 1.25
-    DRAIN_TO_BURN_EXTRA_MS: float = 10.0
-    # **And not in the hypersonic glide: there the reserve is ballast.**
-    # Flown opening on the first GLIDE tick (LOG3743-3745, fingerprint
-    # ``cb8bcf3d``), the drained shuttle departed **3 of 3** -- alpha
-    # overshooting 35 -> 45-48 deg at a Mach 4-7 bank reversal, sideslip
-    # 70-100 deg peak to peak, 19-29 km short -- against 1 of 2 on the
-    # defaults beside it and 0 of 6 the night before.  ``cgProbe.py`` says
-    # why: with the 1.9 t in the nose the hypersonic pitch moment falls
-    # 0.02-0.04 of the surfaces' authority per 20 deg of alpha, drained it is
-    # flat -- neutrally stable exactly where the glide flies 35 deg and
-    # reverses its bank.  Subsonic it is still stable drained (0.11 per
-    # 20 deg at 70-100 m/s).  So the valve waits for this Mach; 0 opens on
-    # the first GLIDE tick, as first flown.
-    DRAIN_RESIDUAL_MACH_MAX: float = 0.8
-    # **And the ballast is also trim.**  Wet, the shuttle flies 2-6 deg
-    # *under* the commanded alpha at Mach 1-3 (nose-heavy: glides long,
-    # arrives 13-19 km up); drained at Mach 2.5 it flies up to 19 deg
-    # *over* (tail-heavy: glides short, LOG4241 met 12 km 12.5 km before the
-    # field).  So the first opening (at ``DRAIN_RESIDUAL_MACH_MAX``) stops at
-    # this many units and the rest goes at ``DRAIN_RESIDUAL_FINAL_MACH``.
-    # 0 drains everything at once (the old behaviour).
-    DRAIN_RESIDUAL_KEEP_UNITS: float = 0.0
-    # **Trim by dumping** (``Autopilot.drain_trim``): between
-    # ``DRAIN_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX``, while the
-    # vehicle flies more than ``DRAIN_TRIM_SHORT_DEG`` under its commanded
-    # alpha (smoothed), dump ``DRAIN_TRIM_STEP_UNITS`` every
-    # ``DRAIN_TRIM_INTERVAL_S``; never while it tracks or overshoots.  The
-    # rest goes at ``DRAIN_RESIDUAL_MACH_MAX`` (set it to 0.8 with this).
-    # Needs ``DRAIN_RESIDUAL``.  Off.
-    DRAIN_TRIM_LOOP: bool = False
-    # **Predict the drained vehicle** (``trajectory.predict``): the deorbit
-    # and glide propagations drop the residual's mass at
-    # ``DRAIN_RESIDUAL_MACH_MAX`` instead of flying it wet to the ground.
-    # Not with ``DRAIN_TRIM_LOOP`` (its amount is decided in flight).  Off.
-    PREDICT_RESIDUAL_DUMP: bool = False
-    DRAIN_TRIM_MACH_TOP: float = 3.5
-    DRAIN_TRIM_SHORT_DEG: float = 2.0
-    DRAIN_TRIM_STEP_UNITS: float = 25.0
-    DRAIN_TRIM_INTERVAL_S: float = 6.0
-    DRAIN_TRIM_SMOOTH: float = 0.3
-    DRAIN_RESIDUAL_FINAL_MACH: float = 0.8
-    # **Trim by pumping, not dumping** (``Autopilot.fuel_trim``): the
-    # shuttle's tanks sit at both ends (nose adapter +10.8 m from the CoM,
-    # the aft fuselage tank and adapter 2-5 m behind it), so the CG is a
-    # control the vehicle has and never commanded.  A fixed ballast is right
-    # at one Mach only: keeping 200 units below Mach 3.5 flew 10-20 deg
-    # *over* the command from Mach 2.9 down (LOG4317: 20 commanded, 33-41
-    # flown), keeping 300 flew 5-10 *under* (rot-ballast2-1001).  Between
-    # ``FUEL_TRIM_MACH_TOP`` and the residual drain, every
-    # ``FUEL_TRIM_INTERVAL_S`` the smoothed alpha error (flown - commanded)
-    # beyond ``FUEL_TRIM_DEADBAND_DEG`` moves ``FUEL_TRIM_UNITS_PER_DEG``
-    # per degree (at most ``FUEL_TRIM_STEP_MAX_UNITS``) between the
-    # frontmost and the aftmost tanks: over-rotating moves it forward,
-    # under-rotating aft.  Nothing leaves the vehicle until
-    # ``DRAIN_RESIDUAL_MACH_MAX``.  Use with ``FUEL_TO_NOSE`` and
-    # ``DRAIN_RESIDUAL``.  Off.
-    FUEL_TRIM_TRANSFER: bool = False
-    FUEL_TRIM_MACH_TOP: float = 4.0
-    # Sized from rot-ballast2-1001: 100 units dumped from the nose moved the
-    # mean alpha error ~16 deg, so ~0.2 deg per unit pumped nose-to-aft (a
-    # 13 m arm against 10.8); 3 units per degree closes ~60% a step.  What
-    # would contradict it: ``fuel trim`` steps alternating sign each
-    # interval in the log.
-    FUEL_TRIM_INTERVAL_S: float = 6.0
-    FUEL_TRIM_DEADBAND_DEG: float = 2.0
-    FUEL_TRIM_UNITS_PER_DEG: float = 3.0
-    FUEL_TRIM_STEP_MAX_UNITS: float = 40.0
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and
@@ -3764,19 +2624,6 @@ class Config:
     # log has ever shown.  ``Config`` is where the *bins* live; what the
     # airframe answers in them belongs in the log, not in a constant here.
     AERO_DUMP: bool = True
-    # **What the vehicle makes, against what the table says it will.**
-    # ``simulate_aerodynamic_force_at`` probes the airframe as it sits, and
-    # the vehicle in the air is holding its attitude with control surfaces
-    # deflected -- lift the probe never sees.  Measured against flight
-    # (``aeroaudit.py``, LOG1722): drag agrees to 1%, lift reads 1.77x the
-    # table at Mach 6 and 0.57x at Mach 3.2.  ``environment.LiftTrim``
-    # learns the ratio per Mach bin in flight, the way ``Holdable`` learns
-    # the alpha ceiling, and ``coefficients`` applies it.
-    #
-    # Off by default until a batch says it helps: a correction learned from
-    # the vehicle is only better than no correction if the measurement is
-    # clean, and this one is taken while the vehicle is manoeuvring.
-    LIFT_TRIM_ON: bool = False
     LIFT_TRIM_MACH_BIN: float = 0.5
     LIFT_TRIM_SMOOTHING: float = 0.15
     LIFT_TRIM_MIN_SAMPLES: int = 8
@@ -3844,79 +2691,9 @@ class Config:
     # 1.4 km at the approach speed, which is why the S-turn stops there.
     APPROACH_SCURVE_CROSS_M: float = 300.0
     APPROACH_SCURVE_STOP_M: float = 4000.0  # no weaving inside this of the aim [default 2026-10-03, rot-orbit2-1003]
-    # The same condition as a time to the flare's door rather than a distance
-    # to the aim -- see ``guidance.approach``.  7.0 s is what the 1500 m was
-    # delivering on ``logs/LOG2384`` (the weave stopped at 564 m with 57 m/s
-    # of sink and a 147 m trigger, which is 7.3 s), so this is meant to be
-    # neutral on its own and is off until that has been flown.
-    APPROACH_SCURVE_STOP_S: float = 7.0
-    APPROACH_SCURVE_STOP_BY_TIME: bool = False  # flown with the near aim, which crashed; see TOUCHDOWN_AIM_M
     APPROACH_SCURVE_PERIOD_S: float = 10.0  # half-cycle of the weave clock
-    # ``Autopilot.scurve_half_period_s``: the half-cycle as this factor x
-    # the time to reverse the bank at the measured roll rate (~4 s on the
-    # old craft, ~16 s on the shuttle), not 10 s.  2026-10-03, unflown.
-    APPROACH_SCURVE_PERIOD_BY_ROLL: bool = False
-    APPROACH_SCURVE_PERIOD_FACTOR: float = 2.0
 
     # -- the split-rudder airbrake ----------------------------------------
-    # **Correction, 2026-09-23: the surfaces are NOT disabled** -- every
-    # axis on both craft is on (``ignorePitch = False``; the old reading was
-    # the part menu's ignore flag, and the pad's torque at q=0).  What is
-    # written below about "no control authority" is false; kept for the
-    # record.  docs/spaceplane/journal.md, "Session, 2026-09-23".
-    # **The one dissipation control this vehicle has and has never been
-    # given.**  See ``spaceplane/airbrake.py``: a mirrored pair of vertical
-    # control surfaces deployed in opposing directions is drag with the yaw
-    # and the roll cancelled, and on this craft it costs no control authority
-    # because all six surfaces have Pitch, Yaw and Roll disabled already --
-    # it is flown on reaction wheels (docs/spaceplane/design.md, "This vehicle has
-    # no aerodynamic control at all").
-    #
-    # Off until it has been flown.  The identification refuses rather than
-    # guesses, so on a vehicle without a clean mirrored vertical pair turning
-    # this on changes nothing, and the log says which it was.
-    # **The opposed-flap brake: canards against elevons.**  The user's
-    # mechanism, and a better one than the split rudder.  Canards sit ahead
-    # of the centre of mass and elevons behind it, so the same trailing-edge
-    # sense gives them opposite pitching moments: they cancel, while both
-    # surfaces spoil lift and both make drag.
-    #
-    # That is the currency the split rudder got wrong.  Drag alone spends
-    # *speed*, a glider buys speed back by diving, and two vehicles reached
-    # the flare door at 79-82 m/s of sink doing exactly that.  Sideslip
-    # worked because it spoils lift at constant drag -- it spends *height*.
-    # ``tan(gamma) = D/L``: less lift with more drag is a steeper path at
-    # the same speed, which is the surplus the approach cannot shed.
-    #
-    # The balance is **computed, not fitted**: ``surface_area`` from kRPC and
-    # the arms from the part geometry give the deflection ratio that nulls
-    # the moment (``airbrake.find_opposed_flaps``).  On a canard-plus-two-
-    # elevon-pairs layout the canards deflect about **thirteen times less**
-    # than the elevons, which is precisely the number that differs on every
-    # aircraft and precisely why it must be read off the aircraft.
-    # **Correction, 2026-09-23: the surfaces are NOT disabled** -- every
-    # axis on both craft is on (``ignorePitch = False``; the old reading was
-    # the part menu's ignore flag, and the pad's torque at q=0).  What is
-    # written below about "no control authority" is false; kept for the
-    # record.  docs/spaceplane/journal.md, "Session, 2026-09-23".
-    # **Switch on control axes the craft file left disabled.**  See
-    # ``autopilot.enable_control_surfaces``.  The craft this autopilot grew
-    # up on has six control surfaces with pitch, yaw *and* roll all off, and
-    # flies the entry on 15 kN m of reaction wheel -- which is why its alpha
-    # ceiling collapses at 900 Pa, why RCS buys 3 km for a whole tank, and
-    # why the high-alpha entry work had nowhere to live until a second
-    # airframe arrived.  A wheel is constant torque against a moment that
-    # grows with ``q``; a surface's authority grows with ``q`` too.
-    #
-    # Off by default, and it is **not** a free improvement: it changes the
-    # plant, and with it every constant measured on the old one -- the
-    # stall, ``ALPHA_TRACKING``, ``HOLDABLE_PROBE``, ``MARGIN``, the attitude
-    # tune (failure 23).  It also opens a hole in
-    # ``ATTITUDE_TIME_TO_PEAK_DERIVED``: ``available_torque`` never reports
-    # aerodynamic surfaces, so the derived slew time still describes a
-    # wheels-only vehicle.  Fly it as an arm and read ``oscsum.py`` and
-    # ``alphaceiling.py``, not the arrival alone.
-    ENABLE_CONTROL_SURFACES: bool = False
     AIRBRAKE_OPPOSED_FLAPS: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     # Stow the brake whenever the sink exceeds what the flare can arrest
     # from its door (``airbrake.Brake.update``).  The opposed flaps moved the
@@ -3938,13 +2715,6 @@ class Config:
     # out only while the vehicle is not sinking faster than that plus this.
     AIRBRAKE_SINK_TRACK: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0
-    # **Hold the lift while the spoiler is out** (``Autopilot.
-    # spoiler_lift_hold``), so the spoiled lift becomes induced drag at the
-    # held speed: a speedbrake, not a sink maker.  With the commanded alpha
-    # unchanged the set took ``cla=`` 120 -> 80 and the sink track stowed it
-    # within ~1.5 s, eight times a flight (LOG5361).  Off until paired.
-    AIRBRAKE_HOLD_LIFT: bool = False
-    AIRBRAKE_HOLD_LIFT_STEP_DEG: float = 0.25
     # **Choose each surface's deploy sense by deploying it**, in vacuum,
     # once, against the game's own wrench (``Autopilot.measure_flap_brake``,
     # ``airbrake.MeasuredBrake``).  Positive ``Deploy Angle`` is a per-part
@@ -3962,11 +2732,6 @@ class Config:
     # Deflections do not add (a set predicted to cancel measured +55 CmA on
     # the shuttle), so the balance is re-probed and corrected this often.
     AIRBRAKE_MEASURE_ITER: int = 5
-    # **Flaps**: the same measured surfaces in their lift-*adding* sense,
-    # balanced and verified the same way, deployed for the flare.  The
-    # shuttle's tail strikes at 9.1 deg, so its flare cannot buy lift with
-    # alpha.  Needs ``AIRBRAKE_MEASURED``.
-    AIRBRAKE_FLAPS: bool = False
     # **The instrument, and it flies before the law does.**  Deploy the
     # opposed flaps at this angle (the aft group; the forward group gets
     # ``angle * ratio``) from COAST down, and read back three things the
@@ -3976,7 +2741,6 @@ class Config:
     # lift spoiler or merely a brake.  The same pattern as
     # ``SLIP_PROBE_DEG``, which settled the sideslip question in one round.
     FLAP_BRAKE_PROBE_DEG: float = 0.0
-    AIRBRAKE_SPLIT_RUDDER: bool = False
     # How far the halves deploy.  The parts' own ``Deploy Angle`` default is
     # 20 degrees and that is what this asks for; the module is driven through
     # the generic interface, the same route ``_find_drain`` uses, because the
@@ -4065,10 +2829,6 @@ class Config:
     # ``airframe.lift_discount``.  This flag now covers the cone's glide
     # ratio and the alpha ceiling; the stall is always the table's.
     AIRFRAME_DERIVED: bool = False
-    # ``airframe.lift_discount``: measured, flown, and wrong.  Off, and the
-    # docstring there says what would have to change before it is worth
-    # another arm.
-    LIFT_TRIM_DISCOUNT: bool = False
     # **The approach's ground-per-height, on a switch of its own, because it
     # is the one that moves.**  ``AIRFRAME_DERIVED`` above replaces two
     # numbers the derivation reproduces -- the cone's ratio derives to 1.81
@@ -4187,21 +2947,6 @@ class Config:
     # 40-65 degrees below the horizon, and a bound on the *path* says that
     # cannot happen whatever the speed or the mass.  ``cos(35)`` is 0.82 g.
     APPROACH_DIVE_MAX_DEG: float = 35.0
-    # **The way out of a mush** (``guidance.alpha_for_speed``).  The dive
-    # bound also floors the load at ``cos(APPROACH_DIVE_MAX_DEG)`` = 0.82 g,
-    # and at 57 m/s the shuttle makes 0.82 g only at 13-16 deg of alpha, whose
-    # drag holds it there: LOG4053 left the cone at 98 m/s, the law raised
-    # alpha 4.5 -> 17 as the speed fell to 57, and it sank 2 km at 36-40 m/s
-    # on a 40 deg path -- the back-side equilibrium the law cannot leave.
-    # With this on, below ``APPROACH_MUSH_SPEED_FRAC`` of the target speed
-    # and above ``APPROACH_MUSH_MIN_H_M`` the bound is
-    # ``APPROACH_MUSH_DIVE_DEG`` instead, so the wing may unload and the
-    # vehicle accelerate.  The height floor is the old bound's reason (27
-    # flights that unloaded low and arrived nose-down).  Off until paired.
-    APPROACH_MUSH_RECOVERY: bool = False
-    APPROACH_MUSH_SPEED_FRAC: float = 0.8
-    APPROACH_MUSH_DIVE_DEG: float = 60.0
-    APPROACH_MUSH_MIN_H_M: float = 800.0
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
@@ -4224,60 +2969,8 @@ class Config:
     # the best arrival this project has flown.  40 is a small widening for
     # the faster approach, not a licence to bank.
     APPROACH_BANK_MAX_DEG: float = 40.0
-    # **A bank the vehicle can follow, and roll out of before the door**
-    # (``Autopilot.approach_bank``).  The approach's capture and S-turn ask
-    # for +-40 deg as a relay, reversing every 4-8 s, and the shuttle's
-    # roll (~12 deg/s, time_to_peak 4.8 s) never catches the command:
-    # LOG3855 reached the flare door at -51 deg flown against 0 commanded
-    # and touched down at -36 -- a wing lost at 0.04 m/s of sink.  Across
-    # LOG3810-3849 the approaches that S-turned tracked alpha 2-7 deg rms
-    # worse than the straight ones (0.5-1.4) and dived.  With this on the
-    # command slews at the measured roll rate (``bank_rate``) and its
-    # magnitude is capped at ``rate * (time to the door - roll
-    # time_to_peak)``, so the wings are level when the flare opens.  Off
-    # until paired.
-    # **RCS works only the axes the surfaces cannot** (``Autopilot.
-    # rcs_pitch_gate``): pitch thrusters off while the surfaces' measured
-    # pitch torque exceeds theirs.  The open valve preceded most Mach 3-6
-    # pitch-ups on both shuttles.  Off.
-    RCS_PITCH_BY_AUTHORITY: bool = False
     RCS_PITCH_GATE_S: float = 2.0
-    # **The valve opens on turns, not on the trim limit** (``Autopilot.
-    # valve_error``).  In GLIDE and HAC the nose sitting *below* its
-    # commanded alpha is a steady saturation of the surfaces; counted as
-    # pointing error it opened the valve at ``err 5.0`` on ~15 shuttle
-    # flights at Mach 4.7-5.4 (40.3 commanded, 36 trimmed) and the pitch
-    # thrusters drove alpha through the trim limit to 48-58 in 4 s
-    # (LOG4352).  Lateral error and alpha overshoot still open it.  The
-    # pitch gate above latches at q ~1650 Pa, after these events.
-    RCS_IGNORE_ALPHA_SHORTFALL: bool = False
-    # **Not built for its own purpose:** ``rot-shortfall-1001`` (8 v 8) showed
-    # the valve opening on *lateral* error -- reversals at Mach 4.7-4.8
-    # (LOG4411, 4413, 4426), a 5 deg bank lag at Mach 7.1 with the flag on
-    # (LOG4415: alpha 26 -> 53 against 35) -- and the pitch thrusters
-    # driving alpha through the trim limit every time.  Whatever opens the
-    # valve, pitch thrust is the pitch-up.  So: **pitch thrusters off for the
-    # whole glide and cone** (``rcs_pitch_gate``), yaw and roll keep them.
-    RCS_PITCH_OFF_IN_GLIDE: bool = False
     APPROACH_BANK_BY_ROLL: bool = True  # default 2026-10-03: the landing stack, rot-orbit2-1003
-    # **Lead the capture by the roll-out** (``Autopilot.
-    # approach_heading_lead``): the heading error the lateral law sees is
-    # the one the vehicle will have after rolling level at its measured
-    # roll rate.  LOG4385 commanded level with 27 deg of bank on and turned
-    # on to 20 deg off the runway.  Flown only together with
-    # ``APPROACH_ENERGY_EXCESS`` (``rot-chain7-1001``): cross at the flare
-    # -31..+885 m against -232..+218 without -- not better; unproven.  Off.
-    # **The approach's excess in energy, against the flare's door**
-    # (``guidance.approach``): ``(v^2 - v_door^2) / 2g`` is added to the
-    # height over the glide to the aim, so a hot exit is spent early by the
-    # S-turn and the speed law instead of dived away low (LOG4383).
-    # **Refuted as built** (``rot-chain7-1001`` vs ``rot-chain6-1001``, 8 v
-    # 8, flown with ``APPROACH_HEADING_LEAD``): touchdowns 1.7-2.6 km short
-    # of the midpoint against -0.2..+0.1 km, flares 83-95 m/s, 0 intact
-    # against 3.  It spends what the flare would have floated.  Off.
-    APPROACH_ENERGY_EXCESS: bool = False
-    APPROACH_HEADING_LEAD: bool = False
-    APPROACH_HEADING_LEAD_TAU_S: float = 1.0
     # **Whether the speed loop knows it is in a turn.**  See
     # ``guidance.alpha_for_speed``: the load it solves for is vertical and
     # the vehicle is banked, so the wing must carry ``1/cos(bank)`` to fly
@@ -4429,41 +3122,6 @@ class Config:
     DEORBIT_PROBE_DV: float = 2.0
     DEORBIT_TAPER_S: float = 1.5
     DEORBIT_MIN_GRADIENT: float = 200.0
-    # **The engine keeps thrusting after it is told not to, and nothing
-    # measured it until logs 2090-2101 were differenced.**  Between the
-    # ``DEORBIT -> DRAIN`` tick and the 70 km boundary -- all vacuum -- the
-    # vehicle loses an equivalent 2.3 m/s of dv on ``qs_plane`` and 8.9 on
-    # ``qs_plane_inc``, spread under 0.3 m/s inside each state.  That is
-    # 28 km and 127 km of ground track at the entry interface, it is the
-    # handover error this project has spent a dozen mechanisms on, and it is
-    # state-dependent in exactly the way "nothing transfers" requires.
-    #
-    # With this on, the burn's cutoff deactivates the engine instead of only
-    # commanding zero throttle.
-    #
-    # **Flown twice and a null both times.**  With the drain still downstream
-    # of the burn the shutdown arm drifted -9.05 m/s against -8.97 and -9.36
-    # for the control (LOG2111 against LOG2109/2110) -- a null, because the
-    # valve was worth fifteen times as much and ``Fn`` reads 0.0 kN by the
-    # time the first post-cutoff tick lands.
-    #
-    # With ``DRAIN_BEFORE_BURN`` on the residual drift is **-0.04 to
-    # -0.66 m/s**, and this was flown against that too: -0.10 and -0.43 with
-    # the shutdown against -0.40 and -0.15 without it, with 0-1 kg of
-    # propellant gone across the window either way.  **So the residual is not
-    # the engine either** -- it arrives before any cutoff command reaches the
-    # game, in the gap between the snapshot at the top of the tick and the
-    # throttle call at the bottom of it.  At a two-game-second tick and a
-    # tapered throttle of 0.1-0.4 that is exactly the 0.1-0.45 m/s measured,
-    # and at ~6 km of arrival per m/s it is the 3-4 km of scatter the new arm
-    # shows.  The lever for it is ``DEORBIT_TAPER_S`` -- a longer horizon
-    # makes the final command smaller and the latency worth less -- not a
-    # harder cutoff.
-    #
-    # The general lesson is in failure 61: *a null measured against a
-    # dominant disturbance is a null about the disturbance*; this one
-    # survived the disturbance being removed and is a null on its own.
-    DEORBIT_CUTOFF_SHUTDOWN: bool = False
     DEORBIT_MIN_THROTTLE: float = 0.02
     # **Charge the floor rule one tick, not the dead time.**  See the floor
     # test in ``Autopilot.run_deorbit``: its "what one more floored tick
@@ -4623,16 +3281,6 @@ class Config:
     # +40 commanded through all of APPROACH, -15..+9 flown, 9 km off the
     # centreline.  Flown before in the chain (game_v2, n=6: HAC +45 -> +52).
     ATTITUDE_AXES_KRPC_ORDER: bool = True
-    # ...but only from the cone on, keeping the legacy order in the entry:
-    # with roll on its quick wheel-derived figure a hypersonic reversal
-    # overshoots and costs ~30 km (LOG3051-3052).  See ``switch_axes``.
-    # **Off since 2026-09-25 (night):** the legacy order is roll on 22.6 s,
-    # gains cut tenfold, and the user watched the entry bank with the roll
-    # input at zero (LOG3691: -31 -> +27 flown at ~2 deg/s, all yaw).  The
-    # overshoot it guarded against was flown with an 8 deg/s bank command
-    # and kRPC's roll gate shut; the command now slews at the measured rate
-    # (``BANK_RATE_MEASURED``) and the gate is open.  Unflown in this form.
-    ATTITUDE_AXES_FROM_CONE: bool = False
     # **Roll on full authority** (the user, 2026-09-25): kRPC's roll
     # ``time_to_peak`` in seconds, replacing the derived 4.8 s (1.91 x the
     # wheels-only slew time -- a figure that never counted the surfaces).
@@ -4666,51 +3314,6 @@ class Config:
     # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
     # capped at 180).  0 leaves kRPC's 15/20.
     ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
-    # **Yaw on roll's figure** (``autopilot.krpc_axes``), and the damper
-    # below moves both.  The static yaw figure is 22.6 s -- wheels only --
-    # and at 35 deg of alpha a bank change is a rotation about the velocity,
-    # body roll *and* body yaw; a fast body roll is sideslip, which a yaw
-    # axis that slow never removes: LOG3699 held +27..+40 deg of slip for
-    # 30 s about a steady bank command and tumbled at Mach 4.  The legacy
-    # (swapped) order flew yaw on 4.8 by accident and held the entry's slip
-    # under 5.  Measured (qs_shuttle, roll 4.8): glide sideslip max 8-28
-    # deg with yaw on roll's figure against 19-74 with yaw on its own 22.6
-    # (LOG3705-3728) -- but the bank was lost in the cone instead, >60 deg
-    # of error on 92 ticks below Mach 2 against 33 (LOG3717-3728, 6 an
-    # arm; landings 4/6 with parts either way).  **Off**: the hypersonic
-    # gain is real and the subsonic cost is too; ``ATTITUDE_YAW_BY_ALPHA``
-    # is the attempt to keep the one without the other.
-    ATTITUDE_YAW_WITH_ROLL: bool = False
-    # **Yaw for the share of a bank change that is yaw**: roll's figure /
-    # sin(commanded alpha), clamped between roll's and yaw's static figure
-    # (``autopilot.yaw_time_to_peak``).  Yaw on roll's figure everywhere
-    # (above) cured the hypersonic sideslip and lost the bank in the cone,
-    # ~20 deg of alpha below Mach 1: >60 deg of bank error on 92 ticks below
-    # Mach 2 against 33 with yaw on its own 22.6 (LOG3717-3728, 6 an arm).
-    # Overrides nothing when ``ATTITUDE_YAW_WITH_ROLL`` is on.  **Flown
-    # and not adopted** (LOG3729-3740, 6 an arm against the defaults):
-    # bimodal -- four flights at the session's lowest glide slip (10-17
-    # deg) and two hypersonic tumbles (LOG3734, LOG3738: slip building
-    # +7 -> +30 over 25 s about a steady command at Mach 4, 30 km short),
-    # against none on the defaults.  Tumbles over the session: yaw on roll's
-    # 4.8 0/12, yaw 22.6 2/16, this 2/6 -- not a dose-response at these n.
-    ATTITUDE_YAW_BY_ALPHA: bool = False
-    # **The sideslip in a reversal was commanded, not suffered.**  ``aim``
-    # tilted the nose toward the *commanded* lift, so while the roll lagged
-    # its command by some angle the nose target sat asin(sin alpha sin lag)
-    # off the vehicle's own pitch plane -- a sideslip command.  Every
-    # flight, landed or lost, took 12-24 deg of slip in the first reversal
-    # at Mach 6.5 with lags of 10-23 deg (LOG3741, 3742, 3749, 3758); the
-    # live LOG3758 took a second one at Mach 5 and tumbled, 49 km short.
-    # The three entries above re-tuned how fast the loops chase that target;
-    # this changes the target: the nose from the *flown* bank, the roof to
-    # the commanded one (a stability-axis roll).  **Flown, refuted**
-    # (LOG3759-3761, qs_shuttle, pairfly ksp0/1, `44e63da5`): with no slip
-    # commanded the first reversal still made 26 and 31 deg, and both
-    # flights tumbled (28 and 19 km short) against defaults beside them at
-    # 26 deg and landed.  The slip is the body roll outrunning yaw, not the
-    # target; the lead toward the commanded lift was, if anything, helping.
-    AIM_NOSE_FROM_FLOWN_BANK: bool = False
     # **Yaw on the authority that is actually acting** -- the thrusters.
     # The static yaw figure (22.6 s on the shuttle) is derived from the
     # reaction wheels alone: 15 kN m.  The shuttle's RCS makes **290 kN m
@@ -4738,15 +3341,6 @@ class Config:
     # two landed 30/30.  Transonic bank overshoot (cmd 37, flown 80-106) is
     # present on both arms at similar size -- a separate roll problem.
     ATTITUDE_YAW_WITH_RCS: bool = True
-    # **Hold the valve for the whole reversal, not from a 5 deg lead.**
-    # ``reversal_under_way`` waited for the command to lead the flown bank
-    # by ``BANK_RATE_SAT_DEG``; on the shuttle's Mach 4.5-5 reversal the
-    # valve then opened 2-3 s before the zero crossing with 6-10 deg of
-    # pointing error already built, and 6 of 8 slipped 13-23 deg and lost
-    # alpha (`rot-sliptol2-1002`).  On, it also holds while the rate-limited
-    # command has not reached the lean the loop wants (``bank_wanted``):
-    # from the first tick of the slew.
-    RCS_HOLD_MID_REVERSAL: bool = False
     # **Slow the lateral axes when the bank diverges, from the vehicle's
     # own swings.**  ``rollrate.RollDamper``.  Full authority (roll 1.0)
     # tracked the shuttle to a degree up to q ~700 Pa and then swung about
@@ -4769,21 +3363,6 @@ class Config:
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
-    # **Re-derive the tune from the torque available now, not at STANDBY.**
-    # ``autopilot.live_time_to_peak``: the surfaces are live and their
-    # authority grows with q -- 2928 kN m of pitch at 4.7 kPa on the shuttle
-    # against 15 of wheel -- so the wheels-only 22 s is right in vacuum and
-    # far too slow where a bank reversal has to swing the nose (LOG2918).
-    # **Flown on the shuttle and refuted as built** (LOG2936-2938): arrival
-    # -31..-51 km against +34 without it, GLIDE sideslip p-p 63-69 deg
-    # against ~25.  Two faults, both visible in the `attitude retune` lines:
-    # the live total includes engine and RCS torque (time_to_peak read 0.0
-    # during the burn), and kRPC's surface torque depends on the current
-    # deflection, so the yaw figure chatters 2.3 <-> 10 s second to second.
-    # A controller that quick in thick air drives the lateral mode the 3.0 s
-    # constant was chosen to damp.  Off; do not re-fly without addressing
-    # both.
-    ATTITUDE_TIME_TO_PEAK_LIVE: bool = False
     # **Pitch only, from wheels plus smoothed surface torque, floored at
     # ``ATTITUDE_TIME_TO_PEAK_S``.**  See ``Autopilot.retune_pitch_air``:
     # the three faults of the live version above, each answered.  The
@@ -4793,18 +3372,9 @@ class Config:
     # old craft by construction (its static pitch *is* the floor).
     ATTITUDE_PITCH_AIR: bool = True  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
-    # Switch off kRPC's oscillation mitigations from the cone on.  See
-    # ``Autopilot.osc_mitigation``.  (``deceleration_time`` does not exist
-    # in this kRPC build: ATTITUDE_PITCH_DECEL_S was a disconnected knob,
-    # rot-decel-1003.)
-    ATTITUDE_OSC_MITIGATION_OFF: bool = False
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
     ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
-    # Measure the achieved angle of attack signed (kRPC's, in the pitch
-    # plane) rather than as the unsigned nose-to-velocity angle, which reads
-    # a nose below the airflow as above it.  See ``Telemetry``.
-    ALPHA_SIGNED: bool = False
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
@@ -4856,7 +3426,6 @@ class Config:
     PART_COUNT_INTERVAL_UT: float = 5.0
     LOG_INTERVAL_UT: float = 2.0
     LOG_DIR: str = "logs"
-    DIAG_STATE: bool = False
     # **Where a miss is born, as opposed to where it lands.**  Two log lines
     # per flight: what the committed burn predicts for the entry interface,
     # and what the vehicle actually brings there.  Their difference is the
@@ -4877,12 +3446,6 @@ class Config:
     # -- the vehicle -------------------------------------------------------
     STARTUP_ACTION_GROUP: int = 0           # 0 = none; this craft needs none
     ENABLE_RCS: bool = True
-    # RCS for the burn only.  Left on through the vacuum coast, kRPC's
-    # autopilot hunts on it: measured at 3 kg/s, which is the vehicle's whole
-    # 600 kg of monopropellant inside the coast itself, and the coast is the
-    # cheap part -- a 30 deg angle of attack established in vacuum has nothing
-    # to fight and minutes to get there, so the reaction wheels can have it.
-    COAST_RCS: bool = False
     # RCS through the glide as well -- off, for the reason ``RCS_Q_MAX_PA``
     # gives.  Raising one without the other changes nothing: the ceiling
     # shuts the valve at 500 Pa whatever the phase permits.
@@ -4963,7 +3526,6 @@ def apply_overrides(cfg, overrides):
         name = name.strip()
         if name not in kinds:
             raise SystemExit("unknown config field %r" % name)
-        kind = kinds[name]
         current = getattr(cfg, name)
         if isinstance(current, bool):
             value = raw.strip().lower() in ("1", "true", "yes", "on")

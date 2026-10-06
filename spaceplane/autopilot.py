@@ -145,22 +145,13 @@ def krpc_axes(cfg, pitch, roll, yaw, corrected=None):
     selects the corrected order; off reproduces the old one exactly.
     """
     if corrected is None:
-        corrected = (getattr(cfg, "ATTITUDE_AXES_KRPC_ORDER", False)
-                     and not getattr(cfg, "ATTITUDE_AXES_FROM_CONE", False))
+        corrected = ((getattr(cfg, 'ATTITUDE_AXES_KRPC_ORDER', False)))
     # ``ATTITUDE_ROLL_TIME_TO_PEAK_S``: roll on full authority, whatever
     # the derivation says.  Only in the corrected order, where the slot
     # handed to kRPC as roll really is roll.
     full = float(getattr(cfg, "ATTITUDE_ROLL_TIME_TO_PEAK_S", 0.0))
     if corrected and full > 0.0:
         roll = full
-    # ``ATTITUDE_YAW_WITH_ROLL``: the lateral axes share roll's figure.  A
-    # bank change at alpha is a rotation about the velocity, which is body
-    # roll *and* body yaw in the ratio cos(alpha) : sin(alpha); a yaw axis
-    # four times slower than roll turns every reversal into sideslip it
-    # then cannot take out (LOG3699: slip +27..+40 for 30 s about a steady
-    # command, tumbled at q 3600).
-    if corrected and getattr(cfg, "ATTITUDE_YAW_WITH_ROLL", False):
-        yaw = roll
     if corrected:
         return (pitch, roll, yaw)
     return (pitch, yaw, roll)
@@ -202,16 +193,9 @@ def yaw_time_to_peak(cfg, roll, static_yaw, alpha_deg, rcs_yaw=None):
     yaw then flies what wheels plus RCS deliver, never faster than roll and
     never slower than its static figure.
     """
-    if getattr(cfg, "ATTITUDE_YAW_WITH_ROLL", False):
-        return roll
     if rcs_yaw is not None and getattr(cfg, "ATTITUDE_YAW_WITH_RCS", False):
         return max(roll, min(static_yaw, rcs_yaw))
-    if not getattr(cfg, "ATTITUDE_YAW_BY_ALPHA", False) or alpha_deg is None:
-        return static_yaw
-    s = math.sin(math.radians(abs(alpha_deg)))
-    if s <= 1e-6:
-        return static_yaw
-    return max(min(roll, static_yaw), min(static_yaw, roll / s))
+    return static_yaw
 
 
 def label_axes(cfg, triple):                             # noqa: ARG001
@@ -564,8 +548,7 @@ class Autopilot:
         self.boundary_logged = False
         self.deorbit_progress = 0.0
         self.drain_modules = self._find_drain()
-        self.enable_control_surfaces()
-        self.airbrake_pair = self._find_airbrake()
+        self.airbrake_pair = None
         self.airbrake = airbrake_mod.Brake(cfg)
         self.flap_brake = self._find_brake()
         self.drag_brake = None
@@ -610,15 +593,6 @@ class Autopilot:
         self.log_authority(ut)
         self.switch_axes(ut)
 
-    def _axes_corrected_now(self):
-        """``None`` (the config decides) unless ``ATTITUDE_AXES_FROM_CONE``
-        splits it by phase: legacy order in the entry, corrected from the
-        cone on."""
-        if not (getattr(self.cfg, "ATTITUDE_AXES_KRPC_ORDER", False)
-                and getattr(self.cfg, "ATTITUDE_AXES_FROM_CONE", False)):
-            return None
-        return self.state in (HAC, APPROACH, FLARE, ROLLOUT, STOPPED)
-
     def switch_axes(self, ut):
         """``ATTITUDE_AXES_FROM_CONE``: hand kRPC the corrected order on
         reaching the cone.
@@ -633,20 +607,7 @@ class Autopilot:
         measured on, and the corrected one is used where the bank must
         actually *turn* the vehicle.
         """
-        if (getattr(self, "_axes_switched", True)
-                or not self.autopilot_engaged
-                or self._axes_corrected_now() is not True):
-            return
-        self._axes_switched = True
-        peak = attitude_time_to_peak(self.cfg, self.vessel, self.logbook, ut,
-                                     corrected=True)
-        if not isinstance(peak, (tuple, list)):
-            return
-        pitch_now = self._tuned_peak[0] if self._tuned_peak else peak[0]
-        want = (pitch_now, peak[1], peak[2])
-        tune_autopilot(self.autopilot, want, self.logbook, ut)
-        self._static_peak = tuple(peak)
-        self._tuned_peak = want
+        return
 
     def derive_hac_aim(self, snap):
         """``HAC_AIM_DERIVED``: set the entry aim's ratio once, off the table,
@@ -656,9 +617,6 @@ class Autopilot:
                 or not self.env.ready()):
             return
         mass = snap.mass
-        if getattr(self.cfg, "DRAIN_RESIDUAL", False):
-            mass -= ((snap.liquid_fuel + snap.oxidizer)
-                     * float(self.cfg.RESOURCE_KG_PER_UNIT))
         try:
             got = guidance.straight_in_reach(self.env, self.cfg, mass,
                                              self.surface_gravity)
@@ -841,9 +799,8 @@ class Autopilot:
             # Tune it once, when it first takes: the controller does not
             # exist to be tuned before it is engaged.
             peak = attitude_time_to_peak(self.cfg, self.vessel,
-                                         self.logbook, ut,
-                                         self._axes_corrected_now())
-            self._axes_switched = self._axes_corrected_now() is True
+                                         self.logbook, ut, None)
+            self._axes_switched = False
             tune_autopilot(self.autopilot, peak, self.logbook, ut)
             ungate_roll(self.cfg, self.autopilot, self.logbook, ut)
             self._tuned_peak = (tuple(peak) if isinstance(peak, (tuple, list))
@@ -899,7 +856,6 @@ class Autopilot:
         if self.cfg.BROADSIDE_PROBE_DEG > 0.0 and self.state in (
                 COAST, GLIDE, APPROACH, FLARE):
             alpha_deg = float(self.cfg.BROADSIDE_PROBE_DEG)
-        alpha_deg = self.lift_loop(alpha_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
@@ -918,11 +874,6 @@ class Autopilot:
         # still goes to the commanded lift, so the roll loop alone carries
         # the bank change and the nose follows it round the cone.
         tilt = lift
-        if getattr(self.cfg, "AIM_NOSE_FROM_FLOWN_BANK", False):
-            flown = flown_bank(snap)
-            if not math.isnan(flown):
-                tilt = trajectory.lift_direction(snap.position, v,
-                                                 flown) or lift
         nose = vec.unit(vec.add(vec.scale(vhat, math.cos(alpha)),
                                 vec.scale(tilt, math.sin(alpha))))
         slip = self.slip_command(snap)
@@ -1041,18 +992,6 @@ class Autopilot:
                    "%.1f" % static[2] if static else "?"))
         return peak
 
-    def sweeping(self, snap):
-        """Is ``Config.GLIDE_BANK_SWEEP`` flying the lean this tick?"""
-        if not self.cfg.GLIDE_BANK_SWEEP:
-            return False
-        try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
-        except Exception:                                   # noqa: BLE001
-            return False
-        return mach >= self.cfg.GLIDE_BANK_SWEEP_UNTIL_MACH
-
     def sweep_plan(self):
         """The slow reversal as planned now (``Config.GLIDE_BANK_SWEEP``).
 
@@ -1159,62 +1098,10 @@ class Autopilot:
             alpha = min(alpha, unload)
         return Steer(alpha=alpha, bank=bank, cfg=steer.cfg, mass=steer.mass)
 
-    def single_reversal(self, snap, alpha, wanted):
-        """``wanted`` with its sign from ``guidance.single_reversal_sign``.
-
-        ``Config.GLIDE_SINGLE_REVERSAL``.  Above the trim Mach the side is
-        this law's; below it the relay's sign (already in ``wanted``) is
-        handed back.  Logs every flip, and the two predictions every
-        ``GLIDE_SIGN_LAW_LOG_S`` so the drift can be read against
-        what was flown.
-        """
-        try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
-        except Exception:                                   # noqa: BLE001
-            return wanted
-        if mach < self.cfg.GLIDE_SINGLE_REVERSAL_TRIM_MACH:
-            if getattr(self, "_sr_side", None) is not None \
-                    and not getattr(self, "_sr_released", False):
-                self._sr_released = True
-                self.logbook.event(snap.ut, "single reversal: trim to the "
-                                   "relay at Mach %.2f" % mach)
-            return wanted
-        first = getattr(self, "_sr_side", None) is None
-        if first:
-            self._sr_side = 1.0 if self.steer.bank >= 0.0 else -1.0
-            self._sr_flipped = False
-            self._sr_log_ut = -1e9
-        side, flipped, hold, flip = guidance.single_reversal_sign(
-            self.env, self.cfg, snap.position, snap.velocity, snap.mass,
-            self.end, alpha, abs(wanted), self._sr_side, self._sr_flipped,
-            first)
-
-        def km(x):
-            return "none" if x is None else "%+.1f" % (x / 1000.0)
-        if side != self._sr_side or flipped != self._sr_flipped:
-            self.logbook.event(
-                snap.ut, "single reversal: %s %+.0f -> %+.0f at Mach %.2f q "
-                "%.0f, cross hold %s flip %s km"
-                % ("flip" if flipped and not self._sr_flipped else "lean",
-                   self._sr_side, side, mach, snap.dynamic_pressure,
-                   km(hold), km(flip)))
-        elif snap.ut - self._sr_log_ut >= self.cfg.GLIDE_SIGN_LAW_LOG_S:
-            self._sr_log_ut = snap.ut
-            self.logbook.event(
-                snap.ut, "single reversal: side %+.0f%s Mach %.2f q %.0f "
-                "cross hold %s flip %s km"
-                % (side, " (flipped)" if flipped else "", mach,
-                   snap.dynamic_pressure, km(hold), km(flip)))
-        self._sr_side, self._sr_flipped = side, flipped
-        return side * abs(wanted)
-
     def reversal_under_way(self, snap):
         """The bank command leads the flown bank by more than
-        ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet
-        -- or, under ``RCS_HOLD_MID_REVERSAL``, the rate-limited command is
-        still that far from the lean the loop wants.  Only under
+        ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet.
+        Only under
         ``ATTITUDE_YAW_WITH_RCS``, only in GLIDE."""
         if not getattr(self.cfg, "ATTITUDE_YAW_WITH_RCS", False):
             return False
@@ -1225,13 +1112,7 @@ class Autopilot:
         if cmd is None or math.isnan(flown):
             return False
         lead = (cmd - flown + 180.0) % 360.0 - 180.0
-        if abs(lead) > float(self.cfg.BANK_RATE_SAT_DEG):
-            return True
-        wanted = getattr(self, "bank_wanted", None)
-        if getattr(self.cfg, "RCS_HOLD_MID_REVERSAL", False) \
-                and wanted is not None:
-            return abs(wanted - cmd) > float(self.cfg.BANK_RATE_SAT_DEG)
-        return False
+        return abs(lead) > float(self.cfg.BANK_RATE_SAT_DEG)
 
     def bank_rate(self):
         """deg/s the bank command may slew at: measured by ``roll_rate``
@@ -1301,56 +1182,6 @@ class Autopilot:
         self._alpha_trim = delta
         return alpha_deg + delta
 
-    def lift_loop(self, alpha_deg, snap):
-        """``LIFT_LOOP``: fly the lift the law asked for, not the table's
-        angle for it.
-
-        Every law here turns a wanted load into an angle through the swept
-        table, and on the landing the table is **untrimmed**: the shuttle
-        makes 0.72-0.74 of its lift at the angle it trims to (the elevons
-        that hold the nose up take lift away), the old craft 1.34.  So a
-        pull-up asked for at 1.6 g arrives at about 1.1 -- in a 45 degree
-        bank, less than one g vertically -- and the cone's climb never
-        happens (LOG3065-3066: 190-300 m/s against a 128 target, sinking
-        68-198 m/s the whole way down).
-
-        The vehicle reports the lift it is making.  So the angle the law
-        asked for is offset by ``delta``, integrated on the fractional gap
-        between the lift the table promised for the law's angle and the
-        lift measured -- an inner loop on lift, whatever the table's error
-        and whichever airframe.  It does not learn while the nose is still
-        slewing (``LIFT_LOOP_TRACK_DEG``), because a lagging controller is
-        not a wrong table.
-        """
-        delta = getattr(self, "_lift_delta", 0.0)
-        if (not getattr(self.cfg, "LIFT_LOOP", False)
-                or self.state not in (HAC, APPROACH)):
-            return alpha_deg
-        last_ut = getattr(self, "_lift_ut", None)
-        asked = getattr(self, "_lift_asked", None)
-        self._lift_ut = snap.ut
-        self._lift_asked = alpha_deg
-        dt = 0.0 if last_ut is None else max(0.0, snap.ut - last_ut)
-        if (asked is not None and dt > 0.0
-                and snap.dynamic_pressure > self.cfg.LIFT_LOOP_MIN_Q_PA
-                and abs((asked + delta) - snap.krpc_aoa)
-                <= self.cfg.LIFT_LOOP_TRACK_DEG):
-            try:
-                speed = vec.norm(snap.velocity)
-                altitude = (vec.norm(snap.position)
-                            - self.env.equatorial_radius)
-                want, _ = self.env.coefficients(asked, speed, altitude)
-                got, _ = measured_coefficients(snap)
-                if want > self.cfg.LIFT_TRIM_MIN_CLA:
-                    error = vec.clamp((want - got) / want, -1.0, 1.0)
-                    delta += self.cfg.LIFT_LOOP_RATE_DEG_S * error * dt
-                    delta = vec.clamp(delta, self.cfg.LIFT_LOOP_MIN_DEG,
-                                      self.cfg.LIFT_LOOP_MAX_DEG)
-            except Exception:                           # noqa: BLE001
-                pass
-        self._lift_delta = delta
-        return alpha_deg + delta
-
     def run_flap_probe(self, snap):
         """``FLAP_BRAKE_PROBE_DEG``: hold the opposed flaps out and watch.
 
@@ -1414,123 +1245,7 @@ class Autopilot:
         probe = float(getattr(self.cfg, "SLIP_PROBE_DEG", 0.0))
         if probe != 0.0 and self.state in (COAST, GLIDE, HAC, APPROACH):
             return probe
-        if (getattr(self.cfg, "APPROACH_SLIP_FOR_ENERGY", False)
-                and self.state == APPROACH):
-            return self.slip_for_energy(snap)
         return 0.0
-
-    def slip_for_energy(self, snap):
-        """Slip in proportion to the surplus, ramped, under the q ceiling.
-
-        Three properties, each of them paid for by a failure in this file:
-
-        * **Proportional to the surplus, not switched on.**  The surplus is
-          ``guidance.approach``'s own ``excess`` -- the same quantity the
-          S-turn and the gear already spend -- so when there is none the
-          command is zero and the vehicle flies exactly as it does now.
-        * **Ramped, never stepped.**  ``SLIP_RATE_DEG_S`` limits how fast the
-          command moves, in both directions.  A control law that steps is a
-          law no vehicle flies (failure 31), and this one steers the nose.
-        * **Under the ceiling the flight measures for itself.**  The probe
-          found a saturation in dynamic pressure -- 20 degrees holds through
-          5000 Pa, 30 degrees only through 4000 -- so the command is capped
-          by ``Holdable``, learned live from what the yaw axis achieves
-          against what it was asked for.  A table would fly the next
-          aircraft on this one's fin.
-
-        And it goes to zero before the flare: ``AIRBRAKE_STOW_LEAD_S``
-        seconds of sink above the door, the same rule the brake uses, so the
-        vehicle is straight well before the wheels.  The three probe flights
-        that held slip into the ROLLOUT were all destroyed.
-        """
-        cfg = self.cfg
-        command = getattr(self, "command", None)
-        if snap is None or command is None:
-            return self._slip_ramp(snap, 0.0)
-        height = snap.landing_height
-        sink = max(0.0, -vec.dot(snap.velocity, vec.unit(snap.position)))
-        door = (guidance.flare_door(cfg, sink, vec.norm(snap.velocity),
-                                    getattr(self, "env", None))
-                + float(getattr(cfg, "AIRBRAKE_STOW_LEAD_S", 4.0)) * sink)
-        if height <= door:
-            return self._slip_ramp(snap, 0.0)
-        excess = max(0.0, getattr(command, "excess", 0.0))
-        wanted = float(cfg.SLIP_ENERGY_KP) * max(
-            0.0, excess - float(cfg.SLIP_ENERGY_DEADBAND_M))
-        ceiling = float(cfg.SLIP_MAX_DEG)
-        learned = self.slip_holdable.limit(snap.dynamic_pressure)
-        if learned is not None:
-            ceiling = min(ceiling, learned)
-        # **The sign is a closed loop on the cross-track, and it has to be.**
-        # Two sign rules have now been flown and both were wrong in an
-        # instructive way.  Taking it from the commanded bank made it reverse
-        # twice per S-turn cycle and halved the delivered slip (LOG2836).
-        # Choosing the corrective side *once* and holding it was worse: the
-        # side force is not small.
-        #
-        # Measured over four flights, the slip moves the cross-track **in its
-        # own sign at about 50 m per degree** across an approach:
-        #
-        #     mean slip +6.8 -> cross +372     mean slip -7.1 -> cross -477
-        #     mean slip +8.1 -> cross +367     mean slip +9.1 -> cross +411
-        #
-        # So an open-loop sign is a 400 m lateral kick.  ``logs/LOG2846``
-        # started at cross -259, correctly chose a positive slip, and rode it
-        # through zero to +301 at the flare door -- destroyed, 227 m off the
-        # centreline.  The direction was right and the absence of feedback
-        # was fatal.
-        #
-        # With the sign taken from the cross-track *now*, the same side force
-        # becomes a lateral control worth ~50 m/deg -- on a phase whose only
-        # other lateral authority, the S-turn, is pinned at its cap for half
-        # of every approach.  The deadband keeps it from chattering across
-        # the centreline, and the ramp below bounds how fast it reverses.
-        #
-        # **And the offset *now* is still the wrong quantity to steer on.**
-        # Nine flights an arm: the slip arm's door cross-track ran a median
-        # 26 m against the defaults' 14, and its two wrecks were its two
-        # highest-slip flights, arriving at +151 and +176.  A sign chosen
-        # from the present offset is a control that *arrives* at the
-        # centreline -- it is still leaning when it gets there, and 50 m per
-        # degree carries it straight through.  The capture one level up has
-        # never reasoned this way: it asks what rate puts the offset at zero
-        # *when the flare starts*.  So does this now -- the side comes from
-        # the cross-track predicted at the door, ``cross + rate * time``,
-        # with both terms published by the capture itself, so the two
-        # lateral authorities are solving the same problem instead of two
-        # different ones.  Degrades to the plain offset when the capture is
-        # off (the fields are zero) or on the first tick.
-        cross = getattr(command, "cross", 0.0)
-        if getattr(cfg, "SLIP_CROSS_PREDICT", True):
-            cross = (cross + float(getattr(command, "cross_rate", 0.0))
-                     * float(getattr(command, "cross_time", 0.0)))
-        band = float(getattr(cfg, "SLIP_CROSS_DEADBAND_M", 25.0))
-        if cross > band:
-            self._slip_side = -1.0
-        elif cross < -band:
-            self._slip_side = 1.0
-        elif self._slip_side == 0.0:
-            self._slip_side = -1.0 if cross > 0.0 else 1.0
-        side = self._slip_side
-        return self._slip_ramp(snap,
-                               side * vec.clamp(wanted, 0.0,
-                                                max(0.0, ceiling)))
-
-    def _slip_ramp(self, snap, wanted):
-        """Move the commanded slip toward ``wanted`` at a bounded rate."""
-        rate = float(getattr(self.cfg, "SLIP_RATE_DEG_S", 5.0))
-        now = snap.ut if snap is not None else 0.0
-        dt = 0.0 if self._slip_ut is None else max(0.0, now - self._slip_ut)
-        self._slip_ut = now
-        # **No elapsed time, no movement.**  The first version fell back to
-        # an unbounded step when ``dt`` was zero -- which is the first tick of
-        # every APPROACH, so the law opened with the one thing it exists to
-        # prevent: 20 degrees of yaw in a single command.  Caught by the
-        # ramp's own test before it flew.
-        step = rate * dt
-        delta = vec.clamp(wanted - self._slip_held, -step, step)
-        self._slip_held += delta
-        return self._slip_held
 
     def aim_runway(self, alpha_deg, snap):
         """Point the nose **down the runway**, pitched up by ``alpha``.
@@ -1708,64 +1423,9 @@ class Autopilot:
         schedule is read -- the pitch axis's own response time, the figure
         ``attitude_settle_s`` already carries (derived, and retuned with the
         air by ``ATTITUDE_PITCH_AIR``).  0 with the flag off."""
-        if not (getattr(self.cfg, "FLARE_LEAD_BY_RESPONSE", False)
-                or getattr(self.cfg, "FLARE_DOOR_FROM_SCHEDULE", False)):
+        if (not getattr(self.cfg, 'FLARE_DOOR_FROM_SCHEDULE', False)):
             return 0.0
         return max(0.0, float(getattr(self, "attitude_settle_s", 0.0) or 0.0))
-
-    def flare_load_loop(self, alpha_deg, needed, elapsed, cap, snap):
-        """The flare's angle, capped -- and under ``FLARE_LOAD_LOOP``
-        offset until the load the vehicle *makes* is the load asked for.
-
-        The sink loop in ``guidance.flare`` asks for a load and the table
-        turns it into an angle; the table is untrimmed and the pitch axis
-        lags, so on the shuttle the flare made a third of the lift it asked
-        for (LOG3832).  ``delta`` integrates the load error, converted to
-        degrees by the table's own slope and spread over the pitch axis's
-        response time -- so a wrong slope changes only how fast it
-        converges, never where.  The commanded load is the ramped one
-        (``FLARE_RAMP_S``), and the integral does not wind up against the
-        cap.  Reset at every flare entry."""
-        if not getattr(self.cfg, "FLARE_LOAD_LOOP", False):
-            return min(alpha_deg, cap)
-        if getattr(self, "_flare_loop_since", None) != self.flare_since:
-            self._flare_loop_since = self.flare_since
-            self._flare_delta = 0.0
-            self._flare_loop_ut = None
-        delta = self._flare_delta
-        last = self._flare_loop_ut
-        self._flare_loop_ut = snap.ut
-        dt = 0.0 if last is None else max(0.0, snap.ut - last)
-        q = snap.dynamic_pressure
-        speed = vec.norm(snap.velocity)
-        weight = max(1.0, snap.mass * self.surface_gravity)
-        lift_dir = trajectory.lift_direction(snap.position, snap.velocity, 0.0)
-        if dt > 0.0 and q > self.cfg.LIFT_LOOP_MIN_Q_PA and lift_dir:
-            try:
-                altitude = (vec.norm(snap.position)
-                            - self.env.equatorial_radius)
-                made = vec.dot(snap.aero_force, lift_dir) / weight
-                ramp = vec.clamp(elapsed / max(0.1, self.cfg.FLARE_RAMP_S),
-                                 0.0, 1.0)
-                asked = 1.0 + ramp * (needed - 1.0)
-                hi, _ = self.env.coefficients(alpha_deg + delta + 1.0,
-                                              speed, altitude)
-                lo, _ = self.env.coefficients(alpha_deg + delta - 1.0,
-                                              speed, altitude)
-                per_deg = max(0.02, 0.5 * (hi - lo) * q / weight)
-                settle = max(self.cfg.FLARE_LOAD_LOOP_T_MIN_S,
-                             getattr(self.env, "pitch_response_s", None)
-                             or 2.0)
-                error = asked - made
-                if not (error > 0.0 and alpha_deg + delta >= cap):
-                    delta += error / per_deg * dt / settle
-                delta = vec.clamp(delta, self.cfg.FLARE_LOAD_LOOP_MIN_DEG,
-                                  self.cfg.FLARE_LOAD_LOOP_MAX_DEG)
-                self._flare_load_made = made
-            except Exception:                           # noqa: BLE001
-                pass
-        self._flare_delta = delta
-        return min(alpha_deg + delta, cap)
 
     def flare_tail_cap(self, snap):
         """The flare's alpha cap from the tail: the tail angle, plus -- under
@@ -1802,42 +1462,6 @@ class Autopilot:
             angle = self.cfg.TAIL_ANGLE_FALLBACK_DEG
         return max(1.0, self.cfg.TAIL_STRIKE_MARGIN * angle)
 
-    def cone_affordable(self, snap, height):
-        """Can the cone the vehicle would fly now be paid for from here?
-
-        **The same expression the cone exits on.**  ``guidance.hac`` already
-        computes ``needed`` -- the gate's altitude plus the circling path
-        still to fly over the ratio a turning descent achieves -- and
-        ``run_hac`` leaves when the height stops covering it.  Asking the
-        same question before entering costs one closed-form solve and makes
-        the two ends of the phase agree about what a flyable cone is.  They
-        did not, and the disagreement is measurable: over 57 flights
-        (``conesum.py``, logs/LOG26*-LOG274*), split by whether the planned
-        path was affordable at entry --
-
-            affordable      21 rolled out,  3 out of height
-            not affordable   9 rolled out, 24 out of height
-
-        -- and the unaffordable entries are the ones ``HAC_ALT_M`` fires,
-        at a mean entry height of 11359 against 12992 for the ones the
-        distance backstop fires.
-
-        ``None`` when the geometry cannot answer, so the caller falls back
-        to the altitude and distance tests rather than reading a failure as
-        a refusal.
-        """
-        try:
-            side = guidance.hac_side(self.env, self.cfg, self.end,
-                                     snap.position, snap.velocity)
-            command = guidance.hac(self.env, self.cfg, self.end,
-                                   snap.position, snap.velocity, snap.mass,
-                                   self.surface_gravity, height, side)
-        except Exception:                               # noqa: BLE001
-            return None
-        if command is None or getattr(command, "needed", None) is None:
-            return None
-        return height >= command.needed
-
     def entry_mass(self, snap):
         """The mass the entry will be flown at, not the one aboard now.
 
@@ -1855,10 +1479,7 @@ class Autopilot:
         """
         if not self.cfg.DRAIN:
             return snap.mass
-        dumped_at_entry = (getattr(self.cfg, "DRAIN_RESIDUAL", False)
-                           and float(getattr(self.cfg,
-                                             "DRAIN_RESIDUAL_MACH_MAX",
-                                             0.0)) <= 0.0)
+        dumped_at_entry = ((False))
         if (getattr(self.cfg, "DRAIN_BEFORE_BURN", False)
                 and not dumped_at_entry):
             # (A residual drain gated on Mach keeps the reserve for the
@@ -1931,34 +1552,6 @@ class Autopilot:
         if self.commanded_alpha <= self.cfg.ALPHA_MIN_DEG + 1.0:
             return
         error = self.commanded_alpha - snap.alpha_actual
-        if getattr(self.cfg, "ALPHA_RATCHET_ON_SWING", False):
-            # ``ALPHA_RATCHET_ON_SWING``: the swing, not only the deficit.
-            # Transonically the shuttle wallows 3-66 deg about a 41 deg
-            # command (LOG4338) on a lift curve that is flat from 24 to 50 --
-            # the lift plateau says nothing about it, and a signed deficit
-            # test never fires on an overshoot.  The mean |error| over
-            # ``ALPHA_SWING_TAU_S`` past the tolerance backs the ceiling off
-            # from what was commanded; the give-back above returns it once
-            # the vehicle tracks.
-            k = min(1.0, dt / max(1.0, self.cfg.ALPHA_SWING_TAU_S))
-            prev = getattr(self, "_alpha_swing", 0.0)
-            self._alpha_swing = prev + k * (abs(error) - prev)
-            last = getattr(self, "_alpha_swing_ut", None)
-            if (self._alpha_swing > self.cfg.ALPHA_SWING_TOL_DEG
-                    and (last is None
-                         or snap.ut - last >= self.cfg.ALPHA_SWING_TAU_S)):
-                floor = max(self.cfg.ALPHA_CEILING_FLOOR_DEG,
-                            self.cfg.GLIDE_ALPHA_DEG)
-                new = max(floor, min(self.alpha_ceiling, self.commanded_alpha)
-                          - self.cfg.ALPHA_BACKOFF_DEG)
-                if new < self.alpha_ceiling - 0.01:
-                    self._alpha_swing_ut = snap.ut
-                    self.alpha_ceiling = new
-                    self.logbook.event(
-                        snap.ut, "alpha ceiling -> %.1f deg on swing: mean "
-                                 "|error| %.1f deg about %.1f (q=%.0f Pa)"
-                        % (new, self._alpha_swing, self.commanded_alpha,
-                           snap.dynamic_pressure))
         if (abs(error) < 0.5 * self.cfg.ALPHA_TRACK_TOLERANCE_DEG
                 and self.alpha_ceiling < self._glide_top(snap)):
             # Tracking comfortably, so give the authority back.  Without this
@@ -2113,9 +1706,6 @@ class Autopilot:
             self.brake_fraction = 0.0
             self.control.brakes = False
             return
-        if getattr(self.cfg, "ROLLOUT_BRAKE_FULL_ON_CONTACT", False):
-            self.brakes_full(snap)
-            return
         if not getattr(self.cfg, "BRAKE_FOR_DISTANCE", False):
             self.control.brakes = speed < self.cfg.BRAKE_SPEED_M_S
             self.brake_fraction = 1.0 if self.control.brakes else 0.0
@@ -2137,34 +1727,6 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 continue
 
-    def rollout_steer_pid(self, snap, cross, drift, limit):
-        """``ROLLOUT_STEER_PID``: nosewheel steering on where the vehicle is
-        *going*, not only where it is.
-
-        P on the cross-track ``cross`` (m), D on ``drift`` -- the velocity's
-        component across the runway (m/s), measured rather than differenced
-        -- which is the same as steering on the position
-        ``ROLLOUT_STEER_LOOKAHEAD_S`` ahead, and a small clamped I on the
-        cross-track for a steady bias (uneven brakes).  The integral only
-        accumulates while the output is inside its limit, so it cannot wind
-        up against the speed taper.  Returns the command, clamped."""
-        cfg = self.cfg
-        last = getattr(self, "_steer_ut", None)
-        dt = 0.0 if last is None else max(0.0, snap.ut - last)
-        self._steer_ut = snap.ut
-        integral = getattr(self, "_steer_int", 0.0)
-        kp = float(cfg.ROLLOUT_STEER_GAIN)
-        kd = kp * float(cfg.ROLLOUT_STEER_LOOKAHEAD_S)
-        ki = float(cfg.ROLLOUT_STEER_KI)
-        raw = self.steer_sign() * (kp * cross + kd * drift + ki * integral)
-        cmd = vec.clamp(raw, -limit, limit)
-        if dt > 0.0 and abs(raw) < limit:
-            imax = float(cfg.ROLLOUT_STEER_I_MAX) / max(1e-9, ki)
-            integral = vec.clamp(integral + cross * dt, -imax, imax)
-        self._steer_int = integral
-        self.rollout_drift = drift
-        return cmd
-
     def steer_sign(self):
         """The sign that turns "metres off the centreline" into a
         ``wheel_steering`` command *back toward* it.
@@ -2180,25 +1742,6 @@ class Autopilot:
         ``ROLLOUT_STEER_ACROSS_IS_RIGHT`` is the fix; off, the old sign."""
         return (1.0 if getattr(self.cfg, "ROLLOUT_STEER_ACROSS_IS_RIGHT",
                                False) else -1.0)
-
-    def brakes_full(self, snap):
-        """``ROLLOUT_BRAKE_FULL_ON_CONTACT``: every main wheel at
-        ``WHEEL_BRAKE_MAX_PCT``, the nose wheel untouched (it is not in
-        ``_brake_wheels``), master switch on.  Logged once."""
-        self.brake_fraction = 1.0
-        self.control.brakes = True
-        for wheel in self._brake_wheels():
-            try:
-                wheel.brakes = float(self.cfg.WHEEL_BRAKE_MAX_PCT)
-            except Exception:                           # noqa: BLE001
-                continue
-        if not getattr(self, "_brakes_full_logged", False):
-            self._brakes_full_logged = True
-            self.logbook.event(
-                snap.ut if snap is not None else 0.0,
-                "brakes full on contact: %d main wheel(s) at %.0f%%, nose "
-                "wheel none" % (len(self._brake_wheels()),
-                                float(self.cfg.WHEEL_BRAKE_MAX_PCT)))
 
     def main_wheels_grounded(self):
         """True once any braked (main) wheel reports ``grounded``, False
@@ -2500,24 +2043,7 @@ class Autopilot:
         if self._reaction_wheels_released:
             return
         self._reaction_wheels_released = True
-        if not getattr(self.cfg, "ROLLOUT_REACTION_WHEELS_OFF", False):
-            return
-        try:
-            wheels = list(self.vessel.parts.reaction_wheels)
-        except Exception:                               # noqa: BLE001
-            return
-        stopped = 0
-        for wheel in wheels:
-            try:
-                if wheel.active:
-                    wheel.active = False
-                    stopped += 1
-            except Exception:                           # noqa: BLE001
-                continue
-        if stopped:
-            self.logbook.event(ut, "reaction wheels off for the rollout (%d "
-                                   "of %d) -- the gear owns the attitude now"
-                               % (stopped, len(wheels)))
+        return
 
     def _brake_wheels(self):
         """Every wheel that brakes except the frontmost, found once.
@@ -2760,73 +2286,6 @@ class Autopilot:
         self.logbook.event(0.0, "drain valves found: %d" % (len(found),))
         return found
 
-    def enable_control_surfaces(self):
-        """Turn on control axes the craft file left disabled.
-
-        **A no-op on both craft on disk, and the premise below is false.**
-        Every surface on ``qs_plane`` and ``qs_shuttle`` already has pitch,
-        yaw and roll enabled; the claim that the old craft had "0 of 6" came
-        from reading KSP's ``ignorePitch`` flag as if it were an enable, and
-        from ``available_torque`` on the pad at q=0.  Kept because a craft
-        that really does ship with an axis off is still worth configuring,
-        and the log line says how many it changed (on these two: none).
-
-        **The authority that is not merely uncommanded but switched off.**
-        The craft this autopilot grew up on carries six control surfaces with
-        ``pitch_enabled``, ``yaw_enabled`` and ``roll_enabled`` all False --
-        it flies the whole entry on 15 kN m of reaction wheel with its
-        aerodynamic surfaces acting as fixed fins.  That one fact is behind
-        most of this project's attitude history: the alpha ceiling collapsing
-        at about 900 Pa (a wheel is a *constant* torque against a moment that
-        grows with ``q``, so it always loses eventually), RCS buying three
-        kilometres for an entire tank, and ``ALPHA_TRACKING`` delivering 0.74
-        of what is commanded.
-
-        The autopilot already configures the vehicle it is handed -- it locks
-        engine gimbals so it can engage, disables the nose brake, sets deploy
-        angles, drives the drain valves.  This is the same act.
-
-        **It changes the plant, and every number measured on the old plant
-        with it** (failure 23): the stall, ``ALPHA_TRACKING``,
-        ``HOLDABLE_PROBE``, ``MARGIN``, the attitude tune.  So it is off by
-        default, it is flown as an arm, and it is read with ``oscsum.py`` and
-        ``alphaceiling.py`` rather than assumed to be an improvement.
-
-        **And it opens a hole in the derived attitude tune.**
-        ``available_torque`` reports reaction wheels and RCS and *never*
-        aerodynamic surfaces, so ``slew_time_scale`` still sees a wheels-only
-        vehicle and asks for a tune far slower than one with working elevons
-        needs.  Flying this with ``ATTITUDE_TIME_TO_PEAK_DERIVED`` is
-        therefore two changes, not one.
-        """
-        if not getattr(self.cfg, "ENABLE_CONTROL_SURFACES", False):
-            return 0
-        changed, total = 0, 0
-        try:
-            surfaces = list(self.vessel.parts.control_surfaces)
-        except Exception:                               # noqa: BLE001
-            self.logbook.event(0.0, "control surfaces: none to enable")
-            return 0
-        for cs in surfaces:
-            total += 1
-            was = []
-            try:
-                for axis in ("pitch", "yaw", "roll"):
-                    if not getattr(cs, axis + "_enabled"):
-                        setattr(cs, axis + "_enabled", True)
-                        was.append(axis)
-            except Exception:                           # noqa: BLE001
-                continue
-            if was:
-                changed += 1
-                self.logbook.event(0.0, "control surface: %s -- enabled %s"
-                                   % (cs.part.title, ", ".join(was)))
-        self.logbook.event(
-            0.0, "control surfaces: %d of %d had axes switched on "
-                 "(the plant is now different from every constant measured "
-                 "on it)" % (changed, total))
-        return changed
-
     def _surface_records(self):
         """Every control surface as a plain record, in the vessel frame.
 
@@ -2879,32 +2338,6 @@ class Autopilot:
         self.logbook.event(0.0, armed.describe())
         return armed if armed.any else None
 
-    def _find_flap_brake_unused(self):
-        """Canards against elevons: the opposed-flap brake, armed by geometry.
-
-        See ``airbrake.find_opposed_flaps``.  The forward group deflects by
-        ``ratio`` times the aft group's angle so the pitching moments cancel,
-        and what is left is drag and a *spoiled* lift -- which is the
-        currency the split rudder got wrong and sideslip got right.
-
-        Arms once, logs either way, and refuses rather than guesses.
-        """
-        if not (getattr(self.cfg, "AIRBRAKE_OPPOSED_FLAPS", False)
-                or float(getattr(self.cfg, "FLAP_BRAKE_PROBE_DEG", 0.0))):
-            return None
-        records = self._surface_records()
-        if records is None:
-            return None
-        # ``vessel.reference_frame``'s origin *is* the centre of mass, so
-        # the positions already carry the arms and the split is at zero.
-        com_y = 0.0
-        forward, aft, ratio, reason = airbrake_mod.find_opposed_flaps(
-            records, com_y, self.cfg)
-        self.logbook.event(0.0, reason)
-        if forward is None:
-            return None
-        return (forward, aft, ratio)
-
     def _deploy_surface(self, surface, angle, out):
         """One surface's ``Deploy Angle`` and deployed state, or False."""
         try:
@@ -2944,117 +2377,6 @@ class Autopilot:
             return None
         lift = vec.unit(vec.project_out(dorsal, d))
         return vec.dot(force, lift) / q, vec.dot(torque, right) / q
-
-    def _probe_wrench_full(self, altitude, speed, alpha_deg):
-        """``(dClA, dCdA, pitch, roll, yaw)`` per q at a synthetic state --
-        ``_probe_wrench`` plus drag and the two lateral moments, which the
-        drag brake must hold as well as pitch."""
-        env = self.env
-        nose, dorsal = env._axes()
-        if nose is None:
-            return None
-        rot = tuple(self.vessel.rotation(env.frame))
-        right = vec.unit(self.conn.space_center.transform_direction(
-            (1.0, 0.0, 0.0), self.vessel.reference_frame, env.frame))
-        up = vec.unit(self.vessel.position(env.frame))
-        pos = tuple(vec.scale(up, env.equatorial_radius + altitude))
-        a = math.radians(alpha_deg)
-        d = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
-                             vec.scale(dorsal, math.sin(a))))
-        force, torque = env.flight.simulate_aerodynamic_wrench_at(
-            env.body, pos, tuple(vec.scale(d, speed)), rot,
-            (0.0, 0.0, 0.0), self.conn.space_center.ut)
-        q = 0.5 * env.density(altitude) * speed * speed
-        if q <= 0.0:
-            return None
-        lift = vec.unit(vec.project_out(dorsal, d))
-        return (vec.dot(force, lift) / q, -vec.dot(force, d) / q,
-                vec.dot(torque, right) / q, vec.dot(torque, nose) / q,
-                vec.dot(torque, dorsal) / q)
-
-    def probe_surfaces_full(self, snap, records, theta, settle, alt, speed,
-                            alpha):
-        """Every mirrored surface on its own, both ways, full wrench:
-        ``(samples, base)``, or ``(None, None)``.  Once per flight, shared
-        by the drag brake and the envelope.  Never an unpaired surface --
-        see ``airbrake.mirrored_only``."""
-        if getattr(self, "_full_probe", None) is not None:
-            return self._full_probe
-        records, dropped = airbrake_mod.mirrored_only(records, self.cfg)
-        if dropped:
-            self.logbook.event(snap.ut, "drag brake: never deflects %s -- no "
-                                        "mirror twin" % ", ".join(
-                                            r.title for r in dropped))
-        if not records:
-            self._full_probe = (None, None)
-            return self._full_probe
-        base = self._probe_wrench_full(alt, speed, alpha)
-        samples = []
-        for r in records:
-            got = []
-            for angle in (theta, -theta):
-                self._deploy_surface(r, angle, True)
-                self.settle_game(settle)
-                w = self._probe_wrench_full(alt, speed, alpha)
-                got.append(tuple(wi - bi for wi, bi in zip(w, base)))
-            self._deploy_surface(r, 0.0, False)
-            self.settle_game(settle)
-            samples.append((r, got[0], got[1]))
-            self.logbook.event(
-                snap.ut, "drag probe %s: +%.0f dClA %+.2f dCdA %+.2f "
-                         "pitch %+.1f roll %+.1f yaw %+.1f | -: %+.2f %+.2f "
-                         "%+.1f %+.1f %+.1f"
-                % ((r.title, theta) + got[0] + got[1]))
-        self._full_probe = (samples, base)
-        return self._full_probe
-
-    def measure_envelope(self, snap, records, theta, settle, alt, speed,
-                         alpha):
-        """``AIRBRAKE_ENVELOPE``: the lift/drag spectrum from the full
-        probes, its corners **deployed and measured in the game** at the
-        angles they will fly, the model rescaled to what was measured, and
-        refused outright if any corner's moments do not cancel."""
-        samples, base = self.probe_surfaces_full(snap, records, theta, settle,
-                                                 alt, speed, alpha)
-        if not samples:
-            return None
-        full = float(self.cfg.ROLLOUT_SPOILER_DEG) / theta
-        frac = float(self.cfg.AIRBRAKE_MEASURE_MOMENT_FRAC)
-        env = airbrake_mod.SurfaceEnvelope(
-            samples, theta,
-            full * (1.0 - float(self.cfg.ENVELOPE_CONTROL_MARGIN)),
-            moment_frac=frac)
-        predicted, measured = [], []
-        for name, point in sorted(env.corners(usable=full).items()):
-            if point is None or not point.any:
-                continue
-            for r, angle in point.angles():
-                self._deploy_surface(r, angle, True)
-            self.settle_game(settle)
-            w = self._probe_wrench_full(alt, speed, alpha)
-            for r, _ in point.angles():
-                self._deploy_surface(r, 0.0, False)
-            self.settle_game(settle)
-            got = tuple(wi - bi for wi, bi in zip(w, base))
-            predicted.append((point.lift, point.drag))
-            measured.append((got[0], got[1]))
-            worst = max(abs(got[2 + k]) / max(1e-6, env._limits[k])
-                        for k in range(3))
-            self.logbook.event(
-                snap.ut, "envelope corner %s: predicted dClA %+.1f dCdA "
-                         "%+.1f, measured %+.1f %+.1f, moments %+.1f %+.1f "
-                         "%+.1f (x%.1f of the limit)"
-                % ((name, point.lift, point.drag, got[0], got[1]) + got[2:]
-                   + (worst,)))
-            if worst > float(self.cfg.ENVELOPE_MOMENT_SLACK):
-                self.logbook.event(snap.ut, "envelope REFUSED: corner %s "
-                                            "pitches/rolls/yaws x%.1f of the "
-                                            "limit" % (name, worst))
-                return None
-        env.calibrate(predicted, measured)
-        self.logbook.event(snap.ut, env.describe())
-        self._envelope_full = full
-        return env
 
     def request_surfaces(self, snap, d_lift, d_drag, why, ground=False):
         """Ask the envelope for a lift/drag change (``ClA``, ``CdA``, game
@@ -3129,102 +2451,6 @@ class Autopilot:
         self.request_surfaces(snap, d_lift, d_drag,
                               "approach, speed %.0f/%.0f, h %.0f"
                               % (speed or 0.0, target or 0.0, height))
-
-    def measure_drag_brake(self, snap, records, theta, settle, alt, speed,
-                           alpha):
-        """``AIRBRAKE_MAX_DRAG``: ``airbrake.choose_max_drag_set`` picks each
-        surface's deflection from the full probes; the set is deployed and
-        measured before it is armed.  Refused (and the spoiler kept) if the
-        game's moments do not cancel.
-        """
-        samples, base = self.probe_surfaces_full(snap, records, theta, settle,
-                                                 alt, speed, alpha)
-        if not samples:
-            return None
-        frac = float(self.cfg.AIRBRAKE_MEASURE_MOMENT_FRAC)
-        ground = airbrake_mod.choose_max_drag_set(
-            samples, lift_weight=float(self.cfg.AIRBRAKE_DRAG_LIFT_WEIGHT),
-            moment_frac=frac)
-        self.air_drag_brake = None
-        if getattr(self.cfg, "AIRBRAKE_DRAG_IN_FLIGHT", False):
-            air = airbrake_mod.choose_max_drag_set(
-                samples, lift_weight=0.0, moment_frac=frac,
-                lift_band=float(self.cfg.AIR_DRAG_LIFT_BAND))
-            self.air_drag_brake = self._verify_drag_set(
-                snap, air, samples, base, theta, settle, alt, speed, alpha,
-                frac, in_flight=True)
-        return self._verify_drag_set(snap, ground, samples, base, theta,
-                                     settle, alt, speed, alpha, frac)
-
-    def _verify_drag_set(self, snap, chosen, samples, base, theta, settle,
-                         alt, speed, alpha, frac, in_flight=False):
-        """Deploy a chosen set, read the game's wrench, arm it or refuse."""
-        self.logbook.event(snap.ut, chosen.describe())
-        if not chosen.any:
-            return None
-        for r, m in chosen.surfaces():
-            self._deploy_surface(r, theta * m, True)
-        self.settle_game(settle)
-        w = self._probe_wrench_full(alt, speed, alpha)
-        for r, _ in chosen.surfaces():
-            self._deploy_surface(r, 0.0, False)
-        self.settle_game(settle)
-        got = tuple(wi - bi for wi, bi in zip(w, base))
-        if in_flight:
-            band = float(self.cfg.AIR_DRAG_LIFT_BAND) * max(
-                max(abs(p[0]), abs(m[0])) for _, p, m in samples)
-            ok = abs(got[0]) <= 2.0 * band and got[1] > 0.0
-        else:
-            ok = got[0] <= 0.0 and got[1] > 0.0
-        for axis in (2, 3, 4):
-            largest = max(max(abs(p[axis]), abs(m[axis]))
-                          for _, p, m in samples)
-            ok = ok and abs(got[axis]) <= frac * largest * 2.0
-        self.logbook.event(
-            snap.ut, "%s (measured) verified at %.0f deg: dClA %+.2f "
-                     "dCdA %+.2f pitch %+.1f roll %+.1f yaw %+.1f "
-                     "(predicted dCdA %+.2f) -- %s"
-            % ((chosen.kind, theta) + got + (getattr(chosen, "drag", 0.0),
-                                 "armed" if ok else "REFUSED")))
-        return chosen if ok else None
-
-    def check_spoiler_lateral(self, snap, spoiler, theta, settle, alt,
-                              speed, alpha, limit):
-        """``AIRBRAKE_SPOILER_LATERAL_CHECK``: the spoiler's roll and yaw.
-
-        The set is chosen and verified on lift and pitch only
-        (``_probe_wrench``), and on the ground its elevons are the roll
-        control the autopilot no longer has.  Deploy it once more, read
-        the full wrench, and say whether roll and yaw sit inside the same
-        ``limit`` pitch is held to.  True when they do (or when the wrench
-        cannot be read -- a missing answer is not a refusal here, it is the
-        old behaviour, and it is logged as such)."""
-        try:
-            base = self._probe_wrench_full(alt, speed, alpha)
-            for r, m in spoiler.surfaces():
-                self._deploy_surface(r, theta * m, True)
-            self.settle_game(settle)
-            w = self._probe_wrench_full(alt, speed, alpha)
-            for r, _ in spoiler.surfaces():
-                self._deploy_surface(r, 0.0, False)
-            self.settle_game(settle)
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(snap.ut, "spoiler lateral: probe failed (%s)"
-                                        " -- not checked" % exc)
-            return True
-        if base is None or w is None:
-            self.logbook.event(snap.ut, "spoiler lateral: no wrench -- not "
-                                        "checked")
-            return True
-        roll, yaw = w[3] - base[3], w[4] - base[4]
-        ok = abs(roll) <= limit and abs(yaw) <= limit
-        self.logbook.event(
-            snap.ut, "spoiler lateral at %.0f deg: roll %+.2f yaw %+.2f "
-                     "(pitch tolerance %.2f) -- %s" % (
-                theta, roll, yaw, limit,
-                "fit for the ground" if ok
-                else "NOT deployed on the ground"))
-        return ok
 
     def measure_flap_brake(self, snap):
         """``AIRBRAKE_MEASURED``: find the lift-spoiling sense of every
@@ -3339,14 +2565,7 @@ class Autopilot:
             spoiler = verify(airbrake_mod.choose_measured_brake(samples),
                              -1.0)
             self._spoiler_lateral_ok = True
-            if spoiler is not None and getattr(
-                    self.cfg, "AIRBRAKE_SPOILER_LATERAL_CHECK", False):
-                self._spoiler_lateral_ok = self.check_spoiler_lateral(
-                    snap, spoiler, theta, settle, alt, speed, alpha, limit)
             flaps = None
-            if getattr(self.cfg, "AIRBRAKE_FLAPS", False):
-                flaps = verify(airbrake_mod.choose_measured_flaps(samples),
-                               +1.0)
         except Exception as exc:                        # noqa: BLE001
             self.flap_brake = None
             self.flap_set = None
@@ -3355,22 +2574,6 @@ class Autopilot:
             return
         self.flap_brake = spoiler
         self.flap_set = flaps
-        if getattr(self.cfg, "AIRBRAKE_ENVELOPE", False):
-            try:
-                self.envelope = self.measure_envelope(
-                    snap, records, theta, settle, alt, speed, alpha)
-            except Exception as exc:                    # noqa: BLE001
-                self.envelope = None
-                self.logbook.event(snap.ut, "envelope: probe failed (%s) "
-                                            "-- not armed" % exc)
-        if getattr(self.cfg, "AIRBRAKE_MAX_DRAG", False):
-            try:
-                self.drag_brake = self.measure_drag_brake(
-                    snap, records, theta, settle, alt, speed, alpha)
-            except Exception as exc:                    # noqa: BLE001
-                self.drag_brake = None
-                self.logbook.event(snap.ut, "drag brake: probe failed (%s) "
-                                            "-- not armed" % exc)
 
     def deploy_set(self, surface_set, out, base_deg=None):
         """Deploy or stow any measured set (spoiler or flaps)."""
@@ -3416,31 +2619,6 @@ class Autopilot:
         if done:
             self.flap_brake_out = bool(out)
         return bool(done)
-
-    def _find_airbrake(self):
-        """The split-rudder pair, found by geometry, and logged either way.
-
-        Runs once, at construction, because arming a brake is a statement
-        about the *vehicle* and not about a phase.  ``spaceplane.airbrake``
-        holds the rule and the reasons; everything here is the adapter that
-        turns kRPC parts into the plain records it takes, and it is wrapped
-        because a craft with no control surfaces at all must fly exactly as
-        it does now rather than raise on the pad.
-
-        **It logs the refusal too.**  A brake that silently does not arm is
-        indistinguishable in the logs from a brake that armed and did
-        nothing, and those two want opposite next steps.
-        """
-        if not getattr(self.cfg, "AIRBRAKE_SPLIT_RUDDER", False):
-            return None
-        records = self._surface_records()
-        if records is None:
-            return None
-        pair, reason = airbrake_mod.find_split_rudder(records, self.cfg)
-        self.logbook.event(0.0, reason)
-        if pair is not None:
-            self._set_airbrake_angle(pair)
-        return pair
 
     def _set_airbrake_angle(self, pair):
         """Ask for ``AIRBRAKE_DEPLOY_ANGLE_DEG``, and say whether it took.
@@ -3600,36 +2778,6 @@ class Autopilot:
                            % ("out" if wanted else "in", height,
                               self.airbrake.last_reason))
 
-    def command_air_drag(self, snap, command, height):
-        """``AIRBRAKE_DRAG_IN_FLIGHT``: the air drag brake against speed over
-        the approach's target, at a height on profile.  See
-        ``airbrake.drag_brake_fraction``.  Yields to the spoiler."""
-        brake = getattr(self, "air_drag_brake", None)
-        if (brake is None or getattr(self, "envelope", None) is not None
-                or not getattr(self.cfg, "AIRBRAKE_DRAG_IN_FLIGHT", False)):
-            return
-        if getattr(self, "flap_brake_out", False) or self.airbrake.extended:
-            return                      # the spoiler has the surfaces
-        frac = airbrake_mod.drag_brake_fraction(
-            self.cfg, getattr(command, "speed", None),
-            getattr(command, "target_speed", None),
-            getattr(command, "excess", 0.0), height, self.air_drag_out > 0.0)
-        if frac == self.air_drag_out:
-            return
-        if frac <= 0.0:
-            self.stow_air_drag(snap, "speed %.0f against %.0f"
-                               % (command.speed, command.target_speed))
-            return
-        biggest = max(abs(m) for _, m in brake.surfaces())
-        full = float(self.cfg.ROLLOUT_SPOILER_DEG) / biggest
-        if self.deploy_set(brake, True, base_deg=full * frac):
-            self.logbook.event(
-                snap.ut, "air drag brake x%.2f at %.0f m: speed %.0f against "
-                         "%.0f, excess %+.0f m"
-                % (frac, height, command.speed, command.target_speed,
-                   getattr(command, "excess", 0.0)))
-            self.air_drag_out = frac
-
     def stow_air_drag(self, snap, why):
         brake = getattr(self, "air_drag_brake", None)
         if brake is None or not getattr(self, "air_drag_out", 0.0):
@@ -3652,9 +2800,8 @@ class Autopilot:
         ``available_control_surface_torque`` against the thrusters' pitch
         torque, remembered from whenever it was last readable.
         """
-        always = getattr(self.cfg, "RCS_PITCH_OFF_IN_GLIDE", False)
-        if (not (always or getattr(self.cfg, "RCS_PITCH_BY_AUTHORITY", False))
-                or self.state not in (GLIDE, HAC)):
+        always = False
+        if ((not always or self.state not in (GLIDE, HAC))):
             return
         if always:
             # ``RCS_PITCH_OFF_IN_GLIDE``: no comparison, off from the first
@@ -3741,25 +2888,7 @@ class Autopilot:
         limit to 48-58 within 4 s (LOG4352, 4354, 4375, 4379, 4383...).
         ``RCS_PITCH_BY_AUTHORITY`` never saw it: it latches at q ~1650.
         """
-        if not (getattr(self.cfg, "RCS_IGNORE_ALPHA_SHORTFALL", False)
-                and self.state in (GLIDE, HAC) and snap is not None):
-            return self.pointing_error(snap)
-        frame = getattr(self, "_aim_frame", None)
-        if frame is None or vec.norm(snap.nose) < 0.5:
-            return self.pointing_error(snap)
-        vhat, tilt, lift, slip, alpha_cmd = frame
-        nose = vec.unit(snap.nose)
-        flown = math.degrees(math.atan2(vec.dot(nose, tilt),
-                                        vec.dot(nose, vhat)))
-        if flown >= alpha_cmd:
-            return self.pointing_error(snap)
-        a = math.radians(flown)
-        ref = vec.unit(vec.add(vec.scale(vhat, math.cos(a)),
-                               vec.scale(tilt, math.sin(a))))
-        if abs(slip) > 0.01:
-            ref = vec.unit(vec.quat_rotate(
-                vec.quat_axis_angle(lift, math.radians(slip)), ref))
-        return vec.angle_between(nose, ref)
+        return self.pointing_error(snap)
 
     def pointing_error(self, snap):
         """Degrees between the commanded nose and the real one, or -1."""
@@ -4051,9 +3180,6 @@ class Autopilot:
             # a warped tick covers twenty seconds of orbit.
             self.set_warp(True)    # release
             return
-        if self.drain_to_burn(snap, dv):
-            # Drained to this burn; re-solve at the mass it now has.
-            return
         self.deorbit_dv = dv
         self.deorbit_since = snap.ut
         self._thrust_limit_pending = True
@@ -4064,27 +3190,6 @@ class Autopilot:
         # on ``deorbit_aim``'s fitted formula, which is what the flag being
         # off means.
         self.deorbit_aim_m = None
-        if getattr(self.cfg, "ENTRY_MAX_DRAG", False):
-            # **Where the entry stops braking, solved with the burn.**  The
-            # broadside entry has no lift, so it has neither range authority
-            # nor steering; the switch speed is what it has instead, and it
-            # has to be known *now* because the arc it produces is the arc
-            # this burn was chosen against.  Hung on ``env`` for the same
-            # reason ``holdable`` and ``spending`` are: every propagation
-            # from here on has to fly the same law the vehicle does, and a
-            # limit nobody passed on is a limit nobody flies.
-            switch = guidance.drag_switch_for(
-                self.env, snap.position,
-                vec.add(snap.velocity,
-                        vec.scale(vec.unit(snap.velocity), -dv)),
-                self.entry_mass(snap), self.cfg, self.end,
-                self.env.runway.gate(self.end), reach)
-            self.env.drag_until = switch
-            self.logbook.event(
-                snap.ut, "drag switch: %s (%.0f km to run; the entry is flown "
-                         "for drag above that speed and for lift below)"
-                % ("unsolved -- the entry flies for lift" if switch is None
-                   else "broadside until %.0f m/s" % switch, reach / 1000.0))
         if self.cfg.DEORBIT_AUTHORITY_WINDOW:
             self.deorbit_aim_m = guidance.deorbit_chosen_aim(
                 self.env, snap.position, snap.velocity,
@@ -4366,7 +3471,6 @@ class Autopilot:
         if (self.deorbit_ticks >= int(self.cfg.DEORBIT_EXIT_TICKS)
                 or self.deorbit_done):
             self.set_throttle(0.0)
-            self.shutdown_engines()
             self.restore_thrust_limits()
             self.cutoff_state = (snap.ut, snap.position, snap.velocity,
                                  snap.mass)
@@ -4719,50 +3823,6 @@ class Autopilot:
         needed *= float(getattr(self.cfg, "DRAIN_RESERVE_MARGIN", 1.0))
         return max(floor, needed / per_unit)
 
-    def drain_to_burn(self, snap, dv):
-        """``DRAIN_TO_BURN``: keep only what *this* burn needs.  True if it
-        drained (the caller re-solves at the new mass on the next tick).
-
-        The pre-burn drain has to run before any burn can be solved, so it
-        keeps ``DRAIN_RESERVE_DV_MS`` -- a budget for the worst orbit -- and
-        on the shuttle 1.9 t of it rode to the runway in the nose tank
-        (LOG4135: 30.1 t at the wheels, 27.5 dry, for a 26 m/s burn).  Once
-        the burn is solved the need is known, so drain to it: the solved dv
-        times ``DRAIN_TO_BURN_MARGIN`` plus ``DRAIN_TO_BURN_EXTRA_MS``, by
-        the rocket equation at the reported Isp.  Once per flight, in vacuum,
-        before the burn's closed loop starts -- so the valve's impulse is
-        upstream of everything that measures (failure 61), as before.
-        """
-        if (not getattr(self.cfg, "DRAIN_TO_BURN", False)
-                or not self.cfg.DRAIN or not self.drain_modules
-                or getattr(self, "_drained_to_burn", False)):
-            return False
-        self._drained_to_burn = True
-        isp = self.vehicle_vacuum_isp(snap)
-        if isp <= 0.0:
-            self.logbook.event(snap.ut, "drain to burn: no Isp -- keeping "
-                                        "the pre-burn reserve")
-            return False
-        per_unit = float(self.cfg.RESOURCE_KG_PER_UNIT)
-        aboard = snap.liquid_fuel + snap.oxidizer
-        dry = max(1.0, snap.mass - aboard * per_unit)
-        budget = (dv * float(self.cfg.DRAIN_TO_BURN_MARGIN)
-                  + float(self.cfg.DRAIN_TO_BURN_EXTRA_MS))
-        keep = dry * (math.exp(budget / (isp * 9.80665)) - 1.0) / per_unit
-        if aboard <= keep + 1.0:
-            return False
-        opened = sum(1 for module in self.drain_modules
-                     if self._open_one_drain(module))
-        self.logbook.event(snap.ut, "drain to burn: dv %.1f m/s solved, "
-                                    "keeping %.0f m/s (%.1f units) of %.1f "
-                                    "aboard, %d of %d valves"
-                           % (dv, budget, keep, aboard, opened,
-                              len(self.drain_modules)))
-        if not opened:
-            return False
-        self.drain_to_reserve(snap, keep)
-        return True
-
     def drain_to_reserve(self, snap, floor):
         """Hold the valve open until the tank is down to ``floor``, watching.
 
@@ -4952,189 +4012,6 @@ class Autopilot:
                            % ("closed" if closed == total
                               else "WOULD NOT CLOSE", closed, total))
 
-    def drain_residual(self, snap):
-        """``DRAIN_RESIDUAL``: dump the burn's leftover once the glide flies.
-
-        Opened on the first GLIDE tick, closed when the tank reads empty, and
-        not blocking: the glide's guidance re-propagates from the mass it
-        reads every tick, so it answers for the valve as the valve runs.  See
-        ``Config.DRAIN_RESIDUAL`` for why here and not in the coast.
-        """
-        if getattr(self.cfg, "PREDICT_RESIDUAL_DUMP", False):
-            # What the predictor should expect to leave the vehicle, and
-            # where (``trajectory.predict``); cleared once it has gone.
-            pending = (getattr(self.cfg, "DRAIN_RESIDUAL", False)
-                       and self.cfg.DRAIN and self.residual_drain != "done"
-                       and self.state in (DEORBIT, COAST, GLIDE))
-            fuel = snap.liquid_fuel + snap.oxidizer
-            keep = float(getattr(self.cfg, "DRAIN_RESIDUAL_KEEP_UNITS", 0.0))
-            self.env.residual_dump = (
-                (float(self.cfg.DRAIN_RESIDUAL_MACH_MAX),
-                 max(0.0, fuel - keep) * float(self.cfg.RESOURCE_KG_PER_UNIT))
-                if pending and fuel > 1.0 else None)
-        if (not getattr(self.cfg, "DRAIN_RESIDUAL", False)
-                or not self.cfg.DRAIN or self.residual_drain == "done"
-                or self.state not in (GLIDE, HAC, APPROACH)):
-            return
-        remaining = snap.liquid_fuel + snap.oxidizer
-        if (self.residual_drain in (None, "trim")
-                and getattr(self.cfg, "DRAIN_TRIM_LOOP", False)):
-            if self.drain_trim(snap, remaining):
-                return
-            if self.residual_drain == "trim":
-                self.residual_drain = None
-        if self.residual_drain is None:
-            if not self.drain_modules or remaining <= float(
-                    self.cfg.DRAIN_REMAINING_UNITS):
-                self.residual_drain = "done"
-                return
-            # **Not while it is ballast.**  See ``DRAIN_RESIDUAL_MACH_MAX``.
-            top = float(getattr(self.cfg, "DRAIN_RESIDUAL_MACH_MAX", 0.0))
-            if top > 0.0:
-                try:
-                    mach = self.env.mach(vec.norm(snap.velocity),
-                                         vec.norm(snap.position)
-                                         - self.env.equatorial_radius)
-                except Exception:                           # noqa: BLE001
-                    return
-                if mach is None or mach > top:
-                    return
-            opened = sum(1 for module in self.drain_modules
-                         if self._open_one_drain(module))
-            self.residual_drain = "open" if opened else "done"
-            self.residual_since = snap.ut
-            keep = float(getattr(self.cfg, "DRAIN_RESIDUAL_KEEP_UNITS", 0.0))
-            if opened and keep > 0.0 and remaining > keep:
-                # **Part of it is trim, not ballast.**  Watched down to
-                # ``keep`` in this tick (the valve outruns the loop); the
-                # rest goes at ``DRAIN_RESIDUAL_FINAL_MACH``.
-                self.drain_to_reserve(snap, keep)
-                self.residual_drain = "kept"
-            self.logbook.event(snap.ut, "residual drain %s (%d of %d valves) "
-                                        "in %s: %.1f units, mass %.3f t, "
-                                        "%.0f m/s"
-                               % ("opened" if opened else "COULD NOT OPEN",
-                                  opened, len(self.drain_modules),
-                                  self.state, remaining,
-                                  snap.mass / 1000.0,
-                                  vec.norm(snap.velocity)))
-            return
-        if self.residual_drain == "kept":
-            # ``DRAIN_RESIDUAL_KEEP_UNITS``: the trim ballast goes at the
-            # final Mach, where the alpha it trims is no longer flown.
-            final = float(getattr(self.cfg, "DRAIN_RESIDUAL_FINAL_MACH", 0.8))
-            try:
-                mach = self.env.mach(vec.norm(snap.velocity),
-                                     vec.norm(snap.position)
-                                     - self.env.equatorial_radius)
-            except Exception:                           # noqa: BLE001
-                return
-            if mach is None or mach > final:
-                return
-            opened = sum(1 for module in self.drain_modules
-                         if self._open_one_drain(module))
-            self.residual_drain = "open"
-            self.logbook.event(snap.ut, "residual drain: the kept %.1f units "
-                                        "go at Mach %.2f (%d valves)"
-                               % (remaining, mach, opened))
-            return
-        if remaining <= float(self.cfg.DRAIN_REMAINING_UNITS):
-            self.stop_drain(snap)
-            self.residual_drain = "done"
-            self.logbook.event(snap.ut, "residual drain empty in %.1f s: "
-                                        "%.1f units left, mass %.3f t"
-                               % (snap.ut - self.residual_since, remaining,
-                                  snap.mass / 1000.0))
-
-    def fuel_trim(self, snap):
-        """``FUEL_TRIM_TRANSFER``: move the CG with the fuel, keep the fuel.
-
-        Between ``FUEL_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX``, in
-        GLIDE: the smoothed alpha error (flown minus commanded) beyond the
-        deadband pumps LF/Ox between the frontmost and the aftmost tanks --
-        forward while over-rotating (tail-heavy), aft while short (nose-
-        heavy).  Fronts and backs are measured along the vessel's own axis,
-        as in ``fuel_to_nose``.  Not blocking; a step waits for the last.
-        """
-        if (not getattr(self.cfg, "FUEL_TRIM_TRANSFER", False)
-                or self.state != GLIDE):
-            return
-        try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
-        except Exception:                               # noqa: BLE001
-            return
-        if (mach is None or mach > float(self.cfg.FUEL_TRIM_MACH_TOP)
-                or mach <= float(self.cfg.DRAIN_RESIDUAL_MACH_MAX)):
-            return
-        commanded = float(getattr(self, "commanded_alpha", 0.0) or 0.0)
-        achieved = getattr(snap, "alpha_actual", None)
-        if achieved is None or math.isnan(achieved):
-            return
-        over = float(achieved) - commanded
-        # **The mean over the interval, not a short filter.**  Trim is the
-        # offset that persists; a bank reversal swings alpha +-15 deg for a
-        # few seconds (LOG4333/4334 stepped both ways inside ten seconds).
-        acc = getattr(self, "_fuel_trim_acc", None) or [0.0, 0]
-        acc[0] += over
-        acc[1] += 1
-        self._fuel_trim_acc = acc
-        last = getattr(self, "_fuel_trim_ut", None)
-        if last is None:
-            self._fuel_trim_ut = snap.ut
-            return
-        if snap.ut - last < float(self.cfg.FUEL_TRIM_INTERVAL_S):
-            return
-        moving = getattr(self, "_fuel_trim_moves", None) or []
-        try:
-            if moving and not all(m.complete for m in moving):
-                return
-        except Exception:                               # noqa: BLE001
-            pass
-        err = acc[0] / max(1, acc[1])
-        self._fuel_trim_err = err
-        self._fuel_trim_acc = [0.0, 0]
-        self._fuel_trim_ut = snap.ut
-        band = float(self.cfg.FUEL_TRIM_DEADBAND_DEG)
-        if abs(err) <= band:
-            return
-        units = min(float(self.cfg.FUEL_TRIM_STEP_MAX_UNITS),
-                    float(self.cfg.FUEL_TRIM_UNITS_PER_DEG) * abs(err))
-        tanks = self._fuel_trim_tanks(snap)
-        if not tanks:
-            return
-        fuel = {"LiquidFuel": snap.liquid_fuel, "Oxidizer": snap.oxidizer}
-        aboard = sum(fuel.values())
-        transfer = self.conn.space_center.ResourceTransfer
-        moves, moved = [], []
-        for name, (front, back) in tanks.items():
-            if aboard <= 0.0:
-                break
-            src, dst = (back, front) if err > 0.0 else (front, back)
-            try:
-                have = src.resources.amount(name)
-                room = dst.resources.max(name) - dst.resources.amount(name)
-            except Exception:                           # noqa: BLE001
-                continue
-            # Each resource moves its share, so the mixture is kept.
-            amount = min(units * fuel.get(name, 0.0) / aboard, have, room)
-            if amount < 0.5:
-                continue
-            try:
-                moves.append(transfer.start(src, dst, name, amount))
-                moved.append("%s %.0f" % (name, amount))
-            except Exception as exc:                    # noqa: BLE001
-                self.logbook.event(snap.ut, "fuel trim: %s FAILED (%s)"
-                                   % (name, exc))
-        self._fuel_trim_moves = moves
-        self.logbook.event(snap.ut, "fuel trim: %+.1f deg %s %.1f at Mach "
-                                    "%.2f -> %s %s"
-                           % (err, "over" if err > 0 else "under",
-                              commanded, mach,
-                              "forward" if err > 0 else "aft",
-                              ", ".join(moved) or "nothing to move"))
-
     def _fuel_trim_tanks(self, snap):
         """``{resource: (frontmost tank, aftmost tank)}``, measured once."""
         got = getattr(self, "_fuel_trim_tank_cache", None)
@@ -5159,63 +4036,6 @@ class Autopilot:
             self.logbook.event(snap.ut, "fuel trim: FAILED (%s)" % exc)
         self._fuel_trim_tank_cache = got
         return got
-
-    def drain_trim(self, snap, remaining):
-        """``DRAIN_TRIM_LOOP``: trim the CG with the nose fuel.  True while
-        it owns the valves (the residual drain then waits).
-
-        Wet, the shuttle flies 2-20 deg *under* its commanded alpha below
-        Mach 3 (nose-heavy: no drag, arrives 13-19 km up, LOG4171); fully
-        drained it flies up to 19 *over* (tail-heavy: arrives short,
-        LOG4241).  So the fuel is let go a step at a time while the vehicle
-        is short of its command, and kept the moment it tracks -- the amount
-        is the vehicle's own answer, not a number fitted to one craft.
-        Between ``DRAIN_TRIM_MACH_TOP`` and ``DRAIN_RESIDUAL_MACH_MAX`` (the
-        hypersonic glide needs it all as ballast); the residual drain takes
-        whatever is left at its own Mach as before.
-        """
-        if self.state != GLIDE or not self.drain_modules:
-            return False
-        try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
-        except Exception:                               # noqa: BLE001
-            return False
-        if mach is None:
-            return False
-        if mach > float(self.cfg.DRAIN_TRIM_MACH_TOP):
-            return True             # still ballast: the residual drain waits
-        if mach <= float(self.cfg.DRAIN_RESIDUAL_MACH_MAX):
-            return False            # the residual drain's turn
-        self.residual_drain = "trim"
-        commanded = float(getattr(self, "commanded_alpha", 0.0) or 0.0)
-        achieved = getattr(snap, "alpha_actual", None)
-        if achieved is None or math.isnan(achieved):
-            return True
-        short = commanded - float(achieved)
-        # Smoothed over a few ticks: one reversal transient is not trim.
-        prev = getattr(self, "_trim_short", None)
-        k = float(self.cfg.DRAIN_TRIM_SMOOTH)
-        self._trim_short = short if prev is None else prev + k * (short - prev)
-        last = getattr(self, "_trim_ut", None)
-        if last is not None and snap.ut - last < float(
-                self.cfg.DRAIN_TRIM_INTERVAL_S):
-            return True
-        floor = float(self.cfg.DRAIN_REMAINING_UNITS)
-        if (self._trim_short > float(self.cfg.DRAIN_TRIM_SHORT_DEG)
-                and remaining > floor + 1.0):
-            keep = max(floor, remaining - float(self.cfg.DRAIN_TRIM_STEP_UNITS))
-            opened = sum(1 for module in self.drain_modules
-                         if self._open_one_drain(module))
-            if opened:
-                self.drain_to_reserve(snap, keep)
-            self._trim_ut = snap.ut
-            self.logbook.event(snap.ut, "drain trim: %.1f deg short of %.1f "
-                                        "at Mach %.2f -> %.0f -> %.0f units"
-                               % (self._trim_short, commanded, mach,
-                                  remaining, keep))
-        return True
 
     def run_drain(self, snap):
         """Dump the propellant, and wait for it to actually be gone.
@@ -5387,45 +4207,6 @@ class Autopilot:
                 continue
         self._thrust_limits = []
 
-    def shutdown_engines(self):
-        """Stop the engine, rather than only asking it for nothing.
-
-        **A commanded throttle of zero is not a thrust of zero, and the
-        difference is the whole handover error.**  Measured across logs
-        2090-2101, the vehicle keeps losing energy after ``DEORBIT -> DRAIN``
-        -- an equivalent 2.3 m/s of extra retrograde dv on ``qs_plane`` and
-        8.9 on ``qs_plane_inc``, in vacuum, tight within each state.  At
-        13 m/s^2 that is under a second of full thrust, which is what an
-        engine's decay from a commanded cutoff looks like, and it scales the
-        way a fixed impulse does: the lighter vehicle gets the larger dv.
-
-        **Flown, and it is a null -- the engine was never the cause.**  With
-        ``thrust`` now streamed, ``Fn`` reads **0.0 kN on the first tick
-        after cutoff**, and the shutdown arm drifts -9.05 m/s against the
-        control's -8.97 and -9.36 on ``qs_plane_inc`` (LOG2111 against
-        LOG2109/2110).  The energy goes somewhere else, and the ``cutoff
-        drift`` line says when: entirely inside the DRAIN phase, with the
-        engine cold.  Kept, off, because it costs nothing and rules the
-        engine out by construction on any future vehicle.
-
-        Off by default: see ``DEORBIT_CUTOFF_SHUTDOWN``.
-        """
-        if not getattr(self.cfg, "DEORBIT_CUTOFF_SHUTDOWN", False):
-            return
-        stopped = 0
-        try:
-            engines = list(self.vessel.parts.engines)
-        except Exception:                               # noqa: BLE001
-            return
-        for engine in engines:
-            try:
-                if engine.active:
-                    engine.active = False
-                    stopped += 1
-            except Exception:                           # noqa: BLE001
-                continue
-        self.logbook.event(0.0, "engines shut down at cutoff: %d" % stopped)
-
     def log_cutoff_drift(self, snap):
         """What the vehicle did between the burn's cutoff and the coast.
 
@@ -5472,29 +4253,6 @@ class Autopilot:
                    along, radial, m0 / 1000.0, snap.mass / 1000.0))
         except Exception as exc:                            # noqa: BLE001
             self.logbook.event(snap.ut, "cutoff drift: failed (%r)" % (exc,))
-
-    def max_drag_alpha(self, snap):
-        """The hot entry's angle of attack, or ``None`` when it is not on.
-
-        One call into ``trajectory.max_drag_alpha`` so the control loop and
-        the propagator cannot drift apart -- the same reason the approach's
-        speed cap lives in ``trajectory`` and is called from both.  The
-        vehicle is asked for what ``Holdable`` says it holds, so the command
-        is never one the airframe has to argue with.
-        """
-        mach = None
-        speed = vec.norm(snap.velocity)
-        altitude = vec.norm(snap.position) - self.env.equatorial_radius
-        try:
-            sound = self.env.speed_of_sound(altitude)
-            if sound > 0.0:
-                mach = speed / sound
-        except Exception:                                   # noqa: BLE001
-            mach = None
-        return trajectory.max_drag_alpha(
-            self.cfg, snap.dynamic_pressure, mach,
-            getattr(self.env, "holdable", None), speed,
-            getattr(self.env, "drag_until", None))
 
     def roll_needs_the_flaps(self, snap):
         """``FLAP_BRAKE_YIELDS_TO_ROLL``: is the vehicle off its bank?
@@ -5654,11 +4412,6 @@ class Autopilot:
         # 1.4-3.2 km of arrest and stowed every deployment within 3-7 s
         # (LOG4052, 4065, 4067).
         nominal = 0.0
-        if getattr(self.cfg, "HAC_FLAP_ARREST_EXCESS", False):
-            ratio = airframe.cone_ld(self.env, self.cfg, vec.norm(snap.velocity),
-                                     height, snap.mass,
-                                     self.surface_gravity)
-            nominal = vec.norm(snap.velocity) / math.sqrt(1.0 + ratio * ratio)
         arrest = (max(0.0, sink * sink - nominal * nominal)
                   / (2.0 * max(0.1, self.cfg.HAC_FLAP_ARREST_G)
                      * self.surface_gravity))
@@ -5693,98 +4446,6 @@ class Autopilot:
                                % ("OUT" if out else "in", surplus, sink,
                                   arrest))
 
-    def fuel_to_nose(self, snap):
-        """``FUEL_TO_NOSE``: after the burn, pump what is left forward.
-
-        The user's rule (2026-09-30): the shuttle is stable hypersonically
-        because of the propellant in its nose (``DRAIN_RESIDUAL_MACH_MAX``,
-        ``cgProbe.py``), and it has tanks at both ends -- so whatever the
-        burn left is moved into the frontmost tanks that can hold it, once,
-        in vacuum, before anything aerodynamic depends on the balance.
-        Front is measured (largest position along the nose), not named.
-        Internal, so no impulse; ``DRAIN_RESIDUAL`` dumps it at Mach 0.8.
-        Blocks until the transfers complete, bounded by
-        ``FUEL_TO_NOSE_TIMEOUT_S`` of wall time.
-        """
-        if (not getattr(self.cfg, "FUEL_TO_NOSE", False)
-                or getattr(self, "_fuel_moved", False)):
-            return
-        self._fuel_moved = True
-        try:
-            frame = self.vessel.reference_frame
-            forward = self.vessel.direction(frame)
-            parts = list(self.vessel.parts.all)
-            station = {p: vec.dot(p.position(frame), forward) for p in parts}
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(snap.ut, "fuel to nose: FAILED (%s)" % exc)
-            return
-        transfer = self.conn.space_center.ResourceTransfer
-        moves = []
-        for name in self.cfg.FUEL_TO_NOSE_RESOURCES:
-            tanks = []
-            for part in parts:
-                try:
-                    cap = part.resources.max(name)
-                    if cap > 0.0:
-                        tanks.append([part, part.resources.amount(name), cap])
-                except Exception:                       # noqa: BLE001
-                    continue
-            tanks.sort(key=lambda tank: -station[tank[0]])
-            # Fill from the front, taking from the back.
-            front, back = 0, len(tanks) - 1
-            while front < back:
-                dest, source = tanks[front], tanks[back]
-                room = dest[2] - dest[1]
-                if room <= 0.01:
-                    front += 1
-                    continue
-                if source[1] <= 0.01:
-                    back -= 1
-                    continue
-                amount = min(room, source[1])
-                try:
-                    moves.append((transfer.start(source[0], dest[0], name,
-                                                 amount), name, amount))
-                except Exception as exc:                # noqa: BLE001
-                    self.logbook.event(snap.ut, "fuel to nose: %s %s -> %s "
-                                       "FAILED (%s)" % (name,
-                                                        source[0].title,
-                                                        dest[0].title, exc))
-                    back -= 1
-                    continue
-                dest[1] += amount
-                source[1] -= amount
-        deadline = time.time() + float(self.cfg.FUEL_TO_NOSE_TIMEOUT_S)
-        while moves and time.time() < deadline:
-            try:
-                if all(move.complete for move, _, _ in moves):
-                    break
-            except Exception:                           # noqa: BLE001
-                break
-            time.sleep(0.1)
-        moved = {}
-        for move, name, _ in moves:
-            try:
-                moved[name] = moved.get(name, 0.0) + move.amount
-            except Exception:                           # noqa: BLE001
-                pass
-        where = []
-        for name in self.cfg.FUEL_TO_NOSE_RESOURCES:
-            for part in sorted(parts, key=lambda p: -station[p]):
-                try:
-                    amount = part.resources.amount(name)
-                except Exception:                       # noqa: BLE001
-                    continue
-                if amount > 0.5:
-                    where.append("%s %.0f in %s at %+.1f m"
-                                 % (name, amount, part.title, station[part]))
-        self.logbook.event(snap.ut, "fuel to nose: %d transfer(s), moved %s; "
-                                    "now %s"
-                           % (len(moves),
-                              ", ".join("%s %.0f" % kv for kv in moved.items())
-                              or "nothing",
-                              "; ".join(where) or "dry"))
-
     def run_coast(self, snap):
         """Fall to the entry interface, already in the entry attitude.
 
@@ -5801,21 +4462,12 @@ class Autopilot:
             self.interface_logged = True
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
-        self.fuel_to_nose(snap)
-        self.set_rcs(self.cfg.COAST_RCS, snap)
+        self.set_rcs(False, snap)
         self.coast_warp(snap)
         self.end = self.env.runway.choose(snap.position, snap.velocity)
         self.env.refresh(snap.ut)
         self.log_boundary_actual(snap)
         alpha = min(self.cfg.ENTRY_ALPHA_DEG, self.alpha_ceiling)
-        hot = self.max_drag_alpha(snap)
-        if hot is not None:
-            # **Broadside before the air arrives.**  The coast has minutes of
-            # nothing to do and an attitude established in vacuum costs
-            # nothing to hold, where one established in thickening air has to
-            # be fought for -- the same argument this phase already makes for
-            # 22 degrees, and it is worth more at 90.
-            alpha = hot
         # **Enter in the attitude the burn was aimed for.**  The deorbit
         # search and its stop test both propagate at
         # ``Steer(ENTRY_ALPHA_DEG, SOLVE_BANK_MIN_DEG)``, so coasting in at
@@ -6030,11 +4682,9 @@ class Autopilot:
         # long.  The *sign* still comes from the vehicle's actual lean, which
         # is what ``_bank_sign`` reads it for; only the magnitude is the
         # intent.
-        self.update_bank_duty(snap)
         bank0 = self.steer.bank
-        sweeping = self.sweeping(snap)
-        if (self.cfg.BANK_PREDICT_INTENT or sweeping) \
-                and self.bank_intent is not None:
+        sweeping = False
+        if (sweeping and self.bank_intent is not None):
             # Under the sweep always: the lean passes through zero by
             # design, and the solve's deadband hold would otherwise latch
             # whatever the sweep happened to be passing through.
@@ -6109,27 +4759,12 @@ class Autopilot:
             vec.norm(snap.position) - self.env.equatorial_radius,
             snap.mass, self.surface_gravity))
         alpha = min(alpha, self.alpha_ceiling)
-        hot = self.max_drag_alpha(snap)
-        if hot is not None:
-            # **The hot entry does not solve for range; it spends energy.**
-            # Applied after the ratchet and the speed laws on purpose: this
-            # command is already the ceiling the plant was measured at, so
-            # there is nothing for ``alpha_ceiling`` to protect against --
-            # and ``ALPHA_MAX_DEG``, which seeds that ratchet, is a lift-curve
-            # stop that has no business bounding a drag phase.  The rate
-            # limiter below still owns how fast the nose gets there.
-            alpha = vec.clamp(hot, self.steer.alpha
-                              - self.cfg.ALPHA_RATE_DEG_S * dt,
-                              self.steer.alpha
-                              + self.cfg.ALPHA_RATE_DEG_S * dt)
         # **A reversal has to outlast its own actuator.**  See
         # ``Config.BANK_REVERSAL_DWELL_S``: the relay switches faster than the
         # seventeen seconds a stop-to-stop slew takes, so the vehicle spends a
         # fifth of the entry mid-transit and the solve spends it reading a
         # wings-level prediction.
         wanted = steer.bank
-        if self.cfg.GLIDE_SINGLE_REVERSAL:
-            wanted = self.single_reversal(snap, alpha, wanted)
         side = 1.0 if wanted >= 0.0 else -1.0
         if self.bank_side is None:
             self.bank_side, self.bank_reversed_ut = side, snap.ut
@@ -6171,32 +4806,6 @@ class Autopilot:
                         and snap.ut - (self.bank_reversed_ut or -1e9) >= dwell):
                     self.bank_side, self.bank_reversed_ut = side, snap.ut
                 wanted = self.bank_side * abs(wanted)
-        # **Hold a scheduled lean while the prediction is worthless.**  The
-        # solve nulls a predicted miss 1500 km away, and above about Mach 4
-        # the vehicle has almost no authority over that miss but enormous
-        # leverage on its own energy: bank is what sets how fast it comes
-        # down, and how fast it comes down sets how much speed the thin air
-        # takes.  Measured over sixteen flights from one byte-identical
-        # save, the speed at 45 km spans 41 m/s and predicts the arrival at
-        # r=+0.97 -- and the *mean bank above 45 km* spans 14.6 to 43.6
-        # degrees.  The commanded lean up there is the whole scatter.
-        #
-        # So the magnitude is scheduled rather than solved until the air is
-        # thick enough for the solve to mean something; the *sign* is still
-        # the cross-track's, because that costs nothing and the cone absorbs
-        # whatever cross-track is left.  A repeatable bias is worth more than
-        # an unbiased scatter: one can be nulled with a number, the other
-        # cannot be nulled at all.
-        if self.cfg.GLIDE_UPPER_HOLD:
-            try:
-                mach = self.env.mach(vec.norm(snap.velocity),
-                                     vec.norm(snap.position)
-                                     - self.env.equatorial_radius)
-            except Exception:                               # noqa: BLE001
-                mach = None
-            if mach is not None and mach > self.cfg.GLIDE_UPPER_UNTIL_MACH:
-                side = 1.0 if wanted >= 0.0 else -1.0
-                wanted = side * self.cfg.GLIDE_UPPER_BANK_DEG
         # **And the lean has to be gone by the gate.**  Bank is how the glide
         # spends surplus range and it is also the one thing the approach
         # cannot inherit: see ``guidance.align_bank_cap`` and
@@ -6274,10 +4883,7 @@ class Autopilot:
             # which asks whether the circle the airframe can hold fits the
             # one the cone may fly.  ``None`` means the derivation is off
             # and the Mach constant is still the veto.
-            derived = guidance.hac_enterable(
-                self.cfg, speed, self.surface_gravity)
-            can_turn = (mach <= self.cfg.HAC_ENTRY_MACH if derived is None
-                        else derived)
+            can_turn = mach <= self.cfg.HAC_ENTRY_MACH
             # **Entered when it can pay for itself, not at an altitude.**
             # See ``cone_affordable``.  ``HAC_ENTRY_DIST_M`` stays as the
             # backstop it was written to be -- an arrival flat enough to
@@ -6291,9 +4897,7 @@ class Autopilot:
             # against the cone's 1.49, so gliding on buys affordability
             # faster than it spends height.  A cone that cannot pay now can
             # pay later; one entered anyway never can.
-            afford = (self.cone_affordable(snap, height)
-                      if getattr(self.cfg, "HAC_ENTRY_AFFORDABLE", False)
-                      else None)
+            afford = ((None))
             if afford is None:
                 reached = (height <= self.cfg.HAC_ALT_M
                            or distance <= self.cfg.HAC_ENTRY_DIST_M)
@@ -6510,48 +5114,6 @@ class Autopilot:
         self.logbook.event(snap.ut, "hac ladder (m %.2ft, stall %.1f): %s"
                            % (snap.mass / 1000.0, stall, " | ".join(bits)))
 
-    def update_bank_duty(self, snap):
-        """How much more vertical lift the reversals are really buying.
-
-        Two time-averages over the same window: the ``cos`` of the bank the
-        vehicle was *commanded* -- which is rate-limited, so it passes through
-        zero on every reversal -- over the ``cos`` of the lean the solve
-        *intended* to hold.  Sitting on the stops the two are the same and the
-        ratio is 1.0.  Reversing, the numerator is lifted by every slew and
-        the ratio is the duty cycle, which is the quantity the propagation
-        has always wanted and never had.
-
-        Exponentially weighted rather than a window, so it needs no history
-        buffer, and hung on ``env`` for the reason ``holdable`` is: every
-        propagation already carries ``env``, and the sixteen ``Steer``
-        objects the search builds cannot each remember to pass it.
-
-        Floored at 1.0: a reversal can only ever *add* vertical lift relative
-        to holding the lean, so a ratio below one is noise and believing it
-        would make the prediction short for no reason.
-        """
-        if not getattr(self.cfg, "GLIDE_BANK_DUTY_ON", False):
-            return
-        previous = self._bank_duty_ut
-        self._bank_duty_ut = snap.ut
-        intent = getattr(self, "bank_wanted", None)
-        if intent is None:
-            intent = self.steer.bank
-        actual = math.cos(math.radians(self.steer.bank))
-        meant = math.cos(math.radians(intent))
-        if previous is None:
-            self._bank_cos_num, self._bank_cos_den = actual, meant
-            return
-        dt = max(0.0, snap.ut - previous)
-        tau = max(1.0, float(self.cfg.GLIDE_BANK_DUTY_TAU_S))
-        w = 1.0 - math.exp(-dt / tau)
-        self._bank_cos_num += w * (actual - self._bank_cos_num)
-        self._bank_cos_den += w * (meant - self._bank_cos_den)
-        if self._bank_cos_den > 1e-3:
-            self.env.bank_cos_duty = vec.clamp(
-                self._bank_cos_num / self._bank_cos_den,
-                1.0, float(self.cfg.GLIDE_BANK_DUTY_MAX))
-
     def report_landing_airframe(self, snap):
         """The airframe reading that the landing constants answer to.
 
@@ -6590,14 +5152,13 @@ class Autopilot:
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.scurve_half_period_s()),
-            heading_lead=self.approach_heading_lead(snap),
+            heading_lead=0.0,
             roll_lag_s=self.roll_lag_s())
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
                                       self.env)
         alpha = min(command.alpha, self.alpha_ceiling)
-        alpha = self.spoiler_lift_hold(alpha, snap)
         bank = self.approach_bank(snap, command.bank, height, trigger, sink)
         self.steer = Steer(alpha=alpha, bank=bank)
         self.aim(alpha, bank, snap)
@@ -6608,54 +5169,12 @@ class Autopilot:
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
         self.command_airbrake(snap, command, height, trigger, sink)
-        self.command_air_drag(snap, command, height)
         if height <= trigger:
             self.flare_since = snap.ut
             self.enter(FLARE, snap.ut, "h=%.1f v=%.1f sink=%.1f cross=%+.0f"
                        % (height, command.speed, command.sink, command.cross))
         elif self.touched_down(snap, height):
             self.enter(ROLLOUT, snap.ut, "touchdown without a flare")
-
-    def spoiler_lift_hold(self, alpha_deg, snap):
-        """``AIRBRAKE_HOLD_LIFT``: while the spoiler is out, the alpha whose
-        table lift is the commanded alpha's plus the lift the set spoils.
-
-        The measured set takes ~1/3 of the lift (``cla=`` 80 out against 120
-        in, rot-brakeguard-1004), so at the commanded alpha it is a sink
-        maker, and ``AIRBRAKE_SINK_TRACK`` stows it within ~1.5 s, eight
-        times a flight (LOG5361).  Held at the same lift, what it spoils
-        becomes drag at the same load: a speedbrake.  The set's lift is the
-        one verified in vacuum at ``verified_deg``, scaled linearly to the
-        angle it is deployed at.  Capped at ``APPROACH_ALPHA_MAX_DEG`` and
-        the learned ceiling."""
-        brake = getattr(self, "flap_brake", None)
-        if (not getattr(self.cfg, "AIRBRAKE_HOLD_LIFT", False)
-                or not getattr(self, "flap_brake_out", False)
-                or brake is None
-                or getattr(brake, "verified_lift", None) is None):
-            self._lift_hold = 0.0
-            return alpha_deg
-        lost = -float(brake.verified_lift) * (
-            float(self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
-            / max(1.0, float(brake.verified_deg)))
-        if lost <= 0.0:
-            self._lift_hold = 0.0
-            return alpha_deg
-        speed = vec.norm(snap.velocity)
-        altitude = vec.norm(snap.position) - self.env.equatorial_radius
-        cap = min(float(self.cfg.APPROACH_ALPHA_MAX_DEG), self.alpha_ceiling)
-        try:
-            want = self.env.coefficients(alpha_deg, speed, altitude)[0] + lost
-            held = alpha_deg
-            step = float(self.cfg.AIRBRAKE_HOLD_LIFT_STEP_DEG)
-            while held < cap and self.env.coefficients(
-                    held, speed, altitude)[0] < want:
-                held = min(cap, held + step)
-        except Exception:                               # noqa: BLE001
-            held = alpha_deg
-        held = max(alpha_deg, held)
-        self._lift_hold = held - alpha_deg
-        return held
 
     def path_accel(self, snap):
         """dv/dt along the path, m/s^2, smoothed over
@@ -6674,57 +5193,11 @@ class Autopilot:
             1.0, dt / tau)
         return self._accel
 
-    def approach_heading_lead(self, snap):
-        """``APPROACH_HEADING_LEAD``: degrees the track will still turn if
-        the wings are levelled now -- the measured heading rate times half
-        the time to roll out at the measured roll rate (bank decays about
-        linearly, and so does the turn).  LOG4385: the capture called for
-        level at -0.3 deg with 27 deg of bank still on, and the track went
-        on to +21 before the wings came level; it touched down 20 deg off
-        the runway and rolled 416 m off the side.  0 when off."""
-        if not getattr(self.cfg, "APPROACH_HEADING_LEAD", False):
-            return 0.0
-        last = getattr(self, "command", None)
-        hdg = getattr(last, "heading_error", None) if last is not None \
-            else None
-        prev = getattr(self, "_lead_hdg", None)
-        self._lead_hdg = (snap.ut, hdg)
-        if hdg is None or prev is None or prev[1] is None:
-            return 0.0
-        dt = snap.ut - prev[0]
-        if dt <= 1e-3:
-            return getattr(self, "_lead_out", 0.0)
-        # The heading error read last tick already includes last tick's
-        # lead; difference the raw track instead.
-        raw = hdg - getattr(self, "_lead_out", 0.0)
-        raw_prev = getattr(self, "_lead_raw", None)
-        self._lead_raw = raw
-        if raw_prev is None:
-            return 0.0
-        rate = (raw - raw_prev) / dt
-        k = min(1.0, dt / max(0.1, self.cfg.APPROACH_HEADING_LEAD_TAU_S))
-        self._lead_rate = getattr(self, "_lead_rate", 0.0) + k * (
-            rate - getattr(self, "_lead_rate", 0.0))
-        bank = flown_bank(snap)
-        if math.isnan(bank):
-            return 0.0
-        unroll = abs(bank) / max(1.0, self.bank_rate())
-        self._lead_out = self._lead_rate * 0.5 * unroll
-        return self._lead_out
-
     def roll_lag_s(self):
         """Roll's ``time_to_peak`` as kRPC applies it, or ``None``."""
         peak = getattr(self, "_tuned_peak", None)
         try:
             return float(peak[1]) if peak else None
-        except (TypeError, IndexError, ValueError):
-            return None
-
-    def yaw_lag_s(self):
-        """Yaw's ``time_to_peak`` as kRPC applies it, or ``None``."""
-        peak = getattr(self, "_tuned_peak", None)
-        try:
-            return float(peak[2]) if peak else None
         except (TypeError, IndexError, ValueError):
             return None
 
@@ -6742,10 +5215,7 @@ class Autopilot:
         (``2 x APPROACH_BANK_MAX_DEG`` at the measured roll rate, plus
         roll's time to peak).  A half-cycle shorter than the reversal never
         reaches its bank.  Else ``APPROACH_SCURVE_PERIOD_S``."""
-        if not getattr(self.cfg, "APPROACH_SCURVE_PERIOD_BY_ROLL", False):
-            return self.cfg.APPROACH_SCURVE_PERIOD_S
-        return (float(self.cfg.APPROACH_SCURVE_PERIOD_FACTOR)
-                * self.roll_out_s(2.0 * self.cfg.APPROACH_BANK_MAX_DEG))
+        return self.cfg.APPROACH_SCURVE_PERIOD_S
 
     def approach_bank(self, snap, bank_deg, height, trigger, sink):
         """The approach's bank as commanded -- or, under
@@ -6772,40 +5242,6 @@ class Autopilot:
         self._app_bank, self._app_bank_ut = bank, snap.ut
         return bank
 
-    def flare_speed_budget(self, snap):
-        """``FLARE_SPEED_BUDGET``: game-seconds before the speed falls to
-        ``FLARE_SPEED_FLOOR_FACTOR`` x stall, at the deceleration measured
-        over about the last second; None when off or not yet measured.
-
-        Measured rather than modelled: the subsonic lift and drag tables
-        have been wrong by more than this margin before (failure 13), and
-        the deceleration is one subtraction of two speeds the loop already
-        has."""
-        if not getattr(self.cfg, "FLARE_SPEED_BUDGET", False):
-            return None
-        speed = vec.norm(snap.velocity)
-        last = getattr(self, "_flare_v_last", None)
-        self._flare_v_last = (snap.ut, speed)
-        decel = getattr(self, "_flare_decel", None)
-        if last is not None and snap.ut - last[0] > 1e-3:
-            dt = snap.ut - last[0]
-            rate = (last[1] - speed) / dt
-            share = min(1.0, dt / 1.0)
-            decel = rate if decel is None else decel + share * (rate - decel)
-            self._flare_decel = decel
-        if decel is None:
-            return None
-        stall = airframe.stall(self.env, self.cfg)
-        floor = float(self.cfg.FLARE_SPEED_FLOOR_FACTOR) * stall
-        budget = (speed - floor) / max(0.5, decel)
-        self.flare_budget = budget
-        if (budget < 0.0 and not getattr(self, "_flare_floor_logged", False)):
-            self._flare_floor_logged = True
-            self.logbook.event(snap.ut, "flare speed budget spent: %.1f m/s "
-                               "against a floor of %.1f, h %.1f"
-                               % (speed, floor, snap.landing_height))
-        return budget
-
     def run_flare(self, snap):
         """The last fifteen metres, which are their own problem."""
         # Nothing below the glide permits RCS; close what it left open.
@@ -6816,10 +5252,10 @@ class Autopilot:
         alpha, sink, needed = guidance.flare(
             self.env, self.cfg, snap.position, snap.velocity, snap.mass,
             self.surface_gravity, height, elapsed, self.flare_lead_s(),
-            float_s=self.flare_speed_budget(snap))
+            float_s=None)
         cap = min(self.alpha_ceiling, self.cfg.FLARE_ALPHA_DEG,
                   self.flare_tail_cap(snap))
-        alpha = self.flare_load_loop(alpha, needed, elapsed, cap, snap)
+        alpha = min(alpha, cap)
         # **Wings level at the arrival, not for the whole flare.**  A banked
         # arrival puts a wingtip down first and this airframe's wings are the
         # only thing holding it off the tarmac -- but the flare starts around
@@ -6835,7 +5271,7 @@ class Autopilot:
         # ``FLARE_BANK_MAX_DEG`` out (``roll_out_s``), not as heights fitted
         # on a 25 deg/s roll.  Time to the ground is ``height / sink``,
         # which overstates nothing: the flare only slows the sink.
-        lean_by_roll = getattr(self.cfg, "FLARE_LEAN_BY_ROLL", False)
+        lean_by_roll = False
         sink_now = max(1.0, -vec.dot(snap.velocity,
                                      vec.unit(snap.position)))
         to_ground = height / sink_now
@@ -6865,14 +5301,7 @@ class Autopilot:
         # comment assumed was 3 s; on the shuttle it is 19.7 -- but never
         # while the lean is still allowed, because ``aim_runway`` flies
         # wings level and would end the lateral correction early.
-        if getattr(self.cfg, "FLARE_ALIGN_BY_YAW", False) \
-                and self.yaw_lag_s() is not None:
-            align_s = self.yaw_lag_s()
-            if lean_by_roll:
-                align_s = min(align_s, level_s)
-            aligned = to_ground <= align_s
-        else:
-            aligned = height <= self.cfg.FLARE_ALIGN_ALT_M
+        aligned = height <= self.cfg.FLARE_ALIGN_ALT_M
         if aligned:
             self.aim_runway(alpha, snap)
         else:
@@ -6883,21 +5312,6 @@ class Autopilot:
         self.stow_air_drag(snap, "the flare")
         if getattr(self, "envelope", None) is not None:
             self.request_surfaces(snap, 0.0, 0.0, "the flare")
-        # **Flaps for the flare** (``AIRBRAKE_FLAPS``): the measured
-        # lift-adding set, the spoiler's surfaces in the other sense.  The
-        # shuttle's tail strikes at 9.1 deg, so the flare cannot buy its lift
-        # with angle of attack; the flare is closed-loop on sink and flies
-        # the extra lift without being told its size.  Never with the
-        # spoiler out -- they are the same surfaces.
-        if (getattr(self.cfg, "AIRBRAKE_FLAPS", False)
-                and getattr(self, "flap_set", None) is not None
-                and not getattr(self, "flaps_out", False)
-                and not getattr(self, "flap_brake_out", False)):
-            if self.deploy_set(self.flap_set, True):
-                self.flaps_out = True
-                self.logbook.event(snap.ut, "flaps out for the flare at "
-                                            "%.0f m, %.1f m/s"
-                                   % (height, vec.norm(snap.velocity)))
         # **Stowed for the flare, whatever the approach left it at.**  The
         # flare arrests the sink with the speed it arrives with, and the
         # brake's own height floor is above the flare door for the same
@@ -6912,11 +5326,6 @@ class Autopilot:
             self.logbook.event(snap.ut, "airbrake in for the flare")
         self.flare_sink = sink
         self.flare_needed = needed
-        # ``ROLLOUT_BRAKE_FULL_ON_CONTACT``: the tick the mains touch, not
-        # the tick the phase notices.
-        if (getattr(self.cfg, "ROLLOUT_BRAKE_FULL_ON_CONTACT", False)
-                and self.main_wheels_grounded()):
-            self.brakes_full(snap)
         self.ground_spoiler(snap)
         # ``ROLLOUT_ON_MAIN_CONTACT``: the mains reporting ``grounded`` is
         # the touchdown.  KSP's ``situation`` said "landed" 1.4 s later on
@@ -6963,7 +5372,7 @@ class Autopilot:
         self.release_reaction_wheels(snap.ut)
         self.ground_spoiler(snap, landed=True)
         self.apply_brakes(snap, speed)
-        ramped = getattr(self.cfg, "ROLLOUT_RAMP_FROM_ATTITUDE", False)
+        ramped = False
         if self.rollout_entry_alpha is None:
             # Whatever the flare finished holding -- the command ramps out of
             # *that*, not out of nothing.  ``self.steer`` is the last thing
@@ -7022,13 +5431,9 @@ class Autopilot:
         taper = min(1.0, (self.cfg.ROLLOUT_STEER_FULL_M_S
                           / max(1.0, speed)) ** 2)
         limit = self.cfg.ROLLOUT_STEER_MAX * taper
-        if getattr(self.cfg, "ROLLOUT_STEER_PID", False):
-            steer_cmd = self.rollout_steer_pid(
-                snap, cross, vec.dot(snap.velocity, across), limit)
-        else:
-            steer_cmd = vec.clamp(self.steer_sign()
-                                  * self.cfg.ROLLOUT_STEER_GAIN * cross,
-                                  -limit, limit)
+        steer_cmd = vec.clamp(self.steer_sign()
+                              * self.cfg.ROLLOUT_STEER_GAIN * cross,
+                              -limit, limit)
         self.rollout_steer_cmd = steer_cmd
         # The track's angle off the runway, signed like ``cross`` (positive
         # heading right): with the steering command beside it the log says
@@ -7084,7 +5489,7 @@ class Autopilot:
             trim = ""
         if trim:
             self.logbook.event(ut, "lift trim, measured (applied=%s): %s"
-                               % (bool(self.cfg.LIFT_TRIM_ON), trim))
+                               % (bool(False), trim))
 
     def run_stopped(self, snap):
         self.set_throttle(0.0)
@@ -7168,11 +5573,6 @@ class Autopilot:
             self.wheel_watch(snap)
             return
         trigger = self.cfg.GEAR_ALT_M
-        if (getattr(self.cfg, "GEAR_FOR_ENERGY", False)
-                and excess is not None and excess > 0.0):
-            frac = max(0.01, float(self.cfg.GEAR_DRAG_FRACTION))
-            trigger = min(float(self.cfg.GEAR_ALT_MAX_M),
-                          self.cfg.GEAR_ALT_M + excess / frac)
         if height > trigger:
             return
         self.control.gear = True
@@ -7301,8 +5701,6 @@ class Autopilot:
         self.measure_flap_brake(snap)
         self.retune_attitude(snap)
         self.rcs_pitch_gate(snap)
-        self.fuel_trim(snap)
-        self.drain_residual(snap)
         handler(snap)
         self.pitch_assist(snap)
         # **Wherever the table happens to become ready.**  The first version
@@ -7362,36 +5760,7 @@ class Autopilot:
         if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
             self.flare_pitch_p(snap, error)
             return
-        if not getattr(self.cfg, "PITCH_ASSIST", False):
-            return
-        trim = getattr(self, "_pitch_assist", 0.0)
-        last = getattr(self, "_pitch_assist_ut", None)
-        self._pitch_assist_ut = snap.ut
-        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
-        peak = getattr(self, "_tuned_peak", None)
-        tp = max(0.5, float(peak[0]) if peak else
-                 float(self.cfg.ATTITUDE_TIME_TO_PEAK_S))
-        if self.state in (HAC, APPROACH, FLARE):
-            if error is not None and dt > 0.0 and snap.dynamic_pressure > 50:
-                band = float(self.cfg.PITCH_ASSIST_DEADBAND_DEG)
-                past = math.copysign(max(0.0, abs(error) - band), error)
-                step = (vec.clamp(past, -20.0, 20.0) * dt
-                        / (float(self.cfg.PITCH_ASSIST_FULL_DEG) * tp))
-                total = float(getattr(snap, "pitch_input", 0.0) or 0.0)
-                if not (abs(total) >= 0.98 and step * total > 0.0):
-                    trim = vec.clamp(trim + step, -1.0, 1.0)
-        elif self.state == ROLLOUT:
-            trim -= trim * min(1.0, dt / tp)
-        else:
-            trim = 0.0
-        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
-                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
-            try:
-                self.control.pitch = trim
-                self._pitch_assist_sent = trim
-            except Exception:                           # noqa: BLE001
-                pass
-        self._pitch_assist = trim
+        return
 
     def flare_pitch_p(self, snap, error):
         """``FLARE_PITCH_P``: manual pitch input proportional to the pitch
@@ -7435,87 +5804,10 @@ class Autopilot:
         by half again since the last line, so the log shows the schedule
         without a line per second.
         """
-        self.osc_mitigation(snap)
-        if getattr(self.cfg, "ATTITUDE_PITCH_AIR", False) and not getattr(
-                self.cfg, "ATTITUDE_TIME_TO_PEAK_LIVE", False):
+        if getattr(self.cfg, 'ATTITUDE_PITCH_AIR', False):
             self.retune_pitch_air(snap)
             return
-        if not (getattr(self.cfg, "ATTITUDE_TIME_TO_PEAK_LIVE", False)
-                and self.autopilot_engaged):
-            return
-        if self.state in (STANDBY, ROLLOUT, STOPPED):
-            return
-        if (self._retune_ut is not None and snap.ut - self._retune_ut
-                < float(self.cfg.ATTITUDE_RETUNE_S)):
-            return
-        self._retune_ut = snap.ut
-        want = live_time_to_peak(self.cfg, self.vessel)
-        if want is None:
-            return
-        have = self._tuned_peak
-        frac = float(self.cfg.ATTITUDE_RETUNE_FRAC)
-        if have is not None and all(
-                abs(w - h) <= frac * h for w, h in zip(want, have)):
-            return
-        try:
-            self.autopilot.time_to_peak = want
-        except Exception:                               # noqa: BLE001
-            return
-        self._tuned_peak = want
-        self.attitude_settle_s = want[0]
-        logged = self._retune_logged
-        if logged is None or any(abs(w - h) > 0.5 * h
-                                 for w, h in zip(want, logged)):
-            self._retune_logged = want
-            self.logbook.event(
-                snap.ut, "attitude retune at q=%.0f Pa: time_to_peak "
-                         "(pitch %.1f, roll %.1f, yaw %.1f) s as applied"
-                % ((snap.dynamic_pressure,) + tuple(want)))
-
-    def osc_mitigation(self, snap):
-        """``ATTITUDE_OSC_MITIGATION_OFF``: from the cone on, switch off this
-        kRPC build's oscillation mitigations (bandwidth floor, feedforward,
-        output notch) and its pitch/yaw rate filter.
-
-        Its detector latches during the approach's swings -- pitch
-        ``oscillation_level`` 0.93, ``pitch_yaw_oscillation_latched`` True,
-        ``pitch_yaw_control_oscillation`` 0.41 on a vessel just landed -- and
-        a filtered pitch output is what every flare shows: 6.7-11.8 deg
-        commanded for six seconds, 2.1-2.6 flown, the input flat at +0.24
-        (LOG4927).  Set once; the detector's state at that moment is logged,
-        so the log says whether it was engaged."""
-        if (not getattr(self.cfg, "ATTITUDE_OSC_MITIGATION_OFF", False)
-                or getattr(self, "_osc_off_set", False)
-                or not self.autopilot_engaged
-                or self.state not in (HAC, APPROACH, FLARE)):
-            return
-        self._osc_off_set = True
-        ap = self.autopilot
-        try:
-            before = "level %s latched %s control %.2f" % (
-                tuple(round(x, 2) for x in ap.oscillation_level),
-                ap.pitch_yaw_oscillation_latched,
-                ap.pitch_yaw_control_oscillation)
-        except Exception:                               # noqa: BLE001
-            before = "unreadable"
-        try:
-            mode = self.conn.space_center.MitigationMode.off
-            ap.oscillation_bandwidth_floor_mode = mode
-            ap.oscillation_feedforward_mode = mode
-            ap.oscillation_output_filter_mode = mode
-            ap.pitch_yaw_rate_filter_mode = \
-                self.conn.space_center.RateFilterMode.off
-            after = "%s/%s/%s rate %s" % (
-                ap.oscillation_bandwidth_floor_mode,
-                ap.oscillation_feedforward_mode,
-                ap.oscillation_output_filter_mode,
-                ap.pitch_yaw_rate_filter_mode)
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(snap.ut, "oscillation mitigation not "
-                                        "switched off: %s" % exc)
-            return
-        self.logbook.event(snap.ut, "kRPC oscillation mitigation off (was "
-                                    "%s): %s" % (before, after))
+        return
 
     def retune_pitch_air(self, snap):
         """``ATTITUDE_PITCH_AIR``: pitch follows the authority the air adds.
@@ -7695,9 +5987,7 @@ class Autopilot:
             if self.rpc is not None:
                 self.rpc.tick(self.state, self.last_ut)
             snap = self.tick()
-            if self.state == DEORBIT and (
-                    self.deorbit_dv is not None
-                    or getattr(self.cfg, "DEORBIT_PACE_WHOLE_PHASE", False)):
+            if (self.state == DEORBIT and self.deorbit_dv is not None):
                 # Thrusting at 13 m/s^2, so a two-second tick is 26 m/s of dv
                 # -- a third of the whole burn -- between chances to stop.
                 #
@@ -8008,16 +6298,6 @@ def compact_line(state, snap, run):
     if state == GLIDE and getattr(run, "prediction", None) is not None:
         bits.append("slv=%s" % ("max" if getattr(run.prediction, "max_range",
                                                  False) else "ok "))
-    # **What the propagation believes the reversals are worth.**  1.00 is a
-    # vehicle sitting on its lean and a correction that is doing nothing;
-    # above it is the extra vertical lift the slews are really buying
-    # (``Autoland.update_bank_duty``).  Logged because without it a null on
-    # ``GLIDE_BANK_DUTY_ON`` cannot be told from the term never engaging --
-    # CLAUDE.md's "a knob that changes nothing may be disconnected, not
-    # powerless", and this file has cost the project a wrong headline finding
-    # for want of exactly this column before.
-    if state == GLIDE and getattr(run.cfg, "GLIDE_BANK_DUTY_ON", False):
-        bits.append("duty=%4.2f" % getattr(env, "bank_cos_duty", 1.0))
     if state == HAC and getattr(run, "hac_command", None) is not None:
         c = run.hac_command
         # The cone's whole state in five numbers: how much turn is left, the
@@ -8058,18 +6338,9 @@ def compact_line(state, snap, run):
                         % ("out" if brake.extended else
                            ("in " if run.airbrake_pair is not None else "-- "),
                            brake.saturated))
-            if getattr(run.cfg, "AIRBRAKE_HOLD_LIFT", False):
-                bits.append("hold=%+4.1f" % getattr(run, "_lift_hold", 0.0))
     if state == FLARE:
         bits.append("sink=%5.2f n=%4.2f" % (getattr(run, "flare_sink", 0.0),
                                             getattr(run, "flare_needed", 1.0)))
-        if getattr(run.cfg, "FLARE_SPEED_BUDGET", False):
-            budget = getattr(run, "flare_budget", None)
-            bits.append("bud=%5.1f fdc=%4.1f td=%3.1f" % (
-                float("nan") if budget is None else budget,
-                getattr(run, "_flare_decel", None) or float("nan"),
-                guidance.flare_touchdown_sink(
-                    run.cfg, snap.landing_height, budget)))
     if state in (ROLLOUT, STOPPED):
         # ``brk`` is the commanded brake fraction and ``left`` the tarmac the
         # law computed it from.  Both are printed beside ``dec=`` on purpose:

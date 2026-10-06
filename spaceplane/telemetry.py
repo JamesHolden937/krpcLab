@@ -282,18 +282,6 @@ class Telemetry:
             # negative one buys nothing a 180 degree bank does not), and what
             # this is compared against is the magnitude of that command.
             alpha_actual = vec.angle_between(nose, velocity)
-            # **"The command is always positive" is not "the vehicle is
-            # always positive."**  An unsigned angle reads a nose pitched
-            # five degrees *below* the airflow as five above, so on the
-            # shuttle's dive (LOG3035: kRPC -1.5, -4.7, -5.5 deg while this
-            # read +4.6..+7.4) a fifteen degree tracking error looked like
-            # five -- inside ``ALPHA_TRACK_TOLERANCE_DEG`` -- and nothing
-            # reacted.  kRPC's angle is signed and in the pitch plane.
-            if getattr(self.cfg, "ALPHA_SIGNED", False):
-                try:
-                    alpha_actual = float(self.krpc_aoa())
-                except Exception:                           # noqa: BLE001
-                    pass
 
         # The hottest part as a fraction of what it can take.  One number,
         # because that is the one that decides whether the vehicle arrives in

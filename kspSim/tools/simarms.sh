@@ -3,7 +3,7 @@
 #
 # One kspSim instance per (arm, flight): instance i flies arm i % n_arms, so
 # K flights of every arm run at once (n_arms * K instances).  Sets are
-# space-separated --set arguments, e.g. "HAC_WEAVE_MAX_DEG=75 DRAIN_RESIDUAL=True".
+# space-separated --set arguments, e.g. "HAC_WEAVE_MAX_DEG=75 HAC_WEAVE_HELD=True".
 # Output: one line per flight, prefixed "armN", as quickglide prints it.
 # Screening only (kspSim/CLAUDE.md): confirm on the farm.
 SAVE=$1; K=$2; shift 2

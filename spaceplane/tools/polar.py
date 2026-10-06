@@ -107,9 +107,8 @@ def main():
         return 1
     print("\nbest glide L/D %.2f at %d deg, %.1f m/s at sea level and %.0f kg"
           % (best[1], best[0], best[3], args.mass))
-    print("APPROACH_BEST_LD %.2f, APPROACH_GLIDE_DEG %.0f"
-          % (best[1], __import__("math").degrees(
-              __import__("math").atan(1.0 / best[1]))))
+    print("glide angle %.1f deg" % __import__("math").degrees(
+        __import__("math").atan(1.0 / best[1])))
     return 0
 
 

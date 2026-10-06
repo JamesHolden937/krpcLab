@@ -97,8 +97,7 @@ def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,
     short may not spend range on anything the lateral miss is not actually
     asking for -- and inside the deadband that floor is exactly zero.
     """
-    lean = cross_bank_floor(env, cfg, r, gate, flat.cross)
-    magnitude = min(lean, align_bank_cap(env, cfg, r, gate))
+    magnitude = min(0.0, align_bank_cap(env, cfg, r, gate))
     sign = _bank_sign(env, cfg, r, v, gate, bank0, flat.cross)
     bank = sign * magnitude
 
@@ -290,31 +289,8 @@ def _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     if not env.ready():
         return Steer(alpha=alpha0, bank=bank0, cfg=cfg, mass=mass), flat
     if not flat.reached:
-        # **"Did not reach" is not "fell short", and treating them alike
-        # sends the vehicle the wrong way.**  ``predict`` distinguishes them
-        # and says so: ``grounded`` ran out of sky, which is a shortfall;
-        # anything else that fails to reach ran out of *time*, which on a
-        # long shallow arc means the vehicle is enormously long.
-        #
-        # Measured, hooking this branch on ``not reached`` alone fired
-        # ``max_range`` at 40 km with the prediction reading **+68 km** and
-        # made a vehicle that was already 68 kilometres long fly further
-        # still (``logs/LOG1887``).  The shortfall case is handled where the
-        # evidence for it actually is -- in ``verified``, on the sign of the
-        # residual -- and this branch keeps the old hold.
-        if getattr(cfg, "SOLVE_MAX_RANGE_ON", False) and flat.grounded:
-            return max_range(env, r, v, mass, cfg, end, gate,
-                             alpha0, bank0, floor, top, flat)
         return Steer(alpha=alpha0, bank=bank0, cfg=cfg, mass=mass), flat
-    # The cross-track's own claim on the bank, taken *before* the range
-    # solve so the angle of attack is solved against the trajectory the
-    # vehicle will actually fly, rather than against one with no lean in it.
-    lean = cross_bank_floor(env, cfg, r, gate, m0[1])
-    bank0 = (1.0 if bank0 >= 0.0 else -1.0) * max(abs(bank0), lean)
-    if lean > 0.0:
-        _, flat, m0 = _fly(env, r, v, mass, cfg, end, gate, alpha0, bank0)
-        if not flat.reached:
-            return Steer(alpha=alpha0, bank=bank0, cfg=cfg, mass=mass), flat
+    bank0 = (1.0 if bank0 >= 0.0 else -1.0) * abs(bank0)
     # The glide aims past the gate by a reserve that decays to nothing --
     # deliberately long, spending the margin through the altitudes where
     # shedding is cheap.  See ``glide_reserve``.
@@ -324,7 +300,7 @@ def _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     else:
         alpha, magnitude = _solve_range(env, r, v, mass, cfg, end, gate,
                                         alpha0, bank0, m0, floor, top, target)
-    magnitude = max(magnitude, lean)
+    magnitude = max(magnitude, 0.0)
 
     sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
     bank = sign * magnitude
@@ -521,23 +497,6 @@ def cross_band(cfg, distance):
                      cfg.CROSS_DEADBAND_MIN_M, cfg.CROSS_DEADBAND_MAX_M)
 
 
-def cross_bank_floor(env, cfg, r, gate, cross):
-    """The bank magnitude the cross-track needs, whatever the range wants.
-
-    See ``Config.CROSS_BANK_ON``.  Zero inside the band, and zero when the
-    feature is off -- not a small number, because a floor of "a little bank
-    always" is a range error on every flight rather than a correction on the
-    ones that need it.
-    """
-    if not getattr(cfg, "CROSS_BANK_ON", False):
-        return 0.0
-    band = cross_band(cfg, trajectory.surface_distance(env, r, gate))
-    outside = abs(cross) - band
-    if outside <= 0.0:
-        return 0.0
-    return min(cfg.CROSS_BANK_KP * outside, cfg.CROSS_BANK_MAX_DEG)
-
-
 def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     """Which way to lean: an azimuth deadband, not a prediction.
 
@@ -725,48 +684,6 @@ def sweep_rate(env, cfg, r, v, mass, end, alpha, magnitude, lean, toward,
                          cfg.GLIDE_BANK_SWEEP_ITERATIONS)
 
 
-def single_reversal_sign(env, cfg, r, v, mass, end, alpha, magnitude,
-                         side, flipped, first=False):
-    """``(side, flipped, hold, flip)``: the one-reversal sign law.
-
-    ``Config.GLIDE_SINGLE_REVERSAL``.  ``hold`` is the cross-track predicted
-    at the gate if the current lean is held all the way there, ``flip`` the
-    same if it is reversed now and that is held; both with the lateral lift
-    in (``reversing=False``), which is the trajectory this law really flies.
-    The flip is due once ``flip`` has come round to the same side as
-    ``hold`` and is no longer worse: holding any longer would put the
-    reversed arc past the centreline.  While the gate is outside both
-    (``hold`` and ``flip`` on one side, ``hold`` the nearer) the lean stays
-    toward it.  Once ``flipped`` the side is held; the caller hands the
-    sign back to ``_bank_sign`` below the trim Mach.
-
-    ``first`` is the first tick, ``side`` the lean already held: it is kept
-    when the gate is between the two arcs (either side works) and turned
-    toward the gate when it is not -- without spending the one reversal.
-    Either prediction missing (a skip, the arc not reaching the gate) keeps
-    the side: a missing answer must not look like a zero crossing.
-    """
-    gate = env.runway.gate(end)
-    magnitude = max(abs(magnitude), cfg.SOLVE_BANK_MIN_DEG)
-
-    def cross(sign):
-        steer = Steer(alpha=alpha, bank=sign * magnitude, cfg=cfg, mass=mass,
-                      reversing=False)
-        p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
-                               end=end, target_radius=vec.norm(gate))
-        return p.cross if p.reached and not p.skipped else None
-
-    hold, flip = cross(side), cross(-side)
-    if flipped or hold is None or flip is None:
-        return side, flipped, hold, flip
-    if hold * flip > 0.0 and abs(flip) <= abs(hold):
-        # Both on one side and reversing is the nearer: the drift has
-        # carried the reversed arc onto the centreline -- or, on the first
-        # tick, the gate is outside the band and the lean points away.
-        return -side, not first, hold, flip
-    return side, flipped, hold, flip
-
-
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
              alpha0, bank0, floor=None, target=0.0, top=None):
     """Command the solved pair only if propagating it lands nearer.
@@ -800,26 +717,6 @@ def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
             continue
         if prediction.reached and abs(miss[0] - target) < was:
             return steer, prediction
-    # **Nothing offered was an improvement, and there are two reasons for
-    # that which want opposite answers.**
-    #
-    # Near the gate the miss is already closed and the sensitivity has
-    # collapsed, so holding is right and is what this guard was built for.
-    # But the same branch is reached when the vehicle is *short and out of
-    # authority*, and there holding means flying the last eight kilometres of
-    # altitude on whatever angle happened to be commanded when the shortfall
-    # began -- 18.0 degrees for thirty consecutive ticks in ``logs/LOG1877``,
-    # at L/D 0.75, while the arrival walked out to -4 km.  A vehicle that
-    # cannot close the miss should be going as far as it can; those are the
-    # same command only when it is already doing so.
-    #
-    # The two cases are told apart by the residual itself: short by more than
-    # the deadband is the range-limited one, and a closed miss is not.
-    if (getattr(cfg, "SOLVE_MAX_RANGE_ON", False)
-            and (m0[0] - target) < -cfg.SOLVE_DEADBAND_M):
-        ceiling = cfg.ALPHA_MAX_DEG if top is None else top
-        return max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0,
-                         floor, ceiling, flat)
     # Hold, rather than commit a control on no evidence -- but keep any
     # reversal, because the sign costs the range budget nothing and the
     # cross-track has no other actuator anywhere in this flight.
@@ -984,15 +881,6 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
     tau = max(0.5, float(getattr(cfg, "APPROACH_SPEED_TAU_S", 6.0)))
     steepest = math.sin(math.radians(
         float(getattr(cfg, "APPROACH_DIVE_MAX_DEG", 35.0))))
-    # ``APPROACH_MUSH_RECOVERY``: well below the target and with height in
-    # hand, the dive bound -- and the load floor it sets -- yields, so the
-    # wing can unload and the vehicle accelerate out of the back side.  See
-    # the config entry (LOG4053).
-    if (getattr(cfg, "APPROACH_MUSH_RECOVERY", False)
-            and speed < float(cfg.APPROACH_MUSH_SPEED_FRAC) * target
-            and height > float(cfg.APPROACH_MUSH_MIN_H_M)):
-        steepest = max(steepest, math.sin(math.radians(
-            float(cfg.APPROACH_MUSH_DIVE_DEG))))
     gain = float(getattr(cfg, "APPROACH_PATH_KN", 1.5))
     flying = math.asin(vec.clamp(sink / max(1.0, speed), -1.0, 1.0))
     alpha = trim
@@ -1042,47 +930,6 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
             break
         alpha = found
     return alpha
-
-
-def polar_speed(env, cfg, ratio, height, mass, gravity, stall):
-    """The speed whose wings-level, one-g glide ratio is ``ratio``.
-
-    On the fast side of best glide, where speed is stable to fly: best-glide
-    speed when ``ratio`` is more than the airframe has (low -- stretch), the
-    first faster speed whose ratio has fallen to ``ratio`` otherwise, and
-    the top of the scan when even that is too flat (high -- the S-turn's
-    job).  Off the table (``airframe.turning_ld``); ``None`` if it cannot
-    answer.  The scan's bounds are multiples of the stall only as limits.
-    """
-    best = None
-    curve = []
-    # The bounds are equivalent airspeeds -- the stall is one -- so they are
-    # scaled to true airspeed at this height (the cone flies 12 km up, where
-    # best glide is 1.8x its sea-level speed).
-    try:
-        rho0, rho = env.density(0.0), env.density(max(0.0, height))
-        scale = math.sqrt(rho0 / rho) if rho0 > 0.0 and rho > 0.0 else 1.0
-    except Exception:                                       # noqa: BLE001
-        scale = 1.0
-    step = max(0.5, float(getattr(cfg, "APPROACH_POLAR_STEP_M_S", 2.0))
-               * scale)
-    v = 1.2 * stall * scale
-    while v <= 3.0 * stall * scale:
-        ld = airframe.turning_ld(env, cfg, v, height, mass, gravity, 0.0)
-        if ld is not None and ld > 0.0:
-            ld *= airframe.PLANNING_BIAS      # a straight final, see approach_ld
-            curve.append((v, ld))
-            if best is None or ld > best[1]:
-                best = (v, ld)
-        v += step
-    if best is None:
-        return None
-    if ratio >= best[1]:
-        return best[0]
-    for v, ld in curve:
-        if v > best[0] and ld <= ratio:
-            return v
-    return curve[-1][0]
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
@@ -1185,29 +1032,10 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``airframe.approach_ld``.  The approach flies 2.25 x stall, not the
     # 78 m/s best glide sits at, and the two ratios differ by a third.
     best_ld = airframe.approach_ld(env, cfg, height, mass, gravity)
-    fast = getattr(cfg, "FLARE_SHALLOW", False)
+    fast = False
     target = (cfg.FLARE_SHALLOW_APPROACH_FACTOR if fast
               else cfg.APPROACH_FACTOR) * stall
     floor = cfg.APPROACH_SPEED_FLOOR_FACTOR * stall
-    if getattr(cfg, "APPROACH_POLAR_SPEED", False) and height > 1.0:
-        # ``APPROACH_POLAR_SPEED``: the speed whose glide ratio is the one
-        # still needed to the aim, off the polar -- see ``polar_speed``.
-        # Replaces ``APPROACH_FACTOR`` (2.25 x stall, the old craft's) and
-        # puts the floor under it: on the shuttle 108 m/s is L/D 3.0, so on
-        # a final needing 4.2 it read itself low all the way down and dove
-        # at 1.4 deg of alpha to hold a speed it could not afford (LOG4281:
-        # exc -360..-620, flare at 91 m/s).
-        polar = polar_speed(env, cfg, max(0.0, distance) / height, height,
-                            mass, gravity, stall)
-        if polar is not None:
-            # **One-sided: it may only slow the approach toward best
-            # glide.**  On the fast side the polar is flat near its top, so
-            # a final needing ~4.2 against a best of 4.15 inverted to ~140
-            # m/s: LOG4354 crossed the threshold at 138 m/s 700 m up and
-            # floated 3.6 km.  Speed stretches a low final; a high one is
-            # the S-turn's.
-            target = min(target, polar)
-            floor = min(floor, target)
     if getattr(cfg, "APPROACH_SPEED_PROFILE", False):
         # The height the flare will fire at, from the same expression the
         # flare's own trigger uses -- shared rather than re-derived, for the
@@ -1243,14 +1071,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # is surplus, which is the side to be on.
     reachable = max(0.0, distance) / max(0.1, best_ld)
     excess = height - reachable
-    if getattr(cfg, "APPROACH_ENERGY_EXCESS", False) and gravity > 0.0:
-        # ``APPROACH_ENERGY_EXCESS``: the speed over the flare's door is
-        # height the final has to spend too, and it has a target -- the
-        # door.  Counted in height only, LOG4383 left the cone at 133 m/s
-        # (650 m over the door), read itself +560 m high only as it slowed,
-        # then dove to spend it and reached the door at 81 m/s.
-        door = cfg.APPROACH_FLARE_FACTOR * stall
-        excess += (speed * speed - door * door) / (2.0 * gravity)
     target, floor = spend_as_speed(cfg, target, floor, excess, stall,
                                    gravity, fast)
     wanted_sink = (height * max(1.0, math.sqrt(max(0.0, speed * speed
@@ -1365,10 +1185,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # landed 1-2 km longer (rot-orbit-1005).
     scurve_stop = (distance + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0))
                    > cfg.APPROACH_SCURVE_STOP_M)
-    if getattr(cfg, "APPROACH_SCURVE_STOP_BY_TIME", False):
-        stop_trigger = flare_door(cfg, sink, speed, env)
-        scurve_stop = ((max(0.0, height - stop_trigger) / max(1.0, sink))
-                       > cfg.APPROACH_SCURVE_STOP_S)
     scurve_deg = 0.0
     if (cfg.APPROACH_SCURVE_TRACK and cfg.APPROACH_LATERAL_CAPTURE
             and excess > cfg.APPROACH_SCURVE_M
@@ -1458,8 +1274,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         # of the flare the capture is still allowed to use.
         in_flare *= vec.clamp(
             float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
-        if getattr(cfg, "APPROACH_CAPTURE_BY_FLARE", False):
-            in_flare = 0.0
         cross_time = to_flare + in_flare
         timely = abs(cross) / max(1.0, cross_time)
         wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
@@ -1780,18 +1594,6 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
     # abandoned the cone, and cut in from wherever it happened to be.
     tangent = angle + side * math.acos(vec.clamp(radius / distance, -1.0, 1.0))
     turn = hac_turn(cfg, tangent, exit_angle, side)
-    # ``HAC_PATH_WRAP_TO_GATE``: **a tangent point past the rollout is not
-    # path.**  Just outside the circle and lined up, the tangent point lies
-    # a few degrees *beyond* the rollout; ``hac_turn`` rightly calls that
-    # arrived, but ``lead`` still runs to it -- ``sqrt(x^2 + 2 R dy)``, so
-    # 190 m outside a 16 km circle 955 m before the gate costs 2651 m.  The
-    # scan takes the longest path that fits, so it *chose* those radii and
-    # the cone read on-profile while 1.2-2.8 km high: LOG4056 ``gate=955
-    # path=2650``, LOG4051 ``gate=6207 path=9484``.  The vehicle rolls out
-    # at the gate, so the gate is the path.
-    if (getattr(cfg, "HAC_PATH_WRAP_TO_GATE", False) and turn == 0.0
-            and (side * (exit_angle - tangent)) % (2.0 * math.pi) > math.pi):
-        return to_gate, turn, tangent
     # ``HAC_PAST_BEFORE_GATE_DEG``: **a few degrees past the rollout is not
     # a lap while the gate is still ahead.**  ``hac_turn`` forgives 12 deg;
     # one degree more and the same vehicle is costed a whole circle.  LOG4152
@@ -1841,56 +1643,8 @@ def hac_hold_radius(cfg, speed, gravity=9.81, load=None):
     while faithfully reporting the one that was ignored.
     """
     bank = math.radians(cfg.HAC_BANK_MAX_DEG)
-    if getattr(cfg, "HAC_LOAD_MODEL", False) and load is not None:
-        # **The honest radius.**  Lateral acceleration is ``n g sin(bank)``,
-        # not ``g tan(bank)`` -- the two agree only when the wing is pulling
-        # the ``1/cos(bank)`` that holds altitude, and this one pulls about
-        # 1.06 g while the formula assumes 1.41 at the committed cap.  The
-        # ``tan`` form is optimistic at every bank angle and increasingly so
-        # as bank rises (1.33x too tight at 45 degrees, 1.89x at 60, 2.8x at
-        # 70), which is exactly the wrong direction for raising the cap.
-        #
-        # It also makes an impossible bank *say so*.  Where the ``tan`` form
-        # shrinks the planned circle without limit, this one blows the radius
-        # up when the wing cannot pay for the turn, so ``hac_enterable``
-        # refuses instead of printing a number nothing can fly -- failure
-        # 33's clamp, closed rather than rediscovered.
-        return (cfg.HAC_HOLD_MARGIN * speed * speed
-                / max(0.1, load * gravity * math.sin(bank)))
     return (cfg.HAC_HOLD_MARGIN * speed * speed
             / max(0.1, gravity * math.tan(bank)))
-
-
-def hac_enterable(cfg, speed, gravity=9.81, load=None):
-    """Is the vehicle manoeuvrable enough for there to be a cone to fly?
-
-    **The calculated form of ``HAC_ENTRY_MACH``.**  That constant is a Mach
-    number standing in for a turn radius -- its own comment says so and does
-    the arithmetic in prose ("9 km at Mach 0.9, 30 km at Mach 1.8, 250 km at
-    Mach 4.7").  A Mach number cannot express it, because what decides
-    whether a circle exists is the speed against the *cone's* size, and the
-    speed of sound has nothing to do with either.
-
-    So: the cone is enterable the first moment the circle the airframe can
-    hold fits inside the one the cone is allowed to fly.  With the committed
-    ``HAC_HOLD_MARGIN`` and ``HAC_RADIUS_MAX_M`` that is 347 m/s, which is
-    Mach 1.08-1.11 over the altitudes it happens at -- and ``HAC_ENTRY_MACH``
-    was **1.10** until it was raised to 1.50.  The derivation recovers the
-    original fit; the raise was an override of it.
-
-    **Which direction this moves the handover is not the obvious one.**  It
-    is stricter than the committed 1.50 -- but the flights that land do not
-    use that latitude anyway: ``logs/LOG2747`` entered at Mach 0.9 and 279
-    m/s, needing 10.3 km of radius against 16.0 available, and it entered on
-    the ``HAC_ENTRY_DIST_M`` backstop rather than on either speed test.  The
-    latitude between Mach 0.9 and this bound is real and unspent, and it is
-    height the cone could be starting with.  What the veto at 1.50 buys is
-    not an earlier entry for the flights that work; it is permission for the
-    flights that do not.
-    """
-    if not getattr(cfg, "HAC_ENTRY_DERIVED", False):
-        return None                 # the caller keeps its Mach test
-    return hac_hold_radius(cfg, speed, gravity, load) <= cfg.HAC_RADIUS_MAX_M
 
 
 def hac_radius(env, cfg, end, r, side, available, speed=None,
@@ -1933,8 +1687,7 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     # and speed only falls inside the cone, so this can no longer bind and
     # keeping it would only restore the silence.  With the flag off it is
     # exactly the clamp it always was.
-    if not getattr(cfg, "HAC_ENTRY_DERIVED", False):
-        floor = min(floor, cfg.HAC_RADIUS_MAX_M)
+    floor = min(floor, cfg.HAC_RADIUS_MAX_M)
 
     # ``HAC_LAP_AT_TARGET_SPEED``: **a lap is flown at the cone's speed,
     # not the entry's.**  The floor above is the circle the vehicle can hold
@@ -2500,29 +2253,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         # One IAS, already sized for the bank limit: constant, not
         # re-scaled by the bank of the moment.
         target = cone_speed(env, cfg, stall, height)
-    if getattr(cfg, "HAC_POLAR_SPEED", False):
-        # ``HAC_POLAR_SPEED``: the speed whose glide ratio is the one the
-        # plan needs (path over energy height to the gate), off the polar --
-        # the approach's law (``polar_speed``) one phase earlier.  Short, it
-        # slows to best glide and stretches; high, it flies faster and the
-        # weave takes the rest.  At the banked load, as the fixed target was.
-        spend = height + excess_height - cfg.GATE_ALT_M
-        if spend > 1.0:
-            polar = polar_speed(env, cfg, total / spend, height, mass,
-                                gravity, stall)
-            if polar is not None:
-                target = polar * math.sqrt(load)
-    if getattr(cfg, "HAC_SPEND_AS_SPEED", False):
-        # ``HAC_SPEND_AS_SPEED``: height over the cone's own profile flies
-        # the cone slower -- more alpha, less L/D, a steeper circle -- down
-        # to the flare's door speed scaled for the bank.  See the config.
-        profile = cfg.GATE_ALT_M + total / max(0.1, cone_ld)
-        if rungs is not None:
-            profile = ladder_height(rungs, total, cone_ld)
-        lowest = (cfg.APPROACH_FLARE_FACTOR * stall * math.sqrt(load)
-                  * eas_scale(env, cfg, height))
-        target = spend_as_speed(cfg, target, target, height - profile,
-                                stall, gravity, lowest=lowest)[0]
     # **The one-sided speed law, one phase earlier.**  ``trim + KP * (v -
     # target)`` bleeds a surplus and answers a deficit by holding trim, and
     # trim *rises* as the vehicle slows -- the loop failure 65 took out of
@@ -2537,7 +2267,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if getattr(cfg, "HAC_SPEED_PATH", False):
         alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
                                 target, trim, bank_deg=abs(bank),
-                                climb_ok=getattr(cfg, "HAC_CLIMB", False))
+                                climb_ok=False)
     else:
         alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
@@ -2727,7 +2457,7 @@ def spend_as_speed(cfg, target, floor, excess, stall, gravity=9.81,
     anyway.  The floor comes down with it, or ``max(target, floor)`` would
     hold the old speed regardless.
     """
-    if lowest is None and not getattr(cfg, "APPROACH_SPEND_AS_SPEED", False):
+    if lowest is None:
         return target, floor
     spend = excess - float(cfg.APPROACH_SCURVE_M)
     if spend <= 0.0:
@@ -2757,8 +2487,7 @@ def flare_door(cfg, sink, speed=None, env=None):
     """
     sink = max(0.0, sink)
     exp_tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
-    if (getattr(cfg, "FLARE_DOOR_FROM_SCHEDULE", False) and exp_tau > 0.0
-            and not getattr(cfg, "FLARE_SHALLOW", False)):
+    if ((getattr(cfg, 'FLARE_DOOR_FROM_SCHEDULE', False) and exp_tau > 0.0)):
         # Open where the exponential schedule starts to bind, read one
         # pitch response ahead: ``tau (sink - td) + T sink``.  Never lower
         # than the old door.  See the config entry.
@@ -2768,24 +2497,7 @@ def flare_door(cfg, sink, speed=None, env=None):
         binds = (exp_tau * max(0.0, sink - float(cfg.FLARE_EXP_TOUCHDOWN_M_S))
                  + lag * sink)
         return max(cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink, binds)
-    if (getattr(cfg, "FLARE_DOOR_FROM_RESPONSE", False)
-            and not getattr(cfg, "FLARE_SHALLOW", False)):
-        # The pitch axis's own response time at the present sink, then the
-        # pull-up at the most the flare may ask for.  See the config entry.
-        lag = getattr(env, "pitch_response_s", None)
-        if lag is None or lag <= 0.0:
-            lag = cfg.FLARE_LEAD_S
-        touchdown = float(cfg.FLARE_TOUCHDOWN_SINK_M_S)
-        pull = max(0.05, float(cfg.FLARE_TRACK_LOAD_MAX) - 1.0) * 9.81
-        arrest = max(0.0, sink * sink - touchdown * touchdown) / (2.0 * pull)
-        return cfg.FLARE_ALT_M + lag * sink + arrest
-    if not getattr(cfg, "FLARE_SHALLOW", False):
-        return cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink
-    inner = inner_glide_sink(cfg, speed if speed is not None else 0.0)
-    pull = max(0.05, float(cfg.FLARE_SHALLOW_PULL_LOAD) - 1.0) * 9.81
-    arrest = max(0.0, sink * sink - inner * inner) / (2.0 * pull)
-    lag = float(getattr(cfg, "FLARE_TRACK_TAU_S", 2.0)) * max(0.0, sink - inner)
-    return cfg.FLARE_ALT_M + arrest + lag
+    return cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink
 
 
 def inner_glide_sink(cfg, speed):
@@ -2891,16 +2603,6 @@ def flare(env, cfg, r, v, mass, gravity, height, elapsed, lead_s=0.0,
         scheduled = max(0.0, height - max(0.0, lead_s) * max(0.0, sink))
         wanted = math.sqrt(touchdown * touchdown
                            + 2.0 * rise * gravity * scheduled)
-        if getattr(cfg, "FLARE_SHALLOW", False):
-            # The inner glide, and a gentler bottom under it: the pull-up is
-            # the part of this schedule the vehicle is furthest behind at the
-            # door, the glide is the cap, and the last few metres are drawn
-            # at ``FLARE_SHALLOW_FINAL_LOAD`` so the touchdown is a settle.
-            final = max(0.01, float(cfg.FLARE_SHALLOW_FINAL_LOAD) - 1.0)
-            low = float(cfg.FLARE_SHALLOW_TOUCHDOWN_SINK_M_S)
-            bottom = math.sqrt(low * low
-                               + 2.0 * final * gravity * scheduled)
-            wanted = min(bottom, max(low, inner_glide_sink(cfg, speed)))
         # ``FLARE_EXP_TAU_S``: and no faster than an exponential flare,
         # ``td + h / tau`` -- the square root is steepest at the ground and
         # lands at ``touchdown`` plus the loop's lag by construction (the
@@ -2970,12 +2672,8 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     # solve range on this airframe, so the shortest entry is the one flown at
     # *both* stops (max alpha, max bank) and the longest at neither.  The old
     # pairing crossed them and spanned a sliver.
-    if getattr(cfg, "DEORBIT_WINDOW_CORNERS_FIXED", False):
-        box = ((cfg.ALPHA_MAX_DEG, cfg.BANK_MAX_DEG),
-               (cfg.SOLVE_ALPHA_MIN_DEG, cfg.SOLVE_BANK_MIN_DEG))
-    else:
-        box = ((cfg.SOLVE_ALPHA_MIN_DEG, cfg.BANK_MAX_DEG),
-               (cfg.ALPHA_MAX_DEG, cfg.SOLVE_BANK_MIN_DEG))
+    box = ((cfg.SOLVE_ALPHA_MIN_DEG, cfg.BANK_MAX_DEG),
+           (cfg.ALPHA_MAX_DEG, cfg.SOLVE_BANK_MIN_DEG))
     for index, (alpha, bank) in enumerate(box):
         steer = Steer(alpha=alpha, bank=bank, cfg=honest, mass=mass)
         prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
@@ -3278,234 +2976,6 @@ def deorbit_remaining(env, r, v, mass, cfg, end, aim=None, record=None):
     return error, owed
 
 
-def deorbit_commits(env, r, v2, mass, cfg, gate, steer):
-    """Does this post-burn state fly an entry, or bounce back out?
-
-    The predicate the shallow search bisects on.  Four ways to fail and they
-    are all "not an entry": never gets to the gate's altitude, skips out of
-    the air and comes back later, hits the ground first, or arrives a
-    revolution away.
-    """
-    prediction = trajectory.predict(env, r, v2, mass, cfg, steer=steer,
-                                    target_radius=vec.norm(gate))
-    if not prediction.reached or prediction.skipped or prediction.grounded:
-        return False, prediction
-    if prediction.time_to_go > cfg.DEORBIT_MAX_TIME_TO_GO_S:
-        return False, prediction
-    return True, prediction
-
-
-def drag_switch_for(env, r, v2, mass, cfg, end, gate, needed):
-    """The airspeed at which to stop making drag and start making lift.
-
-    **The entry's range control, and it costs nothing.**  ``ENTRY_MAX_DRAG``
-    flies the vehicle broadside, which is five times the drag and *zero*
-    lift -- so it cannot steer and it cannot stretch.  Giving the angle of
-    attack back at a chosen speed restores both: switch early and the entry
-    is long, switch late and it is short, and the answer is a single number
-    that the propagator can solve for.
-
-    That replaces the constant this started as.  A fixed Mach 3 is the shape
-    this project has a rule against -- a number standing in for a quantity
-    the program can compute -- and worse, it is the *wrong* number to be
-    fixed, because it decides the entry's length and the entry's length is
-    what decides where the deorbit burn goes.  Solved here, the burn and the
-    entry agree with each other by construction.
-
-    Monotone, so a bisection is honest: a higher switch speed means less time
-    broadside, more lift and a longer arc.  Returns ``None`` when the gate is
-    outside the span -- flying the whole entry for lift still falls short, or
-    flying all of it for drag still overflies -- which is the signal to wait
-    rather than to commit to an entry that cannot reach.
-
-    A closed form was tried and does not survive contact with the numbers:
-    the equilibrium-glide range equation reads 647 km where this airframe
-    flies 2317, because the arc is flown near circular speed with centrifugal
-    lift carrying it and the vehicle nowhere near equilibrium glide.
-    """
-    speed = vec.norm(v2)
-    radius = vec.norm(gate)
-
-    # **And the switch has a floor that is not about range at all.**  The
-    # solve above will happily walk the switch to zero -- fly broadside all
-    # the way to the gate -- because that is the shortest arc and the
-    # shortest arc is what a long entry wants.  It is also a vehicle that
-    # arrives over the gate with no lift, no steering and no speed, which is
-    # not a landing.  So a candidate only counts if it reaches the gate
-    # *flying*: at or above the arrival speed the whole landing chain is
-    # sized on, which is the same ``GLIDE_ARRIVAL_FACTOR x stall`` the glide
-    # already caps itself with.  A prediction that cannot be landed is not a
-    # bound on anything.
-    floor = cfg.GLIDE_ARRIVAL_FACTOR * (airframe.stall(env, cfg) or 0.0)
-
-    def arc_for(until):
-        steer = Steer(alpha=cfg.ENTRY_ALPHA_DEG, bank=cfg.SOLVE_BANK_MIN_DEG,
-                      cfg=cfg, mass=mass, drag_until=until)
-        prediction = trajectory.predict(env, r, v2, mass, cfg, steer=steer,
-                                        target_radius=radius)
-        if (not prediction.reached or prediction.skipped
-                or prediction.grounded):
-            return None
-        if prediction.speed < floor:
-            return None
-        return trajectory.forward_arc(env, r, v2, prediction.position)
-
-    # The two ends of the span: all lift (the longest entry this vehicle
-    # flies) and all drag (the shortest).
-    longest = arc_for(speed * 2.0)
-    shortest = arc_for(0.0)
-    if longest is None:
-        return None
-    if shortest is None:
-        # All-drag does not arrive flyable, which is the usual case: the
-        # bracket's short end is then the shortest arc that *does*, and the
-        # bisection below finds it because ``arc_for`` refuses the rest.
-        shortest = 0.0
-    if not (shortest <= needed <= longest):
-        return None
-    lo, hi = 0.0, speed * 2.0
-    for _ in range(int(cfg.DRAG_SWITCH_PASSES)):
-        mid = 0.5 * (lo + hi)
-        arc = arc_for(mid)
-        if arc is None:
-            # A candidate that does not fly is not a bound; walk away from it
-            # toward the lifting end, which is the one that always does.
-            lo = mid
-            continue
-        if arc < needed:
-            lo = mid
-        else:
-            hi = mid
-    return 0.5 * (lo + hi)
-
-
-def deorbit_shallowest(env, r, v, mass, cfg, end):
-    """The smallest burn that still commits, and whether to light it now.
-
-    **A different question from the one the rest of this file asks, and a
-    much better conditioned one.**  ``deorbit_solution``'s grid searches over
-    *range*, which is not monotone in dv on this airframe -- it peaks around
-    50-80 m/s -- so the search has to be a grid and its answer has to be
-    checked against a window.  "Does this burn commit?" is monotone: more
-    retrograde dv lowers the periapsis and nothing about that reverses.  So
-    this is a bisection, it converges to a tenth of a m/s in a dozen
-    propagations, and the answer it converges to is a property of the
-    vehicle and the atmosphere rather than of a fitted constant.
-
-    **What it is for.**  The deorbit burn is the only irreversible decision
-    in the flight and the only one that spends propellant.  Taking the
-    *shallowest* burn that still captures is the least propellant the
-    trajectory can be bought with -- which is free on the test craft and is
-    not free on the next one.  It pairs with ``ENTRY_MAX_DRAG``: a broadside
-    entry makes ``ClA`` exactly zero, so there is nothing to skip on, and
-    measured offline the threshold moves **16 -> 12 m/s** when the entry is
-    flown for drag.  Less lift is what makes a shallower capture safe, and
-    more drag is what makes it capture at all.
-
-    **Then the range has to come from somewhere, and it comes from the
-    clock.**  With the dv pinned at the threshold, where the vehicle lands is
-    set by *when* the burn is lit: the entry's arc is a property of the
-    trajectory and the arc still to run shrinks as the vehicle coasts, so
-    the difference crosses zero exactly once per revolution.  That crossing
-    is the ignition point.  Returns ``(dv, miss)`` at the crossing and
-    ``(None, miss)`` everywhere else, which is the same contract
-    ``deorbit_solution`` already has with a phase that knows how to wait.
-
-    Note what this gives up: at 90 degrees of alpha there is no lift, so
-    there is no bank steering either.  The entry cannot correct downrange and
-    is not asked to -- which is the point of putting the targeting in the
-    ignition time.
-    """
-    speed = vec.norm(v)
-    if speed < 1.0:
-        return None, 0.0
-    retro = vec.scale(v, -1.0 / speed)
-    gate = env.runway.gate(end)
-    needed = trajectory.forward_arc(env, r, v, gate)
-    steer = Steer(alpha=cfg.ENTRY_ALPHA_DEG, bank=cfg.SOLVE_BANK_MIN_DEG,
-                  cfg=cfg, mass=mass)
-
-    def at(dv):
-        return deorbit_commits(env, r, vec.add(v, vec.scale(retro, dv)),
-                               mass, cfg, gate, steer)
-
-    lo, hi = float(cfg.DEORBIT_DV_MIN), float(cfg.DEORBIT_DV_MAX)
-    ok, prediction = at(hi)
-    if not ok:
-        # Nothing in range commits from here.  Not a solution, and signed the
-        # way the phase reads "keep waiting".
-        return None, 0.0
-    if at(lo)[0]:
-        # Already committed at the smallest burn considered: the threshold is
-        # below the search, so the smallest burn *is* the answer.
-        threshold = lo
-    else:
-        for _ in range(int(cfg.DEORBIT_SHALLOW_PASSES)):
-            mid = 0.5 * (lo + hi)
-            if at(mid)[0]:
-                hi = mid
-            else:
-                lo = mid
-        threshold = hi
-    # **And then step off the threshold, because the threshold is a cliff.**
-    # On the shallow side of it the vehicle skips and comes down a revolution
-    # later somewhere else entirely, so the margin is not a tuning parameter
-    # -- it is the burn's own execution error, and it belongs here until the
-    # log's ``cutoff drift`` line has enough flights behind it to say what
-    # that error actually is.  See ``DEORBIT_SKIP_MARGIN_MS``.
-    margin = float(cfg.DEORBIT_SKIP_MARGIN_MS)
-    dv = min(float(cfg.DEORBIT_DV_MAX), threshold + margin)
-    ok, prediction = at(dv)
-    while not ok and dv < float(cfg.DEORBIT_DV_MAX):
-        # The bisection found *a* crossing of a predicate that is monotone in
-        # principle and measured on a propagator: verify rather than assume.
-        dv = min(float(cfg.DEORBIT_DV_MAX), dv + margin)
-        ok, prediction = at(dv)
-    if not ok:
-        return None, 0.0
-    carried = trajectory.forward_arc(env, r, v, prediction.position)
-    miss = carried - needed
-    # **And the gate has to be inside the glide's authority, which this
-    # path skipped.**  ``deorbit_solution``'s centring branch checks
-    # ``shortest <= want <= longest`` before it returns; this one returned
-    # before reaching it, and the first flight duly committed to a burn whose
-    # own window topped out at 1854 km with the gate at 1949 -- logged, in
-    # capitals, by the very next line -- and arrived **484 km short**
-    # (``logs/LOG2868``).  A search that reports a solution its own bound
-    # refuses is failure 33's shape: the log faithfully prints the number
-    # that was ignored.
-    v2 = vec.add(v, vec.scale(retro, dv))
-    window = deorbit_window(env, r, v2, mass, cfg, end, gate)
-    if window is None:
-        return None, miss
-    shortest, longest, want = window
-    if not (shortest <= want <= longest):
-        return None, miss
-    if getattr(cfg, "ENTRY_MAX_DRAG", False):
-        # **Solve where the entry stops braking, here, before the burn.**
-        # The broadside entry has no lift, so it has no range authority and
-        # no steering; what it has instead is a *switch* -- the speed at
-        # which the angle of attack goes back to the range solve -- and that
-        # one number spans the whole reachable arc.  Solving it at this
-        # moment is what makes the burn and the entry consistent: the arc the
-        # search is judging is the arc the vehicle will actually fly.
-        #
-        # It also turns the ignition point from an instant into a *window*.
-        # With the dv pinned and nothing else to trim with, the arrival lands
-        # on the gate at one moment per revolution; with the switch solved,
-        # any moment whose gate lies between the all-drag and all-lift arcs
-        # will do, and the switch takes up the difference.
-        switch = drag_switch_for(env, r, v2, mass, cfg, end, gate, needed)
-        if switch is None:
-            return None, miss
-        return dv, miss
-    if abs(miss) > max(500.0, float(cfg.DEORBIT_TOLERANCE_M)):
-        # Right burn, wrong moment.  Wait: the arc still to run is shrinking
-        # and this crosses zero once a revolution.
-        return None, miss
-    return dv, miss
-
-
 def deorbit_solution(env, r, v, mass, cfg, end):
     """The retrograde dv that puts the entry's gate crossing on the gate.
 
@@ -3522,8 +2992,6 @@ def deorbit_solution(env, r, v, mass, cfg, end):
     ``(None, best_long)`` when no dv in range reaches the gate at all -- which
     is the signal to stay in orbit another pass rather than commit.
     """
-    if getattr(cfg, "DEORBIT_SHALLOWEST", False):
-        return deorbit_shallowest(env, r, v, mass, cfg, end)
     speed = vec.norm(v)
     if speed < 1.0:
         return None, 0.0

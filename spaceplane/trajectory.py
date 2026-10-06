@@ -24,7 +24,7 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 from common import vec
 from . import airframe
@@ -174,10 +174,6 @@ class Steer:
     # solve probing magnitudes probes them *under the plan*.  Implies the
     # lateral lift is in.  ``None`` is the constant lean.
     plan: object = None
-
-    def as_tuple(self):
-        return (self.alpha, self.bank)
-
 
 _LOAD_CACHE = {}
 _LOAD_CACHE_KEY = None
@@ -588,28 +584,6 @@ class Holdable:
         short = commanded - achieved
         current = self.bins.get(index)
         saturated = short > float(self.cfg.HOLDABLE_SATURATED_DEG)
-        if getattr(self.cfg, "HOLDABLE_MEAN", False):
-            # **The ceiling is what the vehicle holds on average when asked
-            # for at least that much** (``HOLDABLE_MEAN``).  The max below
-            # took one upswing of a wobble as the ceiling, and its tracking
-            # branch raised the bin to the *command* on any tick within 2.5
-            # deg -- so a steady 2-5 deg trim shortfall, straddling that
-            # threshold, learned the command: "learned 36.0" while the
-            # vehicle flew 31-34 (LOG4433, pitch thrusters off).  A tick is
-            # evidence when it saturated or asked for at least the current
-            # estimate; a lower command tracked says nothing about a ceiling.
-            if not (saturated or current is None or commanded >= current[0]):
-                return
-            if current is None:
-                self.bins[index] = current = [achieved, 0]
-            n = min(current[1] + 1, int(self.cfg.HOLDABLE_MEAN_SAMPLES))
-            current[0] += (achieved - current[0]) / n
-            current[1] += 1
-            if saturated and mach is not None and (
-                    self.anchor is None or q > self.anchor[1]):
-                self.anchor = (current[0], q, mach)
-            self.generation += 1
-            return
         if saturated:
             # Saturated: the vehicle is telling us where its ceiling is.
             value = achieved
@@ -643,9 +617,7 @@ class Holdable:
         trusted = [(i, v[0]) for i, v in self.bins.items()
                    if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)]
         if not trusted:
-            # Nothing measured yet this flight -- which is most of an entry,
-            # and all of the part where a shortfall can still be fixed.
-            return self.probe(q)
+            return None
         index = self._bin(q)
         exact = dict(trusted)
         if index in exact:
@@ -659,177 +631,11 @@ class Holdable:
                 # Denser air than anything flown yet: the ceiling only falls,
                 # so carry the lowest one seen rather than inventing a higher.
                 best = min(below)
-                fitted = self._extrapolate(index, trusted)
-                if fitted is not None:
-                    best = min(best, fitted)
-                # **This is the branch that matters.**  Denser air than the
-                # vehicle has flown is exactly where the propagator has been
-                # optimistic, and ``min(below)`` is a thin-air bin -- which
-                # over 98 flights carries 4.5 to 5.7 degrees of scatter
-                # because it records the command rather than a ceiling.  The
-                # probe measured this ``q`` directly.
-                measured = self.probe(q)
-                if measured is not None:
-                    best = min(best, measured)
             else:
                 # Thinner air than anything flown: nothing has refused a
                 # command up here, so do not invent a limit.
-                return self.probe(q)
+                return None
         return best + float(self.cfg.HOLDABLE_MARGIN_DEG)
-
-    def probe(self, q):
-        """The ceiling this airframe was *measured* to hold at this ``q``.
-
-        ``limit`` above answers from the flight in hand, and for most of an
-        entry it has nothing to answer with: a bin is only evidence where the
-        vehicle was commanded past its ceiling, which does not reliably
-        happen until below about 28 km.  Until then it returned ``None`` --
-        *no limit* -- and the propagator flew a vehicle that holds whatever
-        it is asked in air it has never met.  That optimism is the whole of
-        the entry's range deficit (spaceplane failures 47, 50 and 51), and it
-        is optimism in the one direction nothing downstream can recover from.
-
-        So fall back on a curve measured once by a flight whose job was to be
-        refused -- ``Config.HOLDABLE_PROBE``, and see that entry for how it
-        was taken and what would disagree with it.  Evidence from the flight
-        in hand always wins where it exists: the probe describes the
-        airframe, the flight describes today.
-
-        Interpolated in log ``q``, because that is the axis the ceiling is
-        straight in and the axis the bins are cut on.  Off the ends it holds
-        the end value rather than extrapolating a curve that is only
-        trustworthy between measured points.
-        """
-        if not getattr(self.cfg, "HOLDABLE_PROBE_ON", False):
-            return None
-        table = getattr(self.cfg, "HOLDABLE_PROBE", ())
-        if not table or q <= 0.0:
-            return None
-        points = sorted(table)
-        if q <= points[0][0]:
-            return points[0][1]
-        if q >= points[-1][0]:
-            return points[-1][1]
-        for (q0, a0), (q1, a1) in zip(points, points[1:]):
-            if q0 <= q <= q1 and q1 > q0:
-                share = (math.log(q) - math.log(q0)) / (math.log(q1)
-                                                        - math.log(q0))
-                return a0 + share * (a1 - a0)
-        return None
-
-    def prior(self, env, q, mach):
-        """The ceiling in air the vehicle has not reached, from one sample.
-
-        **The estimator this class had could not be pessimistic in time.**
-        ``limit`` answers ``None`` -- *no limit* -- for any dynamic pressure
-        with no trusted bin, so the propagator assumes this airframe holds
-        whatever it is commanded in air it has never met, and the default is
-        optimism in the one direction that cannot be recovered from.
-        ``_extrapolate`` was written to fix that and measured inert: it needs
-        ``HOLDABLE_MIN_SAMPLES`` samples in each of ``HOLDABLE_FIT_MIN_BINS``
-        bins -- eight ticks of saturation -- before it has a trend, and the
-        vehicle does not reliably produce one until below 32 km, by which
-        time the range deficit is already being made.  Spaceplane failures
-        47 and 50.
-
-        **This needs one sample, and the unknowns cancel.**  The angle of
-        attack is lost when the aerodynamic pitching moment overcomes the
-        control torque holding it:
-
-            q * Cn(alpha, M) * arm  =  T
-
-        The moment arm and the available torque are both properties of the
-        vehicle that kRPC will not report usefully -- it gives no pitching
-        moment at any price, and ``available_rcs_torque`` is a peak figure a
-        steady aerodynamic moment never sees.  But neither has to be known.
-        Take one observed saturation ``(alpha_s, q_s, M_s)``: the same
-        product holds there, so for any other dynamic pressure
-
-            Cn(alpha, M)  =  Cn(alpha_s, M_s) * q_s / q
-
-        and the ceiling is whatever angle satisfies it.  ``arm`` and ``T``
-        divide out, leaving only the vehicle's own swept table -- so there is
-        no constant about this airframe anywhere in it, and a different
-        vehicle gets a different answer from its own sweep for free.
-
-        Only ever used to make a ceiling *lower*, and only for air denser
-        than the anchor: predicting thinner air would be extrapolating the
-        wrong way down a curve whose shape is only trustworthy between
-        measured points.
-        """
-        if not getattr(self.cfg, "HOLDABLE_PRIOR", False):
-            return None
-        if self.anchor is None or env is None or mach is None:
-            return None
-        alpha_s, q_s, mach_s = self.anchor
-        if q <= q_s:
-            return None
-        try:
-            target = normal_coefficient(env, alpha_s, mach_s) * q_s / q
-        except Exception:                                   # noqa: BLE001
-            return None
-        low = float(self.cfg.ALPHA_CEILING_FLOOR_DEG)
-        high = float(self.cfg.ALPHA_MAX_DEG)
-        try:
-            if normal_coefficient(env, low, mach) >= target:
-                return low
-            if normal_coefficient(env, high, mach) <= target:
-                return None         # even the stop is holdable; say nothing
-            for _ in range(24):
-                mid = 0.5 * (low + high)
-                if normal_coefficient(env, mid, mach) < target:
-                    low = mid
-                else:
-                    high = mid
-        except Exception:                                   # noqa: BLE001
-            return None
-        return 0.5 * (low + high)
-
-    def _extrapolate(self, index, trusted):
-        """Carry the *trend* into air the vehicle has not reached, not the
-        last value.
-
-        Holding the lowest ceiling seen is conservative against a flat plant
-        and wildly optimistic against this one.  Measured on this airframe
-        (``logs/LOG1015``): 2154 Pa: 31.9 deg, 3162: 27.0, 4642: 24.0,
-        6813: 17.9, 10000: 14.9 -- about **26 degrees per decade of dynamic
-        pressure**, and monotone.  Early in an entry nothing has saturated
-        yet, so ``min(below)`` is whatever the thin air allowed, and the
-        propagator predicts the vehicle holding it at ten times the ``q``.
-
-        That is not a small error and it has a direction: the prediction is
-        optimistic about range for the whole part of the entry where the
-        solve still has the authority to fix a shortfall, and becomes honest
-        only below 25 km where it has none.  Over 34 flights the predicted
-        miss sits near zero down to 27 km and then falls off a cliff; a
-        flight still positive at 27 km lands a median 1.7 km out and one
-        already negative lands 21.5 km out.
-
-        Fitted by least squares on the bins already trusted, and only ever
-        used to make the ceiling *lower* -- a fit that slopes upward is
-        discarded rather than believed, because "it gets easier in thicker
-        air" is not a thing this plant does and a two-bin fit is noisy.
-
-        Still learned in flight and still this vehicle: what is extrapolated
-        is the trend in its own samples, not a table from a previous one.
-        """
-        if not getattr(self.cfg, "HOLDABLE_EXTRAPOLATE", False):
-            return None
-        if len(trusted) < max(2, int(self.cfg.HOLDABLE_FIT_MIN_BINS)):
-            return None
-        xs = [float(i) for i, _ in trusted]
-        ys = [float(v) for _, v in trusted]
-        n = float(len(xs))
-        mx = sum(xs) / n
-        my = sum(ys) / n
-        den = sum((x - mx) ** 2 for x in xs)
-        if den <= 0.0:
-            return None
-        slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
-        if slope >= 0.0:
-            return None
-        value = my + slope * (float(index) - mx)
-        return max(float(self.cfg.ALPHA_CEILING_FLOOR_DEG), value)
 
     def summary(self):
         """One short string for the log, so a flight says what it learned."""
@@ -855,79 +661,6 @@ def normal_coefficient(env, alpha_deg, mach):
     return cla * math.cos(a) + cda * math.sin(a)
 
 
-def max_drag_alpha(cfg, q, mach, holdable=None, speed=None, until=None):
-    """The hot entry's angle of attack: as much drag as the vehicle can hold.
-
-    ``None`` when the law is off or the entry is no longer hot, which leaves
-    the angle of attack to whoever owns it otherwise -- the range solve in
-    GLIDE, ``ENTRY_ALPHA_DEG`` in COAST.
-
-    **Why this is a different quantity from every alpha constant above it.**
-    ``ENTRY_ALPHA_DEG`` and ``ALPHA_MAX_DEG`` are both set by lift arguments
-    (a range plateau, and the lift curve turning over at 35).  Drag does not
-    turn over: on this airframe's swept table ``CdA`` climbs monotonically to
-    its peak at 90 degrees, where it is five times the value at 22 and the
-    lift is exactly zero.  A phase whose job is to destroy energy should be
-    bounded by the drag stop, and until now nothing has ever asked for it.
-
-    **The guard is the plant, not a constant.**  The command returned here is
-    the ceiling ``Holdable`` has measured -- live evidence first, the
-    ``HOLDABLE_PROBE`` curve as the prior -- so the vehicle is asked for
-    exactly what it has been seen to hold and never for more.  That matters
-    twice over: an angle it cannot hold is not flown (so the prediction and
-    the flight agree), and there is no standing shortfall for the attitude
-    controller to spend monopropellant on, which is how the entire tank once
-    went for three kilometres of altitude (LOG1616).
-
-    Above ``HOLDABLE_MIN_Q`` there is no aerodynamic moment worth the name --
-    at 100 Pa it is a twentieth of the 1 kPa moment the vehicle was measured
-    to hold 48 degrees against -- so up there the stop is the only limit.
-    With no evidence and no prior, this returns ``ENTRY_ALPHA_DEG``: today's
-    entry, which is the conservative answer rather than a large angle a
-    ``min`` would quietly accept.
-    """
-    if not getattr(cfg, "ENTRY_MAX_DRAG", False):
-        return None
-    # **The handover is a solved speed, not a constant.**  The first version
-    # of this law switched at a fixed Mach 3, which is the shape this project
-    # has a rule against: a constant standing in for a quantity the program
-    # can compute.  What the switch actually has to satisfy is "stop spending
-    # energy when you can no longer afford to", and that is a statement about
-    # the range still to run -- so it is solved, against the propagator, at
-    # the same moment the burn is (``guidance.drag_switch_for``).
-    #
-    # It also has to be known *before* the burn, because the entry's arc
-    # depends on it and the arc is what decides where the burn goes.  Solving
-    # it there is what makes the deorbit's answer self-consistent.
-    #
-    # A closed form will not do: the equilibrium-glide range equation gives
-    # 647 km where this vehicle flies 2317, because most of the arc is flown
-    # near circular speed with centrifugal lift carrying it and the vehicle
-    # nowhere near equilibrium.
-    if until is None:
-        # Nobody solved it.  That happens when the flight is picked up past
-        # the burn (``ENGAGE_INTO_LANDING``, an entry save) and it must not
-        # read as "broadside for the whole entry".
-        return None
-    if speed is not None and speed <= float(until):
-        return None
-    if mach is not None and mach < float(getattr(cfg, "ENTRY_MAX_DRAG_MACH",
-                                                 0.0)):
-        return None
-    ceiling = float(getattr(cfg, "ENTRY_ALPHA_CEILING_DEG", 90.0))
-    if q < float(cfg.HOLDABLE_MIN_Q):
-        # Nothing up here can refuse it.
-        return ceiling
-    limit = None
-    if holdable is not None:
-        limit = holdable.limit(q)
-        if limit is None:
-            limit = holdable.probe(q)
-    if limit is None:
-        return float(cfg.ENTRY_ALPHA_DEG)
-    return max(float(cfg.ENTRY_ALPHA_DEG), min(ceiling, limit))
-
-
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """Clamp a commanded angle to what the airframe has shown it can hold.
 
@@ -940,13 +673,6 @@ def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     if not getattr(cfg, "HOLDABLE_ON", False) or holdable is None:
         return alpha
     limit = holdable.limit(q)
-    if env is not None and mach is not None:
-        # **The prior is used only to make a ceiling lower, never higher.**
-        # Measured evidence at this dynamic pressure outranks a prediction
-        # about it; the prior exists for the air the vehicle has not reached.
-        predicted = holdable.prior(env, q, mach)
-        if predicted is not None:
-            limit = predicted if limit is None else min(limit, predicted)
     return alpha if limit is None else min(alpha, limit)
 
 
@@ -960,8 +686,7 @@ def tracked_alpha(cfg, alpha, q):
     of a trajectory the vehicle does not fly, which is the error this project
     has now made in five places.
     """
-    if not getattr(cfg, "ALPHA_TRACKING_ON", False) \
-            and not getattr(cfg, "_tracking_forced", False):
+    if (not getattr(cfg, '_tracking_forced', False)):
         return alpha
     table = getattr(cfg, "ALPHA_TRACKING", ())
     if not table or q <= 0.0:
@@ -993,26 +718,6 @@ def acceleration(env, r, v, mass, steer):
             bank = steer.bank if steer is not None else 0.0
             q0 = 0.5 * rho * speed * speed
             if steer is not None and steer.cfg is not None:
-                # **The hot entry's own law, and the propagator flies it
-                # because the vehicle does.**  A prediction of a law nobody
-                # flies is a prediction of a trajectory nobody flies -- and
-                # this one changes the drag by a factor of five, so a deorbit
-                # solved without it is solved for a different aircraft.  That
-                # is the point: the search sees the extra drag and asks for a
-                # smaller burn.
-                hot = max_drag_alpha(
-                    steer.cfg, q0,
-                    speed / env.speed_of_sound(altitude),
-                    getattr(env, "holdable", None)
-                    or getattr(steer, "holdable", None),
-                    speed,
-                    # Off the ``Steer`` first here, not the environment: the
-                    # deorbit search propagates *candidate* switch speeds and
-                    # each candidate has to fly its own.
-                    steer.drag_until if steer.drag_until is not None
-                    else getattr(env, "drag_until", None))
-                if hot is not None:
-                    alpha = hot
                 gravity = env.mu / (vec.norm(r) ** 2)
                 alpha = min(alpha, alpha_limit_for_speed(
                     env, steer.cfg, speed, altitude,
@@ -1054,44 +759,9 @@ def acceleration(env, r, v, mass, steer):
                     # manoeuvre the vehicle flies cannot be used to choose it
                     # -- boosterland's "the predictor flies the landing burn",
                     # in the one place where flying it literally is wrong.
-                    # **And the magnitude is a duty cycle, not a lean.**
-                    # The averaging above is over the *azimuth* -- the sign
-                    # swaps and the lateral component cancels -- and the
-                    # magnitude is still one constant.  It is not: a reversal
-                    # is about seventeen seconds of slew at
-                    # ``BANK_RATE_DEG_S``, and a glide that reverses eleven
-                    # times spends 138 s of its 700 near wings level against
-                    # 88 s for one that reverses seven times.  Near wings
-                    # level the vehicle sinks less and flies further, so the
-                    # reversal *count* is a range term -- and it is the one
-                    # the arrival is bimodal in (failure 78).
-                    #
-                    # Both single-bank repairs have been flown and both are
-                    # worse: the instantaneous command spikes ``long`` by
-                    # +20 km mid-reversal, and ``BANK_PREDICT_INTENT``'s
-                    # stop-lean lands it long because the vehicle really is
-                    # near level for part of the time.  What is wanted is the
-                    # mean of ``cos(bank)`` *including its duty cycle*, which
-                    # is neither -- see the comment at ``BANK_RATE_DEG_S``,
-                    # which says exactly this and stops there.
-                    #
-                    # ``env.bank_cos_duty`` is that mean, measured by the
-                    # vehicle on itself (``Autoland.update_bank_duty``) as the
-                    # ratio of the time-averaged ``cos`` of what it commanded
-                    # to the time-averaged ``cos`` of the lean it meant to
-                    # hold.  A flight that sits on its stops reports 1.0 and
-                    # this is inert; a flight that reverses constantly reports
-                    # the extra lift it is really getting.  One number, no new
-                    # fitted constant, and it cannot spike -- the mean does
-                    # not care where in a slew the tick happened to land.
                     up_perp, _ = lift_frame(r, v)
                     if up_perp is not None:
                         share = math.cos(math.radians(bank))
-                        duty = getattr(env, "bank_cos_duty", None)
-                        if (duty and steer.cfg is not None
-                                and getattr(steer.cfg, "GLIDE_BANK_DUTY_ON",
-                                            False)):
-                            share = min(1.0, share * duty)
                         vertical = cla * q * share
                         a = vec.add(a, vec.scale(up_perp, vertical / mass))
                 else:
@@ -1208,8 +878,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     # ~2 t heavier than the one that arrives -- every drained flight
     # arrived short (LOG4140-4144, 4241-4243, 4283-4286).  The autopilot
     # posts ``env.residual_dump = (mach, kg)`` while the dump is pending.
-    dump = (getattr(env, "residual_dump", None)
-            if getattr(cfg, "PREDICT_RESIDUAL_DUMP", False) else None)
+    dump = ((None))
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
         altitude = radius - env.equatorial_radius
