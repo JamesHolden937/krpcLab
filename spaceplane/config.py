@@ -327,6 +327,11 @@ class Config:
     # profile, less the arrest height of the sink it builds, exceeds
     # ``HAC_WEAVE_DEADBAND_M``.  Off until paired.
     HAC_FLAP_BRAKE_ON_SURPLUS: bool = False
+    # Arm the measured brake from this craft's last vacuum measurement
+    # when engaged in the air (``Autopilot._load_brake_cache``,
+    # ``logs/brakecache/``, written by every vacuum probe).  Off: an
+    # air-start save has no brake.
+    AIRBRAKE_CACHE: bool = False
     # ...and **not stowed for the roll** in the cone.  ``FLAP_BRAKE_YIELDS_
     # TO_ROLL`` was written for the hypersonic glide (LOG3680, 3690: the
     # elevon brake out, roll authority gone, departure at Mach 5-6); in the

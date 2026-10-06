@@ -2175,6 +2175,17 @@ class Autopilot:
         self._brake_measured = True
         if snap.dynamic_pressure > 1.0:
             self.flap_brake = None
+            # ``AIRBRAKE_CACHE``: the set this craft measured in vacuum on an
+            # earlier flight, matched part by part.
+            cached = (self._load_brake_cache()
+                      if getattr(self.cfg, "AIRBRAKE_CACHE", False) else None)
+            if cached is not None:
+                self.flap_brake = cached
+                self.flap_set = None
+                self.logbook.event(snap.ut, "brake (measured): engaged in the "
+                                            "air -- armed from the cache: "
+                                            "%s" % cached.describe())
+                return
             self.logbook.event(snap.ut, "brake (measured): engaged in the air "
                                         "(q=%.0f Pa) -- not measured, not "
                                         "armed" % snap.dynamic_pressure)
@@ -2271,6 +2282,79 @@ class Autopilot:
             return
         self.flap_brake = spoiler
         self.flap_set = flaps
+        if spoiler is not None:
+            self._save_brake_cache(spoiler)
+
+    # -- the measured brake, kept between flights ---------------------------
+    #
+    # **A save that starts in the air has never had a brake.**  The probe
+    # needs vacuum, so every cone and final-approach save flew without the
+    # one spender the cone's surplus logic is written around, and a flag
+    # tested from those saves was disconnected (sav-spend-1006).  The set is
+    # a property of the craft, not the flight: key it on the surfaces and
+    # reuse it.
+
+    def _brake_cache_path(self, records):
+        import hashlib
+        names = sorted("%s@%.1f,%.1f,%.1f" % ((r.title,) + tuple(r.position))
+                       for r in records)
+        key = hashlib.sha1("|".join(names).encode()).hexdigest()[:12]
+        root = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "logs", "brakecache")
+        return os.path.join(root, key + ".json")
+
+    @staticmethod
+    def _record_id(record):
+        return "%s@%.1f,%.1f,%.1f" % ((record.title,) + tuple(record.position))
+
+    def _save_brake_cache(self, brake):
+        try:
+            import json
+            records = self._surface_records() or []
+            if not records or not getattr(brake, "parts", None):
+                return
+            path = self._brake_cache_path(records)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            data = {
+                "parts": [[self._record_id(r), sense, dl, dm]
+                          for r, sense, dl, dm in brake.parts],
+                "gains": list(brake.gains),
+                "kind": getattr(brake, "kind", "spoiler"),
+                "verified_lift": getattr(brake, "verified_lift", None),
+                "verified_deg": getattr(brake, "verified_deg", None),
+            }
+            with open(path, "w") as fh:
+                json.dump(data, fh)
+        except Exception:                               # noqa: BLE001
+            pass
+
+    def _load_brake_cache(self):
+        try:
+            import json
+            records = self._surface_records() or []
+            if not records:
+                return None
+            path = self._brake_cache_path(records)
+            if not os.path.exists(path):
+                return None
+            with open(path) as fh:
+                data = json.load(fh)
+            by_id = dict((self._record_id(r), r) for r in records)
+            parts = []
+            for rid, sense, dl, dm in data["parts"]:
+                if rid not in by_id:
+                    return None
+                parts.append((by_id[rid], sense, dl, dm))
+            brake = airbrake_mod.MeasuredBrake(
+                [], 0.0, 0.0, reasons=("cached",), parts=parts
+            ).with_gains(*data["gains"])
+            brake.kind = data.get("kind", "spoiler")
+            if data.get("verified_lift") is not None:
+                brake.verified_lift = data["verified_lift"]
+                brake.verified_deg = data["verified_deg"]
+            return brake
+        except Exception:                               # noqa: BLE001
+            return None
 
     def deploy_set(self, surface_set, out, base_deg=None):
         """Deploy or stow any measured set (spoiler or flaps)."""
