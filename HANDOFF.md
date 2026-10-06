@@ -1,12 +1,13 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the session of 2026-10-06 (day, ~0735-1600, in progress).
+Snapshot of the session of 2026-10-06 (day, ~0735-1600).
 History: `docs/spaceplane/journal.md`, "Session, 2026-10-06 morning" and
 "... afternoon".
 
 Defaults fingerprint **`63ef8321`** (= `6a226a64` + the off flags below;
 `6a226a64` = the overnight `d91cd0ad` + `ROLLOUT_STEER_LEAD_S` 3).
-Commits on main, not yet pushed at checkpoint time.
+Everything committed and pushed.  Farm **stopped**, sims not used, sleep
+inhibitor released.
 
 ## What changed this session
 
@@ -64,7 +65,7 @@ saturate once early (q ~1600 Pa, achieving 36 against 43) plan the rest of
 the glide with a ~37 deg ceiling and arrive on profile.  Flights that do
 not keep commanding 37-44 deg, carry more energy (Mach 4.9 vs 4.7 at 36
 km), and at q ~3500 Pa achieve only 23-28 deg with bank pinned at 64-70
-(bank-coupled alpha); the ceiling collapses late, the prediction jumps
+(bank-coupled alpha; `holdmap.py` over 264 logs: held alpha 31-34 at q 1-4 kPa, 25-28 above 5); the ceiling collapses late, the prediction jumps
 from +500 to +5-11 km at 33-27 km.  A fixed cap (`GLIDE_ALPHA_MAX_DEG`)
 does not fix it -- achieved alpha depends on bank as well as q.
 
@@ -74,9 +75,16 @@ Between them only the weave and drag, and neither is enough.
 
 ## Next
 
-1. rot-lapstack-1006 (in flight at checkpoint): `HAC_EXIT_LAP_AT_TARGET +
-   HAC_BANK_MAX_DEG 60 + HAC_RADIUS_MIN_M 1200` -- laps purchasable from ~4
-   km of height, continuous by radius.  Read it.
+1. **Lead: the lap stack moves the cone's error from high to low.**
+   rot-lapstack-1006 (rigoff, 24 an arm): `HAC_EXIT_LAP_AT_TARGET +
+   HAC_BANK_MAX_DEG 60 + HAC_RADIUS_MIN_M 1200` took the handover from
+   mean +2012 sd 2430 to **+66 sd 1249** -- no 6-10 km-high exits left
+   (max +3.4 km) -- but 12 of 24 now leave "out of height" 0.3-1.4 km under
+   need, and landings are unchanged (10/24 vs 11/24).  The laps are now
+   affordable; what is missing is a lap that ends at the gate, not below
+   it.  Read where the out-of-height ones were (gate distance, turn) and
+   whether the planned lap ratio (1.86) is above what a 60-deg lap flies
+   (`conesum.py` on the arm-1 logs) before changing anything.
 2. The glide: make the propagator plan with a bank-aware holdable alpha
    from the start rather than waiting to saturate (a prior over (q, bank)
    from the logs' `alpha ceiling` events, recomputed by a tool; or seed

@@ -4577,3 +4577,34 @@ speed's hold radius -- 9-14 km); the approach dived at alpha 20-25 to 50
 m/s and all three flared at 39-41 m/s of sink.  `_inc`: the short cones fly
 L/D 1.43-1.55 against 1.69-1.92 for the ones that land, at 1-2 deg more
 alpha and twice the sideslip (|slip| 3.8-4.9 vs 1.6-3.3).
+
+## Session, 2026-10-06 afternoon: the glide's split, and nulls on the cone
+
+Fingerprint `63ef8321` (`6a226a64` + off flags).  All from orbit, farm
+restarted before every batch.
+
+- rot-bank-1006 (12 an arm): defaults with the rollout lead 22/36 on the
+  shuttle (rigoff 4, inc 9, high 9), **no rollout losses**; `HAC_BANK_MAX_DEG`
+  60 22/36.  Old craft 0/12 -- **landing 1.2-1.5 km short of the
+  threshold**, not long (the previous handoff misread an unsigned
+  distance).
+- rot-lapt-1006: `HAC_EXIT_LAP_AT_TARGET` (new) null, 4/12 vs 4/12 and
+  6/12 vs 7/12; `HAC_SPEED_PATH` on inc **0/12**, all 7.5-12 km short.
+- rot-galpha-1006 (24 an arm): `GLIDE_ALPHA_MAX_DEG` 40 / 37 / 34 -> 8, 7,
+  0.  Cone entries are trimodal (11.8 / 15-17 / 19-21 km); the caps push
+  flights into the 11.8 km (short) mode.
+- rot-fbrake-1006 (24): cone flap brake from orbit 9 vs 11 -- it deploys
+  only on the cone's last tick (LOG7342: OUT at +7853, in 0.1 s later).
+- rot-lapstack-1006 (24): `LAP_AT_TARGET + BANK 60 + RADIUS_MIN 1200`
+  handover +2012 sd 2430 -> +66 sd 1249, landings 10 vs 11; half exit low.
+
+**The glide's split (rigoff).**  LOG7092/7101/7129/7161 (long) against
+7096/7116/7119/7138: identical to 55 km; at 50-40 km the long ones command
+36-37 deg against 39-40 and bank 34-37 against 31; Mach 4.9 vs 4.7 at 36
+km; at q ~3500 they achieve 23-28 against commands of 37-44, the ceiling
+collapses (`alpha ceiling -> 32`, achieving 26) and the predicted miss
+jumps +500 -> +5-11 km at 33-27 km.  The normal flights saturated once at
+q ~1600 and planned the rest with a ~37 ceiling.  Over 264 shuttle logs,
+the alpha actually held while saturated above Mach 1.5 is 31-34 deg for q
+1-4 kPa (30-31 at 45-60 deg of bank), 25-28 above 5 kPa
+(`spaceplane/tools/holdmap.py`, new).

@@ -77,12 +77,19 @@ law and bank compensation were kept (82).
 
 ## Next, in order
 
+**Start from the root HANDOFF.md** (2026-10-06 day): the blocker is
+`qs_shuttle2_rigoff`'s bimodal cone arrival, traced to the glide's learned
+alpha ceiling; the rollout weave is fixed (`ROLLOUT_STEER_LEAD_S`).
+
 0. **Replace `TOUCHDOWN_AIM_M` = 1800 with a per-vehicle derivation**
    (open since 2026-10-06; the user asked it be kept for now and fixed
    later). 1800 was fitted on the shuttle alone (9/18 vs 3/18 at 2400,
-   rot-aim-1006) and is a ship bias: the old craft on it lands 1/12,
-   touching down 1.3-1.6 km in and rolling ~2 km off the end
-   (rot-newdef-1006). `APPROACH_AIM_SHIFT_M` 1000 is the same kind of
+   rot-aim-1006) and is a ship bias: the old craft on it lands 0-1/12
+   **1.2-1.5 km short of the threshold**, intact (corrected 2026-10-06:
+   the earlier "rolls off the end" read an unsigned distance; the signed
+   stops are -1.4..-2.6 km from the midpoint, rot-bank-1006) -- its
+   approach falls ~3 km short of the aim, so the shuttle-fitted
+   `APPROACH_BEST_LD` 4.2 is the first suspect. `APPROACH_AIM_SHIFT_M` 1000 is the same kind of
    constant and goes with it. Derive the aim so that aim + flare float
    (door speed against stall, L/D, from the table) + rollout (touchdown
    speed^2 / 2 x braking deceleration) fits the runway; log predicted
