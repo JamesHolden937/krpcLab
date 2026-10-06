@@ -57,10 +57,23 @@ Farm **stopped**, sims stopped.
 
 ## Next
 
-1. Blocker 1: diff the long and normal rigoff glides above 31 km (bank
-   history, reversal timing, predicted miss, alpha tracking -- the long
-   group's glide alpha error is -2.9 vs -1.9 deg, overlapping).  The
-   glide is kspSim-screenable if the sim reproduces the split.
+1. Blocker 1, narrowed after the checkpoint: every rigoff glide looks
+   identical down to ~36 km (bank +-30-36, alpha 35-39, predicted +0.5
+   km).  The split is the reversal at 32-36 km: normal flights come out
+   at +-30 and stay; long ones come out needing 44-51 deg and are pinned
+   at 70 within 30 s (LOG6845, 6826, 6836 against 6812, 6816, 6831).  The
+   propagator models a reversing entry as a constant cos(bank) share
+   (`trajectory.py` ~690) -- the lift-up time of a slow Mach-4 reversal is
+   invisible to it.  **But that model was corrected three times and
+   refuted three times** (failures 79, 85: `GLIDE_BANK_DUTY_ON`,
+   `ALPHA_TRACKING_ON`, both) -- on the old craft, while the drain valve
+   dominated.  So change the method (failure 85's own advice): keep bank
+   authority in reserve late in the glide so a reversal cannot pin it
+   (e.g. cap the solve's bank below `BANK_MAX` by the reversal's cost, or
+   forbid reversals below a q / Mach where the remaining authority cannot
+   absorb one), rather than a fourth propagator correction.  Check first
+   whether kspSim reproduces the split on `qs_shuttle2` (it has no rigoff
+   model; its sim cone entries were all 16-18 km, so maybe not).
 2. Blocker 2 with `conesum.py` on rot-newdef-1006's `_inc` logs.
 3. The derived touchdown aim (spaceplane/CLAUDE.md "Next" 0).
 4. Carried over: the other fitted constants in the chain (`HAC_LD` 1.86,
