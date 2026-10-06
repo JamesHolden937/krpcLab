@@ -3945,6 +3945,7 @@ class Autopilot:
         # configured constants -- and discarded.
         self.env.stall_speed = measured.stall_speed
         self.env.best_ld = measured.best_ld
+        self.env.best_speed = measured.best_speed
         self.env.stall_alpha = measured.stall_alpha
         if (getattr(self.cfg, "GATE_FROM_APPROACH", False) and not landing
                 and getattr(self.env.runway, "gate_dist_m", None) is None):
@@ -6360,6 +6361,17 @@ class Autopilot:
         self.set_rcs(getattr(self.cfg, "ATTITUDE_YAW_WITH_RCS", False)
                      and getattr(self.rcs, "on", False), snap)
         self.set_throttle(0.0)
+        if not getattr(self, "_cone_ias_logged", False):
+            self._cone_ias_logged = True
+            ias = guidance.cone_ias(self.env, self.cfg)
+            if ias is not None:
+                self.logbook.event(
+                    snap.ut, "cone IAS %.1f m/s (stall %.1f, min-drag %s, "
+                    "bank limit %.0f deg)"
+                    % (ias, self.env.stall_speed,
+                       "-" if not getattr(self.env, "best_speed", None)
+                       else "%.1f" % self.env.best_speed,
+                       self.cfg.HAC_BANK_MAX_DEG))
         if (getattr(self.cfg, "GLIDE_FLAP_BRAKE", False)
                 and not getattr(self, "_glide_flaps_stowed", False)):
             # The glide's brake is the glide's; the cone has its own energy.
@@ -6474,12 +6486,11 @@ class Autopilot:
             return
         self._hac_ladder_ut = snap.ut
         stall = airframe.stall(self.env, self.cfg)
-        base = self.cfg.HAC_SPEED_FACTOR * self.cfg.APPROACH_FACTOR * stall
         g = self.surface_gravity
         bits = []
         h = self.cfg.GATE_ALT_M
         while h <= height + 1.0:
-            v = base * guidance.eas_scale(self.env, self.cfg, h)
+            v = guidance.cone_speed(self.env, self.cfg, stall, h)
             a = trajectory.alpha_for_load(self.env, v, h, snap.mass, g, 1.0)
             if a is None:
                 bits.append("%.0f: v %.0f no trim" % (h, v))

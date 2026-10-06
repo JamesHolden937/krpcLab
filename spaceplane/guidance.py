@@ -2148,9 +2148,8 @@ def straight_in_reach(env, cfg, mass, gravity):
     km at 20 km, weave pinned, out +4.2 km).
     """
     stall = airframe.stall(env, cfg)
-    base = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
     rungs = hac_ladder(env, cfg, cfg.HAC_ALT_M, mass, gravity,
-                       lambda h: base * eas_scale(env, cfg, h),
+                       lambda h: cone_speed(env, cfg, stall, h),
                        1.0, 0.0, 0, 1.0)
     if rungs is None or len(rungs) < 2:
         return None
@@ -2163,7 +2162,7 @@ def straight_in_reach(env, cfg, mass, gravity):
     # aim is their midpoint in height per metre (the harmonic mean), so equal
     # height errors either way are absorbed.
     mid_h = 0.5 * (cfg.HAC_ALT_M + cfg.GATE_ALT_M)
-    speed = base * eas_scale(env, cfg, mid_h)
+    speed = cone_speed(env, cfg, stall, mid_h)
     try:
         cla, cda = env.coefficients(cfg.HAC_ALPHA_MAX_DEG, speed, mid_h)
     except Exception:                                       # noqa: BLE001
@@ -2203,7 +2202,8 @@ def eas_scale(env, cfg, height):
     (LOG3071).  The same wing at the same angle flies ``sqrt(rho0 / rho)``
     faster in thin air; ``HAC_SPEED_EAS`` says so.  1 when off.
     """
-    if not getattr(cfg, "HAC_SPEED_EAS", False):
+    if not (getattr(cfg, "HAC_SPEED_EAS", False)
+            or getattr(cfg, "HAC_IAS_FROM_STALL", False)):
         return 1.0
     try:
         rho0 = env.density(0.0)
@@ -2213,6 +2213,40 @@ def eas_scale(env, cfg, height):
     if rho <= 0.0 or rho0 <= 0.0:
         return 1.0
     return math.sqrt(rho0 / rho)
+
+
+def cone_ias(env, cfg):
+    """``HAC_IAS_FROM_STALL``: the one indicated airspeed the cone is flown
+    at, off this airframe's own table, or ``None``.
+
+    ``1.3 x`` the stall (the conventional approach margin) or the
+    minimum-drag speed, whichever is faster -- below minimum drag a speed
+    error grows instead of correcting itself -- raised by the load the
+    cone's bank limit demands, so the margin holds at full bank.  One IAS
+    from the top of the cone to the gate keeps the angle of attack, and so
+    the glide ratio the plan is priced at, the same all the way down.  It
+    replaces ``HAC_SPEED_FACTOR x APPROACH_FACTOR x STALL_SPEED_M_S`` (108
+    m/s, the old craft's) held as *true* airspeed, which at 10 km is ~66
+    indicated: the shuttle flew its upper cone at 15-26 deg of alpha.
+    """
+    if not getattr(cfg, "HAC_IAS_FROM_STALL", False):
+        return None
+    vs = getattr(env, "stall_speed", None)
+    vmd = getattr(env, "best_speed", None)
+    if not vs or vs <= 0.0:
+        return None
+    load = 1.0 / max(0.2, math.cos(math.radians(
+        min(cfg.HAC_BANK_MAX_DEG, 75.0))))
+    return max(1.3 * vs, vmd or 0.0) * math.sqrt(load)
+
+
+def cone_speed(env, cfg, stall, height):
+    """The cone's target true airspeed at ``height``, wings level."""
+    ias = cone_ias(env, cfg)
+    if ias is not None:
+        return ias * eas_scale(env, cfg, height)
+    return (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+            * eas_scale(env, cfg, height))
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
@@ -2269,8 +2303,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # it is flown at rather than transcribed -- see ``airframe.turning_ld``.
     cone_ld = airframe.cone_ld(env, cfg, speed, height, mass, gravity)
     rungs = None
-    reference = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
-                 * eas_scale(env, cfg, height))
+    reference = cone_speed(env, cfg, stall, height)
     excess_height = 0.0
     if getattr(cfg, "HAC_ENERGY_BUDGET", False) and gravity > 0.0:
         excess_height = max(0.0, (speed * speed - reference * reference)
@@ -2299,9 +2332,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         # 4086).  ``None`` from the table keeps the first plan.
         # Priced slice by slice down to the gate (``hac_ladder``): the
         # descent is flown into denser air, where the ratio climbs.
-        base = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall)
         rungs = hac_ladder(env, cfg, height, mass, gravity,
-                           lambda h: base * eas_scale(env, cfg, h),
+                           lambda h: cone_speed(env, cfg, stall, h),
                            radius, turn, laps, total)
         # ``HAC_LD_MEASURED``: the table gives the curve's *shape* with
         # height; the vehicle's own L/D against the table's at the alpha it
@@ -2455,6 +2487,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         trim = cfg.GLIDE_ALPHA_DEG
     target = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR
               * stall * math.sqrt(load)) * eas_scale(env, cfg, height)
+    if cone_ias(env, cfg) is not None:
+        # One IAS, already sized for the bank limit: constant, not
+        # re-scaled by the bank of the moment.
+        target = cone_speed(env, cfg, stall, height)
     if getattr(cfg, "HAC_POLAR_SPEED", False):
         # ``HAC_POLAR_SPEED``: the speed whose glide ratio is the one the
         # plan needs (path over energy height to the gate), off the polar --

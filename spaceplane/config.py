@@ -299,6 +299,12 @@ class Config:
     # it as true airspeed at 9 km -- ~66 m/s equivalent, near the stall,
     # held with 19-22 deg of alpha (LOG3071).
     HAC_SPEED_EAS: bool = False
+    # **The cone at one IAS derived from the stall** (``guidance.cone_ias``,
+    # the user's, 2026-10-05): ``max(1.3 x stall, minimum-drag speed)``
+    # off this airframe's table, times ``sqrt(1/cos(HAC_BANK_MAX_DEG))``,
+    # held as indicated airspeed from the top of the cone to the gate.
+    # Implies the EAS scaling.  Off until paired.
+    HAC_IAS_FROM_STALL: bool = False
     LIFT_LOOP: bool = False
     LIFT_LOOP_RATE_DEG_S: float = 4.0       # deg/s per unit fractional error
     LIFT_LOOP_MIN_DEG: float = -8.0
