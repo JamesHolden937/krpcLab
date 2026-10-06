@@ -437,7 +437,7 @@ class Brake(object):
         # reached the door at 38-58 m/s of sink against 29-36 unbraked, past
         # the ~39 the committed flare can take; 3 of 6 broke up
         # (`pairfly-flapbrake.txt`).  Every number here is the flare's own.
-        if getattr(cfg, "AIRBRAKE_SINK_GUARD", False) and flare_trigger > 0.0:
+        if flare_trigger > 0.0:
             rise = max(0.05, float(getattr(cfg, "FLARE_TRACK_LOAD", 1.5))
                        - 1.0)
             touchdown = float(getattr(cfg, "FLARE_TOUCHDOWN_SINK_M_S", 8.0))
@@ -637,27 +637,4 @@ def choose_measured_set(samples, spoil=True):
             "wrong way (dClA %+.1f)" % (word, brake.lift),))
     brake.kind = word
     return brake
-
-
-def drag_brake_fraction(cfg, speed, target, excess, height, was_out):
-    """How far out the in-flight drag brake should be, in [0, 1].
-
-    **For "too fast at the right height"** (the user, 2026-09-25) -- the
-    one surplus the spoiler cannot spend, because a spoiler spends *height*.
-    Out when the approach is ``AIR_DRAG_ON_M_S`` over its own
-    ``target_speed`` and not below its height profile by more than
-    ``AIR_DRAG_LOW_M`` (below it, the speed is the height it is short of
-    and must not be braked away); in again under ``AIR_DRAG_OFF_M_S``
-    (hysteresis) or under ``AIR_DRAG_MIN_H_M``.  Proportional between, in
-    quarters, so the deploy field is written only when the step changes.
-    """
-    if speed is None or target is None:
-        return 0.0
-    over = speed - target
-    if height < cfg.AIR_DRAG_MIN_H_M or excess < -cfg.AIR_DRAG_LOW_M:
-        return 0.0
-    if over < (cfg.AIR_DRAG_OFF_M_S if was_out else cfg.AIR_DRAG_ON_M_S):
-        return 0.0
-    frac = max(0.0, min(1.0, over / cfg.AIR_DRAG_FULL_M_S))
-    return max(0.25, math.ceil(frac * 4.0 - 1e-9) / 4.0)
 

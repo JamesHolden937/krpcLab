@@ -33,67 +33,6 @@ SEA_LEVEL_MACH = 0.25           # where the subsonic polar is read
 MARGIN = 0.70
 
 
-def lift_discount(env, cfg):
-    """How much of the table's lift this airframe actually makes, subsonically.
-
-    **``MARGIN`` is a measurement, and the vehicle takes it every flight.**
-    The module docstring calls 0.70 "one stated assumption in place of four
-    transcribed constants", which was progress -- but it is still a number
-    fitted to one wing, sitting on the quantity a stall speed is made of, on
-    an autopilot whose bar is any aircraft a player could fly this entry in.
-    ``environment.LiftTrim`` has been measuring exactly this on every flight
-    and printing it at shutdown, behind a flag that gates *applying* it
-    rather than reading it.
-
-    **This was flown and it is wrong.  Do not re-try it in this form.**
-
-    The case for it looked strong: LiftTrim's subsonic bin read 0.74 on
-    ``logs/LOG2747`` against ``MARGIN``'s 0.70, and 0.49 on ``logs/LOG2756``
-    -- and flight-over-table lift through FLARE on those same two flights
-    read 0.74 and 0.52, two extractions agreeing twice.
-
-    Flown as an arm on ``qs_plane``, 8 against 8, it landed **+1405 sd 364
-    against +900 sd 184**, 1 of 4 on the runway against 5 of 5, 3 of 8
-    intact against 5 of 8.  The log says why in one line: *"stall 41.7 m/s
-    (ClA max 56.9, discounted -21% measured off this vehicle)"* -- the bin
-    read **1.21**, so the stall came out 25% low, which is the direction
-    ``MARGIN``'s own comment calls the dangerous one.  At shutdown the same
-    flight reported that bin at **2.54**.
-
-    Two separate errors, and the first is the instructive one:
-
-    - **They are different quantities.**  ``MARGIN`` discounts the *top of
-      the lift curve*, where the table is a hypothetical the vehicle is
-      rarely steady at.  ``LiftTrim`` measures lift over table at *whatever
-      angle is being flown*.  Agreeing twice at the bottom of the curve is
-      not evidence about the top.  One name for two quantities is failure
-      19, and the agreement is exactly what made it look safe.
-    - **And the bin is not clean anyway.**  Over three flights of two
-      aircraft it reads 0.74, 0.49 and 2.54 -- a fivefold range, two of them
-      on the same aircraft.  ``Config.LIFT_TRIM_ON``'s comment says this
-      ("only better than no correction if the measurement is clean, and this
-      one is taken while the vehicle is manoeuvring") and it was not
-      weighed.
-    - Timing compounds both: the landing read happens at ``GLIDE -> HAC``,
-      where the subsonic bin holds a few hundred samples from the end of a
-      hypersonic entry, not from an approach.
-
-    What would answer the objection: a measurement taken *near maximum
-    lift*, which on this vehicle happens only in the flare -- after the
-    number is needed.  Until something produces that, ``MARGIN`` stays a
-    stated assumption, which is what its module docstring always claimed it
-    was.
-
-    ``None`` unless ``LIFT_TRIM_DISCOUNT`` is on.  The caller falls back to
-    ``MARGIN``, and the log says which was used.
-    """
-    # **Refuted in flight, and left here as the record of how.**
-    # ``LIFT_TRIM_DISCOUNT`` is off and should stay off until the objection
-    # below is answered; it is a switch rather than a deletion because the
-    # measurement is real and only the *use* of it was wrong.
-    return None
-
-
 class Airframe:
     """Stall speed and best glide, read off the table in STANDBY.
 
@@ -175,15 +114,12 @@ def measure(env, mass, gravity, altitude=0.0):
 
     alpha, ratio, cla = best
     weight = mass * gravity
-    # The discount the vehicle measured on itself, or ``MARGIN`` if it has
-    # not flown yet.  See ``lift_discount``.
-    got = lift_discount(env, getattr(env, "cfg", None))
-    discount = MARGIN if got is None else got
+    discount = MARGIN
     stall = math.sqrt(2.0 * weight / (rho * peak * discount))
     glide = math.sqrt(2.0 * weight / (rho * cla))
     return Airframe(stall_speed=stall, best_ld=ratio, best_alpha=alpha,
                     best_speed=glide, max_cla=peak, discount=discount,
-                    measured_discount=got is not None,
+                    measured_discount=False,
                     stall_alpha=peak_alpha)
 
 

@@ -194,10 +194,6 @@ class LiftTrim:
             return None
         return entry[0]
 
-    def factor(self, mach):
-        """The correction for this Mach, or ``None`` where nothing is known."""
-        return None
-
     def report(self):
         """One line for the log: every bin that has an answer."""
         width = max(0.1, float(self.cfg.LIFT_TRIM_MACH_BIN))
@@ -346,9 +342,7 @@ class Runway:
         makes the cone enterable also unsaturates the glide solve that feeds
         it.
         """
-        if getattr(self.cfg, "HAC_ON", False):
-            return self.high_gate(end)
-        return self.low_gate(end)
+        return self.high_gate(end)
 
     def choose(self, position, velocity):
         """Which end to land on, given where the vehicle is and its heading.
@@ -526,9 +520,6 @@ class Environment:
         mach = speed / self.speed_of_sound(altitude)
         cla = self.lift.lookup(alpha_deg, mach)
         cda = self.drag.lookup(alpha_deg, mach)
-        trim = self.lift_trim.factor(mach)
-        if trim is not None:
-            cla *= trim
         return cla, cda
 
     def ready(self):

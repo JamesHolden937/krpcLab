@@ -24,7 +24,7 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from common import vec
 from . import airframe
@@ -99,41 +99,6 @@ class Prediction:
 
 
 @dataclass
-class BankPlan:
-    """A slow reversal, as a lean against time (``GLIDE_BANK_SWEEP``).
-
-    From ``lean`` (deg) the bank goes to ``hold * magnitude`` at
-    ``approach`` deg/s and stays there until ``start`` seconds, then crosses
-    toward ``toward * magnitude`` at ``rate`` deg/s and stays there.
-    ``hold`` of 0 is a crossing already under way (``start`` 0).  The
-    magnitude is the ``Steer``'s, so the range solve's probes of it fly the
-    plan rather than a constant lean.
-    """
-    lean: float = 0.0
-    hold: float = 0.0
-    start: float = 0.0
-    toward: float = 1.0
-    rate: float = 1.0
-    approach: float = 8.0
-    # Below this Mach the relay has the sign back
-    # (``GLIDE_BANK_SWEEP_UNTIL_MACH``), so the plan becomes the mean of a
-    # reversing entry there: holding one side to the gate subsonically is a
-    # 5 km turn radius the vehicle never flies.  0: the plan to the end.
-    until_mach: float = 0.0
-
-    def bank(self, t, magnitude):
-        def move(frm, to, speed, dt):
-            step = speed * max(0.0, dt)
-            return frm + vec.clamp(to - frm, -step, step)
-        if self.hold and t < self.start:
-            return move(self.lean, self.hold * magnitude, self.approach, t)
-        held = (move(self.lean, self.hold * magnitude, self.approach,
-                     self.start) if self.hold else self.lean)
-        return move(held, self.toward * magnitude, self.rate,
-                    t - (self.start if self.hold else 0.0))
-
-
-@dataclass
 class Steer:
     """A commanded angle of attack and bank, held for one propagation.
 
@@ -169,11 +134,6 @@ class Steer:
     # so an unsolved switch turns the law off rather than flying its most
     # aggressive setting.
     drag_until: object = None
-    # **A bank that moves** (``GLIDE_BANK_SWEEP``): a :class:`BankPlan`
-    # flown across the propagation, with ``|bank|`` as its magnitude, so a
-    # solve probing magnitudes probes them *under the plan*.  Implies the
-    # lateral lift is in.  ``None`` is the constant lean.
-    plan: object = None
 
 _LOAD_CACHE = {}
 _LOAD_CACHE_KEY = None
@@ -362,15 +322,14 @@ def alpha_floor_for_speed(env, cfg, speed, altitude, mass, gravity):
     and like boosterland's ``landing_command``: a prediction of a law nobody
     flies is a prediction of a trajectory nobody flies.
     """
-    if cfg is None or not getattr(cfg, "SPEED_FLOOR_ON", False):
+    if cfg is None:
         return cfg_default_min(cfg)
     # Only while the glide has surplus to spend: see
     # ``Config.SPEED_FLOOR_WHEN_LONG``.  ``env.spending`` is set by the
     # control loop from its own prediction each tick, so the propagations of
     # that tick all see the same law -- which is the point of hanging it on
     # the environment.
-    if (getattr(cfg, "SPEED_FLOOR_WHEN_LONG", False)
-            and getattr(env, "spending", True) is False):
+    if getattr(env, "spending", True) is False:
         return cfg.ALPHA_MIN_DEG
     vs = airframe.stall(env, cfg)
     if vs is None:                  # no table yet: no floor either
@@ -646,21 +605,6 @@ class Holdable:
                         for i, v in trusted)
 
 
-def normal_coefficient(env, alpha_deg, mach):
-    """``Cn*A`` at an angle and Mach, from the vehicle's own swept table.
-
-    The force perpendicular to the body is what makes the pitching moment
-    that takes the angle of attack away from the vehicle, so it is the
-    quantity the alpha ceiling is really about -- not lift, which is
-    perpendicular to the *airflow* and therefore rotates as the angle
-    changes.
-    """
-    cla = env.lift.lookup(alpha_deg, mach)
-    cda = env.drag.lookup(alpha_deg, mach)
-    a = math.radians(alpha_deg)
-    return cla * math.cos(a) + cda * math.sin(a)
-
-
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """Clamp a commanded angle to what the airframe has shown it can hold.
 
@@ -670,7 +614,7 @@ def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     knowable only by watching.  With no estimator, or none with evidence at
     this ``q``, the command is returned untouched.
     """
-    if not getattr(cfg, "HOLDABLE_ON", False) or holdable is None:
+    if holdable is None:
         return alpha
     limit = holdable.limit(q)
     return alpha if limit is None else min(alpha, limit)
@@ -686,7 +630,7 @@ def tracked_alpha(cfg, alpha, q):
     of a trajectory the vehicle does not fly, which is the error this project
     has now made in five places.
     """
-    if (not getattr(cfg, '_tracking_forced', False)):
+    if not getattr(cfg, "_tracking_forced", False):
         return alpha
     table = getattr(cfg, "ALPHA_TRACKING", ())
     if not table or q <= 0.0:
@@ -794,16 +738,8 @@ def _rk4(env, r, v, mass, dt, steer):
             vec.add(v, combine(k1v, k2v, k3v, k4v)))
 
 
-def _euler(env, r, v, mass, dt, steer):
-    a = acceleration(env, r, v, mass, steer)
-    v2 = vec.add(v, vec.scale(a, dt))
-    return vec.add(r, vec.scale(v2, dt)), v2
-
-
 def _step(env, r, v, mass, dt, cfg, steer):
-    if cfg.PREDICT_RK4:
-        return _rk4(env, r, v, mass, dt, steer)
-    return _euler(env, r, v, mass, dt, steer)
+    return _rk4(env, r, v, mass, dt, steer)
 
 
 
@@ -828,13 +764,6 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     """
     if steer is None:
         steer = Steer()
-    swept = None
-    if steer.plan is not None:
-        # A private copy whose ``bank`` is moved every step; the caller's is
-        # left as it was handed in.
-        swept = replace(steer, reversing=False)
-        plan, magnitude = steer.plan, abs(steer.bank)
-        steer = swept
     r = tuple(r0)
     v = tuple(v0)
     t = 0.0
@@ -872,24 +801,9 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     entry_r = entry_v = None
     iface_r = iface_v = iface_t = None
     air_r = air_v = None
-    # ``PREDICT_RESIDUAL_DUMP``: **the vehicle that flies the late glide is
-    # the drained one.**  ``DRAIN_RESIDUAL`` dumps the nose fuel at a Mach,
-    # and a prediction made at the wet mass all the way down aims a vehicle
-    # ~2 t heavier than the one that arrives -- every drained flight
-    # arrived short (LOG4140-4144, 4241-4243, 4283-4286).  The autopilot
-    # posts ``env.residual_dump = (mach, kg)`` while the dump is pending.
-    dump = ((None))
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
         altitude = radius - env.equatorial_radius
-        if dump is not None and altitude < env.atmosphere_depth:
-            try:
-                mach = env.mach(vec.norm(v), altitude)
-            except Exception:                           # noqa: BLE001
-                mach = None
-            if mach is not None and mach <= dump[0]:
-                mass = max(1.0, mass - dump[1])
-                dump = None
         lowest = min(lowest, altitude)
         # A skip is an entry that does not commit.  This airframe holds
         # 30 deg -- *maximum lift* -- through the entry, and if the burn
@@ -947,18 +861,6 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         if descending and altitude < env.atmosphere_depth:
             profile.append((speed, altitude))
 
-        if swept is not None:
-            # The bank at the middle of the step: RK4 holds one control
-            # across its four stages.
-            relay = False
-            if plan.until_mach > 0.0:
-                try:
-                    relay = env.mach(speed, altitude) < plan.until_mach
-                except Exception:                       # noqa: BLE001
-                    relay = False
-            swept.reversing = relay
-            swept.bank = (magnitude if relay
-                          else plan.bank(t + 0.5 * dt, magnitude))
         r, v = _step(env, r, v, mass, dt, cfg, steer)
         t += dt
         steps += 1

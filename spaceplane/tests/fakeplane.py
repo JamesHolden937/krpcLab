@@ -149,8 +149,7 @@ class Runway:
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.HAC_ALT_M)
 
     def gate(self, end):
-        if getattr(self.cfg, "HAC_ON", False):
-            return self.high_gate(end)
+        return self.high_gate(end)
         return self.low_gate(end)
 
     def choose(self, position, velocity):

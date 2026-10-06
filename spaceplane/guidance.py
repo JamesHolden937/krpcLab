@@ -31,10 +31,7 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     what the glide is solved on.  ``cross`` is the lateral miss at the same
     point, which the bank's sign takes.
     """
-    # ``GLIDE_BANK_SWEEP``: the glide solve flies the planned slow reversal
-    # (``solve_glide(plan=...)`` posts it for the duration of one solve).
-    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
-                  plan=getattr(env, "bank_plan", None))
+    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass)
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
@@ -192,7 +189,7 @@ def glide_reserve(env, cfg, r):
     is not decoration -- a reserve held to the end is just a long landing,
     which is no more recoverable than a short one.
     """
-    if not cfg.GLIDE_RESERVE_ON or cfg.GLIDE_RESERVE_M <= 0.0:
+    if cfg.GLIDE_RESERVE_M <= 0.0:
         return 0.0
     altitude = vec.norm(r) - env.equatorial_radius
     top = cfg.GLIDE_RESERVE_FROM_ALT_M
@@ -204,28 +201,7 @@ def glide_reserve(env, cfg, r):
     return cfg.GLIDE_RESERVE_M * (altitude - bottom) / (top - bottom)
 
 
-def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None,
-                plan=None):
-    """The angle of attack and bank under ``plan`` (``GLIDE_BANK_SWEEP``).
-
-    With a :class:`trajectory.BankPlan` every propagation of the solve
-    flies it, so the magnitude is solved for the slow reversal the vehicle
-    will fly -- time near wings level included -- rather than for the mean
-    of a reversing entry.  The sign the solve returns is then the relay's
-    and is the caller's to replace.  See ``_solve_glide`` for the rest.
-    """
-    if plan is None:
-        return _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0,
-                            ceiling)
-    env.bank_plan = plan
-    try:
-        return _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0,
-                            ceiling)
-    finally:
-        env.bank_plan = None
-
-
-def _solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
+def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     """The angle of attack and bank that land the prediction on the gate.
 
     **Decoupled, not a 2x2.**  The first version inverted a measured Jacobian
@@ -557,133 +533,6 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     return wanted if wanted else sign
 
 
-def _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan):
-    """The cross-track at the gate under ``plan``, or ``None``."""
-    gate = env.runway.gate(end)
-    steer = Steer(alpha=alpha, bank=magnitude, cfg=cfg, mass=mass, plan=plan)
-    p = trajectory.predict(env, r, v, mass, cfg, steer=steer, gate=gate,
-                           end=end, target_radius=vec.norm(gate))
-    return p.cross if p.reached and not p.skipped else None
-
-
-def _bracket_root(f, x0, lo, hi, step, tolerance, budget):
-    """``(x, f(x))`` nearest a root of a monotone ``f`` on ``[lo, hi]``.
-
-    Local, not global: the curves this serves are steep steps between
-    plateaus (a sweep rate that reaches the stop in seconds, a start time
-    past the end of the flight), and a global regula falsi stalls on them
-    -- 116 km off, offline.  So from ``x0`` step outward, doubling, until
-    the sign changes, then Illinois inside that bracket.  A bracket that
-    reaches an end without a sign change returns that end.  ``None`` from
-    ``f`` (a propagation that did not reach the gate) returns the best
-    point so far, or ``(x0, None)``.
-    """
-    calls = [budget]
-
-    def g(x):
-        calls[0] -= 1
-        return f(x)
-
-    a = vec.clamp(x0, lo, hi)
-    fa = g(a)
-    if fa is None or abs(fa) <= tolerance:
-        return a, fa
-    b = vec.clamp(a + step, lo, hi)
-    if b == a:
-        b = vec.clamp(a - step, lo, hi)
-    fb = g(b)
-    if fb is None:
-        return a, fa
-    if fa * fb > 0.0:
-        if abs(fb) > abs(fa):
-            a, fa, b, fb = b, fb, a, fa
-        while fa * fb > 0.0 and calls[0] > 0:
-            direction = 1.0 if b >= a else -1.0
-            if (direction > 0 and b >= hi) or (direction < 0 and b <= lo):
-                return b, fb
-            step *= 2.0
-            a, fa = b, fb
-            b = vec.clamp(b + direction * step, lo, hi)
-            fb = g(b)
-            if fb is None:
-                return a, fa
-            if abs(fb) <= tolerance:
-                return b, fb
-        if fa * fb > 0.0:
-            return (a, fa) if abs(fa) < abs(fb) else (b, fb)
-    # Illinois: plain regula falsi keeps one end and crawls where the curve
-    # bends, so halve the kept end's value whenever it survives twice.
-    x, fx = (a, fa) if abs(fa) < abs(fb) else (b, fb)
-    kept = 0
-    while calls[0] > 0 and fb != fa:
-        c = a - fa * (b - a) / (fb - fa)
-        fc = g(c)
-        if fc is None:
-            break
-        if abs(fc) < abs(fx):
-            x, fx = c, fc
-        if abs(fc) <= tolerance:
-            break
-        if fc * fa > 0.0:
-            a, fa = c, fc
-            if kept == 1:
-                fb *= 0.5
-            kept = 1
-        else:
-            b, fb = c, fc
-            if kept == -1:
-                fa *= 0.5
-            kept = -1
-    return x, fx
-
-
-def sweep_start(env, cfg, r, v, mass, end, alpha, magnitude, lean, side,
-                approach, guess):
-    """``(start, cross)``: when the slow reversal should begin.
-
-    ``Config.GLIDE_BANK_SWEEP``, holding.  The plan is: lean on ``side`` at
-    ``magnitude``, then at ``start`` seconds cross to the other side at
-    ``GLIDE_BANK_SWEEP_RATE_DEG_S`` and stay there.  The cross-track at the
-    gate is monotone in ``start`` -- the longer the lean is held, the
-    further the track goes that way -- and ``start`` is the one that puts it
-    on zero, searched over ``[0, GLIDE_BANK_SWEEP_HORIZON_S]``.  A ``start``
-    at 0 is the crossing being due now; when no start nulls it the nearer
-    end comes back (0: cross now, the most it can do; the horizon: hold).
-    """
-    def f(start):
-        plan = trajectory.BankPlan(
-            lean=lean, hold=side, start=start, toward=-side,
-            rate=cfg.GLIDE_BANK_SWEEP_RATE_DEG_S, approach=approach,
-            until_mach=cfg.GLIDE_BANK_SWEEP_UNTIL_MACH)
-        return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
-    return _bracket_root(f, guess, 0.0, cfg.GLIDE_BANK_SWEEP_HORIZON_S,
-                         cfg.GLIDE_BANK_SWEEP_START_STEP_S,
-                         cfg.GLIDE_BANK_SWEEP_TOL_M,
-                         cfg.GLIDE_BANK_SWEEP_ITERATIONS)
-
-
-def sweep_rate(env, cfg, r, v, mass, end, alpha, magnitude, lean, toward,
-               guess):
-    """``(rate, cross)``: how fast the crossing under way should go.
-
-    ``Config.GLIDE_BANK_SWEEP``, crossing.  The lean moves from ``lean``
-    toward ``toward * magnitude`` and stays there; the faster it gets
-    there, the further the track goes that way, so the cross-track at the
-    gate is monotone in the rate, searched over
-    ``[GLIDE_BANK_SWEEP_RATE_MIN_DEG_S, GLIDE_BANK_SWEEP_RATE_MAX_DEG_S]``.
-    """
-    def f(rate):
-        plan = trajectory.BankPlan(lean=lean, hold=0.0, toward=toward,
-                                   rate=rate,
-                                   until_mach=cfg.GLIDE_BANK_SWEEP_UNTIL_MACH)
-        return _plan_cross(env, cfg, r, v, mass, end, alpha, magnitude, plan)
-    return _bracket_root(f, guess, cfg.GLIDE_BANK_SWEEP_RATE_MIN_DEG_S,
-                         cfg.GLIDE_BANK_SWEEP_RATE_MAX_DEG_S,
-                         cfg.GLIDE_BANK_SWEEP_STEP_DEG_S,
-                         cfg.GLIDE_BANK_SWEEP_TOL_M,
-                         cfg.GLIDE_BANK_SWEEP_ITERATIONS)
-
-
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
              alpha0, bank0, floor=None, target=0.0, top=None):
     """Command the solved pair only if propagating it lands nearer.
@@ -915,11 +764,10 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
         # The wing carries the turn as well as the path.  Bounded, because
         # ``1/cos`` runs away at the vertical and a bank limit that has been
         # exceeded should not become an infinite load demand.
-        if getattr(cfg, "APPROACH_BANK_COMPENSATION", False):
-            lift_share = math.cos(math.radians(vec.clamp(
-                bank_deg, -cfg.APPROACH_BANK_COMP_MAX_DEG,
-                cfg.APPROACH_BANK_COMP_MAX_DEG)))
-            load /= max(0.1, lift_share)
+        lift_share = math.cos(math.radians(vec.clamp(
+            bank_deg, -cfg.APPROACH_BANK_COMP_MAX_DEG,
+            cfg.APPROACH_BANK_COMP_MAX_DEG)))
+        load /= max(0.1, lift_share)
         # Never more than the flare is allowed to ask for, and never less
         # than the bounded dive: the first keeps this out of the manoeuvre
         # the next phase owns, the second is the old trim floor's caution.
@@ -1032,37 +880,35 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``airframe.approach_ld``.  The approach flies 2.25 x stall, not the
     # 78 m/s best glide sits at, and the two ratios differ by a third.
     best_ld = airframe.approach_ld(env, cfg, height, mass, gravity)
-    fast = False
-    target = (cfg.FLARE_SHALLOW_APPROACH_FACTOR if fast
+    target = (cfg.FLARE_SHALLOW_APPROACH_FACTOR if False
               else cfg.APPROACH_FACTOR) * stall
     floor = cfg.APPROACH_SPEED_FLOOR_FACTOR * stall
-    if getattr(cfg, "APPROACH_SPEED_PROFILE", False):
-        # The height the flare will fire at, from the same expression the
-        # flare's own trigger uses -- shared rather than re-derived, for the
-        # reason ``deorbit_aim`` is shared by the search and the stop test.
-        trigger = flare_door(cfg, sink, speed, env)
-        # **Reach the target above the trigger and hold it there.**  The
-        # first version ramped to its target *at* the trigger height, so the
-        # vehicle arrived at the flare still decelerating and carried on
-        # through the target into the stall -- 65-76 m/s against a window of
-        # 83-91, two of five destroyed (failure 49).  A glider cannot make
-        # speed, so a target it is still descending towards is a target it
-        # will pass.  Finishing the ramp ``APPROACH_PROFILE_HOLD_M`` above
-        # the trigger leaves a stretch where the command is constant and the
-        # speed loop can settle on it.
-        hold = max(0.0, float(getattr(cfg, "APPROACH_PROFILE_HOLD_M", 0.0)))
-        span = max(1.0, cfg.GATE_ALT_M - trigger - hold)
-        share = vec.clamp((height - trigger - hold) / span, 0.0, 1.0)
-        wanted = (cfg.FLARE_SHALLOW_DOOR_FACTOR if fast
-                  else cfg.APPROACH_FLARE_FACTOR) * stall
-        target = wanted + share * (target - wanted)
-        # The floor has to come down with it, or it fights the deceleration
-        # it is supposed to be protecting: at a fixed 2.0 x stall it clamps
-        # the angle of attack to trim the moment the vehicle goes below 96,
-        # which is *above* the speed the flare wants.  Its bottom is the
-        # measured one -- the angle the flare stops completing at.
-        bottom = cfg.APPROACH_FLARE_FLOOR_FACTOR * stall
-        floor = bottom + share * (floor - bottom)
+    # The height the flare will fire at, from the same expression the
+    # flare's own trigger uses -- shared rather than re-derived, for the
+    # reason ``deorbit_aim`` is shared by the search and the stop test.
+    trigger = flare_door(cfg, sink, speed, env)
+    # **Reach the target above the trigger and hold it there.**  The
+    # first version ramped to its target *at* the trigger height, so the
+    # vehicle arrived at the flare still decelerating and carried on
+    # through the target into the stall -- 65-76 m/s against a window of
+    # 83-91, two of five destroyed (failure 49).  A glider cannot make
+    # speed, so a target it is still descending towards is a target it
+    # will pass.  Finishing the ramp ``APPROACH_PROFILE_HOLD_M`` above
+    # the trigger leaves a stretch where the command is constant and the
+    # speed loop can settle on it.
+    hold = max(0.0, float(getattr(cfg, "APPROACH_PROFILE_HOLD_M", 0.0)))
+    span = max(1.0, cfg.GATE_ALT_M - trigger - hold)
+    share = vec.clamp((height - trigger - hold) / span, 0.0, 1.0)
+    wanted = (cfg.FLARE_SHALLOW_DOOR_FACTOR if False
+              else cfg.APPROACH_FLARE_FACTOR) * stall
+    target = wanted + share * (target - wanted)
+    # The floor has to come down with it, or it fights the deceleration
+    # it is supposed to be protecting: at a fixed 2.0 x stall it clamps
+    # the angle of attack to trim the moment the vehicle goes below 96,
+    # which is *above* the speed the flare wants.  Its bottom is the
+    # measured one -- the angle the flare stops completing at.
+    bottom = cfg.APPROACH_FLARE_FLOOR_FACTOR * stall
+    floor = bottom + share * (floor - bottom)
     trim = alpha_for_load(env, speed, height, mass, gravity, 1.0)
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
@@ -1072,7 +918,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     reachable = max(0.0, distance) / max(0.1, best_ld)
     excess = height - reachable
     target, floor = spend_as_speed(cfg, target, floor, excess, stall,
-                                   gravity, fast)
+                                   gravity, False)
     wanted_sink = (height * max(1.0, math.sqrt(max(0.0, speed * speed
                                                    - sink * sink)))
                    / distance) if distance > 50.0 else sink
@@ -1083,38 +929,20 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # is a *pull-up* on a vehicle descending at 18 degrees, which needs
     # ``cos(18) = 0.95``.  So the command is the descent angle that holds the
     # speed, flown as the load that flies that angle.
-    two_sided = getattr(cfg, "APPROACH_SPEED_PATH", False)
-    at_target = getattr(cfg, "APPROACH_ALPHA_AT_TARGET", False)
-    if at_target:
-        # ``APPROACH_ALPHA_AT_TARGET``: the one-g angle *at the target
-        # speed*, plus a proportional pull-up when fast.  The airframe's own
-        # speed stability then holds the speed.  Both laws before it fed
-        # energy into the phugoid: trim at the *current* speed rises as the
-        # vehicle slows (failure 65), and the descent-for-speed law swung
-        # the door 43-122 m/s on a ~50 s period with or without a rate term
-        # (LOG4848, rot-kd-1002, rot-trim4-1002).
-        held = max(target, floor)
-        at = alpha_for_load(env, held, height, mass, gravity, 1.0)
-        if at is None:
-            at = trim
-        alpha = at + cfg.APPROACH_SPEED_KP * (speed - held)
-        two_sided = True        # the floor below is the target's, as above
-    elif two_sided:
-        # The floor is not a clamp on the angle any more, it is a floor under
-        # the *target*: "never slower than this" is a speed the law can fly
-        # to, where "never less alpha than trim" was a command it could not
-        # recover from.
-        alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
-                                max(target, floor), trim, accel=accel)
-        alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
-                                                  -cfg.APPROACH_PATH_LIMIT_M,
-                                                  cfg.APPROACH_PATH_LIMIT_M)
-    else:
-        alpha = (trim
-                 + cfg.APPROACH_SPEED_KP * (speed - target)
-                 + cfg.APPROACH_PATH_KP * vec.clamp(
-                     excess, -cfg.APPROACH_PATH_LIMIT_M,
-                     cfg.APPROACH_PATH_LIMIT_M))
+    two_sided = True
+    # ``APPROACH_ALPHA_AT_TARGET``: the one-g angle *at the target
+    # speed*, plus a proportional pull-up when fast.  The airframe's own
+    # speed stability then holds the speed.  Both laws before it fed
+    # energy into the phugoid: trim at the *current* speed rises as the
+    # vehicle slows (failure 65), and the descent-for-speed law swung
+    # the door 43-122 m/s on a ~50 s period with or without a rate term
+    # (LOG4848, rot-kd-1002, rot-trim4-1002).
+    held = max(target, floor)
+    at = alpha_for_load(env, held, height, mass, gravity, 1.0)
+    if at is None:
+        at = trim
+    alpha = at + cfg.APPROACH_SPEED_KP * (speed - held)
+    two_sided = True        # the floor below is the target's, as above
 
     # The speed floor outranks the path, always.  Arriving at the flare too
     # slow cannot be fixed -- the manoeuvre needs more airspeed than the
@@ -1144,7 +972,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # Surplus height is then spent the way a glider spends it, with the
     # S-turn above, and the worst case is landing long instead of arriving
     # nose-down.
-    if cfg.APPROACH_TRIM_FLOOR and not two_sided:
+    if not two_sided:
         alpha = max(alpha, min(trim, cfg.APPROACH_ALPHA_MAX_DEG))
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
 
@@ -1186,10 +1014,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     scurve_stop = (distance + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0))
                    > cfg.APPROACH_SCURVE_STOP_M)
     scurve_deg = 0.0
-    if (cfg.APPROACH_SCURVE_TRACK and cfg.APPROACH_LATERAL_CAPTURE
-            and excess > cfg.APPROACH_SCURVE_M
-            and scurve_stop
-            and height > 150.0):
+    if excess > cfg.APPROACH_SCURVE_M and scurve_stop and (height > 150.0):
         affordable = max(1.0, height * best_ld)
         ratio = vec.clamp(max(0.0, distance) / affordable, 0.0, 1.0)
         scurve_deg = min(cfg.APPROACH_SCURVE_MAX_DEG,
@@ -1200,145 +1025,128 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # anything it could buy.
     cross_rate = 0.0
     cross_time = 0.0
-    if cfg.APPROACH_LATERAL_CAPTURE:
-        # The lateral closing rate that can still be arrested inside the
-        # offset that is left, against the lateral acceleration the bank
-        # limit affords: ``v^2 = 2 a s``.  Then bank on the difference
-        # between that and the rate the vehicle has.  Every term is a speed
-        # or an acceleration, so it does not need re-fitting when the
-        # approach speed changes -- which is exactly what went wrong with the
-        # two proportional gains it replaces.  See ``APPROACH_LATERAL_CAPTURE``.
-        lateral = (cfg.APPROACH_CAPTURE_MARGIN * gravity
-                   * math.tan(math.radians(cfg.APPROACH_BANK_MAX_DEG)))
-        stoppable = math.sqrt(2.0 * lateral * abs(cross))
-        # **And a rate the vehicle still has time to spend.**  "Arrest it in
-        # the offset that is left" permits 9 m/s fourteen metres out, which
-        # is a closure the *flare* then inherits and flies straight for eight
-        # seconds with the wings level -- measured on ``logs/LOG1366``, a
-        # handover at ``cross=+14`` reached the first rollout tick at
-        # **-72 m** and came to rest at -86, shedding both elevons and a wing
-        # on the grass beside a runway it had landed on. The capture is not
-        # overshooting; it is being interrupted, and a gentler gain would
-        # hand over *more* rate rather than less.
-        #
-        # So the rate asked for is also the one that puts the cross-track at
-        # zero when the wheels arrive: ``|cross| / time to the ground``. The
-        # drift through the flare then *is* the last of the correction
-        # instead of a departure from it. This is the open item recorded at
-        # ``APPROACH_CAPTURE_MARGIN``, and it is a time, not a gain.
-        #
-        # **And the time to the ground is not the height over the sink**,
-        # because the flare spends the last two hundred metres arresting
-        # exactly that sink.  Dividing by the approach's rate runs the
-        # closure for about twice as long as it was sized for and overshoots
-        # by as much: ``logs/LOG1398`` handed over near the centreline, drew
-        # 6.8 m/s of closure for it, and touched down at **+45 m** and still
-        # going -- +80 at rest, both elevons gone in the grass beside the
-        # runway.  The flare's own trigger is the boundary and its average
-        # sink is about half, so the remaining time is written against the
-        # same constants the flare is triggered on.  A phase that cannot
-        # correct still has to be *handed* a state it can fly out.
-        trigger = flare_door(cfg, sink, speed, env)
-        to_flare = max(0.0, height - trigger) / max(1.0, sink)
-        in_flare = 2.0 * min(height, trigger) / max(1.0, sink)
-        # ``APPROACH_CAPTURE_LAG_AWARE``: the time the roll axis takes to
-        # deliver a bank, times ``APPROACH_CAPTURE_LAG_FACTOR``.  ``None``
-        # (not known, or the flag off) leaves the law as it was.
-        lag = None
-        if (getattr(cfg, "APPROACH_CAPTURE_LAG_AWARE", False)
-                and roll_lag_s is not None and roll_lag_s > 0.0):
-            lag = float(cfg.APPROACH_CAPTURE_LAG_FACTOR) * float(roll_lag_s)
-        # **Be centred at the flare's door, not at the wheels.**  Spending
-        # the last of the correction inside the flare is what the ``in_flare``
-        # term was for, and it works -- the cross-track at rest is within
-        # 33 m on every flight that stops.  What it costs is the *wing*: the
-        # flare is eight seconds long and the only way to move sideways in it
-        # is to put a tip down, at fifty metres, on an airframe whose wings
-        # are the lowest thing on it.  Across eighteen flights of the working
-        # arm the split is clean and it is on this number alone -- every
-        # flight entering the flare inside 70 m of the centreline kept its
-        # parts, every flight outside it was ``destroyed in ROLLOUT`` with a
-        # ``Structural Wing Type A`` and an elevon the first things to go.
-        #
-        # So ask for the closure that is finished when the flare starts.  It
-        # is a *faster* closure, but it is spent at 150 m and above, where a
-        # wing down is free, instead of at 50 m where it is the aircraft.
-        # **And the two ends of that are both wrong, so it is a share.**
-        # Finishing at the wheels (share 1) puts the cross-track at rest
-        # inside 33 m and takes a wingtip doing it; finishing at the door
-        # (share 0) starts the flare on the centreline -- measured, +1 m and
-        # +0 m -- and then *drifts*, because arriving at zero offset is not
-        # arriving at zero rate, and the flare has no authority to take the
-        # last of it out.  Seven of seven on the runway either way; what
-        # moves is which of the two windows is missed.  The share is how much
-        # of the flare the capture is still allowed to use.
-        in_flare *= vec.clamp(
-            float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
-        cross_time = to_flare + in_flare
-        timely = abs(cross) / max(1.0, cross_time)
-        wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
-        if scurve_deg > 0.0:
-            # Which way this half of the weave leans: the clock, unless the
-            # band is used up, in which case the band wins.  The clock is
-            # what makes it a manoeuvre rather than a relay (see
-            # ``weave_sign``); the band is what keeps the excursion inside
-            # an offset the capture can still take back before the flare.
-            lean_side = 1.0 if weave >= 0.0 else -1.0
-            if lean_side * cross > cfg.APPROACH_SCURVE_CROSS_M:
-                lean_side = -lean_side
-            room = max(0.0, cfg.APPROACH_SCURVE_CROSS_M - lean_side * cross)
-            wanted_rate = lean_side * min(
-                speed * math.sin(math.radians(scurve_deg)),
-                math.sqrt(2.0 * lateral * room))
-            # **And no faster than the time left can take back.**  The weave
-            # stops at a distance and hands the capture whatever sideways
-            # rate it was running: LOG5096 left it at ~44 m/s ten seconds
-            # from the door, ~800 m of stopping at ``lateral``, and the
-            # flare started 525 m off.  Arresting a rate w and returning
-            # takes about ``2 w / lateral``, after the roll lag.
-            if lag is not None:
-                cap = 0.5 * lateral * max(0.0, cross_time - lag)
-                wanted_rate = math.copysign(min(abs(wanted_rate), cap),
-                                            wanted_rate)
-        rate = vec.dot(v, across)
-        cross_rate = rate
-        error = wanted_rate - rate
-        kp = cfg.APPROACH_CAPTURE_KP
-        # ``APPROACH_SCURVE_FULL_GAIN``: the weave keeps the full gain.  It
-        # is the approach's only dissipation, and at the lag-matched gain it
-        # banked 15-25 deg where it asked 45 and spent nothing -- 4 of 6
-        # long by 1.8-6.7 km into the sea (save-lag-1003).  The rate cap
-        # above still bounds what it hands back to the capture.
-        weave_full = (scurve_deg > 0.0
-                      and getattr(cfg, "APPROACH_SCURVE_FULL_GAIN", False))
-        if lag is not None and not weave_full:
-            # **A gain the roll axis can follow.**  Bank ``k * error`` makes
-            # the rate loop a lag of ``180 / (pi g k)`` seconds -- 2.9 s at
-            # 2.0 -- and on a vehicle whose roll takes 5.3 s to arrive (the
-            # shuttle) that is a relay: +-40 deg alternating, the bank
-            # overshooting to 61, doors 60-525 m off (save-steer-1003).  So
-            # the loop's lag is set to ``lag`` and the constant is a cap.
-            kp = min(kp, 180.0 / (math.pi * max(0.1, gravity) * lag))
-        magnitude = abs(kp * error)
-        # Lift toward +across accelerates the vehicle toward +across, so the
-        # side to lean is the sign of the rate error and not of the offset.
-        want = vec.scale(across, 1.0 if error > 0.0 else -1.0)
-        if abs(cross) < 8.0 and abs(error) < 1.0 and scurve_deg <= 0.0:
-            magnitude = 0.0
-    else:
-        magnitude = abs(cfg.APPROACH_CROSS_KP * cross
-                        + cfg.APPROACH_HEADING_KP * heading_error)
-        want = vec.scale(across, -1.0 if (cross + 12.0 * heading_error) > 0.0
-                         else 1.0)
-        if abs(cross) < 8.0 and abs(heading_error) < 1.0:
-            magnitude = 0.0
-    if (not cfg.APPROACH_SCURVE_TRACK
-            and excess > cfg.APPROACH_SCURVE_M and height > 150.0):
-        magnitude = max(magnitude,
-                        cfg.APPROACH_SCURVE_KP
-                        * (excess - cfg.APPROACH_SCURVE_M))
-        if vec.norm(want) < 0.5:
-            want = across
+    # The lateral closing rate that can still be arrested inside the
+    # offset that is left, against the lateral acceleration the bank
+    # limit affords: ``v^2 = 2 a s``.  Then bank on the difference
+    # between that and the rate the vehicle has.  Every term is a speed
+    # or an acceleration, so it does not need re-fitting when the
+    # approach speed changes -- which is exactly what went wrong with the
+    # two proportional gains it replaces.  See ``APPROACH_LATERAL_CAPTURE``.
+    lateral = (cfg.APPROACH_CAPTURE_MARGIN * gravity
+               * math.tan(math.radians(cfg.APPROACH_BANK_MAX_DEG)))
+    stoppable = math.sqrt(2.0 * lateral * abs(cross))
+    # **And a rate the vehicle still has time to spend.**  "Arrest it in
+    # the offset that is left" permits 9 m/s fourteen metres out, which
+    # is a closure the *flare* then inherits and flies straight for eight
+    # seconds with the wings level -- measured on ``logs/LOG1366``, a
+    # handover at ``cross=+14`` reached the first rollout tick at
+    # **-72 m** and came to rest at -86, shedding both elevons and a wing
+    # on the grass beside a runway it had landed on. The capture is not
+    # overshooting; it is being interrupted, and a gentler gain would
+    # hand over *more* rate rather than less.
+    #
+    # So the rate asked for is also the one that puts the cross-track at
+    # zero when the wheels arrive: ``|cross| / time to the ground``. The
+    # drift through the flare then *is* the last of the correction
+    # instead of a departure from it. This is the open item recorded at
+    # ``APPROACH_CAPTURE_MARGIN``, and it is a time, not a gain.
+    #
+    # **And the time to the ground is not the height over the sink**,
+    # because the flare spends the last two hundred metres arresting
+    # exactly that sink.  Dividing by the approach's rate runs the
+    # closure for about twice as long as it was sized for and overshoots
+    # by as much: ``logs/LOG1398`` handed over near the centreline, drew
+    # 6.8 m/s of closure for it, and touched down at **+45 m** and still
+    # going -- +80 at rest, both elevons gone in the grass beside the
+    # runway.  The flare's own trigger is the boundary and its average
+    # sink is about half, so the remaining time is written against the
+    # same constants the flare is triggered on.  A phase that cannot
+    # correct still has to be *handed* a state it can fly out.
+    trigger = flare_door(cfg, sink, speed, env)
+    to_flare = max(0.0, height - trigger) / max(1.0, sink)
+    in_flare = 2.0 * min(height, trigger) / max(1.0, sink)
+    # ``APPROACH_CAPTURE_LAG_AWARE``: the time the roll axis takes to
+    # deliver a bank, times ``APPROACH_CAPTURE_LAG_FACTOR``.  ``None``
+    # (not known, or the flag off) leaves the law as it was.
+    lag = None
+    if roll_lag_s is not None and roll_lag_s > 0.0:
+        lag = float(cfg.APPROACH_CAPTURE_LAG_FACTOR) * float(roll_lag_s)
+    # **Be centred at the flare's door, not at the wheels.**  Spending
+    # the last of the correction inside the flare is what the ``in_flare``
+    # term was for, and it works -- the cross-track at rest is within
+    # 33 m on every flight that stops.  What it costs is the *wing*: the
+    # flare is eight seconds long and the only way to move sideways in it
+    # is to put a tip down, at fifty metres, on an airframe whose wings
+    # are the lowest thing on it.  Across eighteen flights of the working
+    # arm the split is clean and it is on this number alone -- every
+    # flight entering the flare inside 70 m of the centreline kept its
+    # parts, every flight outside it was ``destroyed in ROLLOUT`` with a
+    # ``Structural Wing Type A`` and an elevon the first things to go.
+    #
+    # So ask for the closure that is finished when the flare starts.  It
+    # is a *faster* closure, but it is spent at 150 m and above, where a
+    # wing down is free, instead of at 50 m where it is the aircraft.
+    # **And the two ends of that are both wrong, so it is a share.**
+    # Finishing at the wheels (share 1) puts the cross-track at rest
+    # inside 33 m and takes a wingtip doing it; finishing at the door
+    # (share 0) starts the flare on the centreline -- measured, +1 m and
+    # +0 m -- and then *drifts*, because arriving at zero offset is not
+    # arriving at zero rate, and the flare has no authority to take the
+    # last of it out.  Seven of seven on the runway either way; what
+    # moves is which of the two windows is missed.  The share is how much
+    # of the flare the capture is still allowed to use.
+    in_flare *= vec.clamp(
+        float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
+    cross_time = to_flare + in_flare
+    timely = abs(cross) / max(1.0, cross_time)
+    wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
+    if scurve_deg > 0.0:
+        # Which way this half of the weave leans: the clock, unless the
+        # band is used up, in which case the band wins.  The clock is
+        # what makes it a manoeuvre rather than a relay (see
+        # ``weave_sign``); the band is what keeps the excursion inside
+        # an offset the capture can still take back before the flare.
+        lean_side = 1.0 if weave >= 0.0 else -1.0
+        if lean_side * cross > cfg.APPROACH_SCURVE_CROSS_M:
+            lean_side = -lean_side
+        room = max(0.0, cfg.APPROACH_SCURVE_CROSS_M - lean_side * cross)
+        wanted_rate = lean_side * min(
+            speed * math.sin(math.radians(scurve_deg)),
+            math.sqrt(2.0 * lateral * room))
+        # **And no faster than the time left can take back.**  The weave
+        # stops at a distance and hands the capture whatever sideways
+        # rate it was running: LOG5096 left it at ~44 m/s ten seconds
+        # from the door, ~800 m of stopping at ``lateral``, and the
+        # flare started 525 m off.  Arresting a rate w and returning
+        # takes about ``2 w / lateral``, after the roll lag.
+        if lag is not None:
+            cap = 0.5 * lateral * max(0.0, cross_time - lag)
+            wanted_rate = math.copysign(min(abs(wanted_rate), cap),
+                                        wanted_rate)
+    rate = vec.dot(v, across)
+    cross_rate = rate
+    error = wanted_rate - rate
+    kp = cfg.APPROACH_CAPTURE_KP
+    # ``APPROACH_SCURVE_FULL_GAIN``: the weave keeps the full gain.  It
+    # is the approach's only dissipation, and at the lag-matched gain it
+    # banked 15-25 deg where it asked 45 and spent nothing -- 4 of 6
+    # long by 1.8-6.7 km into the sea (save-lag-1003).  The rate cap
+    # above still bounds what it hands back to the capture.
+    weave_full = scurve_deg > 0.0
+    if lag is not None and not weave_full:
+        # **A gain the roll axis can follow.**  Bank ``k * error`` makes
+        # the rate loop a lag of ``180 / (pi g k)`` seconds -- 2.9 s at
+        # 2.0 -- and on a vehicle whose roll takes 5.3 s to arrive (the
+        # shuttle) that is a relay: +-40 deg alternating, the bank
+        # overshooting to 61, doors 60-525 m off (save-steer-1003).  So
+        # the loop's lag is set to ``lag`` and the constant is a cap.
+        kp = min(kp, 180.0 / (math.pi * max(0.1, gravity) * lag))
+    magnitude = abs(kp * error)
+    # Lift toward +across accelerates the vehicle toward +across, so the
+    # side to lean is the sign of the rate error and not of the offset.
+    want = vec.scale(across, 1.0 if error > 0.0 else -1.0)
+    if abs(cross) < 8.0 and abs(error) < 1.0 and scurve_deg <= 0.0:
+        magnitude = 0.0
     if height <= 150.0:
         magnitude = min(magnitude, 10.0)
     magnitude = min(magnitude, cfg.APPROACH_BANK_MAX_DEG)
@@ -1349,8 +1157,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # vehicle; this is the same call with the answer fed back, not a second
     # law.  One pass, because the bank does not depend on alpha -- there is
     # no loop to converge, only an ordering to undo.
-    if (two_sided and abs(bank) > 1.0
-            and getattr(cfg, "APPROACH_BANK_COMPENSATION", False)):
+    if two_sided and abs(bank) > 1.0:
         alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
                                 max(target, floor), trim, bank_deg=bank)
         alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
@@ -2058,7 +1865,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     rungs = None
     reference = cone_speed(env, cfg, stall, height)
     excess_height = 0.0
-    if getattr(cfg, "HAC_ENERGY_BUDGET", False) and gravity > 0.0:
+    if gravity > 0.0:
         # **Against the speed the cone ends at, not the one it holds here.**
         # Held at one IAS the true speed falls with height -- 280 m/s at 12
         # km to ~120 at the gate for 108 IAS -- and every metre per second
@@ -2187,10 +1994,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # than a cycle of path left is a lateral excursion into the gate.  See
     # ``Config.HAC_WEAVE_WHOLE_CYCLE``.  Held, ``weave_angle`` fits the
     # last swing to the path instead.
-    cycle_ok = (held or not getattr(cfg, "HAC_WEAVE_WHOLE_CYCLE", False)
-                or total >= speed * cfg.HAC_WEAVE_PERIOD_S)
-    if (cfg.HAC_WEAVE_ON and cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M
-            and total > 1.0):
+    cycle_ok = held or total >= speed * cfg.HAC_WEAVE_PERIOD_S
+    if cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M and (total > 1.0):
         ratio = vec.clamp(total / max(1.0, available), 0.0, 1.0)
         if held:
             weave_deg, weave_half_s = weave_angle(
@@ -2487,7 +2292,7 @@ def flare_door(cfg, sink, speed=None, env=None):
     """
     sink = max(0.0, sink)
     exp_tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
-    if ((getattr(cfg, 'FLARE_DOOR_FROM_SCHEDULE', False) and exp_tau > 0.0)):
+    if getattr(cfg, "FLARE_DOOR_FROM_SCHEDULE", False) and exp_tau > 0.0:
         # Open where the exponential schedule starts to bind, read one
         # pitch response ahead: ``tau (sink - td) + T sink``.  Never lower
         # than the old door.  See the config entry.
@@ -2498,11 +2303,6 @@ def flare_door(cfg, sink, speed=None, env=None):
                  + lag * sink)
         return max(cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink, binds)
     return cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink
-
-
-def inner_glide_sink(cfg, speed):
-    """The sink rate of the shallow inner glide at ``speed``."""
-    return max(0.0, speed) * math.sin(math.radians(cfg.FLARE_INNER_GLIDE_DEG))
 
 
 def flare_touchdown_sink(cfg, height, float_s=None):
@@ -2594,29 +2394,28 @@ def flare(env, cfg, r, v, mass, gravity, height, elapsed, lead_s=0.0,
     # direction that matters: a vehicle that has arrested early is *above*
     # the schedule's arrival and the law unloads and lets it down, which is
     # the float this exists to delete.  Failure 67, one phase later.
-    if getattr(cfg, "FLARE_SINK_TRACK", False):
-        rise = max(0.05, float(getattr(cfg, "FLARE_TRACK_LOAD", 1.5)) - 1.0)
-        touchdown = float(getattr(cfg, "FLARE_TOUCHDOWN_SINK_M_S", 8.0))
-        # ``FLARE_LEAD_BY_RESPONSE``: the schedule read at the height the
-        # vehicle will be at once its pitch has answered -- ``lead_s`` of
-        # the present sink lower.  See the config entry.
-        scheduled = max(0.0, height - max(0.0, lead_s) * max(0.0, sink))
-        wanted = math.sqrt(touchdown * touchdown
-                           + 2.0 * rise * gravity * scheduled)
-        # ``FLARE_EXP_TAU_S``: and no faster than an exponential flare,
-        # ``td + h / tau`` -- the square root is steepest at the ground and
-        # lands at ``touchdown`` plus the loop's lag by construction (the
-        # shuttle, 9-17 m/s at contact, wings and engine lost).
-        exp_tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
-        if exp_tau > 0.0:
-            wanted = min(wanted, flare_touchdown_sink(cfg, scheduled,
-                                                      float_s)
-                         + scheduled / exp_tau)
-        tau = max(0.2, float(getattr(cfg, "FLARE_TRACK_TAU_S", 2.0)))
-        needed = 1.0 + (sink - wanted) / (tau * gravity)
-        needed = vec.clamp(needed,
-                           float(getattr(cfg, "FLARE_TRACK_LOAD_MIN", 0.85)),
-                           float(getattr(cfg, "FLARE_TRACK_LOAD_MAX", 2.5)))
+    rise = max(0.05, float(getattr(cfg, "FLARE_TRACK_LOAD", 1.5)) - 1.0)
+    touchdown = float(getattr(cfg, "FLARE_TOUCHDOWN_SINK_M_S", 8.0))
+    # ``FLARE_LEAD_BY_RESPONSE``: the schedule read at the height the
+    # vehicle will be at once its pitch has answered -- ``lead_s`` of
+    # the present sink lower.  See the config entry.
+    scheduled = max(0.0, height - max(0.0, lead_s) * max(0.0, sink))
+    wanted = math.sqrt(touchdown * touchdown
+                       + 2.0 * rise * gravity * scheduled)
+    # ``FLARE_EXP_TAU_S``: and no faster than an exponential flare,
+    # ``td + h / tau`` -- the square root is steepest at the ground and
+    # lands at ``touchdown`` plus the loop's lag by construction (the
+    # shuttle, 9-17 m/s at contact, wings and engine lost).
+    exp_tau = float(getattr(cfg, "FLARE_EXP_TAU_S", 0.0))
+    if exp_tau > 0.0:
+        wanted = min(wanted, flare_touchdown_sink(cfg, scheduled,
+                                                  float_s)
+                     + scheduled / exp_tau)
+    tau = max(0.2, float(getattr(cfg, "FLARE_TRACK_TAU_S", 2.0)))
+    needed = 1.0 + (sink - wanted) / (tau * gravity)
+    needed = vec.clamp(needed,
+                       float(getattr(cfg, "FLARE_TRACK_LOAD_MIN", 0.85)),
+                       float(getattr(cfg, "FLARE_TRACK_LOAD_MAX", 2.5)))
     target = alpha_for_load(env, speed, height, mass, gravity, needed)
     if target is None:
         target = cfg.FLARE_ALPHA_DEG
@@ -2699,9 +2498,7 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
         # failure 8) -- and on this vehicle a 1500 s stretch bound happens to
         # mark that line.  It is kept, and the reason is now recorded rather
         # than inferred: boosterland failure 17's rule, one project over.
-        long_corner = (index == 1)
-        if prediction.time_to_go > cfg.DEORBIT_MAX_TIME_TO_GO_S \
-                and (cfg.DEORBIT_WINDOW_TIME_ON_LONG or not long_corner):
+        if prediction.time_to_go > cfg.DEORBIT_MAX_TIME_TO_GO_S:
             return None
         corners.append(trajectory.forward_arc(env, r, v, prediction.position))
     shortest, longest = min(corners), max(corners)
@@ -2996,81 +2793,7 @@ def deorbit_solution(env, r, v, mass, cfg, end):
     if speed < 1.0:
         return None, 0.0
     retro = vec.scale(v, -1.0 / speed)
-    # Predict the entry the glide will actually fly.  Bank cannot go below
-    # ``SOLVE_BANK_MIN_DEG`` once the glide has the controls, so a deorbit
-    # solved against a wings-level entry is solved against a trajectory the
-    # vehicle is not allowed to fly -- and a bank floor *lengthens* the
-    # reachable range on this airframe (1730 km at 0 degrees against 1872 at
-    # 30), so the error is not even in the safe direction.
-    steer = Steer(alpha=cfg.ENTRY_ALPHA_DEG, bank=cfg.SOLVE_BANK_MIN_DEG,
-                  cfg=cfg, mass=mass)
     gate = env.runway.gate(end)
-    radius = vec.norm(gate)
-
-    # How far round the vehicle has to go to reach the gate, the way it is
-    # actually travelling.  Fixed for the whole search: every candidate burn
-    # starts from the same state.
-    needed = trajectory.forward_arc(env, r, v, gate)
-
-    # **The aim is a fraction of the entry, not a distance -- and not a
-    # fraction of how far away the runway currently is.**
-    #
-    # What the bias compensates is the propagator's over-prediction of the
-    # glide's range, which is a *relative* error: a longer entry accumulates
-    # more of it.  A fixed number is therefore right for one entry length and
-    # wrong for every other -- measured, a fixed 300 km aim puts three states
-    # with ~1100 km to run within 4-20 km while sending the elliptical save,
-    # which has 728 km to run, 57-60 km long into the sea with alpha at its
-    # stop and 60 degrees of bank on.  The glide had spent everything it had;
-    # the aim was simply past its authority.
-    #
-    # The scale is ``Prediction.entry_arc`` -- the arc flown *inside the
-    # atmosphere* -- and taking it from the candidate rather than from
-    # ``needed`` is the whole point.  Scaled against ``needed`` the aim
-    # shrinks as the vehicle coasts closer, so **waiting makes the target
-    # easier**: a pass that cannot be solved becomes solvable by doing
-    # nothing, and one flight duly sat until 410 km to run and then committed
-    # on ``DEORBIT_DV_MAX`` exactly.  The entry's own length is a property of
-    # the trajectory being judged and does not move while the phase waits.
-    def aim_for(prediction):
-        return deorbit_aim(cfg, prediction)
-
-    def miss_for(dv):
-        """Signed metres past this candidate's *own* aim.
-
-        Returning the error against the aim, rather than the raw arrival,
-        means every candidate is judged against the aim its own entry length
-        earns -- so a steep short entry and a shallow long one are compared
-        on the same footing.
-        """
-        v2 = vec.add(v, vec.scale(retro, dv))
-        prediction = trajectory.predict(env, r, v2, mass, cfg, steer=steer,
-                                        target_radius=radius)
-        if not prediction.reached:
-            # Never reached the gate altitude in the time allowed, or hit the
-            # ground first.  Both are "not a solution"; signing them keeps a
-            # search from wandering into them.
-            return (1e7 if not prediction.grounded else -1e7)
-        if prediction.time_to_go > cfg.DEORBIT_MAX_TIME_TO_GO_S:
-            # Comes down, but on a later pass.  Signed like an undershoot for
-            # the same reason as the skip below: more dv is what brings the
-            # arrival forward.
-            return -1e7
-        if prediction.skipped:
-            # **The entry has to commit.**  A burn that leaves the periapsis
-            # high does not fail the range test -- the arc dips into the air,
-            # maximum-lift alpha pushes it straight back out, and it comes
-            # down somewhere on a later pass, which the propagation dutifully
-            # reports as a range.  Signed like an undershoot so the search
-            # walks away from it towards more dv, which is the direction that
-            # actually lowers the periapsis.
-            return -1e7
-        # Signed range error along the ground track, positive when the arc
-        # carries past the gate, less the aim this candidate earns.  Arc
-        # lengths, not a projection onto the runway's local heading: see
-        # ``trajectory.forward_arc``.
-        carried = trajectory.forward_arc(env, r, v, prediction.position)
-        return carried - needed - aim_for(prediction)
 
     def centring_for(dv):
         """The same question asked of the glide's own authority."""
@@ -3087,7 +2810,7 @@ def deorbit_solution(env, r, v, mass, cfg, end):
     # slowly, while a steeper one arrives with less time to glide at all.  A
     # bracket-and-bisect assumes a monotone function and would happily
     # converge on the wrong side of the hump.
-    score = centring_for if cfg.DEORBIT_AUTHORITY_WINDOW else miss_for
+    score = centring_for
     steps = max(8, int(cfg.DEORBIT_SEARCH_STEPS))
     coarse = max(6, steps // 2)
     lo, hi = cfg.DEORBIT_DV_MIN, cfg.DEORBIT_DV_MAX
@@ -3140,50 +2863,20 @@ def deorbit_solution(env, r, v, mass, cfg, end):
     # stayed on the same shallow candidates -- across a 110 km sweep the
     # landings moved -53, -78, -65, -57 km, which reads as "the aim is not
     # the lever" and was really "the aim is not connected".
-    if cfg.DEORBIT_AUTHORITY_WINDOW:
-        # Centring is a single-valued target, so there is no band to accept
-        # inside of and no "which of the acceptable ones" rule to get wrong.
-        # What still has to be checked is that the gate is inside the window
-        # at all: ``m`` near zero says the gate is near the *centre* of the
-        # span, and a span the vehicle cannot fly is centred on nothing.
-        best = min((row for row in grid if abs(row[1]) < 1e6),
-                   key=lambda x: abs(x[1]), default=None)
-        if best is None:
-            return None, grid[0][1] if grid else 0.0
-        v2 = vec.add(v, vec.scale(retro, best[0]))
-        window = deorbit_window(env, r, v2, mass, cfg, end, gate)
-        if window is None:
-            return None, best[1]
-        shortest, longest, want = window
-        if not (shortest <= want <= longest):
-            return None, best[1]
-        return best
-
-    tolerance = max(500.0, float(cfg.DEORBIT_TOLERANCE_M))
-    good = [(dv, m) for dv, m in grid
-            if abs(m) < 1e6 and wanted <= m <= wanted + tolerance]
-    if good:
-        # **Among arrivals that are all long enough, the steepest.**  The
-        # original rule took the smallest burn, for time in the air and for
-        # heating, and both were measured and neither survived.  Steeper is
-        # better here for a reason that is about the *model* rather than the
-        # vehicle: a shallow entry spends its energy high, in thin air, over
-        # a long arc -- which is the regime the propagator is least reliable
-        # in and the one where the skip lives (failure 8) -- while a steep one
-        # commits, and its prediction is correspondingly shorter-range and
-        # better tested.  The heating argument points the same way once
-        # measured: the skin peaked at 0.73 of limit on a steep entry against
-        # 0.78 on the shallowest of the same batch, because the shallow entry
-        # is the *long* one and it is the time that heats it.
-        #
-        # Flown both ways on three entry states, with the old two-sided band:
-        # smallest landed -75.0, -62.7, -57.4 km and largest -65.2, -63.0,
-        # -57.7. With this one-sided band and the smallest rule the search
-        # resolves the shallowest burn that just reaches the aim and it is
-        # worse again (-71.5, -79.7). The lever is weak either way -- it is
-        # worth about 10 km of a 60 km shortfall -- but its sign is now
-        # measured three times.
-        dv, m = max(good, key=lambda x: x[0])
-        return dv, m
-    best = min(grid, key=lambda x: abs(x[1] - wanted))
-    return None, best[1]
+    # Centring is a single-valued target, so there is no band to accept
+    # inside of and no "which of the acceptable ones" rule to get wrong.
+    # What still has to be checked is that the gate is inside the window
+    # at all: ``m`` near zero says the gate is near the *centre* of the
+    # span, and a span the vehicle cannot fly is centred on nothing.
+    best = min((row for row in grid if abs(row[1]) < 1e6),
+               key=lambda x: abs(x[1]), default=None)
+    if best is None:
+        return None, grid[0][1] if grid else 0.0
+    v2 = vec.add(v, vec.scale(retro, best[0]))
+    window = deorbit_window(env, r, v2, mass, cfg, end, gate)
+    if window is None:
+        return None, best[1]
+    shortest, longest, want = window
+    if not (shortest <= want <= longest):
+        return None, best[1]
+    return best

@@ -10,7 +10,7 @@ for p in sys.argv[1:]:
     if not ex: continue
     cfg = re.search(r"config: (.*)", txt).group(1)
     sets = ";".join(s for s in cfg.split(", ") if not s.startswith(("SAVE_NAME", "LOOP", "TIMESC")))[:40]
-    rows = [(float(a), b, float(c), float(d), float(e)) for a, b, c, d, e in T.findall(txt, re.M)] if False else []
+    rows = []
     for line in txt.splitlines():
         m = T.match(line)
         if m: rows.append((float(m.group(1)), m.group(2), float(m.group(3)), float(m.group(4)), float(m.group(5))))

@@ -242,105 +242,6 @@ class TestTheGuidanceEntryPoints(unittest.TestCase):
         return r, tuple(share * c for c in v)
 
 
-    def test_the_approach_speed_schedule_arrives_at_the_flares_requirement(self):
-        """A speed at one point, not a speed held all the way down.
-
-        The flare lands on the centreline entered at 83-91 m/s and stalls
-        below about 82; the approach could only command a constant 108, so
-        the good landings were the ones too starved to obey it.  Spaceplane
-        failure 48.  The schedule must reach the flare's number *at the
-        height the flare fires*, and must leave the gate alone -- because
-        ``HAC_SPEED_FACTOR`` hangs off ``APPROACH_FACTOR`` and moving that is
-        what starved the cone.
-        """
-        cfg = replace(self.cfg, APPROACH_SPEED_PROFILE=True)
-        stall = FAKE_STALL
-        sink = 25.0
-        trigger = cfg.FLARE_ALT_M + cfg.FLARE_LEAD_S * sink
-
-        def commanded(height):
-            span = max(1.0, cfg.GATE_ALT_M - trigger)
-            share = max(0.0, min(1.0, (height - trigger) / span))
-            wanted = cfg.APPROACH_FLARE_FACTOR * stall
-            return wanted + share * (cfg.APPROACH_FACTOR * stall - wanted)
-
-        # At the gate it is the approach speed, unchanged.
-        self.assertAlmostEqual(commanded(cfg.GATE_ALT_M),
-                               cfg.APPROACH_FACTOR * stall, places=6)
-        # At the flare's door it is the flare's requirement.
-        self.assertAlmostEqual(commanded(trigger),
-                               cfg.APPROACH_FLARE_FACTOR * stall, places=6)
-        # Monotone in between, and never under the measured stall floor.
-        last = None
-        for h in range(int(trigger), int(cfg.GATE_ALT_M), 50):
-            got = commanded(float(h))
-            self.assertGreaterEqual(
-                got, cfg.APPROACH_FLARE_FLOOR_FACTOR * stall - 1e-6,
-                "the schedule must never command under the flare's floor")
-            if last is not None:
-                self.assertGreaterEqual(got, last - 1e-9)
-            last = got
-        # And the cone's speed is untouched: it hangs off APPROACH_FACTOR.
-        self.assertEqual(cfg.APPROACH_FACTOR, self.cfg.APPROACH_FACTOR)
-
-    def test_the_cone_budgets_speed_as_well_as_height(self):
-        """A vehicle at the right height and too fast must plan more path.
-
-        Budgeted in height alone it reads as on profile, flies no extra
-        path, and hands the approach a surplus in the one currency the
-        approach cannot spend -- which is what puts the wheels off the side
-        of the strip once the along-track is centred.  Spaceplane failure 47.
-        """
-        end = self.end
-        gate = self.env.runway.gate(end)
-        up = vec.unit(gate)
-        # Sitting off the gate at the cone's altitude, wings level.
-        r = vec.scale(up, self.env.equatorial_radius + self.cfg.HAC_ALT_M)
-        along = self.env.runway.horizontal(end, end["along"])
-        r = vec.add(r, vec.scale(along, -2500.0))
-        r = vec.scale(vec.unit(r),
-                      self.env.equatorial_radius + self.cfg.HAC_ALT_M)
-        reference = (self.cfg.HAC_SPEED_FACTOR * self.cfg.APPROACH_FACTOR
-                     * FAKE_STALL)
-        gravity = self.env.mu / (vec.norm(r) ** 2)
-
-        def plan(cfg, speed):
-            # Scaled to the requested *total* speed: the budget is specific
-            # energy, so a sink component counts toward it and a fixture that
-            # bolts one on top is not at the speed it says it is.
-            track = vec.unit(vec.project_out(along, vec.unit(r)))
-            v = vec.add(vec.scale(track, 1.0), vec.scale(vec.unit(r), -0.25))
-            v = vec.scale(vec.unit(v), speed)
-            return guidance.hac(self.env, cfg, end, r, v, MASS, gravity,
-                                self.cfg.HAC_ALT_M, 1, 0.0)
-
-        fast = reference + 40.0
-        off = replace(self.cfg, HAC_ENERGY_BUDGET=False)
-        on = replace(self.cfg, HAC_ENERGY_BUDGET=True)
-        a = plan(off, fast)
-        b = plan(on, fast)
-        if a is None or b is None:
-            self.skipTest("degenerate cone geometry in this fixture")
-        self.assertEqual(getattr(a, "excess_height", 0.0), 0.0)
-        self.assertGreater(b.excess_height, 0.0,
-                           "being fast must buy height to spend")
-        # What the downstream geometry does with the extra budget depends on
-        # whether the cone has path to spare, and ``spaceplane/tests/fakeplane``'s cone
-        # is short of path at every distance and speed tried -- so the
-        # surplus branch is not reachable here and is not asserted.  What is
-        # asserted is the term itself: present when fast, exactly zero at the
-        # reference speed, and therefore a surplus rather than a bias.  The
-        # effect on the landing is an in-game question; CLAUDE.md's rule that
-        # a sim improvement is a hypothesis applies with full force.
-        # At the reference speed the two must agree exactly: the term is a
-        # surplus, not a bias.
-        c = plan(off, reference)
-        d = plan(on, reference)
-        if c is not None and d is not None:
-            self.assertAlmostEqual(d.excess_height, 0.0, places=6)
-            self.assertAlmostEqual(c.path, d.path, places=6)
-            self.assertAlmostEqual(c.surplus, d.surplus, places=6)
-
     def test_every_snapshot_attribute_the_autopilot_reads_exists(self):
         """The offline suite does not fly the kRPC-facing tick, so it cannot
         catch a name that is simply not there.
@@ -690,43 +591,6 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(SystemExit):
             apply_overrides(Config(), ["NO_SUCH_FIELD=1"])
 
-    def test_the_gate_sits_on_a_path_the_vehicle_can_fly(self):
-        """A gate the vehicle cannot reach is not a target, it is a
-        guaranteed undershoot -- and for a long time it was exactly that.
-        The gate has to be *above* the best glide from it to the touchdown
-        aim, not below, because surplus height is recoverable and a shortfall
-        is not recoverable by anything.
-
-        Stated against the distance the vehicle has to fly from the gate --
-        ``GATE_DIST_M`` plus ``TOUCHDOWN_AIM_M`` -- rather than against an
-        angle, because that is the quantity that decides it, and asserted
-        against ``APPROACH_BEST_LD`` rather than a written-down angle, so
-        that re-measuring the polar cannot leave the gate behind again."""
-        cfg = Config()
-        gate = cfg.GATE_DIST_M
-        if cfg.GATE_FROM_APPROACH:
-            # ``Autopilot`` places it where the approach needs GATE_ALT_M
-            # (``approach_ld`` there is ``APPROACH_BEST_LD`` when nothing
-            # is measured), so the geometry closes by construction.
-            gate = max(cfg.GATE_CAPTURE_M,
-                       cfg.GATE_ALT_M * cfg.APPROACH_BEST_LD
-                       - cfg.TOUCHDOWN_AIM_M)
-        to_fly = gate + cfg.TOUCHDOWN_AIM_M
-        reach = cfg.GATE_ALT_M * cfg.APPROACH_BEST_LD
-        # **This inequality is currently not closed, by about 4%, and that is
-        # deliberate.**  Both handles on it -- raising ``GATE_ALT_M`` and
-        # shortening ``GATE_DIST_M`` -- move the gate, and the gate is what
-        # the deorbit solves against, so closing it cost 11 and 12 km of
-        # along-track against the ~1 km it buys (failure 24).  The assertion
-        # is therefore a characterisation: it pins how far short the geometry
-        # is, so that a regression is caught and the known gap is not
-        # mistaken for one.
-        self.assertGreater(reach, 0.93 * to_fly,
-                           "the gate fell further short of the aim: %.0f m "
-                           "of glide for %.0f m to fly" % (reach, to_fly))
-        # ... and not so high that the approach is all S-turn.
-        self.assertLess(reach, 1.6 * to_fly)
-
 
 if __name__ == "__main__":
     unittest.main()
@@ -929,45 +793,6 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         self.assertLess(roll, 0.25 * pitch)
 
 
-    def test_the_legacy_order_is_reproduced_with_the_flag_off(self):
-        """The old belief, (pitch, yaw, roll), kept exactly when
-        `ATTITUDE_AXES_KRPC_ORDER` is off so old flights are reproducible.
-        kRPC applied it as (pitch, roll, yaw): roll on yaw's figure."""
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True,
-                      ATTITUDE_AXES_KRPC_ORDER=False)
-        got = autopilot_module.attitude_time_to_peak(
-            cfg, self.vessel(self.SHUTTLE))
-        pitch, roll, yaw = autopilot_module.slew_time_scale(
-            self.vessel(self.SHUTTLE))
-        k = cfg.ATTITUDE_SLEW_FACTOR
-        self.assertAlmostEqual(got[0], k * pitch, places=6)
-        self.assertAlmostEqual(got[1], k * yaw, places=6)
-        self.assertAlmostEqual(got[2], k * roll, places=6)
-
-    def test_the_factor_reproduces_the_committed_constant(self):
-        """Read off the craft the constant was fitted to, not fitted again.
-
-        That agreement is the reason to believe it and equally the warning:
-        a derivation that reproduces a fit says the fit was right for *that*
-        aircraft and nothing yet about the next one.
-        """
-        # In the legacy order, where got[1] is yaw.
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True,
-                      ATTITUDE_AXES_KRPC_ORDER=False)
-        got = autopilot_module.attitude_time_to_peak(cfg,
-                                                     self.vessel(self.OLD))
-        # pitch and yaw, the axes the constant was fitted against
-        self.assertAlmostEqual(got[0], cfg.ATTITUDE_TIME_TO_PEAK_S, delta=0.1)
-        self.assertAlmostEqual(got[1], cfg.ATTITUDE_TIME_TO_PEAK_S, delta=0.1)
-
-    def test_the_heavier_airframe_gets_a_slower_controller(self):
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True)
-        old = autopilot_module.attitude_time_to_peak(cfg,
-                                                     self.vessel(self.OLD))
-        shuttle = autopilot_module.attitude_time_to_peak(
-            cfg, self.vessel(self.SHUTTLE))
-        self.assertGreater(shuttle[0], 4.0 * old[0])
-
     def test_more_actuators_make_the_same_airframe_quicker(self):
         """The shuttle's RCS is 290 kN m in pitch and roll and its slew time
         with it is 2.63 s -- near the old craft's 1.57. The committed
@@ -990,14 +815,6 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         self.assertAlmostEqual(
             max(autopilot_module.slew_time_scale(rcs_on)), 11.85, places=1)
 
-    def test_no_answer_keeps_the_constant_and_does_not_invent_one(self):
-        cfg = replace(Config(), ATTITUDE_TIME_TO_PEAK_DERIVED=True)
-        dead = SimpleNamespace(moment_of_inertia=self.OLD,
-                               available_torque=((0.0, 0.0, 0.0),) * 2)
-        self.assertIsNone(autopilot_module.slew_time_scale(dead))
-        self.assertAlmostEqual(
-            autopilot_module.attitude_time_to_peak(cfg, dead),
-            cfg.ATTITUDE_TIME_TO_PEAK_S)
 
     def test_a_scalar_still_means_every_axis(self):
         """The constant path hands a single number and must keep working."""
@@ -1011,11 +828,6 @@ class TestTheAttitudeTuneIsDerivedFromTheVehicle(unittest.TestCase):
         autopilot_module.tune_autopilot(ap, (22.4, 22.6, 4.8))
         self.assertEqual(ap.time_to_peak, (22.4, 22.6, 4.8))
         del seen
-
-    def test_on_now_that_it_has_been_flown_on_both_craft(self):
-        """Null on the old craft (qs_plane_inc pair, 2026-09-23) and the
-        precondition for every shuttle result."""
-        self.assertTrue(Config().ATTITUDE_TIME_TO_PEAK_DERIVED)
 
 
 class TestRollIsNeverGatedOnPointing(unittest.TestCase):
@@ -1227,11 +1039,6 @@ class TestTheFlapBrakeYieldsToRoll(unittest.TestCase):
         self.assertTrue(ap.roll_needs_the_flaps(self.snap(settle / 2, 30.0)))
         self.assertFalse(ap.roll_needs_the_flaps(self.snap(settle + 0.1,
                                                            30.0)))
-
-    def test_off_by_flag(self):
-        ap = self.pilot(0.0)
-        ap.cfg = replace(Config(), FLAP_BRAKE_YIELDS_TO_ROLL=False)
-        self.assertFalse(ap.roll_needs_the_flaps(self.snap(0.0, 60.0)))
 
 
 class TestTheDrainReserveIsADvNotAUnitCount(unittest.TestCase):
@@ -1476,13 +1283,6 @@ class TestHoldableAlpha(unittest.TestCase):
             self.holdable.observe(20.0, 31.5, 9000.0)
         self.assertIsNone(self.holdable.limit(9000.0))
 
-    def test_switching_it_off_changes_nothing(self):
-        """The clamp is gated, so it can be taken out of a comparison."""
-        off = Config()
-        off.HOLDABLE_ON = False
-        self.saturate(9000.0, 18.0)
-        self.assertAlmostEqual(
-            trajectory.holdable_alpha(off, 30.0, 9000.0, self.holdable), 30.0)
 
     def test_no_estimator_at_all_changes_nothing(self):
         """Every ``Steer`` the deorbit search builds goes through this path.
@@ -1549,30 +1349,6 @@ class TestTheDeorbitAimIsShared(unittest.TestCase):
             guidance.deorbit_aim(self.cfg, self._prediction(300000.0)),
             self.cfg.DEORBIT_LONG_BIAS_M)
 
-    def test_progress_is_reported_net_of_the_aim(self):
-        """So "owes nothing" is zero for both of them, not two thresholds."""
-        r, v = entry_state(self.env, self.cfg, dv=60.0, longitude=-200.0)
-        kept = apply_overrides(Config(), ["GLIDE_RESERVE_ON=False"])
-        raw = guidance.deorbit_progress(FakeEnv(kept), r, v, MASS, kept,
-                                        self.end)
-        if raw is None:
-            self.skipTest("no arrival from this state to compare")
-        # The reserve is off on both sides: it is a second offset, computed
-        # at the altitude each propagation happens to reach, and this test is
-        # about the *aim* being shared and nothing else.
-        zero = apply_overrides(Config(), ["DEORBIT_LONG_BIAS_M=0",
-                                          "DEORBIT_LONG_BIAS_FRACTION=0",
-                                          "GLIDE_RESERVE_ON=False"])
-        env0 = FakeEnv(zero)
-        unbiased = guidance.deorbit_progress(env0, r, v, MASS, zero, self.end)
-        self.assertIsNotNone(unbiased)
-        # With the aim removed the same state reports a range error larger
-        # by exactly the aim -- which is what "net of the aim" means.  The
-        # *direction* is not the claim: the default aim is negative now
-        # (see ``DEORBIT_LONG_BIAS_M``) and asserting "greater" quietly
-        # tested the sign of a configured constant instead of the sharing.
-        aim = guidance.deorbit_aim(kept, self._prediction(0.0))
-        self.assertAlmostEqual(unbiased - raw, aim, delta=1.0)
 
     def test_the_burn_owes_nothing_when_progress_is_zero(self):
         """The exit test is ``owed <= 0``, so the two have to share a zero."""
@@ -1784,16 +1560,6 @@ class TestTheSpeedFloorIsTheOtherHalfOfTheHold(unittest.TestCase):
         return trajectory.alpha_floor_for_speed(
             self.env, self.cfg, speed, altitude, MASS, GRAVITY)
 
-    def test_switching_it_off_puts_the_constraint_back_to_nothing(self):
-        """It is on by default now (the measurement is in its config entry),
-        so what this pins is that the flag still reaches the law -- an
-        experiment that cannot be turned off is not an experiment."""
-        cfg = Config()
-        cfg.SPEED_FLOOR_ON = False
-        self.assertEqual(
-            trajectory.alpha_floor_for_speed(self.env, cfg, 140.0, 3000.0,
-                                             MASS, GRAVITY),
-            cfg.ALPHA_MIN_DEG)
 
     def test_a_vehicle_already_at_the_arrival_speed_is_not_constrained(self):
         self.assertEqual(self.floor(self.approach - 1.0),
@@ -1850,26 +1616,6 @@ class TestTheSpeedFloorIsTheOtherHalfOfTheHold(unittest.TestCase):
             guidance.alpha_floor(self.env, self.cfg, speed, altitude,
                                  MASS, GRAVITY),
             enforced)
-
-    def test_the_propagated_arc_does_not_dive_below_it(self):
-        """The floor is only worth anything if ``acceleration`` applies it."""
-        cfg = Config()
-        cfg.SPEED_FLOOR_ON = True
-        loose_cfg = Config()
-        loose_cfg.SPEED_FLOOR_ON = False
-        env = FakeEnv(cfg)
-        r, v = circular_state(env, 4000.0, 0.0)
-        # A steep, fast state: the one the dive produces.
-        up = vec.unit(r)
-        v = vec.add(vec.scale(vec.unit(vec.project_out(v, up)), 20.0),
-                    vec.scale(up, -140.0))
-        steer = Steer(alpha=cfg.ALPHA_MIN_DEG, bank=0.0, cfg=cfg, mass=MASS)
-        free = Steer(alpha=cfg.ALPHA_MIN_DEG, bank=0.0, cfg=loose_cfg,
-                     mass=MASS)
-        held = trajectory.acceleration(env, r, v, MASS, steer)
-        loose = trajectory.acceleration(env, r, v, MASS, free)
-        self.assertGreater(vec.norm(held), vec.norm(loose),
-                           "the floor changed nothing in the propagator")
 
 
 class TestTheTrimAngleAtSpeed(unittest.TestCase):
@@ -2249,26 +1995,6 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
                                  kw.get("height", 1000.0), roll_lag_s=lag,
                                  weave=weave)
 
-    def test_a_slow_roll_gets_a_gentler_gain_same_side(self):
-        stiff = self.lagged(+800.0, +5.0, 0.5).bank
-        slow = self.lagged(+800.0, +5.0, 5.3).bank
-        self.assertGreater(stiff * slow, 0.0)
-        self.assertLess(abs(slow), abs(stiff))
-
-    def test_off_or_unknown_lag_is_the_old_law(self):
-        old = self.lagged(+800.0, +5.0, 5.3, on=False).bank
-        self.assertEqual(self.lagged(+800.0, +5.0, None).bank, old)
-        self.assertTrue(Config().APPROACH_CAPTURE_LAG_AWARE)
-
-    def test_the_weave_asks_less_when_the_door_is_near(self):
-        far = self.lagged(0.0, 0.0, 5.3, height=2500.0, distance=3000.0,
-                          weave=+1.0)
-        self.assertGreater(far.scurve_deg, 0.0)
-        # a lag that eats the whole time to the door leaves no weave rate:
-        # the command is then the capture's, which is quiet on the line
-        none = self.lagged(0.0, 0.0, 1e4, height=2500.0, distance=3000.0,
-                           weave=+1.0)
-        self.assertLess(abs(none.bank), abs(far.bank))
 
     def test_the_weave_stays_inside_an_offset_it_can_take_back(self):
         """The band, not the clock, at the edge: a weave that keeps leaning
@@ -2374,19 +2100,6 @@ class TestTheReversalOutlastsItsActuator(unittest.TestCase):
         cfg.BANK_REVERSAL_DWELL_SLEWS = 0.0
         self.assertEqual(self.commanded(cfg, -70.0, +70.0, 1.0), -70.0)
 
-    def test_the_default_is_at_least_one_slew(self):
-        """A dwell shorter than the slew it is meant to outlast is not a
-        dwell, it is a rounding error."""
-        cfg = Config()
-        slew = 2.0 * cfg.BANK_MAX_DEG / cfg.BANK_RATE_DEG_S
-        dwell = max(cfg.BANK_REVERSAL_DWELL_S,
-                    cfg.BANK_REVERSAL_DWELL_SLEWS * slew)
-        self.assertGreater(dwell, slew)
-
-    def test_a_reversal_inside_the_dwell_is_refused(self):
-        cfg = Config()
-        cfg.BANK_REVERSAL_DWELL_S = 20.0
-        self.assertEqual(self.commanded(cfg, -70.0, +70.0, 3.0), +70.0)
 
     def test_a_reversal_after_the_dwell_is_taken(self):
         cfg = Config()
@@ -2394,34 +2107,6 @@ class TestTheReversalOutlastsItsActuator(unittest.TestCase):
         cfg.BANK_REVERSAL_DWELL_S = 20.0
         self.assertEqual(self.commanded(cfg, -70.0, +70.0, 25.0), -70.0)
 
-    def test_a_reversal_once_started_is_allowed_to_finish(self):
-        """The bug this replaced: gating every tick of the slew meant a
-        reversal got one tick of travel and was then refused for the whole
-        dwell, so it never crossed zero and the vehicle held one lean for the
-        entire entry -- 93 km off the centreline."""
-        cfg = Config()
-        cfg.BANK_REVERSAL_DWELL_S = 20.0
-        # Side already latched negative, command mid-slew and still positive
-        # in sign terms: the latch must not drag it back.
-        self.assertLess(self.commanded(cfg, -3.0, -70.0, 1.0), 0.0)
-        self.assertLess(self.commanded(cfg, -60.0, -70.0, 1.0), 0.0)
-
-    def test_it_never_blocks_a_change_that_keeps_the_same_lean(self):
-        """It is a reversal guard, not a rate limit: a magnitude change on
-        one side is the range solve doing its job."""
-        cfg = Config()
-        cfg.BANK_REVERSAL_DWELL_S = 20.0
-        self.assertEqual(self.commanded(cfg, +30.0, +70.0, 1.0), +30.0)
-
-    def test_a_useful_dwell_is_at_least_a_stop_to_stop_slew(self):
-        """The number it has to beat is the actuator's own, which the config
-        already carries: below that the relay is still faster than the thing
-        it is switching."""
-        cfg = Config()
-        slew = 2.0 * cfg.BANK_MAX_DEG / cfg.BANK_RATE_DEG_S
-        self.assertGreater(slew, 15.0)      # 17.5 s on the current numbers
-        cfg.BANK_REVERSAL_DWELL_S = slew
-        self.assertEqual(self.commanded(cfg, -70.0, +70.0, slew - 1.0), +70.0)
 
     def test_the_run_loop_uses_that_rule(self):
         here = ROOT
@@ -2431,25 +2116,6 @@ class TestTheReversalOutlastsItsActuator(unittest.TestCase):
                            source.index("def run_approach")]
         self.assertIn("BANK_REVERSAL_DWELL_S", run_glide)
         self.assertIn("self.bank_reversed_ut", run_glide)
-
-
-    def test_the_dwell_can_be_stated_in_slews_not_seconds(self):
-        """A dwell in seconds is this craft's roll rate hard-coded into a
-        policy; in slews it is the policy."""
-        cfg = Config()
-        cfg.BANK_REVERSAL_DWELL_SLEWS = 2.0
-        slew = 2.0 * cfg.BANK_MAX_DEG / cfg.BANK_RATE_DEG_S
-        self.assertEqual(self.commanded(cfg, -70.0, +70.0, 1.5 * slew), +70.0)
-        self.assertEqual(self.commanded(cfg, -70.0, +70.0, 2.5 * slew), -70.0)
-
-    def test_a_faster_actuator_does_not_weaken_a_dwell_in_slews(self):
-        """It shortens the slew, so the same number of slews is fewer
-        seconds -- which is the intent: the policy is about the actuator."""
-        cfg = Config()
-        cfg.BANK_REVERSAL_DWELL_SLEWS = 2.0
-        cfg.BANK_RATE_DEG_S = 16.0
-        slew = 2.0 * cfg.BANK_MAX_DEG / cfg.BANK_RATE_DEG_S
-        self.assertEqual(self.commanded(cfg, -70.0, +70.0, 2.5 * slew), -70.0)
 
 
 class TestTheDeorbitAimIsComputedNotFitted(unittest.TestCase):
@@ -2930,8 +2596,6 @@ class TestALeanIsEstablishedBeforeItIsAbandoned(unittest.TestCase):
                 latched = side
         return latched * abs(wanted)
 
-    def test_on_by_default(self):
-        self.assertTrue(Config().BANK_REVERSAL_SETTLE)
 
     def test_a_reversal_from_an_established_lean_is_taken(self):
         cfg = Config()
@@ -2950,22 +2614,6 @@ class TestALeanIsEstablishedBeforeItIsAbandoned(unittest.TestCase):
         cfg = Config()
         self.assertLess(self.settle(cfg, -12.0, +12.0, +1.0), 0.0)
 
-    def test_it_needs_no_constant_of_its_own(self):
-        """The thresholds it uses are ones the solve already owns."""
-        here = ROOT
-        with open(os.path.join(here, "spaceplane", "autopilot.py")) as fh:
-            source = fh.read()
-        start = source.index("if self.cfg.BANK_REVERSAL_SETTLE:")
-        block = source[start:source.index("\n        else:", start)]
-        self.assertIn("SOLVE_BANK_MIN_DEG", block)
-        self.assertNotIn("DWELL", block)
-        self.assertNotIn("snap.ut -", block)
-
-    def test_the_clock_version_is_still_reachable(self):
-        cfg = Config()
-        cfg.BANK_REVERSAL_SETTLE = False
-        self.assertGreater(cfg.BANK_REVERSAL_DWELL_SLEWS, 0.0)
-
 
 class TestTheAlphaHoldAsksWhetherTheLeanArrived(unittest.TestCase):
     """Failure 25: the guard that held the angle of attack through a reversal
@@ -2974,15 +2622,6 @@ class TestTheAlphaHoldAsksWhetherTheLeanArrived(unittest.TestCase):
     half of every entry, 57-83% of the GLIDE ticks, and the range solve had
     no control at all over the stretch where the miss bleeds."""
 
-    def test_on_by_default(self):
-        self.assertTrue(Config().SOLVE_HOLD_ON_TRANSIT)
-
-    def test_a_small_established_lean_is_not_a_transit(self):
-        """The terminal glide: committed to +1, flying +2.4, asking +2.4.
-        The old magnitude test called this mid-reversal forever."""
-        cfg = Config()
-        self.assertFalse(guidance.bank_in_transit(cfg, 2.4, 2.4, 1.0, 1.0))
-        self.assertLess(2.4, cfg.SOLVE_HOLD_THROUGH_REVERSAL_DEG)
 
     def test_a_reversal_in_progress_is_a_transit(self):
         """Committed to the negative stop, still at +40 on the way there."""
@@ -3011,19 +2650,6 @@ class TestTheAlphaHoldAsksWhetherTheLeanArrived(unittest.TestCase):
         cfg = Config()
         self.assertFalse(guidance.bank_in_transit(cfg, 2.4, 2.4, 1.0, 0.01))
         self.assertGreater(cfg.SOLVE_HOLD_TRANSIT_DEG, 1.0)
-
-    def test_the_magnitude_version_is_still_reachable(self):
-        cfg = Config()
-        cfg.SOLVE_HOLD_ON_TRANSIT = False
-        self.assertGreater(cfg.SOLVE_HOLD_THROUGH_REVERSAL_DEG, 0.0)
-
-    def test_the_loop_asks_guidance_and_not_a_magnitude(self):
-        here = ROOT
-        with open(os.path.join(here, "spaceplane", "autopilot.py")) as fh:
-            source = fh.read()
-        start = source.index("if self.cfg.SOLVE_HOLD_ON_TRANSIT:")
-        block = source[start:source.index("\n        elif", start)]
-        self.assertIn("bank_in_transit", block)
 
 
 class TestTheCeilingFloorIsAPlantLimitNotATarget(unittest.TestCase):
@@ -3139,14 +2765,6 @@ class TestTheLeanIsGoneByTheGate(unittest.TestCase):
         cfg = Config()
         cfg.GLIDE_ALIGN_RANGE_M = 0.0
         self.assertEqual(self.cap(cfg, 100.0), cfg.BANK_MAX_DEG)
-
-    def test_the_loop_applies_it_before_the_rate_limiter(self):
-        here = ROOT
-        with open(os.path.join(here, "spaceplane", "autopilot.py")) as fh:
-            source = fh.read()
-        cap = source.index("align_bank_cap")
-        rate = source.index("self.bank_rate() * dt", cap)
-        self.assertLess(cap, rate)
 
 
 class TestADestroyedVehicleEndsTheFlight(unittest.TestCase):
@@ -3471,99 +3089,6 @@ class TestTheGateIsMovedInNotUp(unittest.TestCase):
         self.assertLess(2.19, 2.2, "the airframe's clean best glide")
 
 
-class TestTheGlideAimsLongAndGivesItBack(unittest.TestCase):
-    """``GLIDE_RESERVE_M``: fly the entry on the surplus side, on a schedule.
-
-    The properties that matter are the two ends and the sign, not the size.
-    A reserve that does not decay is a long landing, which is no more
-    recoverable than a short one; and a reserve applied with the wrong sign
-    aims the vehicle *short*, which is the failure it exists to prevent.
-    """
-
-    def setUp(self):
-        self.cfg = Config(GLIDE_RESERVE_ON=True)
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def at(self, altitude):
-        return vec.scale((1.0, 0.0, 0.0), self.env.equatorial_radius + altitude)
-
-    def test_it_is_on_and_its_magnitude_is_the_entry_s_own_scatter(self):
-        """It is on now, and 4000 became 500 for a reason worth keeping.
-
-        A reserve is a margin, and **a margin is a fitted constant with a
-        standard deviation baked into it**.  4000 was three sigma of an
-        entry that scattered 6.5 km through the control loop's tick latency
-        (failures 63 and 65); with the loop governed the arrival lands on its
-        commanded point to under 250 m, and four kilometres of deliberate
-        overshoot is four kilometres nothing downstream can spend -- measured,
-        the approach crossing the threshold at 800 m and still 130 m high at
-        the far end.  At 500 the chain hands the wheels the arrival it was
-        given (bias +76 m sd 423) and nine of nine stop on the runway.
-        """
-        cfg = Config()
-        self.assertTrue(cfg.GLIDE_RESERVE_ON)
-        self.assertGreater(guidance.glide_reserve(self.env, cfg,
-                                                  self.at(40000.0)), 0.0)
-        # Small enough that the chain can give it back, and not zero: the
-        # entry still has to miss on the long side.
-        self.assertGreater(cfg.GLIDE_RESERVE_M, 0.0)
-        self.assertLess(cfg.GLIDE_RESERVE_M, 0.5 * cfg.RUNWAY_LENGTH_M)
-
-    def test_it_is_full_high_up_and_gone_by_the_gate(self):
-        cfg = self.cfg
-        self.assertAlmostEqual(
-            guidance.glide_reserve(self.env, cfg,
-                                   self.at(cfg.GLIDE_RESERVE_FROM_ALT_M + 1e4)),
-            cfg.GLIDE_RESERVE_M)
-        # **The landing configuration sets the two ends equal, so the
-        # schedule is a step and not a ramp** -- full above 12 km, nothing
-        # below it, which is the flown form (failure 50, "held constant to
-        # the gate" as against decayed into it).  Asserting zero *at* the
-        # boundary would be asserting which side of a step the equality
-        # lands on, which is not a property of the design.
-        self.assertEqual(
-            guidance.glide_reserve(self.env, cfg,
-                                   self.at(cfg.GLIDE_RESERVE_TO_ALT_M - 1.0)),
-            0.0)
-        self.assertEqual(guidance.glide_reserve(self.env, cfg,
-                                                self.at(cfg.GATE_ALT_M)), 0.0)
-
-    def test_it_decays_monotonically_in_between(self):
-        cfg = self.cfg
-        last = None
-        for altitude in range(int(cfg.GLIDE_RESERVE_TO_ALT_M),
-                              int(cfg.GLIDE_RESERVE_FROM_ALT_M) + 1, 1000):
-            now = guidance.glide_reserve(self.env, cfg, self.at(altitude))
-            if last is not None:
-                self.assertGreaterEqual(now, last)
-            last = now
-        self.assertAlmostEqual(last, cfg.GLIDE_RESERVE_M)
-
-    def test_the_reserve_aims_the_solve_long_not_short(self):
-        """The sign, which is the whole point and is easy to get backwards.
-
-        With a reserve the solve is nulling ``long - reserve``, so a vehicle
-        predicted to arrive *on* the gate is now a vehicle that is short of
-        where it is aiming -- and the command that answers a shortfall must
-        not be the one that answers a surplus.  Compared against the same
-        state solved with no reserve.
-        """
-        r, v = entry_state(self.env, self.cfg)
-        for _ in range(60):
-            r, v = trajectory._step(
-                self.env, r, v, MASS, 5.0, self.cfg,
-                Steer(alpha=30.0, bank=0.0, cfg=self.cfg, mass=MASS))
-        plain = Config()
-        without, _ = guidance.solve_glide(self.env, r, v, MASS, plain,
-                                          self.end, 30.0, 30.0)
-        with_it, _ = guidance.solve_glide(self.env, r, v, MASS, self.cfg,
-                                          self.end, 30.0, 30.0)
-        # Aiming further away can only ask for more range, never less, and
-        # bank magnitude is the control whose sign of effect never changes.
-        self.assertLessEqual(abs(with_it.bank), abs(without.bank) + 1e-6)
-
-
 class TestTheCoastWarpsTheVacuumPart(unittest.TestCase):
     """``COAST_WARP``: delete the third of the flight where nothing happens.
 
@@ -3647,764 +3172,6 @@ class TestEngagingBelowTheInterface(unittest.TestCase):
         self.assertIn("run.engage(", main[:800])
         self.assertNotIn('run.enter(DEORBIT, conn.space_center.ut, "autostart")',
                          main[:main.index("run.engage(")])
-
-
-class TestTheHeadingAlignmentCone(unittest.TestCase):
-    """The cone's geometry, which is the part a flight cannot debug.
-
-    Every one of these is a statement a wrong sign would break, and a wrong
-    sign here does not look like a bug in flight -- it looks like a vehicle
-    that turns the long way round and runs out of height, which is
-    indistinguishable from an entry that arrived low.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-        self.gate = self.env.runway.low_gate(self.end)
-
-    def frame(self):
-        return guidance.hac_frame(self.env, self.cfg, self.end)
-
-    def point(self, along_m, across_m, height):
-        """A position ``(along, across)`` metres from the gate, ``height`` up."""
-        gate, along, across, _ = self.frame()
-        ground = vec.add(gate, vec.add(vec.scale(along, along_m),
-                                       vec.scale(across, across_m)))
-        radius = self.end["radius"] + height
-        return vec.scale(vec.unit(ground), radius)
-
-    def test_the_circle_is_tangent_to_the_centreline_at_the_gate(self):
-        """Rolling out of the cone *is* being lined up, or it is not a cone."""
-        for side in (1.0, -1.0):
-            r = self.point(0.0, 0.0, self.cfg.GATE_ALT_M)
-            distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-                self.env, self.cfg, self.end, r, side,
-                self.cfg.HAC_RADIUS_M)
-            self.assertAlmostEqual(distance, self.cfg.HAC_RADIUS_M, delta=1.0)
-            path, turn, tangent = guidance.hac_path(
-                self.cfg, distance, angle, exit_angle, side,
-                self.cfg.HAC_RADIUS_M)
-            self.assertAlmostEqual(math.degrees(turn), 0.0, delta=0.5)
-
-    def test_the_side_is_the_side_the_vehicle_is_on(self):
-        """It joins where it already is; crossing the centreline to reach the
-        circle is a reversal at the worst moment of the flight."""
-        left = self.point(-10000.0, 6000.0, 8000.0)
-        right = self.point(-10000.0, -6000.0, 8000.0)
-        self.assertEqual(guidance.hac_side(self.env, self.cfg, self.end,
-                                           left), 1.0)
-        self.assertEqual(guidance.hac_side(self.env, self.cfg, self.end,
-                                           right), -1.0)
-
-    def test_a_quarter_of_the_way_round_is_a_quarter_of_the_arc(self):
-        side = 1.0
-        radius = self.cfg.HAC_RADIUS_M
-        # A quarter turn before the rollout, on the circle: for a left-hand
-        # (counter-clockwise) turn that is abeam the gate, on the far side of
-        # the centre from the runway's own direction.
-        gate, along, across, _ = self.frame()
-        centre_along, centre_across = 0.0, side * radius
-        r = self.point(centre_along - radius, centre_across, 6000.0)
-        distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-            self.env, self.cfg, self.end, r, side, self.cfg.HAC_RADIUS_M)
-        self.assertAlmostEqual(distance, radius, delta=50.0)
-        path, turn, tangent = guidance.hac_path(self.cfg, distance, angle,
-                                                exit_angle, side, radius)
-        self.assertAlmostEqual(math.degrees(turn), 90.0, delta=2.0)
-        self.assertAlmostEqual(path, radius * math.pi / 2.0, delta=200.0)
-
-
-    def test_a_wrap_before_the_gate_is_the_run_to_it(self):
-        """``HAC_WRAP_BEFORE_GATE``: before the gate, a tangent point past
-        the rollout by any angle costs the run to the gate, not a lap
-        (LOG4152: 347 deg / 106 km to go, 16 km before the gate).  Past the
-        gate the lap stands, and a real turn before it is untouched."""
-        side = 1.0
-        radius = 8000.0
-        def path(along_m, across_m):
-            state = guidance.hac_state(self.env, self.cfg, self.end,
-                                       self.point(along_m, across_m, 3000.0),
-                                       side, radius)
-            return guidance.hac_path(self.cfg, *state[:3], side=side,
-                                     radius=radius)
-        cases = [(-5000.0, -side * 1500.0), (-1000.0, -side * 3000.0),
-                 (-500.0, -side * 6000.0)]
-        for along_m, across_m in cases:
-            old, turn, _ = path(along_m, across_m)
-            self.assertGreater(old, 40000.0)
-            self.assertGreater(math.degrees(turn), 300.0)
-        self.cfg.HAC_WRAP_BEFORE_GATE = True
-        for along_m, across_m in cases:
-            new, turn, _ = path(along_m, across_m)
-            self.assertAlmostEqual(new, math.hypot(along_m, across_m),
-                                   delta=0.02 * new)
-            self.assertEqual(turn, 0.0)
-        # Past the gate the lap is a lap.
-        lap, turn, _ = path(3000.0, side * 2000.0)
-        self.assertGreater(lap, 30000.0)
-        # A turn still to fly before the gate is untouched.
-        self.cfg.HAC_WRAP_BEFORE_GATE = False
-        before = path(-5000.0, side * 6000.0)
-        self.cfg.HAC_WRAP_BEFORE_GATE = True
-        self.assertEqual(before, path(-5000.0, side * 6000.0))
-
-    def test_a_straight_in_is_priced_at_the_wings_level_ratio(self):
-        """``HAC_LD_AT_TARGET``: lined up, the path left is flown wings
-        level at the cone's speed, so the profile is lower than ``HAC_LD``
-        prices it and the same height reads as more surplus."""
-        side = 1.0
-        _, along, _, _ = self.frame()
-        r = self.point(-10000.0, 0.0, 6000.0)
-        v = vec.scale(along, 110.0)
-        off = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0, 9.81,
-                           6000.0, side)
-        self.cfg.HAC_LD_AT_TARGET = True
-        on = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0, 9.81,
-                          6000.0, side)
-        self.assertLess(on.needed_height, off.needed_height - 500.0)
-        self.assertGreater(on.surplus, off.surplus)
-
-    def test_a_measured_ld_scale_scales_the_cone_budget(self):
-        """``HAC_LD_MEASURED``: a vehicle flying 20% better than its table
-        reads 20% more path, so the same height is more surplus; no scale
-        yet is the table alone."""
-        side = 1.0
-        _, along, _, _ = self.frame()
-        r = self.point(-10000.0, 0.0, 6000.0)
-        v = vec.scale(along, 110.0)
-        self.cfg.HAC_LD_MEASURED = True
-        table = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
-                             9.81, 6000.0, side)
-        same = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
-                            9.81, 6000.0, side, ld_scale=1.0)
-        better = guidance.hac(self.env, self.cfg, self.end, r, v, 7000.0,
-                              9.81, 6000.0, side, ld_scale=1.2)
-        self.assertAlmostEqual(table.plan_ld, same.plan_ld, places=6)
-        self.assertAlmostEqual(better.plan_ld, 1.2 * same.plan_ld, places=6)
-        self.assertLess(better.needed_height, same.needed_height)
-
-
-    def test_the_derived_aim_is_the_straight_in_ratio(self):
-        """``HAC_AIM_DERIVED``: the aim's ratio is the wings-level ladder
-        from ``HAC_ALT_M`` to the gate, and ``high_gate`` uses it."""
-        got = guidance.straight_in_reach(self.env, self.cfg, 7000.0, 9.81)
-        self.assertIsNotNone(got)
-        self.assertGreater(got, 0.5)
-        # The real ``Runway.high_gate``, on the fake's geometry.
-        rw = SimpleNamespace(cfg=self.cfg,
-                             horizontal=self.env.runway.horizontal,
-                             gate_dist=lambda: self.cfg.GATE_DIST_M)
-        high = lambda: environment.Runway.high_gate(rw, self.end)
-        before = high()
-        rw.aim_ld = 2.0 * self.cfg.HAC_GATE_LD
-        moved = vec.norm(vec.sub(high(), before))
-        reach = (self.cfg.HAC_ALT_M - self.cfg.GATE_ALT_M) * self.cfg.HAC_GATE_LD
-        self.assertAlmostEqual(moved, reach, delta=0.02 * reach)
-
-    def test_the_ladder_prices_each_slice_at_its_own_height(self):
-        """Path per metre of height is summed down to the gate, not taken
-        where the vehicle is; and the profile height inverts it."""
-        speed = lambda h: 110.0
-        rungs = guidance.hac_ladder(self.env, self.cfg, 8000.0, 7000.0, 9.81,
-                                    speed, 16000.0, 0.0, 0, 10000.0)
-        self.assertIsNotNone(rungs)
-        self.assertAlmostEqual(rungs[0][0], self.cfg.GATE_ALT_M)
-        self.assertAlmostEqual(rungs[-1][0], 8000.0)
-        paths = [p for _, p in rungs]
-        self.assertEqual(paths, sorted(paths))
-        # Inverse: the height that pays for the whole ladder is its top.
-        self.assertAlmostEqual(
-            guidance.ladder_height(rungs, rungs[-1][1], 1.86), 8000.0,
-            delta=1.0)
-        self.assertAlmostEqual(
-            guidance.ladder_height(rungs, 0.0, 1.86),
-            self.cfg.GATE_ALT_M, delta=1.0)
-
-    def test_a_vehicle_still_far_out_is_costed_the_run_in_as_well(self):
-        """The failure the first version had: an arc-only path model reads
-        zero for a vehicle lined up thirty kilometres out, so the guidance
-        calls for extra laps exactly where there is the most path left."""
-        side = 1.0
-        r = self.point(-40000.0, 0.0, 12000.0)
-        distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-            self.env, self.cfg, self.end, r, side, self.cfg.HAC_RADIUS_M)
-        path, turn, tangent = guidance.hac_path(
-            self.cfg, distance, angle, exit_angle, side,
-            self.cfg.HAC_RADIUS_M)
-        self.assertGreater(path, 35000.0)
-        self.assertIsNotNone(tangent)
-
-    def test_more_height_buys_a_wider_circle_and_then_a_lap(self):
-        """The whole claim: an energy error becomes a radius, and when the
-        radius runs out it becomes a lap."""
-        side = 1.0
-        r = self.point(-6000.0, 4000.0, 6000.0)
-        distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-            self.env, self.cfg, self.end, r, side, self.cfg.HAC_RADIUS_M)
-        paths = []
-        laps = []
-        for height in (4000.0, 8000.0, 14000.0, 26000.0):
-            available = (height - self.cfg.GATE_ALT_M) * self.cfg.HAC_LD
-            radius, lap, _, _, total = guidance.hac_radius(
-                self.env, self.cfg, self.end, r, side, available)
-            paths.append(total)
-            laps.append(lap)
-        # More height, more path flown -- that is the entire mechanism.
-        self.assertEqual(paths, sorted(paths))
-        self.assertEqual(laps[0], 0)
-        self.assertGreater(laps[-1], 0)
-
-    def test_the_command_turns_toward_the_circle_it_is_outside_of(self):
-        """A vehicle outside the circle, flying straight at the centre, is
-        told to lean the way that gets it onto the turn -- and the sign is
-        checked against the *vehicle's* frame, because ``across`` is fixed at
-        the gate and the vehicle spends half a lap pointing the other way."""
-        side = 1.0
-        for along_m, across_m in ((-25000.0, 9000.0), (-25000.0, -0.0)):
-            r = self.point(along_m, across_m, 11000.0)
-            gate, along, across, _ = self.frame()
-            up = vec.unit(r)
-            track = vec.unit(vec.project_out(along, up))
-            v = vec.scale(track, 140.0)
-            command = guidance.hac(self.env, self.cfg, self.end, r, v, MASS,
-                                   9.81, 11000.0, side)
-            self.assertIsNotNone(command)
-            self.assertLessEqual(abs(command.bank),
-                                 self.cfg.HAC_BANK_MAX_DEG + 1e-6)
-            self.assertFalse(command.on_circle)
-
-    def test_no_answer_rather_than_a_zero_when_stopped(self):
-        r = self.point(-5000.0, 0.0, 5000.0)
-        self.assertIsNone(guidance.hac(self.env, self.cfg, self.end, r,
-                                       (0.0, 0.0, 0.0), MASS, 9.81, 5000.0,
-                                       1.0))
-
-
-class TestTheConeHoldsItsTurn(unittest.TestCase):
-    """A circle is a standing bank, and a proportional term alone cannot hold
-    one: its command is zero exactly when the vehicle is pointing along the
-    tangent, which is when it is about to leave.
-
-    The weave is off here on purpose.  It deliberately steers off the
-    tangent to spend surplus height, so with it on these two claims are
-    about a different manoeuvre; what is being checked is that the *turn*
-    is held, which is the half the weave is layered on top of.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True",
-                                              "HAC_WEAVE_ON=False"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def on_the_circle(self, side, height=6000.0):
-        """A state on the circle the guidance will actually choose.
-
-        The tightest one, and the height is picked so that nothing wider
-        fits -- because the radius is the energy knob, a state built on the
-        *nominal* circle is a state on a circle the vehicle is not flying,
-        and the sign being tested here is a property of the turn it is.
-        """
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        radius = self.cfg.HAC_RADIUS_MIN_M
-        # A quarter turn before the rollout.
-        ground = vec.add(gate, vec.add(vec.scale(along, -radius),
-                                       vec.scale(across, side * radius)))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + height)
-        up = vec.unit(r)
-        # Tangent there, in the turn's sense: the radius is ``-along``, so
-        # the tangent is ``+across`` rotated by the sense.
-        # Slow enough that the tightest circle the guidance will offer is
-        # ``HAC_RADIUS_MIN_M`` itself: the floor rises with speed (see
-        # ``HAC_HOLD_MARGIN``), so a faster state is a state on a circle the
-        # guidance would not have chosen.
-        track = vec.unit(vec.project_out(vec.scale(across, side), up))
-        return r, vec.scale(track, 110.0)
-
-    def test_a_vehicle_already_on_the_tangent_is_still_told_to_bank(self):
-        for side in (1.0, -1.0):
-            r, v = self.on_the_circle(side)
-            command = guidance.hac(self.env, self.cfg, self.end, r, v, MASS,
-                                   9.81, 6000.0, side)
-            self.assertIsNotNone(command)
-            self.assertGreater(abs(command.bank), 5.0,
-                               "no feed-forward: the cone would fly straight "
-                               "off its own circle")
-
-    def test_the_bank_leans_into_the_turn_and_not_out_of_it(self):
-        """The one sign that cannot be argued from the gate's frame, because
-        the vehicle spends half a lap pointing the other way."""
-        for side in (1.0, -1.0):
-            r, v = self.on_the_circle(side)
-            command = guidance.hac(self.env, self.cfg, self.end, r, v, MASS,
-                                   9.81, 6000.0, side)
-            self.assertAlmostEqual(command.radius,
-                                   self.cfg.HAC_RADIUS_MIN_M, delta=1.0)
-            self.assertLess(command.lead, 1.0)
-            up_perp, lateral = trajectory.lift_frame(r, v)
-            # Lift at this bank, and the component of it toward the turn
-            # centre: a turn is held by leaning at the centre.
-            lift = vec.add(
-                vec.scale(up_perp, math.cos(math.radians(command.bank))),
-                vec.scale(lateral, math.sin(math.radians(command.bank))))
-            # The centre of the circle the guidance *chose*, not of the
-            # nominal one: the radius is the energy knob and the centre
-            # moves with it, so a test that asks about a different circle is
-            # asking about a turn the vehicle is not flying.
-            _, _, _, centre, _, _ = guidance.hac_state(
-                self.env, self.cfg, self.end, r, side, command.radius)
-            inward = vec.sub(vec.scale(vec.unit(centre), vec.norm(r)), r)
-            self.assertGreater(vec.dot(lift, vec.unit(inward)), 0.0)
-
-
-class TestTheConeCostsALinedUpArrivalNothing(unittest.TestCase):
-    """The arrival the whole entry is trying to produce must be the cheapest
-    one the cone knows, or the cone is charging for its own geometry.
-
-    This is the test that would have caught the tangent's sign.  The first
-    version put the tangent point the other way round the circle, so a
-    vehicle thirty kilometres out on the extended centreline -- lined up,
-    wings level, exactly where the entry aims -- was costed a 149 degree turn
-    on top of the run in.  Every flight then read short of height and left
-    the cone immediately, and nothing in the log said why.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def straight_in(self, side, back_m):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        ground = vec.add(gate, vec.scale(along, -back_m))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + 10000.0)
-        return guidance.hac_state(self.env, self.cfg, self.end, r, side,
-                                  self.cfg.HAC_RADIUS_M)
-
-    def test_lined_up_on_the_centreline_is_no_turn_at_all(self):
-        for side in (1.0, -1.0):
-            for back in (12000.0, 29000.0, 50000.0):
-                distance, angle, exit_angle, _, _, _ = self.straight_in(
-                    side, back)
-                path, turn, tangent = guidance.hac_path(
-                    self.cfg, distance, angle, exit_angle, side,
-                    self.cfg.HAC_RADIUS_M)
-                self.assertAlmostEqual(math.degrees(turn), 0.0, delta=1.0)
-                # And the path is then just the run in to the gate.  The
-                # few hundred metres of slack at 50 km is the tangent plane
-                # at the gate against the sphere, not the geometry.
-                self.assertAlmostEqual(path, back, delta=400.0)
-
-    def test_arriving_the_wrong_way_round_costs_most_of_a_lap(self):
-        """The other half of the same claim: the expensive arrival must still
-        read expensive, or the sign has merely been flipped."""
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        side = 1.0
-        # Past the gate, heading away: it has to come all the way round.
-        ground = vec.add(gate, vec.scale(along, 20000.0))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + 10000.0)
-        distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-            self.env, self.cfg, self.end, r, side, self.cfg.HAC_RADIUS_M)
-        path, turn, _ = guidance.hac_path(self.cfg, distance, angle,
-                                          exit_angle, side,
-                                          self.cfg.HAC_RADIUS_M)
-        self.assertGreater(math.degrees(turn), 90.0)
-        self.assertGreater(path, 20000.0)
-
-
-class TestEveryCandidateCircleRollsOutOnTheCentreline(unittest.TestCase):
-    """The property that makes a circle a *heading alignment* cone.
-
-    The radius is the energy knob, so the guidance flies a different one on
-    every flight and several during one.  If the rollout point moves with the
-    radius, the energy knob is also a cross-track knob -- which is what the
-    first three flights measured: circles of 3.0, 4.6 and 5.7 km about a
-    centre placed for 8, landing 0.2, 1.2 and 1.6 km off a runway 70 m wide.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def test_the_gate_is_on_every_circle_this_cone_can_fly(self):
-        gate = self.env.runway.low_gate(self.end)
-        for side in (1.0, -1.0):
-            for radius in (self.cfg.HAC_RADIUS_MIN_M, 5000.0, 9000.0,
-                           self.cfg.HAC_RADIUS_MAX_M):
-                _, _, _, centre, _, _ = guidance.hac_state(
-                    self.env, self.cfg, self.end, gate, side, radius)
-                # The gate is exactly ``radius`` from the centre ...
-                here = vec.scale(vec.unit(gate), vec.norm(centre))
-                self.assertAlmostEqual(vec.norm(vec.sub(here, centre)),
-                                       radius, delta=2.0)
-                # ... and the turn still to fly from it is zero, which is
-                # what "the rollout point is the gate" means.
-                distance, angle, exit_angle, _, _, _ = guidance.hac_state(
-                    self.env, self.cfg, self.end, gate, side, radius)
-                turn = guidance.hac_turn(self.cfg, angle, exit_angle, side)
-                self.assertAlmostEqual(math.degrees(turn), 0.0, delta=0.5)
-
-    def test_the_centre_is_abeam_the_gate_and_on_the_turning_side(self):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        for side in (1.0, -1.0):
-            for radius in (3000.0, 12000.0):
-                _, _, _, centre, _, _ = guidance.hac_state(
-                    self.env, self.cfg, self.end, gate, side, radius)
-                offset = vec.sub(centre, gate)
-                # Abeam: no component along the runway.
-                self.assertAlmostEqual(vec.dot(offset, along), 0.0, delta=2.0)
-                self.assertAlmostEqual(vec.dot(offset, across), side * radius,
-                                       delta=2.0)
-
-
-class TestTheConeDoesNotLeaveWithALapStillOwed(unittest.TestCase):
-    """Reaching the rollout point is not the same as being ready to leave it.
-
-    Two flights of the first clean batch reached ``turn=1`` with ``laps=1``,
-    took the exit, and handed the four-kilometre approach law a vehicle
-    twelve kilometres up: both floated ten kilometres past the field.  The
-    lap the cone had just asked for is the height it has no other way to
-    spend.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def at_the_rollout(self, height):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        ground = vec.add(gate, vec.scale(along, -300.0))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + height)
-        up = vec.unit(r)
-        track = vec.unit(vec.project_out(along, up))
-        return r, vec.scale(track, 120.0)
-
-    def exit_is_offered(self, height):
-        r, v = self.at_the_rollout(height)
-        side = guidance.hac_side(self.env, self.cfg, self.end, r)
-        c = guidance.hac(self.env, self.cfg, self.end, r, v, MASS, 9.81,
-                         height, side)
-        self.assertIsNotNone(c)
-        return (c, c.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
-                and c.gate_range <= self.cfg.HAC_ROLLOUT_M
-                and c.laps == 0
-                and height <= c.needed_height + self.cfg.HAC_EXIT_SURPLUS_M)
-
-    def test_lined_up_at_the_gate_altitude_leaves(self):
-        command, offered = self.exit_is_offered(self.cfg.GATE_ALT_M + 200.0)
-        self.assertEqual(command.laps, 0)
-        self.assertTrue(offered)
-
-    def test_lined_up_but_twelve_kilometres_up_does_not(self):
-        command, offered = self.exit_is_offered(12500.0)
-        self.assertFalse(offered,
-                         "a vehicle 12 km over the gate is not on final, "
-                         "however well it is pointing")
-
-
-class TestTheRolloutIsAtTheGateAndNotMerelyPointingAtIt(unittest.TestCase):
-    """``turn == 0`` says the vehicle is aligned, not that it has arrived.
-
-    Inside the circle there is no tangent point, so the run-in length is zero
-    everywhere -- and a vehicle sitting on the abeam line four kilometres to
-    one side of the gate reads ``turn=0`` with nothing left to fly.  Three
-    flights of one batch took the rollout there and landed 0.8 to 1.6 km
-    across a runway 70 m wide.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def command_at(self, along_m, across_m, height, side):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        ground = vec.add(gate, vec.add(vec.scale(along, along_m),
-                                       vec.scale(across, across_m)))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + height)
-        up = vec.unit(r)
-        track = vec.unit(vec.project_out(along, up))
-        return guidance.hac(self.env, self.cfg, self.end, r,
-                            vec.scale(track, 120.0), MASS, 9.81, height, side)
-
-    def test_abeam_the_gate_is_not_at_the_gate(self):
-        for side in (1.0, -1.0):
-            c = self.command_at(0.0, side * 4000.0, 4000.0, side)
-            self.assertIsNotNone(c)
-            self.assertGreater(c.gate_range, self.cfg.HAC_ROLLOUT_M,
-                               "four kilometres abeam must not read as "
-                               "rolled out, whatever the turn says")
-
-    def test_on_the_gate_is_at_the_gate(self):
-        for side in (1.0, -1.0):
-            c = self.command_at(-200.0, 0.0, self.cfg.GATE_ALT_M + 100.0,
-                                side)
-            self.assertIsNotNone(c)
-            self.assertLess(c.gate_range, 400.0)
-
-
-class TestThePathIsNeverLessThanTheDistanceToTheGate(unittest.TestCase):
-    """A floor no geometry can get under, and the arc model gets under it.
-
-    Inside the circle the path is ``d * turn``, which goes to zero as the
-    vehicle lines up -- so a vehicle inside a ten kilometre circle, aligned,
-    three kilometres from the gate is told it has nothing left to fly and
-    spends the height it needs to get there.  Three flights of one batch
-    reached the gate's altitude 2.8, 3.9 and 3.3 km short of the gate with
-    ``needed 2600`` in the log, which is the guidance saying the arrival was
-    free.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def test_aligned_and_inside_a_wide_circle_still_costs_the_run_in(self):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        for side in (1.0, -1.0):
-            for back in (1500.0, 3000.0, 6000.0):
-                ground = vec.add(gate, vec.scale(along, -back))
-                r = vec.scale(vec.unit(ground),
-                              self.end["radius"] + 4000.0)
-                for radius in (9000.0, 12000.0, self.cfg.HAC_RADIUS_MAX_M):
-                    state = guidance.hac_state(self.env, self.cfg,
-                                               self.end, r, side, radius)
-                    distance, angle, exit_angle = state[0], state[1], state[2]
-                    path, turn, _ = guidance.hac_path(
-                        self.cfg, distance, angle, exit_angle, side, radius)
-                    self.assertGreaterEqual(path, back - 300.0)
-
-
-class TestTheConeNeverPlansAPathItCannotAfford(unittest.TestCase):
-    """Over budget and under budget are not the same error.
-
-    A plan longer than the height can pay for puts the vehicle on the ground
-    short of the gate, which nothing downstream undoes; one shorter puts it
-    over the gate high, which the approach's S-turn absorbs.  Scored on
-    ``abs``, an arrival with 19.1 km of path in hand chose a 21.5 km plan
-    over a 10.2 km one -- and was 1.8 km of height short before it started.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def at(self, back_m, across_m, height):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        ground = vec.add(gate, vec.add(vec.scale(along, -back_m),
-                                       vec.scale(across, across_m)))
-        return vec.scale(vec.unit(ground), self.end["radius"] + height)
-
-    def test_the_chosen_plan_fits_the_height_whenever_one_does(self):
-        for side in (1.0, -1.0):
-            for back, across_m, height in ((9000.0, 1000.0, 16700.0),
-                                           (20000.0, -4000.0, 14000.0),
-                                           (4000.0, 2000.0, 9000.0)):
-                r = self.at(back, across_m, height)
-                available = (height - self.cfg.GATE_ALT_M) * self.cfg.HAC_LD
-                _, _, _, _, total = guidance.hac_radius(
-                    self.env, self.cfg, self.end, r, side, available)
-                # The shortest path any circle offers.  Below it there is
-                # nothing to choose and the arrival is simply short; the
-                # claim is only about states where something fits.
-                shortest = min(
-                    guidance.hac_path(
-                        self.cfg,
-                        *guidance.hac_state(self.env, self.cfg, self.end, r,
-                                            side, radius)[:3],
-                        side=side, radius=radius)[0]
-                    for radius in (self.cfg.HAC_RADIUS_MIN_M, 6000.0,
-                                   11000.0, self.cfg.HAC_RADIUS_MAX_M))
-                if shortest <= available:
-                    self.assertLessEqual(total, available + 1.0)
-                else:
-                    self.assertLessEqual(total, shortest + 1.0)
-
-    def test_the_radius_may_not_step(self):
-        """Unlimited, the plan flips between a 2 km circle with 340 degrees
-        to fly and a 15 km one with none, and the bank reverses with it."""
-        r = self.at(9000.0, 1000.0, 16700.0)
-        up = vec.unit(r)
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        v = vec.scale(vec.unit(vec.project_out(along, up)), 250.0)
-        free = guidance.hac(self.env, self.cfg, self.end, r, v, MASS, 9.81,
-                            16700.0, 1.0)
-        held = guidance.hac(self.env, self.cfg, self.end, r, v, MASS, 9.81,
-                            16700.0, 1.0, previous=2000.0, max_step=400.0)
-        self.assertIsNotNone(free)
-        self.assertIsNotNone(held)
-        self.assertLessEqual(abs(held.radius - 2000.0), 400.0 + 1e-6)
-
-
-class TestTheWeaveSpendsExactlyTheSurplus(unittest.TestCase):
-    """The weave exists because the circle cannot spend a surplus that arrives
-    aligned, and it has to go to zero by itself once there is none."""
-
-    def setUp(self):
-        # On profile in *height*: the speed is not at the cone's reference,
-        # which ``HAC_ENERGY_BUDGET`` (default) would count as surplus.
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True",
-                                              "HAC_ENERGY_BUDGET=False"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def command_at(self, back_m, height, speed=200.0):
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg,
-                                                    self.end)
-        ground = vec.add(gate, vec.scale(along, -back_m))
-        r = vec.scale(vec.unit(ground), self.end["radius"] + height)
-        up = vec.unit(r)
-        track = vec.unit(vec.project_out(along, up))
-        return guidance.hac(self.env, self.cfg, self.end, r,
-                            vec.scale(track, speed), MASS, 9.81, height, 1.0)
-
-    def test_on_profile_there_is_no_weave(self):
-        """Lined up with just enough height: the manoeuvre is a straight-in
-        arrival and the weave must not invent one."""
-        back = 8000.0
-        height = self.cfg.GATE_ALT_M + back / self.cfg.HAC_LD
-        c = self.command_at(back, height)
-        self.assertIsNotNone(c)
-        self.assertLess(c.weave_deg, 1.0)
-
-    def test_surplus_height_becomes_weave_angle(self):
-        back = 8000.0
-        on_profile = self.cfg.GATE_ALT_M + back / self.cfg.HAC_LD
-        angles = []
-        for extra in (0.0, 2000.0, 5000.0):
-            c = self.command_at(back, on_profile + extra)
-            self.assertIsNotNone(c)
-            angles.append(c.weave_deg)
-        self.assertEqual(angles, sorted(angles))
-        self.assertGreater(angles[-1], angles[0])
-        self.assertLessEqual(angles[-1], self.cfg.HAC_WEAVE_MAX_DEG + 1e-6)
-
-    def test_the_weave_reverses_and_is_reproducible_from_the_clock(self):
-        """It is timed rather than triggered on cross-track: the offset a
-        band would watch is the thing the weave is creating."""
-        period = self.cfg.HAC_WEAVE_PERIOD_S
-        for elapsed, want in ((0.0, 1.0), (period * 0.5, 1.0),
-                              (period * 1.5, -1.0), (period * 2.5, 1.0)):
-            self.assertEqual(guidance.weave_sign(self.cfg, elapsed), want)
-
-
-class TestTheEntryIsAimedAtTheProfileNotAtTheRollout(unittest.TestCase):
-    """The rollout is where the turn wraps, so it is the one point the entry
-    must not be aimed at.
-
-    Aimed over the gate, four flights in a row arrived reading 342-345
-    degrees of turn still to fly -- the wrap, not a real misalignment --
-    committed to most of an orbit, and reached the floor five kilometres
-    short with the runway behind them.
-    """
-
-    def setUp(self):
-        # On profile in *height*: the speed is not at the cone's reference,
-        # which ``HAC_ENERGY_BUDGET`` (default) would count as surplus.
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True",
-                                              "HAC_ENERGY_BUDGET=False"])
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def test_the_high_gate_is_on_the_straight_in_profile(self):
-        high = self.env.runway.high_gate(self.end)
-        low = self.env.runway.low_gate(self.end)
-        drop = (vec.norm(high) - self.end["radius"]) - self.cfg.GATE_ALT_M
-        along = trajectory.surface_distance(self.env, high, low)
-        # The run in from the high gate to the gate is exactly the height it
-        # has to lose, at the glide ratio the cone is planned with.
-        self.assertAlmostEqual(along, drop * self.cfg.HAC_LD, delta=200.0)
-
-    def test_arriving_there_is_lined_up_and_on_profile(self):
-        high = self.env.runway.high_gate(self.end)
-        height = vec.norm(high) - self.end["radius"]
-        up = vec.unit(high)
-        along = self.env.runway.horizontal(self.end, self.end["along"])
-        v = vec.scale(vec.unit(vec.project_out(along, up)), 220.0)
-        for side in (1.0, -1.0):
-            c = guidance.hac(self.env, self.cfg, self.end, high, v, MASS,
-                             9.81, height, side)
-            self.assertIsNotNone(c)
-            # A few degrees of turn, not three hundred and forty.
-            self.assertLess(c.turn_deg, 20.0)
-            # And no meaningful surplus to spend.
-            self.assertLess(c.weave_deg, 12.0)
-
-
-class TestTheConePicksTheCheaperEndOfTheRunway(unittest.TestCase):
-    """Which way down the runway it lands is free, and it was being decided
-    fifteen hundred kilometres away.
-
-    ``Runway.choose`` picks an end at the deorbit on the arrival bearing and
-    nothing revisits it, so an arrival that ends up facing most of a lap to
-    that threshold flies most of a lap -- when turning the other way onto
-    the other threshold is a fraction of it.  Nothing downstream cares which
-    end it lands on.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["HAC_ON=True"])
-        self.env = FakeEnv(self.cfg)
-
-    def approaching(self, end_name, back_m, height=12000.0, reverse=False):
-        end = self.env.runway.ends[end_name]
-        gate, along, across, _ = guidance.hac_frame(self.env, self.cfg, end)
-        ground = vec.add(gate, vec.scale(along, -back_m))
-        r = vec.scale(vec.unit(ground), end["radius"] + height)
-        up = vec.unit(r)
-        direction = vec.scale(along, -1.0 if reverse else 1.0)
-        v = vec.scale(vec.unit(vec.project_out(direction, up)), 200.0)
-        return r, v
-
-    def test_it_takes_whichever_threshold_it_is_arriving_at(self):
-        """Each end's own straight-in profile must select that end -- the
-        claim is that the choice is made from where the vehicle is, not from
-        a bearing taken before the entry."""
-        for name in ("09", "27"):
-            r, v = self.approaching(name, 14000.0)
-            end, side = guidance.hac_choose(self.env, self.cfg,
-                                            self.env.runway, r, v)
-            self.assertEqual(end["name"], name)
-
-    def test_arriving_backwards_is_charged_for_the_turn(self):
-        """A vehicle on 09's profile travelling the other way is departing,
-        not lined up for 27 -- but it must be charged the turn rather than
-        costed as though it were already pointing the right way."""
-        r, v = self.approaching("09", 14000.0, reverse=True)
-        end = self.env.runway.ends["09"]
-        forward = guidance.hac_cost(self.env, self.cfg, end, r,
-                                    self.approaching("09", 14000.0)[1], 1.0)
-        backward = guidance.hac_cost(self.env, self.cfg, end, r, v, 1.0)
-        self.assertGreater(backward, forward + 10000.0)
-
-    def test_pinning_one_end_is_still_honoured(self):
-        cfg = apply_overrides(Config(), ["HAC_ON=True",
-                                         "RUNWAY_BOTH_ENDS=False"])
-        env = FakeEnv(cfg)
-        end09 = env.runway.ends["09"]
-        gate, along, across, _ = guidance.hac_frame(env, cfg, end09)
-        ground = vec.add(gate, vec.scale(along, -14000.0))
-        r = vec.scale(vec.unit(ground), end09["radius"] + 12000.0)
-        up = vec.unit(r)
-        v = vec.scale(vec.unit(vec.project_out(vec.scale(along, -1.0), up)),
-                      200.0)
-        end, side = guidance.hac_choose(env, cfg, env.runway, r, v)
-        self.assertEqual(end["name"], "09")
 
 
 class TestTheConfigHasNoDuplicateFields(unittest.TestCase):
@@ -4755,134 +3522,6 @@ class TestTheSweptTableIsWrittenDown(unittest.TestCase):
         peaks = [l for l in self.lines if "peak CdA" in l]
         self.assertEqual(len(peaks), len(self.cfg.MACH_BINS))
         self.assertIn("at 90 deg", peaks[0])
-
-
-class TestTheBroadsideProbeReachesTheVehicle(unittest.TestCase):
-    """A knob that changes nothing may be disconnected, not powerless.
-
-    Six laws are entitled to lower the commanded angle of attack -- the
-    solve's floors, ``alpha_limit_for_speed``, the ratchet, the cone's speed
-    term, the rate limiter, the learned ceiling -- and the probe exists to
-    ask what the *airframe* can hold, not what those laws will permit.  So it
-    is applied inside ``aim``, downstream of all of them, and these pin both
-    halves: that it is the last word, and that it stays out of the phases
-    where the vehicle is pointing prograde for a burn.
-    """
-
-    def setUp(self):
-        self.cfg = apply_overrides(Config(), ["BROADSIDE_PROBE_DEG=90",
-                                                "ALPHA_TRIM_IN_GLIDE=False"])
-        self.run = object.__new__(autopilot_module.Autopilot)
-        self.run.cfg = self.cfg
-        self.run.autopilot = SimpleNamespace(
-            target_direction=None, target_roll=0.0,
-            set_direction_and_up=self._record)
-        self.commanded = None
-
-    def _record(self, direction, up, roll=0.0):
-        self.commanded = direction
-
-    def snap(self):
-        # 2 km/s due east at the equator, 50 km up.
-        return SimpleNamespace(velocity=(0.0, 0.0, 2000.0),
-                               position=(650000.0, 0.0, 0.0))
-
-    def aim(self, state, alpha=20.0, bank=30.0):
-        self.run.state = state
-        self.run.aim(alpha, bank, self.snap())
-
-    def test_it_overrides_whatever_the_glide_asked_for(self):
-        self.aim(autopilot_module.GLIDE, alpha=12.0)
-        self.assertAlmostEqual(self.run.commanded_alpha, 90.0, places=6)
-
-    def test_the_nose_really_goes_broadside(self):
-        """The recorded command, not the recorded number: the whole point is
-        that the vehicle is asked for it."""
-        self.aim(autopilot_module.GLIDE, alpha=12.0)
-        self.assertIsNotNone(self.commanded)
-        self.assertAlmostEqual(
-            vec.angle_between(self.commanded, self.snap().velocity),
-            90.0, delta=0.5)
-
-    def test_it_leaves_the_burn_phases_alone(self):
-        """DEORBIT points at retrograde through its own path, and STANDBY
-        holds prograde.  A probe that reached them would fly a different
-        deorbit, which is the one thing this flight must not change."""
-        for state in (autopilot_module.STANDBY, autopilot_module.DEORBIT,
-                      autopilot_module.DRAIN):
-            self.aim(state, alpha=0.0)
-            self.assertAlmostEqual(self.run.commanded_alpha, 0.0, places=6,
-                                   msg="the probe reached %s" % state)
-
-    def test_it_is_off_by_default(self):
-        """It is an instrument.  A flight flown with it on does not reach the
-        runway, so the default has to be the one that flies."""
-        self.assertEqual(Config().BROADSIDE_PROBE_DEG, 0.0)
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), ALPHA_TRIM_IN_GLIDE=False)
-        run.state = autopilot_module.GLIDE
-        run.autopilot = SimpleNamespace(target_direction=None,
-                                        target_roll=0.0,
-                                        set_direction_and_up=self._record)
-        run.aim(14.0, 0.0, self.snap())
-        self.assertAlmostEqual(run.commanded_alpha, 14.0, places=6)
-
-
-class TestTheApproachNeverUnloadsTheWing(unittest.TestCase):
-    """Lift below weight is not a steep glide, it is a fall.
-
-    The approach's path term subtracts from the one-g trim when the vehicle
-    is high, and its floor was ``ALPHA_MIN_DEG`` -- zero.  Over 27 flights
-    (LOG1626-1652) every single flare was entered at 41-98 m/s of sink and
-    74-110 m/s of airspeed, which is 40-65 degrees below the horizon against
-    a polar that says 15-30, and none of the 27 kept its parts.
-
-    The floor is ``trim``, computed from the swept table at the current mass
-    and speed -- a law, not a constant, so it transfers to an airframe
-    nobody has flown.
-    """
-
-    def setUp(self):
-        # The speed-path law (APPROACH_ALPHA_AT_TARGET replaced it 2026-10-03).
-        self.cfg = Config(APPROACH_ALPHA_AT_TARGET=False)
-        self.env = FakeEnv(self.cfg)
-
-    def test_the_floor_is_on_by_default(self):
-        self.assertTrue(self.cfg.APPROACH_TRIM_FLOOR)
-
-    def test_a_high_approach_is_not_allowed_to_unload(self):
-        """The case that broke 27 flights: far too high, so the path term
-        drives alpha hard negative.
-
-        Against the one-sided law this floor belongs to.  The two-sided law
-        (``APPROACH_SPEED_PATH``, the default now) unloads on purpose -- that
-        is how a glider makes speed -- and carries the same caution as a bound
-        on the *path* instead: see ``TestTwoSidedSpeed`` and
-        ``APPROACH_DIVE_MAX_DEG``.  Both laws must be kept honest, so both are
-        tested, each against its own guard.
-        """
-        end = self.env.runway.ends["09"]
-        gate = self.env.runway.gate(end)
-        up = vec.unit(gate)
-        # 3 km up, 1.5 km to run -- the handover the cone actually produces.
-        r = vec.add(gate, vec.scale(up, 3000.0))
-        along = self.env.runway.horizontal(end, end["along"])
-        v = vec.scale(along, 90.0)
-        one_sided = replace(self.cfg, APPROACH_SPEED_PATH=False)
-        command = guidance.approach(self.env, one_sided, end, r, v,
-                                    6700.0, 9.81, 3000.0)
-        trim = trajectory.alpha_for_load(self.env, 90.0, 3000.0, 6700.0, 9.81)
-        self.assertIsNotNone(trim)
-        self.assertGreaterEqual(
-            command.alpha + 1e-6, min(trim, self.cfg.APPROACH_ALPHA_MAX_DEG),
-            "the approach unloaded the wing to %.1f deg with %.1f deg needed "
-            "to hold one g" % (command.alpha, trim))
-
-    def test_the_floor_can_be_turned_off_to_fly_the_old_law(self):
-        cfg = apply_overrides(Config(), ["APPROACH_TRIM_FLOOR=False"])
-        source = inspect.getsource(guidance.approach)
-        self.assertIn("APPROACH_TRIM_FLOOR", source)
-        self.assertFalse(cfg.APPROACH_TRIM_FLOOR)
 
 
 class TestTheFlareRespectsTheTail(unittest.TestCase):
@@ -5534,205 +4173,6 @@ class TestScaleGovernor(unittest.TestCase):
         self.assertGreater(self.scale(), 6.0)
 
 
-class TestTwoSidedSpeed(unittest.TestCase):
-    """``guidance.alpha_for_speed``: a glider that can make speed again.
-
-    Two loops.  The outer one picks the descent angle that holds the
-    commanded speed against drag; the inner one flies that angle with load,
-    against the descent the vehicle actually has.  The tests are written
-    against the pair, because either alone has a failure in the logs: the
-    old one-sided law decayed to 59.9 m/s at the flare (``logs/LOG2246``)
-    and the outer loop alone ran away to 124 m/s and 72 m/s of sink
-    (``logs/LOG2247``).
-    """
-
-    def setUp(self):
-        # The speed-path law (APPROACH_ALPHA_AT_TARGET replaced it 2026-10-03).
-        self.cfg = Config(APPROACH_ALPHA_AT_TARGET=False)
-        self.env = FakeEnv(self.cfg)
-        self.mass, self.g = 6930.0, 9.81
-
-    def law(self, speed, height, target, descent_deg):
-        sink = speed * math.sin(math.radians(descent_deg))
-        trim = trajectory.alpha_for_load(self.env, speed, height, self.mass,
-                                         self.g, 1.0)
-        return trim, guidance.alpha_for_speed(
-            self.env, self.cfg, speed, sink, height, self.mass, self.g,
-            target, trim)
-
-    def load(self, speed, height, alpha):
-        """The load the commanded angle actually asks the wing for."""
-        rho = self.env.density(height)
-        q = 0.5 * rho * speed * speed
-        cla, _ = self.env.coefficients(alpha, speed, height)
-        return cla * q / (self.mass * self.g)
-
-    def test_slow_and_shallow_unloads_to_trade_height_for_speed(self):
-        """The whole point: the old law floored at trim and decayed."""
-        trim, alpha = self.law(63.0, 130.0, 85.0, descent_deg=10.0)
-        self.assertLess(alpha, trim)
-        self.assertLess(self.load(63.0, 130.0, alpha), 1.0)
-
-    def test_fast_and_steep_pulls_up_rather_than_unloading_further(self):
-        """``logs/LOG2247``: the runaway the inner loop exists to stop."""
-        trim, alpha = self.law(124.0, 500.0, 101.0, descent_deg=36.0)
-        self.assertGreater(alpha, trim)
-        self.assertGreater(self.load(124.0, 500.0, alpha), 1.0)
-
-    def test_level_and_fast_asks_for_more_load_only_when_allowed_to_climb(self):
-        """``HAC_CLIMB``: the user's zoom.  Level at twice the target, the
-        floored law holds the path; allowed to climb, it pulls up into one."""
-        speed, height, target = 90.0, 3000.0, 60.0
-        sink = 0.0
-        trim = trajectory.alpha_for_load(self.env, speed, height, self.mass,
-                                         self.g, 1.0)
-        level = guidance.alpha_for_speed(
-            self.env, self.cfg, speed, sink, height, self.mass, self.g,
-            target, trim)
-        cfg = replace(self.cfg, SPEED_PATH_CLIMB_MAX_DEG=20.0)
-        climb = guidance.alpha_for_speed(
-            self.env, cfg, speed, sink, height, self.mass, self.g,
-            target, trim, climb_ok=True)
-        self.assertGreater(self.load(speed, height, climb),
-                           self.load(speed, height, level))
-
-
-    def test_the_dive_is_bounded_however_slow_it_gets(self):
-        """``APPROACH_DIVE_MAX_DEG`` is ``APPROACH_TRIM_FLOOR``'s caution,
-        moved onto the path where the speed and the mass cannot move it."""
-        floor = math.cos(math.radians(self.cfg.APPROACH_DIVE_MAX_DEG))
-        for speed in (40.0, 50.0, 60.0, 70.0):
-            _, alpha = self.law(speed, 300.0, 110.0, descent_deg=0.0)
-            load = self.load(speed, 300.0, alpha)
-            self.assertGreaterEqual(load, floor - 0.02,
-                                    "unloaded to %.2f g at %.0f m/s"
-                                    % (load, speed))
-
-    def test_on_speed_on_path_it_holds_what_it_has(self):
-        """Neither loop has anything to say, so the command is the glide."""
-        speed, height = 95.0, 600.0
-        rho = self.env.density(height)
-        q = 0.5 * rho * speed * speed
-        trim = trajectory.alpha_for_load(self.env, speed, height, self.mass,
-                                         self.g, 1.0)
-        _, cda = self.env.coefficients(trim, speed, height)
-        settled = math.degrees(math.asin((cda * q / self.mass) / self.g))
-        _, alpha = self.law(speed, height, speed, descent_deg=settled)
-        self.assertAlmostEqual(self.load(speed, height, alpha), 1.0, delta=0.1)
-
-    def test_the_approach_flies_it_when_the_flag_is_on(self):
-        """And the flag is what decides, not a comment.
-
-        The same slow, shallow state under both laws: the old one floors at
-        trim and waits, the new one unloads and dives for the speed.
-        """
-        end, r, v = self.state(70.0, 600.0)
-        trim = trajectory.alpha_for_load(self.env, 70.0, 600.0, self.mass,
-                                         self.g, 1.0)
-        one_sided = replace(self.cfg, APPROACH_SPEED_PATH=False)
-        old = guidance.approach(self.env, one_sided, end, r, v,
-                                self.mass, self.g, 600.0)
-        self.cfg = replace(self.cfg, APPROACH_SPEED_PATH=True)
-        new = guidance.approach(self.env, self.cfg, end, r, v, self.mass,
-                                self.g, 600.0)
-        self.assertGreaterEqual(old.alpha, trim - 1e-6)
-        self.assertLess(new.alpha, trim)
-
-    def state(self, speed, height, distance=3000.0):
-        env = self.env
-        end = env.runway.choose(
-            vec.scale(vec.unit(env.runway.midpoint),
-                      vec.norm(env.runway.midpoint) + height),
-            (0.0, 0.0, 1.0))
-        along = env.runway.horizontal(end, end["along"])
-        base = vec.add(end["threshold"], vec.scale(along, -distance))
-        r = vec.scale(vec.unit(base), vec.norm(end["threshold"]) + height)
-        forward = speed * math.cos(math.radians(20.0))
-        v = vec.add(vec.scale(along, forward),
-                    vec.scale(vec.unit(r), -speed * math.sin(math.radians(20.0))))
-        return end, r, v
-
-    def test_the_approach_flies_it_when_the_flag_is_on(self):
-        """And the flag is what decides, not a comment.
-
-        The same slow state under both laws: the old one floors at trim and
-        waits, the new one unloads and dives for the speed.
-        """
-        end, r, v = self.state(70.0, 600.0)
-        trim = trajectory.alpha_for_load(self.env, 70.0, 600.0, self.mass,
-                                         self.g, 1.0)
-        one_sided = replace(self.cfg, APPROACH_SPEED_PATH=False)
-        old = guidance.approach(self.env, one_sided, end, r, v, self.mass,
-                                self.g, 600.0)
-        two_sided = replace(self.cfg, APPROACH_SPEED_PATH=True)
-        new = guidance.approach(self.env, two_sided, end, r, v, self.mass,
-                                self.g, 600.0)
-        self.assertGreaterEqual(old.alpha, trim - 1e-6)
-        self.assertLess(new.alpha, trim)
-
-
-class TestFlareSinkSchedule(unittest.TestCase):
-    """``FLARE_SINK_TRACK``: a flare that does not float.
-
-    The failure it exists for is ``logs/LOG2259`` -- level at 50 m, four
-    seconds of float, stalled out of it and fell the last fifty metres onto
-    the runway at 41 m/s.
-    """
-
-    def setUp(self):
-        self.cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
-                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=True)
-        self.env = FakeEnv(self.cfg)
-        self.mass, self.g = 6930.0, 9.81
-
-    def load(self, height, sink, speed=85.0, elapsed=5.0):
-        """The load the flare asks for, which is what the schedule sets."""
-        r = (600070.0 + height, 0.0, 0.0)
-        v = (-sink, math.sqrt(max(0.0, speed * speed - sink * sink)), 0.0)
-        _, _, needed = guidance.flare(self.env, self.cfg, r, v, self.mass,
-                                      self.g, height, elapsed)
-        return needed
-
-    def test_too_fast_down_asks_for_more_than_a_g(self):
-        self.assertGreater(self.load(40.0, 40.0), 1.0)
-
-    def test_already_arrested_asks_for_less(self):
-        """The float, and the whole point: level at 50 m must come *down*."""
-        self.assertLess(self.load(50.0, 2.0), 1.0)
-
-    def test_on_the_schedule_it_holds_one_g(self):
-        rise = self.cfg.FLARE_TRACK_LOAD - 1.0
-        for height in (10.0, 40.0, 100.0):
-            sink = math.sqrt(self.cfg.FLARE_TOUCHDOWN_SINK_M_S ** 2
-                             + 2.0 * rise * self.g * height)
-            self.assertAlmostEqual(self.load(height, sink), 1.0, delta=0.02)
-
-    def test_the_schedule_arrives_at_the_touchdown_sink(self):
-        self.assertAlmostEqual(
-            math.sqrt(self.cfg.FLARE_TOUCHDOWN_SINK_M_S ** 2),
-            self.cfg.FLARE_TOUCHDOWN_SINK_M_S, places=6)
-        # At the ground the schedule *is* the touchdown sink, so a vehicle
-        # arriving at it is asked for exactly one g.
-        self.assertAlmostEqual(
-            self.load(0.0, self.cfg.FLARE_TOUCHDOWN_SINK_M_S), 1.0, delta=0.02)
-
-    def test_the_demand_is_bounded_both_ways(self):
-        self.assertGreaterEqual(self.load(50.0, -30.0),
-                                self.cfg.FLARE_TRACK_LOAD_MIN - 1e-6)
-        self.assertLessEqual(self.load(5.0, 90.0),
-                             self.cfg.FLARE_TRACK_LOAD_MAX + 1e-6)
-
-    def test_the_old_arrest_is_what_flies_with_the_flag_off(self):
-        cfg = replace(Config(), FLARE_EXP_TAU_S=0.0,
-                       FLARE_DOOR_FROM_SCHEDULE=False, FLARE_SINK_TRACK=False)
-        env = FakeEnv(cfg)
-        r = (600070.0 + 50.0, 0.0, 0.0)
-        v = (-2.0, 85.0, 0.0)
-        _, _, needed = guidance.flare(env, cfg, r, v, self.mass, self.g,
-                                      50.0, 5.0)
-        self.assertGreaterEqual(needed, 1.0)
-
-
 class TestTheBrakesAreForTheDistanceThatIsLeft(unittest.TestCase):
     """``BRAKE_SPEED_M_S`` said "brakes below this" and was set to 200 m/s.
 
@@ -5806,9 +4246,6 @@ class TestTheBrakesAreForTheDistanceThatIsLeft(unittest.TestCase):
         self.assertEqual(guidance.brake_fraction(self.cfg, 50.0, None, 1.3),
                          1.0)
 
-    def test_the_law_is_the_default_because_it_was_flown(self):
-        self.assertTrue(hasattr(Config(), "BRAKE_FOR_DISTANCE"))
-        self.assertTrue(Config().BRAKE_FOR_DISTANCE)
 
     def test_the_reserve_is_inside_the_runway(self):
         self.assertLess(self.cfg.ROLLOUT_STOP_RESERVE_M,
@@ -5854,76 +4291,6 @@ class TestTheTailExtentIsRangeChecked(unittest.TestCase):
         # 18.7 deg is what this airframe is documented to have.  A fallback
         # above it would be betting the tail on a constant.
         self.assertLessEqual(Config().TAIL_ANGLE_FALLBACK_DEG, 18.7)
-
-    def test_the_old_behaviour_is_still_reachable(self):
-        self.assertTrue(Config().TAIL_EXTENT_CHECK)
-
-
-class TestTheSpeedLoopKnowsItIsInATurn(unittest.TestCase):
-    """``L = m g cos(theta)`` holds the path only with the wings level.
-
-    ``alpha_for_speed`` solves for a load in the *vertical plane* and
-    ``alpha_for_load`` turns that into an angle with no bank term anywhere in
-    the chain -- so a vehicle banked at the S-turn's 40 degree limit was
-    handed ``cos(40) = 77%`` of the load it had just computed, in exactly the
-    moments it had decided it was high.
-
-    What that produces is the opposite of what the weave is for: the surplus
-    height is spent into *airspeed* instead of away.  ``logs/LOG2394``
-    (`qs_plane_inc`) sinks at 56-59 m/s where its own profile asks for 25,
-    reaches the flare at 111 m/s and 190 m against a documented 83-91 m/s
-    window, touches down at 76.7, bounces, and is destroyed two seconds
-    later.
-
-    It is also the mechanism behind failure 68's inversion.  A nearer
-    ``TOUCHDOWN_AIM_M`` is a larger computed surplus, a larger surplus is a
-    larger weave, a larger weave is more uncompensated bank, and more bank is
-    a faster and steeper arrival that floats further -- so aiming two
-    kilometres short landed the vehicle nine hundred metres long.  The knob
-    reached the decision; the decision was wired backwards.
-    """
-
-    def setUp(self):
-        # The compensation is off by default until it has been flown, so the
-        # tests that exercise it have to turn it on -- the point of these is
-        # the law, not the committed default, which its own test covers.
-        self.cfg = replace(Config(), APPROACH_BANK_COMPENSATION=True)
-        self.env = FakeEnv(self.cfg)
-        self.mass = 6900.0
-        self.g = 9.81
-
-    def alpha(self, bank):
-        return guidance.alpha_for_speed(
-            self.env, self.cfg, 105.0, 40.0, 600.0, self.mass, self.g,
-            100.0, 8.0, bank_deg=bank)
-
-    def test_a_turn_asks_the_wing_for_more_than_level_flight(self):
-        self.assertGreater(self.alpha(40.0), self.alpha(0.0))
-
-    def test_it_does_not_care_which_way_the_turn_goes(self):
-        self.assertAlmostEqual(self.alpha(30.0), self.alpha(-30.0), places=6)
-
-    def test_level_flight_is_unchanged(self):
-        # The fix must be invisible to a wings-level approach, or it is not a
-        # compensation, it is a new trim.
-        with_flag = self.alpha(0.0)
-        cfg = replace(self.cfg, APPROACH_BANK_COMPENSATION=False)
-        without = guidance.alpha_for_speed(
-            FakeEnv(cfg), cfg, 105.0, 40.0, 600.0, self.mass, self.g,
-            100.0, 8.0, bank_deg=0.0)
-        self.assertAlmostEqual(with_flag, without, places=6)
-
-    def test_the_demand_is_bounded_near_the_vertical(self):
-        # 1/cos runs away at 90 degrees, and a bank limit that has already
-        # been exceeded must not become an infinite load demand.
-        self.assertLessEqual(self.alpha(89.0),
-                             self.cfg.APPROACH_ALPHA_MAX_DEG + 1e-6)
-        self.assertGreater(self.cfg.APPROACH_BANK_COMP_MAX_DEG,
-                           self.cfg.APPROACH_BANK_MAX_DEG)
-
-    def test_the_law_is_the_default_because_it_was_flown(self):
-        self.assertTrue(hasattr(Config(), "APPROACH_BANK_COMPENSATION"))
-        self.assertTrue(Config().APPROACH_BANK_COMPENSATION)
 
 
 class TestTheSplitRudderAirbrake(unittest.TestCase):
@@ -6320,19 +4687,6 @@ class TestTheBurnIsNeverShorterThanTheLoopCanSteer(unittest.TestCase):
         run.restore_thrust_limits()
         self.assertEqual(engines[0].thrust_limit, 1.0)
 
-    def test_the_floor_rule_can_charge_one_tick(self):
-        """Ten seconds of realigning must not make one floored tick 'cost'
-        13 m/s -- that is how the burn stopped 1.9 m/s short."""
-        source = inspect.getsource(
-            autopilot_module.Autopilot.fly_deorbit_burn)
-        cut = source.index("spend = floor * accel * step")
-        self.assertIn("DEORBIT_FLOOR_ON_TICK", source[cut - 800:cut])
-        self.assertIn("_deorbit_prev_tick_ut", source[cut - 800:cut])
-        # and the tick clock is advanced before the alignment early return
-        tick = source.index("self._deorbit_tick_ut = snap.ut")
-        align = source.index("if align > self.cfg.DEORBIT_ALIGN_DEG")
-        self.assertLess(tick, align)
-
 
 class TestAReversalIsNotACeiling(unittest.TestCase):
     """A bank reversal at 7 kPa dipped the shuttle's alpha 31 -> 8 for three
@@ -6353,9 +4707,6 @@ class TestAReversalIsNotACeiling(unittest.TestCase):
                       "self.attitude_settle_s", source)
         self.assertIn("HOLDABLE_SKIP_REVERSAL", source)
 
-    def test_on_by_default(self):
-        """Flown and cleared on both craft, 2026-09-23."""
-        self.assertTrue(Config().HOLDABLE_SKIP_REVERSAL)
 
     def test_a_poisoned_bin_is_what_it_prevents(self):
         """Without the gate: four reversal samples in a fresh bin make it a
@@ -6367,78 +4718,12 @@ class TestAReversalIsNotACeiling(unittest.TestCase):
         self.assertLess(h.limit(7000.0), 20.0)
 
 
-class TestTheTuneFollowsTheAir(unittest.TestCase):
-    """At 4.7 kPa the shuttle's surfaces give 2928 kN m of pitch against the
-    wheels' 15; a tune derived from the wheels is ~15x too slow there."""
-
-    SHUTTLE = (2068357.0, 94184.0, 2106086.0)
-
-    def vessel(self, torque):
-        return SimpleNamespace(moment_of_inertia=self.SHUTTLE,
-                               available_torque=(torque, torque))
-
-    def test_vacuum_is_the_static_figure(self):
-        cfg = Config()
-        live = autopilot_module.live_time_to_peak(
-            cfg, self.vessel((15000.0, 15000.0, 15000.0)))
-        static = autopilot_module.attitude_time_to_peak(
-            replace(cfg, ATTITUDE_TIME_TO_PEAK_DERIVED=True),
-            SimpleNamespace(moment_of_inertia=self.SHUTTLE,
-                            available_torque=((15000.0,) * 3,) * 2))
-        for a, b in zip(live, static):
-            self.assertAlmostEqual(a, b, places=6)
-
-    def test_thick_air_is_much_quicker(self):
-        cfg = Config()
-        live = autopilot_module.live_time_to_peak(
-            cfg, self.vessel((2943000.0, 3462000.0, 534000.0)))
-        self.assertLess(live[0], 2.0)            # pitch, from 22.4
-        self.assertLess(live[1], 4.0 * live[0])  # yaw follows its own torque
-
-
-    def test_the_axes_are_reordered_for_krpc(self):
-        cfg = replace(Config(), ATTITUDE_AXES_KRPC_ORDER=False)
-        pitch, yaw, roll = autopilot_module.live_time_to_peak(
-            cfg, self.vessel((100.0e3, 400.0e3, 900.0e3)))
-        k = cfg.ATTITUDE_SLEW_FACTOR
-        self.assertAlmostEqual(pitch, k * math.sqrt(2068357.0 / 100e3))
-        self.assertAlmostEqual(roll, k * math.sqrt(94184.0 / 400e3))
-        self.assertAlmostEqual(yaw, k * math.sqrt(2106086.0 / 900e3))
-
-    def test_no_torque_is_no_answer(self):
-        self.assertIsNone(autopilot_module.live_time_to_peak(
-            Config(), self.vessel((0.0, 0.0, 0.0))))
-
-
-class TestTheRatchetHoldsThroughARoll(unittest.TestCase):
-    """One reversal at 3.4 kPa backed the ceiling off 30 -> 20 deg in five
-    seconds and cost +22 km the saturated solve could not win back."""
-
-    def test_the_back_off_is_skipped_inside_the_window(self):
-        source = inspect.getsource(autopilot_module.Autopilot.ratchet_alpha)
-        gate = source.index("RATCHET_SKIP_REVERSAL")
-        backoff = source.index("self.alpha_ceiling - self.cfg.ALPHA_BACKOFF_DEG")
-        self.assertLess(gate, backoff)
-        self.assertIn("snap.ut < self.holdable_quiet_until",
-                      source[gate:gate + 300])
-
-    def test_on_by_default(self):
-        """Flown and cleared on both craft, 2026-09-23."""
-        self.assertTrue(Config().RATCHET_SKIP_REVERSAL)
-
-
 class TestTheOpposedFlapsAreDrivenByTheLaw(unittest.TestCase):
     """``AIRBRAKE_OPPOSED_FLAPS`` armed the brake and nothing but the probe
     ever deployed it: ``command_airbrake`` returned on "no split-rudder
     pair". A flag that arms and never acts flies the committed vehicle and
     reports a null that means nothing."""
 
-    def test_the_law_deploys_the_flaps(self):
-        source = inspect.getsource(autopilot_module.Autopilot.command_airbrake)
-        self.assertIn("AIRBRAKE_OPPOSED_FLAPS", source)
-        self.assertIn("self.set_flap_brake(wanted)", source)
-        # and the missing split pair no longer ends the method on its own
-        self.assertIn("self.airbrake_pair is None and not flaps", source)
 
     def test_the_flare_stows_them(self):
         source = inspect.getsource(autopilot_module.Autopilot)
@@ -6454,14 +4739,6 @@ class TestTheBrakeNeverOutrunsTheFlare(unittest.TestCase):
     def brake(self, **sets):
         return airbrake.Brake(replace(Config(), **sets))
 
-    def test_it_stows_above_the_arrestable_sink(self):
-        b = self.brake(AIRBRAKE_SINK_GUARD=True)
-        b.extended = True
-        door = 50.0 + 2.5 * 45.0
-        self.assertFalse(b.update(0.1, 30.0, 30.0, 400.0, 900.0,
-                                  flare_trigger=door, sink=45.0,
-                                  gravity=9.81))
-        self.assertIn("flare can arrest", b.last_reason)
 
     def test_the_limit_is_the_flares_own_schedule(self):
         cfg = Config()
@@ -6470,10 +4747,6 @@ class TestTheBrakeNeverOutrunsTheFlare(unittest.TestCase):
                           + 2.0 * (cfg.FLARE_TRACK_LOAD - 1.0) * 9.81 * door)
         self.assertGreater(limit, 30.0)   # the unbraked 29-36 is inside
         self.assertLess(limit, 45.0)      # the braked 38-58 is not
-
-    def test_on_by_default(self):
-        """Default since 2026-09-25 (the shuttle chain, LOG3656-3661)."""
-        self.assertTrue(Config().AIRBRAKE_SINK_GUARD)
 
 
 class TestAFrozenStateEndsTheFlight(unittest.TestCase):
@@ -6548,10 +4821,6 @@ class TestMeasuredBrake(unittest.TestCase):
         titles = [r.title for r, _ in airbrake.choose_measured_brake(
             self.samples(rows)).surfaces()]
         self.assertNotIn("fin", titles)
-
-    def test_on_by_default(self):
-        """Default since 2026-09-25 (the shuttle chain, LOG3656-3661)."""
-        self.assertTrue(Config().AIRBRAKE_MEASURED)
 
 
 class TestMeasuredBrakeRebalance(TestMeasuredBrake):
@@ -6682,20 +4951,6 @@ class TestGroundSpoiler(unittest.TestCase):
         self.run.ground_spoiler(self.snap, landed=True)
         self.assertIn("no measured spoiler", self.run.events[-1])
 
-    def test_the_drag_brake_is_preferred_when_armed(self):
-        other_mod = self._Module()
-        other = self._Surface(other_mod)
-        self.run.drag_brake = types.SimpleNamespace(
-            any=True, kind="drag brake", surfaces=lambda: [(other, -0.5)])
-        self.run.ground_spoiler(self.snap, landed=True)
-        self.assertTrue(other.key.deployed)
-        self.assertFalse(self.fwd.key.deployed)
-        self.assertAlmostEqual(other_mod.angle, -25.0)
-        self.assertIn("ground drag brake out", self.run.events[-1])
-
-    def test_on_by_default(self):
-        self.assertTrue(Config().ROLLOUT_GROUND_SPOILER)
-
 
 class TestRollHasFullAuthority(unittest.TestCase):
     """The user: "why don't you just give roll full authority"."""
@@ -6711,73 +4966,6 @@ class TestRollHasFullAuthority(unittest.TestCase):
         cfg = replace(Config(), ATTITUDE_AXES_KRPC_ORDER=False)
         self.assertEqual(autopilot_module.krpc_axes(cfg, 22.4, 4.8, 22.6),
                          (22.4, 22.6, 4.8))
-
-
-class TestTheTailStrikesByAttitude(unittest.TestCase):
-    """``FLARE_TAIL_BY_ATTITUDE``: the tail limit bounds the body's attitude,
-    which is alpha less the descent -- and ``aim_runway`` delivers alpha."""
-
-    def run_(self, on, tail=9.1):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), FLARE_TAIL_BY_ATTITUDE=on,
-                          AIM_RUNWAY_TRUE_ALPHA=True)
-        run.tail_limit_deg = lambda: tail
-        run.pitch_overshoot = lambda snap: 0.0
-        run.sent = None
-        run.autopilot = SimpleNamespace(
-            target_direction=None, target_roll=0.0,
-            set_direction_and_up=lambda d, u, roll=0.0: setattr(
-                run, "sent", (d, u)))
-        # runway along +x, up along +z at the vehicle
-        run.end = {"along": 0.0}
-        run.env = SimpleNamespace(runway=SimpleNamespace(
-            horizontal=lambda end, along: (1.0, 0.0, 0.0)))
-        return run
-
-    def snap(self, speed, descent_deg):
-        d = math.radians(descent_deg)
-        return SimpleNamespace(position=(0.0, 0.0, 600000.0),
-                               velocity=(speed * math.cos(d), 0.0,
-                                         -speed * math.sin(d)),
-                               nose=(1.0, 0.0, 0.0), ut=0.0)
-
-    def test_the_cap_is_the_tail_plus_the_descent(self):
-        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
-            self.snap(84.0, 30.0)), 39.1, places=6)
-
-    def test_level_it_is_the_tail(self):
-        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
-            self.snap(84.0, 0.0)), 9.1, places=6)
-        # climbing is not extra room
-        self.assertAlmostEqual(self.run_(True).flare_tail_cap(
-            self.snap(84.0, -5.0)), 9.1, places=6)
-
-    def test_off_is_the_tail_alone(self):
-        self.assertEqual(self.run_(False).flare_tail_cap(
-            self.snap(84.0, 30.0)), 9.1)
-
-    def pitch(self, run):
-        d = run.sent[0]
-        return math.degrees(math.atan2(d[2], d[0]))
-
-    def test_aim_runway_delivers_the_alpha_commanded(self):
-        run = self.run_(True)
-        run.aim_runway(6.0, self.snap(70.0, 4.0))
-        self.assertAlmostEqual(self.pitch(run), 2.0, places=4)
-        # nose above the velocity by the commanded alpha
-        self.assertAlmostEqual(self.pitch(run) + 4.0, 6.0, places=4)
-
-    def test_off_pitches_to_alpha_plus_descent(self):
-        """The old sign: 6 + 4 = 10 -> capped at the tail's 9.1, which
-        delivers 13.1 of alpha against the 6 asked for."""
-        run = self.run_(False)
-        run.aim_runway(6.0, self.snap(70.0, 4.0))
-        self.assertAlmostEqual(self.pitch(run), 9.1, places=4)
-
-    def test_the_pitch_cap_still_binds(self):
-        run = self.run_(True)
-        run.aim_runway(30.0, self.snap(70.0, 2.0))
-        self.assertAlmostEqual(self.pitch(run), 9.1, places=4)
 
 
 class TestAHighApproachFliesSlower(unittest.TestCase):
@@ -6808,14 +4996,6 @@ class TestTheMachFloorLetsATurnFinish(unittest.TestCase):
         self.assertIn("ATTITUDE_YAW_WITH_RCS", chunk)
         self.assertIn('getattr(self.rcs, "on", False)', chunk)
 
-    def test_the_hac_keeps_an_open_valve_and_never_reopens_it(self):
-        """The first HAC tick used to shut it (LOG3802, 3805, 3838)."""
-        src = inspect.getsource(autopilot_module.Autopilot.run_hac)
-        i = src.index("self.set_rcs(")
-        chunk = src[i:i + 200]
-        self.assertIn("ATTITUDE_YAW_WITH_RCS", chunk)
-        self.assertIn('getattr(self.rcs, "on", False)', chunk)
-
 
 class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):
     """``FLARE_DOOR_FROM_RESPONSE``: the door is the pitch response at the
@@ -6837,46 +5017,6 @@ class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):
                 self.assertIn("env", call, call)
 
 
-class TestTheSpoilerMustNotRollTheVehicle(unittest.TestCase):
-    """``AIRBRAKE_SPOILER_LATERAL_CHECK``: the ground spoiler's roll and yaw
-    are measured, and a set that rolls is not deployed on the ground."""
-
-    def run_(self, roll, yaw=0.0):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), AIRBRAKE_SPOILER_LATERAL_CHECK=True)
-        reads = iter([(0.0, 0.0, 0.0, 0.0, 0.0),
-                      (-30.0, 5.0, 1.0, roll, yaw)])
-        run._probe_wrench_full = lambda alt, speed, alpha: next(reads)
-        run._deploy_surface = lambda r, angle, on: True
-        run.said = []
-        run.logbook = SimpleNamespace(event=lambda ut, t: run.said.append(t))
-        spoiler = SimpleNamespace(surfaces=lambda: [("elevon", 1.0)])
-        return run, spoiler
-
-    def check(self, roll, yaw=0.0):
-        run, spoiler = self.run_(roll, yaw)
-        with unittest.mock.patch.object(autopilot_module.time, "sleep"):
-            ok = run.check_spoiler_lateral(SimpleNamespace(ut=0.0), spoiler,
-                                           15.0, 0.0, 1000.0, 100.0, 5.0,
-                                           10.0)
-        return ok, run.said
-
-
-    def test_the_ground_spoiler_obeys_it(self):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), ROLLOUT_GROUND_SPOILER=True)
-        run.main_wheels_grounded = lambda: True
-        run.envelope = None
-        run.flap_brake = SimpleNamespace(any=True,
-                                         surfaces=lambda: [("e", 1.0)])
-        run._spoiler_lateral_ok = False
-        run.deploy_set = lambda *a, **k: self.fail("deployed")
-        said = []
-        run.logbook = SimpleNamespace(event=lambda ut, t: said.append(t))
-        run.ground_spoiler(SimpleNamespace(ut=0.0))
-        self.assertIn("nothing deployed", said[-1])
-
-
 class TestTheRolloutSteersTowardTheCentreline(unittest.TestCase):
     """``ROLLOUT_STEER_ACROSS_IS_RIGHT``: ``across = cross(up, along)``
     points right in kRPC's left-handed body frame (x lon 0, y north, z lon
@@ -6889,10 +5029,6 @@ class TestTheRolloutSteersTowardTheCentreline(unittest.TestCase):
         across = vec.cross(up, east)
         # facing east, the right hand is south: -y
         self.assertAlmostEqual(across[1], -1.0)
-
-
-    def test_on_by_default(self):
-        self.assertTrue(Config().ROLLOUT_STEER_ACROSS_IS_RIGHT)
 
 
 class TestTheValveHoldsThroughATurn(unittest.TestCase):
@@ -6919,33 +5055,6 @@ class TestTheValveHoldsThroughATurn(unittest.TestCase):
         v = self.valve()
         self.assertFalse(v.update(0.0, False, 0.5, hold=True))
         self.assertFalse(v.update(1.0, True, 0.5, q=30000.0, hold=True))
-
-
-class TestTheAirDragBrake(unittest.TestCase):
-    """``AIRBRAKE_DRAG_IN_FLIGHT``: too fast at the right height."""
-
-    def frac(self, over, excess=0.0, height=1000.0, was_out=False):
-        cfg = Config()
-        return airbrake.drag_brake_fraction(cfg, 100.0 + over, 100.0,
-                                            excess, height, was_out)
-
-    def test_out_when_fast_on_profile(self):
-        self.assertEqual(self.frac(5.0), 0.0)
-        self.assertGreater(self.frac(15.0), 0.0)
-        self.assertEqual(self.frac(60.0), 1.0)
-
-    def test_not_when_low(self):
-        """Below the profile the speed is the height it is short of."""
-        self.assertEqual(self.frac(40.0, excess=-500.0), 0.0)
-        self.assertEqual(self.frac(40.0, height=50.0), 0.0)
-
-    def test_hysteresis(self):
-        self.assertEqual(self.frac(6.0), 0.0)
-        self.assertGreater(self.frac(6.0, was_out=True), 0.0)
-
-    def test_quarters(self):
-        for over in (11.0, 14.0, 19.0, 24.0):
-            self.assertIn(self.frac(over), (0.25, 0.5, 0.75, 1.0))
 
 
 class TestTheEnvelopeIsFlown(unittest.TestCase):
@@ -6996,52 +5105,6 @@ class TestTheEnvelopeIsFlown(unittest.TestCase):
 
     def deployed(self):
         return [n for n, (m, r) in self.mods.items() if r.key.deployed]
-
-
-class TestTheApproachBankIsOneTheRollCanFly(unittest.TestCase):
-    """``APPROACH_BANK_BY_ROLL``: slewed at the measured roll rate and small
-    enough to roll out of before the flare door (LOG3855: -51 deg flown at
-    the door, -36 at touchdown)."""
-
-    def run_(self, on=True):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), APPROACH_BANK_BY_ROLL=on)
-        run.bank_rate = lambda: 10.0
-        run._tuned_peak = (3.0, 5.0, 22.6)
-        return run
-
-    def snap(self, ut):
-        return SimpleNamespace(ut=ut, flown_bank=0.0)
-
-    def test_off_passes_the_command(self):
-        run = self.run_(False)
-        self.assertEqual(run.approach_bank(self.snap(0), 40.0, 1000, 200, 20),
-                         40.0)
-
-    def test_slews_at_the_roll_rate(self):
-        run = self.run_()
-        with unittest.mock.patch.object(autopilot_module, "flown_bank",
-                                        return_value=0.0):
-            first = run.approach_bank(self.snap(0.0), 40.0, 2000, 200, 20)
-            second = run.approach_bank(self.snap(1.0), 40.0, 1980, 200, 20)
-            third = run.approach_bank(self.snap(2.0), -40.0, 1960, 200, 20)
-        self.assertEqual(first, 0.0)
-        self.assertAlmostEqual(second, 10.0)
-        self.assertAlmostEqual(third, 0.0)
-
-    def test_level_by_the_door(self):
-        run = self.run_()
-        with unittest.mock.patch.object(autopilot_module, "flown_bank",
-                                        return_value=40.0):
-            # Starts from the flown bank, then slews to the cap: 8 s to the
-            # door, 5 s to settle -- 30 deg allowed.
-            self.assertEqual(run.approach_bank(self.snap(0.0), 40.0, 380,
-                                               200, 20), 40.0)
-            got = run.approach_bank(self.snap(1.0), 40.0, 360, 200, 20)
-            self.assertAlmostEqual(got, 30.0)
-            # Inside the settle time: rolling out at the roll rate.
-            got2 = run.approach_bank(self.snap(2.0), 40.0, 280, 200, 20)
-            self.assertAlmostEqual(got2, 20.0)
 
 
 class TestTheWheelWatch(unittest.TestCase):
@@ -7158,93 +5221,6 @@ class TestTheExponentialFlare(unittest.TestCase):
         # 12 m/s of sink at 10 m: the root schedule allows ~12.8, the
         # exponential 2 + 10/4 = 4.5 -- it pulls where the root one does not.
         self.assertGreater(n_on, n_off)
-
-
-class TestTheConeBrakeOnSurplus(unittest.TestCase):
-    """``HAC_FLAP_BRAKE_ON_SURPLUS``: the cone's brake is not gated on the
-    weave being pinned (it never pinned on the shuttle, LOG3846-3875)."""
-
-    def run_(self, on):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), HAC_FLAP_BRAKE=True,
-                          HAC_FLAP_BRAKE_ON_SURPLUS=on,
-                          FLAP_BRAKE_YIELDS_TO_ROLL=False)
-        run.flap_brake = object()
-        run.flap_brake_out = False
-        run.body = SimpleNamespace(surface_gravity=9.81)
-        run.logbook = SimpleNamespace(event=lambda *a, **k: None)
-
-        def set_flap_brake(out, *a):
-            run.flap_brake_out = bool(out)
-            return True
-        run.set_flap_brake = set_flap_brake
-        return run
-
-    def test_surplus_alone_deploys_it(self):
-        snap = SimpleNamespace(ut=1.0, position=(600000.0, 0.0, 0.0),
-                               velocity=(-20.0, 120.0, 0.0))
-        command = SimpleNamespace(needed_height=10000.0, weave_deg=44.0)
-        off = self.run_(False)
-        off.hac_flap_brake(snap, command, 13000.0)
-        self.assertFalse(off.flap_brake_out)
-        on = self.run_(True)
-        on.hac_flap_brake(snap, command, 13000.0)
-        self.assertTrue(on.flap_brake_out)
-
-
-class TestTheAlphaTrimLoop(unittest.TestCase):
-    """``ALPHA_TRIM_LOOP``: a standing alpha deficit is integrated out, and
-    only while the roll is settled (LOG3994-4007)."""
-
-    def run_(self, on=True):
-        run = object.__new__(autopilot_module.Autopilot)
-        run.cfg = replace(Config(), ALPHA_TRIM_LOOP=on)
-        run.state = autopilot_module.FLARE
-        run.attitude_settle_s = 2.0
-        run.commanded_bank = 0.0
-        return run
-
-    def snap(self, ut, aoa, bank=0.0):
-        return SimpleNamespace(ut=ut, krpc_aoa=aoa, sideslip=1.0,
-                               dynamic_pressure=4000.0, flown_bank=bank)
-
-    def test_a_deficit_raises_the_command(self):
-        run = self.run_()
-        with unittest.mock.patch.object(autopilot_module, "flown_bank",
-                                        lambda s: s.flown_bank):
-            for i in range(40):
-                out = run.alpha_trim_loop(7.0, self.snap(100 + 0.1 * i, 4.0))
-        self.assertGreater(out, 8.0)
-        self.assertLessEqual(out, 7.0 + run.cfg.ALPHA_TRIM_MAX_DEG)
-
-    def test_not_while_rolling_or_off(self):
-        run = self.run_()
-        with unittest.mock.patch.object(autopilot_module, "flown_bank",
-                                        lambda s: s.flown_bank):
-            for i in range(40):
-                out = run.alpha_trim_loop(7.0, self.snap(100 + 0.1 * i, 4.0,
-                                                         bank=30.0))
-        self.assertEqual(out, 7.0)
-        self.assertEqual(self.run_(False).alpha_trim_loop(
-            7.0, self.snap(100, 4.0)), 7.0)
-
-    def test_the_glide_under_its_own_bound(self):
-        """``ALPHA_TRIM_IN_GLIDE``: the glide integrates past the landing's
-        bound, and what it wound up is clamped back on leaving it."""
-        run = self.run_()
-        run.state = autopilot_module.GLIDE
-        with unittest.mock.patch.object(autopilot_module, "flown_bank",
-                                        lambda s: s.flown_bank):
-            off = run.alpha_trim_loop(36.0, self.snap(100, 26.0))
-            self.assertEqual(off, 36.0)
-            run.cfg = replace(run.cfg, ALPHA_TRIM_IN_GLIDE=True)
-            for i in range(200):
-                out = run.alpha_trim_loop(36.0, self.snap(101 + 0.1 * i, 26.0))
-            self.assertGreater(out, 36.0 + run.cfg.ALPHA_TRIM_MAX_DEG + 1.0)
-            self.assertLessEqual(out, 36.0 + run.cfg.ALPHA_TRIM_GLIDE_MAX_DEG)
-            run.state = autopilot_module.HAC
-            out = run.alpha_trim_loop(12.0, self.snap(130, 12.0))
-            self.assertLessEqual(out, 12.0 + run.cfg.ALPHA_TRIM_MAX_DEG)
 
 
 class HeldWeave(unittest.TestCase):

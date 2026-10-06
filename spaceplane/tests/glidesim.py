@@ -94,15 +94,8 @@ def fly(cfg, dv, longitude=0.0, verbose=True, jitter=0.0):
         altitude = vec.norm(r) - env.equatorial_radius
         height = vec.norm(r) - env.target_radius
         distance = trajectory.surface_distance(env, r, gate)
-        if cfg.HAC_ON:
-            if height <= cfg.HAC_ALT_M or distance <= cfg.HAC_ENTRY_DIST_M:
-                break
-        else:
-            if height <= cfg.GATE_ALT_M:
-                break
-            if height <= 1.15 * cfg.GATE_ALT_M \
-                    and distance <= cfg.GATE_CAPTURE_M:
-                break
+        if height <= cfg.HAC_ALT_M or distance <= cfg.HAC_ENTRY_DIST_M:
+            break
         if (height <= cfg.ENTRY_INTERFACE_M
                 if not getattr(cfg, "ENTRY_INTERFACE_AT_AIR", False)
                 else trajectory.past_interface(env, cfg, altitude)):
@@ -128,27 +121,26 @@ def fly(cfg, dv, longitude=0.0, verbose=True, jitter=0.0):
     # -- the cone, when it is flying.  Same law the autopilot runs, same
     # exit test, so a sign error here is a sign error there.
     hac_rows = []
-    if cfg.HAC_ON:
-        end, side = guidance.hac_choose(env, cfg, env.runway, r, v)
-        while t < 5000.0:
-            height = vec.norm(r) - env.target_radius
-            command = guidance.hac(env, cfg, end, r, v, MASS, gravity,
-                                   height, side)
-            if command is None:
-                break
-            hac_rows.append((t, height, vec.norm(v), command.alpha,
-                             command.bank, command.turn_deg,
-                             command.distance, command.radius, command.laps))
-            if ((command.turn_deg <= cfg.HAC_EXIT_TURN_DEG
-                 and command.gate_range <= cfg.HAC_ROLLOUT_M
-                 and command.laps == 0
-                 and height <= command.needed_height + cfg.HAC_EXIT_SURPLUS_M)
-                    or height <= cfg.GATE_ALT_M):
-                break
-            steer = Steer(alpha=command.alpha, bank=command.bank, cfg=None,
-                          mass=MASS)
-            r, v = advance(env, cfg, r, v, MASS, steer, 1.0, dt_max=0.25)
-            t += 1.0
+    end, side = guidance.hac_choose(env, cfg, env.runway, r, v)
+    while t < 5000.0:
+        height = vec.norm(r) - env.target_radius
+        command = guidance.hac(env, cfg, end, r, v, MASS, gravity,
+                               height, side)
+        if command is None:
+            break
+        hac_rows.append((t, height, vec.norm(v), command.alpha,
+                         command.bank, command.turn_deg,
+                         command.distance, command.radius, command.laps))
+        if ((command.turn_deg <= cfg.HAC_EXIT_TURN_DEG
+             and command.gate_range <= cfg.HAC_ROLLOUT_M
+             and command.laps == 0
+             and height <= command.needed_height + cfg.HAC_EXIT_SURPLUS_M)
+                or height <= cfg.GATE_ALT_M):
+            break
+        steer = Steer(alpha=command.alpha, bank=command.bank, cfg=None,
+                      mass=MASS)
+        r, v = advance(env, cfg, r, v, MASS, steer, 1.0, dt_max=0.25)
+        t += 1.0
 
     approach_rows = []
     flare_rows = []
@@ -186,8 +178,6 @@ def fly(cfg, dv, longitude=0.0, verbose=True, jitter=0.0):
         t += 0.2
 
     height = vec.norm(r) - env.target_radius
-    offset = (vec.norm(r) - env.target_radius - cfg.GATE_ALT_M,
-              trajectory.surface_distance(env, r, gate))
     threshold_offset = trajectory.miss_components(env, end, r,
                                                   end["threshold"])
     result = {

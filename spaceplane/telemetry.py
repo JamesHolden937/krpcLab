@@ -530,9 +530,7 @@ class Telemetry:
             # says so, and the flare loses three quarters of its authority
             # for the whole landing.
             aft = abs(box[0][1])
-            parts_aft = (self._aft_extent()
-                         if getattr(self.cfg, "TAIL_EXTENT_CHECK", False)
-                         else None)
+            parts_aft = self._aft_extent()
             if parts_aft is not None and aft > self.cfg.TAIL_EXTENT_SLACK * parts_aft:
                 # **And then use the parts, because they answered.**  This
                 # branch used to return, and the fallback constant flew --
@@ -556,9 +554,7 @@ class Telemetry:
                             "and the parts say %.2f -- flying on the parts"
                         % (aft, parts_aft))
                 aft = parts_aft
-            ceiling = (self.cfg.TAIL_EXTENT_MAX_M
-                       if getattr(self.cfg, "TAIL_EXTENT_CHECK", False)
-                       else float("inf"))
+            ceiling = self.cfg.TAIL_EXTENT_MAX_M
             if 0.5 < aft <= ceiling:
                 angle = math.degrees(math.atan2(candidate, aft))
                 if 1.0 <= angle <= 45.0:
