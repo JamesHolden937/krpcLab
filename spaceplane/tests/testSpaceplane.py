@@ -5312,3 +5312,37 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
         run = self.run_(True, autopilot_module.APPROACH)
         self.assertAlmostEqual(run.valve_error(self.snap(35.0)), 5.0, places=3)
 
+
+
+class TestHacWeaveStraightOnly(unittest.TestCase):
+    """``HAC_WEAVE_STRAIGHT_ONLY``: no weave on the circle, where it fights
+    the turn's standing bank (rot-lapstack-1006, LOG7371)."""
+
+    def command(self, on):
+        cfg = replace(Config(), HAC_WEAVE_STRAIGHT_ONLY=on)
+        env = FakeEnv(cfg)
+        end = env.runway.ends["09"]
+        side, radius, height = 1.0, 2000.0, 6000.0
+        gate, _, across, _ = guidance.hac_frame(env, cfg, end)
+        centre = vec.add(gate, vec.scale(across, side * radius))
+        # Half a turn to go, on the circle, with the radius held so the
+        # height it cannot spend is surplus.
+        p = vec.add(centre, vec.scale(across, side * radius))
+        up = vec.unit(p)
+        r = vec.scale(up, vec.norm(gate) + height)
+        tangent = vec.unit(vec.cross(up, vec.unit(vec.sub(p, centre))))
+        return guidance.hac(env, cfg, end, r, vec.scale(tangent, 110.0),
+                            MASS, GRAVITY, height, side,
+                            previous=radius, max_step=1.0)
+
+    def test_the_circle_weaves_without_the_flag(self):
+        command = self.command(False)
+        self.assertTrue(command.on_circle)
+        self.assertGreater(command.surplus, Config().HAC_WEAVE_DEADBAND_M)
+        self.assertGreater(command.weave_deg, 10.0)
+
+    def test_the_circle_holds_its_bank_with_the_flag(self):
+        on, off = self.command(True), self.command(False)
+        self.assertEqual(on.weave_deg, 0.0)
+        self.assertLess(abs(on.bank), abs(off.bank))
+        self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")

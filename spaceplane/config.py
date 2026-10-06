@@ -349,6 +349,11 @@ class Config:
     # anything.  Off until paired.
     HAC_FLAP_BRAKE_IGNORES_ROLL: bool = False
     HAC_WEAVE_DEADBAND_M: float = 800.0     # surplus worth weaving for
+    # Weave only on the join leg, never on the circle (``guidance.hac``):
+    # on the circle the weave fights the turn's standing bank and walks the
+    # vehicle off it (rot-lapstack-1006: 7 of 12 "out of height" exits wove
+    # on the circle, 1 of 12 rolled-out ones).  Off until flown.
+    HAC_WEAVE_STRAIGHT_ONLY: bool = False
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.

@@ -1999,6 +1999,16 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # ``Config.HAC_WEAVE_WHOLE_CYCLE``.  Held, ``weave_angle`` fits the
     # last swing to the path instead.
     cycle_ok = held or total >= speed * cfg.HAC_WEAVE_PERIOD_S
+    # ``HAC_WEAVE_STRAIGHT_ONLY``: **on the circle the radius is the
+    # spending device, not the weave.**  Rotated 25-50 deg on the circle,
+    # the target takes the bank through wings level against the turn's own
+    # standing bank; the vehicle leaves the circle, the gate opens to 2-6 km
+    # and the cone dives back at the bank limit and hands over "out of
+    # height" -- 7 of 12 such exits in rot-lapstack-1006 wove on the circle,
+    # 1 of 12 that rolled out did (LOG7371, 7395, 7398).
+    if (getattr(cfg, "HAC_WEAVE_STRAIGHT_ONLY", False)
+            and lead <= cfg.HAC_JOIN_M):
+        cycle_ok = False
     if cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M and (total > 1.0):
         ratio = vec.clamp(total / max(1.0, available), 0.0, 1.0)
         if held:
