@@ -1,95 +1,99 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the session of 2026-10-06 (overnight, ~0000-0750).  History:
-`docs/spaceplane/journal.md`, "Session, 2026-10-06 (overnight)".
+Snapshot of the session of 2026-10-06 (day, ~0735-1600, in progress).
+History: `docs/spaceplane/journal.md`, "Session, 2026-10-06 morning" and
+"... afternoon".
 
-Defaults fingerprint **`d91cd0ad`** (= the promoted `f31c4cbe` plus the
-off flag `HAC_SHORT_BEST_GLIDE`).  Everything committed and pushed.
-Farm **stopped**, sims stopped.
+Defaults fingerprint **`63ef8321`** (= `6a226a64` + the off flags below;
+`6a226a64` = the overnight `d91cd0ad` + `ROLLOUT_STEER_LEAD_S` 3).
+Commits on main, not yet pushed at checkpoint time.
 
 ## What changed this session
 
-1. **Promoted to defaults** (e584a8a), measured on the farm:
-   `HAC_AIM_DERIVED` (the cone's entry aim from the table, replacing the
-   old craft's `HAC_GATE_LD` 1.35), `HAC_LAP_AT_TARGET_SPEED`,
-   `HAC_WEAVE_FIRST_WITH_BANK` (new: the weave's first swing agrees with
-   the bank being flown -- the old clock opened every cone with -45 deg,
-   a 100-115 deg reversal at alpha 42 / Mach 0.9 when the glide handed
-   over banked positive, and departed), and **`TOUCHDOWN_AIM_M` 2400 ->
-   1800**.
-   - Shuttle, rot-newdef-1006: **19/36 intact on the runway** (rigoff
-     5/12, inc 4/12, high 10/12) against 3/36 on the old defaults
-     (rot-base-1006).  Cone handover within +-500 m 23/36 (was 2/36).
-   - Old craft, same batch: **1/12** -- see the blocker.
-2. **`TOUCHDOWN_AIM_M` 1800 is a ship bias, kept on purpose (the user).**
-   Recorded in its config comment and as item 0 of `spaceplane/CLAUDE.md`
-   "Next": derive the aim per vehicle (aim + flare float + rollout fits
-   the runway), fly it against 1800 on both craft.
-3. Tools: `conexit.py` groups by each log's own config line (exact arm
-   mapping); **`hacentry.py`** (new) shows the glide-to-cone handover --
-   glide bank, first cone commands, departures, stops -- by arm.
-4. kspSim: **gap 7, its landings do not follow the game** (stops short
-   where the farm lands long) -- screen the cone there, never the aim /
-   approach / flare.  `simarms.sh` times a flight out at 600 s (runaway
-   flights coasting an orbit held two screens for 100 min).
+1. **Promoted: `ROLLOUT_STEER_LEAD_S` = 3** (sav-lead2-1006).  The rollout
+   steered on cross-track alone (no damping) and every shuttle rollout
+   weaved +-25-80 m with a ~20 s period; 5 of 17 losses in rot-newdef-1006
+   touched down on the centreline and stopped off the tarmac.  Lead 3:
+   every rollout closes monotonically, stops within 7 m.  From orbit
+   (rot-bank-1006, rot-lapt-1006) no shuttle loss has been a rollout since.
+2. **Correction to the last handoff: the old craft lands SHORT, not long.**
+   `ROLLOUT -> STOPPED stopped N m along` is unsigned; the signed stops
+   (-1.4..-2.6 km from the midpoint) put `qs_plane` 1.2-1.5 km short of
+   the threshold, intact, ~340 m of rollout.  Its approach falls ~3 km
+   short of the 1800 aim -- the shuttle-fitted `APPROACH_BEST_LD` 4.2 is
+   the likely term.  0/12 in rot-bank-1006.  Not chased (the user: the old
+   craft is a brick).
+3. Tools/data: `qs_s2_rwy0-5` exist only in the instances (copies of
+   `saves/qs_s2_rigoff2.sfs`, which lands on the runway reliably) for
+   landing-only A/B.  `logs/brakecache/` (AIRBRAKE_CACHE, below).
 
-## Flags added (off), and what they measured
+## Flags added (all off) and what they measured
 
-- `HAC_SHORT_BEST_GLIDE`: a cone short of height moves alpha toward the
-  table's best-L/D alpha, in proportion to the deficit.  Null in kspSim
-  twice (sim-short-1006, sim-short2-1006): handovers higher, sd up.
+- `HAC_EXIT_LAP_FRACTION` (1.0 = old): cone saves, only rigoff4 lapped and
+  it ended -1.6 km (sav-spend-1006).
+- `HAC_CHOOSE_BY_ENERGY`: choose end/hand by the planner's fit.  Offline,
+  from a lined-up arrival the other end costs more than a lap; unflown.
+- `AIRBRAKE_CACHE`: arm the measured spoiler from the craft's last vacuum
+  probe when engaged in the air (air-start saves never had a brake, which
+  made sav-spend-1006's brake arm disconnected).  Unflown; the cache is
+  written by any flight on the new code that starts in vacuum.
+- `HAC_EXIT_LAP_AT_TARGET`: the exit prices a lap as the plan does (target
+  speed's radius) less 500.  rot-lapt-1006: null (rigoff 4/12 vs 4/12) --
+  its threshold (~6.3 km) is above most high exits (2.5-6.2 km).
+- Flown, existing flags, refuted: `HAC_SPEED_PATH` (inc 0/12, all 7.5-12
+  km short, rot-lapt-1006); `GLIDE_ALPHA_MAX_DEG` 37 (7/24 vs 8/24) and 34
+  (0/24, most arrive at 11.8 km short) (rot-galpha-1006);
+  `HAC_FLAP_BRAKE_ON_SURPLUS + _IGNORES_ROLL` from orbit 9/24 vs 11/24 --
+  the brake deploys only on the cone's last tick, because the plan absorbs
+  the surplus into path it never flies (rot-fbrake-1006);
+  `HAC_BANK_MAX_DEG` 60 (22/36 vs 22/36, rot-bank-1006);
+  `HAC_WEAVE_MAX_DEG` 70 / `HAC_WEAVE_HELD` (cone saves, null/worse).
 
-## Blockers, in order
+## The blocker: rigoff arrives at the cone 4-5 km high on half its flights
 
-1. **`qs_shuttle2_rigoff` is bimodal in the glide.**  7/12 arrive 3-10 km
-   long at 19-21 km (the rest +500 at ~16 km), same burn, same loop rate.
-   The glide's predicted miss holds +500 until ~31 km / Mach 4.3; in the
-   long flights the commanded bank has ramped to 66-70 deg (pinned)
-   before a reversal, and the reversal through wings-level leaves no
-   authority (LOG6845, 6826; normal LOG6812, 6816 hold ~30 deg there).
-   Find where the energy state splits, earlier in the glide.
-2. **`_inc`: the cone flies a lower L/D than it plans** -- entry margins
-   +700..+1800 become handovers -700..-1000 and land 3-7 km short
-   (LOG6813, 6817, 6822, 6827).  Compare planned against flown turning
-   L/D on that orbit (`conesum.py`).
-3. **The old craft rolls off the end** on the 1800 aim (touchdown 1.3-1.6
-   km in, ~2 km rollout).  Part of item 0 in `spaceplane/CLAUDE.md`.
+Shuttle from orbit on the current defaults, five batches: rigoff
+5/12, 4/12, 4/12, 8/24, 11/24 (~38%); inc 9/12, 8/12; high 9/12, 7/12.
+rigoff's cone entries are bimodal, 15-17 km or 19-21 km (rot-galpha-1006,
+24 flights).  The high ones exit the cone 2.5-10 km above what the approach
+needs and break at the flare (48-68 m/s, sink 38-46).
+
+**Mechanism, found this session** (LOG7092/7101/7129/7161 vs
+7096/7116/7119/7138): the split is the learned alpha ceiling.
+`Holdable` only creates a bin when the vehicle saturates.  Flights that
+saturate once early (q ~1600 Pa, achieving 36 against 43) plan the rest of
+the glide with a ~37 deg ceiling and arrive on profile.  Flights that do
+not keep commanding 37-44 deg, carry more energy (Mach 4.9 vs 4.7 at 36
+km), and at q ~3500 Pa achieve only 23-28 deg with bank pinned at 64-70
+(bank-coupled alpha); the ceiling collapses late, the prediction jumps
+from +500 to +5-11 km at 33-27 km.  A fixed cap (`GLIDE_ALPHA_MAX_DEG`)
+does not fix it -- achieved alpha depends on bank as well as q.
+
+**The cone cannot absorb 2-6 km**: lined up, the path is the run to the
+gate at any radius; the next answer is a lap (~6.5 km of height at R 2000).
+Between them only the weave and drag, and neither is enough.
 
 ## Next
 
-1. Blocker 1, narrowed after the checkpoint: every rigoff glide looks
-   identical down to ~36 km (bank +-30-36, alpha 35-39, predicted +0.5
-   km).  The split is the reversal at 32-36 km: normal flights come out
-   at +-30 and stay; long ones come out needing 44-51 deg and are pinned
-   at 70 within 30 s (LOG6845, 6826, 6836 against 6812, 6816, 6831).  The
-   propagator models a reversing entry as a constant cos(bank) share
-   (`trajectory.py` ~690) -- the lift-up time of a slow Mach-4 reversal is
-   invisible to it.  **But that model was corrected three times and
-   refuted three times** (failures 79, 85: `GLIDE_BANK_DUTY_ON`,
-   `ALPHA_TRACKING_ON`, both) -- on the old craft, while the drain valve
-   dominated.  So change the method (failure 85's own advice): keep bank
-   authority in reserve late in the glide so a reversal cannot pin it
-   (e.g. cap the solve's bank below `BANK_MAX` by the reversal's cost, or
-   forbid reversals below a q / Mach where the remaining authority cannot
-   absorb one), rather than a fourth propagator correction.  Check first
-   whether kspSim reproduces the split on `qs_shuttle2` (it has no rigoff
-   model; its sim cone entries were all 16-18 km, so maybe not).
-2. Blocker 2 with `conesum.py` on rot-newdef-1006's `_inc` logs.
-3. The derived touchdown aim (spaceplane/CLAUDE.md "Next" 0).
-4. Carried over: the other fitted constants in the chain (`HAC_LD` 1.86,
-   `APPROACH_BEST_LD`, `APPROACH_AIM_SHIFT_M`, `APPROACH_FACTOR`,
-   `MARGIN`); untracking `savegen` save variants behind a regeneration
-   script; ~100 comment lines naming removed flags.
+1. rot-lapstack-1006 (in flight at checkpoint): `HAC_EXIT_LAP_AT_TARGET +
+   HAC_BANK_MAX_DEG 60 + HAC_RADIUS_MIN_M 1200` -- laps purchasable from ~4
+   km of height, continuous by radius.  Read it.
+2. The glide: make the propagator plan with a bank-aware holdable alpha
+   from the start rather than waiting to saturate (a prior over (q, bank)
+   from the logs' `alpha ceiling` events, recomputed by a tool; or seed
+   the ceiling with one early probe).  Four refutations of this mechanism
+   now (failures 79, 85 and this session's two caps): change what is
+   measured, not the constant.
+3. Old craft: derive the approach ratio per vehicle (spaceplane/CLAUDE.md
+   Next 0 with the sign corrected).
+4. Carried over: the rest of spaceplane/CLAUDE.md "Next".
 
 ## Traps paid this session
 
-- **The sim's landings are not the game's** (kspSim gap 7): a sim screen
-  of the aim said the opposite of the farm.
-- **A long simarms screen is a runaway, not slow sims**: a normal screen
-  of 30 flights takes ~2-4 minutes.
-- **Kill the kspSim servers before the farm** (`kspSim/stopall.sh`):
-  16 idle servers were left up and swap read 12 GB at farm start.
-- `rotfly.sh ... &` chained after `start.sh` with `&&` still backgrounds
-  the whole chain (it works, but the start output is lost).
-- `rwysum.py`'s `td rwy` is a distance: read the signed stop to tell a
-  short landing from a long one.
+- **Unsigned distances again**: the old craft's "rolls off the end" was a
+  short landing.  Read the signed along.
+- **Air-start saves have no measured brake** -- any flag about the flap
+  brake is disconnected when flown from a cone save (now: AIRBRAKE_CACHE).
+- **Cone saves no longer represent orbit** after an aim change: the
+  qs_s2_rigoff states arrive 1.6-5 km high under HAC_AIM_DERIVED.
+- Swap reaches 17-20 GB after every ~90 min batch; restart the farm
+  between batches (done every time today).
