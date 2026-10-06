@@ -348,6 +348,9 @@ class Config:
     # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
     # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
     HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
+    # Short of height (the tightest circle unaffordable), cap the cone's
+    # alpha at the table's best-L/D alpha (``guidance.hac``).  Off.
+    HAC_SHORT_BEST_GLIDE: bool = False
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
     # How fast the commanded circle may change size.  The radius is the

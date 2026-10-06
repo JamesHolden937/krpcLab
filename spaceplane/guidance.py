@@ -2029,6 +2029,18 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     else:
         alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
+    # ``HAC_SHORT_BEST_GLIDE``: **short of height, fly the wing's best glide,
+    # not the cone's speed.**  The cone holds a true airspeed sized for the
+    # gate; at 7-9 km that is the back of the drag curve -- LOG6827 flew its
+    # whole deficit at alpha 18-26 and L/D 1.2-1.5 against the table's 3.1
+    # at 5 deg, and handed over 1.6 km low, 6.8 km from the gate.  Capped at
+    # the best-L/D alpha the vehicle speeds up to that angle's own speed,
+    # which is the longest it can glide; the speed it gains is counted by
+    # the budget above as height.
+    best_alpha = getattr(env, "best_alpha", None)
+    if (getattr(cfg, "HAC_SHORT_BEST_GLIDE", False) and short
+            and best_alpha is not None):
+        alpha = min(alpha, max(cfg.ALPHA_MIN_DEG, best_alpha))
 
     needed = cfg.GATE_ALT_M + total / max(0.1, cone_ld)
     if rungs is not None:
