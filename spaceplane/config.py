@@ -267,7 +267,7 @@ class Config:
     # laps take their radius floor from the cone's target speed, not the
     # entry speed.  At 270 m/s the floor is 7.4 km and no lap ever fits, so
     # 5-7 km of surplus went out of the gate (LOG4152, 4171).  Off.
-    HAC_LAP_AT_TARGET_SPEED: bool = False
+    HAC_LAP_AT_TARGET_SPEED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     # **The cone's glide ratio at the speed and bank it will be flown at**
     # (``guidance._hac_planned_ld``): the swept table at the cone's target
     # speed, wings level on the straight legs and at the circle's bank on
@@ -297,7 +297,7 @@ class Config:
     # ``HAC_GATE_LD`` 1.35 is the old craft's; this computes the ground a
     # straight-in at the cone's speed covers per metre of height, once,
     # when the table is ready.  Off.
-    HAC_AIM_DERIVED: bool = False
+    HAC_AIM_DERIVED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     HAC_LADDER_STEP_M: float = 500.0
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
     # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the
@@ -347,7 +347,7 @@ class Config:
     # banked +50..+70 is commanded a 100-115 deg reversal at alpha ~42, Mach
     # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
     # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
-    HAC_WEAVE_FIRST_WITH_BANK: bool = False
+    HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
     # How fast the commanded circle may change size.  The radius is the
@@ -2272,7 +2272,15 @@ class Config:
     # 3665, 3668, 3669).  Failure 68's mechanism, not cured by the
     # time-based weave stop or ``GATE_FROM_APPROACH``.  **Make the cone
     # spend the surplus first (HANDOFF, "SECOND THING"), then move this.**
-    TOUCHDOWN_AIM_M: float = 2400.0
+    # **1800, default 2026-10-06**, now that the cone spends its surplus
+    # (the three HAC flags above, same day): with them on, intact on the
+    # runway 9/18 at 1800 against 3/18 at 2400 and 5/18 at 1200, over the
+    # three rigoff orbits interleaved (rot-aim-1006).  At 2400 a handover
+    # within 200 m of profile still touched down 1.4-2.3 km in.  At 1800
+    # every handover between -200 and +630 m stopped +650..+850 along; the
+    # misses are the cone's tails (out of height below -600, or 20 km
+    # arrivals 1-2 km high).  kspSim cannot screen this (gap 7).
+    TOUCHDOWN_AIM_M: float = 1800.0
     # **The aim derived** (``airframe.touchdown_aim``): the touchdown zone
     # (this fraction of ``RUNWAY_LENGTH_M`` -- the user's rule, aim at the
     # near end so the rollout has the room) less the flare's float at best
