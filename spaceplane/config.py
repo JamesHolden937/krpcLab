@@ -1533,8 +1533,11 @@ class Config:
     # touched down within 30 m of the centreline and stopped 40-55 m off
     # it.  This adds the cross-track *rate* (``v . across``) times this
     # lead time to the error the gain acts on; ~2/omega of the observed
-    # weave is critical damping.  0 is the old law.
-    ROLLOUT_STEER_LEAD_S: float = 0.0
+    # weave is critical damping.  0 is the old law.  Measured from one
+    # runway save x6 (sav-lead2-1006, 12 an arm): lead 0 weaved span 24-176
+    # m and stopped up to 85 m off; lead 3 closed monotonically, every
+    # rollout that stayed on the tarmac stopped within 7 m (spans 11-23).
+    ROLLOUT_STEER_LEAD_S: float = 3.0  # default 2026-10-06: sav-lead2-1006
     STOPPED_SPEED_M_S: float = 1.0
     # **A rollout that cannot end must still end.**  The stop test is a speed
     # threshold, and a vehicle that arrived 50 km short is not on a runway:
