@@ -246,6 +246,20 @@ class Config:
     # -- the surplus column reads +493 to +499 whatever the arrival was --
 
     HAC_EXIT_SURPLUS_M: float = 500.0
+    # **Hand over only what is nearer the approach than a lap would leave
+    # it** (``Autopilot.hac_exit_surplus``).  The derived allowance is a
+    # whole lap's height (2 pi R / cone ratio at the circle the airframe
+    # holds now): any surplus short of a lap was handed to the approach,
+    # whose own capacity is the ~500 m above.  On the shuttle a lap there
+    # prices at 9-14 km, so rigoff cones rolled out 6-8 km high with the
+    # plan still reading laps=1 and fitting (LOG6826 h 9784 needing 2101,
+    # 6850, 6855); the approach dived at alpha 20-25 to 50 m/s and all
+    # three flared at 39-41 m/s of sink and broke.  A lap leaves the
+    # surplus minus the lap; not lapping leaves the surplus, so the lap is
+    # the nearer answer once the surplus passes this fraction of it --
+    # 0.5 is the symmetric choice, and a short lap can still cut to the
+    # gate where a high rollout cannot lose height.  1.0 is the old rule.
+    HAC_EXIT_LAP_FRACTION: float = 1.0
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.

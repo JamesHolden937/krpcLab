@@ -3857,6 +3857,9 @@ class Autopilot:
         ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
                                  snap.mass, self.surface_gravity)
         lap = 2.0 * math.pi * radius / max(0.1, ratio)
+        # ``HAC_EXIT_LAP_FRACTION``: past this share of a lap, the lap is
+        # the nearer answer.
+        lap *= float(getattr(self.cfg, "HAC_EXIT_LAP_FRACTION", 1.0))
         return max(self.cfg.HAC_EXIT_SURPLUS_M, lap)
 
     def hac_flap_brake(self, snap, command, height):
