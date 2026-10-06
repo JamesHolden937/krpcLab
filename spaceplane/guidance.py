@@ -2037,10 +2037,24 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # the best-L/D alpha the vehicle speeds up to that angle's own speed,
     # which is the longest it can glide; the speed it gains is counted by
     # the budget above as height.
+    #
+    # **Only as far toward it as the deficit needs.**  All the way whenever
+    # ``short`` (judged at the cone's own ratio, ~1.7x below best glide)
+    # stretched every slightly-short entry into a high arrival: kspSim
+    # handover median +907 against +138 (sim-short-1006).  The fraction
+    # is how much of the gap between the cone's ratio and best glide the
+    # tightest circle needs.
     best_alpha = getattr(env, "best_alpha", None)
+    best_ld = getattr(env, "best_ld", None)
     if (getattr(cfg, "HAC_SHORT_BEST_GLIDE", False) and short
-            and best_alpha is not None):
-        alpha = min(alpha, max(cfg.ALPHA_MIN_DEG, best_alpha))
+            and best_alpha is not None and best_ld and available > 1.0
+            and best_alpha < alpha):
+        budget = max(1.0, height + excess_height - cfg.GATE_ALT_M)
+        flown = available / budget
+        need = shortest / budget
+        frac = vec.clamp((need - flown) / max(0.1, best_ld - flown),
+                         0.0, 1.0)
+        alpha = alpha + frac * (max(cfg.ALPHA_MIN_DEG, best_alpha) - alpha)
 
     needed = cfg.GATE_ALT_M + total / max(0.1, cone_ld)
     if rungs is not None:
