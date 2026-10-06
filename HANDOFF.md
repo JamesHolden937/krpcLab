@@ -1,95 +1,82 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the last session (2026-10-05 evening, wrapped up early at the
-user's request -- usage limit). History: `docs/spaceplane/journal.md`,
-"Session, 2026-10-05 evening: the cleanup, and the cone's gap".
+Snapshot of the session of 2026-10-06 (overnight, ~0000-0750).  History:
+`docs/spaceplane/journal.md`, "Session, 2026-10-06 (overnight)".
 
-Defaults fingerprint **`01c06c20`**. Everything committed and pushed;
-how-it-works PDFs rebuilt (status table updated).
-Farm **stopped**, sims stopped, inhibitor **released**.
+Defaults fingerprint **`d91cd0ad`** (= the promoted `f31c4cbe` plus the
+off flag `HAC_SHORT_BEST_GLIDE`).  Everything committed and pushed.
+Farm **stopped**, sims stopped.
 
 ## What changed this session
 
-1. **Big cleanup of `spaceplane/`** (the user's request): 79 retired
-   off-by-default flags and 60 settled default-on flags baked in, their dead
-   code / stubs / config fields / tests removed. Package 21.5k -> 14.9k
-   lines, config 580 -> 341 fields, ~11k lines gone in total. Proven
-   behaviour-preserving by a guidance-law fingerprint (cone, approach,
-   flare, glide solve, propagator over a state grid, byte-identical) plus
-   pyflakes/pylint call checks, the full suite (560 OK) and kspSim full
-   flights. Resurrect anything from **`bbfd1e9`** (last pre-cleanup commit).
-   Kept switchable: the live candidates (below), `DIAG_INTERFACE`, and the
-   operational switches (warp, RCS master, drain, both ends, ...).
-2. **`STALL_SPEED_M_S` and `STALL_CALIBRATION_M_S` removed** (the user: the
-   48 was the old craft's, measured as TAS). `airframe.stall` is always the
-   vehicle's own table, scaled by sqrt(mass) from the glide on. **This moves
-   every speed on final ~6% up on the shuttle (approach ~115 vs 108) and
-   has NOT been measured on the farm yet** -- first thing to fly.
-3. In-game panel: thin even red frame, rounded corners (common/panel.py).
-4. CLAUDE.md: push to GitHub on wrap-up.
+1. **Promoted to defaults** (e584a8a), measured on the farm:
+   `HAC_AIM_DERIVED` (the cone's entry aim from the table, replacing the
+   old craft's `HAC_GATE_LD` 1.35), `HAC_LAP_AT_TARGET_SPEED`,
+   `HAC_WEAVE_FIRST_WITH_BANK` (new: the weave's first swing agrees with
+   the bank being flown -- the old clock opened every cone with -45 deg,
+   a 100-115 deg reversal at alpha 42 / Mach 0.9 when the glide handed
+   over banked positive, and departed), and **`TOUCHDOWN_AIM_M` 2400 ->
+   1800**.
+   - Shuttle, rot-newdef-1006: **19/36 intact on the runway** (rigoff
+     5/12, inc 4/12, high 10/12) against 3/36 on the old defaults
+     (rot-base-1006).  Cone handover within +-500 m 23/36 (was 2/36).
+   - Old craft, same batch: **1/12** -- see the blocker.
+2. **`TOUCHDOWN_AIM_M` 1800 is a ship bias, kept on purpose (the user).**
+   Recorded in its config comment and as item 0 of `spaceplane/CLAUDE.md`
+   "Next": derive the aim per vehicle (aim + flare float + rollout fits
+   the runway), fly it against 1800 on both craft.
+3. Tools: `conexit.py` groups by each log's own config line (exact arm
+   mapping); **`hacentry.py`** (new) shows the glide-to-cone handover --
+   glide bank, first cone commands, departures, stops -- by arm.
+4. kspSim: **gap 7, its landings do not follow the game** (stops short
+   where the farm lands long) -- screen the cone there, never the aim /
+   approach / flare.  `simarms.sh` times a flight out at 600 s (runaway
+   flights coasting an orbit held two screens for 100 min).
 
 ## Flags added (off), and what they measured
 
-- `HAC_IAS_FROM_STALL`: cone at one IAS = max(1.3 Vs, V_md) x sqrt(load at
-  45 deg). On the shuttle V_md (gear up, alpha 0) is 112 -> IAS 133: too
-  fast, 0/12 (rot-ias-1005, with the chain below). Wants a different speed
-  rule (the user asked for "constant IAS derived from stall").
-- `ENTRY_INTERFACE_AT_AIR`: glide takes over at the atmosphere top instead
-  of the arbitrary 58 km. Unflown.
-- Cone energy budget now counts excess speed against the *gate's* target
-  (inert under the default constant-TAS cone; fixes the constant-IAS case).
-- Chain `HAC_SPEED_EAS + HAC_LD_AT_TARGET + HAC_LD_MEASURED + HAC_WEAVE_HELD`
-  before that fix: 0/12 vs 5/12 (rot-cone-1005).
+- `HAC_SHORT_BEST_GLIDE`: a cone short of height moves alpha toward the
+  table's best-L/D alpha, in proportion to the deficit.  Null in kspSim
+  twice (sim-short-1006, sim-short2-1006): handovers higher, sd up.
 
-## The blocker: the cone's structural gap
+## Blockers, in order
 
-From orbit the cone rolls out **+0.6..+4 km high** (game and sim alike;
-sim baseline surplus median +1.9 km sd 1.9, 1/12 within +-500,
-`spaceplane/tools/conexit.py`). Mechanism: the entry delivers the vehicle
-on the centreline ~15-19 km out at 14-17 km, so the circle has ~0 turn;
-laps=0 offers ~16 km of path (+weave, ~25 km at 50 deg), a lap costs
->= 2 pi R more (~12.6 km at R 2 km, far more at entry speed), and the
-energy wants 26-30 km -- the gap. `hac_choose` always picks the cheapest
-end/hand. Root cause upstream: `HAC_GATE_LD` 1.35 (old craft's) places the
-entry aim too close for the shuttle's glide.
+1. **`qs_shuttle2_rigoff` is bimodal in the glide.**  7/12 arrive 3-10 km
+   long at 19-21 km (the rest +500 at ~16 km), same burn, same loop rate.
+   The glide's predicted miss holds +500 until ~31 km / Mach 4.3; in the
+   long flights the commanded bank has ramped to 66-70 deg (pinned)
+   before a reversal, and the reversal through wings-level leaves no
+   authority (LOG6845, 6826; normal LOG6812, 6816 hold ~30 deg there).
+   Find where the energy state splits, earlier in the glide.
+2. **`_inc`: the cone flies a lower L/D than it plans** -- entry margins
+   +700..+1800 become handovers -700..-1000 and land 3-7 km short
+   (LOG6813, 6817, 6822, 6827).  Compare planned against flown turning
+   L/D on that orbit (`conesum.py`).
+3. **The old craft rolls off the end** on the 1800 aim (touchdown 1.3-1.6
+   km in, ~2 km rollout).  Part of item 0 in `spaceplane/CLAUDE.md`.
 
-**Sim screen at wrap-up** (simarms, 4 per arm, qs_shuttle2, LOG6535-6550;
-small n, and the arm-to-log mapping from simarms output is loose):
-cone surplus median / sd / within +-500 m --
-defaults -206 / 2398 / 3 of 8; `HAC_AIM_DERIVED` +186 / 943 / 4 of 5;
-**`HAC_AIM_DERIVED` + `HAC_LAP_AT_TARGET_SPEED` +340 / 280 / 3 of 5** (the
-lead); + `HAC_FLAP_BRAKE_ON_SURPLUS`+`IGNORES_ROLL` -193 / 2306 / 2 of 4.
-One flight (LOG6548) coasted round another orbit and was killed.
+## Next
 
-## Next, in order
-
-1. Farm: defaults (new, stall removed) on the three rigoff orbits,
-   12+ per save -- the regression nobody has flown yet.
-2. Cone: re-screen `HAC_AIM_DERIVED + HAC_LAP_AT_TARGET_SPEED` in kspSim
-   with 16+ flights per arm (map logs to arms by instance, not the fuzzy
-   LOG column), then fly it on the farm against defaults.  Then screen in kspSim (8-16 flights/minute, farm stopped), confirm on
-   the farm. Candidates: `HAC_AIM_DERIVED` (replaces HAC_GATE_LD),
-   `HAC_LAP_AT_TARGET_SPEED`, the cone flap brake on surplus, choosing the
-   end/hand by energy fit rather than min cost, a larger weave cap.
-3. Then the constants still standing in the chain: `HAC_LD` 1.86,
-   `APPROACH_BEST_LD` 4.2, `TOUCHDOWN_AIM_M` 2400, `APPROACH_AIM_SHIFT_M`,
-   `APPROACH_FACTOR` 2.25, `HAC_GATE_LD`, `MARGIN` 0.70.
-4. Repo hygiene (the user's rule, now in CLAUDE.md): `saves/` variants
-   made by `savegen.py` / hand splices are still tracked -- write a
-   regeneration script before untracking them (they are the farm's
-   reference via `syncSaves.sh`).  `ksc_terrain.json` is untracked now.
-5. Comments still naming removed flags (~100 lines, mostly autopilot.py
-   and config.py) -- trim.
+1. Blocker 1: diff the long and normal rigoff glides above 31 km (bank
+   history, reversal timing, predicted miss, alpha tracking -- the long
+   group's glide alpha error is -2.9 vs -1.9 deg, overlapping).  The
+   glide is kspSim-screenable if the sim reproduces the split.
+2. Blocker 2 with `conesum.py` on rot-newdef-1006's `_inc` logs.
+3. The derived touchdown aim (spaceplane/CLAUDE.md "Next" 0).
+4. Carried over: the other fitted constants in the chain (`HAC_LD` 1.86,
+   `APPROACH_BEST_LD`, `APPROACH_AIM_SHIFT_M`, `APPROACH_FACTOR`,
+   `MARGIN`); untracking `savegen` save variants behind a regeneration
+   script; ~100 comment lines naming removed flags.
 
 ## Traps paid this session
 
-- **A flag switched per call (`replace(cfg, X=True)`) is not a default**:
-  baking `ALPHA_TRACKING_ON` silently disabled the deorbit window's
-  tracking corners. Check `replace`/`--set` users before baking a flag.
-- The guidance fingerprint does not cover `autopilot.py`: a one-row tuple
-  (from the stall removal) and a `run.attr` read both crashed every flight.
-  **Fly one kspSim flight (`./kspSim/tools/simfly.sh qs_shuttle2 2 1`)
-  after any code change before a farm batch** -- it takes a minute.
-- Scripted multi-file tools emptied `gui.py` and `__init__.py` once:
-  compare line counts against HEAD after any scripted edit.
-- `rotfly.sh ... &` chained after `start.sh` backgrounds the whole chain.
+- **The sim's landings are not the game's** (kspSim gap 7): a sim screen
+  of the aim said the opposite of the farm.
+- **A long simarms screen is a runaway, not slow sims**: a normal screen
+  of 30 flights takes ~2-4 minutes.
+- **Kill the kspSim servers before the farm** (`kspSim/stopall.sh`):
+  16 idle servers were left up and swap read 12 GB at farm start.
+- `rotfly.sh ... &` chained after `start.sh` with `&&` still backgrounds
+  the whole chain (it works, but the start output is lost).
+- `rwysum.py`'s `td rwy` is a distance: read the signed stop to tell a
+  short landing from a long one.

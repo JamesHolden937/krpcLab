@@ -4449,3 +4449,73 @@ stall-constant removal) and the sim found a third (`run.airbrake_pair`).
 
 Also: panel frame (thin red, rounded); `ENTRY_INTERFACE_AT_AIR` (unflown);
 `spaceplane/tools/conexit.py` (cone handover per flight).
+
+## Session, 2026-10-06 (overnight): the cone's handover fixed, the aim moved
+
+Fingerprint at start `01c06c20`, at the checkpoint `d91cd0ad` (defaults
+`f31c4cbe` + the off flag `HAC_SHORT_BEST_GLIDE`).
+
+**Old defaults, first farm flights since the stall constants went**
+(rot-base-1006, 36 from orbit over the three rigoff orbits): **3/36** intact
+on the runway.  Cone handover high on 34/36 (median +974 m, laps 0 on
+every flight); the approach lands it 1-5 km long.
+
+**kspSim, by config line** (`conexit.py` now groups by each log's own
+`config:` line -- last session's arm mapping was wrong; defaults were 0/4
+within +-500, not 3/8).  sim-cone-1006, 15 an arm: defaults +2492 m, 0/15
+within +-500; `HAC_AIM_DERIVED` -1156, 4/14, **9 of 14 departed**;
+`+ HAC_LAP_AT_TARGET_SPEED` -87, 9/14.
+
+**The departures were the weave.**  The cone's first command is the
+weave's first swing, and the phase clock always started on the same one:
+-45 deg on every flight, sim and game, whether the log said "turning left"
+or "right" (the flip 24 s later is `HAC_WEAVE_PERIOD_S`).  A glide handing
+over at +50..+70 deg was commanded a 100-115 deg reversal at alpha ~42,
+Mach 0.9 -- failure 99's regime -- and departed 11 of 17 times in the sim
+(2 of ~24 otherwise); the farm's 3 departures were all from a positive
+glide bank.  `HAC_WEAVE_FIRST_WITH_BANK` starts the clock on the swing
+that agrees with the bank being flown (tried both, picked by sign).  Sim
+(sim-weave-1006, 10 an arm): the AIM+LAP sd 1616 -> 569, no reversal
+departures.  New tool `hacentry.py` (glide bank, first cone commands,
+departures, stops, by arm).
+
+**Farm, rot-weave-1006** (18 an arm, interleaved): AIM+LAP+WEAVE_FIRST
+handover within +-500 **9/18 vs 1/18**, departures 0 vs 2 -- but runway
+4/18 vs 4/18.  A handover on profile still touched down 1.4-2.3 km in:
+`TOUCHDOWN_AIM_M` 2400 is the far threshold.
+
+**The aim, rot-aim-1006** (cone flags on, 18 an aim): 2400 **3/18**, 1800
+**9/18**, 1200 5/18.  At 1800 every handover between -200 and +630 m
+stopped +650..+850 along.  kspSim cannot screen this: the same
+configuration stops 1.2-3.5 km *short* there (sim-aim-1006) -- kspSim
+gap 7.
+
+**Promoted** (e584a8a): the three cone flags and `TOUCHDOWN_AIM_M` 1800.
+rot-newdef-1006: shuttle **19/36** on the runway (rigoff 5/12, inc 4/12,
+high 10/12), handover within +-500 23/36.  **Old craft 1/12**: centreline
+touchdowns 1.3-1.6 km in, ~2 km of rollout off the end -- 1800 is a ship
+bias.  The user: keep it for now, replace it later (spaceplane/CLAUDE.md
+"Next" 0, and the constant's comment).
+
+**Refuted, `HAC_SHORT_BEST_GLIDE`** (off): a cone short of height caps its
+alpha at the table's best-L/D alpha (LOG6827 flew its deficit at alpha
+18-26, L/D 1.2-1.5 against 3.1).  All-or-nothing: median +907 vs +138
+(sim-short-1006).  Proportional to the deficit: 8/15 vs 7/16 on the
+runway, sd 866 vs 482, high outliers (sim-short2-1006).  Two versions,
+both null on the sim; the farm tail it was for (`_inc`) is upstream.
+
+**What is left (rot-newdef-1006):**
+- `qs_shuttle2_rigoff` is **bimodal at the glide**: 5/12 reach the cone
+  +500..+860 long at ~16 km, 7/12 arrive 3-10 km long at 19-21 km.  Same
+  burn (range error 0), same loop rate.  The glide's own predicted miss
+  holds +500 until ~31 km / Mach 4.3, then jumps: in the long flights the
+  commanded bank has ramped to 66-70 deg (pinned) before a reversal, which
+  swings through wings level with no authority left (LOG6845: predicted
+  +532 -> +1493 in 15 s before the reversal, +11 km after).  The normal
+  flights hold ~30 deg there.  The energy difference arises earlier.
+- `_inc`: the cone loses height it planned to have (entry margin
+  +700..+1800 -> handover -700..-1000) -- its planned L/D is above what it
+  flies on that orbit.
+- sim runaways (deorbit ending on the 60 s burn guard, coasting an orbit,
+  600 MB logs) held two screens for 100 min; `simarms.sh` now times a
+  flight out at 600 s.
