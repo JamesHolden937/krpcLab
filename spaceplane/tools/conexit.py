@@ -23,7 +23,7 @@ ENTRY = re.compile(r"GLIDE -> HAC .*?d=(\d+) h=(\d+)")
 DOWN = re.compile(r"DOWN: .*?\(along ([+-]\d+), across ([+-]\d+)\)")
 CONFIG = re.compile(r"config: (.*?) \[defaults (\w+)\]")
 PLUMBING = ("SAVE_NAME", "LOOP_PACING_GAME_TIME", "TIMESCALE_GOVERNOR",
-            "LOG_INTERVAL_UT")
+            "LOG_INTERVAL_UT", "TIMESCALE_GOVERNOR_MAX")
 
 
 def arm_of(text):
