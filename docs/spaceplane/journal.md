@@ -4412,3 +4412,40 @@ runway whatever the arm; the cone dominates.
   rollout 300-3500 m high on almost every orbital flight** (laps=0, circle
   2-16 km).  It burns less height than it plans -- measure planned against
   flown turning L/D (`conesum.py`) before changing anything else.
+
+## Session, 2026-10-05 evening: the cleanup, and the cone's gap
+
+Ended early (usage limit). HANDOFF.md has the snapshot.
+
+**From orbit, defaults:** rot-hacld-1005 rounds 0-2 3/9 on the runway;
+rot-cone-1005 5/12; rot-ias-1005 1/12 (same defaults -- the run-to-run
+scatter is that wide). Misses are mostly long; cone exits +0.6..+1.9 km
+over what the approach needs (conesum: plan pinned at ~16.4 km, R at the
+16 km cap, laps 0, LD flown 1.8-1.9 ~ HAC_LD).
+
+**Arms (all 12/arm over the three rigoff orbits):**
+- `HAC_SPEED_EAS + HAC_LD_AT_TARGET + HAC_LD_MEASURED + HAC_WEAVE_HELD`
+  (rot-cone-1005): 0/12 vs 5/12. Held at 108 IAS the true speed is 280 m/s
+  at 12 km; the energy budget counted excess speed against the target *at
+  the current height*, so the ~3 km of height released as TAS falls was
+  invisible: rolled out 1.5 km high, overran, lapped, out of height 7 km
+  from the gate (LOG6476). Fixed: budget against the gate's target.
+- `HAC_IAS_FROM_STALL` + the same chain (rot-ias-1005): 0/12. IAS came out
+  133 m/s (V_md gear-up at alpha 0 is 112 on the shuttle's table) -- too
+  fast to spend anything.
+
+**The cone's gap** (see HANDOFF): arrival on the centreline 15-19 km out at
+14-17 km; laps=0 path ~16-25 km, a lap >= +12.6 km, energy wants 26-30 km.
+`HAC_GATE_LD` 1.35 (old craft) puts the entry aim too close; `hac_choose`
+always takes the cheapest end/hand. kspSim reproduces it (12 flights,
+surplus median +1.9 km sd 1.9): screen cone work there.
+
+**Cleanup** (commits 7fd5096, 8636f9d, c7e0eed, + fix): 139 flags baked,
+~11k lines removed, verified by a guidance fingerprint, pylint call checks,
+the suite and kspSim flights. Two bugs reached a farm batch first
+(rot-clean-1005, all 12 crashed at table-ready: a one-row tuple from the
+stall-constant removal) and the sim found a third (`run.airbrake_pair`).
+`STALL_SPEED_M_S`/`STALL_CALIBRATION_M_S` removed: unflown on the farm.
+
+Also: panel frame (thin red, rounded); `ENTRY_INTERFACE_AT_AIR` (unflown);
+`spaceplane/tools/conexit.py` (cone handover per flight).

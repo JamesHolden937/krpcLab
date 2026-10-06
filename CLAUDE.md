@@ -43,6 +43,14 @@ from the previous batch's round length times the rounds left.
    measured (with log/batch names), the blocker and the proposed next step,
    open items in order, and traps paid for. It's a snapshot: replace it,
    don't append. The history goes in `docs/<pilot>/journal.md`.
+3. **On wrap-up: update the how-it-works PDFs, then commit and push to
+   GitHub** (`git push origin main`). Revise `docs/<pilot>/howItWorks.html`
+   for whatever changed, rebuild each PDF (`chromium --headless
+   --print-to-pdf=docs/<pilot>/howItWorks.pdf docs/<pilot>/howItWorks.html`),
+   then push, so the next session -- on any machine -- starts from it.
+   **Nothing that the repo plus a KSP instance can regenerate is tracked**
+   (e.g. `kspSim/data/ksc_terrain.json`, `kspSim/models/`): gitignore it and
+   say in the owning CLAUDE.md how to rebuild it.
 
 ## What this is
 

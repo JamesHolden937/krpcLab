@@ -201,13 +201,14 @@
 <tr><th style="width:28%">segment</th><th>state</th></tr>
 <tr><td>deorbit + entry</td><td>Works on both airframes. The shuttle's arrival error went from +111&nbsp;km to +3&nbsp;km after attitude and burn fixes, including the engine thrust limiter, which had never been commanded.</td></tr>
 <tr><td>landing, from saves over the field</td><td>Shuttle on the runway intact in <b>23 of 30</b> flights across five save states (36 with a sixth, hard one included: 23/36). Touchdown cross-track is now a median of 13&ndash;20&nbsp;m.</td></tr>
-<tr><td>landing, from orbit</td><td><b>The current blocker:</b> about 1 orbital flight in 8 lands on the runway. The cone reaches the rollout 300&ndash;3,500&nbsp;m too high, and its exit prices energy against a gate 6&nbsp;km out while the vehicle is already beside the field.</td></tr>
+<tr><td>landing, from orbit</td><td><b>The current blocker:</b> 1&ndash;5 orbital flights in 12 land on the runway. The cone reaches the rollout 0.6&ndash;4&nbsp;km too high. The entry delivers the vehicle lined up 15&ndash;19&nbsp;km out, so the circle has almost no turn left: without a lap it can fly about 16&ndash;25&nbsp;km of path, a lap costs at least 12&nbsp;km more, and the energy needs 26&ndash;30&nbsp;km. Placing the entry aim from the shuttle's own glide ratio (instead of the old craft's) is the lead.</td></tr>
+<tr><td>code</td><td>139 experiment flags retired and about 11,000 lines removed, with the guidance laws verified unchanged. The stall speed is now always the vehicle's own, from its swept table.</td></tr>
 <tr><td>touchdown survival</td><td>The shuttle's wings were breaking off on contact. The cause was the <code>rigidAttachment</code> flag on the two delta-wing parts: with it off, 22 of 24 touchdowns kept both wings, against ~8 of 24.</td></tr>
 </table>
 
 <h2>How it is measured</h2>
 <p>Changes are flown on a farm of six headless KSP instances, with the autopilot unmodified. A batch is <i>n</i> flights of one configuration, not one flight of <i>n</i> configurations: one unchanged configuration scatters 10&ndash;15&nbsp;km along-track from orbit, and an 8-flight batch resolves a factor of two and nothing finer. Arms are interleaved round by round so drift in the farm cancels. Every log records the settings that differ from the defaults <i>and</i> a fingerprint of the defaults, and ends with a <code>loop rate</code> line showing whether each phase's control loop actually ran at the interval it asked for. Landing work is flown from saves taken over the field, since a landing can't be measured through 15&nbsp;km of entry scatter. A headless simulator (<code>kspSim</code>) screens ideas about ten times faster, and the farm confirms them.</p>
 
-<div class="footer-note">Written 2026-10-05 from <code>docs/spaceplane/design.md</code>, <code>failures.md</code>, <code>journal.md</code>, <code>HANDOFF.md</code> and the code at commit <code>8ae26ff</code> (defaults fingerprint <code>9e64c23f</code>). Figures are from the logs cited in those documents.</div>
+<div class="footer-note">Written 2026-10-05 from <code>docs/spaceplane/design.md</code>, <code>failures.md</code>, <code>journal.md</code>, <code>HANDOFF.md</code> and the code at the end of 2026-10-05 (defaults fingerprint <code>01c06c20</code>). Figures are from the logs cited in those documents.</div>
 </body>
 </html>

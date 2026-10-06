@@ -25,3 +25,6 @@ testInstances/*.log
 kspSim/models/
 testInstances/kspsim[0-9]*/
 testInstances/kspproxy[0-9]*/
+
+# Generated from a KSP instance by kspSim/tools/kscterrain.py --instance 0
+kspSim/data/ksc_terrain.json

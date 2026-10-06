@@ -39,6 +39,11 @@ volume. Nothing is promoted on sim evidence alone; confirm on the farm.
 | `makecraft.sh` | the whole new-craft procedure (below) |
 | `observe.py`, `krpcproxy.py`, `simfly.sh` | passive temperature observer (`--fluxes`: heat flows and thermal masses too); recording proxy; N sims at once (`PILOT=booster` flies quickfly) |
 
+## Regenerated, not tracked
+
+`kspSim/data/ksc_terrain.json` (the KSC ground grid): `./kspSim/tools/kscterrain.py
+--instance 0` with a farm instance up. `models/<save>.json`: `probe.py` (below).
+
 ## A new craft
 
     ./kspSim/tools/makecraft.sh 0 <main save> <air save> [<orbit save>]

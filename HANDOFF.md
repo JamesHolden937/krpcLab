@@ -1,116 +1,95 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the last session. History is in `docs/spaceplane/journal.md`
-("Session, 2026-10-04 night / 10-05: the wings come off because of rigid
-attachment").
+Snapshot of the last session (2026-10-05 evening, wrapped up early at the
+user's request -- usage limit). History: `docs/spaceplane/journal.md`,
+"Session, 2026-10-05 evening: the cleanup, and the cone's gap".
 
-Last written **2026-10-05 ~15:35** (machine clock). Defaults fingerprint
-**`9e64c23f`**: `FLARE_ALIGN_ALT_M` 140 -> 30, `HAC_EXIT_PAST_DEG` 0 -> 25 and `APPROACH_AIM_SHIFT_M`
-(new) 0 -> 1000 promoted this session. Offline
-spaceplane suite OK. Everything committed. Farm **stopped**, inhibitor
-**released**. ksp6 is the camera instance (1280x720 in its own
-settings.cfg; start it alone with `RES=1280x720 ./start.sh 6`).
+Defaults fingerprint **`01c06c20`**. Everything committed and pushed;
+how-it-works PDFs rebuilt (status table updated).
+Farm **stopped**, sims stopped, inhibitor **released**.
 
-**Stopped mid-batch at the user's request:** rot-hacld-1005 (defaults vs
-`HAC_LD_AT_TARGET=True;HAC_LD_MEASURED=True`, three rigoff orbits) was
-killed in round 3 of 4 -- read rounds 0-2 only as a first look, and
-**restart the farm before the next batch** (a killed batch contaminates the
-next; memory note). That pair is the next thing to fly properly.
+## What changed this session
 
-**Latest defaults check** (sav-final-1005, LOG6400-6435, pure defaults on
-the rigoff cone saves): on the runway intact **23/36; 23/30 without hac4**
-(hac0 6/6, hac2 6/6, hac3 4/6, hac5 4/6, hac1 3/6 -- its misses stop
-41-44 m off, just outside the 35 m half-width).
+1. **Big cleanup of `spaceplane/`** (the user's request): 79 retired
+   off-by-default flags and 60 settled default-on flags baked in, their dead
+   code / stubs / config fields / tests removed. Package 21.5k -> 14.9k
+   lines, config 580 -> 341 fields, ~11k lines gone in total. Proven
+   behaviour-preserving by a guidance-law fingerprint (cone, approach,
+   flare, glide solve, propagator over a state grid, byte-identical) plus
+   pyflakes/pylint call checks, the full suite (560 OK) and kspSim full
+   flights. Resurrect anything from **`bbfd1e9`** (last pre-cleanup commit).
+   Kept switchable: the live candidates (below), `DIAG_INTERFACE`, and the
+   operational switches (warp, RCS master, drain, both ends, ...).
+2. **`STALL_SPEED_M_S` and `STALL_CALIBRATION_M_S` removed** (the user: the
+   48 was the old craft's, measured as TAS). `airframe.stall` is always the
+   vehicle's own table, scaled by sqrt(mass) from the glide on. **This moves
+   every speed on final ~6% up on the shuttle (approach ~115 vs 108) and
+   has NOT been measured on the farm yet** -- first thing to fly.
+3. In-game panel: thin even red frame, rounded corners (common/panel.py).
+4. CLAUDE.md: push to GitHub on wrap-up.
 
-## The finding: rigid attachment breaks the wings at touchdown
+## Flags added (off), and what they measured
 
-With `rigidAttachment = False` on the two `wingShuttleDelta` parts
-(`saves/qs_s2_rigoff0-5`, two lines per save), **22 of 24 touchdowns kept
-both wings** (14/14 gentle, 8/10 hard), against ~8/24 stock, interleaved in
-two batches (sav-rigoff-1005 LOG5932-5967, sav-rigconf-1005 LOG5968-6003).
-Off on every wing part (`qs_s2_rigwing`) is no better. **The user's real
-craft still has it on** -- they were told to turn it off on the deltas in
-the SPH (FullAutoStrut's `RigidAttachment = True` re-applies it to new
-parts). The reference saves are unchanged; fly landing work on
-`SAVE=qs_s2_rigoff` until the user's craft is updated.
+- `HAC_IAS_FROM_STALL`: cone at one IAS = max(1.3 Vs, V_md) x sqrt(load at
+  45 deg). On the shuttle V_md (gear up, alpha 0) is 112 -> IAS 133: too
+  fast, 0/12 (rot-ias-1005, with the chain below). Wants a different speed
+  rule (the user asked for "constant IAS derived from stall").
+- `ENTRY_INTERFACE_AT_AIR`: glide takes over at the atmosphere top instead
+  of the arbitrary 58 km. Unflown.
+- Cone energy budget now counts excess speed against the *gate's* target
+  (inert under the default constant-TAS cone; fixes the constant-IAS case).
+- Chain `HAC_SPEED_EAS + HAC_LD_AT_TARGET + HAC_LD_MEASURED + HAC_WEAVE_HELD`
+  before that fix: 0/12 vs 5/12 (rot-cone-1005).
 
-Refuted on the way (journal has the logs): the brake at contact, contact
-attitude/sink within the gentle band (random), autostrut on the wings,
-suspension spring/damper, gear-into-runway and gear-into-elevon
-collisions (artefacts: impulse 0 / after the break), gear on the fuselage
-(wings still go -- the clue).
+## The blocker: the cone's structural gap
 
-## Instruments added (all off by default / outside the flight code)
+From orbit the cone rolls out **+0.6..+4 km high** (game and sim alike;
+sim baseline surplus median +1.9 km sd 1.9, 1/12 within +-500,
+`spaceplane/tools/conexit.py`). Mechanism: the entry delivers the vehicle
+on the centreline ~15-19 km out at 14-17 km, so the circle has ~0 turn;
+laps=0 offers ~16 km of path (+weave, ~25 km at 50 deg), a lap costs
+>= 2 pi R more (~12.6 km at R 2 km, far more at entry speed), and the
+energy wants 26-30 km -- the gap. `hac_choose` always picks the cheapest
+end/hand. Root cause upstream: `HAC_GATE_LD` 1.35 (old craft's) places the
+entry aim too close for the shuttle's glide.
 
-- `GROUND_WATCH_S` (e.g. 3): lowest point of every part above the runway
-  near contact, rigid geometry + flex. `contactsum.py` summarises.
-- **CollisionSpy** plugin, `testInstances/collisionSpySrc`, installed in
-  every instance's GameData: collisions, joint breaks, and per physics step
-  near the ground the wing joints' force/torque vs break limits (1760).
-  `spaceplane/tools/jointsum.py` (its `--batch` labelling is unreliable
-  when a flight has no touchdown -- align by UT instead).
-- `testInstances/shoot.py N --watch --cam-mode locked --cam-heading 90`:
-  screenshot burst through touchdown via `SpaceCenter.screenshot` into
-  `logs/shots/LOG<n>/` (F1 over XTEST does not reach the game). Run on ksp6
-  alone, at time scale 1.
-- `testInstances/gearProbe.py N SAVE`: geometry with the gear down.
-- `savefly.sh` arms may carry `SAVE=<prefix>`.
-
-## Flags added, all off
-
-- `GEAR_GEOMETRY_DEPLOYED`: wheel clearance and tail-strike angle measured
-  gear-down (3.72 m / 25 deg; gear-up they read 1.82 / 11.0, so the flare
-  flew 1.9 m of phantom height and capped pitch at 8.8). Wired (LOG5747:
-  contact h 0.1 not 2.2). Unmeasured on landing quality -- the wing loss
-  swamped it. **Re-fly on rigoff saves.**
-- `ROLLOUT_BRAKE_DELAY_S`: null on wing loss.
-- `MAIN_GEAR_SPRING` / `MAIN_GEAR_DAMPER`: null.
-
-## Promoted 2026-10-05 midday (journal, "the touchdown point")
-
-- `FLARE_ALIGN_ALT_M=30`: touchdown cross-track halved (median 27 -> 13-20).
-- `APPROACH_AIM_SHIFT_M=1000`: the approach aims 1 km nearer; cone/gate
-  keep `TOUCHDOWN_AIM_M`; S-turn stop measured from the unshifted aim.
-  Rigoff cone saves on the runway **13/15 vs 5/15** (hac4 excluded).
-  Regression: old craft 4/4 on runway; orbit 2/8 vs 2/8.
-
-**Now the blocker is the cone from orbit**: ~1 in 8 orbital shuttle
-flights lands on the runway. Two mechanisms (journal): the derived exit
-allowance hands over up to a lap's height (~8 km) of surplus; and the cone
-prices its exit via a gate 6 km out while a 9 km circle has the vehicle
-beside the field, so "out of height" exits read +500 m to the approach.
-Make the cone's exit ask `guidance.approach` for the excess (one model).
-Since then (journal, "the cone from orbit"): `HAC_EXIT_PAST_DEG` 0 -> 25
-promoted (out-of-height exits 0/12 vs 4/12). Fixed exit allowance and an
-8 km radius cap both null/worse. **Next: the cone arrives at the rollout
-300-3500 m high on almost every orbital flight with laps=0 -- measure the
-planned vs flown turning L/D (`conesum.py --settled`) on rot-*-1005 logs.**
-
-## Where the landing stood before those (rigoff saves, 30 flights)
-
-On the runway and intact: hac0 5/5, hac2 3/5, hac5 2/5, hac1 0/5, hac3
-0/5, hac4 0/5 -- **10/30**. What misses now is the arrival, not the gear:
-- hac1: the approach's S-turns end ~1.6 km out and the centreline capture
-  overshoots (+321 -> -378 m); flare hands over 200-260 m off and stops
-  75-115 m to the side. The flare has ~1.5 s of lateral authority.
-- hac3/hac5: touch down near or past the far end (`TOUCHDOWN_AIM_M` is the
-  far threshold, 2400; read its comment before moving it).
-- hac4: cone surplus 3.5 km (lands 6-8 km long) or stalls on final.
-- One flare departure (LOG6003): cone out of height, 127 deg bank at 49 m.
+**Sim screen at wrap-up** (simarms, 4 per arm, qs_shuttle2, LOG6535-6550;
+small n, and the arm-to-log mapping from simarms output is loose):
+cone surplus median / sd / within +-500 m --
+defaults -206 / 2398 / 3 of 8; `HAC_AIM_DERIVED` +186 / 943 / 4 of 5;
+**`HAC_AIM_DERIVED` + `HAC_LAP_AT_TARGET_SPEED` +340 / 280 / 3 of 5** (the
+lead); + `HAC_FLAP_BRAKE_ON_SURPLUS`+`IGNORES_ROLL` -193 / 2306 / 2 of 4.
+One flight (LOG6548) coasted round another orbit and was killed.
 
 ## Next, in order
 
-1. Batch on `SAVE=qs_s2_rigoff`: defaults / `GEAR_GEOMETRY_DEPLOYED` /
-   `TOUCHDOWN_AIM_DERIVED` (exists, off; the cone exits closer now).
-2. hac1's lateral capture: end the S-turns by the time the capture needs
-   (roll lag), or capture before the S-turn's last swing.
-3. hac4's cone energy.
+1. Farm: defaults (new, stall removed) on the three rigoff orbits,
+   12+ per save -- the regression nobody has flown yet.
+2. Cone: re-screen `HAC_AIM_DERIVED + HAC_LAP_AT_TARGET_SPEED` in kspSim
+   with 16+ flights per arm (map logs to arms by instance, not the fuzzy
+   LOG column), then fly it on the farm against defaults.  Then screen in kspSim (8-16 flights/minute, farm stopped), confirm on
+   the farm. Candidates: `HAC_AIM_DERIVED` (replaces HAC_GATE_LD),
+   `HAC_LAP_AT_TARGET_SPEED`, the cone flap brake on surplus, choosing the
+   end/hand by energy fit rather than min cost, a larger weave cap.
+3. Then the constants still standing in the chain: `HAC_LD` 1.86,
+   `APPROACH_BEST_LD` 4.2, `TOUCHDOWN_AIM_M` 2400, `APPROACH_AIM_SHIFT_M`,
+   `APPROACH_FACTOR` 2.25, `HAC_GATE_LD`, `MARGIN` 0.70.
+4. Repo hygiene (the user's rule, now in CLAUDE.md): `saves/` variants
+   made by `savegen.py` / hand splices are still tracked -- write a
+   regeneration script before untracking them (they are the farm's
+   reference via `syncSaves.sh`).  `ksc_terrain.json` is untracked now.
+5. Comments still naming removed flags (~100 lines, mostly autopilot.py
+   and config.py) -- trim.
 
 ## Traps paid this session
 
-- Small n flipped three "findings" tonight (brake 5/5, the spring, the
-  gear-collision story). Interleave arms, and read 18+ per arm.
-- CollisionSpy ENTER lines with `impulse=0.0` are the wheel touching, not
-  a part strike; collisions after a JOINTBREAK are debris.
-- KSP overrides `-screen-width` with settings.cfg; ksp6's is 1280x720.
-- `date` on this machine reads UTC-ish morning times; KSP.log too.
+- **A flag switched per call (`replace(cfg, X=True)`) is not a default**:
+  baking `ALPHA_TRACKING_ON` silently disabled the deorbit window's
+  tracking corners. Check `replace`/`--set` users before baking a flag.
+- The guidance fingerprint does not cover `autopilot.py`: a one-row tuple
+  (from the stall removal) and a `run.attr` read both crashed every flight.
+  **Fly one kspSim flight (`./kspSim/tools/simfly.sh qs_shuttle2 2 1`)
+  after any code change before a farm batch** -- it takes a minute.
+- Scripted multi-file tools emptied `gui.py` and `__init__.py` once:
+  compare line counts against HEAD after any scripted edit.
+- `rotfly.sh ... &` chained after `start.sh` backgrounds the whole chain.
