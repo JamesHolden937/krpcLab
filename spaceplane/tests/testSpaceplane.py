@@ -5346,3 +5346,63 @@ class TestHacWeaveStraightOnly(unittest.TestCase):
         self.assertEqual(on.weave_deg, 0.0)
         self.assertLess(abs(on.bank), abs(off.bank))
         self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")
+
+
+class TestHoldablePrior(unittest.TestCase):
+    """``HOLDABLE_PRIOR``: the ceiling known before the vehicle hits it."""
+
+    CELLS = [(1000.0, 1468.0, 35.6), (1468.0, 2154.0, 33.9),
+             (2154.0, 3162.0, 31.9), (3162.0, 4642.0, 32.9),
+             (4642.0, 6813.0, 28.7)]
+
+    def holdable(self, prior=True):
+        h = trajectory.Holdable(Config())
+        if prior:
+            h.set_prior(self.CELLS, mach_floor=1.5)
+        return h
+
+    def test_no_prior_no_evidence_is_no_limit(self):
+        self.assertIsNone(self.holdable(False).limit(4000.0, 3.0))
+
+    def test_the_prior_answers_where_nothing_was_learned(self):
+        margin = Config().HOLDABLE_MARGIN_DEG
+        self.assertAlmostEqual(self.holdable().limit(5000.0, 3.0),
+                               28.7 + margin)
+
+    def test_the_prior_only_falls_with_q(self):
+        # 32.9 above 31.9 in denser air is carried down to 31.9.
+        h = self.holdable()
+        self.assertAlmostEqual(h.prior_at(4000.0), 31.9)
+
+    def test_not_subsonic_of_where_it_was_measured(self):
+        self.assertIsNone(self.holdable().limit(5000.0, 0.8))
+
+    def test_not_outside_the_q_it_was_measured_at(self):
+        self.assertIsNone(self.holdable().prior_at(20000.0))
+
+    def test_tracking_in_thin_air_no_longer_licenses_dense_air(self):
+        """The rigoff failure: 44 tracked at 1.2 kPa, then queried at 5."""
+        for prior in (False, True):
+            h = self.holdable(prior)
+            for _ in range(10):
+                h.observe(44.0, 44.0, 1200.0, 3.0)  # tracking: no bin yet
+                h.observe(44.0, 30.0, 1200.0, 3.0)  # one saturated sample
+                h.observe(44.0, 44.0, 1200.0, 3.0)
+            limit = h.limit(5000.0, 3.0)
+            if prior:
+                self.assertLess(limit, 30.0)
+            else:
+                self.assertGreater(limit, 40.0)
+
+    def test_own_evidence_at_this_q_wins(self):
+        h = self.holdable()
+        for _ in range(10):
+            h.observe(40.0, 34.0, 5000.0, 3.0)
+        self.assertAlmostEqual(h.limit(5000.0, 3.0),
+                               34.0 + Config().HOLDABLE_MARGIN_DEG)
+
+    def test_key_matches_the_log_line(self):
+        self.assertEqual(trajectory.holdprior_key("Untitled Space Craft", 31),
+                         "Untitled Space Craft|31")
+        self.assertEqual(trajectory.holdprior_slug("Untitled Space Craft|31"),
+                         "Untitled_Space_Craft_31")

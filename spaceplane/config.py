@@ -991,6 +991,15 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
+    # **Seed the learned alpha ceiling from this craft's earlier flights**
+    # (``Holdable.set_prior``; written by ``spaceplane/tools/holdprior.py``
+    # to ``logs/holdprior/``, keyed by vessel name and part count).  The
+    # learner knows a ceiling only once the vehicle hits it, so a glide that
+    # has not saturated yet plans 40-44 deg into air where it holds 23-28:
+    # every long rigoff arrival of rot-lapstack-1006 made 20-40% less drag
+    # at 38-32 km than its prediction.  No file for the craft: no prior.
+    # Off until flown.
+    HOLDABLE_PRIOR: bool = False
 
     # -- the ceiling, measured by a probe instead of inferred in flight ----
 

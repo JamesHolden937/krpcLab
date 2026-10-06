@@ -435,6 +435,8 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
+        if getattr(cfg, "HOLDABLE_PRIOR", False):
+            self._load_holdable_prior(ut)
         self._below_ground_since = None
         self.prediction = None
         # Latched once, at the cone's entry: recomputing it every tick flips
@@ -2293,6 +2295,32 @@ class Autopilot:
     # tested from those saves was disconnected (sav-spend-1006).  The set is
     # a property of the craft, not the flight: key it on the surfaces and
     # reuse it.
+
+    def _load_holdable_prior(self, ut):
+        """``HOLDABLE_PRIOR``: seed ``env.holdable`` from this craft's file
+        in ``logs/holdprior/`` (``tools/holdprior.py``), and say so."""
+        try:
+            import json
+            key = trajectory.holdprior_key(self.vessel.name,
+                                           len(self.vessel.parts.all))
+            path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "logs", "holdprior",
+                trajectory.holdprior_slug(key) + ".json")
+            if not os.path.exists(path):
+                self.logbook.event(ut, "alpha prior: none for %r (%s)"
+                                   % (key, path))
+                return
+            with open(path) as fh:
+                data = json.load(fh)
+            cells = [(lo, hi, a) for lo, hi, a, _n in data["bins"]]
+            self.env.holdable.set_prior(cells, data.get("mach_floor", 0.0))
+            self.logbook.event(
+                ut, "alpha prior: %r from %d logs, above Mach %.1f: %s"
+                % (key, data.get("logs", 0), self.env.holdable.prior_mach,
+                   " ".join("%.0fPa:%.1f" % (lo, a)
+                            for lo, _hi, a in self.env.holdable.prior)))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(ut, "alpha prior: not loaded (%s)" % (exc,))
 
     def _brake_cache_path(self, records):
         import hashlib

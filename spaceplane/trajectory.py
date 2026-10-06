@@ -24,6 +24,7 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
+import re
 from dataclasses import dataclass
 
 from common import vec
@@ -477,6 +478,18 @@ def lift_direction(r, v, bank_deg):
                             vec.scale(side, math.sin(bank))))
 
 
+def holdprior_key(name, parts):
+    """Which craft a ``HOLDABLE_PRIOR`` file belongs to: the vessel's name and
+    its part count at load, exactly as every log's ``vessel:`` line prints
+    them (both airframes are called "Untitled Space Craft")."""
+    return "%s|%d" % (name, int(parts))
+
+
+def holdprior_slug(key):
+    """A file name for ``holdprior_key``."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
+
+
 class Holdable:
     """The angle of attack this airframe can hold, learned while flying it.
 
@@ -524,6 +537,50 @@ class Holdable:
         # ``(alpha achieved, q, mach)``.  One such sample is enough to
         # predict the ceiling everywhere denser; see ``prior``.
         self.anchor = None
+        # ``HOLDABLE_PRIOR``: what this craft held while saturated on earlier
+        # flights, as ``[(q_lo, q_hi, alpha)]`` above ``prior_mach``.  Set by
+        # ``set_prior``; empty means no prior and the old behaviour.
+        self.prior = []
+        self.prior_mach = 0.0
+
+    def set_prior(self, cells, mach_floor=0.0):
+        """Seed the ceiling with what earlier flights of this craft held.
+
+        **The learner only knows a ceiling once the vehicle has hit it**, and
+        the predictor plans the rest of the glide on whatever it knows.  A
+        flight that tracks 40-44 deg in the first kilopascal reads "no
+        ceiling" for the denser air below and plans on 44 there; at 3-5 kPa
+        it holds 23-28, makes 20-40% less drag than the plan, and arrives
+        5-14 km long (rot-lapstack-1006: act/commanded drag 0.59-0.80 on
+        every long flight at 38-32 km, 0.83-1.07 on every on-profile one;
+        the table at the *achieved* alpha is within 4% on all of them).
+        The prior is that ceiling measured -- by ``tools/holdprior.py``
+        from this craft's own logs -- so the plan knows it from the first
+        tick.  Forced non-increasing in ``q``: the ceiling only falls as the
+        air thickens, the same rule ``limit`` extrapolates by.
+        """
+        cells = sorted((float(lo), float(hi), float(a)) for lo, hi, a in cells)
+        out = []
+        low = None
+        for lo, hi, a in cells:
+            low = a if low is None else min(low, a)
+            out.append((lo, hi, low))
+        self.prior = out
+        self.prior_mach = float(mach_floor)
+
+    def prior_at(self, q, mach=None):
+        """The prior ceiling at ``q``, or ``None`` (no prior, subsonic of
+        what it was measured over, or outside the q it was measured at)."""
+        if not self.prior:
+            return None
+        if mach is not None and mach < self.prior_mach:
+            return None
+        # Only where it was measured: past its densest bin the learner's own
+        # downward extrapolation answers, as it always has.
+        for lo, hi, a in self.prior:
+            if lo <= q < hi:
+                return a
+        return None
 
     def _bin(self, q):
         per = max(1, int(self.cfg.HOLDABLE_Q_DECADE_BINS))
@@ -569,18 +626,29 @@ class Holdable:
             current[1] += 1
         self.generation += 1
 
-    def limit(self, q):
-        """The ceiling at this ``q``, or ``None`` where there is no evidence."""
+    def limit(self, q, mach=None):
+        """The ceiling at this ``q``, or ``None`` where there is no evidence.
+
+        With a prior (``set_prior``), the vehicle's own evidence at this
+        ``q`` still wins; where it has none, the prior answers, and an
+        extrapolation is never above it.
+        """
         if q < float(self.cfg.HOLDABLE_MIN_Q):
             return None
+        prior = self.prior_at(q, mach)
         trusted = [(i, v[0]) for i, v in self.bins.items()
                    if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)]
         if not trusted:
-            return None
+            if prior is None:
+                return None
+            return prior + float(self.cfg.HOLDABLE_MARGIN_DEG)
         index = self._bin(q)
         exact = dict(trusted)
         if index in exact:
             best = exact[index]
+        elif prior is not None:
+            below = [v for i, v in trusted if i < index]
+            best = min([prior] + below)
         else:
             below = [v for i, v in trusted if i < index]
             above = [v for i, v in trusted if i > index]
@@ -616,7 +684,7 @@ def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """
     if holdable is None:
         return alpha
-    limit = holdable.limit(q)
+    limit = holdable.limit(q, mach)
     return alpha if limit is None else min(alpha, limit)
 
 
