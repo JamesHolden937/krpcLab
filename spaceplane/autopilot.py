@@ -2588,7 +2588,7 @@ class Autopilot:
             return
         for name, configured, derived in (
                 ("APPROACH_BEST_LD", self.cfg.APPROACH_BEST_LD,
-                 measured.best_ld)):
+                 measured.best_ld),):
             if configured <= 0.0 or derived is None:
                 continue
             off = abs(derived - configured) / configured
@@ -4504,7 +4504,6 @@ class Autopilot:
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.scurve_half_period_s()),
-            heading_lead=0.0,
             roll_lag_s=self.roll_lag_s())
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))

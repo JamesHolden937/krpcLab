@@ -630,7 +630,8 @@ def tracked_alpha(cfg, alpha, q):
     of a trajectory the vehicle does not fly, which is the error this project
     has now made in five places.
     """
-    if not getattr(cfg, "_tracking_forced", False):
+    if not getattr(cfg, "ALPHA_TRACKING_ON", False) \
+            and not getattr(cfg, "_tracking_forced", False):
         return alpha
     table = getattr(cfg, "ALPHA_TRACKING", ())
     if not table or q <= 0.0:

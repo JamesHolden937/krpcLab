@@ -632,9 +632,7 @@ class ApproachCommand:
         # reason about it the way the capture does.**  ``cross`` alone says
         # where the vehicle is; these two say where it is *going to be* at
         # the flare's door, which is the only place the cross-track has to be
-        # small.  ``APPROACH_SLIP_FOR_ENERGY``'s side force is worth ~50 m
-        # per degree and was arriving rather than arresting when it chose its
-        # side from the offset now.  Zero when the capture is not running,
+        # small.  Zero when the capture is not running,
         # which degrades the predictor to the offset itself.
         self.cross_rate = 0.0
         self.cross_time = 0.0
@@ -716,10 +714,9 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
     converges to a standing error, because whatever it commands is divided by
     ``cos(phi)`` again on the way to the vertical.
 
-    The dive is bounded (``APPROACH_DIVE_MAX_DEG``).  That bound is the same
-    caution ``APPROACH_TRIM_FLOOR`` was written for -- 27 flights that unloaded
-    to 4-6 degrees and arrived nose-down at 40-65 degrees below the horizon --
-    but expressed where it belongs, on the *path* rather than on the angle: a
+    The dive is bounded (``APPROACH_DIVE_MAX_DEG``) -- 27 flights once
+    unloaded to 4-6 degrees and arrived nose-down at 40-65 degrees below the
+    horizon -- on the *path* rather than on the angle: a
     load floor of ``cos(35)`` is a 35 degree dive and no steeper, whatever the
     speed, the mass or the air does.
     """
@@ -781,7 +778,7 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             heading_lead=0.0, accel=None, roll_lag_s=None):
+             accel=None, roll_lag_s=None):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -846,10 +843,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         track = vec.unit(track)
         heading_error = math.degrees(math.atan2(vec.dot(track, across),
                                                 vec.dot(track, along)))
-        # ``APPROACH_HEADING_LEAD``: the heading the vehicle will have once
-        # it has rolled level (``Autopilot.approach_heading_lead``), so the
-        # capture does not command level while the turn is still running.
-        heading_error += heading_lead
 
     sink = -vec.dot(v, up)
     # **The speed the flare needs is a speed at one point, not a speed to
@@ -923,15 +916,9 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
                                                    - sink * sink)))
                    / distance) if distance > 50.0 else sink
 
-    # **The speed loop is two-sided, or it is not a loop.**  See
-    # ``APPROACH_SPEED_PATH``: ``trim + gain * error`` can only ever bleed,
-    # because the floor that stops it unloading the wing is one g -- and one g
-    # is a *pull-up* on a vehicle descending at 18 degrees, which needs
-    # ``cos(18) = 0.95``.  So the command is the descent angle that holds the
-    # speed, flown as the load that flies that angle.
-    two_sided = True
-    # ``APPROACH_ALPHA_AT_TARGET``: the one-g angle *at the target
-    # speed*, plus a proportional pull-up when fast.  The airframe's own
+    # **The speed loop is two-sided, or it is not a loop**: ``trim + gain *
+    # error`` can only ever bleed (failure 65).  The command is the one-g
+    # angle *at the target speed*, plus a proportional pull-up when fast.  The airframe's own
     # speed stability then holds the speed.  Both laws before it fed
     # energy into the phugoid: trim at the *current* speed rises as the
     # vehicle slows (failure 65), and the descent-for-speed law swung
@@ -942,15 +929,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     if at is None:
         at = trim
     alpha = at + cfg.APPROACH_SPEED_KP * (speed - held)
-    two_sided = True        # the floor below is the target's, as above
-
-    # The speed floor outranks the path, always.  Arriving at the flare too
-    # slow cannot be fixed -- the manoeuvre needs more airspeed than the
-    # margin contains and the vehicle stalls in it -- while arriving fast only
-    # costs runway, of which there is plenty (46 m/s in 2400 m is 0.44 m/s^2
-    # and the gear-down drag alone gives about one).
-    if speed < floor and not two_sided:
-        alpha = min(alpha, trim)
     # **And never less lift than the vehicle weighs.**
     #
     # The path term subtracts from ``trim`` when the approach is high, and
@@ -972,8 +950,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # Surplus height is then spent the way a glider spends it, with the
     # S-turn above, and the worst case is landing long instead of arriving
     # nose-down.
-    if not two_sided:
-        alpha = max(alpha, min(trim, cfg.APPROACH_ALPHA_MAX_DEG))
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
 
     # **How far off the centreline to fly, to spend the height that is
@@ -984,33 +960,11 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # Zero by construction the moment the vehicle is on profile, and off
     # near the ground and near the aim, where the cross-track it creates has
     # no time left to be taken back.
-    # **The weave's stopping point is measured from the aim, which is what
-    # inverts the aim into a lever that works backwards.**  Failure 68 moved
-    # ``TOUCHDOWN_AIM_M`` 2400 -> 400 to bias out an overshoot and the vehicle
-    # stopped nine hundred metres *later*, and read that as "a knob upstream
-    # of a phase with no authority over the quantity is not a lever".  The
-    # mechanism is narrower than that and it is here: ``distance`` is
-    # measured to the aim, so moving the aim two kilometres nearer also moves
-    # the point where dissipation *stops* two kilometres further out.  With
-    # the aim at the far threshold the weave runs until 900 m past the near
-    # one; with the aim at 400 it stops 1100 m *before* it, and the surplus
-    # that used to be dumped low and late is flown out straight instead.
-    #
-    # What the condition is actually about is whether there is still time to
-    # take the cross-track back before the flare freezes it -- which is a
-    # time, and the capture below already computes it.  Written as one, the
-    # aim stops dragging the dissipation around behind it and becomes a
-    # geometry anchor again, which is all it ever claimed to be.
-    #
-    # ``APPROACH_SCURVE_STOP_S`` is set to what the old constant was
-    # delivering at the operating point it was fitted at (7.3 s on
-    # ``logs/LOG2384``), so turning this on is meant to change nothing by
-    # itself.  That is the point: it has to be verified neutral before the
-    # aim can be moved against it.
-    # Measured from the *unshifted* aim: ``APPROACH_AIM_SHIFT_M`` moves the
-    # profile's target, not where dissipation stops -- shifted with it, the
-    # weave ended 1 km earlier and arrivals with kilometres of surplus
-    # landed 1-2 km longer (rot-orbit-1005).
+    # The weave stops ``APPROACH_SCURVE_STOP_M`` before the *unshifted* aim
+    # (``APPROACH_AIM_SHIFT_M`` moves only the profile's target).  Measured
+    # from the aim, moving the aim also moves where dissipation stops
+    # (failure 68); shifted with it, the weave ended 1 km early and long
+    # arrivals landed 1-2 km longer (rot-orbit-1005).
     scurve_stop = (distance + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0))
                    > cfg.APPROACH_SCURVE_STOP_M)
     scurve_deg = 0.0
@@ -1031,7 +985,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # between that and the rate the vehicle has.  Every term is a speed
     # or an acceleration, so it does not need re-fitting when the
     # approach speed changes -- which is exactly what went wrong with the
-    # two proportional gains it replaces.  See ``APPROACH_LATERAL_CAPTURE``.
+    # two proportional gains it replaced.
     lateral = (cfg.APPROACH_CAPTURE_MARGIN * gravity
                * math.tan(math.radians(cfg.APPROACH_BANK_MAX_DEG)))
     stoppable = math.sqrt(2.0 * lateral * abs(cross))
@@ -1065,9 +1019,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     trigger = flare_door(cfg, sink, speed, env)
     to_flare = max(0.0, height - trigger) / max(1.0, sink)
     in_flare = 2.0 * min(height, trigger) / max(1.0, sink)
-    # ``APPROACH_CAPTURE_LAG_AWARE``: the time the roll axis takes to
-    # deliver a bank, times ``APPROACH_CAPTURE_LAG_FACTOR``.  ``None``
-    # (not known, or the flag off) leaves the law as it was.
+    # The time the roll axis takes to deliver a bank, times
+    # ``APPROACH_CAPTURE_LAG_FACTOR``; ``None`` when it is not known yet.
     lag = None
     if roll_lag_s is not None and roll_lag_s > 0.0:
         lag = float(cfg.APPROACH_CAPTURE_LAG_FACTOR) * float(roll_lag_s)
@@ -1127,8 +1080,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     cross_rate = rate
     error = wanted_rate - rate
     kp = cfg.APPROACH_CAPTURE_KP
-    # ``APPROACH_SCURVE_FULL_GAIN``: the weave keeps the full gain.  It
-    # is the approach's only dissipation, and at the lag-matched gain it
+    # The weave keeps the full gain.  It is the approach's only
+    # dissipation, and at the lag-matched gain it
     # banked 15-25 deg where it asked 45 and spent nothing -- 4 of 6
     # long by 1.8-6.7 km into the sea (save-lag-1003).  The rate cap
     # above still bounds what it hands back to the capture.
@@ -1157,7 +1110,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # vehicle; this is the same call with the answer fed back, not a second
     # law.  One pass, because the bank does not depend on alpha -- there is
     # no loop to converge, only an ordering to undo.
-    if two_sided and abs(bank) > 1.0:
+    if abs(bank) > 1.0:
         alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
                                 max(target, floor), trim, bank_deg=bank)
         alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
