@@ -5625,8 +5625,7 @@ def compact_line(state, snap, run):
         brake = getattr(run, "airbrake", None)
         if brake is not None:
             bits.append("ab=%s sat=%4.2f"
-                        % ("out" if brake.extended else
-                           ("in " if run.airbrake_pair is not None else "-- "),
+                        % ("out" if brake.extended else "-- ",
                            brake.saturated))
     if state == FLARE:
         bits.append("sink=%5.2f n=%4.2f" % (getattr(run, "flare_sink", 0.0),
