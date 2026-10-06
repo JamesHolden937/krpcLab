@@ -20,7 +20,7 @@ for k in $(seq 1 "$K"); do
     PYPY=""
     [ -x .venv-pypy/bin/python ] && PYPY="--pypy"
     ( ./spaceplane/tools/quickglide.py -n 1 --save "$SAVE" --instance sim$i \
-        --timescale 8 --timeout 3000 $PYPY $args 2>&1 | sed "s|^|arm$a |" \
+        --timescale 8 --timeout 600 $PYPY $args 2>&1 | sed "s|^|arm$a |" \
         > "$OUT/$i.txt" ) &
     i=$((i+1)); a=$((a+1))
   done

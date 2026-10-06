@@ -97,6 +97,15 @@ different craft).
    Deploy) are not modelled.
 5. Terrain outside the KSC grid is sea level; wheels are spring-dampers.
 6. Fuel flow draws evenly from all tanks (KSP has flow priorities).
+7. **The approach and landing do not follow the game** (2026-10-06): the
+   same configuration (cone flags of that session) stops -1.2..-3.5 km
+   *short* in the sim and 1-2 km *long* on the farm (sim-aim-1006 against
+   rot-weave-1006). Screen the cone here -- its handover surplus agreed
+   with the farm's -- but fly anything about the aim, the approach or the
+   flare on the farm.
+8. A few flights per screen end the deorbit burn on its 60 s guard, coast
+   another orbit and write ~600 MB of log (LOG6616, 6618, 6709; deleted).
+   `simarms.sh` now times a flight out at 600 s wall.
 
 ## Speed
 
