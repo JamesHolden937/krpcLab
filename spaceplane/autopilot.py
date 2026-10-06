@@ -4766,7 +4766,11 @@ class Autopilot:
         taper = min(1.0, (self.cfg.ROLLOUT_STEER_FULL_M_S
                           / max(1.0, speed)) ** 2)
         limit = self.cfg.ROLLOUT_STEER_MAX * taper
-        steer_cmd = vec.clamp(self.cfg.ROLLOUT_STEER_GAIN * cross,
+        # ``ROLLOUT_STEER_LEAD_S``: damp on the cross-track rate.
+        lead = float(getattr(self.cfg, "ROLLOUT_STEER_LEAD_S", 0.0))
+        cross_rate = vec.dot(snap.velocity, across)
+        steer_cmd = vec.clamp(self.cfg.ROLLOUT_STEER_GAIN
+                              * (cross + lead * cross_rate),
                               -limit, limit)
         self.rollout_steer_cmd = steer_cmd
         # The track's angle off the runway, signed like ``cross`` (positive

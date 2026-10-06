@@ -1505,6 +1505,17 @@ class Config:
     # now touches down within a few metres of the centreline, so there is
     # nothing for hard steering at speed to do.
     ROLLOUT_STEER_FULL_M_S: float = 30.0
+    # **Steer on where the wheels are going, not only where they are.**
+    # ``ROLLOUT_STEER_GAIN`` alone is a proportional law on cross-track
+    # acting on a double integrator (steer -> heading -> cross), which has
+    # no damping at all: every shuttle rollout in rot-newdef-1006 weaved
+    # +-25-80 m with a ~20 s period and growing amplitude (LOG6831: +22 ->
+    # -41 -> +51 m, track swinging -17..+26 deg), and 5 of the 17 losses
+    # touched down within 30 m of the centreline and stopped 40-55 m off
+    # it.  This adds the cross-track *rate* (``v . across``) times this
+    # lead time to the error the gain acts on; ~2/omega of the observed
+    # weave is critical damping.  0 is the old law.
+    ROLLOUT_STEER_LEAD_S: float = 0.0
     STOPPED_SPEED_M_S: float = 1.0
     # **A rollout that cannot end must still end.**  The stop test is a speed
     # threshold, and a vehicle that arrived 50 km short is not on a runway:
