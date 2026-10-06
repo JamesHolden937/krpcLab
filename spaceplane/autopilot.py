@@ -4335,7 +4335,8 @@ class Autopilot:
             # hand differ by most of a lap.
             chosen, self.hac_side = guidance.hac_choose(
                 self.env, self.cfg, self.env.runway, snap.position,
-                snap.velocity)
+                snap.velocity, mass=snap.mass,
+                gravity=self.surface_gravity, height=height)
             if chosen["name"] != self.end["name"]:
                 self.logbook.event(
                     snap.ut, "runway %s -> %s: cheaper from here"

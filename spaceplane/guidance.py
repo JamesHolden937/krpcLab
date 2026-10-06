@@ -1203,7 +1203,23 @@ def hac_cost(env, cfg, end, r, v, side, radius=None):
     return path + radius * swing
 
 
-def hac_choose(env, cfg, runway, r, v):
+def hac_available(env, cfg, speed, height, mass, gravity):
+    """The path the cone can afford from here: ``guidance.hac``'s own
+    budget (height plus speed over the gate's target, at ``cone_ld``),
+    without the ladder.  ``None`` when the airframe cannot say."""
+    stall = airframe.stall(env, cfg)
+    if stall is None:
+        return None
+    ratio = airframe.cone_ld(env, cfg, speed, height, mass, gravity)
+    excess = 0.0
+    if gravity > 0.0:
+        final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
+        excess = max(0.0, (speed * speed - final * final) / (2.0 * gravity))
+    return max(0.0, height + excess - cfg.GATE_ALT_M) * ratio
+
+
+def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,
+               height=None):
     """``(end, side)``: which way round, **and which way down the runway**.
 
     Both are free and both were being decided by something other than what
@@ -1221,6 +1237,41 @@ def hac_choose(env, cfg, runway, r, v):
     """
     ends = (list(runway.ends.values()) if cfg.RUNWAY_BOTH_ENDS
             else [runway.ends["09"]])
+    # ``HAC_CHOOSE_BY_ENERGY``: **the end and hand whose path the height
+    # fits, not the cheapest.**  An arrival lined up with a threshold is
+    # costed the run to the gate at any radius -- there is no turn for a
+    # wider circle to lengthen -- so between that and a whole lap (12+ km
+    # of path on the shuttle) the cone has nothing to spend a surplus with:
+    # the cone saves rolled out 1.6-5 km high on every flight, sd < 150 m
+    # (sav-spend-1006), and landed 3-13 km long.  The other end costs a
+    # half turn that the radius scales continuously.  So: of the options
+    # with a radius whose path fits the budget, the one that leaves the
+    # least unspent; if none fits, the cheapest, as before.
+    if (getattr(cfg, "HAC_CHOOSE_BY_ENERGY", False) and mass is not None
+            and height is not None):
+        speed = vec.norm(v)
+        available = hac_available(env, cfg, speed, height, mass, gravity)
+        stall = airframe.stall(env, cfg)
+        if available is not None and speed > 1.0 and stall is not None:
+            load = airframe.turn_load(env, cfg, speed, height, mass,
+                                      gravity)
+            reference = cone_speed(env, cfg, stall, height)
+            scored = None
+            for end in ends:
+                for side in (1.0, -1.0):
+                    # The plan the cone itself would fly on this option,
+                    # laps included, so the two cannot disagree.
+                    total = hac_radius(env, cfg, end, r, side, available,
+                                       speed, gravity, load,
+                                       lap_speed=reference)[4]
+                    left = available - total
+                    # Over budget is the worse side (see ``hac_radius``'s
+                    # scan): a short cone cuts to the gate low.
+                    score = left if left >= 0.0 else -2.0 * left
+                    if scored is None or score < scored[0]:
+                        scored = (score, end, side)
+            if scored is not None:
+                return scored[1], scored[2]
     best = None
     for end in ends:
         for side in (1.0, -1.0):

@@ -313,6 +313,11 @@ class Config:
     # when the table is ready.  Off.
     HAC_AIM_DERIVED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     HAC_LADDER_STEP_M: float = 500.0
+    # At cone entry, choose the runway end and hand whose path the budget
+    # fits with the least left over, not the cheapest one
+    # (``guidance.hac_choose``): an arrival lined up with a threshold has
+    # nothing between the run to the gate and a whole lap.  Off.
+    HAC_CHOOSE_BY_ENERGY: bool = False
     # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
     # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the
     # shuttle it never does (~44 deg), and so never deployed in LOG3846-3875
