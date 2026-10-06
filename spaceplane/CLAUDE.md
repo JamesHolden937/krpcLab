@@ -77,6 +77,20 @@ law and bank compensation were kept (82).
 
 ## Next, in order
 
+0. **Replace `TOUCHDOWN_AIM_M` = 1800 with a per-vehicle derivation**
+   (open since 2026-10-06; the user asked it be kept for now and fixed
+   later). 1800 was fitted on the shuttle alone (9/18 vs 3/18 at 2400,
+   rot-aim-1006) and is a ship bias: the old craft on it lands 1/12,
+   touching down 1.3-1.6 km in and rolling ~2 km off the end
+   (rot-newdef-1006). `APPROACH_AIM_SHIFT_M` 1000 is the same kind of
+   constant and goes with it. Derive the aim so that aim + flare float
+   (door speed against stall, L/D, from the table) + rollout (touchdown
+   speed^2 / 2 x braking deceleration) fits the runway; log predicted
+   against flown float and rollout; fly derived vs 1800 on the farm,
+   interleaved, on the three shuttle orbits **and** `qs_plane`. Accept
+   only if it holds on both craft. kspSim cannot screen it (its landings
+   do not follow the game, kspSim gap 7).
+
 1. **The opposed-flap brake and the speed loop sharing the surplus.** The
    user's brake works: wired (`AIRBRAKE_OPPOSED_FLAPS`, disconnected until
    2026-09-23) it moved the old craft's touchdown **~600 m earlier**, the

@@ -2283,6 +2283,16 @@ class Config:
     # every handover between -200 and +630 m stopped +650..+850 along; the
     # misses are the cone's tails (out of height below -600, or 20 km
     # arrivals 1-2 km high).  kspSim cannot screen this (gap 7).
+    # **A ship bias, kept on purpose for now (the user, 2026-10-06) -- to be
+    # replaced.**  Fitted on the shuttle only; the old craft on the same
+    # defaults lands 1/12 (rot-newdef-1006: centreline touchdowns 1.3-1.6
+    # km in, then ~2 km of rollout off the end).  Together with
+    # ``APPROACH_AIM_SHIFT_M`` (also fitted) it means "800 m past the
+    # threshold, on the shuttle".  The general form derives it per vehicle:
+    # touchdown = aim + flare float (door speed vs stall, L/D) and that plus
+    # the rollout (v_td^2 / 2 a_brake) must fit the runway.
+    # ``TOUCHDOWN_AIM_DERIVED`` has the float half and no rollout term, and
+    # has never been flown on the farm.  spaceplane/CLAUDE.md, "Next".
     TOUCHDOWN_AIM_M: float = 1800.0
     # **The aim derived** (``airframe.touchdown_aim``): the touchdown zone
     # (this fraction of ``RUNWAY_LENGTH_M`` -- the user's rule, aim at the
