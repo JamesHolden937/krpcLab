@@ -1308,6 +1308,15 @@ class Autopilot:
             angle = self.cfg.TAIL_ANGLE_FALLBACK_DEG
         return max(1.0, self.cfg.TAIL_STRIKE_MARGIN * angle)
 
+    def snap_mach(self, snap):
+        """Mach off the state vector, or ``None``."""
+        try:
+            return self.env.mach(
+                vec.norm(snap.velocity),
+                vec.norm(snap.position) - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return None
+
     def ratchet_alpha(self, snap):
         """Lower the ceiling when the vehicle cannot hold what it is given.
 
@@ -1406,7 +1415,8 @@ class Autopilot:
             # a dynamic pressure it has no evidence at.  With evidence the
             # ceiling may walk down to what was measured there; without it,
             # the old floor stands.
-            learned = self.env.holdable.limit(snap.dynamic_pressure)
+            learned = self.env.holdable.limit(snap.dynamic_pressure,
+                                              self.snap_mach(snap))
             if learned is None:
                 floor = self.cfg.GLIDE_ALPHA_DEG
             else:
@@ -1415,7 +1425,8 @@ class Autopilot:
                       self.alpha_ceiling - self.cfg.ALPHA_BACKOFF_DEG)
             if new < self.alpha_ceiling - 0.01:
                 self.alpha_ceiling = new
-                learned = self.env.holdable.limit(snap.dynamic_pressure)
+                learned = self.env.holdable.limit(snap.dynamic_pressure,
+                                                  self.snap_mach(snap))
                 self.logbook.event(
                     snap.ut, "alpha ceiling -> %.1f deg (commanded %.1f, "
                              "achieving %.1f, q=%.0f Pa, learned %s)"

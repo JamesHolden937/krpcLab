@@ -586,6 +586,19 @@ class Holdable:
         per = max(1, int(self.cfg.HOLDABLE_Q_DECADE_BINS))
         return int(math.floor(per * math.log10(max(1.0, q))))
 
+    def _band(self, mach):
+        """``HOLDABLE_BY_MACH``: the Mach regime a sample belongs to, or 0.
+
+        Binned by ``q`` alone, the 36 deg the shuttle holds at Mach 4 and
+        3 kPa answered for Mach 0.7 at 3 kPa, where it holds 18 with the
+        pitch input saturated (rot-offmach-1007, LOG7727: "commanded 26,
+        achieving 18.7, learned 38.5").  The trim limit is a moment balance
+        and the centre of pressure moves with Mach, so each regime learns its
+        own ceiling.  The edges are aerodynamic regimes, not this craft."""
+        if not getattr(self.cfg, "HOLDABLE_BY_MACH", False) or mach is None:
+            return 0
+        return 1 + sum(1 for e in self.cfg.HOLDABLE_MACH_EDGES if mach >= e)
+
     def observe(self, commanded, achieved, q, mach=None):
         """One tick of evidence.  Cheap enough to call every tick, and is."""
         if q < float(self.cfg.HOLDABLE_MIN_Q) or commanded <= 0.0:
@@ -596,7 +609,7 @@ class Holdable:
             # comment records -- and taking it as one would raise the limit
             # above anything the vehicle holds steadily.
             return
-        index = self._bin(q)
+        index = (self._band(mach), self._bin(q))
         short = commanded - achieved
         current = self.bins.get(index)
         saturated = short > float(self.cfg.HOLDABLE_SATURATED_DEG)
@@ -646,8 +659,18 @@ class Holdable:
         if q < float(self.cfg.HOLDABLE_MIN_Q):
             return None
         prior = self.prior_at(q, mach)
-        trusted = [(i, v[0]) for i, v in self.bins.items()
-                   if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)]
+        band = self._band(mach)
+        # A query with no Mach under ``HOLDABLE_BY_MACH`` sees every band.
+        any_band = band == 0 and getattr(self.cfg, "HOLDABLE_BY_MACH", False)
+        trusted = [(i[1], v[0]) for i, v in self.bins.items()
+                   if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)
+                   and (any_band or i[0] == band)]
+        if any_band and trusted:
+            # The lowest ceiling any regime showed at each q bin.
+            low = {}
+            for i, v in trusted:
+                low[i] = min(v, low.get(i, v))
+            trusted = list(low.items())
         if not trusted:
             if prior is None:
                 return None
@@ -679,8 +702,10 @@ class Holdable:
         trusted = sorted((i, v) for i, v in self.bins.items()
                          if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES))
         per = max(1, int(self.cfg.HOLDABLE_Q_DECADE_BINS))
-        return " ".join("%.0fPa:%.1f/%d" % (10.0 ** (i / float(per)), v[0], v[1])
-                        for i, v in trusted)
+        by_mach = getattr(self.cfg, "HOLDABLE_BY_MACH", False)
+        return " ".join("%s%.0fPa:%.1f/%d" % (
+            ("m%d:" % i[0]) if by_mach else "",
+            10.0 ** (i[1] / float(per)), v[0], v[1]) for i, v in trusted)
 
 
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):

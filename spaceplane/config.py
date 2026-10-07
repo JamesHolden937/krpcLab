@@ -1004,6 +1004,10 @@ class Config:
     # to express a tuple on a command line.  Off by default: see the numbers.
     ALPHA_TRACKING_ON: bool = False
     HOLDABLE_Q_DECADE_BINS: int = 6         # bins per decade of dynamic pressure
+    # ``Holdable._band``: learn the ceiling per Mach regime as well as per
+    # q -- the trim limit moves with the centre of pressure.  Off until flown.
+    HOLDABLE_BY_MACH: bool = False
+    HOLDABLE_MACH_EDGES: tuple = (0.8, 1.2, 2.0, 3.0, 5.0)
     HOLDABLE_SATURATED_DEG: float = 2.5     # command - achieved, to count
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back

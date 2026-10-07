@@ -5431,6 +5431,32 @@ class TestHacWeaveStraightOnly(unittest.TestCase):
         self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")
 
 
+class TestHoldableByMach(unittest.TestCase):
+    """``HOLDABLE_BY_MACH``: a ceiling learned supersonically does not
+    answer subsonically at the same dynamic pressure."""
+
+    def learn(self, h, alpha, q, mach, n=20):
+        for _ in range(n):
+            h.observe(alpha + 10.0, alpha, q, mach)
+
+    def test_regimes_learn_apart(self):
+        h = trajectory.Holdable(Config(HOLDABLE_BY_MACH=True))
+        self.learn(h, 36.0, 3000.0, 4.0)
+        self.learn(h, 18.0, 3000.0, 0.7)
+        m = Config().HOLDABLE_MARGIN_DEG
+        self.assertAlmostEqual(h.limit(3000.0, 4.0), 36.0 + m)
+        self.assertAlmostEqual(h.limit(3000.0, 0.7), 18.0 + m)
+        # No Mach given: the lowest any regime showed.
+        self.assertAlmostEqual(h.limit(3000.0), 18.0 + m)
+
+    def test_off_is_q_only(self):
+        h = trajectory.Holdable(Config())
+        self.learn(h, 36.0, 3000.0, 4.0)
+        self.learn(h, 18.0, 3000.0, 0.7)
+        m = Config().HOLDABLE_MARGIN_DEG
+        self.assertAlmostEqual(h.limit(3000.0, 0.7), 36.0 + m)
+
+
 class TestHoldablePrior(unittest.TestCase):
     """``HOLDABLE_PRIOR``: the ceiling known before the vehicle hits it."""
 
