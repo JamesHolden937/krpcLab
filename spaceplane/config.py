@@ -188,6 +188,17 @@ class Config:
     # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
     FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
     FLARE_PITCH_P_MAX: float = 0.5
+    # **The same proportional term in HAC and APPROACH.**  kRPC's attitude
+    # loop is a rate loop: its only path from a *held* angle error to a held
+    # input is the integrator, and on a statically stable wing every change
+    # of alpha needs a changed standing input.  When the cone's speed law
+    # drops its alpha command, the shuttle stays 7-9 deg high for 30-90 s
+    # with the pitch input unsaturated at +0.3..+0.5 (the integrator
+    # unwinding at ~0.003/s), flies L/D ~1.2 and runs out of height:
+    # over 480 rigoff flights of 2026-10-07 the flights holding that state
+    # on >= 20% of cone/approach ticks landed 3/173 on the runway (145
+    # short), those under 5% 114/185 (LOG8104 against LOG8083).
+    PITCH_P_CONE: bool = False
     ALPHA_TRIM_MIN_DEG: float = -2.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_MAX_DEG: float = 4.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0

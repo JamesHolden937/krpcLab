@@ -5479,7 +5479,11 @@ class Autopilot:
         last = getattr(self, "_pitch_assist_ut", None)
         self._pitch_assist_ut = snap.ut
         dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
-        if self.state == FLARE and error is not None:
+        # ``PITCH_P_CONE``: the cone and the approach too -- kRPC's loop
+        # leaves the same standing error there (LOG8104: -8 deg at +0.3).
+        states = (FLARE, HAC, APPROACH) if getattr(
+            self.cfg, "PITCH_P_CONE", False) else (FLARE,)
+        if self.state in states and error is not None:
             cap = float(self.cfg.FLARE_PITCH_P_MAX)
             trim = vec.clamp(float(self.cfg.FLARE_PITCH_P) * error, -cap, cap)
         elif self.state == ROLLOUT:
