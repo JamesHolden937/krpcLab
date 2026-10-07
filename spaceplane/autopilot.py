@@ -5846,6 +5846,9 @@ def compact_line(state, snap, run):
         bits.append("pv=%4.0f el=%+5.0f" % (
             run.prediction.speed,
             getattr(run.prediction, "energy_long", 0.0)))
+        hand = getattr(run.prediction, "handover", None)
+        if hand:
+            bits.append("ph=%5.0f/%3.0f" % hand)
     # What the glide is aiming past the gate by, right now.  ``long=`` is the
     # miss against the *gate*, so on a flight flown with a reserve the number
     # to read is ``long - rsv``: that is what the solve is nulling.  Without

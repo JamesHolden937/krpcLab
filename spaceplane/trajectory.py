@@ -71,6 +71,12 @@ class Prediction:
     # as the ground the cone would gain or lose for it (see
     # ``guidance.energy_long``).  0 when off or unknown.
     energy_long: float = 0.0
+    # **The predicted handover**: ``(altitude, speed)`` where the arc first
+    # meets the cone's entry test (Mach at most ``HAC_ENTRY_MACH`` and within
+    # ``HAC_ENTRY_DIST_M`` of the gate, or down to the gate's altitude), so
+    # the log can set the energy the prediction promises the cone against
+    # the one it gets.  ``None`` when the arc never meets it.
+    handover: object = None
     closest: float = 0.0       # horizontal distance to the gate there
     profile: tuple = ()        # (speed, altitude) along the way down
     min_altitude: float = 0.0
@@ -884,6 +890,9 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     stop = (target_radius if target_radius is not None
             else env.target_radius + cfg.GATE_ALT_M)
     closest = None
+    handover = None
+    entry_mach = float(getattr(cfg, "HAC_ENTRY_MACH", 0.0) or 0.0)
+    entry_dist = float(getattr(cfg, "HAC_ENTRY_DIST_M", 0.0) or 0.0)
 
     def answer(rr, vv, tt, ss, reached, grounded):
         radius = vec.norm(rr)
@@ -897,6 +906,9 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             high=radius - (env.target_radius + cfg.GATE_ALT_M),
             long=long, cross=cross,
             closest=(closest if closest is not None else 0.0),
+            handover=(handover if handover is not None
+                      else ((radius - env.equatorial_radius, vec.norm(vv))
+                            if reached else None)),
             profile=tuple(profile), min_altitude=lowest, skipped=skipped,
             entry_arc=(0.0 if entry_r is None
                        else forward_arc(env, entry_r, entry_v, rr)),
@@ -943,6 +955,14 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             distance = surface_distance(env, r, gate)
             if closest is None or distance < closest:
                 closest = distance
+            if (handover is None and entry_dist > 0.0
+                    and distance <= entry_dist and descending):
+                try:
+                    slow = speed <= entry_mach * env.speed_of_sound(altitude)
+                except Exception:                       # noqa: BLE001
+                    slow = False
+                if slow:
+                    handover = (altitude, speed)
 
         if descending and radius <= stop:
             return answer(r, v, t, steps, True, False)
