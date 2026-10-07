@@ -4734,3 +4734,84 @@ flight-path L/D of 1.70-1.80 against 2.02-2.19 (back of the drag curve).
 LOG7930: speed 221 -> 107 m/s between 10.5 and 8.5 km with the bank 30-40
 deg off its command (yaw input -0.46), then alpha driven to ~0 to recover
 speed and out of height.
+
+## Session, 2026-10-07 morning: the missing control was the propellant, and it is not yet a gain
+
+Fingerprints `8f16d628` -> `db682413` (new off flags only; no default
+changed).  All `qs_shuttle2_rigoff` from orbit, every arm on the
+offload (`GLIDE_PITCH_OFFLOAD` 0.6, Mach >= 3), farm restarted before
+every batch.  The user asked: "you might be missing a control, not just a
+method -- have you been using flaps/spoilers?"
+
+**Flaps/spoilers: armed, never deployed in flight.**  Every orbital
+flight measures a split rudder (0.3 m^2 a side) and an opposed-flap
+"spoiler" set at startup; in the 40 logs before this session no in-flight
+deployment happened (every in-flight brake flag off; the cone was short of
+energy, which a brake cannot fix).  Only the ground spoiler runs.
+
+**The cone flies on its pitch stop.**  Over rot-hacalt-1007 (61 flights)
+every cone has a standing summed pitch input of +0.55..+0.76, pinned at +1
+for 7-49% of ticks, flown L/D 1.3-1.6 -- good and out-of-height flights
+alike.
+
+**The control nobody commanded: the propellant.**  After the drain all the
+LFO the shuttle keeps (~390 units, ~2 t on the cone saves) is in the nose
+tank (`adapterMk3-Size2`, +9.9 m), 13-15 m ahead of four empty tanks.
+kRPC's `ResourceTransfer` moves it at ~110 LF units per game second
+(bench, `scratchpad/xferbench.py`); the whole orbital load moved the CoM
+3.0 m, the cone's load ~0.6 m (~175 kN m at 1 g).
+
+**`PROPELLANT_TRIM`** (new, off): pump fore/aft on the low-passed summed
+pitch input (deadband 0.15, tau 5 s, sweep 20 s, at or below Mach 1.5),
+tanks found by station.  New column `ptrim=` (standing input / unit-m
+moved, + aft).  Smoke from `qs_s2_hac0` (LOG7962): standing input
++0.65 -> +0.15 within seconds, bank tracks its command, no speed collapse
+-- and 11.8 km long, intact.
+
+| batch | arms (8 an arm unless said) | intact / intact on runway |
+|---|---|---|
+| rot-ptrim-1007 | offload / +pump (glide too) / +pump +cone flap brake | 8/3, 3/0, 3/1 |
+| rot-ptrim2-1007 | offload / +pump (HAC on) / +pump +brake +arrest-excess | 7/3, 5/0, 5/1 |
+| rot-ptrim3-1007 | offload / +pump +`HAC_LD_MEASURED` / `HAC_LD_MEASURED` | 7/3, 5/1, 8/5 |
+| rot-ptrim4-1007 | same three | 8/5, 4/0, 7/2 |
+| rot-ptrim5-1007 | offload / pump+LDm `HAC_ALT_M` 10500 / 9000 | 8/4, 4/2, 2/2 |
+| rot-ptrim6-1007 (12) | offload / `PROPELLANT_TRIM_ON_ENERGY` | 12/5, 8/1 |
+
+Offload pooled over the session: **50/52 intact, 23/52 on the runway**;
+every miss short (-1.6..-6.7 km, the cone out of height).
+
+What each step showed:
+1. **Pumping in the glide departs.**  An aft CoM at the transonic glide's
+   38-41 deg pitched up into a deep stall: LOG7969 flown alpha 48 -> 80
+   deg at full nose-down input at Mach 0.8, 29 km short (also LOG7985).
+   Now cone-on only; `PROPELLANT_TRIM_IN_GLIDE` opts back in.
+2. **Trimmed, the cone flies glide ratio 2.60 against 2.01** (conesum),
+   plans with `HAC_LD` 1.86, rolls out 2.2-2.8 km high and never laps;
+   the approach floats 7-15 km long or hits at 116-123 m/s.
+3. **The flap brake cannot spend it.**  The measured set dumps lift (dClA
+   -30): each deployment doubled the sink in 4-8 s with the surplus
+   unchanged, and the arrest guard stowed it within 3 s.
+   `HAC_FLAP_ARREST_EXCESS` (re-added, off; retired in 7fd5096 leaving
+   `nominal = 0`) charges only the sink over the cone's glide: the brake
+   then stays out 4-14 s and still spends nothing.
+4. **`HAC_LD_MEASURED` alone: null** (5/8 then 2/8 against 3/8, 5/8).
+   With the pump it takes the exit surplus to +0.7..+2.7 km, still long.
+5. **The handover is not the lever.**  `HAC_ALT_M` 10500/9000 lowered the
+   handover to 11-13 km, the cone shortened its path to match (flown 17.8
+   km against 27) and exited 2.5-4.8 km high all the same.
+6. **The trim drag is this craft's only speedbrake.**  That is why the
+   offload misses are all short and the pump's all long.
+   `PROPELLANT_TRIM_ON_ENERGY` (new, off): aft only while the cone is
+   short of height, forward past `HAC_WEAVE_DEADBAND_M` surplus and from
+   the approach on.  Stops -1.6..+3.4 km (one +10.3) -- centred, the first
+   pump arm to straddle the runway -- but 8/12 intact and ~1/12 on it,
+   losses off the centreline (+179..+790 m across).
+
+**Not adopted.**  The pump is a real, wired, two-sided energy control
+(L/D 2.0 <-> 2.6 in the cone) but no variant beats the offload on
+landings.  Abandoned *as a trim*; open *as an energy control* -- the next
+look is why its centred arrivals lose the centreline (the cone's exit
+with fuel forward again just before the approach is a CoM step at the
+handover, the shape of failure 31).  Traps: ksp3/ksp4 once each "could
+not pause after the load" (LOG7966, LOG8069 suspect; GameData matches
+`base/` apart from the shared CollisionSpy/icons).

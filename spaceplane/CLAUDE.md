@@ -77,7 +77,7 @@ law and bank compensation were kept (82).
 
 ## Next, in order
 
-**Start from the root HANDOFF.md** (2026-10-07: the glide's long mode is kRPC's roll-invariant pitch integrator; `GLIDE_PITCH_OFFLOAD` fixes the arrival and survival, landings now set by the energy chain and the cone's subsonic speed collapse). Before that (2026-10-06 evening: the glide plans an alpha the shuttle cannot hold -- measured drag 0.59-0.80 of predicted at 38-32 km on every long flight; `HOLDABLE_PRIOR` fixed the arrival position but not the energy, off). Before that (day): the blocker was
+**Start from the root HANDOFF.md** (2026-10-07 morning: the missing control was the propellant -- `PROPELLANT_TRIM` pumps the nose fuel aft and frees the elevons, but the trim drag was the only speedbrake, so every pump variant lands worse than the offload; open as an energy control). Before that (2026-10-07 early: the glide's long mode is kRPC's roll-invariant pitch integrator; `GLIDE_PITCH_OFFLOAD` fixes the arrival and survival, landings now set by the energy chain and the cone's subsonic speed collapse). Before that (2026-10-06 evening: the glide plans an alpha the shuttle cannot hold -- measured drag 0.59-0.80 of predicted at 38-32 km on every long flight; `HOLDABLE_PRIOR` fixed the arrival position but not the energy, off). Before that (day): the blocker was
 `qs_shuttle2_rigoff`'s bimodal cone arrival, traced to the glide's learned
 alpha ceiling; the rollout weave is fixed (`ROLLOUT_STEER_LEAD_S`).
 

@@ -1,82 +1,76 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the session of 2026-10-06 night -> 10-07 (~2045-0440).
-History: `docs/spaceplane/journal.md`, "Session, 2026-10-06 night / 10-07".
+Snapshot of the session of 2026-10-07 morning (~0700-1110).
+History: `docs/spaceplane/journal.md`, "Session, 2026-10-07 morning".
 
-Defaults fingerprint **`8f16d628`** (= `42d938f0` + new off flags and
-instruments; **no default changed**).  Everything committed and pushed.
-Farm **stopped**, sleep inhibitor released.
+Defaults fingerprint **`db682413`** (= `8f16d628` + new off flags;
+**no default changed**).  Everything committed and pushed.  Farm
+**stopped**, sleep inhibitor released.
 
 ## Where it stands (rigoff, the bimodal save)
 
-| | arrival at the cone | intact on runway | vehicle kept |
-|---|---|---|---|
-| defaults (3 batches) | +4.0..+5.4 km, sd 3.7-5.3 | 23/56 | 46/56 |
-| `GLIDE_PITCH_OFFLOAD` 0.6, Mach >= 3 | **+0.8..+1.1 km, sd 0.5-1.0** | 22/56 | **55/56** |
-
-On `_inc` (4 vs 3 of 12) and `_high` (8 vs 8) the offload is neutral.
-The user: the target is this shuttle family (cargo/bigger-wing and
-mass-distribution variants); other people's craft are secondary.
+The offload (`GLIDE_PITCH_OFFLOAD` 0.6, `_MIN_MACH` 3, still off by
+default) pooled over this session's six batches: **50/52 intact, 23/52
+intact on the runway**; every miss is short (-1.6..-6.7 km), the cone
+running out of height.  Previous session: 22/56 landed, 55/56 kept.
 
 ## What was found
 
-1. **The glide's long mode is kRPC's attitude controller.**  Holding 36 deg
-   at 2-4 kPa takes the shuttle's whole pitch input, mostly integral, and
-   kRPC keeps its pitch/yaw integrators in a roll-invariant frame
-   (`kspSim/attitude.py`).  At the ~38 km reversal the long flights drop to
-   +0.4 of pitch with 8-12 deg of error and 8-10 deg of slip for 30 s.
-   `GLIDE_PITCH_OFFLOAD` (a body-frame trim carrying the standing input)
-   removes it: long arrivals 17/24 -> 1/24.  Its two laws, both paid for:
-   never learn from a saturated read-back (at 1.0 it pinned the elevons and
-   departed at Mach 3-4), and only above Mach 3 (held lower it costs ~2 km
-   of energy).
-2. **With the long mode gone, landings are set by energy, in two places.**
-   (a) The glide aims a 12 km crossing (12.9 km of energy height); the cone
-   needs ~18.5 at handover.  Defaults delivered ~24 only because their
-   propagator is pessimistic (`ph=`: 100 km out it predicts 13-15, the
-   vehicle hands over at 17-25).  (b) The cone itself loses flights "out of
-   height" whatever they bring in: speed collapses to 68-92 m/s (rolled-out
-   flights exit at 106-115) with the bank 30-40 deg off its command.
+1. **Flaps/spoilers are armed on every orbital flight and never deploy in
+   flight** (the user asked).  The measured "spoiler" set dumps lift
+   (dClA -30) rather than adding drag; the split rudder is 0.3 m^2 a side.
+   Deployed in the cone they doubled the sink and spent nothing.
+2. **Every cone flies on its pitch stop**: standing input +0.55..+0.76,
+   pinned 7-49% of ticks, L/D 1.3-1.6.
+3. **The missing control is the propellant.**  ~2 t of LFO sits in the
+   nose tank 13-15 m ahead of four empty ones; `ResourceTransfer` moves it
+   in ~2 s.  `PROPELLANT_TRIM` takes the standing input to +0.15, the bank
+   tracks, the cone's glide ratio goes 2.01 -> 2.60.
+4. **But the trim drag is this craft's only speedbrake**, so the trimmed
+   vehicle lands long (7-15 km) and nothing downstream can spend it:
+   not the flap brake, not `HAC_LD_MEASURED`, not a lower `HAC_ALT_M`
+   (the cone shortens its path to match and exits high anyway).
+5. **As an energy control** (`PROPELLANT_TRIM_ON_ENERGY`: aft only when
+   the cone is short) the stops centre on the runway (-1.6..+3.4 km) for
+   the first time, but 8/12 intact and ~1/12 on the runway, losses off
+   the centreline.
 
-## Flags and instruments added (all off / log-only)
+## Flags added (all off)
 
-- `GLIDE_PITCH_OFFLOAD`, `_TAU_S` (0 = pitch time_to_peak), `_MAX` (0.8;
-  flown at 0.6), `_MIN_MACH` (0; flown at 3).  rot-offload, rot-offload2,
-  rot-offmach, rot-hmach, rot-offorb, rot-ph, rot-hacalt (-1007).
-- `HOLDABLE_BY_MACH` (+ `HOLDABLE_MACH_EDGES`): Holdable per Mach regime.
-  rot-hmach-1007: 3/16 vs 5/16, null.
-- `GLIDE_ENERGY_AIM`: **refuted by construction in the sim, never flown**
-  -- the predicted speed at 12 km is pinned (114-147 m/s) by the
-  propagator's gate-speed alpha cap.
-- Log columns: `yrin=` yaw/roll input read-back; `pv=`/`el=` predicted
-  speed at the gate altitude; `ph=` the prediction's own handover
-  (height/speed where the arc meets the cone's entry test).
+- `PROPELLANT_TRIM` (+ `_MAX_MACH` 1.5, `_DEADBAND` 0.15, `_TAU_S` 5,
+  `_SWEEP_S` 20): pump on the standing pitch input, HAC/APPROACH/FLARE.
+  Column `ptrim=standing/unit-m moved`.  rot-ptrim..ptrim5-1007: worse
+  than the offload in every variant.
+- `PROPELLANT_TRIM_IN_GLIDE`: departs (deep stall at Mach 0.8, alpha 80,
+  LOG7969, 7985).  Never.
+- `PROPELLANT_TRIM_ON_ENERGY`: rot-ptrim6-1007, 8/12 intact vs 12/12.
+- `HAC_FLAP_ARREST_EXCESS` (re-added; retired in 7fd5096 leaving
+  `nominal = 0`): keeps the brake out 4-14 s instead of 3; spends nothing.
 
 ## Next
 
-1. **The cone's speed collapse** (rot-hacalt-1007 "out of height" cluster,
-   LOG7930, 7917, 7922, 7934): find why speed falls from ~220 to ~100 and
-   below at 10-8 km -- the bank tracking 30-40 deg off in the cone, the
-   alpha trim at +4, the speed loop.  `conesum2.py`-style table: exit speed
-   splits OOH 68-92 from ok 106-115 cleanly.  This is upstream of every
-   landing that reaches the cone with energy.
-2. **The glide's energy target**: derive the high-gate target from the
-   cone's own need instead of `HAC_ALT_M` (rot-hacalt gain: delivered
-   energy follows the aim, but so did the cone's need -- fix 1 first).
-3. Then promote the offload: needs a landing gain, not only arrivals and
-   survival; re-fly on all three orbits and `qs_plane` (regression).
-4. Carried: `TOUCHDOWN_AIM_M` per vehicle; spaceplane/CLAUDE.md "Next".
-   CG-shifted `qs_shuttle2` copies as a third test axis (the user plans
-   mass-distribution variants; the offload is about the standing moment).
+1. **Why the energy-mode pump loses the centreline** (rot-ptrim6-1007:
+   LOG8084, 8091, 8096, 8098 at +341..+790 across).  Suspect the CoM step
+   at the cone's exit: fuel pumped forward from the approach on, a plant
+   change during the capture (failure 31's shape).  Try holding the fuel
+   where the cone left it and pumping forward only in the flare, or
+   ramping.  Read `oscsum.py` on those logs first.
+2. **The offload's short misses** are the cone out of height, the
+   pump's aft half's job alone: an arm with `PROPELLANT_TRIM_ON_ENERGY`
+   and the forward pump disabled (aft when short, otherwise hold).
+3. Carried from 2026-10-07 early: the glide's energy target from the
+   cone's need; promote the offload (all three orbits + `qs_plane`);
+   `TOUCHDOWN_AIM_M` per vehicle; CG-shifted `qs_shuttle2` copies.
+4. The user's idea, not flown: pump into the **wing tanks** for roll
+   inertia (LF only, mid-station, must split evenly).  Not needed unless
+   the cone wallows in roll.
 
 ## Traps paid this session
 
-- `pkill`/`pgrep -f` loops kill their own shell (exit 144): use
-  `scratchpad/killsims.sh`-style script files; a sim left running beside
-  the farm was found that way.
-- `start.sh` once failed silently after a stop; check `pgrep -c -f
-  KSP_x64[.]exe` (36 when six are up).
-- A scripted `str.replace` whose old text is a substring of another line
-  (12-space vs 16-space indent) matches twice: assert counts.
-- landsum's `surplus` is at the cone **exit**, not the handover.
-- Swap 20-22 GB after every ~1 h batch; restarted before every batch.
+- 8 flights an arm told a false story again: `HAC_LD_MEASURED` 5/8 then
+  2/8.  16 is the minimum for a landing rate.
+- ksp3 and ksp4 once each "could not pause after the load" (LOG7966,
+  LOG8069 suspect); GameData matches `base/` -- one-offs.
+- kspSim cannot screen anything about pitch trim near the stall (gap 1)
+  or propellant location; the pump went straight to the farm.
+- Swap 20-21 GB after every ~35 min batch; restarted before each.
