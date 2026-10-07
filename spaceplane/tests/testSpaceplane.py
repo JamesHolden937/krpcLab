@@ -5406,3 +5406,12 @@ class TestHoldablePrior(unittest.TestCase):
                          "Untitled Space Craft|31")
         self.assertEqual(trajectory.holdprior_slug("Untitled Space Craft|31"),
                          "Untitled_Space_Craft_31")
+
+    def test_tracking_above_the_prior_overrides_it(self):
+        h = self.holdable()
+        for _ in range(Config().HOLDABLE_MIN_SAMPLES):
+            h.observe(40.0, 40.0, 4000.0, 3.0)
+        self.assertAlmostEqual(h.limit(4000.0, 3.0),
+                               40.0 + Config().HOLDABLE_MARGIN_DEG)
+        # ...but only where it tracked: the next, denser bin keeps the prior.
+        self.assertLess(h.limit(5000.0, 3.0), 30.0)

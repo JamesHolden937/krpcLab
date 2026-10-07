@@ -621,6 +621,16 @@ class Holdable:
         else:
             # Tracking: the ceiling is at least what was asked for.
             if current is None:
+                # **Above the prior is evidence against it.**  The prior is
+                # what flights held *when they saturated*; a flight tracking
+                # above it here is not one of those, and left to the prior it
+                # plans less drag than it is making (rot-prior-1006: inc held
+                # its command at 38-32 km and handed the cone over 0.4-1.7 km
+                # low under the prior).  Its own bin, at the command.
+                prior = self.prior_at(q, mach)
+                if prior is not None and commanded > prior:
+                    self.bins[index] = [commanded, 1]
+                    self.generation += 1
                 return
             current[0] = max(current[0], commanded)
             current[1] += 1
