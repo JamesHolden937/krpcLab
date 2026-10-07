@@ -194,6 +194,15 @@ class Config:
     ALPHA_TRIM_SLIP_TOL_DEG: float = 15.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
     LIFT_LOOP_MIN_Q_PA: float = 500.0
+    # ``Autopilot.glide_pitch_offload``: carry the glide's standing pitch
+    # input as a body-frame manual trim, so kRPC's roll-invariant integrators
+    # hold only the transient and a bank reversal has no wound-up pitch to
+    # swing onto yaw (rot-lapstack-1006: long arrivals sit at +0.4 of pitch,
+    # 8-12 deg short, for 30 s after the 38 km reversal).  TAU 0 = the pitch
+    # axis's time_to_peak.  Off until flown.
+    GLIDE_PITCH_OFFLOAD: bool = False
+    GLIDE_PITCH_OFFLOAD_TAU_S: float = 0.0
+    GLIDE_PITCH_OFFLOAD_MAX: float = 1.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is

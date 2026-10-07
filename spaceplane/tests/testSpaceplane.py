@@ -1041,6 +1041,61 @@ class TestTheFlapBrakeYieldsToRoll(unittest.TestCase):
                                                            30.0)))
 
 
+class TestTheGlidePitchOffload(unittest.TestCase):
+    """``GLIDE_PITCH_OFFLOAD`` moves the standing pitch input into a
+    body-frame trim while the roll is settled, freezes it through a
+    reversal, and bleeds it off after GLIDE."""
+
+    class Control:
+        pitch = 0.0
+
+    def pilot(self):
+        ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
+        ap.cfg = Config(GLIDE_PITCH_OFFLOAD=True,
+                        GLIDE_PITCH_OFFLOAD_TAU_S=10.0)
+        ap.control = self.Control()
+        ap.state = autopilot_module.GLIDE
+        return ap
+
+    def snap(self, ut, total, bank=30.0):
+        b = math.radians(bank)
+        return SimpleNamespace(ut=ut, position=(600000.0, 0.0, 0.0),
+                               velocity=(0.0, 0.0, 2000.0),
+                               roof=(math.cos(b), math.sin(b), 0.0),
+                               pitch_input=total, dynamic_pressure=3000.0)
+
+    def fly(self, ap, t0, t1, total, bank=30.0):
+        t = t0
+        while t < t1:
+            ap.glide_pitch_offload(self.snap(t, total, bank))
+            t += 0.5
+
+    def test_settled_trim_follows_the_total(self):
+        ap = self.pilot()
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.fly(ap, 0.0, 60.0, 0.9)
+        self.assertGreater(ap._pitch_assist, 0.85)
+        self.assertAlmostEqual(ap.control.pitch, ap._pitch_assist, places=2)
+
+    def test_a_reversal_freezes_it(self):
+        ap = self.pilot()
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.fly(ap, 0.0, 30.0, 0.8)
+        held = ap._pitch_assist
+        ap.commanded_bank = -ap.commanded_bank
+        self.fly(ap, 30.0, 40.0, 0.2)
+        self.assertAlmostEqual(ap._pitch_assist, held, places=6)
+
+    def test_it_bleeds_off_after_the_glide(self):
+        ap = self.pilot()
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.fly(ap, 0.0, 60.0, 0.9)
+        ap.state = autopilot_module.HAC
+        self.fly(ap, 60.0, 200.0, 0.0)
+        self.assertEqual(ap._pitch_assist, 0.0)
+        self.assertFalse(ap._offload_live)
+
+
 class TestTheDrainReserveIsADvNotAUnitCount(unittest.TestCase):
     """`vacuum_specific_impulse` is 0 when nothing is lit, and the drain
     runs in vacuum before the burn -- which is exactly when it is 0.

@@ -58,6 +58,11 @@ class Snapshot:
     # client's manual input and the attitude controller's output
     # (``PilotAddon.OnFlyByWire``), so +-1 is a saturated elevator.
     pitch_input: float = 0.0
+    # The same read-back for yaw and roll: what a bank reversal does to the
+    # other two axes is invisible from pitch alone (the glide's long
+    # arrivals sit at 0.4 of pitch against a 12 deg error, 2026-10-07).
+    yaw_input: float = 0.0
+    roll_input: float = 0.0
     # The nose, in the body's rotating frame.  Already streamed for
     # ``alpha_actual``; carried whole because the pointing *error* -- nose
     # against the commanded nose -- is a two-axis quantity and the angle to
@@ -198,6 +203,11 @@ class Telemetry:
             self.pitch_input = stream(getattr, vessel.control, "pitch")
         except Exception:                                   # noqa: BLE001
             self.pitch_input = None
+        try:
+            self.yaw_input = stream(getattr, vessel.control, "yaw")
+            self.roll_input = stream(getattr, vessel.control, "roll")
+        except Exception:                                   # noqa: BLE001
+            self.yaw_input = self.roll_input = None
         self.aero_force = stream(getattr, flight, "aerodynamic_force")
         self.air_density = stream(getattr, flight, "atmosphere_density")
         self.dynamic_pressure = stream(getattr, flight, "dynamic_pressure")
@@ -338,6 +348,10 @@ class Telemetry:
             sideslip=self._scalar(self.sideslip),
             pitch_input=(self._scalar(self.pitch_input)
                          if self.pitch_input is not None else 0.0),
+            yaw_input=(self._scalar(self.yaw_input)
+                       if self.yaw_input is not None else 0.0),
+            roll_input=(self._scalar(self.roll_input)
+                        if self.roll_input is not None else 0.0),
             aero_force=self._vector(self.aero_force),
             air_density=self._scalar(self.air_density),
             dynamic_pressure=self._scalar(self.dynamic_pressure))

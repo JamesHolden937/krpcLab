@@ -5222,10 +5222,74 @@ class Autopilot:
         decays over the same time in ROLLOUT and is zero elsewhere."""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
+        if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
+                self.state == GLIDE or (getattr(self, "_offload_live", False)
+                                        and self.state not in (FLARE,
+                                                               ROLLOUT))):
+            self.glide_pitch_offload(snap)
+            return
         if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
             self.flare_pitch_p(snap, error)
             return
         return
+
+    def glide_pitch_offload(self, snap):
+        """``GLIDE_PITCH_OFFLOAD``: carry the glide's *standing* pitch input
+        as a manual body-frame trim, so kRPC's loop keeps only the transient.
+
+        Holding 36 deg at 2-4 kPa takes the shuttle's whole pitch input, and
+        kRPC holds it in its integrators -- which run in a roll-invariant
+        frame (``kspSim/attitude.py``, from kRPC 0.6.0's
+        ``AttitudeController``) and are mapped back to the body through the
+        roll it has accumulated.  At the bank reversal near 38 km the long
+        arrivals of rot-lapstack-1006 drop from +1.0 of pitch to +0.4 and
+        stay there for 30 s against a 8-12 deg pitch error, with 8-10 deg of
+        sideslip, while the on-profile flights recover: the shape of a
+        wound-up pitch integral swung partly onto yaw.  A trim the client
+        sets is applied in the body frame, which a roll cannot rotate.
+
+        The law is the autopilot's trim offload: the trim moves toward the
+        total input the vessel is getting (kRPC's read-back is the sum) over
+        ``GLIDE_PITCH_OFFLOAD_TAU_S`` (0 = the pitch axis's own
+        time_to_peak), so kRPC's share decays to the transient and the
+        two loops share one zero.  Only while the roll is settled -- during a
+        reversal the total is kRPC's transient, not the airframe's moment.
+        After GLIDE it bleeds off over the same time and kRPC takes the
+        moment back."""
+        trim = getattr(self, "_pitch_assist", 0.0)
+        last = getattr(self, "_pitch_assist_ut", None)
+        self._pitch_assist_ut = snap.ut
+        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
+        tau = float(getattr(self.cfg, "GLIDE_PITCH_OFFLOAD_TAU_S", 0.0)) or (
+            self._tuned_peak[0] if getattr(self, "_tuned_peak", None)
+            else (getattr(self, "_static_peak", None) or (20.0,))[0])
+        k = min(1.0, dt / max(1.0, tau))
+        if self.state == GLIDE:
+            self._offload_live = True
+            total = getattr(snap, "pitch_input", None)
+            flown = flown_bank(snap)
+            cmd_bank = float(getattr(self, "commanded_bank", 0.0) or 0.0)
+            settled = (total is not None and not math.isnan(flown)
+                       and abs(flown - cmd_bank)
+                       <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG)
+                       and snap.dynamic_pressure
+                       > self.cfg.LIFT_LOOP_MIN_Q_PA)
+            if settled:
+                cap = float(self.cfg.GLIDE_PITCH_OFFLOAD_MAX)
+                trim = vec.clamp(trim + k * (float(total) - trim), -cap, cap)
+        else:
+            trim -= trim * k
+            if abs(trim) < 0.005:
+                trim = 0.0
+                self._offload_live = False
+        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
+                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
+            try:
+                self.control.pitch = trim
+                self._pitch_assist_sent = trim
+            except Exception:                           # noqa: BLE001
+                pass
+        self._pitch_assist = trim
 
     def flare_pitch_p(self, snap, error):
         """``FLARE_PITCH_P``: manual pitch input proportional to the pitch
@@ -5677,6 +5741,10 @@ def compact_line(state, snap, run):
             getattr(snap, "pitch_input", 0.0) or 0.0,
             getattr(run, "_pitch_assist", 0.0),
             getattr(run, "_pitch_assist_err", None) or 0.0),
+        # Yaw and roll as the vessel receives them (the same summed
+        # read-back as ``pin=``'s first number).
+        "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
+                                getattr(snap, "roll_input", 0.0) or 0.0),
         # **Commanded slip is its own column, and only when something asks
         # for one.**  ``slip=`` has always meant the achieved angle and two
         # analyses already parse it; changing that column into ``cmd/actual``
