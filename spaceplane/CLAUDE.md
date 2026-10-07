@@ -77,7 +77,7 @@ law and bank compensation were kept (82).
 
 ## Next, in order
 
-**Start from the root HANDOFF.md** (2026-10-06 day): the blocker is
+**Start from the root HANDOFF.md** (2026-10-06 evening: the glide plans an alpha the shuttle cannot hold -- measured drag 0.59-0.80 of predicted at 38-32 km on every long flight; `HOLDABLE_PRIOR` fixed the arrival position but not the energy, off). Before that (day): the blocker was
 `qs_shuttle2_rigoff`'s bimodal cone arrival, traced to the glide's learned
 alpha ceiling; the rollout weave is fixed (`ROLLOUT_STEER_LEAD_S`).
 

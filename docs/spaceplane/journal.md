@@ -4608,3 +4608,51 @@ q ~1600 and planned the rest with a ~37 ceiling.  Over 264 shuttle logs,
 the alpha actually held while saturated above Mach 1.5 is 31-34 deg for q
 1-4 kPa (30-31 at 45-60 deg of bank), 25-28 above 5 kPa
 (`spaceplane/tools/holdmap.py`, new).
+
+## Session, 2026-10-06 evening: the glide planned an alpha it cannot hold
+
+**Asked by the user: is something fundamental missing?**  Yes, upstream of
+the cone.  landsum over rot-lapstack-1006 (48 flights): almost every flight
+reaching the cone within ~1 km of profile landed intact on the runway;
+of ~20 arriving 4-14 km long, 2 did, and every miss is long.
+Reliability is the fraction of glides that arrive on profile.
+
+**The measurement** (log columns `cda=` model at the commanded alpha,
+`act=` measured, `mdl=` model at the achieved alpha), averaged per altitude
+band: at 38-32 km measured/commanded drag is **0.59-0.80 on every long
+flight and 0.83-1.07 on every on-profile one**; measured/achieved is
+0.96-1.04 on all of them.  The table is right; the alpha the propagator
+assumes is not.  `Holdable` learns a ceiling only by saturating, and
+tracking 40-44 deg in the first kilopascal leaves denser air unlimited
+(offline test: one saturated sample at 1.2 kPa plus tracking -> limit at
+5 kPa above 40).
+
+**`HOLDABLE_PRIOR`** (new, off; 65c3fc3 + 592ea75): `tools/holdprior.py`
+writes, per Holdable q bin, the median alpha this craft's glide held while
+saturated (Mach >= 1.5, >= 100 samples) to `logs/holdprior/<vessel>_<parts>.json`
+(shuttle from 360 logs: 36.8 below 1 kPa, 31.9 at 2-4.6, 28.7 at 4.6-6.8);
+the propagator uses it wherever the vehicle has no evidence of its own.
+v1 (65c3fc3), rot-prior-1006, 8 an arm: rigoff long arrivals 6/8 -> 2/8,
+but inc handed over 0.4-1.7 km low and landed short 6/8 -- the prior is
+conditioned on saturating, and a flight tracking above it never overrode
+it.  v2 (592ea75): tracking above the prior makes the vehicle's own bin.
+rot-prior2-1006 (12 an arm): **rigoff arrivals 2.7-10.5 km long 5/12 ->
+0/12** (all -700..+582), intact on the runway 6 -> 7; inc 7 -> 9.  Under
+the prior rigoff's cone hands over low on every flight (-96..-1007): the
+next limit, previously hidden by the long arrivals.
+
+**`HAC_WEAVE_STRAIGHT_ONLY`** (new, off): no weave on the circle, where it
+walked the vehicle off it (7 of 12 lap-stack "out of height" exits wove on
+the circle, 1 of 12 rolled-out).  rot-straight-1006 (24 an arm, lap
+stack): 11 vs 11 intact on the runway; out of height 10 -> 7.  Null.
+
+**rot-prior3-1006 (8 an arm), v2: not promotable.**  high 7/8 -> **4/8**
+(arrivals on profile, handover -700..-930 on most, 3-5 km short);
+`qs_plane` 1/8 -> 0/8, arrivals **5.5-8.5 km short** (its prior is from
+12 logs); rigoff 3/8 -> 2/8 with 2 of 8 long again.  Over v2, rigoff long
+arrivals 10/20 -> 2/20 but landings 9/20 each.  The prior fixes where the
+glide arrives and not the energy it arrives with: low on every shuttle
+orbit.  A q-only median of *saturated* samples is biased low for flights
+that would have held more, and `GLIDE_ALPHA_MAX_DEG` 34 (short, 0/24)
+already said lower planned alpha means a shorter glide on this vehicle.
+Off.
