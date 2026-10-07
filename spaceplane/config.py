@@ -199,6 +199,24 @@ class Config:
     # on >= 20% of cone/approach ticks landed 3/173 on the runway (145
     # short), those under 5% 114/185 (LOG8104 against LOG8083).
     PITCH_P_CONE: bool = False
+    # **Hand the standing trim to the body frame and clear kRPC's integrators**
+    # (``Autopilot.cone_trim_handoff``), HAC and APPROACH.  ``PITCH_P_CONE``
+    # was null (rot-pitchp-1007, 8/18 vs 6/18): kRPC wound up against it.
+    # kRPC's own diagnostic log (scratch apwatch, LOG8144) says why the cone
+    # sticks: its PID integrators live in a roll-invariant frame carried by
+    # parallel transport of the nose, which a spiral twists against the body
+    # (phi 34 deg on a wings-level vehicle), so the nose-up trim they hold
+    # comes out as body pitch +0.29 and body yaw -0.53 -- the 4-7 deg pitch
+    # and heading error and the 3.6 deg slip -- and unwinds at ~0.002/s.
+    # A manual input is applied in the body frame, which nothing rotates.
+    # Every ``_S`` game seconds, with the nose within ``_TOL_DEG`` of its
+    # command, the roll settled and nothing saturated, the summed pitch and
+    # yaw inputs become the manual trim and kRPC is re-engaged, whose
+    # ``Start()`` zeroes the integrators and re-seats the frame.  The flare
+    # keeps the trim and adds ``FLARE_PITCH_P`` on top; ROLLOUT ramps it out.
+    CONE_TRIM_HANDOFF: bool = False
+    CONE_TRIM_HANDOFF_S: float = 5.0
+    CONE_TRIM_HANDOFF_TOL_DEG: float = 1.5
     ALPHA_TRIM_MIN_DEG: float = -2.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_MAX_DEG: float = 4.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0

@@ -5245,6 +5245,10 @@ class Autopilot:
         decays over the same time in ROLLOUT and is zero elsewhere."""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
+        if getattr(self.cfg, "CONE_TRIM_HANDOFF", False) and self.state in (
+                HAC, APPROACH, FLARE, ROLLOUT):
+            self.cone_trim_handoff(snap, error)
+            return
         if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
                 self.state == GLIDE or (getattr(self, "_offload_live", False)
                                         and self.state not in (FLARE,
@@ -5463,6 +5467,95 @@ class Autopilot:
                                "%+.2f, M=%.2f" % ("AFT" if direction > 0
                                                   else "FORWARD", s, mach))
         self._ptrim_dir = direction
+
+    def cone_trim_handoff(self, snap, error):
+        """``CONE_TRIM_HANDOFF``: carry the standing pitch/yaw input as a
+        body-frame manual trim and keep kRPC's integrators empty.
+
+        kRPC 0.6's PID integrators are held in a roll-invariant frame that
+        it carries by parallel transport of the nose; a spiral twists that
+        frame against the body (``phi`` 34 deg on a wings-level vehicle in
+        LOG8144's diagnostic dump), and the nose-up trim stored there comes
+        back out as body pitch *and yaw* -- a 4-7 deg pointing error held for
+        minutes at an unsaturated input (config, ``CONE_TRIM_HANDOFF``).  A
+        manual input is summed by kRPC in the body frame, which no roll or
+        turn rotates.  So, whenever the nose is on its command, the roll
+        settled and nothing is saturated, the summed read-back becomes the
+        trim and kRPC is re-engaged: ``Start()`` zeroes its integrators and
+        re-seats the frame, and with the trim already carrying the moment
+        its soft start fades in an output of about nothing.  FLARE holds the
+        trim and adds ``FLARE_PITCH_P``; ROLLOUT ramps it out."""
+        if not hasattr(self, "_handoff_pitch"):
+            # Take over whatever trim was being sent (the glide offload's).
+            self._handoff_pitch = float(getattr(self, "_pitch_assist", 0.0))
+            self._handoff_yaw = 0.0
+            self._handoff_ut = None
+            self._handoff_n = 0
+        last = getattr(self, "_pitch_assist_ut", None)
+        self._pitch_assist_ut = snap.ut
+        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
+        pitch, yaw = self._handoff_pitch, self._handoff_yaw
+        if self.state in (HAC, APPROACH):
+            due = (self._handoff_ut is None or snap.ut - self._handoff_ut
+                   >= float(self.cfg.CONE_TRIM_HANDOFF_S))
+            nose = getattr(snap, "nose", None)
+            cmd = getattr(self, "commanded_nose", None)
+            total_p = getattr(snap, "pitch_input", None)
+            total_y = getattr(snap, "yaw_input", None)
+            flown = flown_bank(snap)
+            cmd_bank = float(getattr(self, "commanded_bank", 0.0) or 0.0)
+            if (due and nose and cmd and total_p is not None
+                    and total_y is not None
+                    and abs(float(total_p)) < 0.98
+                    and abs(float(total_y)) < 0.98
+                    and not math.isnan(flown)
+                    and abs(flown - cmd_bank)
+                    <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG)
+                    and snap.dynamic_pressure > self.cfg.LIFT_LOOP_MIN_Q_PA
+                    and math.degrees(math.acos(vec.clamp(vec.dot(
+                        vec.unit(nose), vec.unit(cmd)), -1.0, 1.0)))
+                    <= float(self.cfg.CONE_TRIM_HANDOFF_TOL_DEG)):
+                pitch, yaw = float(total_p), float(total_y)
+                try:
+                    self.control.pitch = pitch
+                    self.control.yaw = yaw
+                    self._pitch_assist_sent = pitch
+                    self._handoff_yaw_sent = yaw
+                except Exception:                       # noqa: BLE001
+                    pass
+                set_autopilot_engaged(self.autopilot, False)
+                set_autopilot_engaged(self.autopilot, True)
+                self._handoff_ut = snap.ut
+                self._handoff_n += 1
+                if self._handoff_n == 1 or self._handoff_n % 10 == 0:
+                    self.logbook.event(
+                        snap.ut, "trim handoff %d: body trim pitch %+.2f yaw "
+                                 "%+.2f, kRPC re-engaged"
+                        % (self._handoff_n, pitch, yaw))
+            out_p = pitch
+        elif self.state == FLARE:
+            out_p = pitch
+            if error is not None and float(getattr(
+                    self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
+                cap = float(self.cfg.FLARE_PITCH_P_MAX)
+                out_p = pitch + vec.clamp(
+                    float(self.cfg.FLARE_PITCH_P) * error, -cap, cap)
+        else:
+            k = min(1.0, dt / max(0.1, float(self.cfg.ROLLOUT_RAMP_S)))
+            pitch -= pitch * k
+            yaw -= yaw * k
+            out_p = pitch
+        self._handoff_pitch, self._handoff_yaw = pitch, yaw
+        try:
+            if abs(out_p - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002:
+                self.control.pitch = out_p
+                self._pitch_assist_sent = out_p
+            if abs(yaw - getattr(self, "_handoff_yaw_sent", 0.0)) > 0.002:
+                self.control.yaw = yaw
+                self._handoff_yaw_sent = yaw
+        except Exception:                               # noqa: BLE001
+            pass
+        self._pitch_assist = out_p
 
     def flare_pitch_p(self, snap, error):
         """``FLARE_PITCH_P``: manual pitch input proportional to the pitch
