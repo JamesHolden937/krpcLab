@@ -4656,3 +4656,81 @@ orbit.  A q-only median of *saturated* samples is biased low for flights
 that would have held more, and `GLIDE_ALPHA_MAX_DEG` 34 (short, 0/24)
 already said lower planned alpha means a shorter glide on this vehicle.
 Off.
+
+## Session, 2026-10-06 night / 10-07: kRPC's pitch integrator, the offload, and the glide's energy
+
+Fingerprints `c53353bf` -> `8f16d628` (off flags only; no default
+changed).  All rigoff unless said, farm restarted before every batch.
+
+**The long mode is a controller fault.**  Over rot-lapstack + rot-straight
+(96 flights), at 38-32 km the long arrivals command ~41 deg and achieve
+28-32 with 5-10 deg of slip; on-profile ones command ~35 and hold 35-40
+with ~3.  At the ~38 km bank reversal the long flights' pitch input drops
+1.0 -> 0.4 and stays there 30 s against an 8-12 deg pitch error.  kRPC
+0.6's attitude controller keeps its pitch/yaw integrators in a
+roll-invariant frame (`kspSim/attitude.py`); the shuttle needs its whole
+pitch input to hold 36 deg at 2-4 kPa, mostly integral, and a reversal
+swings it.  New column `yrin=` (yaw/roll read-back).
+
+**`GLIDE_PITCH_OFFLOAD`** (new, off): the standing pitch input carried as a
+body-frame manual trim (moves toward the summed read-back over the pitch
+time_to_peak while the roll is settled; frozen in reversals; bleeds off
+after).
+- rot-offload-1007 (24 an arm), v1 cap 1.0: long (>1.5 km) 17/24 -> 1/24,
+  but 15/24 short (to -17 km), 5 vs 8 landed.  Every short flight's trim
+  hit 1.0 (chasing a saturated read-back pins the elevons nose-up, lateral
+  departure at Mach 3-4); all 9 at 0.59-0.90 arrived within 1.7 km.
+- v2: no learning from a saturated read-back, cap `_MAX`.
+  rot-offload2-1007 (16): cap 0.8 13/16 short; cap 0.6 arrivals 16/16
+  within 5 km (mean -0.8 sd 1.5; defaults +4.7 sd 3.8), but 2/16 landed:
+  handed over ~2 km low.
+- `GLIDE_PITCH_OFFLOAD_MIN_MACH` (new): rot-offmach-1007 (16): cap 0.6
+  above Mach 3 only -> arrival **+834 sd 696**, 16/16 kept, 7/16 intact on
+  the runway (defaults 8/16).  Landing split exactly on the cone's exit
+  surplus: > -450 m 8/8 on the runway, < -570 m 8/8 3.5-6.5 km short.
+- Repeat in rot-hmach-1007: +870 sd 973, 5/16 (defaults 5/16).
+- rot-offorb-1007 (12): inc 4 vs 3, high 8 vs 8 -- neutral on the other
+  orbits (inc's arrivals are already +491 sd 170 on defaults).
+
+**`HOLDABLE_BY_MACH`** (new, off): Holdable bins by q alone, so the 36 deg
+held at Mach 4 / 3 kPa answered for Mach 0.7 / 3 kPa where the vehicle
+holds 18 (LOG7727: "commanded 26, achieving 18.7, learned 38.5").
+rot-hmach-1007: 3/16 vs 5/16, same deficits.  Null.
+
+**The deficit is speed.**  Arrivals on the aim point at the same place
+(30 km out, h 14-17 km): landing flights 246-270 m/s, short ones 211-229
+-- ~1 km of the cone's energy height.  The glide solves position at the
+12 km crossing and leaves speed to the alpha history; the cone budgets
+height + v^2/2g.  In the cone every flight is pitch-saturated (alpha 18
+against 24): the airframe's subsonic trim limit, not the discriminator.
+
+**`GLIDE_ENERGY_AIM`** (new, off, **refuted in the sim by construction**):
+the predicted speed at HAC_ALT_M counted as ground.  sim-energy-1007:
+`pv=` is 114-147 m/s on every flight, pinned by the propagator's
+gate-speed alpha cap; the vehicle hands over at 14-17 km doing 210-270.
+It measures the propagator, not the arrival.  Not flown on the farm.
+
+**Instrument `ph=`** (the prediction's own handover state, where the arc
+meets the cone's entry test).  Sim: 100 km out it predicts 13.3 km / 155
+m/s against an actual 16.9 km / 261 -- ~6 km of energy height pessimistic
+until the last ~35 km.  rot-ph-1007 flies it on the farm.
+
+**rot-ph-1007 (24 an arm):** defaults 10/24 intact on the runway, 17/24
+kept; offload (0.6, Mach >= 3) 10/24, **24/24 kept**.  Pooled over three
+rigoff batches: offload 22/56 landed, 55/56 kept; defaults 23/56, 46/56.
+`ph=` in the game: the predicted handover is pinned at 12.9 km of energy
+height (the 12 km crossing) until ~60 km out, then correlates with the
+actual, biased low.  Landing threshold within the offload arm: energy
+height at handover ~18.5 km (h + v^2/2g); the aim promises 12.9;
+defaults deliver ~24 because their propagator is pessimistic.
+
+**rot-hacalt-1007 (offload, 16 an arm), `HAC_ALT_M` 12000/13500/15000:**
+6 / 4 / 9 landed (inside the noise of 16).  Delivered energy rises (median
+~19 / ~19 / ~25) but in every arm a cluster exits the cone "out of height"
+at -1.0..-1.36 km, 4-5.7 km from the gate on the 2000 m circle, laps=0 --
+the cone's own failure.  Those flights leave the cone at **68-92 m/s**
+against 106-115 for the ones that roll out, at 1-3 deg more alpha and a
+flight-path L/D of 1.70-1.80 against 2.02-2.19 (back of the drag curve).
+LOG7930: speed 221 -> 107 m/s between 10.5 and 8.5 km with the bank 30-40
+deg off its command (yaw input -0.46), then alpha driven to ~0 to recover
+speed and out of height.
