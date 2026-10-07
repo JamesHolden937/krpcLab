@@ -4025,6 +4025,11 @@ class Autopilot:
         # 1.4-3.2 km of arrest and stowed every deployment within 3-7 s
         # (LOG4052, 4065, 4067).
         nominal = 0.0
+        if getattr(self.cfg, "HAC_FLAP_ARREST_EXCESS", False):
+            speed = vec.norm(snap.velocity)
+            ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
+                                     snap.mass, self.surface_gravity)
+            nominal = speed / math.sqrt(1.0 + max(0.1, ratio) ** 2)
         arrest = (max(0.0, sink * sink - nominal * nominal)
                   / (2.0 * max(0.1, self.cfg.HAC_FLAP_ARREST_G)
                      * self.surface_gravity))
@@ -5367,7 +5372,13 @@ class Autopilot:
         is all a pump needs."""
         if not getattr(self.cfg, "PROPELLANT_TRIM", False):
             return
-        if self.state not in (GLIDE, HAC, APPROACH, FLARE):
+        # Not in the glide unless asked: an aft CoM at the glide's 38-41 deg
+        # transonic alpha pitched up into a deep stall (LOG7969: flown alpha
+        # 48 -> 80 deg at full nose-down input, rot-ptrim-1007).
+        phases = (HAC, APPROACH, FLARE) + (
+            (GLIDE,) if getattr(self.cfg, "PROPELLANT_TRIM_IN_GLIDE", False)
+            else ())
+        if self.state not in phases:
             return
         total = getattr(snap, "pitch_input", None)
         if total is None:

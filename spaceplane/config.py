@@ -223,6 +223,9 @@ class Config:
     # memory shuttle-pitch-trim).  Tanks are found by station, not name.
     PROPELLANT_TRIM: bool = False
     PROPELLANT_TRIM_MAX_MACH: float = 1.5
+    # Also in GLIDE (below ``_MAX_MACH``).  Off: rot-ptrim-1007 departed
+    # 3 of 16 at Mach 0.8 with the CoM aft at 40 deg of alpha.
+    PROPELLANT_TRIM_IN_GLIDE: bool = False
     PROPELLANT_TRIM_DEADBAND: float = 0.15
     PROPELLANT_TRIM_TAU_S: float = 5.0
     # Movable propellant swept end to end in this many game seconds.
@@ -423,6 +426,10 @@ class Config:
     HAC_SHORT_BEST_GLIDE: bool = False
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
+    # Charge only the sink over the cone's own glide (``speed / sqrt(1 +
+    # cone_ld^2)``) as height to arrest.  Off, the brake stowed 3 s after
+    # every deployment on rot-ptrim-1007 (LOG7965, 7970, 7978, 7986).
+    HAC_FLAP_ARREST_EXCESS: bool = False
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
