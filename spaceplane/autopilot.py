@@ -4567,6 +4567,8 @@ class Autopilot:
         self.aim(alpha, command.bank, snap)
         self.ratchet_alpha(snap)
         self.hac_flap_brake(snap, command, height)
+        needed = getattr(command, "needed_height", None)
+        self._hac_surplus = None if needed is None else height - needed
         # Rolled out, or out of height.  The second is not a failure mode:
         # the cone is flown *above* the gate's altitude and reaching it is
         # simply the end of the surplus.
@@ -5400,6 +5402,22 @@ class Autopilot:
             return
         band = float(self.cfg.PROPELLANT_TRIM_DEADBAND)
         direction = 1 if s > band else (-1 if s < -band else 0)
+        if getattr(self.cfg, "PROPELLANT_TRIM_ON_ENERGY", False):
+            # The pump as the cone's energy control: aft (L/D 2.5) only
+            # while short of height, forward (back to the trim drag, L/D
+            # 2.0) once the surplus is worth weaving for; forward again
+            # for the approach and flare, which land nose-heavy.
+            surplus = getattr(self, "_hac_surplus", None)
+            if self.state != HAC:
+                direction = -1
+            elif surplus is None:
+                direction = 0
+            elif surplus < 0.0:
+                direction = 1 if s > band else 0
+            elif surplus > float(self.cfg.HAC_WEAVE_DEADBAND_M):
+                direction = -1
+            else:
+                direction = 0
         # Pump on a one-game-second cadence: each transfer is a handful
         # of calls and the CoM needs no finer step than the sweep allows.
         pumped = getattr(self, "_ptrim_pump_ut", None)

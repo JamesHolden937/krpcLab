@@ -226,6 +226,14 @@ class Config:
     # Also in GLIDE (below ``_MAX_MACH``).  Off: rot-ptrim-1007 departed
     # 3 of 16 at Mach 0.8 with the CoM aft at 40 deg of alpha.
     PROPELLANT_TRIM_IN_GLIDE: bool = False
+    # **The pump as an energy control, not a trim** (cone only).  Trimmed,
+    # the cone flies L/D 2.5 against 2.0 and exits 1-3 km high whatever
+    # the glide hands it (rot-ptrim5-1007: handover 11-13 km, exit still
+    # 2.5-4.8); untrimmed it runs out of height.  The trim drag is this
+    # craft's only real speedbrake (its spoiler dumps lift).  So: aft
+    # while the cone is short, forward once the surplus passes
+    # ``HAC_WEAVE_DEADBAND_M``, forward from the approach on.
+    PROPELLANT_TRIM_ON_ENERGY: bool = False
     PROPELLANT_TRIM_DEADBAND: float = 0.15
     PROPELLANT_TRIM_TAU_S: float = 5.0
     # Movable propellant swept end to end in this many game seconds.
