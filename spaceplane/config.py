@@ -206,6 +206,11 @@ class Config:
     # headroom for transients (at 1.0 the trim pinned the elevons nose-up,
     # rot-offload-1007).  A fraction of authority, not a tuned angle.
     GLIDE_PITCH_OFFLOAD_MAX: float = 0.8
+    # Offload only above this Mach, bleeding off below (0 = the whole
+    # glide).  The reversal it cures is at Mach 5-4; with the trim held
+    # through Mach 2.5-1.2 the arrivals were on position but 2 km low
+    # (rot-offload2-1007).
+    GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 0.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is

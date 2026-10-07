@@ -1101,6 +1101,19 @@ class TestTheGlidePitchOffload(unittest.TestCase):
         self.fly(ap, 30.0, 40.0, 0.2)
         self.assertAlmostEqual(ap._pitch_assist, held, places=6)
 
+    def test_it_bleeds_off_below_the_mach_floor(self):
+        ap = self.pilot()
+        ap.cfg = replace(ap.cfg, GLIDE_PITCH_OFFLOAD_MIN_MACH=3.0)
+        ap.env = SimpleNamespace(equatorial_radius=600000.0,
+                                 mach=lambda v, h: self.mach)
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.mach = 5.0
+        self.fly(ap, 0.0, 60.0, 0.6)
+        self.assertGreater(ap._pitch_assist, 0.5)
+        self.mach = 2.0
+        self.fly(ap, 60.0, 260.0, 0.6)
+        self.assertEqual(ap._pitch_assist, 0.0)
+
     def test_it_bleeds_off_after_the_glide(self):
         ap = self.pilot()
         ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))

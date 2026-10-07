@@ -5264,7 +5264,16 @@ class Autopilot:
             self._tuned_peak[0] if getattr(self, "_tuned_peak", None)
             else (getattr(self, "_static_peak", None) or (20.0,))[0])
         k = min(1.0, dt / max(1.0, tau))
-        if self.state == GLIDE:
+        mach = None
+        floor = float(getattr(self.cfg, "GLIDE_PITCH_OFFLOAD_MIN_MACH", 0.0))
+        if floor > 0.0:
+            try:
+                mach = self.env.mach(vec.norm(snap.velocity),
+                                     vec.norm(snap.position)
+                                     - self.env.equatorial_radius)
+            except Exception:                           # noqa: BLE001
+                mach = None
+        if self.state == GLIDE and (mach is None or mach >= floor):
             self._offload_live = True
             total = getattr(snap, "pitch_input", None)
             flown = flown_bank(snap)
