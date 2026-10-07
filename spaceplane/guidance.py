@@ -35,7 +35,45 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
-    return steer, prediction, (prediction.long, prediction.cross)
+    if prediction.reached:
+        prediction.energy_long = energy_long(env, cfg, prediction.speed,
+                                             vec.norm(gate))
+    return steer, prediction, (prediction.long + prediction.energy_long,
+                               prediction.cross)
+
+
+def energy_long(env, cfg, speed, radius):
+    """``GLIDE_ENERGY_AIM``: an arrival speed's error, as along-track metres.
+
+    The glide is solved on *where* the arc crosses the high gate's altitude
+    and the speed it gets there with is left to the alpha history -- while
+    the cone budgets *energy*, ``height + (v^2 - v_final^2) / 2g`` at its
+    ratio (``hac_available``).  Arrivals on the aim point at 211-229 m/s
+    instead of 246-270 left the cone ~1 km of energy height short and landed
+    3.5-6.5 km short, every one (rot-offmach-1007, rot-hmach-1007).
+
+    So a speed above or below the cone's own target at ``HAC_ALT_M``
+    (``cone_speed``) counts as height, converted to ground by the same ratio
+    that placed the aim (``Runway.high_gate``): a slow arrival reads short by
+    the ground the cone will not have, and the solve flies flatter to keep
+    it.  The position target stays -- an energy objective alone nulls the
+    energy somewhere else (``trajectory.predict``).  0 when off or when the
+    airframe cannot say."""
+    if not getattr(cfg, "GLIDE_ENERGY_AIM", False):
+        return 0.0
+    stall = airframe.stall(env, cfg)
+    if stall is None or radius <= 0.0:
+        return 0.0
+    try:
+        reference = cone_speed(env, cfg, stall, cfg.HAC_ALT_M)
+    except Exception:                                   # noqa: BLE001
+        return 0.0
+    if not reference or reference <= 0.0:
+        return 0.0
+    gravity = env.mu / (radius * radius)
+    ratio = (getattr(getattr(env, "runway", None), "aim_ld", None)
+             or cfg.HAC_GATE_LD)
+    return ratio * (speed * speed - reference * reference) / (2.0 * gravity)
 
 
 def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,

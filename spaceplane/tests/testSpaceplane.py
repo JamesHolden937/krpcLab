@@ -5431,6 +5431,41 @@ class TestHacWeaveStraightOnly(unittest.TestCase):
         self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")
 
 
+class TestEnergyLong(unittest.TestCase):
+    """``GLIDE_ENERGY_AIM``: an arrival speed against the cone's own, as
+    ground at the aim's ratio; 0 when off or unknown."""
+
+    def env(self, stall=50.0):
+        return SimpleNamespace(stall_speed=stall, mu=3.5316e12,
+                               runway=SimpleNamespace(aim_ld=2.0))
+
+    def test_off_is_zero(self):
+        self.assertEqual(guidance.energy_long(self.env(), Config(), 200.0,
+                                              612000.0), 0.0)
+
+    def test_slow_reads_short_by_the_ground_it_costs(self):
+        cfg = Config(GLIDE_ENERGY_AIM=True)
+        env = self.env()
+        with unittest.mock.patch.object(guidance, "cone_speed",
+                                        return_value=250.0), \
+                unittest.mock.patch.object(guidance.airframe, "stall",
+                                           return_value=50.0):
+            r = 612000.0
+            g = env.mu / (r * r)
+            got = guidance.energy_long(env, cfg, 210.0, r)
+            self.assertAlmostEqual(got, 2.0 * (210.0 ** 2 - 250.0 ** 2)
+                                   / (2.0 * g))
+            self.assertLess(got, 0.0)
+            self.assertGreater(guidance.energy_long(env, cfg, 270.0, r), 0.0)
+
+    def test_no_airframe_is_zero(self):
+        cfg = Config(GLIDE_ENERGY_AIM=True)
+        with unittest.mock.patch.object(guidance.airframe, "stall",
+                                        return_value=None):
+            self.assertEqual(guidance.energy_long(self.env(), cfg, 210.0,
+                                                  612000.0), 0.0)
+
+
 class TestHoldableByMach(unittest.TestCase):
     """``HOLDABLE_BY_MACH``: a ceiling learned supersonically does not
     answer subsonically at the same dynamic pressure."""

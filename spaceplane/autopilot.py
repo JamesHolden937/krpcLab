@@ -1438,8 +1438,12 @@ class Autopilot:
         if self.prediction is None or not self.prediction.reached:
             return None
         gate = self.env.runway.gate(self.end)
-        return trajectory.miss_components(self.env, self.end,
-                                          self.prediction.position, gate)
+        long, cross = trajectory.miss_components(self.env, self.end,
+                                                 self.prediction.position,
+                                                 gate)
+        # What the solve nulled: under ``GLIDE_ENERGY_AIM`` the position
+        # miss plus the arrival speed's error as ground.
+        return long + getattr(self.prediction, "energy_long", 0.0), cross
 
     def gate_distance(self, snap):
         gate = self.env.runway.gate(self.end)
@@ -5837,6 +5841,11 @@ def compact_line(state, snap, run):
     if run.prediction is not None:
         bits.append("long=%+6.0f cross=%+6.0f" % run.last_miss)
         bits.append("t2g=%5.0f" % run.prediction.time_to_go)
+        # The predicted arrival speed at the gate's altitude, and (under
+        # ``GLIDE_ENERGY_AIM``) the ground it is worth in ``long=``.
+        bits.append("pv=%4.0f el=%+5.0f" % (
+            run.prediction.speed,
+            getattr(run.prediction, "energy_long", 0.0)))
     # What the glide is aiming past the gate by, right now.  ``long=`` is the
     # miss against the *gate*, so on a flight flown with a reserve the number
     # to read is ``long - rsv``: that is what the solve is nulling.  Without

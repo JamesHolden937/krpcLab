@@ -812,6 +812,9 @@ class Config:
     SOLVE_MAX_RANGE_PROBES: int = 6
 
     GLIDE_RESERVE_M: float = 500.0
+    # ``guidance.energy_long``: solve the glide on position *and* the arrival
+    # speed against the cone's, the speed counted as ground.  Off until flown.
+    GLIDE_ENERGY_AIM: bool = False
     GLIDE_RESERVE_FROM_ALT_M: float = 12000.0
     GLIDE_RESERVE_TO_ALT_M: float = 12000.0
 

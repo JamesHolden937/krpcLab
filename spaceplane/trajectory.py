@@ -67,6 +67,10 @@ class Prediction:
     high: float = 0.0          # altitude above the gate at closest approach
     long: float = 0.0          # along-track miss at the gate altitude
     cross: float = 0.0         # lateral offset from the centreline there
+    # ``GLIDE_ENERGY_AIM``: the arrival speed's error against the cone's,
+    # as the ground the cone would gain or lose for it (see
+    # ``guidance.energy_long``).  0 when off or unknown.
+    energy_long: float = 0.0
     closest: float = 0.0       # horizontal distance to the gate there
     profile: tuple = ()        # (speed, altitude) along the way down
     min_altitude: float = 0.0
