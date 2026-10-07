@@ -1073,9 +1073,24 @@ class TestTheGlidePitchOffload(unittest.TestCase):
     def test_settled_trim_follows_the_total(self):
         ap = self.pilot()
         ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
-        self.fly(ap, 0.0, 60.0, 0.9)
-        self.assertGreater(ap._pitch_assist, 0.85)
+        self.fly(ap, 0.0, 60.0, 0.6)
+        self.assertGreater(ap._pitch_assist, 0.55)
         self.assertAlmostEqual(ap.control.pitch, ap._pitch_assist, places=2)
+
+    def test_a_saturated_read_back_teaches_nothing(self):
+        ap = self.pilot()
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.fly(ap, 0.0, 30.0, 0.5)
+        held = ap._pitch_assist
+        self.fly(ap, 30.0, 60.0, 1.0)
+        self.assertAlmostEqual(ap._pitch_assist, held, places=6)
+
+    def test_it_leaves_krpc_headroom(self):
+        ap = self.pilot()
+        ap.commanded_bank = autopilot_module.flown_bank(self.snap(0, 0))
+        self.fly(ap, 0.0, 300.0, 0.95)
+        self.assertLessEqual(ap._pitch_assist,
+                             ap.cfg.GLIDE_PITCH_OFFLOAD_MAX + 1e-9)
 
     def test_a_reversal_freezes_it(self):
         ap = self.pilot()

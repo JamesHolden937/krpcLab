@@ -202,7 +202,10 @@ class Config:
     # axis's time_to_peak.  Off until flown.
     GLIDE_PITCH_OFFLOAD: bool = False
     GLIDE_PITCH_OFFLOAD_TAU_S: float = 0.0
-    GLIDE_PITCH_OFFLOAD_MAX: float = 1.0
+    # The share of pitch authority the trim may take; the rest is kRPC's
+    # headroom for transients (at 1.0 the trim pinned the elevons nose-up,
+    # rot-offload-1007).  A fraction of authority, not a tuned angle.
+    GLIDE_PITCH_OFFLOAD_MAX: float = 0.8
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is

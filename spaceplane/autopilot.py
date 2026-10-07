@@ -5269,7 +5269,13 @@ class Autopilot:
             total = getattr(snap, "pitch_input", None)
             flown = flown_bank(snap)
             cmd_bank = float(getattr(self, "commanded_bank", 0.0) or 0.0)
-            settled = (total is not None and not math.isnan(flown)
+            # A saturated read-back says "at least this much", not what the
+            # airframe needs: chasing it pinned the trim at 1.0 and left kRPC
+            # no nose-down authority -- 15 of 15 such flights departed at Mach
+            # 3-4 and arrived 1.4-17 km short; the 9 whose trim stayed at
+            # 0.59-0.90 all arrived within 1.7 km (rot-offload-1007).
+            settled = (total is not None and abs(float(total)) < 0.98
+                       and not math.isnan(flown)
                        and abs(flown - cmd_bank)
                        <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG)
                        and snap.dynamic_pressure
