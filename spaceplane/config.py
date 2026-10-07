@@ -211,6 +211,22 @@ class Config:
     # through Mach 2.5-1.2 the arrivals were on position but 2 km low
     # (rot-offload2-1007).
     GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 0.0
+    # **Pitch trim by propellant, not by elevon travel** (``Autopilot.
+    # propellant_trim``).  After the drain every unit the shuttle keeps is
+    # in its nose tank, 13 m ahead of four empty tanks, and every cone of
+    # rot-hacalt-1007 flew a standing pitch input of +0.55..+0.76 (pinned
+    # at +1 for 7-49% of ticks) at L/D 1.3-1.6.  ``ResourceTransfer``
+    # moves it in ~2 s (110 LF/s measured): 1.4 t is ~0.6 m of CoM, ~175
+    # kN m at 1 g.  The law pumps aft while the low-passed summed pitch
+    # input is nose-up past the deadband, forward while nose-down past it,
+    # at or below ``_MAX_MACH`` (the hypersonic glide needs the nose fuel:
+    # memory shuttle-pitch-trim).  Tanks are found by station, not name.
+    PROPELLANT_TRIM: bool = False
+    PROPELLANT_TRIM_MAX_MACH: float = 1.5
+    PROPELLANT_TRIM_DEADBAND: float = 0.15
+    PROPELLANT_TRIM_TAU_S: float = 5.0
+    # Movable propellant swept end to end in this many game seconds.
+    PROPELLANT_TRIM_SWEEP_S: float = 20.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is
