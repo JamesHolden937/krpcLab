@@ -4906,3 +4906,15 @@ losses (3 + 2) are approaches handed over ~1 km high that pin the S-turns
 for a minute and then dive the excess away into the flare door at 52-93
 m/s of sink (LOG8265, 8268, 8282).  rot-canbay-1007 flies the last-resort
 doors against that.
+
+**Later the same evening.**  rot-canbay-1007 (canard + `HAC_LD_MEASURED`,
+18 an arm): last-resort doors 11/18 vs 12/18 -- null, kept off; pooled
+canard + LD_MEASURED on rigoff **31/48**.  rot-xrange-1007
+(`GLIDE_BANK_PROBE_DEG`, the user's crossrange question): +bank = left;
+at Mach 1, 45 deg held 57-72 km sideways, 60 deg 92-95 km (downrange -34
+and -86 km; bought back by a later burn).  `attitudeProbe.py`: inverted at
+1 g only 8-47% more drag than upright -- not a brake; upright needs
+700-830 kN m nose-down trimmed out at approach speeds.  rot-orbits-1007
+(same configuration, 6 each): inc 1/6, ecc 0/6 (arrival +41 km --
+upstream), high 2/6; inc/high land long.  The rigoff gain does not carry
+over yet.
