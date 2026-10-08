@@ -402,6 +402,13 @@ class Config:
     # losses rolled out 4-8 km high and broke at the flare.  With this on
     # the exit allowance is that lap less ``HAC_EXIT_SURPLUS_M``.  Off.
     HAC_EXIT_LAP_AT_TARGET: bool = False
+    # ``HAC_SPIRAL_DUMP`` (off): tight descending 360s over the gate when the
+    # cone is lined up with more surplus than the approach can spend but
+    # less than a lap (``Autopilot.hac_spiral``).  Each lap's cost is
+    # measured, not fitted.  The user's sharp-turn idea, 2026-10-07.
+    HAC_SPIRAL_DUMP: bool = False
+    HAC_SPIRAL_BANK_DEG: float = 60.0
+    HAC_SPIRAL_ALPHA_MAX_DEG: float = 14.0   # under the canard trim's 15
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.

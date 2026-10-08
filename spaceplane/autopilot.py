@@ -4664,6 +4664,11 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         self.log_hac_ladder(snap, height)
+        spiral = self.hac_spiral(snap, command, height)
+        if spiral is not None:
+            self.steer = Steer(alpha=spiral[0], bank=spiral[1])
+            self.aim(spiral[0], spiral[1], snap)
+            return
         alpha = min(command.alpha, self.alpha_ceiling)
         self.steer = Steer(alpha=alpha, bank=command.bank)
         self.aim(alpha, command.bank, snap)
@@ -4731,6 +4736,101 @@ class Autopilot:
                        % ("rolled out" if ready else "out of height",
                           command.turn_deg, height, needed,
                           command.gate_range, command.radius, command.laps))
+
+    def hac_spiral(self, snap, command, height):
+        """``HAC_SPIRAL_DUMP``: tight descending 360s over the gate.
+
+        Returns ``(alpha, bank)`` while spiralling, else ``None``.
+
+        The cone hands the approach anything short of a whole lap
+        (``hac_exit_surplus``: ``2 pi R / cone_ld``, ~8 km of height at its
+        2 km minimum radius), and the approach can spend ~0.8 km of it.  The
+        cone saves flown with ``CANARD_TRIM`` rolled out lined up 4-4.6 km
+        over need and landed 3-14 km long (sav-sharp-1007).  A tight spiral
+        is the quantum in between: at ``HAC_SPIRAL_BANK_DEG`` 60 and ~90 m/s
+        the radius is ~480 m, and the turn's load is drag -- the user's
+        split-S/sharp-turn idea, 2026-10-07, flown where it returns the
+        vehicle to the same point on the same heading.
+
+        Started lined up at the gate with no lap owed and surplus over
+        ``HAC_EXIT_SURPLUS_M`` plus one lap's estimated cost; the cost of
+        each lap is then *measured* (height lost per 360 deg of track), and
+        at each pass through the runway heading another lap is flown only if
+        it still leaves the approach its allowance.  Alpha holds the cone's
+        speed at the turn's load, so the descent is whatever that speed
+        costs.
+        """
+        if not getattr(self.cfg, "HAC_SPIRAL_DUMP", False):
+            return None
+        needed = getattr(command, "approach_needed", command.needed_height)
+        surplus = height - needed
+        allowance = float(self.cfg.HAC_EXIT_SURPLUS_M)
+        speed = vec.norm(snap.velocity)
+        up = vec.unit(snap.position)
+        track = vec.project_out(snap.velocity, up)
+        if vec.norm(track) < 1.0:
+            return None
+        track = vec.unit(track)
+        bank_deg = float(self.cfg.HAC_SPIRAL_BANK_DEG)
+        g = self.surface_gravity
+        state = getattr(self, "_spiral", None)
+        aligned = (command.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
+                   or command.turn_deg >= 360.0 - float(
+                       getattr(self.cfg, "HAC_EXIT_PAST_DEG", 0.0)))
+        if state is None:
+            if getattr(self, "_spiral_done", False):
+                return None
+            radius = speed * speed / (g * math.tan(math.radians(bank_deg)))
+            ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
+                                     snap.mass, g) or 1.5
+            estimate = 2.0 * math.pi * radius / max(0.5, ratio)
+            if not (aligned and command.laps == 0
+                    and command.gate_range <= self.cfg.HAC_ROLLOUT_M
+                    and surplus > allowance + estimate):
+                return None
+            state = self._spiral = {"track": track, "turned": 0.0,
+                                    "lap_h": height, "cost": estimate,
+                                    "laps": 0, "h0": height}
+            self.logbook.event(snap.ut, "spiral dump: start h=%.0f surplus "
+                               "%.0f, lap estimated %.0f m (r %.0f m)"
+                               % (height, surplus, estimate, radius))
+        # Track turned since the last tick, signed about the vertical.
+        step = math.degrees(math.atan2(
+            vec.dot(vec.cross(state["track"], track), up),
+            vec.dot(state["track"], track)))
+        state["track"] = track
+        state["turned"] += abs(step)
+        if state["turned"] >= 360.0 * (state["laps"] + 1) - 30.0 and aligned:
+            state["laps"] += 1
+            state["cost"] = max(1.0, state["lap_h"] - height)
+            state["lap_h"] = height
+            again = surplus - state["cost"] >= allowance
+            self.logbook.event(snap.ut, "spiral dump: lap %d cost %.0f m, "
+                               "surplus %.0f -> %s" % (
+                                   state["laps"], state["cost"], surplus,
+                                   "another" if again else "done"))
+            if not again:
+                self._spiral, self._spiral_done = None, True
+                return None
+        stall = airframe.stall(self.env, self.cfg)
+        if surplus < allowance or (stall and speed < 1.5 * stall):
+            self.logbook.event(snap.ut, "spiral dump: stop mid-lap, surplus "
+                               "%.0f, %.1f m/s" % (surplus, speed))
+            self._spiral, self._spiral_done = None, True
+            return None
+        v_ref = guidance.cone_speed(self.env, self.cfg, stall, height)
+        load = 1.0 / math.cos(math.radians(bank_deg))
+        alpha = trajectory.alpha_for_load(self.env, v_ref, height, snap.mass,
+                                          g, load)
+        if alpha is None:
+            alpha = float(self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG)
+        alpha += self.cfg.APPROACH_SPEED_KP * (speed - v_ref)
+        alpha = vec.clamp(alpha, 0.0, min(self.alpha_ceiling, float(
+            self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG)))
+        side = getattr(self, "_spiral_side", None)
+        if side is None:
+            side = self._spiral_side = 1.0 if command.bank >= 0.0 else -1.0
+        return (alpha, side * bank_deg)
 
     def log_hac_ladder(self, snap, height):
         """``HAC_LD_AT_TARGET``, every 60 s of the cone: what each rung of the ladder was
