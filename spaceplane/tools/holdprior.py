@@ -43,6 +43,10 @@ def main(argv=None):
     ap.add_argument("--mach", type=float, default=1.5)
     ap.add_argument("--min-samples", type=int, default=100)
     ap.add_argument("--dry-run", action="store_true")
+    # Bin by Mach band (``HOLDABLE_MACH_EDGES``) as well as q: the trim
+    # limit moves with Mach, and a q-only median answers Mach 4 with what
+    # Mach 2 held.  Pair with ``HOLDABLE_BY_MACH`` in flight.
+    ap.add_argument("--by-mach", action="store_true")
     args = ap.parse_args(argv)
     cfg = Config()
     per = max(1, int(cfg.HOLDABLE_Q_DECADE_BINS))
@@ -69,22 +73,30 @@ def main(argv=None):
             if q < qmin or mach < args.mach or cmd - ach <= sat:
                 continue
             index = int(math.floor(per * math.log10(max(1.0, q))))
-            crafts[key][index].append(ach)
+            band = (sum(1 for e in cfg.HOLDABLE_MACH_EDGES if mach >= e)
+                    if args.by_mach else -1)
+            crafts[key][(band, index)].append(ach)
             took = True
         if took:
             used[key] += 1
     for key, cells in sorted(crafts.items()):
         bins = []
-        for index in sorted(cells):
-            values = sorted(cells[index])
+        edges = (0.0,) + tuple(cfg.HOLDABLE_MACH_EDGES) + (99.0,)
+        for band, index in sorted(cells):
+            values = sorted(cells[(band, index)])
             if len(values) < args.min_samples:
                 continue
             lo, hi = 10 ** (index / float(per)), 10 ** ((index + 1) / float(per))
-            bins.append([round(lo, 1), round(hi, 1),
-                         round(values[len(values) // 2], 2), len(values)])
+            cell = [round(lo, 1), round(hi, 1),
+                    round(values[len(values) // 2], 2), len(values)]
+            if band >= 0:
+                cell += [max(args.mach, edges[band]), edges[band + 1]]
+            bins.append(cell)
         print("%s  (%d logs)" % (key, used[key]))
-        for lo, hi, a, n in bins:
-            print("  q %6.0f-%6.0f  held %5.1f  n=%d" % (lo, hi, a, n))
+        for cell in bins:
+            print("  q %6.0f-%6.0f  held %5.1f  n=%d%s" % (
+                tuple(cell[:4]) + (("  M %g-%g" % tuple(cell[4:6]))
+                                   if len(cell) > 4 else "",)))
         if args.dry_run or not bins:
             continue
         out = os.path.join(ROOT, "logs", "holdprior", holdprior_slug(key) + ".json")

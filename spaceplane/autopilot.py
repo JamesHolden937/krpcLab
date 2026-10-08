@@ -2399,13 +2399,14 @@ class Autopilot:
                 return
             with open(path) as fh:
                 data = json.load(fh)
-            cells = [(lo, hi, a) for lo, hi, a, _n in data["bins"]]
+            cells = [tuple(b[:3]) + tuple(b[4:6]) for b in data["bins"]]
             self.env.holdable.set_prior(cells, data.get("mach_floor", 0.0))
             self.logbook.event(
                 ut, "alpha prior: %r from %d logs, above Mach %.1f: %s"
                 % (key, data.get("logs", 0), self.env.holdable.prior_mach,
-                   " ".join("%.0fPa:%.1f" % (lo, a)
-                            for lo, _hi, a in self.env.holdable.prior)))
+                   " ".join("%s%.0fPa:%.1f" % (
+                       "M%g-%g/" % c[3:5] if len(c) >= 5 else "", c[0], c[2])
+                       for c in self.env.holdable.prior)))
         except Exception as exc:                        # noqa: BLE001
             self.logbook.event(ut, "alpha prior: not loaded (%s)" % (exc,))
 

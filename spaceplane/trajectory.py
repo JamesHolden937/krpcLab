@@ -573,13 +573,24 @@ class Holdable:
         tick.  Forced non-increasing in ``q``: the ceiling only falls as the
         air thickens, the same rule ``limit`` extrapolates by.
         """
-        cells = sorted((float(lo), float(hi), float(a)) for lo, hi, a in cells)
+        # A cell may carry its Mach band (``holdprior.py --by-mach``): the
+        # rule then holds within each band, because the trim limit is a
+        # moment balance that moves with Mach (``_band``) -- at 4.4 kPa the
+        # shuttle holds 35 deg at Mach 3-4 and 25 at Mach 1.2-3.
+        groups = {}
+        for cell in cells:
+            lo, hi, a = (float(x) for x in cell[:3])
+            mach = (tuple(float(x) for x in cell[3:5]) if len(cell) >= 5
+                    else None)
+            groups.setdefault(mach, []).append((lo, hi, a))
         out = []
-        low = None
-        for lo, hi, a in cells:
-            low = a if low is None else min(low, a)
-            out.append((lo, hi, low))
-        self.prior = out
+        for mach, group in groups.items():
+            low = None
+            for lo, hi, a in sorted(group):
+                low = a if low is None else min(low, a)
+                out.append((lo, hi, low) if mach is None
+                           else (lo, hi, low) + mach)
+        self.prior = sorted(out)
         self.prior_mach = float(mach_floor)
 
     def prior_at(self, q, mach=None):
@@ -591,7 +602,11 @@ class Holdable:
             return None
         # Only where it was measured: past its densest bin the learner's own
         # downward extrapolation answers, as it always has.
-        for lo, hi, a in self.prior:
+        for cell in self.prior:
+            lo, hi, a = cell[:3]
+            if len(cell) >= 5 and (mach is None
+                                   or not cell[3] <= mach < cell[4]):
+                continue
             if lo <= q < hi:
                 return a
         return None

@@ -5721,6 +5721,20 @@ class TestHoldablePrior(unittest.TestCase):
         h = self.holdable()
         self.assertAlmostEqual(h.prior_at(4000.0), 31.9)
 
+    def test_a_mach_banded_prior_answers_per_band(self):
+        # ``holdprior.py --by-mach``: Mach 3-5 held 32 at 4.4 kPa where
+        # Mach 1.2-2 held 27; each band falls with q on its own.
+        h = trajectory.Holdable(Config())
+        h.set_prior([(3162.0, 4642.0, 26.8, 1.2, 2.0),
+                     (4642.0, 6813.0, 23.6, 1.2, 2.0),
+                     (3162.0, 4642.0, 32.3, 3.0, 5.0),
+                     (4642.0, 6813.0, 33.0, 3.0, 5.0)], mach_floor=0.8)
+        self.assertAlmostEqual(h.prior_at(4000.0, 1.5), 26.8)
+        self.assertAlmostEqual(h.prior_at(4000.0, 4.0), 32.3)
+        self.assertAlmostEqual(h.prior_at(5000.0, 4.0), 32.3)
+        self.assertIsNone(h.prior_at(4000.0, 2.5))
+        self.assertIsNone(h.prior_at(4000.0, None))
+
     def test_not_subsonic_of_where_it_was_measured(self):
         self.assertIsNone(self.holdable().limit(5000.0, 0.8))
 
