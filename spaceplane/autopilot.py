@@ -4771,8 +4771,22 @@ class Autopilot:
         if vec.norm(track) < 1.0:
             return None
         track = vec.unit(track)
-        bank_deg = float(self.cfg.HAC_SPIRAL_BANK_DEG)
         g = self.surface_gravity
+        stall = airframe.stall(self.env, self.cfg)
+        v_ref = guidance.cone_speed(self.env, self.cfg, stall, height)
+        cap = min(self.alpha_ceiling,
+                  float(self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG))
+        # **The bank the alpha cap can hold**, with a tenth in hand.  At 60
+        # deg the turn needs 2 g, ~16 deg at cone speed; capped at 14 the
+        # load fell short, the nose dropped and the spiral became a dive --
+        # 128 m/s, stopped mid-lap, flare at 138 m/s (LOG8432).
+        cla, _ = self.env.coefficients(cap, v_ref, height)
+        q_ref = 0.5 * self.env.density(height) * v_ref * v_ref
+        load = 0.9 * q_ref * cla / max(1.0, snap.mass * g)
+        if load <= 1.05:
+            return None
+        bank_deg = min(float(self.cfg.HAC_SPIRAL_BANK_DEG),
+                       math.degrees(math.acos(1.0 / load)))
         state = getattr(self, "_spiral", None)
         aligned = (command.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
                    or command.turn_deg >= 360.0 - float(
@@ -4792,8 +4806,10 @@ class Autopilot:
                                     "lap_h": height, "cost": estimate,
                                     "laps": 0, "h0": height}
             self.logbook.event(snap.ut, "spiral dump: start h=%.0f surplus "
-                               "%.0f, lap estimated %.0f m (r %.0f m)"
-                               % (height, surplus, estimate, radius))
+                               "%.0f, lap estimated %.0f m (r %.0f m, bank "
+                               "%.0f, v_ref %.0f)" % (height, surplus,
+                                                     estimate, radius,
+                                                     bank_deg, v_ref))
         # Track turned since the last tick, signed about the vertical.
         step = math.degrees(math.atan2(
             vec.dot(vec.cross(state["track"], track), up),
@@ -4812,21 +4828,26 @@ class Autopilot:
             if not again:
                 self._spiral, self._spiral_done = None, True
                 return None
-        stall = airframe.stall(self.env, self.cfg)
-        if surplus < allowance or (stall and speed < 1.5 * stall):
+        # Stop while the rest of the turn back to the runway heading can
+        # still be paid for, or on an overspeed (a spiral turning into a
+        # dive), or a stall.
+        left = max(0.0, 360.0 * (state["laps"] + 1) - state["turned"])
+        rest = state["cost"] * left / 360.0
+        if (surplus - rest < allowance * 0.5
+                or speed > 1.25 * v_ref
+                or (stall and speed < 1.5 * stall)):
             self.logbook.event(snap.ut, "spiral dump: stop mid-lap, surplus "
-                               "%.0f, %.1f m/s" % (surplus, speed))
+                               "%.0f (rest of lap ~%.0f), %.1f m/s"
+                               % (surplus, rest, speed))
             self._spiral, self._spiral_done = None, True
             return None
-        v_ref = guidance.cone_speed(self.env, self.cfg, stall, height)
         load = 1.0 / math.cos(math.radians(bank_deg))
         alpha = trajectory.alpha_for_load(self.env, v_ref, height, snap.mass,
                                           g, load)
         if alpha is None:
             alpha = float(self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG)
         alpha += self.cfg.APPROACH_SPEED_KP * (speed - v_ref)
-        alpha = vec.clamp(alpha, 0.0, min(self.alpha_ceiling, float(
-            self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG)))
+        alpha = vec.clamp(alpha, 0.0, cap)
         side = getattr(self, "_spiral_side", None)
         if side is None:
             side = self._spiral_side = 1.0 if command.bank >= 0.0 else -1.0
