@@ -4815,3 +4815,94 @@ with fuel forward again just before the approach is a CoM step at the
 handover, the shape of failure 31).  Traps: ksp3/ksp4 once each "could
 not pause after the load" (LOG7966, LOG8069 suspect; GameData matches
 `base/` apart from the shared CollisionSpy/icons).
+
+## Session, 2026-10-07 afternoon/evening: kRPC's twisting integrators, and trim on the canards
+
+Fingerprints `db682413` -> `0d31fb12` (off flags only; no default
+changed).  All `qs_shuttle2_rigoff` from orbit, every arm on the offload
+(`GLIDE_PITCH_OFFLOAD` 0.6, Mach >= 3), farm restarted before every
+batch.  The user: "not just tune things, think about missing things".
+
+**Where the short misses come from.**  The offload's short flights reach
+the cone as well as the good ones (+0.4..+0.6 km, same height) and lose it
+inside: late in the cone the speed law drops the alpha command to ~0-2 and
+the vehicle holds 6-11 deg with a 7-9 deg nose-down pointing error and an
+*unsaturated* pitch input of +0.3..+0.5 for 30-90 s (LOG8104 vs LOG8083).
+Over 480 rigoff flights of 2026-10-07, that state on >= 20% of cone and
+approach ticks: **3/173 on the runway, 145 short**; under 5%: 114/185.
+kspSim never shows it (max 6% over 31 sim flights).
+
+**What it is, from kRPC's own diagnostic log** (scratch `apwatch.py`: a
+passive observer reading `AutoPilot.current_attitude_error`, oscillation
+levels and latches, PID gains, and dumping `AutoPilot.diagnostic_log` --
+kRPC 0.6's 50 Hz internals -- when the nose sits off target): no
+oscillation mitigation involved (latch 0, level 0), effective target equal
+to ours.  The error sits in kRPC's *roll-invariant yaw* axis, and `phi` =
+33-35 deg on a wings-level vehicle: kRPC carries that frame by parallel
+transport of the nose, and the spiral twists it against the body.  The
+nose-up trim its integrators hold (RI yaw -0.62) comes out as body pitch
++0.29 and **body yaw -0.53** -- the pitch and heading error and the 3.6
+deg slip -- and unwinds at ~0.002/s.  The glide's long mode (previous
+session) is the same fault.
+
+**Three ways of holding the standing input elsewhere, all refuted:**
+- `PITCH_P_CONE` (rot-pitchp-1007, 18 an arm): 8/18 vs 6/18.  kRPC wound
+  its own output up against the term (LOG8123: P -0.35, total +0.30).
+- `CONE_TRIM_HANDOFF` (rot-handoff-1007): carry the summed input as a body
+  trim at converged moments and re-engage kRPC (its `Start()` zeroes the
+  integrators and re-seats the frame).  4/18 vs 5/19, 2 lost, 5 far misses:
+  the first handoff captured +0.6..+0.98 at high q and the vehicle never
+  converged again -- a stale trim is the same fault.
+- (The glide offload, previous session.)
+
+**Measured, never commanded before:**
+- *Cargo bay doors* (scratch `bayprobe.py`, `simulate_aerodynamic_force_at`):
+  open adds 10-30% drag and a little lift (L/D 5.5 -> 4.75 at 0 deg, 3.9 ->
+  3.4 at 5, 90 m/s).  A real speedbrake.
+- *Trim cost* (scratch `tabprobe.py`, 12 km, alpha 5, 90 m/s): full nose-up
+  input on every surface 285 kN m for **-50 kN lift (-34%) and +28 kN drag
+  (+160%)**; canards deployed +10 deg 60 kN m with **+6 kN lift**, +2 drag.
+  That, with the stuck controller, is the cone's L/D 1.2.
+- *Canard stall* (`tabprobe2.py`, 120 m/s): +15 deg deployed gives -129 kN
+  m at alpha 5, -65 at 18, 0 at 24, **+56 (nose-down) at 30**.  The
+  cone's early 22-26 deg command, flown at 15-17 with the input pinned, is
+  this ceiling.
+- *Surfaces under AtmosphereAutopilot* (decompiled
+  `SyncModuleControlSurface`): pitch+roll+yaw share one travel per surface
+  (clamp of the sum); a *deployed* surface ignores input entirely (stock
+  adds the deploy angle to the control deflection, clamped at 1.5x range).
+  kRPC's `ControlSurface.deflection_override` takes a surface off the input
+  and sets its deploy angle (-1..1 -> +-37.5 deg here) -- direct per-surface
+  control, no more travel or rate than stock; a deploy angle of exactly 0
+  freezes the surface (never command 0).
+- *Pump vs stuck state*: in last session's pump arms the 35-47% stuck
+  cluster of every offload arm is gone (max ~24%).
+
+**`BAY_BRAKE`** v1 (deadband law) with `PROPELLANT_TRIM` +
+`HAC_LD_MEASURED` (rot-bay-1007): 4/18 vs 4/18, 4 lost -- the measured
+ratio swings ~3 km with the pump changing the trim, doors cycled.  The user:
+doors only if necessary, no cycling (memory bay-doors-last-resort).  v2:
+open once when the cone's radius is at its cap with no lap or the
+approach's S-turns are saturated (`BAY_BRAKE_SATURATED` 0.8 of the window),
+shut when spent, never reopened.
+
+**`CANARD_TRIM`** (new, off): the forward mirrored pair is taken off kRPC
+with `deflection_override` and integrates the low-passed summed pitch input
+to zero (tau 5 s), engaging and learning only settled and under 15 deg of
+alpha (first smoke LOG8224 engaged at the cone's entry at alpha 22-30,
+learned the entry transient and departed at alpha 86), capped by the
+canard's local incidence (deflection + alpha <= 28 deg).  Column `ctrim=`.
+LOG8225: standing input +-0.08 from engagement, yaw ~0, flown L/D 3.0-3.7
+late cone, 3.7-4.2 approach (was 1.2-2.5); +5.1 km long.
+
+| batch | arms (12 or 18 an arm) | runway / intact |
+|---|---|---|
+| rot-canard-1007 (12) | offload / +canard / +canard +LD_MEASURED | 4/12, 12 / 5/12, 11 / 6/12, 10 |
+| rot-canard2-1007 (18, incidence cap) | offload / +canard +LD_MEASURED | 5/18, 18 / **13/18**, 15 |
+
+Pooled canard + `HAC_LD_MEASURED`: **19/30 against 9/30**; the offload's
+-5..-6.5 km short cluster is gone, runway stops within +-930 m along.  The
+losses (3 + 2) are approaches handed over ~1 km high that pin the S-turns
+for a minute and then dive the excess away into the flare door at 52-93
+m/s of sink (LOG8265, 8268, 8282).  rot-canbay-1007 flies the last-resort
+doors against that.

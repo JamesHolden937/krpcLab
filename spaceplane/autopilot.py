@@ -827,6 +827,7 @@ class Autopilot:
         if self.cfg.BROADSIDE_PROBE_DEG > 0.0 and self.state in (
                 COAST, GLIDE, APPROACH, FLARE):
             alpha_deg = float(self.cfg.BROADSIDE_PROBE_DEG)
+        bank_deg = self.bank_probe(bank_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
@@ -869,6 +870,60 @@ class Autopilot:
             rr.update(snap.ut, bank_deg, flown_bank(snap),
                       getattr(snap, "sideslip", None))
         self.damp_roll(snap, bank_deg, alpha_deg)
+
+    def bank_probe(self, bank_deg, snap):
+        """``GLIDE_BANK_PROBE_DEG``: hold one bank from COAST through GLIDE
+        until ``_END_MACH`` and log where the vehicle is at fixed Mach
+        crossings (config).  Returns the bank to fly."""
+        probe = float(getattr(self.cfg, "GLIDE_BANK_PROBE_DEG", 0.0))
+        if probe == 0.0 or self.state not in (COAST, GLIDE) \
+                or getattr(self, "_bank_probe_done", False):
+            return bank_deg
+        try:
+            alt = vec.norm(snap.position) - self.env.equatorial_radius
+            mach = self.env.mach(vec.norm(snap.velocity), alt)
+        except Exception:                               # noqa: BLE001
+            return probe
+        marks = getattr(self, "_bank_probe_marks", None)
+        if marks is None:
+            marks = self._bank_probe_marks = [8.0, 6.0, 5.0, 4.0, 3.0, 2.0,
+                                              1.5, 1.0]
+            self._bank_probe_ref = None
+            self.logbook.event(snap.ut, "bank probe: holding %+.0f deg "
+                               "(%s) until Mach %.1f" % (
+                                   probe, self.state, float(
+                                       self.cfg.GLIDE_BANK_PROBE_END_MACH)))
+        while marks and mach <= marks[0]:
+            mark = marks.pop(0)
+            try:
+                body, frame = self.body, self.frame
+                if self._bank_probe_ref is None:
+                    mid = self.env.runway.midpoint
+                    self._bank_probe_ref = (
+                        body.latitude_at_position(mid, frame),
+                        body.longitude_at_position(mid, frame))
+                lat = body.latitude_at_position(snap.position, frame)
+                lon = body.longitude_at_position(snap.position, frame)
+                lat0, lon0 = self._bank_probe_ref
+                radius = self.env.equatorial_radius
+                north = math.radians(lat - lat0) * radius
+                dlon = (lon - lon0 + 180.0) % 360.0 - 180.0
+                east = math.radians(dlon) * radius * math.cos(
+                    math.radians(lat0))
+                self.logbook.event(
+                    snap.ut, "bank probe: Mach %.1f alt %.0f m  lat %+.4f "
+                    "lon %+.4f  north %+.1f km east %+.1f km of the runway "
+                    "(bank flown %+.1f)" % (mark, alt, lat, lon, north / 1e3,
+                                            east / 1e3, flown_bank(snap)))
+            except Exception as exc:                    # noqa: BLE001
+                self.logbook.event(snap.ut, "bank probe: no position (%s)"
+                                   % exc)
+        if mach <= float(self.cfg.GLIDE_BANK_PROBE_END_MACH):
+            self._bank_probe_done = True
+            self.logbook.event(snap.ut, "bank probe: done at Mach %.2f, "
+                               "guidance resumes" % mach)
+            return bank_deg
+        return probe
 
     def damp_roll(self, snap, bank_deg, alpha_deg=None):
         """The lateral tune, every tick: roll from ``ROLL_DAMPER``, yaw from

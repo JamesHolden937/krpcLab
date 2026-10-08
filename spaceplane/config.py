@@ -661,6 +661,15 @@ class Config:
     # cheaply; if they hold twenty, it is a bigger lever than the split
     # rudder by an order of magnitude.
     SLIP_PROBE_DEG: float = 0.0
+    # **Crossrange probe** (the user, 2026-10-07): hold this bank, in the
+    # autopilot's own sign convention (``trajectory.lift_frame`` does not
+    # name left and right -- read the side off the logged track), from
+    # COAST through GLIDE until ``_END_MACH``, then hand back to guidance.
+    # ``Autopilot.aim`` logs the position (km north/east of the runway
+    # midpoint) at fixed Mach crossings: the lateral reach of a constant
+    # bank, measured.  0 = off.  An instrument, not a flight mode.
+    GLIDE_BANK_PROBE_DEG: float = 0.0
+    GLIDE_BANK_PROBE_END_MACH: float = 1.0
     ENTRY_ALPHA_DEG: float = 22.0# hot phase: maximum drag with lift
     GLIDE_ALPHA_DEG: float = 20.0           # max L/D, for range
     ALPHA_RATE_DEG_S: float = 3.0           # how fast the command may move
