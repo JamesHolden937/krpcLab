@@ -1482,7 +1482,16 @@ def cone_energy_long(env, cfg, handover):
     gravity = env.mu / (radius * radius)
     ratio = (getattr(getattr(env, "runway", None), "aim_ld", None)
              or cfg.HAC_GATE_LD)
-    return ratio * (altitude + speed * speed / (2.0 * gravity) - want[1])
+    # **A surplus only.**  The predicted entry energy is low on every
+    # flight on record (60 of 60 orbit flights, by 0.5-13 km of energy
+    # height 50 km out; rot-orbits/rot-sharp*-1007), so a predicted surplus
+    # is a lower bound on a real one, while a predicted deficit is mostly
+    # the prediction's own pessimism.  Priced both ways, the glide read
+    # -14 km from 260 to 40 km out, flattened to save energy it already had
+    # and entered the cone with 24 km (kspSim LOG8501, against 17-18.6
+    # without).  The deficit side is left to the position aim.
+    return ratio * max(0.0, altitude + speed * speed / (2.0 * gravity)
+                       - want[1])
 
 
 def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,

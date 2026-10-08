@@ -5604,14 +5604,14 @@ class TestConeEntryEnergy(unittest.TestCase):
         over = self.band(-6000.0, 3000.0)
         self.assertLess(straight[2] - straight[0], over[2] - over[0])
 
-    def test_surplus_reads_long_and_a_deficit_short(self):
+    def test_surplus_reads_long_and_a_deficit_is_ignored(self):
         self.env.cone_energy = (14000.0, 16000.0, 18000.0)
         radius = self.env.equatorial_radius + 15000.0
         g = self.env.mu / (radius * radius)
         v_at = lambda e: math.sqrt(2.0 * g * (e - 15000.0))
         self.assertGreater(guidance.cone_energy_long(
             self.env, self.cfg, (15000.0, v_at(18000.0))), 0.0)
-        self.assertLess(guidance.cone_energy_long(
+        self.assertEqual(guidance.cone_energy_long(
             self.env, self.cfg, (15000.0, v_at(15500.0))), 0.0)
         self.assertAlmostEqual(guidance.cone_energy_long(
             self.env, self.cfg, (15000.0, v_at(16000.0))), 0.0, delta=1.0)
