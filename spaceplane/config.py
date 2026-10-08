@@ -214,6 +214,18 @@ class Config:
     # yaw inputs become the manual trim and kRPC is re-engaged, whose
     # ``Start()`` zeroes the integrators and re-seats the frame.  The flare
     # keeps the trim and adds ``FLARE_PITCH_P`` on top; ROLLOUT ramps it out.
+    # **The cargo bay doors as a speedbrake** (``Autopilot.bay_brake``),
+    # never commanded before 2026-10-07.  Measured on qs_s2_hac0 with
+    # ``simulate_aerodynamic_force_at`` (scratch bayprobe): open adds 10-30%
+    # drag at 90-220 m/s and slightly *adds* lift (L/D 5.5 -> 4.75 at 0
+    # deg, 3.9 -> 3.4 at 5) -- drag, not a lift dump, unlike the measured
+    # flap "spoiler".  The missing half of ``PROPELLANT_TRIM``: trimmed, the
+    # cone flies L/D 2.6 and lands 7-15 km long with nothing to spend it.
+    # Open past ``HAC_WEAVE_DEADBAND_M`` of surplus (cone: over
+    # ``needed_height``; approach: ``command.excess``), shut under half of
+    # it; held as they are from the flare door on.  kspSim does not model
+    # the doors (its gap 4).
+    BAY_BRAKE: bool = False
     CONE_TRIM_HANDOFF: bool = False
     CONE_TRIM_HANDOFF_S: float = 5.0
     CONE_TRIM_HANDOFF_TOL_DEG: float = 1.5

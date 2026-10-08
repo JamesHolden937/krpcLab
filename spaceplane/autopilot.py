@@ -4064,6 +4064,45 @@ class Autopilot:
                                % ("OUT" if out else "in", surplus, sink,
                                   arrest))
 
+    def bay_brake(self, snap, surplus, where):
+        """``BAY_BRAKE``: the cargo bay doors as the energy chain's drag
+        control -- open past ``HAC_WEAVE_DEADBAND_M`` of surplus, shut under
+        half of it.  Doors add drag and a little lift (scratch bayprobe,
+        2026-10-07), so there is no sink to arrest as with the flaps.  A
+        missing surplus is no answer: the doors stay as they are."""
+        if not getattr(self.cfg, "BAY_BRAKE", False) or surplus is None:
+            return
+        bays = getattr(self, "_bays", None)
+        if bays is None:
+            try:
+                bays = list(self.vessel.parts.cargo_bays)
+            except Exception:                           # noqa: BLE001
+                bays = []
+            self._bays = bays
+            self._bay_open = False
+            self._bay_moves = 0
+            if not bays:
+                self.logbook.event(snap.ut, "bay brake: no cargo bay")
+        if not bays:
+            return
+        band = float(self.cfg.HAC_WEAVE_DEADBAND_M)
+        want = self._bay_open
+        if not want and surplus > band:
+            want = True
+        elif want and surplus < 0.5 * band:
+            want = False
+        if want == self._bay_open:
+            return
+        try:
+            for bay in bays:
+                bay.open = want
+        except Exception:                               # noqa: BLE001
+            return
+        self._bay_open = want
+        self._bay_moves += 1
+        self.logbook.event(snap.ut, "bay brake %s (%s): surplus %+.0f m"
+                           % ("OPEN" if want else "shut", where, surplus))
+
     def run_coast(self, snap):
         """Fall to the entry interface, already in the entry attitude.
 
@@ -4569,6 +4608,7 @@ class Autopilot:
         self.hac_flap_brake(snap, command, height)
         needed = getattr(command, "needed_height", None)
         self._hac_surplus = None if needed is None else height - needed
+        self.bay_brake(snap, self._hac_surplus, "cone")
         # Rolled out, or out of height.  The second is not a failure mode:
         # the cone is flown *above* the gate's altitude and reaching it is
         # simply the end of the surplus.
@@ -4710,6 +4750,7 @@ class Autopilot:
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
         self.command_airbrake(snap, command, height, trigger, sink)
+        self.bay_brake(snap, getattr(command, "excess", None), "approach")
         if height <= trigger:
             self.flare_since = snap.ut
             self.enter(FLARE, snap.ut, "h=%.1f v=%.1f sink=%.1f cross=%+.0f"
