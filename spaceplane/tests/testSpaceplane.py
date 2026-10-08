@@ -1990,7 +1990,7 @@ class TestTheSharpTurnSpendsSurplusAsDrag(unittest.TestCase):
         self.assertIsNone(low.sharp)
 
     def test_slow_it_hands_back_to_the_speed_law(self):
-        slow = self.command(2800.0, 8000.0, speed=40.0)
+        slow = self.command(2800.0, 8000.0, speed=40.0)  # under the door
         self.assertIsNone(slow.sharp)
 
 

@@ -1216,9 +1216,14 @@ def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
     the extra alpha adds is banked off: ``cos(bank) = L_speed / L``.
     """
     margin = max(0.1, float(cfg.APPROACH_SHARP_SPEED_MARGIN_M_S))
-    # Faded out over the margin below the held speed, not switched: a step
-    # from 14 deg to the speed law's 2 is a law no vehicle flies.
-    share = vec.clamp((speed - (held - margin)) / margin, 0.0, 1.0)
+    door = cfg.APPROACH_FLARE_FACTOR * stall
+    # Faded in over the margin above the speed the flare needs at its door,
+    # not switched: a step from 14 deg to the speed law's 2 is a law no
+    # vehicle flies.  **The door, not the held speed**: the shuttle flies
+    # its approach at 73-100 m/s against a held 110-115 (LOG8359-8363), so
+    # gating on the held speed left the turn off on all but one tick.  Speed
+    # above the door is surplus like height, and ``energy`` counts it.
+    share = vec.clamp((speed - door) / margin, 0.0, 1.0)
     if share <= 0.0:
         return None
     stop = (float(cfg.APPROACH_SCURVE_STOP_M)
@@ -1226,7 +1231,6 @@ def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
     span = distance - max(0.0, stop)
     if span <= 100.0:
         return None
-    door = cfg.APPROACH_FLARE_FACTOR * stall
     energy = (height - trigger - max(0.0, stop) / max(0.1, best_ld)
               + (speed * speed - door * door) / (2.0 * gravity))
     if energy <= 0.0:

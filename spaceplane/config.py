@@ -2206,7 +2206,7 @@ class Config:
     # an ``aoa=`` cmd/actual gap in the sharp turns.
     APPROACH_SHARP_ALPHA_MAX_DEG: float = 14.0
     APPROACH_SHARP_BANK_MAX_DEG: float = 60.0
-    # Hand back to the speed law this far under its held speed.
+    # Faded in over this much speed above the flare's door speed.
     APPROACH_SHARP_SPEED_MARGIN_M_S: float = 5.0
     # The lean reverses toward the course past this heading off it.
     APPROACH_SHARP_HEADING_MAX_DEG: float = 60.0
