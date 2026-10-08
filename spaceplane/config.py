@@ -423,6 +423,13 @@ class Config:
     # from zero, where a lap is quantised.  It only grows while the move
     # does not wrap the turn (a gate moved behind a lined-up vehicle is a
     # lap), and shrinks when the plan reads short.  Off.
+    # **Flown null (sav-stretch-1008, 12 v 12 on qs_s2_hac0-5):** engaged
+    # on 4, grew to 0.2-1.35 km, handovers unchanged (+1.2..+2.3 km over
+    # need).  The high saves enter the cone *straight in* -- on the
+    # extended centreline outside the gate, turn ~2 deg, 11 km out
+    # (LOG8477) -- where moving the gate out cannot add path, only reprice
+    # it, so the step test refuses it correctly.  The surplus there needs
+    # a turn away from the runway, i.e. a lap, or drag.
     HAC_GATE_STRETCH: bool = False
     HAC_GATE_STRETCH_MAX_M: float = 12000.0  # safety bound, not a fit
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the

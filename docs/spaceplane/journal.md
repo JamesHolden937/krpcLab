@@ -4985,3 +4985,53 @@ allowance cut so the cone itself flies the lap), not a quantum after it.
 Also seen: touchdown breakups at 64-68 m/s flare entry are common on the
 cone saves in every arm (15-25 parts), and the approach often commands
 alpha -2 while flying +4.5 (LOG8359) -- the kRPC tracking problem again.
+
+## Session, 2026-10-08 morning (~0700-0800): the cone's exit quantum -- `HAC_GATE_STRETCH`, null
+
+The user: "fix the cone handover".  The last session's finding: on the cone
+saves the cone rolls out lined up 2-6.8 km over the approach's need with
+`laps=0` (LOG8401 +1.9 km, 8404 +4.1, 8416 +4.6) and lands +3..+14 km.
+Read: the cone's continuous spending devices are the radius and the weave;
+once both pin (`R=16000`, `wv=50`), anything short of a lap (~5-8 km of
+height, `hac_exit_surplus`) is handed to an approach that spends ~0.5.
+
+**Built: `HAC_GATE_STRETCH`** (off; `Autopilot.hac_gate_stretch`,
+`guidance.gate_alt`, `end["gate_stretch"]` read by `low_gate`).  While the
+plan reads surplus, the rollout moves out along the extended centreline at
+`HAC_RADIUS_RATE_M_S`, the gate rising by the approach's glide over the
+move (`approach_needed` carries it), so a sub-lap surplus becomes a longer
+final.  A step is taken only if the re-planned cone owes no lap, is not
+short, does not wrap the turn, and **raises the plan's need**.
+
+- **kspSim screen 1** (sim-stretch-1008, qs_shuttle2, 4 v 4, best config):
+  without the last test the stretch grew 2.5-2.9 km at turn 0 and rolled
+  out +1.2-1.8 km over need against +0.2-0.65 (LOG8459, 8463, 8465).
+  Lined up outside the gate, moving the gate toward the vehicle only swaps
+  straight path priced at the cone's ratio (~2.3) for the approach's (4.2):
+  surplus appears, nothing is spent.  Fixed by the need-must-rise test.
+- **kspSim screen 2** (sim-stretch2-1008): barely engaged.  The sim's cone
+  plan read *short* most of the way down (`pld` 0.85-0.97, LOG8473) and
+  rolled out high anyway -- the cone's L/D estimate, a separate problem.
+- **Farm** (sav-stretch-1008, savefly 4 rounds, `GLIDE_PITCH_OFFLOAD` +
+  `CANARD_TRIM` + `HAC_LD_MEASURED`, off v on, 12 each): **null**.
+  Engaged on 4 flights (hac1, hac3), stretch 0.2-1.35 km; rollout surplus
+  hac3 +2.33/+2.15 km on against +1.83/+1.83 off, hac1 +1.93/+1.22 on
+  against +1.87/+1.93.  Landings: hac3 +6.2/+4.8 km on against +3.4/+3.1;
+  the rest flew stretch 0 and differ by noise (hac2 on: -267, +621, 31
+  parts both).  hac0/hac5 hand over "out of height" in both arms; hac4
+  rolls out at turn 336 with +4.1 km in both.
+
+**Why:** the high saves enter the cone **straight in** (LOG8477: turn
+1.6 deg, gate 11.3 km, on the centreline outside the gate, surplus
++2.7 km).  The entry aim (`high_gate`, `HAC_AIM_DERIVED`) puts them on the
+straight-in profile by design.  There, no gate position adds path -- only a
+turn away from the runway does, and the cheapest such turn is the lap.  The
+stretch only helps a vehicle that is on the far side of the circle.
+
+This is the third mechanism on spending the cone's sub-lap surplus (sharp
+turn, spiral dump, stretch).  Per the root rule, change the method: the
+remaining continuous devices are **drag at the cone's speed** (flap brake on
+surplus, the bay doors, propellant trim -- each previously off for its own
+reasons) and **upstream**: an entry aim that delivers the high arrivals
+*onto the circle* rather than onto the straight-in line, where both the
+radius and the stretch have authority.  Swap after the batch: 24.6 GB.
