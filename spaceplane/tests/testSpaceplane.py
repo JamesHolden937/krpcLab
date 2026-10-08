@@ -5616,6 +5616,13 @@ class TestConeEntryEnergy(unittest.TestCase):
         self.assertAlmostEqual(guidance.cone_energy_long(
             self.env, self.cfg, (15000.0, v_at(16000.0))), 0.0, delta=1.0)
 
+    def test_ceiling_is_one_number_above_the_gate(self):
+        self.cfg = Config(GLIDE_CONE_ENERGY=True, GLIDE_CONE_CEILING=True)
+        low, mid, high = self.band(8000.0, 0.0)
+        self.assertEqual(low, high)
+        self.assertEqual(mid, high)
+        self.assertGreater(high, self.cfg.GATE_ALT_M)
+
     def test_nothing_when_off_or_unknown(self):
         self.env.cone_energy = None
         self.assertEqual(guidance.cone_energy_long(

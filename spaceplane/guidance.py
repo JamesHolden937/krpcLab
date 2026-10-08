@@ -1456,6 +1456,32 @@ def cone_entry_energy(env, cfg, end, r, v, mass, gravity):
             return None
         return ladder_height(rungs, path, 1.0) + speed_term
 
+    if getattr(cfg, "GLIDE_CONE_CEILING", False):
+        # **The most the cone can spend without a lap**, priced at the
+        # ratio it actually spends at.  The ladder above prices path at the
+        # cone's target speed scaled by ``ldk``, and read 14-35 km for the
+        # same entry state on eight sim flights (sim-easce-1008).  Flown,
+        # the cone covers 26-29 km of path from *every* entry on 24 farm
+        # orbit flights, whatever the radius, and its one energy control is
+        # how long it stays at the alpha cap: ~1.5 m of path per metre of
+        # energy there, ~3.1 below it.  So the ceiling is the gate's energy
+        # plus the longest no-lap path (widest circle, weave at its limit)
+        # at the airframe's own L/D at the cap -- ``straight_in_reach``'s
+        # "steepest", off the table.  Entries above ~20-21 km roll out high
+        # and land 4-6 km long (LOG8340, 8348, 8351); below it they roll out
+        # within +-0.5 km.  Returned as ``(ceiling, ceiling, ceiling)``.
+        mid_h = 0.5 * (height + cfg.GATE_ALT_M)
+        speed = cone_speed(env, cfg, stall, mid_h)
+        try:
+            cla, cda = env.coefficients(cfg.HAC_ALPHA_MAX_DEG, speed, mid_h)
+        except Exception:                                   # noqa: BLE001
+            return None
+        if cla <= 0.0 or cda <= 0.0:
+            return None
+        ceiling = (gate_alt(env, cfg, end, mass=mass, gravity=gravity)
+                   + speed_term + long[0] / max(0.1, eff) / (cla / cda))
+        return ceiling, ceiling, ceiling
+
     low = need(short[0], short[1], short[2])
     high = need(long[0] / max(0.1, eff), long[1], long[2])
     if low is None or high is None:

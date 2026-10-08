@@ -992,6 +992,14 @@ class Config:
     # rot-sharp*-1007) entries delivered 17-28 km of energy height and the
     # cone handed over ~20% of the excess over ~17 km.  Off.
     GLIDE_CONE_ENERGY: bool = False
+    # **... against the cone's ceiling, not the middle of its ladder band**
+    # (``guidance.cone_entry_energy``): the gate's energy plus the longest
+    # no-lap path at the airframe's L/D at ``HAC_ALPHA_MAX_DEG``.  The
+    # ladder band read 14-35 km for one entry state; the cone flies 26-29 km
+    # of path from every entry and absorbs ~20-21 km of energy height at
+    # most (24 farm orbit flights, rot-orbits/rot-sharp1-1007).  Needs
+    # ``GLIDE_CONE_ENERGY``.  Off.
+    GLIDE_CONE_CEILING: bool = False
     GLIDE_RESERVE_FROM_ALT_M: float = 12000.0
     GLIDE_RESERVE_TO_ALT_M: float = 12000.0
 
