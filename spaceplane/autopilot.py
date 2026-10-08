@@ -5570,6 +5570,12 @@ class Autopilot:
             if abs(lp) > band:
                 err = lp - math.copysign(band, lp)
                 cap = float(self.cfg.CANARD_TRIM_MAX)
+                try:
+                    local = (float(self.cfg.CANARD_TRIM_LOCAL_MAX_DEG)
+                             - max(0.0, float(snap.krpc_aoa))) / 37.5
+                    cap = max(0.0, min(cap, local))
+                except (TypeError, ValueError):
+                    pass
                 self._ctrim = vec.clamp(
                     self._ctrim + err * dt / max(0.1, float(
                         self.cfg.CANARD_TRIM_TAU_S)), -cap, cap)
@@ -5586,6 +5592,13 @@ class Autopilot:
                 self._ctrim_on = False
                 self.logbook.event(snap.ut, "canard trim released")
             return
+        if self._ctrim > 0.0:
+            try:
+                local = (float(self.cfg.CANARD_TRIM_LOCAL_MAX_DEG)
+                         - max(0.0, float(snap.krpc_aoa))) / 37.5
+                self._ctrim = min(self._ctrim, max(0.0, local))
+            except (TypeError, ValueError):
+                pass
         cmd = float(self.cfg.CANARD_TRIM_SIGN) * self._ctrim
         if abs(cmd) < 0.003:
             # A deploy angle of exactly 0 freezes the surface under

@@ -254,6 +254,14 @@ class Config:
     # ``_MAX_ALPHA_DEG``, within ``_ALPHA_TOL_DEG`` of its command and the
     # roll settled; otherwise it holds.
     CANARD_TRIM_MAX_ALPHA_DEG: float = 15.0
+    # **The cap is the canard's own incidence, not a share of travel.**
+    # Deflection + flown alpha (the canard's local angle) at most this: at
+    # +15 deg deployed the nose-up moment halves by alpha 18 and is gone at
+    # 24 (local ~39 deg, tabprobe2).  With a fixed cap of 0.6 (22.5 deg) the
+    # three flights lost in rot-canard-1007 (LOG8253, 8233, 8259) sat at the
+    # cap at 10-15 deg of alpha, standing input still +0.4..+0.9, and dived
+    # into the flare at 52-93 m/s of sink.
+    CANARD_TRIM_LOCAL_MAX_DEG: float = 28.0
     CANARD_TRIM_ALPHA_TOL_DEG: float = 3.0
     CANARD_TRIM_LP_S: float = 2.0
     CANARD_TRIM_DEADBAND: float = 0.05
