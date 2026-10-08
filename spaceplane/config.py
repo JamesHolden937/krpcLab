@@ -980,6 +980,18 @@ class Config:
     # 14-17 km doing 210-270.  It measures the propagator, not the arrival.
     # The energy has to be read where the cone is actually entered.
     GLIDE_ENERGY_AIM: bool = False
+    # **Aim the glide at the energy the cone wants to be entered with**
+    # (``guidance.cone_entry_energy`` / ``cone_energy_long``; the user,
+    # 2026-10-08: "adjust cone entry energy").  The target is the middle of
+    # what the cone can spend without a lap from the state the prediction
+    # enters it in -- its tightest circle to its widest plus the weave,
+    # down its own ladder -- and the predicted energy is read where the arc
+    # meets the cone's entry test, not at the 12 km crossing (which is why
+    # ``GLIDE_ENERGY_AIM`` was refuted).  The difference is ground at the
+    # aim's ratio, added to the miss.  Over 60 orbit flights (rot-orbits,
+    # rot-sharp*-1007) entries delivered 17-28 km of energy height and the
+    # cone handed over ~20% of the excess over ~17 km.  Off.
+    GLIDE_CONE_ENERGY: bool = False
     GLIDE_RESERVE_FROM_ALT_M: float = 12000.0
     GLIDE_RESERVE_TO_ALT_M: float = 12000.0
 

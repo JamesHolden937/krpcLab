@@ -1490,6 +1490,22 @@ class Autopilot:
                        snap.dynamic_pressure,
                        "%.1f" % learned if learned is not None else "-"))
 
+    def update_cone_energy(self, snap, prediction):
+        """``GLIDE_CONE_ENERGY``: what the cone wants to be entered with,
+        from the state this tick's prediction enters it in
+        (``guidance.cone_entry_energy``), for the next tick's solve.
+        Cleared when the arc does not meet the entry test, so no stale
+        target is ever priced."""
+        if not getattr(self.cfg, "GLIDE_CONE_ENERGY", False):
+            return
+        state = getattr(prediction, "handover_state", None)
+        want = None
+        if getattr(prediction, "handover_met", False) and state:
+            want = guidance.cone_entry_energy(
+                self.env, self.cfg, self.end, state[0], state[1],
+                snap.mass, self.surface_gravity)
+        self.env.cone_energy = want
+
     def miss(self, snap):
         if self.prediction is None or not self.prediction.reached:
             return None
@@ -4410,6 +4426,7 @@ class Autopilot:
         if prediction is not None:
             self.prediction = prediction
             self.env.set_profile(prediction.profile)
+            self.update_cone_energy(snap, prediction)
 
         # Rate-limit the command.  The solve is allowed to ask for anything;
         # the vehicle is not allowed to slam to it, because a step in bank is
@@ -6536,6 +6553,18 @@ def compact_line(state, snap, run):
     if state == GLIDE:
         bits.append("rsv=%6.0f" % guidance.glide_reserve(env, run.cfg,
                                                          snap.position))
+        if getattr(run.cfg, "GLIDE_CONE_ENERGY", False):
+            # The cone's wanted entry energy (low/mid/high) against the
+            # predicted one: what ``el=`` is made of.
+            want = getattr(env, "cone_energy", None)
+            hand = getattr(run.prediction, "handover", None) \
+                if run.prediction is not None else None
+            met = getattr(run.prediction, "handover_met", False) \
+                if run.prediction is not None else False
+            got = (hand[0] + hand[1] ** 2 / (2.0 * run.surface_gravity)
+                   if hand and met else 0.0)
+            bits.append("ce=%5.0f/%5.0f/%5.0f pe=%5.0f" % (
+                (want or (0.0, 0.0, 0.0)) + (got,)))
     # **Which law flew this tick.**  ``max`` means the propagated arc did not
     # reach the gate and the vehicle is bracketing for distance rather than
     # nulling a miss (``guidance.max_range``).  It is here because the two

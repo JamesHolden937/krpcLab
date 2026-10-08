@@ -77,6 +77,10 @@ class Prediction:
     # the log can set the energy the prediction promises the cone against
     # the one it gets.  ``None`` when the arc never meets it.
     handover: object = None
+    # Whether ``handover`` is where the arc met the entry test (and where:
+    # ``handover_state`` = ``(r, v)``), or only the fallback at the target.
+    handover_met: bool = False
+    handover_state: object = None
     closest: float = 0.0       # horizontal distance to the gate there
     profile: tuple = ()        # (speed, altitude) along the way down
     min_altitude: float = 0.0
@@ -891,6 +895,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             else env.target_radius + cfg.GATE_ALT_M)
     closest = None
     handover = None
+    handover_state = None
     entry_mach = float(getattr(cfg, "HAC_ENTRY_MACH", 0.0) or 0.0)
     entry_dist = float(getattr(cfg, "HAC_ENTRY_DIST_M", 0.0) or 0.0)
 
@@ -909,6 +914,8 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             handover=(handover if handover is not None
                       else ((radius - env.equatorial_radius, vec.norm(vv))
                             if reached else None)),
+            handover_met=handover is not None,
+            handover_state=handover_state,
             profile=tuple(profile), min_altitude=lowest, skipped=skipped,
             entry_arc=(0.0 if entry_r is None
                        else forward_arc(env, entry_r, entry_v, rr)),
@@ -963,6 +970,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
                     slow = False
                 if slow:
                     handover = (altitude, speed)
+                    handover_state = (tuple(r), tuple(v))
 
         if descending and radius <= stop:
             return answer(r, v, t, steps, True, False)

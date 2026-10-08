@@ -38,6 +38,9 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     if prediction.reached:
         prediction.energy_long = energy_long(env, cfg, prediction.speed,
                                              vec.norm(gate))
+        if getattr(prediction, "handover_met", False):
+            prediction.energy_long += cone_energy_long(env, cfg,
+                                                       prediction.handover)
     return steer, prediction, (prediction.long + prediction.energy_long,
                                prediction.cross)
 
@@ -1392,6 +1395,94 @@ def hac_available(env, cfg, speed, height, mass, gravity):
         final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
         excess = max(0.0, (speed * speed - final * final) / (2.0 * gravity))
     return max(0.0, height + excess - cfg.GATE_ALT_M) * ratio
+
+
+def cone_entry_energy(env, cfg, end, r, v, mass, gravity):
+    """``GLIDE_CONE_ENERGY``: the energy height (``h + v^2/2g``) the cone
+    wants to be entered with at ``r``/``v`` -- the middle of what it can
+    spend from there without a lap -- as ``(low, mid, high)``, or ``None``.
+
+    Everything is the cone's own machinery at the entry state: the path to
+    the rollout over every radius it may fly (``hac_cost``, floored at the
+    circle the airframe holds at the cone's speed), the longest of them
+    stretched by the weave at its limit (``weave_efficiency``), each priced
+    down the cone's ladder (``hac_ladder``), plus the speed term the cone's
+    budget counts (``(v^2 - v_final^2)/2g`` over the gate's target speed).
+    ``low`` is the tightest circle, ``high`` the widest plus the weave.  At
+    a straight-in entry the two nearly meet -- the cone has no authority
+    there but the weave -- which is the geometry this measures rather than
+    assumes.
+    """
+    stall = airframe.stall(env, cfg)
+    if stall is None or mass is None or gravity <= 0.0:
+        return None
+    height = vec.norm(r) - env.equatorial_radius
+    side = hac_side(env, cfg, end, r, v)
+    target = cone_speed(env, cfg, stall, height)
+    load = airframe.turn_load(env, cfg, target, height, mass, gravity)
+    floor = max(cfg.HAC_RADIUS_MIN_M,
+                hac_hold_radius(cfg, target, gravity, load))
+    floor = min(floor, cfg.HAC_RADIUS_MAX_M)
+    plans = []
+    steps = 24
+    for i in range(steps + 1):
+        radius = floor + (cfg.HAC_RADIUS_MAX_M - floor) * i / float(steps)
+        cost = hac_cost(env, cfg, end, r, v, side, radius)
+        if cost is None:
+            continue
+        state = hac_state(env, cfg, end, r, side, radius)
+        _, turn, _ = hac_path(cfg, state[0], state[1], state[2], side,
+                              radius)
+        plans.append((cost, radius, turn))
+    if not plans:
+        return None
+    short = min(plans)
+    long = max(plans)
+    try:
+        rev = weave_reversal_s(cfg, cfg.HAC_WEAVE_MAX_DEG, target, gravity)
+        eff = weave_efficiency(cfg.HAC_WEAVE_MAX_DEG, rev,
+                               cfg.HAC_WEAVE_HOLD_S)
+    except Exception:                                       # noqa: BLE001
+        eff = 1.0
+    final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
+    speed_term = final * final / (2.0 * gravity)
+
+    def need(path, radius, turn):
+        top = max(height, cfg.GATE_ALT_M) + 30000.0
+        rungs = hac_ladder(env, cfg, top, mass, gravity,
+                           lambda h: cone_speed(env, cfg, stall, h),
+                           radius, turn, 0, max(1.0, path))
+        if rungs is None or len(rungs) < 2:
+            return None
+        return ladder_height(rungs, path, 1.0) + speed_term
+
+    low = need(short[0], short[1], short[2])
+    high = need(long[0] / max(0.1, eff), long[1], long[2])
+    if low is None or high is None:
+        return None
+    return low, 0.5 * (low + high), high
+
+
+def cone_energy_long(env, cfg, handover):
+    """``GLIDE_CONE_ENERGY``: the predicted cone-entry energy against what
+    the cone wants (``env.cone_energy``, set each glide tick from
+    ``cone_entry_energy``), as along-track metres at the ratio that places
+    the aim -- so a surplus reads long and the glide spends it before the
+    cone has to.  ``handover`` is the prediction's ``(altitude, speed)``
+    where the arc met the cone's entry test; 0 when it did not (the
+    fallback there is the 12 km crossing ``GLIDE_ENERGY_AIM`` was refuted
+    on), when off, or when the cone could not say."""
+    if not getattr(cfg, "GLIDE_CONE_ENERGY", False) or not handover:
+        return 0.0
+    want = getattr(env, "cone_energy", None)
+    if want is None:
+        return 0.0
+    altitude, speed = handover
+    radius = env.equatorial_radius + altitude
+    gravity = env.mu / (radius * radius)
+    ratio = (getattr(getattr(env, "runway", None), "aim_ld", None)
+             or cfg.HAC_GATE_LD)
+    return ratio * (altitude + speed * speed / (2.0 * gravity) - want[1])
 
 
 def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,

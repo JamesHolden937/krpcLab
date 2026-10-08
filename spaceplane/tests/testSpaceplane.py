@@ -5570,6 +5570,63 @@ class TestHacGateStretch(unittest.TestCase):
                          1000.0 - self.cfg.HAC_RADIUS_RATE_M_S * 0.5)
 
 
+class TestConeEntryEnergy(unittest.TestCase):
+    """``GLIDE_CONE_ENERGY``: the cone's wanted entry energy from its own
+    planner, and the predicted entry energy against it as ground."""
+
+    def setUp(self):
+        self.cfg = Config(GLIDE_CONE_ENERGY=True)
+        self.env = FakeEnv(self.cfg)
+        self.end = self.env.runway.ends["09"]
+
+    def state(self, out_m, abeam_m, height=15000.0, speed=250.0):
+        cfg, env = self.cfg, self.env
+        gate, along, across, _ = guidance.hac_frame(env, cfg, self.end)
+        p = vec.add(gate, vec.add(vec.scale(along, -out_m),
+                                  vec.scale(across, abeam_m)))
+        up = vec.unit(p)
+        r = vec.scale(up, vec.norm(gate) - cfg.GATE_ALT_M + height)
+        return r, vec.scale(along, speed)
+
+    def band(self, out_m, abeam_m):
+        r, v = self.state(out_m, abeam_m)
+        return guidance.cone_entry_energy(self.env, self.cfg, self.end, r, v,
+                                          MASS, GRAVITY)
+
+    def test_the_band_is_ordered(self):
+        low, mid, high = self.band(8000.0, 0.0)
+        self.assertLessEqual(low, mid)
+        self.assertLessEqual(mid, high)
+        self.assertGreater(low, self.cfg.GATE_ALT_M)
+
+    def test_straight_in_has_less_authority_than_over_the_field(self):
+        straight = self.band(8000.0, 0.0)
+        over = self.band(-6000.0, 3000.0)
+        self.assertLess(straight[2] - straight[0], over[2] - over[0])
+
+    def test_surplus_reads_long_and_a_deficit_short(self):
+        self.env.cone_energy = (14000.0, 16000.0, 18000.0)
+        radius = self.env.equatorial_radius + 15000.0
+        g = self.env.mu / (radius * radius)
+        v_at = lambda e: math.sqrt(2.0 * g * (e - 15000.0))
+        self.assertGreater(guidance.cone_energy_long(
+            self.env, self.cfg, (15000.0, v_at(18000.0))), 0.0)
+        self.assertLess(guidance.cone_energy_long(
+            self.env, self.cfg, (15000.0, v_at(15500.0))), 0.0)
+        self.assertAlmostEqual(guidance.cone_energy_long(
+            self.env, self.cfg, (15000.0, v_at(16000.0))), 0.0, delta=1.0)
+
+    def test_nothing_when_off_or_unknown(self):
+        self.env.cone_energy = None
+        self.assertEqual(guidance.cone_energy_long(
+            self.env, self.cfg, (15000.0, 300.0)), 0.0)
+        self.env.cone_energy = (1.0, 2.0, 3.0)
+        self.assertEqual(guidance.cone_energy_long(
+            self.env, Config(), (15000.0, 300.0)), 0.0)
+        self.assertEqual(guidance.cone_energy_long(
+            self.env, self.cfg, None), 0.0)
+
+
 class TestEnergyLong(unittest.TestCase):
     """``GLIDE_ENERGY_AIM``: an arrival speed against the cone's own, as
     ground at the aim's ratio; 0 when off or unknown."""
