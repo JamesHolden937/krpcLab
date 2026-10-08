@@ -4918,3 +4918,70 @@ and -86 km; bought back by a later burn).  `attitudeProbe.py`: inverted at
 (same configuration, 6 each): inc 1/6, ecc 0/6 (arrival +41 km --
 upstream), high 2/6; inc/high land long.  The rigoff gain does not carry
 over yet.
+
+## Session, 2026-10-07 late (~2200-0015): the user's split-S
+
+The user: "to bleed altitude, maybe you could do a split S. the sharp
+turns should kill most of the speed."  Taken as two separate claims.
+**A literal split-S was not flown**, and here is why. Inverted, lift and
+gravity both point down, so it turns height into *speed*, and speed is
+what was destroying the high handovers (LOG8253/8265/8268/8282: flare door
+at 52-93 m/s of sink).  The shuttle rolls at 14 deg/s (~13 s to get
+inverted) with pitch time_to_peak 22.5 s.  And it reverses the heading: the
+turn back costs ~1-2 km, about twice the ~850 m surplus those flights
+carried.
+**The sharp-turn half is right**: the subsonic polar from ~40k ticks
+(LOG820x-829x) reads CdA 18.6 at 2 deg, 49 at 10, 92 at 16 (L/D 3.8 ->
+1.3), and the approach flew alpha 1-3 with 40-deg S-turns (1.3 g).
+
+**`APPROACH_SHARP_TURN`** (off; `guidance.sharp_turn`): during the S-turn,
+the drag that dissipates the energy surplus by the weave's stop
+(`CdA = m g E / s / q`) chooses the alpha (cap 14).  The vertical lift is
+what a steady descent at the present speed needs (`sin gamma = D/W`, dive
+cap 25 deg, pull toward max(door + 5, v)), and the rest is banked off.  The
+lean is predicted over the roll reversal against a 45-deg heading limit and
+the 300 m band.  Three references for the vertical lift were flown:
+- the speed law's lift: it chases a held 110 m/s against ~90 flown and asks
+  for almost none, giving 30-54 deg of bank at 1-4 deg of alpha.  LOG8374
+  ran out 1.8 km, the capture turned it 176 deg and it landed backwards
+  7 km short;
+- one g: flew level and spent speed (101 -> 75 in 10 s).  LOG8377 kept
+  1150 m of excess and floated 2.8 km into the sea;
+- steady descent: rot-sharp3-1007 (rigoff from orbit, 6 an arm, all intact)
+  **6/6 on the runway vs 5/6**.  But it engaged in only 3 flights, for
+  4-15 ticks: these handovers were barely high.  Not a measurement.
+The first gate (held speed - 5) engaged on 1 tick in 3 flights; it now
+fades in above the flare's door speed (rot-sharp0/1-1007).
+
+**The cone saves showed the real gap** (sav-sharp-1007, 23 flights,
+canard + LD_MEASURED): `qs_s2_hac0-5` arrive ~13 km long at Mach 1, and
+with `CANARD_TRIM` the cone **rolls out lined up 4-6.8 km high** (need
+2.2): `hac_exit_surplus` hands over anything short of a whole lap
+(`2 pi R / cone_ld` ~8 km at R = 2 km), and the approach can spend ~0.8.
+Both arms land +3..+14 km long; runway intact 1/11 vs 0/11.  The low
+handovers ("out of height", hac0/hac5) break up in both.
+
+**`HAC_SPIRAL_DUMP`** (off; `Autopilot.hac_spiral`): tight descending 360s
+over the gate, lined up at the gate with surplus over the allowance plus one
+estimated lap.  Each lap's cost is measured, another lap is flown only if it
+leaves the allowance, and it stops mid-lap only while the rest of the lap is
+affordable.  The bank is what the alpha cap can hold, with 10% in hand.
+- sav-spiral-1007: fixed 60 deg at cap 14 is short of load -- a spiral
+  dive, 128 m/s, flare at 138 m/s (LOG8432, destroyed).
+- sav-spiral2-1007: sustainable 45 deg, cost **~3.9 km a lap**.  LOG8444
+  (hac4) spent 4139 -> 651 m in 0.9 lap, handed over 2.84 km, stopped
+  **+62 m** against +14.0 km without it -- broke on touchdown (15 parts).
+- sav-spiral3-1008: cap 20 (bank 58, estimate 2.1 km): still >3.5 km a lap,
+  sped to 127 m/s, stopped mid-lap misaligned, flare at 133 m/s
+  (LOG8450, destroyed).
+hac1/hac3 (~1.9 km over need) never start: a lap costs more than they
+have.  At the alpha cap the radius is ~v^2/(g k v^2), the same ~1 km at
+any speed, so the lap quantum is set by the airframe, not by speed.
+**Three engagements, one right handover, two dives: the mechanism is not
+ready.**  The method to change next: spend the cone's surplus continuously
+(a measured lap at a tight radius planned *before* rollout, or the exit
+allowance cut so the cone itself flies the lap), not a quantum after it.
+
+Also seen: touchdown breakups at 64-68 m/s flare entry are common on the
+cone saves in every arm (15-25 parts), and the approach often commands
+alpha -2 while flying +4.5 (LOG8359) -- the kRPC tracking problem again.
