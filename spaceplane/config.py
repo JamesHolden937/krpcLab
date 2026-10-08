@@ -2196,6 +2196,20 @@ class Config:
     APPROACH_SCURVE_CROSS_M: float = 300.0
     APPROACH_SCURVE_STOP_M: float = 4000.0  # no weaving inside this of the aim [default 2026-10-03, rot-orbit2-1003]
     APPROACH_SCURVE_PERIOD_S: float = 10.0  # half-cycle of the weave clock
+    # ``APPROACH_SHARP_TURN`` (off): spend the S-turn's surplus as drag --
+    # the alpha whose drag dissipates the surplus by the weave's stop, its
+    # extra lift banked sideways (``guidance.sharp_turn``).  The user's
+    # split-S (2026-10-07), less the inverted half that makes speed.
+    APPROACH_SHARP_TURN: bool = False
+    # Under the canard trim's engage limit (``CANARD_TRIM_MAX_ALPHA_DEG``
+    # 15) and well under the canards' stall (~24): what would disagree is
+    # an ``aoa=`` cmd/actual gap in the sharp turns.
+    APPROACH_SHARP_ALPHA_MAX_DEG: float = 14.0
+    APPROACH_SHARP_BANK_MAX_DEG: float = 60.0
+    # Hand back to the speed law this far under its held speed.
+    APPROACH_SHARP_SPEED_MARGIN_M_S: float = 5.0
+    # The lean reverses toward the course past this heading off it.
+    APPROACH_SHARP_HEADING_MAX_DEG: float = 60.0
 
     # -- the split-rudder airbrake ----------------------------------------
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0

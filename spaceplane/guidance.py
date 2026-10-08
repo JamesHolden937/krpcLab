@@ -1091,6 +1091,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     cross_time = to_flare + in_flare
     timely = abs(cross) / max(1.0, cross_time)
     wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
+    lean_side = None
     if scurve_deg > 0.0:
         # Which way this half of the weave leans: the clock, unless the
         # band is used up, in which case the band wins.  The clock is
@@ -1142,6 +1143,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         magnitude = min(magnitude, 10.0)
     magnitude = min(magnitude, cfg.APPROACH_BANK_MAX_DEG)
     bank = bank_toward(r, v, want, magnitude) if magnitude > 0.1 else 0.0
+    alpha_level = alpha
     # **Now that the bank is known, ask the wing for the load the turn
     # actually costs.**  The bank falls out of the lateral logic below the
     # speed loop, so the first pass necessarily solved for a wings-level
@@ -1156,8 +1158,23 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
                                                   cfg.APPROACH_PATH_LIMIT_M)
         alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
 
+    sharp = None
+    if getattr(cfg, "APPROACH_SHARP_TURN", False) and scurve_deg > 0.0:
+        sharp = sharp_turn(env, cfg, alpha_level, speed, height, mass, gravity,
+                           distance, trigger, best_ld, max(target, floor),
+                           stall, heading_error,
+                           lean_side if lean_side is not None
+                           else (1.0 if bank >= 0.0 else -1.0),
+                           cross, cross_rate, floor_alpha=alpha)
+        if sharp is not None:
+            alpha = max(alpha, sharp[0])
+            want = vec.scale(across, sharp[1])
+            bank = bank_toward(r, v, want, sharp[2]) if sharp[2] > 0.1 \
+                else 0.0
+
     command = ApproachCommand(alpha, bank, sink, wanted_sink, cross,
                               heading_error, distance, height, speed)
+    command.sharp = sharp
     command.cross_rate = cross_rate
     command.cross_time = cross_time
     command.excess = excess
@@ -1171,6 +1188,97 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     command.target_speed = target
     command.speed_floor = floor
     return command
+
+
+def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
+               trigger, best_ld, held, stall, heading_error, lean_side,
+               cross=0.0, cross_rate=0.0, floor_alpha=None):
+    """``APPROACH_SHARP_TURN``: spend the surplus as drag, turning hard.
+
+    Returns ``(alpha, side, bank)`` -- ``side`` +1/-1 along ``across`` -- or
+    ``None`` when the plain S-turn already dissipates enough.
+
+    The approach's S-turn spends surplus only as *path*: it flies the
+    speed law's alpha, 1-3 deg, where this airframe's drag is lowest
+    (``CdA`` 18.6 at 2 deg against 92 at 16, measured over 40k subsonic
+    ticks), and a 40-deg bank at that alpha is a 1.3-g turn.  A sharp turn
+    is the other way to spend it: more alpha is more drag, and the lift
+    that drag comes with -- 2.5 g at 16 deg -- is put sideways by the bank
+    instead of ballooning the vehicle (the user's split-S, 2026-10-07,
+    without the half of it that turns height into speed).
+
+    The drag is chosen, not fitted.  To arrive at the weave's stop with the
+    energy a straight glide at ``best_ld`` needs from there, the vehicle has
+    to dissipate ``E`` metres of energy height over ``s`` metres of
+    progress, so it needs ``D = m g E / s``: ``CdA = D / q``, the alpha
+    with that drag from the table.  The speed law's *vertical* lift is kept
+    -- it is what holds the speed, by choosing the descent -- and the lift
+    the extra alpha adds is banked off: ``cos(bank) = L_speed / L``.
+    """
+    margin = max(0.1, float(cfg.APPROACH_SHARP_SPEED_MARGIN_M_S))
+    # Faded out over the margin below the held speed, not switched: a step
+    # from 14 deg to the speed law's 2 is a law no vehicle flies.
+    share = vec.clamp((speed - (held - margin)) / margin, 0.0, 1.0)
+    if share <= 0.0:
+        return None
+    stop = (float(cfg.APPROACH_SCURVE_STOP_M)
+            - float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0)))
+    span = distance - max(0.0, stop)
+    if span <= 100.0:
+        return None
+    door = cfg.APPROACH_FLARE_FACTOR * stall
+    energy = (height - trigger - max(0.0, stop) / max(0.1, best_ld)
+              + (speed * speed - door * door) / (2.0 * gravity))
+    if energy <= 0.0:
+        return None
+    altitude = height
+    q = 0.5 * env.density(altitude) * speed * speed
+    if q <= 1.0:
+        return None
+    cda_need = mass * gravity * energy / span / q
+    cap = float(cfg.APPROACH_SHARP_ALPHA_MAX_DEG)
+    a_drag = None
+    lo = max(0.0, alpha)
+    cl0, cd0 = env.coefficients(lo, speed, altitude)
+    if cd0 >= cda_need:
+        return None
+    step = 0.5
+    a = lo
+    while a < cap:
+        a = min(cap, a + step)
+        cl, cd = env.coefficients(a, speed, altitude)
+        if cd >= cda_need:
+            a_drag = a
+            break
+    if a_drag is None:
+        a_drag = cap
+    a_drag = lo + share * (a_drag - lo)
+    if floor_alpha is not None:
+        a_drag = max(a_drag, min(cap, floor_alpha))
+    cl, cd = env.coefficients(a_drag, speed, altitude)
+    if cl <= 1e-6 or cl0 <= 0.0:
+        return None
+    # The speed law's lift stays vertical; the rest goes sideways.
+    ratio = vec.clamp(cl0 / cl, 0.0, 1.0)
+    bank = min(float(cfg.APPROACH_SHARP_BANK_MAX_DEG),
+               math.degrees(math.acos(ratio)))
+    # **Never turn the back on the runway.**  At 60 deg the vehicle turns
+    # ~10 deg/s; past the heading limit the lean goes back toward the
+    # course whatever the weave clock says.
+    limit = float(cfg.APPROACH_SHARP_HEADING_MAX_DEG)
+    side = 1.0 if lean_side >= 0.0 else -1.0
+    if side * heading_error > limit:
+        side = -side
+    # **And reverse before the band, not at it.**  The weave's band flips on
+    # the offset alone; at 60 deg the sideways rate reaches 80 m/s, so the
+    # lean goes back once the offset plus the distance to arrest that rate
+    # (at the turn's own lateral acceleration) passes the band.
+    lateral = gravity * math.tan(math.radians(max(5.0, bank)))
+    band = float(cfg.APPROACH_SCURVE_CROSS_M)
+    if side * cross_rate > 0.0 and (side * cross + cross_rate * cross_rate
+                                    / (2.0 * lateral)) > band:
+        side = -side
+    return (a_drag, side, bank)
 
 
 # -- the heading alignment cone --------------------------------------------

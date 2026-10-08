@@ -6388,6 +6388,10 @@ def compact_line(state, snap, run):
                     % (c.cross, c.heading_error,
                        getattr(c, "excess", 0.0),
                        getattr(c, "scurve_deg", 0.0)))
+        if getattr(run.cfg, "APPROACH_SHARP_TURN", False):
+            sh = getattr(c, "sharp", None)
+            bits.append("shp=--" if sh is None else
+                        "shp=%4.1f/%+.0f" % (sh[0], sh[1] * sh[2]))
         # ``ab=`` is the brake, and ``sat=`` the share of the recent window
         # the S-turn spent at its cap -- printed even when the brake is not
         # armed, because that share is the measurement the whole mechanism
