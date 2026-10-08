@@ -221,11 +221,18 @@ class Config:
     # deg, 3.9 -> 3.4 at 5) -- drag, not a lift dump, unlike the measured
     # flap "spoiler".  The missing half of ``PROPELLANT_TRIM``: trimmed, the
     # cone flies L/D 2.6 and lands 7-15 km long with nothing to spend it.
-    # Open past ``HAC_WEAVE_DEADBAND_M`` of surplus (cone: over
-    # ``needed_height``; approach: ``command.excess``), shut under half of
-    # it; held as they are from the flare door on.  kspSim does not model
-    # the doors (its gap 4).
+    # **Last resort only** (the user): open once, when the cone's radius
+    # is at its cap with no lap or the approach's S-turns are saturated,
+    # with more than ``HAC_WEAVE_DEADBAND_M`` still to spend (cone: over
+    # ``needed_height``; approach: ``command.excess``); shut when it is
+    # spent, and never reopened.  Not commanded from the flare door on.
+    # kspSim does not model the doors (its gap 4).
     BAY_BRAKE: bool = False
+    # The approach counts as saturated when its S-turn spent this share of
+    # the recent window at its cap (``airbrake.saturated``, the ``sat=``
+    # column).  Doors open once, last resort, and stay open until the
+    # surplus is spent (the user, 2026-10-07).
+    BAY_BRAKE_SATURATED: float = 0.8
     # **Trim on the canards, by moving them ourselves** (``Autopilot.
     # canard_trim``).  Trimming through control travel is this airframe's
     # largest drag: full nose-up input at alpha 5, 90 m/s costs 34% of the
