@@ -137,7 +137,8 @@ class Runway:
     def low_gate(self, end):
         along = self.horizontal(end, end["along"])
         out = vec.add(end["threshold"],
-                      vec.scale(along, -self.cfg.GATE_DIST_M))
+                      vec.scale(along, -(self.cfg.GATE_DIST_M
+                                         + end.get("gate_stretch", 0.0))))
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.GATE_ALT_M)
 
     def high_gate(self, end):

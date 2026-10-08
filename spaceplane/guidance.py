@@ -1522,6 +1522,19 @@ def gate_dist(env, cfg):
     return got() if callable(got) else cfg.GATE_DIST_M
 
 
+def gate_alt(env, cfg, end, height=None, mass=None, gravity=9.81):
+    """The cone's rollout height: ``GATE_ALT_M``, raised by the approach's
+    own glide over ``end``'s ``gate_stretch`` (``HAC_GATE_STRETCH``) -- a
+    gate moved out along the centreline is a point on the same final, so
+    the approach needs exactly that much more height to fly it."""
+    stretch = end.get("gate_stretch", 0.0) if end else 0.0
+    if stretch <= 0.0:
+        return cfg.GATE_ALT_M
+    ratio = airframe.approach_ld(env, cfg, cfg.GATE_ALT_M if height is None
+                                 else height, mass, gravity)
+    return cfg.GATE_ALT_M + stretch / max(0.1, ratio)
+
+
 def hac_turn(cfg, angle, exit_angle, side):
     """How much turn is left, in ``[0, 2pi)`` -- with the wrap in the right place.
 
@@ -1846,7 +1859,7 @@ def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
 
 
 def hac_ladder(env, cfg, height, mass, gravity, reference, radius, turn,
-               laps, total):
+               laps, total, floor=None):
     """``HAC_LD_AT_TARGET``: path the height still pays for, slice by slice.
 
     ``[(h, path from GATE_ALT_M up to h)]`` in ``HAC_LADDER_STEP_M`` steps
@@ -1855,13 +1868,15 @@ def hac_ladder(env, cfg, height, mass, gravity, reference, radius, turn,
     ratio taken where the vehicle is prices a descent into denser air at
     the thin air's glide: the shuttle read 1.16 at 13 km, called itself
     short, and found its 2 km of surplus below 7 km with 5 km of path left
-    (LOG4091).  ``None`` if any slice cannot be answered.
+    (LOG4091).  ``None`` if any slice cannot be answered.  ``floor`` is
+    the gate's height when it is not ``GATE_ALT_M`` (``gate_alt``).
     """
     arc = radius * (turn + laps * 2.0 * math.pi)
     share = vec.clamp(arc / total, 0.0, 1.0) if total > 0.0 else 0.0
     step = max(50.0, float(getattr(cfg, "HAC_LADDER_STEP_M", 500.0)))
-    rungs = [(cfg.GATE_ALT_M, 0.0)]
-    low, path = cfg.GATE_ALT_M, 0.0
+    base = cfg.GATE_ALT_M if floor is None else floor
+    rungs = [(base, 0.0)]
+    low, path = base, 0.0
     while low < height:
         high = min(height, low + step)
         mid = 0.5 * (low + high)
@@ -2039,6 +2054,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # measured about this airframe, and it is what a heading alignment cone
     # manages on the vehicle the idea was borrowed from.
     stall = airframe.stall(env, cfg)
+    # ``HAC_GATE_STRETCH``: the rollout moved out along the centreline, and
+    # the height the approach needs there (``gate_alt``).
+    floor_alt = gate_alt(env, cfg, end, height, mass, gravity)
+    stretch = end.get("gate_stretch", 0.0)
     # The cone's own glide ratio, derived at the bank it holds and the speed
     # it is flown at rather than transcribed -- see ``airframe.turning_ld``.
     cone_ld = airframe.cone_ld(env, cfg, speed, height, mass, gravity)
@@ -2057,7 +2076,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
         excess_height = max(0.0, (speed * speed - final * final)
                             / (2.0 * gravity))
-    available = (max(0.0, height + excess_height - cfg.GATE_ALT_M)
+    available = (max(0.0, height + excess_height - floor_alt)
                  * cone_ld)
     # **What the wing can pay for, here.**  See ``airframe.turn_load``: the
     # radius model below is a level-turn formula and the cone does not fly a
@@ -2083,7 +2102,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         # descent is flown into denser air, where the ratio climbs.
         rungs = hac_ladder(env, cfg, height, mass, gravity,
                            lambda h: cone_speed(env, cfg, stall, h),
-                           radius, turn, laps, total)
+                           radius, turn, laps, total, floor=floor_alt)
         # ``HAC_LD_MEASURED``: the table gives the curve's *shape* with
         # height; the vehicle's own L/D against the table's at the alpha it
         # is flying (``Autopilot.hac_ld_scale``) gives its scale.  A curve
@@ -2093,7 +2112,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         if rungs is not None and measured and ld_scale:
             rungs = [(h, p * ld_scale) for h, p in rungs]
         if rungs is not None and len(rungs) >= 2:
-            top = rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M)
+            top = rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt)
             available = rungs[-1][1] + excess_height * top
             radius, laps, turn, tangent, total = hac_radius(
                 env, cfg, end, r, side, available, speed, gravity, load)
@@ -2286,14 +2305,14 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if (getattr(cfg, "HAC_SHORT_BEST_GLIDE", False) and short
             and best_alpha is not None and best_ld and available > 1.0
             and best_alpha < alpha):
-        budget = max(1.0, height + excess_height - cfg.GATE_ALT_M)
+        budget = max(1.0, height + excess_height - floor_alt)
         flown = available / budget
         need = shortest / budget
         frac = vec.clamp((need - flown) / max(0.1, best_ld - flown),
                          0.0, 1.0)
         alpha = alpha + frac * (max(cfg.ALPHA_MIN_DEG, best_alpha) - alpha)
 
-    needed = cfg.GATE_ALT_M + total / max(0.1, cone_ld)
+    needed = floor_alt + total / max(0.1, cone_ld)
     if rungs is not None:
         needed = ladder_height(rungs, total, cone_ld)
     # **And what the *approach* needs from here, which is a different
@@ -2321,7 +2340,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # The gate is at ``(0, -side * radius)`` in this circle's frame, so the
     # range to it is one hypotenuse and it is not ambiguous about anything.
     gate_range = math.hypot(distance * ux, side * radius + distance * uy)
-    approach_needed = ((gate_range + gate_dist(env, cfg)
+    approach_needed = ((gate_range + gate_dist(env, cfg) + stretch
                         + airframe.touchdown_aim(env, cfg))
                        / max(0.1, airframe.approach_ld(env, cfg, height,
                                                        mass, gravity)))
@@ -2332,13 +2351,15 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.weave_deg = weave_deg
     command.weave_half_s = weave_half_s
     command.alpha_target_speed = target
-    command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - cfg.GATE_ALT_M))
+    command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt))
                        if rungs is not None and len(rungs) >= 2 else cone_ld)
     command.surplus = surplus
     command.excess_height = excess_height
     command.lead = lead
     command.gate_range = gate_range
     command.approach_needed = approach_needed
+    command.stretch = stretch
+    command.gate_alt = floor_alt
     # **On the circle means at the tangent point, not near the radius.**
     # Being 314 m outside a 16 km circle puts the tangent point *ten
     # kilometres* away: one flight read ``turn=0`` there, took the rollout,

@@ -445,6 +445,7 @@ class Autopilot:
         self.hac_side = None
         self.hac_command = None
         self.hac_radius = None
+        self.hac_stretch = 0.0
         self._last_hac_ut = None
         self.deorbit_dv = None
         self.deorbit_aim_m = None
@@ -4638,16 +4639,27 @@ class Autopilot:
                                               snap.position, snap.velocity)
         dt = max(0.05, snap.ut - (self._last_hac_ut or snap.ut))
         self._last_hac_ut = snap.ut
-        command = guidance.hac(self.env, self.cfg, self.end, snap.position,
-                               snap.velocity, snap.mass,
-                               self.surface_gravity, height,
-                               self.hac_side,
-                               previous=self.hac_radius,
-                               max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
-                               weave=self.hac_weave_phase(snap)
-                               * self.hac_weave_sign(snap.ut),
-                               roll_rate=self.roll_rate.limit(),
-                               ld_scale=getattr(self, "hac_ld_scale", None))
+
+        def plan(stretch):
+            end = self.end
+            if stretch > 0.0:
+                end = dict(self.end, gate_stretch=stretch)
+            return guidance.hac(self.env, self.cfg, end, snap.position,
+                                snap.velocity, snap.mass,
+                                self.surface_gravity, height,
+                                self.hac_side,
+                                previous=self.hac_radius,
+                                max_step=self.cfg.HAC_RADIUS_RATE_M_S * dt,
+                                weave=self.hac_weave_phase(snap)
+                                * self.hac_weave_sign(snap.ut),
+                                roll_rate=self.roll_rate.limit(),
+                                ld_scale=getattr(self, "hac_ld_scale",
+                                                 None))
+
+        command = plan(self.hac_stretch)
+        if command is not None and getattr(self.cfg, "HAC_GATE_STRETCH",
+                                           False):
+            command = self.hac_gate_stretch(snap, command, height, dt, plan)
         if command is None:
             # **No answer, not a zero.**  Degenerate geometry here means over
             # the centre of the circle or stopped; holding the last command
@@ -4732,10 +4744,54 @@ class Autopilot:
                 self.alpha_ceiling = released
             self.enter(APPROACH, snap.ut,
                        "%s turn=%.0f h=%.0f (needed %.0f) gate=%.0f "
-                       "(circle %.0f) laps=%d"
+                       "(circle %.0f) laps=%d stretch=%.0f"
                        % ("rolled out" if ready else "out of height",
                           command.turn_deg, height, needed,
-                          command.gate_range, command.radius, command.laps))
+                          command.gate_range, command.radius, command.laps,
+                          getattr(command, "stretch", 0.0)))
+
+    def hac_gate_stretch(self, snap, command, height, dt, plan):
+        """``HAC_GATE_STRETCH``: move the rollout out along the centreline
+        while the plan has height it cannot spend; back in when short.
+
+        The signal is the plan's own surplus, ``height - needed_height``
+        with no lap owed -- the quantity that was being handed over (LOG8401
+        read +1.7 km of it at the gate and rolled out +1.9).  One step of
+        ``HAC_RADIUS_RATE_M_S * dt`` per tick, re-planned at the candidate
+        and taken only if that plan still owes no lap, is not short, and
+        has not wrapped the turn: a gate moved behind a vehicle already
+        lined up reads ~360 deg to go, which is a lap, not a longer final.
+        Returns the command to fly.
+        """
+        step = self.cfg.HAC_RADIUS_RATE_M_S * dt
+        surplus = height - command.needed_height
+        old = self.hac_stretch
+        candidate = None
+        if command.laps == 0 and surplus > 0.0:
+            top = float(self.cfg.HAC_GATE_STRETCH_MAX_M)
+            if old < top:
+                candidate = min(top, old + step)
+        elif command.needed_height > height and old > 0.0:
+            candidate = max(0.0, old - step)
+        if candidate is None:
+            return command
+        trial = plan(candidate)
+        if trial is None:
+            return command
+        if candidate > old:
+            jump = abs(trial.turn_deg - command.turn_deg)
+            if (trial.laps != 0 or trial.needed_height > height
+                    or jump > 90.0):
+                return command
+        self.hac_stretch = candidate
+        if (old == 0.0) != (candidate == 0.0) or int(old / 1000.0) != \
+                int(candidate / 1000.0):
+            self.logbook.event(
+                snap.ut, "cone gate stretch %.0f -> %.0f m (surplus %+.0f, "
+                "turn %.0f, gate alt %.0f)"
+                % (old, candidate, surplus, trial.turn_deg,
+                   getattr(trial, "gate_alt", self.cfg.GATE_ALT_M)))
+        return trial
 
     def hac_spiral(self, snap, command, height):
         """``HAC_SPIRAL_DUMP``: tight descending 360s over the gate.
@@ -6498,6 +6554,8 @@ def compact_line(state, snap, run):
             bits.append("ldk=%.2f pld=%.2f"
                         % (getattr(run, "hac_ld_scale", None) or 0.0,
                            getattr(c, "plan_ld", 0.0)))
+        if getattr(run.cfg, "HAC_GATE_STRETCH", False):
+            bits.append("str=%5.0f" % getattr(c, "stretch", 0.0))
         if getattr(run.cfg, "HAC_WEAVE_HELD", False):
             bits.append("wh=%4.1f wd=%+.0f"
                         % (getattr(c, "weave_half_s", 0.0),

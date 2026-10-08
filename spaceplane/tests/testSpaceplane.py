@@ -5467,6 +5467,101 @@ class TestHacWeaveStraightOnly(unittest.TestCase):
         self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")
 
 
+class TestHacGateStretch(unittest.TestCase):
+    """``HAC_GATE_STRETCH``: the rollout moves out along the centreline and
+    the gate rises by the approach's glide over the move."""
+
+    def setUp(self):
+        self.cfg = Config()
+        self.env = FakeEnv(self.cfg)
+        self.end = self.env.runway.ends["09"]
+
+    def plan(self, stretch, height=6000.0):
+        cfg, env = self.cfg, self.env
+        end = dict(self.end, gate_stretch=stretch) if stretch else self.end
+        side, radius = 1.0, 2000.0
+        gate, _, across, _ = guidance.hac_frame(env, cfg, self.end)
+        centre = vec.add(gate, vec.scale(across, side * radius))
+        p = vec.add(centre, vec.scale(across, side * radius))
+        up = vec.unit(p)
+        r = vec.scale(up, vec.norm(gate) + height)
+        tangent = vec.unit(vec.cross(up, vec.unit(vec.sub(p, centre))))
+        return guidance.hac(env, cfg, end, r, vec.scale(tangent, 110.0),
+                            MASS, GRAVITY, height, side,
+                            previous=radius, max_step=1.0)
+
+    def test_the_gate_moves_out_along_the_centreline(self):
+        a = self.env.runway.low_gate(self.end)
+        b = self.env.runway.low_gate(dict(self.end, gate_stretch=3000.0))
+        self.assertAlmostEqual(vec.norm(vec.sub(a, b)), 3000.0, delta=15.0)
+        # Further from the threshold, not nearer.
+        t = self.end["threshold"]
+        self.assertGreater(vec.norm(vec.sub(b, t)), vec.norm(vec.sub(a, t)))
+
+    def test_the_gate_rises_on_the_approach_glide(self):
+        end = dict(self.end, gate_stretch=4200.0)
+        self.assertAlmostEqual(
+            guidance.gate_alt(self.env, self.cfg, end),
+            self.cfg.GATE_ALT_M + 4200.0 / self.cfg.APPROACH_BEST_LD)
+        self.assertEqual(guidance.gate_alt(self.env, self.cfg, self.end),
+                         self.cfg.GATE_ALT_M)
+
+    def test_a_stretched_plan_needs_more_height(self):
+        off, on = self.plan(0.0), self.plan(3000.0)
+        self.assertEqual(off.stretch, 0.0)
+        self.assertEqual(on.stretch, 3000.0)
+        self.assertGreater(on.path, off.path)
+        self.assertGreater(on.needed_height, off.needed_height)
+        self.assertGreater(on.approach_needed, off.approach_needed)
+
+    def controller(self, stretch=0.0):
+        logged = []
+        run = SimpleNamespace(
+            cfg=replace(self.cfg, HAC_GATE_STRETCH=True), hac_stretch=stretch,
+            logbook=SimpleNamespace(event=lambda ut, text: logged.append(text)))
+        return run, logged
+
+    def command(self, needed, turn=180.0, laps=0, stretch=0.0):
+        return SimpleNamespace(needed_height=needed, turn_deg=turn, laps=laps,
+                               stretch=stretch, gate_alt=self.cfg.GATE_ALT_M)
+
+    def test_surplus_grows_the_stretch_one_step(self):
+        run, _ = self.controller()
+        trial = self.command(3500.0, turn=175.0, stretch=200.0)
+        got = autopilot_module.Autopilot.hac_gate_stretch(
+            run, SimpleNamespace(ut=1.0), self.command(3000.0), 4000.0, 0.5,
+            lambda s: trial)
+        step = self.cfg.HAC_RADIUS_RATE_M_S * 0.5
+        self.assertEqual(run.hac_stretch, step)
+        self.assertIs(got, trial)
+
+    def test_a_move_that_wraps_the_turn_is_refused(self):
+        run, _ = self.controller()
+        first = self.command(3000.0, turn=5.0)
+        got = autopilot_module.Autopilot.hac_gate_stretch(
+            run, SimpleNamespace(ut=1.0), first, 4000.0, 0.5,
+            lambda s: self.command(3100.0, turn=355.0))
+        self.assertEqual(run.hac_stretch, 0.0)
+        self.assertIs(got, first)
+
+    def test_a_move_that_owes_a_lap_or_goes_short_is_refused(self):
+        for trial in (self.command(3100.0, laps=1),
+                      self.command(4100.0)):
+            run, _ = self.controller()
+            autopilot_module.Autopilot.hac_gate_stretch(
+                run, SimpleNamespace(ut=1.0), self.command(3000.0), 4000.0,
+                0.5, lambda s, t=trial: t)
+            self.assertEqual(run.hac_stretch, 0.0)
+
+    def test_short_shrinks_it(self):
+        run, _ = self.controller(stretch=1000.0)
+        autopilot_module.Autopilot.hac_gate_stretch(
+            run, SimpleNamespace(ut=1.0), self.command(4500.0), 4000.0, 0.5,
+            lambda s: self.command(4400.0))
+        self.assertEqual(run.hac_stretch,
+                         1000.0 - self.cfg.HAC_RADIUS_RATE_M_S * 0.5)
+
+
 class TestEnergyLong(unittest.TestCase):
     """``GLIDE_ENERGY_AIM``: an arrival speed against the cone's own, as
     ground at the aim's ratio; 0 when off or unknown."""

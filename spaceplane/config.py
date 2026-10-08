@@ -409,6 +409,22 @@ class Config:
     HAC_SPIRAL_DUMP: bool = False
     HAC_SPIRAL_BANK_DEG: float = 60.0
     HAC_SPIRAL_ALPHA_MAX_DEG: float = 14.0   # under the canard trim's 15
+    # **Spend a sub-lap surplus as final, not as a high handover**
+    # (``Autopilot.hac_gate_stretch``).  The cone's continuous spending
+    # devices are the radius and the weave; once both saturate, anything
+    # short of a lap (~5-8 km of height on the shuttle) is handed to an
+    # approach that spends ~0.5 -- the cone saves rolled out 2-4.6 km over
+    # need with laps=0 (sav-sharp-1007: LOG8401 +1.9 km, LOG8404 +4.1,
+    # LOG8416 +4.6, all landing +3..+14 km).  With this on, while the plan
+    # reads surplus the rollout point moves out along the extended
+    # centreline at ``HAC_RADIUS_RATE_M_S`` and the gate rises by the
+    # approach's own glide over the extra distance (``guidance.gate_alt``),
+    # so the surplus becomes a longer final -- a path that is continuous
+    # from zero, where a lap is quantised.  It only grows while the move
+    # does not wrap the turn (a gate moved behind a lined-up vehicle is a
+    # lap), and shrinks when the plan reads short.  Off.
+    HAC_GATE_STRETCH: bool = False
+    HAC_GATE_STRETCH_MAX_M: float = 12000.0  # safety bound, not a fit
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.
