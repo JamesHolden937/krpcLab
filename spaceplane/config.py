@@ -2209,7 +2209,7 @@ class Config:
     # Faded in over this much speed above the flare's door speed.
     APPROACH_SHARP_SPEED_MARGIN_M_S: float = 5.0
     # The lean reverses toward the course past this heading off it.
-    APPROACH_SHARP_HEADING_MAX_DEG: float = 60.0
+    APPROACH_SHARP_HEADING_MAX_DEG: float = 45.0   # = APPROACH_SCURVE_MAX_DEG
 
     # -- the split-rudder airbrake ----------------------------------------
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0
