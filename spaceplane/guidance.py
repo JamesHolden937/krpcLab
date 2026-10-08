@@ -1210,12 +1210,14 @@ def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
     energy a straight glide at ``best_ld`` needs from there, the vehicle has
     to dissipate ``E`` metres of energy height over ``s`` metres of
     progress, so it needs ``D = m g E / s``: ``CdA = D / q``, the alpha
-    with that drag from the table.  The one-g lift at the present speed
-    (``alpha`` here is that trim angle) stays vertical and the lift the
-    extra alpha adds is banked off: ``cos(bank) = L_trim / L``.  **Not the
-    speed law's lift**: on the shuttle that law chases a held speed 20 m/s
-    above the one flown and asks for almost none, which became 30-54 deg of
-    bank at 1-4 deg of alpha -- turning, not drag (LOG8374).
+    with that drag from the table.  The vertical lift is what a steady
+    descent at the present speed needs -- ``W cos(gamma)``, ``sin(gamma) =
+    D/W`` -- and the lift the extra alpha adds over that is banked off.
+    Two references were flown and refuted: the speed law's lift (it chases
+    a held speed 20 m/s above the one flown and asks for almost none, which
+    became 30-54 deg of bank at 1-4 deg of alpha -- turning, not drag,
+    LOG8374) and one g (level flight: the drag spent speed, not height,
+    LOG8377).
     """
     margin = max(0.1, float(cfg.APPROACH_SHARP_SPEED_MARGIN_M_S))
     door = cfg.APPROACH_FLARE_FACTOR * stall
@@ -1262,10 +1264,23 @@ def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
     if floor_alpha is not None:
         a_drag = max(a_drag, min(cap, floor_alpha))
     cl, cd = env.coefficients(a_drag, speed, altitude)
-    if cl <= 1e-6 or cl0 <= 0.0:
+    if cl <= 1e-6:
         return None
-    # The speed law's lift stays vertical; the rest goes sideways.
-    ratio = vec.clamp(cl0 / cl, 0.0, 1.0)
+    # **Descend so that gravity pays for the drag**: ``sin(gamma) = D/W``,
+    # plus a pull toward the reference speed over ``APPROACH_SPEED_TAU_S``.
+    # Holding one g of vertical lift instead flew level and spent the speed:
+    # 101 -> 75 m/s in ten seconds, the turn faded out at the door speed
+    # with 1150 m of height still over the profile, and the vehicle floated
+    # 2.8 km long into the sea (LOG8377).
+    weight = mass * gravity
+    v_ref = max(door + margin, speed)
+    tau = max(0.5, float(getattr(cfg, "APPROACH_SPEED_TAU_S", 6.0)))
+    sin_g = (q * cd + mass * (v_ref - speed) / tau) / weight
+    sin_g = vec.clamp(sin_g, 0.0, math.sin(math.radians(
+        float(cfg.APPROACH_SHARP_DIVE_MAX_DEG))))
+    vertical = weight * math.sqrt(1.0 - sin_g * sin_g)
+    # That much lift stays vertical; the rest goes sideways.
+    ratio = vec.clamp(vertical / (q * cl), 0.0, 1.0)
     bank = min(float(cfg.APPROACH_SHARP_BANK_MAX_DEG),
                math.degrees(math.acos(ratio)))
     # **Never turn the back on the runway.**  At 60 deg the vehicle turns

@@ -2210,6 +2210,10 @@ class Config:
     APPROACH_SHARP_SPEED_MARGIN_M_S: float = 5.0
     # The lean reverses toward the course past this heading off it.
     APPROACH_SHARP_HEADING_MAX_DEG: float = 45.0   # = APPROACH_SCURVE_MAX_DEG
+    # The steepest descent the sharp turn flies to keep its speed while the
+    # drag spends height: 25 deg is ~38 m/s of sink at 90, the far side of
+    # which is a flare door it cannot arrest.
+    APPROACH_SHARP_DIVE_MAX_DEG: float = 25.0
 
     # -- the split-rudder airbrake ----------------------------------------
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0
