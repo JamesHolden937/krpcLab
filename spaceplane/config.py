@@ -226,6 +226,29 @@ class Config:
     # it; held as they are from the flare door on.  kspSim does not model
     # the doors (its gap 4).
     BAY_BRAKE: bool = False
+    # **Trim on the canards, by moving them ourselves** (``Autopilot.
+    # canard_trim``).  Trimming through control travel is this airframe's
+    # largest drag: full nose-up input at alpha 5, 90 m/s costs 34% of the
+    # lift and +160% drag, where the canards deployed +10 deg give 60 kN m
+    # nose-up *with* +6 kN of lift and +2 kN of drag (scratch tabprobe,
+    # 2026-10-07).  And a standing input held by kRPC sits in its
+    # roll-invariant integrators, which the cone twists into pitch-and-yaw
+    # error (``CONE_TRIM_HANDOFF``'s note).  So the forward mirrored pair is
+    # taken off kRPC with ``ControlSurface.deflection_override`` and driven
+    # as a trim: it integrates the low-passed summed pitch input toward
+    # zero over ``_TAU_S`` (deadband ``_DEADBAND``), capped at ``_MAX`` of
+    # its travel.  Learns in HAC and APPROACH (and the glide below
+    # ``_MAX_MACH``), held through FLARE, ramped to neutral and released in
+    # ROLLOUT.  ``_SIGN``: + deflection is nose-up on qs_shuttle2's canards
+    # (tabprobe).  Never commands exactly 0 -- under AtmosphereAutopilot a
+    # deploy angle of 0 freezes the surface where it is.
+    CANARD_TRIM: bool = False
+    CANARD_TRIM_TAU_S: float = 3.0
+    CANARD_TRIM_LP_S: float = 2.0
+    CANARD_TRIM_DEADBAND: float = 0.05
+    CANARD_TRIM_MAX: float = 0.6
+    CANARD_TRIM_MAX_MACH: float = 0.0
+    CANARD_TRIM_SIGN: float = 1.0
     CONE_TRIM_HANDOFF: bool = False
     CONE_TRIM_HANDOFF_S: float = 5.0
     CONE_TRIM_HANDOFF_TOL_DEG: float = 1.5

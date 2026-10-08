@@ -5232,6 +5232,7 @@ class Autopilot:
         handler(snap)
         self.pitch_assist(snap)
         self.propellant_trim(snap)
+        self.canard_trim(snap)
         # **Wherever the table happens to become ready.**  The first version
         # reported from STANDBY, which ``--autostart`` leaves on the tick
         # before the sweep finishes -- so on every harness flight, which is
@@ -5508,6 +5509,107 @@ class Autopilot:
                                "%+.2f, M=%.2f" % ("AFT" if direction > 0
                                                   else "FORWARD", s, mach))
         self._ptrim_dir = direction
+
+    def canard_trim(self, snap):
+        """``CANARD_TRIM``: carry the standing pitch moment on the canards,
+        driven directly, so neither kRPC's integrators nor the elevons' travel
+        hold it (config).  Every other surface stays on kRPC."""
+        if not getattr(self.cfg, "CANARD_TRIM", False):
+            return
+        pair = getattr(self, "_canards", None)
+        if pair is None:
+            pair = self._canards = self._find_canards(snap)
+            self._ctrim = 0.0
+            self._ctrim_lp = None
+            self._ctrim_on = False
+            self._ctrim_sent = None
+        if not pair:
+            return
+        last = getattr(self, "_ctrim_ut", None)
+        self._ctrim_ut = snap.ut
+        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
+        learn = self.state in (HAC, APPROACH)
+        if self.state == GLIDE and float(self.cfg.CANARD_TRIM_MAX_MACH) > 0.0:
+            try:
+                mach = self.env.mach(vec.norm(snap.velocity),
+                                     vec.norm(snap.position)
+                                     - self.env.equatorial_radius)
+            except Exception:                           # noqa: BLE001
+                mach = None
+            learn = mach is not None and mach <= float(
+                self.cfg.CANARD_TRIM_MAX_MACH)
+        hold = self.state == FLARE
+        release = self.state in (ROLLOUT, STOPPED)
+        if not (learn or hold or release or self._ctrim_on):
+            return
+        total = getattr(snap, "pitch_input", None)
+        if learn and total is not None:
+            total = float(total)
+            lp = self._ctrim_lp
+            k = min(1.0, dt / max(0.1, float(self.cfg.CANARD_TRIM_LP_S)))
+            lp = total if lp is None else lp + k * (total - lp)
+            self._ctrim_lp = lp
+            band = float(self.cfg.CANARD_TRIM_DEADBAND)
+            if abs(lp) > band:
+                err = lp - math.copysign(band, lp)
+                cap = float(self.cfg.CANARD_TRIM_MAX)
+                self._ctrim = vec.clamp(
+                    self._ctrim + err * dt / max(0.1, float(
+                        self.cfg.CANARD_TRIM_TAU_S)), -cap, cap)
+        elif release:
+            self._ctrim -= self._ctrim * min(1.0, dt / max(0.1, float(
+                self.cfg.ROLLOUT_RAMP_S)))
+        if release and abs(self._ctrim) < 0.01:
+            if self._ctrim_on:
+                try:
+                    for cs in pair:
+                        cs.deflection_override = False
+                except Exception:                       # noqa: BLE001
+                    pass
+                self._ctrim_on = False
+                self.logbook.event(snap.ut, "canard trim released")
+            return
+        cmd = float(self.cfg.CANARD_TRIM_SIGN) * self._ctrim
+        if abs(cmd) < 0.003:
+            # A deploy angle of exactly 0 freezes the surface under
+            # AtmosphereAutopilot; a hair off neutral moves it there.
+            cmd = 0.003
+        try:
+            if not self._ctrim_on:
+                for cs in pair:
+                    cs.deflection_override = True
+                self._ctrim_on = True
+                self.logbook.event(snap.ut, "canard trim engaged (%s), "
+                                   "standing pitch %+.2f"
+                                   % (self.state, total or 0.0))
+            if self._ctrim_sent is None or abs(cmd - self._ctrim_sent) > 0.004:
+                for cs in pair:
+                    cs.deflection = cmd
+                self._ctrim_sent = cmd
+        except Exception:                               # noqa: BLE001
+            pass
+
+    def _find_canards(self, snap):
+        """The forward mirrored pair of control surfaces, or ``[]``: two
+        surfaces ahead of the centre of mass (``vessel.reference_frame``'s
+        origin) at mirrored lateral stations.  Refuses anything else."""
+        try:
+            fwd = []
+            for cs in self.vessel.parts.control_surfaces:
+                x, y, z = cs.part.position(self.vessel.reference_frame)
+                if y > 1.0:
+                    fwd.append((cs, x, y, z))
+        except Exception:                               # noqa: BLE001
+            fwd = []
+        ok = (len(fwd) == 2 and fwd[0][1] * fwd[1][1] < 0.0
+              and abs(fwd[0][1] + fwd[1][1]) < 0.2
+              and abs(fwd[0][2] - fwd[1][2]) < 0.2)
+        self.logbook.event(
+            snap.ut, "canard trim: %s" % (
+                "pair at y=%+.1f m, x=+-%.1f m" % (fwd[0][2], abs(fwd[0][1]))
+                if ok else "no forward mirrored pair (%d forward) -- off"
+                % len(fwd)))
+        return [f[0] for f in fwd] if ok else []
 
     def cone_trim_handoff(self, snap, error):
         """``CONE_TRIM_HANDOFF``: carry the standing pitch/yaw input as a
@@ -6061,6 +6163,11 @@ def compact_line(state, snap, run):
         # the propellant moment moved so far (unit-metres, + aft).
         "ptrim=%+5.2f/%+6.0f" % (getattr(run, "_ptrim_standing", None) or 0.0,
                                  getattr(run, "_ptrim_moment", 0.0)),
+        ]) + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
+        # ``CANARD_TRIM``: the canards' commanded trim (fraction of travel,
+        # + nose-up) and the low-passed summed pitch input it closes on.
+        "ctrim=%+5.2f/%+5.2f" % (getattr(run, "_ctrim", 0.0),
+                                 getattr(run, "_ctrim_lp", None) or 0.0),
         ]) + [
         # **Commanded slip is its own column, and only when something asks
         # for one.**  ``slip=`` has always meant the achieved angle and two
