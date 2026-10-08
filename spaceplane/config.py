@@ -243,7 +243,18 @@ class Config:
     # (tabprobe).  Never commands exactly 0 -- under AtmosphereAutopilot a
     # deploy angle of 0 freezes the surface where it is.
     CANARD_TRIM: bool = False
-    CANARD_TRIM_TAU_S: float = 3.0
+    CANARD_TRIM_TAU_S: float = 5.0
+    # **Only where the canards are linear, and only when settled.**  Their
+    # nose-up effect falls with alpha and *reverses* past ~24 deg (+15 deg
+    # deployed at 120 m/s: -129 kN m at alpha 5, -65 at 18, 0 at 24, +56 at
+    # 30 -- scratch tabprobe2), and the first smoke (LOG8224) engaged at the
+    # cone's entry, at alpha 22-30, learned the entry transient (-0.8 of
+    # input) as trim and departed at alpha 86.  So the pair is taken off
+    # kRPC, and the trim learns, only with the flown alpha under
+    # ``_MAX_ALPHA_DEG``, within ``_ALPHA_TOL_DEG`` of its command and the
+    # roll settled; otherwise it holds.
+    CANARD_TRIM_MAX_ALPHA_DEG: float = 15.0
+    CANARD_TRIM_ALPHA_TOL_DEG: float = 3.0
     CANARD_TRIM_LP_S: float = 2.0
     CANARD_TRIM_DEADBAND: float = 0.05
     CANARD_TRIM_MAX: float = 0.6

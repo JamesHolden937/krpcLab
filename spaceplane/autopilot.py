@@ -5543,6 +5543,23 @@ class Autopilot:
         if not (learn or hold or release or self._ctrim_on):
             return
         total = getattr(snap, "pitch_input", None)
+        if learn:
+            # Settled, and where the canards are linear (config).
+            try:
+                flown = float(snap.krpc_aoa)
+                cmd_alpha = float(getattr(self, "commanded_alpha", flown))
+                fb = flown_bank(snap)
+                cb = float(getattr(self, "commanded_bank", 0.0) or 0.0)
+                learn = (abs(flown) < float(self.cfg.CANARD_TRIM_MAX_ALPHA_DEG)
+                         and abs(cmd_alpha - flown)
+                         <= float(self.cfg.CANARD_TRIM_ALPHA_TOL_DEG)
+                         and not math.isnan(fb)
+                         and abs(fb - cb)
+                         <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG))
+            except (TypeError, ValueError):
+                learn = False
+            if not learn and not self._ctrim_on:
+                return
         if learn and total is not None:
             total = float(total)
             lp = self._ctrim_lp
