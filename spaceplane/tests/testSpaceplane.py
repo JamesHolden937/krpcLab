@@ -5553,6 +5553,14 @@ class TestHacGateStretch(unittest.TestCase):
                 0.5, lambda s, t=trial: t)
             self.assertEqual(run.hac_stretch, 0.0)
 
+    def test_a_move_that_only_reprices_is_refused(self):
+        run, _ = self.controller()
+        Autopilot = autopilot_module.Autopilot
+        Autopilot.hac_gate_stretch(
+            run, SimpleNamespace(ut=1.0), self.command(3000.0, turn=0.0),
+            4000.0, 0.5, lambda s: self.command(2950.0, turn=0.0))
+        self.assertEqual(run.hac_stretch, 0.0)
+
     def test_short_shrinks_it(self):
         run, _ = self.controller(stretch=1000.0)
         autopilot_module.Autopilot.hac_gate_stretch(

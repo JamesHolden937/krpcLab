@@ -4778,11 +4778,21 @@ class Autopilot:
         trial = plan(candidate)
         if trial is None:
             return command
+        # **A step must spend, not reprice.**  Lined up outside the gate,
+        # moving the gate toward the vehicle swaps straight path priced at
+        # the cone's ratio (~2.3) for the same path at the approach's (4.2):
+        # the plan's surplus grows and nothing is spent (kspSim LOG8459,
+        # 8463, 8465 grew 2.5-2.9 km at turn 0 and rolled out +1.2-1.8 km
+        # over need, against +0.2-0.65 without).  Out, the plan's need must
+        # rise; in, it must fall.
         if candidate > old:
             jump = abs(trial.turn_deg - command.turn_deg)
             if (trial.laps != 0 or trial.needed_height > height
+                    or trial.needed_height <= command.needed_height
                     or jump > 90.0):
                 return command
+        elif trial.needed_height >= command.needed_height:
+            return command
         self.hac_stretch = candidate
         if (old == 0.0) != (candidate == 0.0) or int(old / 1000.0) != \
                 int(candidate / 1000.0):
