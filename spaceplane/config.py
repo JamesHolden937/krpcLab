@@ -316,11 +316,7 @@ class Config:
     # vs 0/12.
     HAC_EXIT_PAST_DEG: float = 25.0
     SPLIT_RATE_DEG_S: float = 10.0  # the split rudder's slew
-    # **The split rudder on the runway** (``Autopilot.ground_spoiler``; the
-    # user, 2026-10-08: deploy it on landing so the runway can be shorter):
-    # full out at main-gear contact, left out.  Off.
-    ROLLOUT_SPLIT_BRAKE: bool = False
-    ROLLOUT_SPLIT_DEG: float = 38.0
+    SPLIT_FULL_DEG: float = 38.0  # the split rudder full out (45 adds ~2%)
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one
@@ -2303,6 +2299,13 @@ class Config:
     # takes 72-83 m/s entries on the base flights.  So: out down to this
     # multiple of the stall.
     APPROACH_SPLIT_MIN_SPEED_FACTOR: float = 1.45
+    # **The split rudder kept out into the flare while fast** (``Autopilot.
+    # flare_split_brake``): every long landing of the speedbrake defaults
+    # entered the flare at 86-96 m/s (LOG9011, 9013, 9016, 9023, 8955,
+    # 8982; stops +1.5..+2.6 km), the good ones at 61-81.  Out above this
+    # multiple of the stall, in for good below it.  Off.
+    FLARE_SPLIT_BRAKE: bool = False
+    FLARE_SPLIT_SPEED_FACTOR: float = 1.55
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
