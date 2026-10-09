@@ -34,45 +34,34 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-09)
+## Where it stands (2026-10-09 afternoon, fingerprint `4590c8ce`)
 
-Defaults now carry the configuration measured best since 10-07:
-`GLIDE_PITCH_OFFLOAD` (max 0.6, above Mach 3), `CANARD_TRIM`,
-`HAC_LD_MEASURED`. Over 135 flights of it on 2026-10-08 it landed on the
-runway **61/135 (45%)**: rigoff 27/49, inc 16/43, high 18/43. The failures:
+**The split rudder speedbrake on final is the default** (`APPROACH_SPLIT_BRAKE`):
+rigoff/inc/high land **46/66 on the runway (70%)**, against 61/135 (45%)
+the day before; head to head with it off, 24/30 v 8/30.  The cone hands
+over 0.6-1.7 km high ~6 km out (a ~28 deg path); the fins open to the L/D
+factor the geometry asks for and alpha holds speed, so the drag buys path
+angle.  Gated on 1.45 x stall: **the shuttle cannot fly below ~+1 deg of
+alpha on final**, so its steady glide is ~80 m/s and the approach's 115
+m/s target is never held.
 
-- **long, 32** -- 3-9 km past the midpoint, intact, into the sea;
-- **lost, 26** -- mostly the approach diving into the flare at 86-112 m/s;
-- **off the strip, 12** -- flare entered 90-330 m off the centreline;
-- short, 4.
-
-**One number predicts most of it: the height surplus the cone hands the
-approach** (`landsum.py`'s `surplus`). Under ~+400 m nearly every flight
-lands; over ~+800 m it lands long (rollout-to-wheels ratio ~3.5) or dives
-(ratio ~1.9). The cone rolls out 1.2-1.5 km high only ~6 km from the
-threshold, which needs a ~28 deg path; the approach had no drag device, so
-it banked 40 deg S-turns at alpha ~1 and spiralled in.
-
-**The split rudder is the speedbrake** (`tools/splitprobe.py`): both fins
-at Deploy Angle 38 double the approach's drag (L/D 4.17 -> 1.89) with no
-yaw or roll. Flags using it (all off, under test):
-`APPROACH_SPLIT_BRAKE` (open by geometry on final, alpha holds speed),
-`HAC_SPLIT_BRAKE` + `HAC_SPLIT_ON_BRANCH` (in the cone),
-`ROLLOUT_SPLIT_BRAKE`.
+Remaining on the good orbits: a few long by <1.4 km (fast flare entries),
+a few short, off-strip by 40-60 m.  **The eccentric orbit
+(`qs_shuttle2_ecc_rigoff`) is the blocker**: it reaches the cone 30-45 km
+long with the glide pinned at both limits from the interface, because the
+deorbit window's short end and the glide's prediction disagree about the
+drag the shuttle makes (root HANDOFF.md).  The single-fin `qs_shuttle`
+(no pair, brake absent) stops on the runway 5/6.
 
 ## Next, in order
 
-1. Whatever `rot-asb-1009` (base v `APPROACH_SPLIT_BRAKE`) says -- see the
-   root HANDOFF.md.
-2. **Energy management the Shuttle's way**, replacing patches: the
-   speedbrake used continuously against an energy-v-range target; a TAEM
-   segment (S-turns) *before* the cone; overhead v straight-in chosen by
-   energy; a dynamic-pressure schedule instead of a fixed 112 m/s true cone
-   target.
-3. The flare's lateral entry (off-strip landings).
-4. `TOUCHDOWN_AIM_M` (1800) and `APPROACH_AIM_SHIFT_M` (1000) are fitted
-   constants; derive the aim from flare float + rollout per vehicle.
-5. The eccentric orbit arrives ~17-21 km long.
+1. The eccentric orbit: make the deorbit window's max-drag model the
+   glide's.  `HOLDABLE_PRIOR` + `_BY_MACH` halves it; decide it.
+2. Fast flare entries (86-96 m/s float long) -- braking in the flare was
+   null; and the flare's lateral entry.
+3. **Energy management the Shuttle's way**: a TAEM segment before the cone
+   so the handover is not 1-1.7 km high; overhead v straight-in by energy.
+4. `TOUCHDOWN_AIM_M` / `APPROACH_AIM_SHIFT_M` per vehicle.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -109,7 +98,9 @@ yaw or roll. Flags using it (all off, under test):
   farm every 2 rounds (swap reaches ~20 GB).
 
 **Removed 2026-10-09** (refuted, null, or superseded; history in the
-journal and `git log`): `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
+journal and `git log`): `HAC_SPLIT_BRAKE`, `HAC_SPLIT_ON_BRANCH`,
+`HAC_LD_FLOWN_POLAR`, `ROLLOUT_SPLIT_BRAKE`, `FLARE_SPLIT_BRAKE`,
+`APPROACH_SPEED_KI`, `APPROACH_ALPHA_MIN_DEG`, `ALPHA_BINS_NEGATIVE`, `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 `HAC_SPEED_PATH`, `HAC_SHORT_BEST_GLIDE`, `APPROACH_SINK_GUARD`,
 `APPROACH_SPLIT_ON_GUARD`, `APPROACH_SHARP_TURN`, `HAC_SPIRAL_DUMP`,
 `HAC_GATE_STRETCH`, `HAC_PAST_KEEPS_LINEUP`, `HAC_EXIT_LAP_AT_TARGET`,
@@ -122,7 +113,8 @@ journal and `git log`): `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 ```bash
 ./run.sh --pilot spaceplane                          # fly it in your game, waiting for START
 ./spaceplane/tools/quickglide.py -n 1 --instance 0 --save qs_shuttle2_rigoff   # one farm flight
-./spaceplane/tools/rotfly.sh "0 1 2 3 4 5" 2 logs/rot-X.txt "$PWD" "save|SET=1;SET2=2" ...  # arms rotated over the farm
+./spaceplane/tools/multirot.sh TAG 3 "save|SET=1;SET2=2" ...   # arms rotated over the farm, restarted every 2 rounds
+./spaceplane/tools/rotfly.sh "0 1 2 3 4 5" 2 logs/rot-X.txt "$PWD" "save|SET=1" ...  # one farm cycle
 ./spaceplane/tools/entrysave.py 0                     # quicksave mid-flight (interface, or --alt on final)
 
 ./spaceplane/tools/landsum.py logs/LOG88*   # arrival -> cone surplus -> wheels, one line per flight

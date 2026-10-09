@@ -5277,3 +5277,42 @@ with their code (~900 lines): `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 fingerprint then `dc281ee4`).  New root rule: a flag ends as the default or
 deleted.  `spaceplane/CLAUDE.md` rewritten around the shuttle; the old craft
 is retired.
+
+**Late morning / afternoon: the speedbrake lands it.**  Gating the split
+rudder on the held speed was the null: the shuttle cannot fly below ~+1
+deg of alpha on final (commanded -2..-5 flew +0.3..+4: LOG8880, 8887,
+8924 -- the canard trim freezes nose-up once the alpha error passes its 3
+deg learning tolerance, and kRPC adds ~-0.1 of input), so its steady
+glide at the lift it needs is ~80 m/s and the 115 m/s target is never
+held; the brake read "slow" and stowed.  `APPROACH_SPEED_KI` (integral on
+the speed) wound to its bound against the untracked alpha and released a
+phugoid, 133 -> 48 m/s at 900 m (LOG8920, 8924): deleted, with
+`APPROACH_ALPHA_MIN_DEG`.  **Gated on 1.45 x stall instead**, at fixed
+alpha the brake steepens the path (L/D ~2: ~27 deg at ~80 m/s):
+
+- rot-asb2-1009 (18 an arm): **15/18 v 6/18**, lost 1 v 7, 18/18 intact;
+  surpluses of +800..+1667 m stopped at +838..+1673; rollout-to-wheels
+  ratio on those ~3.5 -> ~2.2.  Promoted to default.
+- rot-conf-1009 (12 an arm): default **9/12**, brake off **2/12**, default +
+  the gated cone split brake + flown polar 6/12 (deleted; its history 7/12,
+  5/12, 6/12).
+- rot-roll-1009: `ROLLOUT_SPLIT_BRAKE` 9/18 v 10/18, lost 5 v 2 (deleted).
+- `FLARE_SPLIT_BRAKE` (new, deleted): every long landing of the defaults
+  entered the flare at 86-96 m/s, the good ones 61-81; holding the brake
+  into the flare while fast engaged on 14/18 and bled to ~79 m/s mid-flare
+  but changed neither the touchdown speed nor the stop: 11/18 v 12/18
+  (rot-flare-1009).  The float is not a speed problem.
+- Pooled defaults (asb2/conf/roll/flare): **46/66 on the runway**; misses
+  spread -- long <1.4 km, a few short, off-strip 40-60 m, 2-3 partial
+  breakups.
+
+**Breadth** (rot-breadth-1009): single-fin `qs_shuttle` (no mirrored pair,
+brake absent) 5/6 stopped on the runway (rigid-attach save: parts lost on
+touchdown, known).  **`qs_shuttle2_ecc_rigoff` 1/6**: cone arrival +32..+36
+km long, 7-20 km cross, glide pinned at alpha 40 / bank 70 from the
+interface.  rot-ecc-1009 (6 v 6): with `HOLDABLE_PRIOR` + `_BY_MACH` the
+arrival halves on 4/6 (+7..+15 km) and lands 2/6 v 1/6.  On all 12 the
+window at the burn read the max-drag short end at 2,150-2,165 km with the
+gate at 2,205, while the glide's own solve read +17 km long at the
+interface: **the deorbit window and the glide disagree about the drag the
+shuttle makes** -- next session's entry problem.
