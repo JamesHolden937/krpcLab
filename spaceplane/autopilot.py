@@ -4947,11 +4947,20 @@ class Autopilot:
             return
         excess = float(getattr(command, "excess", 0.0) or 0.0)
         stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
+        # **Never below the speed the flare wants** (``APPROACH_FLARE_FACTOR``
+        # x stall): without it four brake flights reached the flare at 44-54
+        # m/s, at the stall, and LOG8801 stalled 2.8 km short (rot-gsplit-1008).
+        stall = airframe.stall(self.env, self.cfg)
+        fast = (stall is None or vec.norm(snap.velocity)
+                > float(self.cfg.APPROACH_FLARE_FACTOR) * stall)
         want = 0.0
-        if (getattr(command, "sink_guard", False) and excess > 0.0
+        if not fast:
+            pass
+        elif (getattr(command, "sink_guard", False) and excess > 0.0
                 and height > stow):
             want = float(self.cfg.ROLLOUT_SPLIT_DEG)
-        elif self.split_angle > 0.0 and height > stow and excess > 0.0:
+        elif (self.split_angle > 0.0 and height > stow and excess > 0.0
+                and fast):
             # Hold it out between guard ticks while surplus remains.
             want = self.split_angle
         dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
