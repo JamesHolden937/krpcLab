@@ -4701,14 +4701,29 @@ class Autopilot:
         cap_sink = float(self.cfg.APPROACH_SPLIT_SINK_FACTOR) * design
         want = 0.0
         reason = ""
+        # ``APPROACH_SPLIT_SINK_FADE``: over the cap the brake backs off in
+        # proportion instead of stowing, and not at all while faster than
+        # the held speed.  The stow was a relay: in, the clean airframe
+        # accelerated down the same steep path (92 -> 118 m/s, LOG9013), the
+        # speed law pulled up to bleed it and crossed the threshold level at
+        # 1000 m.  The feed-forward bound below already keeps the *steady*
+        # sink under the cap; what crosses it is a transient.
+        fade = float(getattr(self.cfg, "APPROACH_SPLIT_SINK_FADE", 0.0))
+        scale = 1.0
         if height <= stow:
             reason = "flare door"
         elif stall and speed < float(
                 self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR) * stall:
             reason = "slow"
-        elif cap_sink > 0.0 and sink > cap_sink:
+        elif cap_sink > 0.0 and sink > cap_sink and (
+                fade <= 0.0 or (speed <= held and sink >= (1.0 + fade)
+                                * cap_sink)):
             reason = "sink"
         elif command.distance > 50.0 and height > 1.0 and clean > 0.0:
+            if fade > 0.0 and cap_sink > 0.0 and sink > cap_sink \
+                    and speed <= held:
+                scale = vec.clamp(((1.0 + fade) * cap_sink - sink)
+                                  / (fade * cap_sink), 0.0, 1.0)
             factor = command.distance / (height * clean)
             # The steepest path the sink cap allows at this speed.
             if cap_sink > 0.0:
@@ -4721,7 +4736,10 @@ class Autopilot:
                         want = a0 + (a1 - a0) * (f0 - factor) / max(
                             1e-6, f0 - f1)
                         break
+            want *= scale
             reason = "factor %.2f" % factor
+            if scale < 1.0:
+                reason += " x%.2f (sink)" % scale
         dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
                                   or snap.ut))
         self._split_app_ut = snap.ut

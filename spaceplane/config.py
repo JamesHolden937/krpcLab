@@ -2181,6 +2181,10 @@ class Config:
     APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
                                     (30.0, 0.53), (38.0, 0.45))
     APPROACH_SPLIT_SINK_FACTOR: float = 1.5
+    # Over the cap, the brake fades out across this fraction of it rather
+    # than stowing, and holds while faster than the held speed; 0 is the
+    # stow (``Autopilot.approach_split_brake``).
+    APPROACH_SPLIT_SINK_FADE: float = 0.0
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and
