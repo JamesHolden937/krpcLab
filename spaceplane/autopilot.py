@@ -4612,6 +4612,36 @@ class Autopilot:
                        "h=%.0f turning %s"
                        % (miss[0], miss[1], distance, height,
                           "left" if self.hac_side > 0 else "right"))
+            self.log_cone_ladder(snap, height)
+
+    def log_cone_ladder(self, snap, height):
+        """One line at cone entry: the ladder's price of each 1 km of height
+        wings level -- reference speed, the alpha that holds 1 g there, the
+        table's L/D at it and what ``_hac_planned_ld`` returns -- so the
+        plan's ``pld`` can be read against the table it was built from."""
+        try:
+            stall = airframe.stall(self.env, self.cfg)
+            bits = []
+            h = float(self.cfg.GATE_ALT_M) + 500.0
+            while h < height:
+                v = guidance.cone_speed(self.env, self.cfg, stall, h)
+                a = trajectory.alpha_for_load(self.env, v, h, snap.mass,
+                                              self.surface_gravity, 1.0)
+                cla, cda = (self.env.coefficients(a, v, h) if a is not None
+                            else (0.0, 0.0))
+                ld = guidance._hac_planned_ld(self.env, self.cfg, v, h,
+                                              snap.mass,
+                                              self.surface_gravity,
+                                              self.cfg.HAC_RADIUS_MAX_M, 0.0)
+                bits.append("%.0fkm:v%.0f/a%s/%.2f/%s" % (
+                    h / 1000.0, v, "%.1f" % a if a is not None else "-",
+                    cla / cda if cda > 0.0 else 0.0,
+                    "%.2f" % ld if ld is not None else "-"))
+                h += 1000.0
+            self.logbook.event(snap.ut, "cone ladder (h:v/alpha/table L/D/"
+                               "planned): " + " ".join(bits))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "cone ladder: FAILED (%s)" % exc)
 
     def run_hac(self, snap):
         """Spiral the surplus off overhead, and roll out on the centreline.
