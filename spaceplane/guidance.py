@@ -963,7 +963,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     low = float(cfg.ALPHA_MIN_DEG)
     neg = float(getattr(cfg, "APPROACH_ALPHA_MIN_DEG", 0.0))
     if neg < low and held > 0.0:
-        frac = float(getattr(cfg, "APPROACH_NEG_ALPHA_SPEED_FRAC", 0.97))
+        frac = float(getattr(cfg, "APPROACH_NEG_ALPHA_SPEED_FRAC", 0.92))
         share = vec.clamp((speed / held - (frac - 0.1)) / 0.1, 0.0, 1.0)
         low = low + share * (neg - low)
     alpha = vec.clamp(alpha, low, cfg.APPROACH_ALPHA_MAX_DEG)

@@ -2317,21 +2317,23 @@ class Config:
     APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
                                     (30.0, 0.53), (38.0, 0.45))
     APPROACH_SPLIT_SINK_FACTOR: float = 1.5
-    APPROACH_SPLIT_SPEED_FRAC: float = 0.97
-    # **The other half of the polar** (root CLAUDE.md: "the table even stops
-    # at alpha 0").  At 105 m/s the shuttle carries ~1 g at alpha 0 (cla ~75
-    # m^2, q 4.1 kPa: 310 kN under 294), so with the floor at 0 the approach
-    # cannot fly a path steeper than its zero-alpha glide: rot-asb-1009's
-    # split brake bled speed instead of steepening (LOG8850: 113 -> 81 m/s
-    # with the brake out 70 s, alpha pinned at 0) and stowed on "slow".
-    # ``ALPHA_BINS_NEGATIVE`` probes rows below zero; ``APPROACH_ALPHA_MIN_
-    # DEG`` is the approach's floor, reached only at or above
-    # ``APPROACH_NEG_ALPHA_SPEED_FRAC`` of the held speed (ramped over the
-    # last tenth below it), so negative alpha *holds* the speed under drag
-    # and never makes speed for a slow handover -- that is the dive.  Off: 0.
-    ALPHA_BINS_NEGATIVE: tuple = ()
+    APPROACH_SPLIT_SPEED_FRAC: float = 0.92
+    # **Below zero alpha on final, through the speed loop only.**  At 105
+    # m/s the shuttle carries ~1 g at alpha 0 (cla ~75 m^2, q 4.1 kPa), so
+    # with the floor at 0 the approach cannot fly steeper than its
+    # zero-alpha glide: rot-asb-1009's split brake bled speed instead
+    # (LOG8850: 113 -> 81 m/s, brake out 70 s, alpha pinned at 0).  The
+    # trim stays on the table's measured rows (>= 0); this floor only lets
+    # ``APPROACH_SPEED_KP``'s term carry alpha below it, and only at or
+    # above ``APPROACH_NEG_ALPHA_SPEED_FRAC`` of the held speed (ramped over
+    # the tenth below), so it holds speed under drag and never makes speed
+    # for a slow handover.  **Not the table below zero**: the vacuum probe's
+    # negative rows read lift *rising* as alpha falls (M0.3: -6 16.5, -3
+    # 15.6, 0 45.7), the 1 g trim came out at -6 and the approach flew -7
+    # into a 90 m/s-sink dive (LOG8879, ``ALPHA_BINS_NEGATIVE``, deleted).
+    # Off: 0.
     APPROACH_ALPHA_MIN_DEG: float = 0.0
-    APPROACH_NEG_ALPHA_SPEED_FRAC: float = 0.97
+    APPROACH_NEG_ALPHA_SPEED_FRAC: float = 0.92
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
