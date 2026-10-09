@@ -2212,6 +2212,12 @@ class Config:
     PROBE_SPEED_FLOOR: float = 30.0
     AERO_REFRESH_UT: float = 1.0
     AERO_ROWS_PER_REFRESH: int = 2
+    # **Re-probe only the Mach rows being flown** (``Environment.
+    # _rows_near``): the probe sees the surfaces as they are deflected now,
+    # so a subsonic row re-probed mid-glide describes an airframe trimmed for
+    # Mach 3 -- L/D 0.85-1.72 at 2.5 km where the cone flies 3.3-3.7
+    # (rot-ladder-1008).  Off.
+    AERO_REFRESH_NEAR_MACH: bool = False
     AERO_SMOOTHING: float = 0.35            # new sample's weight
     SOUND_SPEED_FALLBACK_M_S: float = 340.0
     DENSITY_TABLE_STEP_M: float = 250.0

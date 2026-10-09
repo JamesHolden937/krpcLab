@@ -4203,7 +4203,9 @@ class Autopilot:
         self.set_rcs(False, snap)
         self.coast_warp(snap)
         self.end = self.env.runway.choose(snap.position, snap.velocity)
-        self.env.refresh(snap.ut)
+        self.env.refresh(
+            snap.ut, vec.norm(snap.velocity),
+            vec.norm(snap.position) - self.env.equatorial_radius)
         self.log_boundary_actual(snap)
         alpha = min(self.cfg.ENTRY_ALPHA_DEG, self.alpha_ceiling)
         # **Enter in the attitude the burn was aimed for.**  The deorbit
@@ -4394,7 +4396,9 @@ class Autopilot:
             if not permitted and getattr(self.rcs, "on", False):
                 permitted = True
         self.set_rcs(permitted, snap)
-        self.env.refresh(snap.ut)
+        self.env.refresh(
+            snap.ut, vec.norm(snap.velocity),
+            vec.norm(snap.position) - self.env.equatorial_radius)
         # **Is there surplus to spend?**  The speed floor is a brake, and a
         # brake is only free while the entry is long.  Decided here, once,
         # off the last prediction, and hung on ``env`` so every propagation
@@ -4680,7 +4684,9 @@ class Autopilot:
             if getattr(self, "flap_brake_out", False) \
                     and self.set_flap_brake(False):
                 self.logbook.event(snap.ut, "glide flap brake in: the cone")
-        self.env.refresh(snap.ut)
+        self.env.refresh(
+            snap.ut, vec.norm(snap.velocity),
+            vec.norm(snap.position) - self.env.equatorial_radius)
         height = snap.height_above_runway
         if self.hac_side is None:
             self.hac_side = guidance.hac_side(self.env, self.cfg, self.end,
@@ -5024,7 +5030,9 @@ class Autopilot:
         # Nothing below the glide permits RCS; close what it left open.
         self.set_rcs(False, snap)
         self.set_throttle(0.0)
-        self.env.refresh(snap.ut)
+        self.env.refresh(
+            snap.ut, vec.norm(snap.velocity),
+            vec.norm(snap.position) - self.env.equatorial_radius)
         self.report_landing_airframe(snap)
         height = snap.landing_height
         command = guidance.approach(

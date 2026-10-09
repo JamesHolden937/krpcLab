@@ -5776,3 +5776,28 @@ class TestHoldablePrior(unittest.TestCase):
                                40.0 + Config().HOLDABLE_MARGIN_DEG)
         # ...but only where it tracked: the next, denser bin keeps the prior.
         self.assertLess(h.limit(5000.0, 3.0), 30.0)
+
+
+class TestAeroRefreshNearMach(unittest.TestCase):
+    """``AERO_REFRESH_NEAR_MACH``: only the rows being flown are re-probed."""
+
+    def env(self, on):
+        from spaceplane import environment
+        e = environment.Environment.__new__(environment.Environment)
+        e.cfg = Config(AERO_REFRESH_NEAR_MACH=on)
+        e._machs = tuple(float(m) for m in e.cfg.MACH_BINS)
+        return e
+
+    def test_rows_around_the_present_mach(self):
+        e = self.env(True)
+        e._mach_now = 1.0                     # between the 0.9 and 1.2 rows
+        rows = e._rows_near()
+        self.assertEqual([e._machs[i] for i in rows], [0.6, 0.9, 1.2])
+
+    def test_off_or_unknown_refreshes_every_row(self):
+        e = self.env(False)
+        e._mach_now = 1.0
+        self.assertIsNone(e._rows_near())
+        e = self.env(True)
+        e._mach_now = None
+        self.assertIsNone(e._rows_near())

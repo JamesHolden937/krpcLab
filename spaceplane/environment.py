@@ -719,10 +719,45 @@ class Environment:
                     self.dump_torque(ut)
             return any_row
         rows = max(1, int(self.cfg.AERO_ROWS_PER_REFRESH))
+        near = self._rows_near()
         for _ in range(rows):
+            if near:
+                # ``AERO_REFRESH_NEAR_MACH``: only the rows this Mach is read
+                # from, and the one below it.
+                index = near[self._next_row % len(near)]
+                self._next_row += 1
+                self._probe_row(index, nose, dorsal, rotation)
+                continue
             self._probe_row(self._next_row, nose, dorsal, rotation)
             self._next_row = (self._next_row + 1) % len(self._machs)
         return True
+
+    def _rows_near(self):
+        """``AERO_REFRESH_NEAR_MACH``: the Mach rows the vehicle is flying
+        (the two the lookup interpolates between, and the next one down),
+        or ``None`` to refresh every row in turn.
+
+        ``simulate_aerodynamic_force_at`` evaluates the airframe *as it is
+        configured now* -- elevons, canard trim, flap brake at their present
+        deflection.  Re-probing a Mach 0.3 row at Mach 3, elevons saturated
+        nose-up to hold 40 deg, wrote a subsonic table the vehicle never
+        flies: at cone entry it read L/D 0.85-1.72 at 2.5 km and 112 m/s on
+        five rigoff flights of one craft, against 3.3-3.7 from the same
+        rows re-probed in the cone (rot-ladder-1008).  The cone planned its
+        whole subsonic descent on it, read itself short, pinned the 2 km
+        circle and found 1-4 km of surplus below 5 km.  Rows not near the
+        present Mach keep their last near-Mach probe (the vacuum sweep's,
+        surfaces neutral, until flown)."""
+        if not getattr(self.cfg, "AERO_REFRESH_NEAR_MACH", False):
+            return None
+        mach = getattr(self, "_mach_now", None)
+        if mach is None:
+            return None
+        machs = self._machs
+        k = 0
+        while k < len(machs) - 1 and machs[k + 1] <= mach:
+            k += 1
+        return [i for i in (k - 1, k, k + 1) if 0 <= i < len(machs)]
 
     def refresh(self, ut, speed=0.0, altitude=0.0):
         """Time-gated wrapper, and the log's current-value bookkeeping."""
@@ -730,6 +765,11 @@ class Environment:
                 and ut < self._next_refresh_ut):
             return
         self._next_refresh_ut = ut + self.cfg.AERO_REFRESH_UT
+        if speed > 0.0:
+            try:
+                self._mach_now = speed / self.speed_of_sound(altitude)
+            except Exception:                           # noqa: BLE001
+                self._mach_now = None
         self.sweep(ut)
 
     def set_profile(self, profile):
