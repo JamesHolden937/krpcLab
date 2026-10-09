@@ -782,7 +782,7 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             accel=None, roll_lag_s=None, ld_factor=1.0):
+             accel=None, roll_lag_s=None, ld_factor=1.0, alpha_bias=0.0):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -937,7 +937,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     at = alpha_for_load(env, held, height, mass, gravity, 1.0)
     if at is None:
         at = trim
-    alpha = at + cfg.APPROACH_SPEED_KP * (speed - held)
+    alpha = at + alpha_bias + cfg.APPROACH_SPEED_KP * (speed - held)
     # **And never less lift than the vehicle weighs.**
     #
     # The path term subtracts from ``trim`` when the approach is high, and
@@ -965,7 +965,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # Only while the brake is out: the floor is there to hold speed under
     # its drag.  Without that, a low handover flew -2.5 deg to *make* speed
     # with 260 m too little height (LOG8880).
-    if neg < low and held > 0.0 and float(ld_factor or 1.0) < 0.99:
+    if neg < low and held > 0.0 and (float(ld_factor or 1.0) < 0.99
+                                     or excess > 0.0):
         frac = float(getattr(cfg, "APPROACH_NEG_ALPHA_SPEED_FRAC", 0.92))
         share = vec.clamp((speed / held - (frac - 0.1)) / 0.1, 0.0, 1.0)
         low = low + share * (neg - low)
@@ -1133,6 +1134,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     if abs(bank) > 1.0:
         alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
                                 max(target, floor), trim, bank_deg=bank)
+        alpha += alpha_bias
         alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
                                                   -cfg.APPROACH_PATH_LIMIT_M,
                                                   cfg.APPROACH_PATH_LIMIT_M)
@@ -1155,6 +1157,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     command.target_speed = target
     command.speed_floor = floor
     command.clean_ld = clean_ld
+    command.alpha_floor = low
     command.design_sink = design
     return command
 

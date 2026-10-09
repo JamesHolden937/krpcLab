@@ -2334,6 +2334,20 @@ class Config:
     # Off: 0.
     APPROACH_ALPHA_MIN_DEG: float = 0.0
     APPROACH_NEG_ALPHA_SPEED_FRAC: float = 0.92
+    # **Integral action on the approach's speed** (``Autopilot.
+    # approach_speed_bias``), deg of alpha per (m/s x s), bounded to
+    # ``APPROACH_SPEED_BIAS_MIN/MAX_DEG``.  The law's trim is the table's
+    # 1 g angle, and subsonic the table under-reads the shuttle's lift at
+    # low alpha (M0.3, 0 deg: 45.7 m^2 against ~75 flown), so the trim is
+    # degrees too high and the proportional term alone stands 15-30 m/s
+    # slow: LOG8911 flew 81-104 m/s against 103-115 held at alpha +1.6, L/D
+    # ~4.4, and landed 4.8 km long with +702 m handed over -- the brake
+    # stowed on "slow" after 6 s.  With it the alpha that holds the speed is
+    # found, whatever the table says.  The floor (``APPROACH_ALPHA_MIN_
+    # DEG``) opens with surplus height or the brake out.  Off: 0.
+    APPROACH_SPEED_KI: float = 0.0
+    APPROACH_SPEED_BIAS_MIN_DEG: float = -6.0
+    APPROACH_SPEED_BIAS_MAX_DEG: float = 3.0
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is

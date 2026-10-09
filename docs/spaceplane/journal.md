@@ -5222,3 +5222,58 @@ of each half.
   over need), which is where to act.
 - Base (best config) on the three orbits tonight: 9/12, 6/12, 5/12,
   7/12.
+
+## Session, 2026-10-09 morning: the approach's surplus, the cleanup, and the missing half of the polar
+
+**What decides a landing** (135 flights of the best configuration on
+2026-10-08, `landsum.py`): the height surplus the cone hands the approach.
+Under ~+400 m nearly every flight lands (stops cluster at the brake law's
++850); over ~+800 m it lands 3-9 km long (rollout-to-wheels ratio ~3.5) or
+dives into the flare at 86-112 m/s (ratio ~1.9).  Runway 61/135; long 32,
+lost 26, off-strip 12 (flare entered 90-330 m off the centreline), short 4.
+The dives (LOG8699, 8710, 8583) handed over 1.2-1.4 km high ~6 km out --
+a ~28 deg path -- and spiralled at 40 deg of S-turn bank, alpha ~0-8, to
+90-110 m/s of sink.
+
+- **`APPROACH_SPLIT_BRAKE`** (new, off): the split rudder opened on final
+  to the L/D factor `distance / (height x APPROACH_BEST_LD)` (re-solved
+  every tick), the S-turn sized on the braked ratio, sink-capped at 1.5x
+  design, speed-gated, stowed before the door.  rot-asb-1009 (17 an arm):
+  **8/17 v 8/17**, long 6 -> 3, short 1 -> 3.  Why null: the brake came out
+  and stowed within seconds on "slow" or "sink"; LOG8850 had it out 70 s
+  and the speed fell 113 -> 81 instead of the path steepening.  **The
+  shuttle cannot unload**: at 105 m/s it carries ~1 g at alpha 0 (cla ~75,
+  q 4.1 kPa: 310 kN under 294) and `ALPHA_MIN_DEG` is 0, so drag can only
+  cost speed.  The root CLAUDE.md had this written down ("the table even
+  stops at alpha 0") and nothing had acted on it.
+- **`ALPHA_BINS_NEGATIVE`** (built, deleted the same morning): the vacuum
+  probe's rows below zero read lift *rising* as alpha falls (M0.3: -6
+  16.5, -3 15.6, 0 45.7); the 1 g trim came out at -6, the cone's ladder
+  priced its low rungs at -6, and the approach flew -7 into a 90 m/s-sink
+  dive (LOG8879, destroyed).  The table cannot be trusted below zero.
+- **`APPROACH_ALPHA_MIN_DEG`** (new, off): trim stays on the measured rows;
+  the floor only lets the speed loop's proportional term go below zero,
+  within 8% of the held speed and only while the brake is out (LOG8880
+  flew -2.5 deg handed over 260 m *low*).
+- Two bugs the smoke flights caught: the split brake's slew never moved on
+  short ticks (it compared each sub-degree step against the *applied*
+  angle; LOG8881 held the brake out 113 -> 79 m/s) -- fixed in the cone's
+  brake too; and a `HAC_WEAVE_HELD` leftover from the cleanup (below)
+  NameError'd every flight in the cone (LOG8877) -- the offline tests do
+  not reach `guidance.hac`'s bank cap.  pyflakes now clean of undefined
+  names.
+
+**The cleanup** (the user: "remove any ideas for old craft and just outdated
+ideas ... maybe old policies are holding us back").  Twenty flags deleted
+with their code (~900 lines): `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
+`HAC_SPEED_PATH`, `HAC_SHORT_BEST_GLIDE`, `APPROACH_SINK_GUARD`,
+`APPROACH_SPLIT_ON_GUARD`, `APPROACH_SHARP_TURN`, `HAC_SPIRAL_DUMP`,
+`HAC_GATE_STRETCH`, `HAC_PAST_KEEPS_LINEUP`, `HAC_EXIT_LAP_AT_TARGET`,
+`HAC_WRAP_BEFORE_GATE`, `HAC_CHOOSE_BY_ENERGY`, `HAC_WEAVE_HELD`,
+`HAC_WEAVE_STRAIGHT_ONLY`, three cone flap-brake variants,
+`PROPELLANT_TRIM*`, `AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`,
+`GLIDE_ENERGY_AIM`.  **The best configuration became the default**
+(`GLIDE_PITCH_OFFLOAD` 0.6 above Mach 3, `CANARD_TRIM`, `HAC_LD_MEASURED`;
+fingerprint then `dc281ee4`).  New root rule: a flag ends as the default or
+deleted.  `spaceplane/CLAUDE.md` rewritten around the shuttle; the old craft
+is retired.
