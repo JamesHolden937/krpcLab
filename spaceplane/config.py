@@ -2521,6 +2521,7 @@ class Config:
     APPROACH_SINK_GUARD: bool = False
     APPROACH_SINK_GUARD_M_S: float = 8.0
     APPROACH_SINK_GUARD_BANK_DEG: float = 15.0
+    APPROACH_SINK_GUARD_FACTOR: float = 1.5
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is

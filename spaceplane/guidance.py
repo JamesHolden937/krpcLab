@@ -1187,9 +1187,20 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # path, plus the inner loop's pull toward it.
     guard = float(getattr(cfg, "APPROACH_SINK_GUARD_M_S", 0.0))
     command_guard = False
+    # **The cap is the approach's own design sink, not the path to the
+    # aim**: handed over high, the straight path to the aim is itself 15-20
+    # deg steep, and the first version (sink past *that*) never fired while
+    # three flights dived to 60-88 m/s of sink (rot-stack-1008, LOG8740,
+    # 8745, 8755).  ``APPROACH_SINK_GUARD_FACTOR`` x (the held speed over
+    # the approach's glide ratio): ~1.5 x 26 m/s, the top of every intact
+    # flare on record.  Bound, the vehicle lands long instead of diving.
+    design = max(target, floor) / max(0.1, best_ld)
+    cap_sink = min(wanted_sink + guard, design * float(getattr(
+        cfg, "APPROACH_SINK_GUARD_FACTOR", 1.5)))
     if (getattr(cfg, "APPROACH_SINK_GUARD", False) and speed > 1.0
-            and sink > wanted_sink + guard):
-        path = math.asin(vec.clamp(wanted_sink / speed, -1.0, 1.0))
+            and sink > cap_sink):
+        path = math.asin(vec.clamp(min(wanted_sink, cap_sink) / speed,
+                                   -1.0, 1.0))
         flying = math.asin(vec.clamp(sink / speed, -1.0, 1.0))
         load = math.cos(path) + float(getattr(cfg, "APPROACH_PATH_KN", 1.5)) \
             * (flying - path)
