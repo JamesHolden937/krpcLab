@@ -28,3 +28,6 @@ testInstances/kspproxy[0-9]*/
 
 # Generated from a KSP instance by kspSim/tools/kscterrain.py --instance 0
 kspSim/data/ksc_terrain.json
+.wt-*/
+.venv
+.venv-pypy

@@ -17,7 +17,10 @@ waiter that prints the summary when the batch finishes (`ROT DONE`), end the
 turn, and do nothing with the batch until that notification arrives. Don't
 poll, don't chain wait calls, don't read mid-flight logs: it wastes tokens,
 and part-batch data (one round, half the arms, a flight still in the glide)
-gets misread as a result. **Every time you stop to wait, tell the user
+gets misread as a result. Waiting on the batch is not idling: develop
+the next change in a git worktree (`git worktree add .wt-<name>`; the
+batch runs the main tree, which stays frozen) and merge after it ends.
+**Every time you stop to wait, tell the user
 roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
 from the previous batch's round length times the rounds left.
 
@@ -198,6 +201,17 @@ across instances, and re-clone rather than patch.
 
 These bite in both projects and are the ones a change most often violates.
 
+- **A flag ends its life as the default or deleted -- never parked off.**
+  A mechanism goes in behind a flag so it can be measured; once measured,
+  it is promoted to the default (it won) or its code is deleted (refuted,
+  null, or superseded), with the result in the journal and the code in
+  `git log`. The user flies the defaults live, so a winner left off never
+  reaches them -- the spaceplane's best configuration sat behind three
+  flags for two days -- and every loser left in makes the next change
+  harder to read: by 2026-10-09 the spaceplane had 48 off-by-default flags
+  and ~20 were dead. "Off until paired" is not a state; pair it or delete
+  it.
+
 - **Measure in game, not in the sim.** `boosterland/tests/fakeksp` models a point mass with
   near-instant pointing and no aerodynamic torque, and integrates its own truth
   with the scheme it is judging. Six changes that improved a sim sweep made the
@@ -332,8 +346,8 @@ These bite in both projects and are the ones a change most often violates.
   afternoon after ~2800 flights on one craft, and `Drain Mode` had been right
   only by inheritance. (2) *breadth* -- before the next batch on the phase
   you have been working, glance at the others' summaries (`oscsum.py`,
-  `landsum.py`, `loop rate`, touchdown survival) on **both craft and more than
-  one orbit**. Sessions here have repeatedly spent a day on the approach's
+  `landsum.py`, `loop rate`, touchdown survival) on **more than one orbit
+  and, when there is one, more than one airframe of the family**. Sessions here have repeatedly spent a day on the approach's
   last 900 m while the entry scattered 200 km on another airframe, or tuned
   one save while a second save's bimodality sat unread. The goal is accuracy
   across ships and orbits, and the largest error is rarely in the part you
