@@ -4722,11 +4722,11 @@ class Autopilot:
         dt = max(0.05, snap.ut - (self._last_hac_ut or snap.ut))
         self._last_hac_ut = snap.ut
 
-        def plan(stretch):
+        def plan(stretch, cfg=None):
             end = self.end
             if stretch > 0.0:
                 end = dict(self.end, gate_stretch=stretch)
-            return guidance.hac(self.env, self.cfg, end, snap.position,
+            return guidance.hac(self.env, cfg or self.cfg, end, snap.position,
                                 snap.velocity, snap.mass,
                                 self.surface_gravity, height,
                                 self.hac_side,
@@ -4739,6 +4739,9 @@ class Autopilot:
                                                  None))
 
         command = plan(self.hac_stretch)
+        if command is not None and getattr(self.cfg, "HAC_PAST_KEEPS_LINEUP",
+                                           False):
+            command = self.hac_keep_lineup(snap, command, plan)
         if command is not None and getattr(self.cfg, "HAC_GATE_STRETCH",
                                            False):
             command = self.hac_gate_stretch(snap, command, height, dt, plan)
@@ -4831,6 +4834,49 @@ class Autopilot:
                           command.turn_deg, height, needed,
                           command.gate_range, command.radius, command.laps,
                           getattr(command, "stretch", 0.0)))
+
+    def hac_keep_lineup(self, snap, command, plan):
+        """``HAC_PAST_KEEPS_LINEUP``: a lined-up vehicle that a weave swing
+        carries a little past the rollout is still lined up, unless the lap
+        that wrap implies is one it can fly.
+
+        The wrap is deliberate (``HAC_EXIT_PAST_DEG``'s comment): a vehicle
+        past the rollout and too high owes its lap.  But a lap it cannot
+        afford is not a plan.  Flown with the polar priced right, the cone
+        lined up on its widest circle 15 km out with surplus, wove at 50
+        deg to spend it, swung 12 deg past the rollout, read turn 348 and a
+        106 km path, went ``short``, dropped the weave -- its only spender
+        there -- and flew straight in 2.3 km high (LOG8655, 8665).  So:
+        when the plan is short only because of a wrap inside
+        ``HAC_EXIT_PAST_DEG`` and the last tick was lined up, plan it lined
+        up (the past band as the overshoot tolerance) and keep that plan if
+        it is not short."""
+        past = float(getattr(self.cfg, "HAC_EXIT_PAST_DEG", 0.0))
+        wrapped = command.turn_deg > 360.0 - past
+        if (command.short and wrapped
+                and getattr(self, "_hac_lined_up", False)):
+            relaxed = getattr(self, "_cfg_past", None)
+            if relaxed is None:
+                import dataclasses
+                relaxed = self._cfg_past = dataclasses.replace(
+                    self.cfg, HAC_OVERSHOOT_DEG=max(
+                        past, float(getattr(self.cfg, "HAC_OVERSHOOT_DEG",
+                                            0.0))))
+            lined = plan(self.hac_stretch, cfg=relaxed)
+            if lined is not None and not lined.short:
+                if not getattr(self, "_hac_kept_logged", False):
+                    self._hac_kept_logged = True
+                    self.logbook.event(
+                        snap.ut, "cone: %.0f deg past the rollout and a lap "
+                        "owed it cannot fly (path %.0f) -- kept lined up "
+                        "(path %.0f, need %.0f)" % (
+                            360.0 - command.turn_deg, command.path,
+                            lined.path, lined.needed_height))
+                command = lined
+        self._hac_lined_up = (command.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
+                              or command.turn_deg > 360.0 - past
+                              and not command.short)
+        return command
 
     def hac_gate_stretch(self, snap, command, height, dt, plan):
         """``HAC_GATE_STRETCH``: move the rollout out along the centreline

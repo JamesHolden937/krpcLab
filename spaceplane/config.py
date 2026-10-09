@@ -358,6 +358,13 @@ class Config:
     # 0.5-1.2 km of surplus (LOG6224, 6305, 6309, 6314).  On the runway 2/12
     # vs 0/12.
     HAC_EXIT_PAST_DEG: float = 25.0
+    # **... and in the plan, when the lap that wrap implies is unaffordable**
+    # (``Autopilot.hac_keep_lineup``): a lined-up vehicle swung past the
+    # rollout by the weave read turn 348, a lap it could not fly, went
+    # ``short``, dropped the weave and flew straight in 2.3 km high
+    # (LOG8655, 8665, with ``HAC_LD_FLOWN_POLAR``).  Plan it lined up while
+    # that plan is not short.  Off.
+    HAC_PAST_KEEPS_LINEUP: bool = False
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one
