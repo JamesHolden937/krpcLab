@@ -5316,3 +5316,48 @@ window at the burn read the max-drag short end at 2,150-2,165 km with the
 gate at 2,205, while the glide's own solve read +17 km long at the
 interface: **the deorbit window and the glide disagree about the drag the
 shuttle makes** -- next session's entry problem.
+
+## Session, 2026-10-09 late afternoon (~1430-1600): the prior deleted, 13 flags deleted, and the eccentric orbit's error is the post-burn flip
+
+**`HOLDABLE_PRIOR` + `HOLDABLE_BY_MACH`, deleted** (rot-prior-1009, 6 an
+arm, ecc/inc/high): ecc 1/6 v 2/6 (pooled with rot-ecc-1009: 3/12 v 3/12),
+cone arrivals +11..+48 km either way; inc/high 12/12 v 8/12 (pooled with
+10-08: 33/48 v 29/48).  Null where it was meant to help.
+
+**Cleanup, second pass** (the root rule: measured flags end as default or
+deleted): `PITCH_P_CONE`, `CONE_TRIM_HANDOFF` (refuted 1007),
+`HAC_LD_AT_TARGET` (superseded by `HAC_LD_MEASURED`), `GLIDE_CONE_ENERGY` /
+`_CEILING` (null in the sim), `ENTRY_INTERFACE_AT_AIR` (never flown),
+`GEAR_GEOMETRY_DEPLOYED` (null), `AERO_REFRESH_NEAR_MACH` (null),
+`TOUCHDOWN_AIM_DERIVED` (refuted), `BAY_BRAKE` (superseded by the split
+rudder), the prior and `tools/holdprior.py`.  Suite 559 pass; smoke
+rot-smoke-1009b 4/6 landed, no errors.  Defaults fingerprint `9abe7afd`.
+
+**The eccentric orbit's miss is made in the coast, not the burn.**  The six
+default ecc flights of rot-prior-1009 burned identically (34.0-34.1 m/s,
+window and aim within 2 km of each other) and arrived +11, +12, +21, +44,
++48, +50 km long.  They separate in the ~90 s after the burn, when the
+vehicle swings from retrograde to the entry attitude at full input (pointing
+error 100-160 deg) at 69 km, q ~1 Pa.  Vertical speed ~200 s later: -6.8,
+-6.8, -6.6, -6.6, -6.4, -6.5 m/s -- in arrival order.  The shallow ones
+reach the interface 10-17 s later and ~30 km further along (`rwy=` 540 v 570
+km).  Coast energy is the same on all six to ~0.2 m/s; it is the path angle.
+
+**`COAST_TRIM` (built, smoked, deleted)**: re-run the burn's stop test after
+the flip settles and close it with RCS translation on the nose axis.  The
+first reading said -290..-330 km, -3 m/s owed; its one prograde pulse made
+three flights worse (+69..+78 km at the cone).  **`COAST_WATCH_S`** (an
+instrument, kept) logged the stop test every 5 s through the coast
+(rot-watch-1009): **on the ecc orbit the stop test cannot measure at all**
+-- t2g 1830 s against `DEORBIT_MAX_TIME_TO_GO_S` 1500 straight after
+cutoff, readable only mid-flip, against an aim of +760 km.  So the ecc burn
+was never closed-loop: it ends on the solved dv, and its exit line printed
+"range error +0 m" for "unmeasured" (a missing answer looking like a good
+one -- fixed: it now says "unmeasured").  inc/high also return no
+measurement from the coast (t2g 1580-1790).
+
+Next for ecc: either (a) a correction measured by a quantity that exists on
+this orbit (the glide's own solve from the coast state, or the window's
+corners -- not the stop test), or (b) take the disturbance out: flip on the
+wheels slowly, or before the drag matters, or do the flip *before* the
+burn's final tick.

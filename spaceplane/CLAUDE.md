@@ -34,7 +34,7 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-09 afternoon, fingerprint `4590c8ce`)
+## Where it stands (2026-10-09 evening, fingerprint `9abe7afd`)
 
 **The split rudder speedbrake on final is the default** (`APPROACH_SPLIT_BRAKE`):
 rigoff/inc/high land **46/66 on the runway (70%)**, against 61/135 (45%)
@@ -47,16 +47,17 @@ m/s target is never held.
 
 Remaining on the good orbits: a few long by <1.4 km (fast flare entries),
 a few short, off-strip by 40-60 m.  **The eccentric orbit
-(`qs_shuttle2_ecc_rigoff`) is the blocker**: it reaches the cone 30-45 km
-long with the glide pinned at both limits from the interface, because the
-deorbit window's short end and the glide's prediction disagree about the
-drag the shuttle makes (root HANDOFF.md).  The single-fin `qs_shuttle`
+(`qs_shuttle2_ecc_rigoff`) is the blocker**: it reaches the cone 10-50 km
+long, and the miss is made by the ~90 s post-burn flip to entry attitude
+at 69 km (vertical speed after it orders the arrivals exactly).  On that
+orbit the burn's stop test cannot measure (t2g > 1500 s), so the burn ends
+on the solved dv (root HANDOFF.md).  The single-fin `qs_shuttle`
 (no pair, brake absent) stops on the runway 5/6.
 
 ## Next, in order
 
-1. The eccentric orbit: make the deorbit window's max-drag model the
-   glide's.  `HOLDABLE_PRIOR` + `_BY_MACH` halves it; decide it.
+1. The eccentric orbit: correct the flip's disturbance with a measurement
+   that exists there (not the stop test), or take the disturbance out.
 2. Fast flare entries (86-96 m/s float long) -- braking in the flare was
    null; and the flare's lateral entry.
 3. **Energy management the Shuttle's way**: a TAEM segment before the cone
@@ -74,7 +75,7 @@ drag the shuttle makes (root HANDOFF.md).  The single-fin `qs_shuttle`
   standing moments out of kRPC.
 - **Below Mach 3 the shuttle holds 0.57-0.75 of the ~40 deg the glide
   commands**, so the glide over-delivers cone energy; `HOLDABLE_PRIOR` by
-  Mach fixes the prediction (null on landings).
+  Mach fixed the prediction and was null on landings (deleted).
 - **The aero probe measures at the surfaces' present deflection**, so
   subsonic rows re-probed mid-glide describe an airframe never flown there;
   the cone's flown lift peaks ~139 m^2 near 12 deg (table ~300).
@@ -98,7 +99,10 @@ drag the shuttle makes (root HANDOFF.md).  The single-fin `qs_shuttle`
   farm every 2 rounds (swap reaches ~20 GB).
 
 **Removed 2026-10-09** (refuted, null, or superseded; history in the
-journal and `git log`): `HAC_SPLIT_BRAKE`, `HAC_SPLIT_ON_BRANCH`,
+journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE`,
+`CONE_TRIM_HANDOFF`, `HAC_LD_AT_TARGET`, `GLIDE_CONE_ENERGY`/`_CEILING`,
+`ENTRY_INTERFACE_AT_AIR`, `GEAR_GEOMETRY_DEPLOYED`, `AERO_REFRESH_NEAR_MACH`,
+`TOUCHDOWN_AIM_DERIVED`, `BAY_BRAKE`, `HAC_SPLIT_BRAKE`, `HAC_SPLIT_ON_BRANCH`,
 `HAC_LD_FLOWN_POLAR`, `ROLLOUT_SPLIT_BRAKE`, `FLARE_SPLIT_BRAKE`,
 `APPROACH_SPEED_KI`, `APPROACH_ALPHA_MIN_DEG`, `ALPHA_BINS_NEGATIVE`, `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 `HAC_SPEED_PATH`, `HAC_SHORT_BEST_GLIDE`, `APPROACH_SINK_GUARD`,
@@ -122,7 +126,6 @@ journal and `git log`): `HAC_SPLIT_BRAKE`, `HAC_SPLIT_ON_BRANCH`,
 ./spaceplane/tools/armsum.py --by X --against '(default)' logs/LOG88*   # one line per arm
 ./spaceplane/tools/conesum.py --settled logs/LOG88*
 ./spaceplane/tools/conepolar.py             # the cone's flown polar -> logs/conepolar/
-./spaceplane/tools/holdprior.py --by-mach --mach 0.8   # the glide's holdable alpha -> logs/holdprior/
 ./spaceplane/tools/splitprobe.py 0          # the split rudder's drag, yaw, roll
 
 python3 -m unittest spaceplane.tests.testSpaceplane   # offline, no KSP

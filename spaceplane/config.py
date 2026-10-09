@@ -1873,26 +1873,12 @@ class Config:
     COAST_WARP: bool = True
     COAST_WARP_FACTOR: int = 3              # an index into KSP's rate table
     COAST_WARP_STOP_M: float = 2000.0       # release this far above the air
-    # **Put the arc back on the burn's aim after the flip** (``Autopilot.
-    # coast_trim``).  The burn's stop test is its last measurement, and the
-    # vehicle then swings from retrograde to the entry attitude -- ~90 s of
-    # tumbling at full input, on the eccentric orbit at 69 km where the air
-    # is not quite gone.  That leaves the coast 0.2-0.4 m/s steeper or
-    # shallower, and on a grazing entry that is the whole miss: six default
-    # flights of rot-prior-1009 burned identically (34 m/s, "range error
-    # +0") and their vertical speed 200 s later was -6.8 / -6.8 / -6.6 /
-    # -6.6 / -6.5 / -6.4 m/s against arrivals +11 / +12 / +21 / +44 / +50 /
-    # +48 km.  Failure 61's shape: a disturbance downstream of the burn's
-    # last measurement.  So once the nose has settled, re-run the stop test
-    # (``guidance.deorbit_remaining`` at the burn's own aim) and translate
-    # on RCS along the nose axis until it owes less than the deadband.
-    COAST_TRIM: bool = False
-    COAST_TRIM_SETTLE_S: float = 10.0       # nose within the tolerance this long
-    COAST_TRIM_ALIGN_DEG: float = 3.0
-    COAST_TRIM_DEADBAND_M_S: float = 0.02   # owed dv that is left alone
-    COAST_TRIM_ACCEL_M_S2: float = 0.3      # first guess at full input; learned
-    COAST_TRIM_MAX_DV_M_S: float = 5.0      # a budget, not a target
-    COAST_TRIM_MAX_Q_PA: float = 20.0       # past this the air is the steering
+    # The eccentric orbit's misses track the coast's vertical speed after
+    # the post-burn flip (rot-prior-1009: -6.8 m/s +11 km .. -6.4 m/s +50
+    # km on identical burns).  ``COAST_TRIM`` (RCS translation closed on the
+    # burn's stop test) was deleted 2026-10-09: on that orbit the stop test
+    # cannot measure (t2g 1830 s > ``DEORBIT_MAX_TIME_TO_GO_S``, aim +760 km;
+    # rot-watch-1009) -- the burn there ends on the solved dv, unmeasured.
     # An instrument: every this many game seconds of COAST (0 = off), the
     # burn's stop test re-run from the present state -- the arc's error
     # against the burn's aim, what it owes, and why when it cannot say --

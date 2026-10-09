@@ -593,68 +593,6 @@ class TestConfig(unittest.TestCase):
 
 
 
-class TestCoastTrim(unittest.TestCase):
-    """``COAST_TRIM``: the burn's stop test re-run after the flip, closed
-    by RCS translation along the nose."""
-
-    def run_trim(self, axis_sign, owed0=0.4):
-        ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
-        ap.cfg = Config(COAST_TRIM=True)
-        ap.deorbit_aim_m = 1000.0
-        ap.end = None
-        ap.env = None
-        ap.cutoff_state = (0.0, None, None, None)
-        ap.rcs = SimpleNamespace(on=False)
-        ap.control = SimpleNamespace(rcs=False, forward=0.0)
-        ap._apply_rcs = lambda wanted: setattr(ap.control, "rcs", wanted)
-        events = []
-        ap.logbook = SimpleNamespace(event=lambda ut, text: events.append(text))
-        ap.pointing_error = lambda snap: 1.0
-        state = {"owed": owed0}
-        accel = 0.25
-
-        def remaining(env, r, v, mass, cfg, end, aim):
-            return state["owed"] * 20000.0, state["owed"]
-
-        ut = 100.0
-        with unittest.mock.patch.object(guidance, "deorbit_remaining",
-                                        remaining):
-            for _ in range(60):
-                snap = SimpleNamespace(ut=ut, dynamic_pressure=1.0,
-                                       height_above_runway=68000.0,
-                                       position=None, velocity=None,
-                                       mass=31000.0)
-                trimming = ap.coast_trim(snap)
-                # Positive input along the nose is prograde on this craft
-                # when ``axis_sign`` is +1: it pays back retrograde owed.
-                state["owed"] += (ap.control.forward * axis_sign
-                                  * accel * 2.0)
-                ut += 2.0
-                if not trimming and ap._trim["done"]:
-                    break
-        return ap, state["owed"], events
-
-    def test_trims_to_the_deadband(self):
-        ap, owed, events = self.run_trim(+1)
-        self.assertTrue(ap._trim["done"])
-        self.assertLessEqual(abs(owed), 0.03)
-        self.assertEqual(ap.control.forward, 0.0)
-        self.assertFalse(ap.control.rcs)
-        self.assertIn("on aim", events[-1])
-
-    def test_learns_a_reversed_axis(self):
-        ap, owed, events = self.run_trim(-1, owed0=-0.3)
-        self.assertTrue(ap._trim["done"])
-        self.assertLessEqual(abs(owed), 0.03)
-        self.assertTrue(any("flipped" in e for e in events))
-
-    def test_off_by_default(self):
-        ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
-        ap.cfg = Config()
-        ap.deorbit_aim_m = 1000.0
-        self.assertFalse(ap.coast_trim(SimpleNamespace()))
-
-
 if __name__ == "__main__":
     unittest.main()
 
