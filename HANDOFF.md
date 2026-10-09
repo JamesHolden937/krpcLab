@@ -5,8 +5,8 @@ History: `docs/spaceplane/journal.md`, "Session, 2026-10-08
 afternoon/evening: the glide's handover energy"; the morning's
 `HAC_GATE_STRETCH` session is above it.
 
-Defaults fingerprint **`c9fedee0`** (= `38b4f3b6` + `GLIDE_CONE_ENERGY`,
-`GLIDE_CONE_CEILING` off; **no default changed**).  Farm up at the time of
+Defaults fingerprint **`80930f0e`** (`c9fedee0` + `AERO_REFRESH_NEAR_MACH`
+off, + `GLIDE_CONE_ENERGY`, `GLIDE_CONE_CEILING` off; **no default changed**).  Farm up at the time of
 writing (stop it at wrap-up); swap ~20 GB after every batch.
 
 ## This session (the user: is the glide handing the cone an unusable energy profile?)
@@ -41,6 +41,20 @@ Today: 21/36 over rigoff/inc/high (6/12, 7/12, 7/12).  Last night rigoff
 notes is rigoff only.**  Every code change since 78f93e7 is flag-gated
 (read in full); today's rigoff dip is unexplained -- if it persists,
 bisect on rigoff alone.
+
+## Later this session: the cone's mis-pricing is the aero probe
+
+The table is re-probed in flight at the surfaces' *present* deflection, so
+the subsonic rows read L/D 0.85-1.72 at cone entry where the cone flies
+3.3-3.7 (new `cone ladder` log line; rot-ladder-1008).  The cone plans its
+descent on that, reads short, pins the 2 km circle, finds 1-4 km of surplus
+below 5 km.  `AERO_REFRESH_NEAR_MACH` (off) only half connects (7/12 v 8/12,
+rot-near-a/b-1008): the cone's own high-alpha upper part re-contaminates the
+rows.  **Next is item 1 below, re-aimed: price the ladder from the flown
+trimmed polar** (`polar.py`; subsonic measured L/D 3.9 / 3.3 / 2.8 / 2.5 /
+~1.3 at 0-3 / 3-6 / 6-9 / 9-12 / 15+ deg), not the probe.  kspSim cannot
+screen it: its subsonic lift is 1.51x the table where the game's is 0.6x.
+Today's rigoff base: 11/18 (the 3/8 dip was noise).
 
 ## Next, in order
 

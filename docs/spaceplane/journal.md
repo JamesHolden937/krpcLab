@@ -5099,3 +5099,30 @@ rounds per farm start (as last night) and swap still reached 20 GB.  The
 "65% / 14 of 18" figures are rigoff only; inc/high landed 3/12 last night
 and 14/24 today -- the blend is ~50% either day.  The user, mid-session:
 touchdown breakups are not a concern unless a strike or a hard arrival.
+
+**Later (~1800-1850): why the cone mis-prices -- the probe sees today's
+deflections.**  New log line `cone ladder` at cone entry (per km: reference
+speed, 1 g alpha, table L/D, planned).  On the farm (rot-ladder-1008,
+rigoff best config, 5/6 on the runway -- today's rigoff base 11/18) the
+table at entry prices 2.5 km / 112 m/s at **L/D 0.85-1.72** on five flights
+of one craft, where late in the same flights it reads 3.3-3.7 at ~2 deg and
+the vehicle measures 3.9.  `Environment.sweep` re-probes the current Mach
+row *and one more in turn* with `simulate_aerodynamic_force_at`, which
+evaluates the airframe as deflected now: subsonic rows re-probed mid-glide
+(elevons saturated, canard trim) describe an airframe never flown there.
+(kspSim's ladder at entry read 1.57-1.71 and its `LiftTrim` M0-0.5 1.51x
+against the game's 0.54-0.63x: the sim's subsonic lift does not follow the
+game -- likely the old "sim cone reads short" gap.)
+
+**`AERO_REFRESH_NEAR_MACH`** (new, off): re-probe only the rows the vehicle
+is flying (+ the one below).  rot-near-a/b-1008, 12 an arm over
+rigoff/inc/high: **7/12 v 8/12 (base) -- half connected**: 6/12 entries
+priced 2.5 km at 3.9-4.5, the rest (entry Mach 0.8-1.0) still contaminated
+via the 0.3/0.6 rows; and on every flight `pld` still sinks to ~1.0
+mid-cone, because the cone's own 20+ deg upper part re-contaminates the
+rows it will fly at low alpha.  Rollout still +0.1..+1.8 km, laps=0.
+**The probe gives L/D at the present deflection; the plan needs L/D
+trimmed at the alpha it will fly.**  The logs measure that polar
+(subsonic, measured L/D: 3.9 at 0-3 deg, 3.3 at 3-6, 2.8 at 6-9, 2.5 at
+9-12, ~1.3 at 15+; `polar.py`).  Next: price the ladder from the flown
+polar (recomputed from logs like the alpha prior), not the probe.
