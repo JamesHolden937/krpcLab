@@ -871,14 +871,6 @@ class Config:
     SOLVE_MAX_RANGE_PROBES: int = 6
 
     GLIDE_RESERVE_M: float = 500.0
-    # ``guidance.energy_long``: solve the glide on position *and* the arrival
-    # speed against the cone's, the speed counted as ground.  **Refuted by
-    # construction, do not fly** (sim-energy-1007): the speed it reads is the
-    # prediction's at HAC_ALT_M, 114-147 m/s on every flight -- pinned by the
-    # propagator's own gate-speed alpha cap -- while the vehicle hands over at
-    # 14-17 km doing 210-270.  It measures the propagator, not the arrival.
-    # The energy has to be read where the cone is actually entered.
-    GLIDE_ENERGY_AIM: bool = False
     # **Aim the glide at the energy the cone wants to be entered with**
     # (``guidance.cone_entry_energy`` / ``cone_energy_long``; the user,
     # 2026-10-08: "adjust cone entry energy").  The target is the middle of

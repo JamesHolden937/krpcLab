@@ -67,9 +67,8 @@ class Prediction:
     high: float = 0.0          # altitude above the gate at closest approach
     long: float = 0.0          # along-track miss at the gate altitude
     cross: float = 0.0         # lateral offset from the centreline there
-    # ``GLIDE_ENERGY_AIM``: the arrival speed's error against the cone's,
-    # as the ground the cone would gain or lose for it (see
-    # ``guidance.energy_long``).  0 when off or unknown.
+    # ``GLIDE_CONE_ENERGY``: the cone-entry energy's error as ground (see
+    # ``guidance.cone_energy_long``).  0 when off or unknown.
     energy_long: float = 0.0
     # **The predicted handover**: ``(altitude, speed)`` where the arc first
     # meets the cone's entry test (Mach at most ``HAC_ENTRY_MACH`` and within

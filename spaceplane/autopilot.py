@@ -1496,8 +1496,8 @@ class Autopilot:
         long, cross = trajectory.miss_components(self.env, self.end,
                                                  self.prediction.position,
                                                  gate)
-        # What the solve nulled: under ``GLIDE_ENERGY_AIM`` the position
-        # miss plus the arrival speed's error as ground.
+        # What the solve nulled: under ``GLIDE_CONE_ENERGY`` the position
+        # miss plus the cone-entry energy's error as ground.
         return long + getattr(self.prediction, "energy_long", 0.0), cross
 
     def gate_distance(self, snap):
@@ -6449,7 +6449,7 @@ def compact_line(state, snap, run):
         bits.append("long=%+6.0f cross=%+6.0f" % run.last_miss)
         bits.append("t2g=%5.0f" % run.prediction.time_to_go)
         # The predicted arrival speed at the gate's altitude, and (under
-        # ``GLIDE_ENERGY_AIM``) the ground it is worth in ``long=``.
+        # ``GLIDE_CONE_ENERGY``) the ground its energy error is worth.
         bits.append("pv=%4.0f el=%+5.0f" % (
             run.prediction.speed,
             getattr(run.prediction, "energy_long", 0.0)))
