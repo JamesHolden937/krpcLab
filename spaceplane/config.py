@@ -285,33 +285,6 @@ class Config:
     # through Mach 2.5-1.2 the arrivals were on position but 2 km low
     # (rot-offload2-1007).
     GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 0.0
-    # **Pitch trim by propellant, not by elevon travel** (``Autopilot.
-    # propellant_trim``).  After the drain every unit the shuttle keeps is
-    # in its nose tank, 13 m ahead of four empty tanks, and every cone of
-    # rot-hacalt-1007 flew a standing pitch input of +0.55..+0.76 (pinned
-    # at +1 for 7-49% of ticks) at L/D 1.3-1.6.  ``ResourceTransfer``
-    # moves it in ~2 s (110 LF/s measured): 1.4 t is ~0.6 m of CoM, ~175
-    # kN m at 1 g.  The law pumps aft while the low-passed summed pitch
-    # input is nose-up past the deadband, forward while nose-down past it,
-    # at or below ``_MAX_MACH`` (the hypersonic glide needs the nose fuel:
-    # memory shuttle-pitch-trim).  Tanks are found by station, not name.
-    PROPELLANT_TRIM: bool = False
-    PROPELLANT_TRIM_MAX_MACH: float = 1.5
-    # Also in GLIDE (below ``_MAX_MACH``).  Off: rot-ptrim-1007 departed
-    # 3 of 16 at Mach 0.8 with the CoM aft at 40 deg of alpha.
-    PROPELLANT_TRIM_IN_GLIDE: bool = False
-    # **The pump as an energy control, not a trim** (cone only).  Trimmed,
-    # the cone flies L/D 2.5 against 2.0 and exits 1-3 km high whatever
-    # the glide hands it (rot-ptrim5-1007: handover 11-13 km, exit still
-    # 2.5-4.8); untrimmed it runs out of height.  The trim drag is this
-    # craft's only real speedbrake (its spoiler dumps lift).  So: aft
-    # while the cone is short, forward once the surplus passes
-    # ``HAC_WEAVE_DEADBAND_M``, forward from the approach on.
-    PROPELLANT_TRIM_ON_ENERGY: bool = False
-    PROPELLANT_TRIM_DEADBAND: float = 0.15
-    PROPELLANT_TRIM_TAU_S: float = 5.0
-    # Movable propellant swept end to end in this many game seconds.
-    PROPELLANT_TRIM_SWEEP_S: float = 20.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is
@@ -2267,54 +2240,6 @@ class Config:
     # failure 13 -- those constants were wrong by 1.8x for the life of the
     # project because nothing could contradict them.
     AIRFRAME_DISAGREE_FRACTION: float = 0.15
-    # **Fly the swept table's numbers instead of the transcribed ones.**
-    # The line above only complains; this is what acts on the complaint.
-    # With it on, ``STALL_SPEED_M_S``, ``APPROACH_BEST_LD`` and ``HAC_LD``
-    # stop being flown and become fallbacks for when the sweep fails --
-    # the landing chain is sized on the aircraft that is actually about to
-    # be flown, which is the only version of this autopilot that can fly a
-    # craft file it was not fitted to.  ``airframe.stall``, ``glide_ld``
-    # and ``cone_ld`` are the three readers.
-    #
-    # It is a switch and not an unconditional change because the committed
-    # configuration lands 88% intact and this moves three numbers under it
-    # at once: on ``qs_plane`` the derived stall is 55.0 against the
-    # configured 48.0, which raises the approach floor from 96 to 110 m/s
-    # and moves the gate, the flare and the touchdown with it.  That has to
-    # be flown as an arm, not assumed.  ``pairfly.sh`` with
-    # ``--set AIRFRAME_DERIVED=True`` is the measurement.
-    # Flying the vehicle's own numbers stopped being safe to bundle with the
-    # lift discount, which was refuted in flight -- see
-    # ``airframe.lift_discount``.  This flag now covers the cone's glide
-    # ratio and the alpha ceiling; the stall is always the table's.
-    AIRFRAME_DERIVED: bool = False
-    # **The approach's ground-per-height, on a switch of its own, because it
-    # is the one that moves.**  ``AIRFRAME_DERIVED`` above replaces two
-    # numbers the derivation reproduces -- the cone's ratio derives to 1.81
-    # against a fitted 1.86, and best glide to 3.07 against the 3.06 in
-    # CLAUDE.md -- so on this airframe it is nearly inert and only bites on
-    # a different one, which is the point of it.
-    #
-    # ``APPROACH_BEST_LD`` is not like that.  It is 4.2; its own comment
-    # below says it is ground from the rollout to the wheels over 41
-    # flights, "mean 2.08 sd 0.27", low quartile 1.85; and the derivation at
-    # the speed the approach is actually flown at says 2.33.  The constant
-    # is twice everything that claims to measure it, and it is nonetheless
-    # in the configuration that lands 88% intact.  Either it is carrying
-    # something nobody wrote down -- failure 21's shape, a guard whose
-    # stated reason does not survive inspection but which is the only thing
-    # enforcing a constraint -- or it is a fit that happens to work.
-    #
-    # Halving it is therefore a real change with a documented failure mode
-    # on exactly this constant (failure 23, twice), so it does not ride
-    # along with the others.  Fly it as its own arm and find out which.
-    # **Do not turn this on.**  The batch of 2026-09-21 measured the
-    # rollout-to-wheels ratio at 3.96 sd 0.41, so the committed 4.2 is
-    # right and this derivation's 2.33 is not -- it omits the flare, which
-    # is flat and covers 400-500 m of ground for 150 of height.  The
-    # "2.08 over 41 flights" below describes a configuration no longer
-    # flown.  See ``airframe.approach_ld``.
-    APPROACH_LD_DERIVED: bool = False
     # **The L/D the approach actually flies, which is not best glide.**  2.05
     # is what the airframe manages at its best-glide angle around 70 m/s.
     # The approach is deliberately flown fast now (see ``APPROACH_FACTOR``),

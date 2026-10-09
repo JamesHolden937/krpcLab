@@ -126,19 +126,17 @@ def measure(env, mass, gravity, altitude=0.0):
 def _derived(env, cfg, field, fallback):
     """The measured number when there is one, the configured one otherwise.
 
-    ``AIRFRAME_DERIVED`` is the switch, and it is a switch rather than an
-    unconditional change because the committed configuration lands and this
-    moves four numbers under it at once -- ``pairfly.sh`` needs both arms to
-    exist.  The fallback is the transcribed constant, which is also what the
-    offline tests fly: ``boosterland/tests/fakeksp`` sweeps no table, so ``env`` carries
-    nothing and every call here returns exactly what it returned before.
+    With a ``cfg`` the configured constant is flown: ``AIRFRAME_DERIVED``
+    (the table's own numbers) was flown on the shuttle and made it worse
+    (+9.7 km, 132 m/s into the flare; 2026-09-23) and is removed.
+    Without one, the measured number.
 
     The fallback is deliberately *not* a plausible invented value.  When the
     sweep fails in flight ``Autopilot.read_airframe`` says so in the log and
     the configured constant is flown -- a stated retreat to a known number,
     not a silent one to a made-up one.
     """
-    if cfg is not None and not getattr(cfg, "AIRFRAME_DERIVED", False):
+    if cfg is not None:
         return fallback
     measured = getattr(env, field, None)
     if measured is not None and measured > 0.0:
@@ -353,65 +351,16 @@ def turn_load(env, cfg, speed, altitude, mass, gravity):
 
 
 def cone_ld(env, cfg, speed, altitude, mass, gravity):
-    """``turning_ld`` at the cone's own bank limit, or ``HAC_LD``."""
-    if not getattr(cfg, "AIRFRAME_DERIVED", False):
-        return cfg.HAC_LD
-    got = turning_ld(env, cfg, speed, altitude, mass, gravity,
-                     cfg.HAC_BANK_MAX_DEG)
-    return cfg.HAC_LD if got is None else got
+    """The cone's glide ratio: ``HAC_LD``."""
+    return cfg.HAC_LD
 
 
 def approach_ld(env, cfg, altitude, mass, gravity):
-    """Ground per metre of height on final -- **not** best glide.
-
-    ``APPROACH_BEST_LD`` is named after a quantity it is not.  Its own
-    comment says what it is: ground from the cone's rollout to the first
-    wheel contact over the height there, measured over 41 flights at **mean
-    2.08, sd 0.27**.  Best glide on this airframe is 3.07, and the approach
-    does not fly best glide -- it flies ``APPROACH_FACTOR`` times the stall,
-    which is 2.25 and well up the back of the drag curve, where the ratio is
-    2.33.  Two different numbers with one name is failure 19's shape, and
-    routing this through ``glide_ld`` would have been that mistake made
-    again by a different author.
-
-    So it is derived at the speed the approach is actually flown at, wings
-    level and at one g, and it lands on 2.33 against the 41 flights' 2.08 --
-    inside one standard deviation of the thing it is meant to describe.
-
-    **And the committed 4.2 is right, which this derivation is not.**
-    Measured on the batch of 2026-09-21, ``landsum.py``'s rollout-to-wheels
-    ratio -- the quantity ``APPROACH_BEST_LD`` is defined as -- reads
-    **3.96 sd 0.41** over eight flights of the committed configuration and
-    4.15 sd 0.82 over eight of the derived one.  The 4.2 is inside one
-    standard deviation of what the aircraft does.
-
-    So the "2.08 sd 0.27 over 41 flights" in ``Config.APPROACH_BEST_LD``'s
-    comment is stale -- it describes a configuration that is no longer
-    flown, which is failure 23's rule and the second time this session a
-    number read out of a comment turned out to describe a different
-    aeroplane (see ``TRACKING``).  **Re-run the tool, do not read the
-    prose.**
-
-    That leaves this function measuring the right idea and landing on the
-    wrong number: 2.33 is the straight glide ratio at the approach speed,
-    and the rollout-to-wheels span it has to describe also contains the
-    flare, which is flat and buys 400-500 m of ground for 150 of height.
-    The derivation is missing that term, which is most of the gap.  Off
-    until it has one.
-    """
-    if not getattr(cfg, "APPROACH_LD_DERIVED", False):
-        return cfg.APPROACH_BEST_LD
-    vs = stall(env, cfg)
-    if vs is None:
-        return cfg.APPROACH_BEST_LD
-    speed = cfg.APPROACH_FACTOR * vs
-    got = turning_ld(env, cfg, speed, altitude, mass, gravity, 0.0)
-    if got is None:
-        return cfg.APPROACH_BEST_LD
-    # ``turning_ld`` carries the cone's tracking overhead; a straight final
-    # is not chasing a re-solved circle, so it does not pay it.
-    return got * PLANNING_BIAS
-
+    """Ground per metre of height on final, rollout to wheels:
+    ``APPROACH_BEST_LD``.  It includes the flare's float, so it is not the
+    straight glide ratio; ``landsum.py`` measures it (2.6-3.0 on the
+    shuttle's good landings of 2026-10-08, 3.4-4.0 on its long ones)."""
+    return cfg.APPROACH_BEST_LD
 
 def touchdown_aim(env, cfg):
     """Where the final's glide line meets the runway, metres past the
@@ -428,8 +377,8 @@ def touchdown_aim(env, cfg):
     """
     if not getattr(cfg, "TOUCHDOWN_AIM_DERIVED", False):
         return cfg.TOUCHDOWN_AIM_M
-    # The table's own numbers when it has been read, whatever
-    # ``AIRFRAME_DERIVED`` says: this quantity has no fitted history to keep.
+    # The table's own numbers when it has been read: this quantity has no
+    # fitted history to keep.
     v_stall = stall(env, cfg)
     if v_stall is None:
         return cfg.TOUCHDOWN_AIM_M
@@ -442,32 +391,6 @@ def touchdown_aim(env, cfg):
 
 
 def alpha_ceiling(env, cfg):
-    """The highest angle of attack worth commanding on this wing.
-
-    ``ALPHA_MAX_DEG`` is 32 and its comment is "past 30 the lift curve turns
-    over" -- an airframe property, measured once, on one airframe, and then
-    written down.  The swept table answers it per aircraft: the wing in
-    ``logs/LOG2747`` peaks at 30 degrees, and the one in ``logs/LOG2756``
-    peaks at **25**, so the committed constant commands that second aircraft
-    seven degrees onto the *back* of its own lift curve, where more angle
-    buys less lift and a great deal more drag.
-
-    **This is not the ceiling the vehicle already learns.**
-    ``Holdable``/``alpha_ceiling`` watches for a command the vehicle cannot
-    *achieve* -- a control-authority limit, which moves with dynamic
-    pressure.  Stalling the wing is the opposite case: the vehicle achieves
-    the angle perfectly well and simply makes less lift there, so nothing in
-    the achieved-versus-commanded comparison can see it.  Two different
-    limits; this one seeds and caps the other.
-
-    Returns ``ALPHA_MAX_DEG`` when the table has not been swept, and never
-    returns *more* than it: this is allowed to be a stricter bound on a
-    wing that needs one, not a licence to command more than the
-    configuration permits.
-    """
-    if not getattr(cfg, "AIRFRAME_DERIVED", False):
-        return cfg.ALPHA_MAX_DEG
-    measured = getattr(env, "stall_alpha", None)
-    if measured is None or measured <= 0.0:
-        return cfg.ALPHA_MAX_DEG
-    return min(cfg.ALPHA_MAX_DEG, float(measured))
+    """The highest angle of attack worth commanding: ``ALPHA_MAX_DEG``.
+    (The table's own stall angle was ``AIRFRAME_DERIVED``, removed.)"""
+    return cfg.ALPHA_MAX_DEG

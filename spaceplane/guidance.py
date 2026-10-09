@@ -906,9 +906,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # the height the flare actually triggers at.  ``APPROACH_FACTOR`` is
     # untouched, so the cone is untouched; only the last two thousand metres
     # change, which is the stretch that owns the problem.
-    # Off the swept table when ``AIRFRAME_DERIVED``; the configured constant
-    # otherwise.  Every speed on final is a multiple of this one number, so
-    # it is read once here and the multiples are unchanged.
+    # Every speed on final is a multiple of this one number, so it is read
+    # once here and the multiples are unchanged.
     stall = airframe.stall(env, cfg)
     # **The approach's ground-per-height, not best glide** -- see
     # ``airframe.approach_ld``.  The approach flies 2.25 x stall, not the

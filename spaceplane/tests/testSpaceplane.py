@@ -2384,7 +2384,7 @@ class TestTheAirframeReadsItsOwnTable(unittest.TestCase):
 
 
 class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
-    """``AIRFRAME_DERIVED``: the swept table stops being advice.
+    """The swept table, read per aircraft.
 
     For the life of the project ``airframe.measure`` was taken every flight,
     printed every flight, compared against the configured constants every
@@ -2447,7 +2447,6 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         one.
         """
         cfg = Config()
-        cfg.AIRFRAME_DERIVED = True
         env = FakeEnv(cfg, rows=flownpolar.ROWS)
         measured = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
         env.stall_speed = measured.stall_speed
@@ -2466,42 +2465,11 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         # ``airframe.PLANNING_BIAS``.
         self.assertAlmostEqual(got, cfg.HAC_LD, delta=0.15)
 
-    def test_the_approach_ratio_is_not_best_glide_and_knows_it(self):
-        """``APPROACH_BEST_LD`` is named after a quantity it is not.
-
-        Best glide is 3.07 at 78 m/s; the approach flies ``APPROACH_FACTOR``
-        x stall, which is 116, and the ratio there is 2.33.  Routing the
-        approach through ``glide_ld`` would be one name for two quantities,
-        which is the shape of failure 19 and is how ``HAC_LD`` and
-        ``HAC_GATE_LD`` came to be one constant that moved the entry's aim
-        3.3 km when the cone's budget was corrected.
-        """
-        cfg = Config()
-        cfg.AIRFRAME_DERIVED = True
-        cfg.APPROACH_LD_DERIVED = True
-        env = FakeEnv(cfg, rows=flownpolar.ROWS)
-        measured = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
-        env.stall_speed = measured.stall_speed
-        env.best_ld = measured.best_ld
-        got = airframe.approach_ld(env, cfg, 500.0, flownpolar.MASS,
-                                   flownpolar.GRAVITY)
-        # The approach is flown fast, so it glides worse than best glide.
-        self.assertLess(got, airframe.glide_ld(env, cfg))
-        # It lands on 2.33 -- and that is the *wrong* answer, which is why
-        # ``APPROACH_LD_DERIVED`` is off.  The rollout-to-wheels ratio this
-        # is meant to be measures 3.96 sd 0.41 in flight; the derivation
-        # omits the flare's flat 400-500 m.  Pinned so the gap cannot be
-        # forgotten, not because 2.33 is correct.
-        self.assertAlmostEqual(got, 2.33, delta=0.30)
-        self.assertLess(got, 3.96 - 0.41)
-
     def test_the_approach_ratio_has_its_own_switch(self):
         """It halves the committed constant, which the constant's own
         comment says was destructive the last two times.  It does not ride
         along with the two that reproduce their fits."""
         cfg = Config()
-        cfg.AIRFRAME_DERIVED = True          # the others on ...
-        cfg.APPROACH_LD_DERIVED = False      # ... and this one still not
         env = FakeEnv(cfg, rows=flownpolar.ROWS)
         measured = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
         env.stall_speed = measured.stall_speed
@@ -2526,7 +2494,6 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
 
     def _env(self, trim_ratio=None, mass=None, discount=False):
         cfg = Config()
-        cfg.AIRFRAME_DERIVED = True
         cfg.LIFT_TRIM_DISCOUNT = discount
         env = FakeEnv(cfg, rows=flownpolar.ROWS)
         env.cfg = cfg
@@ -2569,19 +2536,6 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         env.lift_trim.bins[key] = (0.49, cfg.LIFT_TRIM_MIN_SAMPLES - 1)
         got = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
         self.assertFalse(got.measured_discount)
-
-    def test_the_alpha_ceiling_comes_from_where_the_lift_peaks(self):
-        """``ALPHA_MAX_DEG`` is 32 and its comment is "past 30 the lift curve
-        turns over" -- true of the wing it was written on.  The other
-        aircraft on disk peaks at 25, so the constant commands it seven
-        degrees onto the back of its own lift curve."""
-        cfg, env = self._env()
-        measured = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
-        self.assertIsNotNone(measured.stall_alpha)
-        env.stall_alpha = measured.stall_alpha
-        got = airframe.alpha_ceiling(env, cfg)
-        self.assertLessEqual(got, cfg.ALPHA_MAX_DEG)
-        self.assertAlmostEqual(got, measured.stall_alpha)
 
     def test_it_only_ever_lowers_the_configured_maximum(self):
         """A stricter bound on a wing that needs one, never a licence to
@@ -2634,7 +2588,6 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         """``(L/D) cos(bank)``: steeper turn, less ground per metre of
         height.  A cone whose ratio does not move with its own bank limit is
         a cone carrying a constant, which is what it was."""
-        self.cfg.AIRFRAME_DERIVED = True
         speed = self.cfg.APPROACH_FACTOR * airframe.stall(self.env, self.cfg)
         shallow = airframe.turning_ld(self.env, self.cfg, speed, 3000.0,
                                       MASS, GRAVITY, 20.0)

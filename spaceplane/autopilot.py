@@ -5524,7 +5524,6 @@ class Autopilot:
         self.retune_attitude(snap)
         handler(snap)
         self.pitch_assist(snap)
-        self.propellant_trim(snap)
         self.canard_trim(snap)
         # **Wherever the table happens to become ready.**  The first version
         # reported from STANDBY, which ``--autostart`` leaves on the tick
@@ -5698,110 +5697,6 @@ class Autopilot:
             "%s %s" % (k, " ".join("%+.1f/%.0f" % (y, c) for y, _, c in v))
             for k, v in tanks.items()) or "none")
         return tanks
-
-    def propellant_trim(self, snap):
-        """``PROPELLANT_TRIM``: carry the standing pitch moment on the
-        centre of mass instead of on the elevons.
-
-        The standing input is the summed pitch read-back (kRPC's output
-        plus any trim) low-passed over ``PROPELLANT_TRIM_TAU_S``.  Past
-        ``PROPELLANT_TRIM_DEADBAND`` nose-up, propellant moves from the
-        most forward tank holding any to the most aft one with room;
-        nose-down, the other way.  The rate sweeps the movable load end to
-        end in ``PROPELLANT_TRIM_SWEEP_S``.  A saturated read-back is
-        believed here as a direction (it says "at least this much"), which
-        is all a pump needs."""
-        if not getattr(self.cfg, "PROPELLANT_TRIM", False):
-            return
-        # Not in the glide unless asked: an aft CoM at the glide's 38-41 deg
-        # transonic alpha pitched up into a deep stall (LOG7969: flown alpha
-        # 48 -> 80 deg at full nose-down input, rot-ptrim-1007).
-        phases = (HAC, APPROACH, FLARE) + (
-            (GLIDE,) if getattr(self.cfg, "PROPELLANT_TRIM_IN_GLIDE", False)
-            else ())
-        if self.state not in phases:
-            return
-        total = getattr(snap, "pitch_input", None)
-        if total is None:
-            return
-        last = getattr(self, "_ptrim_ut", None)
-        self._ptrim_ut = snap.ut
-        dt = 0.0 if last is None else max(0.0, min(2.0, snap.ut - last))
-        k = min(1.0, dt / max(0.1, float(self.cfg.PROPELLANT_TRIM_TAU_S)))
-        s = getattr(self, "_ptrim_standing", None)
-        s = float(total) if s is None else s + k * (float(total) - s)
-        self._ptrim_standing = s
-        try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
-        except Exception:                               # noqa: BLE001
-            return
-        if mach > float(self.cfg.PROPELLANT_TRIM_MAX_MACH):
-            return
-        band = float(self.cfg.PROPELLANT_TRIM_DEADBAND)
-        direction = 1 if s > band else (-1 if s < -band else 0)
-        if getattr(self.cfg, "PROPELLANT_TRIM_ON_ENERGY", False):
-            # The pump as the cone's energy control: aft (L/D 2.5) only
-            # while short of height, forward (back to the trim drag, L/D
-            # 2.0) once the surplus is worth weaving for; forward again
-            # for the approach and flare, which land nose-heavy.
-            surplus = getattr(self, "_hac_surplus", None)
-            if self.state != HAC:
-                direction = -1
-            elif surplus is None:
-                direction = 0
-            elif surplus < 0.0:
-                direction = 1 if s > band else 0
-            elif surplus > float(self.cfg.HAC_WEAVE_DEADBAND_M):
-                direction = -1
-            else:
-                direction = 0
-        # Pump on a one-game-second cadence: each transfer is a handful
-        # of calls and the CoM needs no finer step than the sweep allows.
-        pumped = getattr(self, "_ptrim_pump_ut", None)
-        if direction == 0 or (pumped is not None and snap.ut - pumped < 1.0):
-            self._ptrim_dir = direction if direction == 0 else getattr(
-                self, "_ptrim_dir", 0)
-            return
-        step = 1.0 if pumped is None else min(2.0, snap.ut - pumped)
-        self._ptrim_pump_ut = snap.ut
-        tanks = getattr(self, "_ptrim_tanks", None)
-        if tanks is None:
-            tanks = self._ptrim_tanks = self._trim_tanks()
-        moved = 0.0
-        for name, row in tanks.items():
-            try:
-                held = [(y, p, c, float(p.resources.amount(name)))
-                        for y, p, c in row]
-            except Exception:                           # noqa: BLE001
-                continue
-            load = sum(a for _, _, _, a in held)
-            if load < 1.0:
-                continue
-            # Nose-up wanted -> mass aft: from the most forward tank that
-            # holds any to the most aft that has room.
-            order = held if direction < 0 else held[::-1]
-            src = next((h for h in order if h[3] > 0.5), None)
-            dst = next((h for h in order[::-1] if h[2] - h[3] > 0.5), None)
-            if src is None or dst is None or src[1] == dst[1] or (
-                    (src[0] - dst[0]) * direction <= 0):
-                continue
-            amount = min(src[3], dst[2] - dst[3], load * step
-                         / max(1.0, float(self.cfg.PROPELLANT_TRIM_SWEEP_S)))
-            try:
-                self.conn.space_center.ResourceTransfer.start(
-                    src[1], dst[1], name, float(amount))
-                moved += amount * (src[0] - dst[0])
-            except Exception as exc:                    # noqa: BLE001
-                self.logbook.event(snap.ut, "propellant trim: %s transfer "
-                                   "failed (%s)" % (name, type(exc).__name__))
-        self._ptrim_moment = getattr(self, "_ptrim_moment", 0.0) + moved
-        if direction != getattr(self, "_ptrim_dir", 0):
-            self.logbook.event(snap.ut, "propellant trim %s: standing pitch "
-                               "%+.2f, M=%.2f" % ("AFT" if direction > 0
-                                                  else "FORWARD", s, mach))
-        self._ptrim_dir = direction
 
     def canard_trim(self, snap):
         """``CANARD_TRIM``: carry the standing pitch moment on the canards,
@@ -6481,12 +6376,7 @@ def compact_line(state, snap, run):
         # read-back as ``pin=``'s first number).
         "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
                                 getattr(snap, "roll_input", 0.0) or 0.0),
-        ] + ([] if not getattr(run.cfg, "PROPELLANT_TRIM", False) else [
-        # ``PROPELLANT_TRIM``: the standing pitch input it closes on, and
-        # the propellant moment moved so far (unit-metres, + aft).
-        "ptrim=%+5.2f/%+6.0f" % (getattr(run, "_ptrim_standing", None) or 0.0,
-                                 getattr(run, "_ptrim_moment", 0.0)),
-        ]) + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
+        ] + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
         # ``CANARD_TRIM``: the canards' commanded trim (fraction of travel,
         # + nose-up) and the low-passed summed pitch input it closes on.
         "ctrim=%+5.2f/%+5.2f" % (getattr(run, "_ctrim", 0.0),
