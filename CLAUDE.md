@@ -47,10 +47,16 @@ from the previous batch's round length times the rounds left.
    open items in order, and traps paid for. It's a snapshot: replace it,
    don't append. The history goes in `docs/<pilot>/journal.md`.
 3. **On wrap-up: update the how-it-works PDFs, then commit and push to
-   GitHub** (`git push origin main`). Revise `docs/<pilot>/howItWorks.html`
-   for whatever changed, rebuild each PDF (`chromium --headless
-   --print-to-pdf=docs/<pilot>/howItWorks.pdf docs/<pilot>/howItWorks.html`),
-   then push, so the next session -- on any machine -- starts from it.
+   GitHub** (`git push origin main`). `docs/<pilot>/howItWorks.pdf` is
+   the only tracked copy: when the code's behaviour changed, write the page
+   afresh in the scratchpad from the code (HTML with inline SVG figures)
+   and print it (`chromium --headless --no-pdf-header-footer
+   --print-to-pdf=docs/<pilot>/howItWorks.pdf page.html`); no HTML is kept.
+   **It says what the program does and what triggers what** -- phases,
+   transitions, the laws each phase flies, with figures -- and **never
+   history**: no earlier errors, refuted ideas, flight counts or "it used
+   to". Those belong in the journal. Then push, so the next session -- on
+   any machine -- starts from it.
    **Nothing that the repo plus a KSP instance can regenerate is tracked**
    (e.g. `kspSim/data/ksc_terrain.json`, `kspSim/models/`): gitignore it and
    say in the owning CLAUDE.md how to rebuild it.
