@@ -5035,3 +5035,67 @@ surplus, the bay doors, propellant trim -- each previously off for its own
 reasons) and **upstream**: an entry aim that delivers the high arrivals
 *onto the circle* rather than onto the straight-in line, where both the
 radius and the stretch have authority.  Swap after the batch: 24.6 GB.
+
+## Session, 2026-10-08 afternoon/evening (~1530-1800): the glide's handover energy -- found, fixed upstream, null on landings
+
+The user: "the cone's struggling to manage energy, but it could be that the
+glide is giving the cone an energy profile that's impossible to use."
+
+**An unrecorded session before this one** built `GLIDE_CONE_ENERGY` (off;
+59f04d7, 21288c5): the cone's wanted entry energy (`cone_entry_energy`, a
+low/mid/high band off the cone's ladder) against the predicted entry
+energy, as ground added to the miss.  kspSim sim-cone-energy(2)-1008: null.
+
+**What the cone does with an entry** (new scratch tool, per-flight
+energy height `h + v^2/2g` at cone entry and rollout, flown path; 24 farm
+orbit flights, rot-orbits/rot-sharp1-1007): the cone flies **25.9-28.8 km
+of path from every entry**, whatever the radius.  Its one energy control is
+how long it stays at the alpha cap: the default cone target is 108 m/s
+*true*, ~65 indicated at 8-14 km, held at 20-26 deg of alpha (path per
+metre of energy ~1.5); below ~5.5 km alpha drops to 0-8 and it is ~3.1.
+`ldk` 0.71 -> 1.44 over one cone (LOG8340).  The plan reads short through
+the middle (`pld` 0.87-0.97, R pinned 2 km), then +1-4 km of surplus
+appears below 5 km with straight-in geometry left.  Ceiling: ~27 km /
+1.5 + ~2.8 at the gate = **~20-21 km of entry energy**; entries above it
+landed 4-6 km long (LOG8340, 8348, 8351).
+
+- **`HAC_SPEED_EAS` alone** (kspSim sim-eas-1008, 4 v 4): rollout +570..
+  +1191 against +139..+1075; radius and weave pin at 16 km / 35-41 deg and
+  it still rolls out high; 2 of 4 broke.  With EAS+`GLIDE_CONE_ENERGY`
+  (sim-easce-1008): CE never engaged, EAS lost 2/4 (one at 273 m/s).
+- **The ladder band is noise**: low edge 14-35 km for near-identical entry
+  states.  **`GLIDE_CONE_CEILING`** (new, off; e464ad1): the band replaced
+  by the ceiling -- gate energy + longest no-lap path at the table's L/D
+  at `HAC_ALPHA_MAX_DEG`.  Computes 19.2-22.9 km in the sim, matching the
+  farm.  But where it engaged (sim-ceil-1008, LOG8531/8533) it was too late:
+  **the predicted entry energy `pe` reads 15-17 km from 45 to 25 km of
+  altitude against 22 delivered**, catching up only in the last ~60 s at
+  70 deg of bank.
+- **Why `pe` is low**: below Mach 3 the glide commands ~40 deg and the
+  shuttle holds 0.57-0.75 of it (farm, best config: M2-3 0.75/0.58
+  rigoff/inc, M1.2-2 0.64/0.57; Mach 3-5 0.84-0.94; sim 0.67-0.70).  The
+  10-06 finding again, and the reason inc/high land long: they hold least.
+- **`HOLDABLE_PRIOR` by Mach band** (756d9ef; `holdprior.py --by-mach
+  --mach 0.8`, regenerated from 138 current-stack farm logs into the
+  untracked `logs/holdprior/`; needs `HOLDABLE_BY_MACH`).  The q-only prior
+  answered Mach 4 with Mach 2's ceiling (at 4.4 kPa: 32 against 25-27).
+  kspSim sim-prior-1008 (3 an arm): entry energy 21.5-21.9 -> **17.6-17.9
+  km**, arrivals +2.2..+3.9 -> +0.2..+0.5 km, rollout -0.4 km.
+- **Farm, rot-prior/prior2/prior3a/prior3b-1008** (36 an arm, 12 per orbit
+  rigoff/inc/high, best config v + prior + BY_MACH + CONE_ENERGY +
+  CEILING): entry energy 18.9 -> 17.4 km mean (first 24), entries >20 km
+  4/12 -> 1/12 (first batch).  **Landings null: 21/36 v 21/36 on the
+  runway**; long 9 v 8, short 5 v 4, hard losses 2 v 3.  Pooled (65): by
+  entry energy <16 / 16-18 / 18-20 / >20 km the runway rate is 3/5, 22/31,
+  13/20, 2/9; the stop tracks the **rollout surplus** (r 0.74) more than
+  the entry energy (0.36) -- correlations across flights, a pointer only.
+  **The handover energy is a real cause of the >20 km tail and not the
+  main one: the cone mis-spends energy it can absorb.**
+
+Also: rigoff on the best config 6/12 today against 15/19 last night
+(rot-sharp1-3 controls) on identical config strings; every change since
+78f93e7 is flag-gated (read in full).  Not a missing flag.  Batch 3 ran 2
+rounds per farm start (as last night) and swap still reached 20 GB.  The
+"65% / 14 of 18" figures are rigoff only; inc/high landed 3/12 last night
+and 14/24 today -- the blend is ~50% either day.  The user, mid-session:
+touchdown breakups are not a concern unless a strike or a hard arrival.
