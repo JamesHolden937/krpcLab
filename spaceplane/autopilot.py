@@ -4859,36 +4859,6 @@ class Autopilot:
                                                   1.0, height - gate)) / ld
                                               if ld else 0.0))
 
-    def approach_speed_bias(self, snap):
-        """``APPROACH_SPEED_KI``: the integral of the approach's speed error
-        as an alpha offset, from last tick's command (its held speed and
-        alpha floor).  Not wound past a floor or a ceiling the command is
-        already pinned at."""
-        ki = float(getattr(self.cfg, "APPROACH_SPEED_KI", 0.0) or 0.0)
-        bias = getattr(self, "_app_bias", 0.0)
-        last = getattr(self, "command", None)
-        prev = getattr(self, "_app_bias_ut", None)
-        self._app_bias_ut = snap.ut
-        if ki <= 0.0 or last is None or prev is None \
-                or getattr(last, "target_speed", None) is None:
-            self._app_bias = bias
-            return bias
-        dt = max(0.0, min(2.0, snap.ut - prev))
-        held = max(float(last.target_speed or 0.0),
-                   float(getattr(last, "speed_floor", 0.0) or 0.0))
-        error = vec.norm(snap.velocity) - held
-        alpha = float(getattr(last, "alpha", 0.0))
-        floor = float(getattr(last, "alpha_floor", self.cfg.ALPHA_MIN_DEG))
-        pinned_low = error < 0.0 and alpha <= floor + 0.05
-        pinned_high = error > 0.0 and alpha >= float(
-            self.cfg.APPROACH_ALPHA_MAX_DEG) - 0.05
-        if not (pinned_low or pinned_high):
-            bias += ki * error * dt
-        bias = vec.clamp(bias, float(self.cfg.APPROACH_SPEED_BIAS_MIN_DEG),
-                         float(self.cfg.APPROACH_SPEED_BIAS_MAX_DEG))
-        self._app_bias = bias
-        return bias
-
     def approach_split_factor(self, angle):
         """The approach's L/D factor at split-rudder ``angle``, off
         ``APPROACH_SPLIT_FACTOR``; 1.0 with no pair."""
@@ -4915,7 +4885,7 @@ class Autopilot:
         ways, each one of the 2026-10-08 failures: no steeper than
         ``APPROACH_SPLIT_SINK_FACTOR`` x the design sink (dives above ~40
         m/s of sink did not survive the flare); not while slower than
-        ``APPROACH_SPLIT_SPEED_FRAC`` of the held speed (a slow handover is
+        ``APPROACH_SPLIT_MIN_SPEED_FACTOR`` x the stall (a slow handover is
         still making speed, and a brake there is a dive, failure 1 of
         ``airbrake``); and stowed ``AIRBRAKE_STOW_LEAD_S`` of sink above
         the flare door, so the flare gets the airframe it was sized on."""
@@ -4927,14 +4897,15 @@ class Autopilot:
         clean = float(getattr(command, "clean_ld", 0.0) or
                       self.cfg.APPROACH_BEST_LD)
         design = float(getattr(command, "design_sink", 0.0) or 0.0)
+        stall = airframe.stall(self.env, self.cfg)
         stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
         cap_sink = float(self.cfg.APPROACH_SPLIT_SINK_FACTOR) * design
         want = 0.0
         reason = ""
         if height <= stow:
             reason = "flare door"
-        elif held > 0.0 and speed < float(
-                self.cfg.APPROACH_SPLIT_SPEED_FRAC) * held:
+        elif stall and speed < float(
+                self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR) * stall:
             reason = "slow"
         elif cap_sink > 0.0 and sink > cap_sink:
             reason = "sink"
@@ -5056,8 +5027,7 @@ class Autopilot:
                 period=self.scurve_half_period_s()),
             roll_lag_s=self.roll_lag_s(),
             ld_factor=(self.approach_split_factor(self.split_angle)
-                       if split_brake else 1.0),
-            alpha_bias=self.approach_speed_bias(snap))
+                       if split_brake else 1.0))
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
@@ -6531,8 +6501,6 @@ def compact_line(state, snap, run):
                                                  False) else "ok "))
     if state == APPROACH and getattr(run.cfg, "APPROACH_SPLIT_BRAKE", False):
         bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
-    if state == APPROACH and getattr(run.cfg, "APPROACH_SPEED_KI", 0.0):
-        bits.append("abias=%+4.1f" % getattr(run, "_app_bias", 0.0))
     if state == HAC and getattr(run, "hac_command", None) is not None:
         c = run.hac_command
         # The cone's whole state in five numbers: how much turn is left, the

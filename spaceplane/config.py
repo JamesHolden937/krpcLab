@@ -2304,7 +2304,7 @@ class Config:
     # APPROACH_BEST_LD)`` that makes the straight path to the aim spend the
     # height, never steeper than ``APPROACH_SPLIT_SINK_FACTOR`` x the design
     # sink (the top of the intact flares), only at or above
-    # ``APPROACH_SPLIT_SPEED_FRAC`` of the held speed (no brake while a slow
+    # ``APPROACH_SPLIT_MIN_SPEED_FACTOR`` x stall (no brake while a slow
     # handover is still making speed), stowed ``AIRBRAKE_STOW_LEAD_S`` of
     # sink above the flare door.  The S-turn is then sized against the
     # *braked* ratio, so it only spends what the brake cannot.  135 base
@@ -2317,37 +2317,17 @@ class Config:
     APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
                                     (30.0, 0.53), (38.0, 0.45))
     APPROACH_SPLIT_SINK_FACTOR: float = 1.5
-    APPROACH_SPLIT_SPEED_FRAC: float = 0.92
-    # **Below zero alpha on final, through the speed loop only.**  At 105
-    # m/s the shuttle carries ~1 g at alpha 0 (cla ~75 m^2, q 4.1 kPa), so
-    # with the floor at 0 the approach cannot fly steeper than its
-    # zero-alpha glide: rot-asb-1009's split brake bled speed instead
-    # (LOG8850: 113 -> 81 m/s, brake out 70 s, alpha pinned at 0).  The
-    # trim stays on the table's measured rows (>= 0); this floor only lets
-    # ``APPROACH_SPEED_KP``'s term carry alpha below it, and only at or
-    # above ``APPROACH_NEG_ALPHA_SPEED_FRAC`` of the held speed (ramped over
-    # the tenth below), so it holds speed under drag and never makes speed
-    # for a slow handover.  **Not the table below zero**: the vacuum probe's
-    # negative rows read lift *rising* as alpha falls (M0.3: -6 16.5, -3
-    # 15.6, 0 45.7), the 1 g trim came out at -6 and the approach flew -7
-    # into a 90 m/s-sink dive (LOG8879, ``ALPHA_BINS_NEGATIVE``, deleted).
-    # Off: 0.
-    APPROACH_ALPHA_MIN_DEG: float = 0.0
-    APPROACH_NEG_ALPHA_SPEED_FRAC: float = 0.92
-    # **Integral action on the approach's speed** (``Autopilot.
-    # approach_speed_bias``), deg of alpha per (m/s x s), bounded to
-    # ``APPROACH_SPEED_BIAS_MIN/MAX_DEG``.  The law's trim is the table's
-    # 1 g angle, and subsonic the table under-reads the shuttle's lift at
-    # low alpha (M0.3, 0 deg: 45.7 m^2 against ~75 flown), so the trim is
-    # degrees too high and the proportional term alone stands 15-30 m/s
-    # slow: LOG8911 flew 81-104 m/s against 103-115 held at alpha +1.6, L/D
-    # ~4.4, and landed 4.8 km long with +702 m handed over -- the brake
-    # stowed on "slow" after 6 s.  With it the alpha that holds the speed is
-    # found, whatever the table says.  The floor (``APPROACH_ALPHA_MIN_
-    # DEG``) opens with surplus height or the brake out.  Off: 0.
-    APPROACH_SPEED_KI: float = 0.0
-    APPROACH_SPEED_BIAS_MIN_DEG: float = -6.0
-    APPROACH_SPEED_BIAS_MAX_DEG: float = 3.0
+    # **Gated on the stall, not on the held speed.**  The shuttle cannot
+    # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
+    # LOG8880, 8887, 8924; integral action on the speed only wound up and
+    # set off a phugoid, 133 -> 48 m/s, LOG8920/8924), so its steady glide
+    # is ~80 m/s braked or not and the approach's 115 m/s target is never
+    # held: gated at a fraction of it the brake read "slow" and stowed
+    # within seconds (LOG8904, 8911).  At fixed alpha the brake *does*
+    # steepen the path -- L/D ~2 is ~27 deg at ~80 m/s -- and the flare
+    # takes 72-83 m/s entries on the base flights.  So: out down to this
+    # multiple of the stall.
+    APPROACH_SPLIT_MIN_SPEED_FACTOR: float = 1.45
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
