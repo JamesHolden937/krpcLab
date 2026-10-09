@@ -5126,3 +5126,38 @@ trimmed at the alpha it will fly.**  The logs measure that polar
 (subsonic, measured L/D: 3.9 at 0-3 deg, 3.3 at 3-6, 2.8 at 6-9, 2.5 at
 9-12, ~1.3 at 15+; `polar.py`).  Next: price the ladder from the flown
 polar (recomputed from logs like the alpha prior), not the probe.
+
+**Evening (~1850-1940): the flown polar, and the two fixes it suggests.**
+`tools/conepolar.py` (new) writes the subsonic polar the cone *flew*
+(measured ClA/CdA by achieved alpha, HAC, M<0.9) to untracked
+`logs/conepolar/`.  From 207 current-stack farm logs: ClA 69/95/129/**139**/
+139/103/94/90/103 at 1/5/9/11/13/15/17/21/25 deg, L/D 3.9 -> 2.4 at 11 ->
+**1.2 at 15-17**.  **The flown lift peaks at ~139 m^2 near 12 deg** against
+the table's ~300 (210 after `MARGIN`); the cone spends most ticks at 15-17
+deg (~32k) -- stalled, braking from 250-350 m/s to its 112 m/s true target
+at the 22 deg cap.  (kspSim's subsonic lift is 1.5x the table where the
+game's is ~0.6x: this afternoon's sim EAS screen says nothing about the
+game.)
+
+rot-polar-1008 (36 flights, 4 per config per orbit; ksp3 refused 3 base
+flights; labelled from each log's `config:` line -- `HAC_LD_MEASURED`
+contains "EAS"):
+- best config 5/9 on the runway (3 long, 1 lost).
+- **`HAC_LD_FLOWN_POLAR`** (new, off): the ladder's subsonic rungs off the
+  flown polar's rising branch, no `ld_scale`.  Connected: `pld` 2.3-2.5
+  from entry (was ~1.0), R pinned 16 km from the start -- and **3/12**:
+  rollout -1.3..+2.3 km, laps=0 on every flight.  The surplus it now sees
+  falls in **the cone's gap** (10-05): more than the widest no-lap circle
+  spends, less than a minimum lap (~12.6 km of path).
+- **`HAC_SPEED_EAS`**: **1/12, 4 lost** -- three out of height mid-turn
+  (turn 192-197, h 1998 against 3400 needed), others 1.2-2.7 km high.
+  Refuted on the farm.
+- Both new arms lost two to the approach diving: flare entered at 102-132
+  m/s with ~90 m/s of sink (the approach-speed item; base had one today).
+
+**Where this leaves the cone:** its mis-pricing is understood (probe at
+present deflection; stalled upper cone) and fixable, but correct pricing
+exposes a geometric gap no constant closes.  Fourth attempt on spending a
+sub-lap surplus would be the same method again (sharp turn, spiral, stretch
+all null): change the method -- e.g. plan the lap at entry, where the
+flown polar now says it is needed, or give the entry aim the gap to avoid.

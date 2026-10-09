@@ -1,13 +1,13 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of the session of 2026-10-08 afternoon/evening (~1530-1800).
+Snapshot of the session of 2026-10-08 afternoon/evening (~1530-1940).
 History: `docs/spaceplane/journal.md`, "Session, 2026-10-08
 afternoon/evening: the glide's handover energy"; the morning's
 `HAC_GATE_STRETCH` session is above it.
 
-Defaults fingerprint **`80930f0e`** (`c9fedee0` + `AERO_REFRESH_NEAR_MACH`
-off, + `GLIDE_CONE_ENERGY`, `GLIDE_CONE_CEILING` off; **no default changed**).  Farm up at the time of
-writing (stop it at wrap-up); swap ~20 GB after every batch.
+Defaults fingerprint **`ae54ff05`** (`c9fedee0` + `AERO_REFRESH_NEAR_MACH`,
+`HAC_LD_FLOWN_POLAR` off, + `GLIDE_CONE_ENERGY`, `GLIDE_CONE_CEILING` off; **no default changed**).  Farm **stopped**; swap ~20 GB after every batch
+(restart before any comparison).
 
 ## This session (the user: is the glide handing the cone an unusable energy profile?)
 
@@ -42,35 +42,42 @@ notes is rigoff only.**  Every code change since 78f93e7 is flag-gated
 (read in full); today's rigoff dip is unexplained -- if it persists,
 bisect on rigoff alone.
 
-## Later this session: the cone's mis-pricing is the aero probe
+## Later this session: why the cone mis-prices, and what fixing it exposes
 
-The table is re-probed in flight at the surfaces' *present* deflection, so
-the subsonic rows read L/D 0.85-1.72 at cone entry where the cone flies
-3.3-3.7 (new `cone ladder` log line; rot-ladder-1008).  The cone plans its
-descent on that, reads short, pins the 2 km circle, finds 1-4 km of surplus
-below 5 km.  `AERO_REFRESH_NEAR_MACH` (off) only half connects (7/12 v 8/12,
-rot-near-a/b-1008): the cone's own high-alpha upper part re-contaminates the
-rows.  **Next is item 1 below, re-aimed: price the ladder from the flown
-trimmed polar** (`polar.py`; subsonic measured L/D 3.9 / 3.3 / 2.8 / 2.5 /
-~1.3 at 0-3 / 3-6 / 6-9 / 9-12 / 15+ deg), not the probe.  kspSim cannot
-screen it: its subsonic lift is 1.51x the table where the game's is 0.6x.
-Today's rigoff base: 11/18 (the 3/8 dip was noise).
+- The aero table is re-probed in flight at the surfaces' *present*
+  deflection: subsonic rows read L/D 0.85-1.72 at cone entry where the cone
+  flies 3.3-3.7 (new `cone ladder` log line, rot-ladder-1008).
+  `AERO_REFRESH_NEAR_MACH` (off) only half connects: 7/12 v 8/12.
+- **The flown polar** (`tools/conepolar.py` -> untracked `logs/conepolar/`,
+  207 logs): lift peaks at **~139 m^2 near 12 deg** (table ~300); the cone
+  flies most ticks at 15-17 deg, **stalled**, L/D ~1.2, braking to its 112
+  m/s *true* target.
+- rot-polar-1008 (4 per config per orbit): base 5/9; **`HAC_LD_FLOWN_POLAR`
+  3/12** -- connected (`pld` 2.3-2.5 from entry, R pinned 16 km), but the
+  surplus it now sees falls in **the cone's gap** (more than the widest
+  no-lap circle, less than a ~12.6 km minimum lap), rollout -1.3..+2.3 km,
+  laps=0; **`HAC_SPEED_EAS` 1/12, 4 lost** (out of height mid-turn) --
+  refuted on the farm.  Two losses per new arm were the approach diving
+  (flare at 102-132 m/s, ~90 m/s sink).
+- kspSim cannot screen any of this: its subsonic lift is 1.5x the table,
+  the game's ~0.6x.  Today's rigoff base: 11/18 (the 3/8 dip was noise).
 
 ## Next, in order
 
-1. **The cone mis-spends energy it can absorb.**  The default target is
-   108 m/s *true* (~65 IAS at 8-14 km): it flies the upper cone at the
-   alpha cap (L/D ~1), prices the rest at that (`ldk` 0.7-0.9, `pld`
-   <1), reads short, pins R at 2 km; below ~5.5 km alpha drops, `ldk` ->
-   1.3-1.45, and 1-4 km of surplus appears with straight-in geometry left
-   (LOG8340, 8364, 8345, 8350; scratch `conetrace`).  Make the plan price
-   the two regimes it actually flies -- or choose the cone speed so there
-   is one regime -- without the EAS failure (sim: radius/weave pin and it
-   still rolls out high, 2/4 broke).
-2. The prior + ceiling stack for the >20 km tail, once the cone half is
+1. **The cone's gap, by a different method** (fourth attempt; sharp
+   turn, spiral dump, gate stretch were the same method).  With the flown
+   polar the cone knows at entry that it owes more than its widest circle
+   and less than a minimum lap.  Candidates: plan the lap at entry when the
+   flown-polar plan says the surplus is over the no-lap ceiling (a lap at a
+   radius sized to the surplus), or make the entry aim (`high_gate`,
+   `HAC_AIM_DERIVED`) deliver energy that lands inside the no-lap band.
+   Price with `HAC_LD_FLOWN_POLAR`; fly on the farm only.
+2. The approach diving to make speed (flare at 102-132 m/s, ~90 m/s
+   sink; lost 5 flights today across arms) -- the approach speed target
+   sits above what the shuttle flies (110-115 v 73-100).
+3. The prior + ceiling stack for the >20 km tail, once the cone half is
    fixed (it removes most >20 km entries; null alone).
-3. Carried: approach speed target above what the shuttle flies (110-115 vs
-   73-100), eccentric orbit ~17-21 km long, runtime crossrange footprint,
+4. Carried: eccentric orbit ~17-21 km long, runtime crossrange footprint,
    `TOUCHDOWN_AIM_M` per vehicle, kspSim's cone L/D.
 
 ## Traps paid (this session first)
@@ -84,6 +91,10 @@ Today's rigoff base: 11/18 (the 3/8 dip was noise).
   the launcher, not the batch -- put a waiter on `ROT DONE`.
 - `GLIDE_CONE_ENERGY`'s `long=` at handover includes the energy term: an
   "arrival +8 km" there is partly the term, not position.
+- **`HAC_LD_MEASURED` contains the substring "EAS"**: label arms from
+  each log's `config:` line, never by grepping the arm string.
+- `rotfly.sh` with more arms than instances flies them unevenly (arm =
+  round + instance): rotate the arm list yourself (rot-polar-1008).
 - `pgrep -f KSP_x64` matches its own shell; count with
   `ps -eo args | grep -c "^[^ ]*KSP_x64"`.
 - "could not pause after the load" (ksp5, ~1 flight in 5 batches) is the
