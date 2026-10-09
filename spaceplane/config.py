@@ -377,6 +377,14 @@ class Config:
     HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
                                (30.0, 0.665), (38.0, 0.61))
     HAC_SPLIT_RATE_DEG_S: float = 10.0
+    # Brake only on the polar's rising branch and with the deceleration
+    # done (``Autopilot.hac_split_brake``); and stop this far above the
+    # gate's need.  rot-split-1008: 7/12 v 5/12, long landings 1 v 5, but
+    # two lost to a brake opened while still stalled at cone entry, and
+    # 8/12 ended 230-550 m short.  Off.
+    HAC_SPLIT_ON_BRANCH: bool = False
+    HAC_SPLIT_SPEED_FRAC: float = 1.15
+    HAC_SPLIT_RESERVE_M: float = 0.0
     # **The split rudder on the runway** (``Autopilot.ground_spoiler``; the
     # user, 2026-10-08: deploy it on landing so the runway can be shorter):
     # full out at main-gear contact, left out.  Off.

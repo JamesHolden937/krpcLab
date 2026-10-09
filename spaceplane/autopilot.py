@@ -4887,9 +4887,31 @@ class Autopilot:
         gate = float(getattr(command, "gate_alt", self.cfg.GATE_ALT_M))
         ld = float(getattr(command, "plan_ld", 0.0) or 0.0)
         want = 0.0
-        if (not command.short and command.laps == 0 and ld > 0.0
-                and height > gate and command.path > 0.0):
-            factor = (command.path / (height - gate)) / ld
+        # **Only on the branch the plan priced** (``HAC_SPLIT_ON_BRANCH``):
+        # the flown polar's rising side.  Deployed at cone entry while the
+        # speed law was still braking the vehicle stalled at ~20 deg (L/D
+        # ~1.2 where the plan priced 2.3), brake and stall together ran two
+        # inc flights out of height 13.6 km from the gate (LOG8714, 8719).
+        # So: achieved alpha under the polar's lift peak, and the speed
+        # within ``HAC_SPLIT_SPEED_FRAC`` of the cone's target.
+        on_branch = True
+        if getattr(self.cfg, "HAC_SPLIT_ON_BRANCH", False):
+            polar = getattr(self.env, "flown_polar", None)
+            peak = None
+            if polar and polar.get("bins"):
+                peak = max(polar["bins"], key=lambda b: b[1])[0]
+            target = getattr(command, "alpha_target_speed", None)
+            speed = vec.norm(snap.velocity)
+            on_branch = ((peak is None or snap.alpha_actual < peak)
+                         and (not target or speed <= target * float(
+                             self.cfg.HAC_SPLIT_SPEED_FRAC)))
+        # ``HAC_SPLIT_RESERVE_M``: spend down to a little above the gate's
+        # need, not to it -- unbraked, the cone ended 230-550 m short of the
+        # approach's need on 8 of 12 brake flights (rot-split-1008).
+        floor = gate + float(getattr(self.cfg, "HAC_SPLIT_RESERVE_M", 0.0))
+        if (on_branch and not command.short and command.laps == 0
+                and ld > 0.0 and height > floor and command.path > 0.0):
+            factor = (command.path / (height - floor)) / ld
             table = sorted(self.cfg.HAC_SPLIT_FACTOR)
             if factor < 1.0:
                 want = table[-1][0]
