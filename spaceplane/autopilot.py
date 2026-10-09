@@ -4742,33 +4742,6 @@ class Autopilot:
             self.split_angle = angle
         return done
 
-    def fast_for_flare(self, snap):
-        """``FLARE_SPLIT_BRAKE``: faster than ``FLARE_SPLIT_SPEED_FACTOR`` x
-        the stall."""
-        stall = airframe.stall(self.env, self.cfg)
-        return bool(stall) and vec.norm(snap.velocity) > float(
-            self.cfg.FLARE_SPLIT_SPEED_FACTOR) * stall
-
-    def flare_split_brake(self, snap):
-        """``FLARE_SPLIT_BRAKE``: the split rudder out in the flare while
-        the vehicle is fast, in once it is not, and never out again.  Every
-        long landing of the speedbrake defaults (rot-asb2/conf/roll-1009)
-        entered the flare at 86-96 m/s and floated; the good ones at 61-81.
-        The brake is drag only -- no lift spoiled, no yaw or roll -- so the
-        flare's sink law is untouched and the float is what it spends."""
-        if not getattr(self, "split_pair", None):
-            return
-        done = getattr(self, "_flare_split_done", False)
-        want = (float(self.cfg.SPLIT_FULL_DEG)
-                if (not done and self.fast_for_flare(snap)) else 0.0)
-        if want == 0.0 and self.split_angle > 0.0:
-            self._flare_split_done = True
-        if (want > 0.0) != (self.split_angle > 0.0) and self.set_split(want):
-            self.logbook.event(snap.ut, "flare split brake %s at %.1f m/s, "
-                               "h=%.0f" % ("out" if want else "in",
-                                           vec.norm(snap.velocity),
-                                           snap.landing_height))
-
     def approach_split_factor(self, angle):
         """The approach's L/D factor at split-rudder ``angle``, off
         ``APPROACH_SPLIT_FACTOR``; 1.0 with no pair."""
@@ -4812,12 +4785,7 @@ class Autopilot:
         cap_sink = float(self.cfg.APPROACH_SPLIT_SINK_FACTOR) * design
         want = 0.0
         reason = ""
-        if height <= stow and getattr(self.cfg, "FLARE_SPLIT_BRAKE", False) \
-                and self.fast_for_flare(snap) and self.split_angle > 0.0:
-            # Fast at the door: the flare keeps it (``flare_split_brake``).
-            want = self.split_angle
-            reason = "fast at the door"
-        elif height <= stow:
+        if height <= stow:
             reason = "flare door"
         elif stall and speed < float(
                 self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR) * stall:
@@ -5029,9 +4997,7 @@ class Autopilot:
 
     def run_flare(self, snap):
         """The last fifteen metres, which are their own problem."""
-        if getattr(self.cfg, "FLARE_SPLIT_BRAKE", False):
-            self.flare_split_brake(snap)
-        elif (getattr(self.cfg, "APPROACH_SPLIT_BRAKE", False)
+        if (getattr(self.cfg, "APPROACH_SPLIT_BRAKE", False)
                 and getattr(self, "split_angle", 0.0) > 0.0
                 and not getattr(self, "_split_flare_stowed", False)):
             # The approach stows ahead of the door; a door reached early
