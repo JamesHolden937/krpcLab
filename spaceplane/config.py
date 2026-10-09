@@ -162,28 +162,12 @@ class Config:
     # is retuned.
     HAC_SPEED_FACTOR: float = 1.00          # x the approach speed
     HAC_SPEED_KP: float = 0.20              # deg of alpha per m/s of excess
-    # Hold the cone's speed with ``guidance.alpha_for_speed`` (the
-    # approach's two-sided law, ``APPROACH_SPEED_PATH``) rather than ``trim +
-    # HAC_SPEED_KP * error``, which cannot make speed.  The shuttle decays to
-    # 55-80 m/s in the cone under the old law (LOG3029).  Off until paired.
-    HAC_SPEED_PATH: bool = False
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,
     # old craft 1.34x subsonically); a 1.6 g pull-up arrived at ~1.1 g and
     # the cone's climb never happened (LOG3065-3066).  Cone and approach
     # only; the flare has its own sink loop and a tail-strike cap.
-    # **The cone's speed target as equivalent airspeed** (``guidance.
-    # eas_scale``): a stall speed is a sea-level quantity and the cone flew
-    # it as true airspeed at 9 km -- ~66 m/s equivalent, near the stall,
-    # held with 19-22 deg of alpha (LOG3071).
-    HAC_SPEED_EAS: bool = False
-    # **The cone at one IAS derived from the stall** (``guidance.cone_ias``,
-    # the user's, 2026-10-05): ``max(1.3 x stall, minimum-drag speed)``
-    # off this airframe's table, times ``sqrt(1/cos(HAC_BANK_MAX_DEG))``,
-    # held as indicated airspeed from the top of the cone to the gate.
-    # Implies the EAS scaling.  Off until paired.
-    HAC_IAS_FROM_STALL: bool = False
     # Manual pitch input per degree of pitch pointing error in the FLARE,
     # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
     FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
@@ -589,9 +573,6 @@ class Config:
     # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
     # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
     HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
-    # Short of height (the tightest circle unaffordable), cap the cone's
-    # alpha at the table's best-L/D alpha (``guidance.hac``).  Off.
-    HAC_SHORT_BEST_GLIDE: bool = False
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
     # Charge only the sink over the cone's own glide (``speed / sqrt(1 +
@@ -2292,24 +2273,6 @@ class Config:
     APPROACH_SCURVE_CROSS_M: float = 300.0
     APPROACH_SCURVE_STOP_M: float = 4000.0  # no weaving inside this of the aim [default 2026-10-03, rot-orbit2-1003]
     APPROACH_SCURVE_PERIOD_S: float = 10.0  # half-cycle of the weave clock
-    # ``APPROACH_SHARP_TURN`` (off): spend the S-turn's surplus as drag --
-    # the alpha whose drag dissipates the surplus by the weave's stop, its
-    # extra lift banked sideways (``guidance.sharp_turn``).  The user's
-    # split-S (2026-10-07), less the inverted half that makes speed.
-    APPROACH_SHARP_TURN: bool = False
-    # Under the canard trim's engage limit (``CANARD_TRIM_MAX_ALPHA_DEG``
-    # 15) and well under the canards' stall (~24): what would disagree is
-    # an ``aoa=`` cmd/actual gap in the sharp turns.
-    APPROACH_SHARP_ALPHA_MAX_DEG: float = 14.0
-    APPROACH_SHARP_BANK_MAX_DEG: float = 60.0
-    # Faded in over this much speed above the flare's door speed.
-    APPROACH_SHARP_SPEED_MARGIN_M_S: float = 5.0
-    # The lean reverses toward the course past this heading off it.
-    APPROACH_SHARP_HEADING_MAX_DEG: float = 45.0   # = APPROACH_SCURVE_MAX_DEG
-    # The steepest descent the sharp turn flies to keep its speed while the
-    # drag spends height: 25 deg is ~38 m/s of sink at 90, the far side of
-    # which is a flare door it cannot arrest.
-    APPROACH_SHARP_DIVE_MAX_DEG: float = 25.0
 
     # -- the split-rudder airbrake ----------------------------------------
     AIRBRAKE_SINK_TRACK_M_S: float = 5.0
@@ -2512,21 +2475,6 @@ class Config:
     # 40-65 degrees below the horizon, and a bound on the *path* says that
     # cannot happen whatever the speed or the mass.  ``cos(35)`` is 0.82 g.
     APPROACH_DIVE_MAX_DEG: float = 35.0
-    # **Never dive steeper than the path to the aim** (``guidance.approach``,
-    # ``APPROACH_SINK_GUARD``): sink past the path's by this much levels the
-    # wings and floors alpha at the load that flies the path.  The dive above
-    # allowed ~63 m/s of sink at 110 m/s where the flare has arrested 30-39
-    # on every intact landing; ~1 flight in 5 on 2026-10-08 entered the flare
-    # at 95-133 m/s with 57-93 of sink (LOG8699: wanted 36, flew 86).  Off.
-    APPROACH_SINK_GUARD: bool = False
-    APPROACH_SINK_GUARD_M_S: float = 8.0
-    APPROACH_SINK_GUARD_BANK_DEG: float = 15.0
-    APPROACH_SINK_GUARD_FACTOR: float = 1.5
-    # The split rudder spends the approach's surplus as speed while the
-    # guard caps the sink (``Autopilot.approach_split``); stowed before the
-    # flare door.  Guard alone: 0 dives, 0 lost, 7/12 long (rot-guard-1008).
-    # Off.
-    APPROACH_SPLIT_ON_GUARD: bool = False
     # **The split rudder as the approach's speedbrake, by geometry**
     # (``Autopilot.approach_split_brake``) -- the Shuttle's outer glide
     # slope: alpha still holds the speed, the brake makes that speed cost a

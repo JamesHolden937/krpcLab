@@ -4713,17 +4713,6 @@ class Autopilot:
         # stays shut.
         self.set_rcs(getattr(self.rcs, "on", False), snap)
         self.set_throttle(0.0)
-        if not getattr(self, "_cone_ias_logged", False):
-            self._cone_ias_logged = True
-            ias = guidance.cone_ias(self.env, self.cfg)
-            if ias is not None:
-                self.logbook.event(
-                    snap.ut, "cone IAS %.1f m/s (stall %.1f, min-drag %s, "
-                    "bank limit %.0f deg)"
-                    % (ias, self.env.stall_speed,
-                       "-" if not getattr(self.env, "best_speed", None)
-                       else "%.1f" % self.env.best_speed,
-                       self.cfg.HAC_BANK_MAX_DEG))
         if not getattr(self, "_glide_flaps_stowed", False):
             # The glide's brake is the glide's; the cone has its own energy.
             self._glide_flaps_stowed = True
@@ -4931,52 +4920,6 @@ class Autopilot:
                                               new, ld, (command.path / max(
                                                   1.0, height - gate)) / ld
                                               if ld else 0.0))
-
-    def approach_split(self, snap, command, height, trigger, sink):
-        """``APPROACH_SPLIT_ON_GUARD``: the split rudder in the approach,
-        while ``APPROACH_SINK_GUARD`` has capped the sink with surplus left.
-
-        The guard turned every dive into a long landing -- zero dives and
-        zero losses, but 7 of 12 long (rot-guard-1008): the energy it will
-        not let become sink has to go somewhere.  At capped sink, drag cannot
-        become a dive, so the brake spends *speed*, which is survivable and
-        floats less.  Out at full (``ROLLOUT_SPLIT_DEG``) while the guard
-        holds and there is surplus; stowed ``AIRBRAKE_STOW_LEAD_S`` of sink
-        above the flare door, so the flare gets a clean airframe."""
-        if not getattr(self, "split_pair", None):
-            return
-        excess = float(getattr(command, "excess", 0.0) or 0.0)
-        stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
-        # **Never below the speed the flare wants** (``APPROACH_FLARE_FACTOR``
-        # x stall): without it four brake flights reached the flare at 44-54
-        # m/s, at the stall, and LOG8801 stalled 2.8 km short (rot-gsplit-1008).
-        stall = airframe.stall(self.env, self.cfg)
-        fast = (stall is None or vec.norm(snap.velocity)
-                > float(self.cfg.APPROACH_FLARE_FACTOR) * stall)
-        want = 0.0
-        if not fast:
-            pass
-        elif (getattr(command, "sink_guard", False) and excess > 0.0
-                and height > stow):
-            want = float(self.cfg.ROLLOUT_SPLIT_DEG)
-        elif (self.split_angle > 0.0 and height > stow and excess > 0.0
-                and fast):
-            # Hold it out between guard ticks while surplus remains.
-            want = self.split_angle
-        dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
-                                  or snap.ut))
-        self._split_app_ut = snap.ut
-        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
-        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
-        if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
-                self.split_angle == 0.0):
-            was = self.split_angle
-            if self.set_split(new) and (was == 0.0) != (new == 0.0):
-                self.logbook.event(snap.ut, "approach split brake %s at "
-                                   "h=%.0f: excess %+.0f m, %.0f m/s, sink "
-                                   "%.0f" % ("out" if new else "in", height,
-                                             excess, vec.norm(snap.velocity),
-                                             sink))
 
     def approach_split_factor(self, angle):
         """The approach's L/D factor at split-rudder ``angle``, off
@@ -5366,8 +5309,6 @@ class Autopilot:
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
         self.command_airbrake(snap, command, height, trigger, sink)
-        if getattr(self.cfg, "APPROACH_SPLIT_ON_GUARD", False):
-            self.approach_split(snap, command, height, trigger, sink)
         if split_brake:
             self.approach_split_brake(snap, command, height, trigger, sink)
         brake = getattr(self, "airbrake", None)
@@ -6934,11 +6875,6 @@ def compact_line(state, snap, run):
     if state == GLIDE and getattr(run, "prediction", None) is not None:
         bits.append("slv=%s" % ("max" if getattr(run.prediction, "max_range",
                                                  False) else "ok "))
-    if state == APPROACH and getattr(run.cfg, "APPROACH_SINK_GUARD", False):
-        bits.append("sg=%d" % (1 if getattr(getattr(run, "command", None),
-                                            "sink_guard", False) else 0))
-        if getattr(run.cfg, "APPROACH_SPLIT_ON_GUARD", False):
-            bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == APPROACH and getattr(run.cfg, "APPROACH_SPLIT_BRAKE", False):
         bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == HAC and getattr(run, "hac_command", None) is not None:
@@ -6975,10 +6911,6 @@ def compact_line(state, snap, run):
                     % (c.cross, c.heading_error,
                        getattr(c, "excess", 0.0),
                        getattr(c, "scurve_deg", 0.0)))
-        if getattr(run.cfg, "APPROACH_SHARP_TURN", False):
-            sh = getattr(c, "sharp", None)
-            bits.append("shp=--" if sh is None else
-                        "shp=%4.1f/%+.0f" % (sh[0], sh[1] * sh[2]))
         # ``ab=`` is the brake, and ``sat=`` the share of the recent window
         # the S-turn spent at its cap -- printed even when the brake is not
         # armed, because that share is the measurement the whole mechanism

@@ -1166,65 +1166,10 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
                                                   cfg.APPROACH_PATH_LIMIT_M)
         alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
 
-    sharp = None
-    if getattr(cfg, "APPROACH_SHARP_TURN", False) and scurve_deg > 0.0:
-        sharp = sharp_turn(env, cfg, trim, speed, height, mass, gravity,
-                           distance, trigger, best_ld, max(target, floor),
-                           stall, heading_error,
-                           lean_side if lean_side is not None
-                           else (1.0 if bank >= 0.0 else -1.0),
-                           cross, cross_rate, floor_alpha=alpha, lag=lag)
-        if sharp is not None:
-            alpha = max(alpha, sharp[0])
-            want = vec.scale(across, sharp[1])
-            bank = bank_toward(r, v, want, sharp[2]) if sharp[2] > 0.1 \
-                else 0.0
-
-    # ``APPROACH_SINK_GUARD``: **never dive steeper than the path to the
-    # aim.**  Below its target speed the law unloads to make speed and the
-    # S-turn banks to spend height, together: LOG8699 handed over at 92 m/s
-    # against ~113 with +430 m of surplus, flew alpha 0-1 at 30-40 deg of
-    # bank, wanted 36 m/s of sink and had 86 at the flare door (125 m/s,
-    # destroyed, 2.2 km short).  About one flight in five of 2026-10-08 died
-    # that way.  A dive steeper than the path lands short as well as hard,
-    # and a slow vehicle on the path is survivable well above the stall.
-    # So when the sink passes the path's by ``APPROACH_SINK_GUARD_M_S`` the
-    # wings come level and alpha is floored at the load that flies the
-    # path, plus the inner loop's pull toward it.
-    guard = float(getattr(cfg, "APPROACH_SINK_GUARD_M_S", 0.0))
-    command_guard = False
-    # **The cap is the approach's own design sink, not the path to the
-    # aim**: handed over high, the straight path to the aim is itself 15-20
-    # deg steep, and the first version (sink past *that*) never fired while
-    # three flights dived to 60-88 m/s of sink (rot-stack-1008, LOG8740,
-    # 8745, 8755).  ``APPROACH_SINK_GUARD_FACTOR`` x (the held speed over
-    # the approach's glide ratio): ~1.5 x 26 m/s, the top of every intact
-    # flare on record.  Bound, the vehicle lands long instead of diving.
     design = max(target, floor) / max(0.1, clean_ld)
-    cap_sink = min(wanted_sink + guard, design * float(getattr(
-        cfg, "APPROACH_SINK_GUARD_FACTOR", 1.5)))
-    if (getattr(cfg, "APPROACH_SINK_GUARD", False) and speed > 1.0
-            and sink > cap_sink):
-        path = math.asin(vec.clamp(min(wanted_sink, cap_sink) / speed,
-                                   -1.0, 1.0))
-        flying = math.asin(vec.clamp(sink / speed, -1.0, 1.0))
-        load = math.cos(path) + float(getattr(cfg, "APPROACH_PATH_KN", 1.5)) \
-            * (flying - path)
-        load = vec.clamp(load, 1.0, float(getattr(cfg, "APPROACH_LOAD_MAX",
-                                                  1.6)))
-        floor_alpha = alpha_for_load(env, speed, height, mass, gravity, load)
-        if floor_alpha is not None and floor_alpha > alpha:
-            alpha = min(floor_alpha, cfg.APPROACH_ALPHA_MAX_DEG)
-        # The S-turn and the centreline capture share ``bank``: cap it
-        # rather than zero it, so the capture keeps working.
-        cap = float(getattr(cfg, "APPROACH_SINK_GUARD_BANK_DEG", 15.0))
-        bank = vec.clamp(bank, -cap, cap)
-        command_guard = True
 
     command = ApproachCommand(alpha, bank, sink, wanted_sink, cross,
                               heading_error, distance, height, speed)
-    command.sink_guard = command_guard
-    command.sharp = sharp
     command.cross_rate = cross_rate
     command.cross_time = cross_time
     command.excess = excess
@@ -1242,129 +1187,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     return command
 
 
-def sharp_turn(env, cfg, alpha, speed, height, mass, gravity, distance,
-               trigger, best_ld, held, stall, heading_error, lean_side,
-               cross=0.0, cross_rate=0.0, floor_alpha=None, lag=None):
-    """``APPROACH_SHARP_TURN``: spend the surplus as drag, turning hard.
-
-    Returns ``(alpha, side, bank)`` -- ``side`` +1/-1 along ``across`` -- or
-    ``None`` when the plain S-turn already dissipates enough.
-
-    The approach's S-turn spends surplus only as *path*: it flies the
-    speed law's alpha, 1-3 deg, where this airframe's drag is lowest
-    (``CdA`` 18.6 at 2 deg against 92 at 16, measured over 40k subsonic
-    ticks), and a 40-deg bank at that alpha is a 1.3-g turn.  A sharp turn
-    is the other way to spend it: more alpha is more drag, and the lift
-    that drag comes with -- 2.5 g at 16 deg -- is put sideways by the bank
-    instead of ballooning the vehicle (the user's split-S, 2026-10-07,
-    without the half of it that turns height into speed).
-
-    The drag is chosen, not fitted.  To arrive at the weave's stop with the
-    energy a straight glide at ``best_ld`` needs from there, the vehicle has
-    to dissipate ``E`` metres of energy height over ``s`` metres of
-    progress, so it needs ``D = m g E / s``: ``CdA = D / q``, the alpha
-    with that drag from the table.  The vertical lift is what a steady
-    descent at the present speed needs -- ``W cos(gamma)``, ``sin(gamma) =
-    D/W`` -- and the lift the extra alpha adds over that is banked off.
-    Two references were flown and refuted: the speed law's lift (it chases
-    a held speed 20 m/s above the one flown and asks for almost none, which
-    became 30-54 deg of bank at 1-4 deg of alpha -- turning, not drag,
-    LOG8374) and one g (level flight: the drag spent speed, not height,
-    LOG8377).
-    """
-    margin = max(0.1, float(cfg.APPROACH_SHARP_SPEED_MARGIN_M_S))
-    door = cfg.APPROACH_FLARE_FACTOR * stall
-    # Faded in over the margin above the speed the flare needs at its door,
-    # not switched: a step from 14 deg to the speed law's 2 is a law no
-    # vehicle flies.  **The door, not the held speed**: the shuttle flies
-    # its approach at 73-100 m/s against a held 110-115 (LOG8359-8363), so
-    # gating on the held speed left the turn off on all but one tick.  Speed
-    # above the door is surplus like height, and ``energy`` counts it.
-    share = vec.clamp((speed - door) / margin, 0.0, 1.0)
-    if share <= 0.0:
-        return None
-    stop = (float(cfg.APPROACH_SCURVE_STOP_M)
-            - float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0)))
-    span = distance - max(0.0, stop)
-    if span <= 100.0:
-        return None
-    energy = (height - trigger - max(0.0, stop) / max(0.1, best_ld)
-              + (speed * speed - door * door) / (2.0 * gravity))
-    if energy <= 0.0:
-        return None
-    altitude = height
-    q = 0.5 * env.density(altitude) * speed * speed
-    if q <= 1.0:
-        return None
-    cda_need = mass * gravity * energy / span / q
-    cap = float(cfg.APPROACH_SHARP_ALPHA_MAX_DEG)
-    a_drag = None
-    lo = max(0.0, alpha)
-    cl0, cd0 = env.coefficients(lo, speed, altitude)
-    if cd0 >= cda_need:
-        return None
-    step = 0.5
-    a = lo
-    while a < cap:
-        a = min(cap, a + step)
-        cl, cd = env.coefficients(a, speed, altitude)
-        if cd >= cda_need:
-            a_drag = a
-            break
-    if a_drag is None:
-        a_drag = cap
-    a_drag = lo + share * (a_drag - lo)
-    if floor_alpha is not None:
-        a_drag = max(a_drag, min(cap, floor_alpha))
-    cl, cd = env.coefficients(a_drag, speed, altitude)
-    if cl <= 1e-6:
-        return None
-    # **Descend so that gravity pays for the drag**: ``sin(gamma) = D/W``,
-    # plus a pull toward the reference speed over ``APPROACH_SPEED_TAU_S``.
-    # Holding one g of vertical lift instead flew level and spent the speed:
-    # 101 -> 75 m/s in ten seconds, the turn faded out at the door speed
-    # with 1150 m of height still over the profile, and the vehicle floated
-    # 2.8 km long into the sea (LOG8377).
-    weight = mass * gravity
-    v_ref = max(door + margin, speed)
-    tau = max(0.5, float(getattr(cfg, "APPROACH_SPEED_TAU_S", 6.0)))
-    sin_g = (q * cd + mass * (v_ref - speed) / tau) / weight
-    sin_g = vec.clamp(sin_g, 0.0, math.sin(math.radians(
-        float(cfg.APPROACH_SHARP_DIVE_MAX_DEG))))
-    vertical = weight * math.sqrt(1.0 - sin_g * sin_g)
-    # That much lift stays vertical; the rest goes sideways.
-    ratio = vec.clamp(vertical / (q * cl), 0.0, 1.0)
-    bank = min(float(cfg.APPROACH_SHARP_BANK_MAX_DEG),
-               math.degrees(math.acos(ratio)))
-    # **Never turn the back on the runway.**  At 60 deg the vehicle turns
-    # ~10 deg/s; past the heading limit the lean goes back toward the
-    # course whatever the weave clock says.
-    # **Both predicted over the roll reversal**, which on the shuttle is
-    # ~6 s: reversing at the limit itself overshot the heading to -61 deg,
-    # put the vehicle 1.8 km off the centreline, and the capture then
-    # turned it through 176 deg (LOG8374, landed backwards 7 km short).
-    limit = float(cfg.APPROACH_SHARP_HEADING_MAX_DEG)
-    side = 1.0 if lean_side >= 0.0 else -1.0
-    reverse_s = max(0.0, lag or 0.0)
-    turn_deg_s = math.degrees(gravity * math.tan(math.radians(
-        max(5.0, bank))) / max(1.0, speed))
-    if side * heading_error + turn_deg_s * reverse_s > limit:
-        side = -side
-    # **And reverse before the band, not at it.**  The weave's band flips on
-    # the offset alone; at 60 deg the sideways rate reaches 80 m/s, so the
-    # lean goes back once the offset plus the distance to arrest that rate
-    # (the roll reversal, then the turn's own lateral acceleration) passes
-    # the band.
-    lateral = gravity * math.tan(math.radians(max(5.0, bank)))
-    band = float(cfg.APPROACH_SCURVE_CROSS_M)
-    if side * cross_rate > 0.0 and (
-            side * cross + side * cross_rate * reverse_s
-            + cross_rate * cross_rate / (2.0 * lateral)) > band:
-        side = -side
-    return (a_drag, side, bank)
-
-
-# -- the heading alignment cone --------------------------------------------
 class HacCommand:
     def __init__(self, alpha, bank, turn_deg, distance, radius, laps,
                  side, height, needed_height, speed, sink):
@@ -2127,63 +1949,9 @@ def ladder_height(rungs, path, fallback_ld):
     return rungs[-1][0] + (path - rungs[-1][1]) / max(0.1, fallback_ld)
 
 
-def eas_scale(env, cfg, height):
-    """True airspeed per unit of equivalent airspeed at ``height``.
-
-    **A stall speed is an equivalent airspeed.**  ``STALL_SPEED_M_S`` and
-    every factor built on it were measured near the runway, and the cone
-    applied them as *true* airspeed nine kilometres up, where the air is a
-    third as dense: 108 m/s true there is about 66 equivalent, down by the
-    stall.  The shuttle held it with 19-22 deg of alpha and all its drag,
-    and with ``HAC_CLIMB`` took 118 m/s for *fast* and pulled up to 88
-    (LOG3071).  The same wing at the same angle flies ``sqrt(rho0 / rho)``
-    faster in thin air; ``HAC_SPEED_EAS`` says so.  1 when off.
-    """
-    if not (getattr(cfg, "HAC_SPEED_EAS", False)
-            or getattr(cfg, "HAC_IAS_FROM_STALL", False)):
-        return 1.0
-    try:
-        rho0 = env.density(0.0)
-        rho = env.density(max(0.0, height))
-    except Exception:                                       # noqa: BLE001
-        return 1.0
-    if rho <= 0.0 or rho0 <= 0.0:
-        return 1.0
-    return math.sqrt(rho0 / rho)
-
-
-def cone_ias(env, cfg):
-    """``HAC_IAS_FROM_STALL``: the one indicated airspeed the cone is flown
-    at, off this airframe's own table, or ``None``.
-
-    ``1.3 x`` the stall (the conventional approach margin) or the
-    minimum-drag speed, whichever is faster -- below minimum drag a speed
-    error grows instead of correcting itself -- raised by the load the
-    cone's bank limit demands, so the margin holds at full bank.  One IAS
-    from the top of the cone to the gate keeps the angle of attack, and so
-    the glide ratio the plan is priced at, the same all the way down.  It
-    replaces ``HAC_SPEED_FACTOR x APPROACH_FACTOR x STALL_SPEED_M_S`` (108
-    m/s, the old craft's) held as *true* airspeed, which at 10 km is ~66
-    indicated: the shuttle flew its upper cone at 15-26 deg of alpha.
-    """
-    if not getattr(cfg, "HAC_IAS_FROM_STALL", False):
-        return None
-    vs = airframe.stall(env, cfg)
-    vmd = airframe.at_mass(env, getattr(env, "best_speed", None))
-    if not vs or vs <= 0.0:
-        return None
-    load = 1.0 / max(0.2, math.cos(math.radians(
-        min(cfg.HAC_BANK_MAX_DEG, 75.0))))
-    return max(1.3 * vs, vmd or 0.0) * math.sqrt(load)
-
-
 def cone_speed(env, cfg, stall, height):
     """The cone's target true airspeed at ``height``, wings level."""
-    ias = cone_ias(env, cfg)
-    if ias is not None:
-        return ias * eas_scale(env, cfg, height)
-    return (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
-            * eas_scale(env, cfg, height))
+    return cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
@@ -2447,55 +2215,9 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
     target = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR
-              * stall * math.sqrt(load)) * eas_scale(env, cfg, height)
-    if cone_ias(env, cfg) is not None:
-        # One IAS, already sized for the bank limit: constant, not
-        # re-scaled by the bank of the moment.
-        target = cone_speed(env, cfg, stall, height)
-    # **The one-sided speed law, one phase earlier.**  ``trim + KP * (v -
-    # target)`` bleeds a surplus and answers a deficit by holding trim, and
-    # trim *rises* as the vehicle slows -- the loop failure 65 took out of
-    # the approach.  The old craft never showed it here because it enters
-    # the cone with energy to spare.  The shuttle does not: LOG3029 enters
-    # at 227 m/s and decays to 55-80 at 14-20 degrees of alpha, where its
-    # flown L/D is 1.2-1.5 against 3.3 at 2 degrees, so the cone spends its
-    # height on drag and hands over "out of height" 200 degrees off the
-    # runway.  ``alpha_for_speed`` commands the descent that holds the
-    # speed, which can unload the wing to *make* speed -- the same law, so
-    # the two phases cannot disagree about what holding a speed means.
-    if getattr(cfg, "HAC_SPEED_PATH", False):
-        alpha = alpha_for_speed(env, cfg, speed, sink, height, mass, gravity,
-                                target, trim, bank_deg=abs(bank),
-                                climb_ok=False)
-    else:
-        alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
+              * stall * math.sqrt(load))
+    alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
-    # ``HAC_SHORT_BEST_GLIDE``: **short of height, fly the wing's best glide,
-    # not the cone's speed.**  The cone holds a true airspeed sized for the
-    # gate; at 7-9 km that is the back of the drag curve -- LOG6827 flew its
-    # whole deficit at alpha 18-26 and L/D 1.2-1.5 against the table's 3.1
-    # at 5 deg, and handed over 1.6 km low, 6.8 km from the gate.  Capped at
-    # the best-L/D alpha the vehicle speeds up to that angle's own speed,
-    # which is the longest it can glide; the speed it gains is counted by
-    # the budget above as height.
-    #
-    # **Only as far toward it as the deficit needs.**  All the way whenever
-    # ``short`` (judged at the cone's own ratio, ~1.7x below best glide)
-    # stretched every slightly-short entry into a high arrival: kspSim
-    # handover median +907 against +138 (sim-short-1006).  The fraction
-    # is how much of the gap between the cone's ratio and best glide the
-    # tightest circle needs.
-    best_alpha = getattr(env, "best_alpha", None)
-    best_ld = getattr(env, "best_ld", None)
-    if (getattr(cfg, "HAC_SHORT_BEST_GLIDE", False) and short
-            and best_alpha is not None and best_ld and available > 1.0
-            and best_alpha < alpha):
-        budget = max(1.0, height + excess_height - floor_alt)
-        flown = available / budget
-        need = shortest / budget
-        frac = vec.clamp((need - flown) / max(0.1, best_ld - flown),
-                         0.0, 1.0)
-        alpha = alpha + frac * (max(cfg.ALPHA_MIN_DEG, best_alpha) - alpha)
 
     needed = floor_alt + total / max(0.1, cone_ld)
     if rungs is not None:

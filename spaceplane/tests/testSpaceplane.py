@@ -1958,42 +1958,6 @@ class TestTheRolloutDoesNotFlyTheVehicle(unittest.TestCase):
             self.assertLessEqual(limit, cfg.ROLLOUT_STEER_MAX + 1e-9)
 
 
-class TestTheSharpTurnSpendsSurplusAsDrag(unittest.TestCase):
-    """``APPROACH_SHARP_TURN``: a high approach flies a draggier alpha and
-    banks the extra lift off; on profile, or slow, it does nothing."""
-
-    def setUp(self):
-        self.cfg = Config(APPROACH_SHARP_TURN=True)
-        self.env = FakeEnv(self.cfg)
-        self.helper = TestTheApproachCapturesTheCentreline()
-        self.helper.cfg, self.helper.env = self.cfg, self.env
-
-    def command(self, height, distance, speed=100.0, cfg=None):
-        end, r, v, _ = self.helper.state(0.0, 0.0, speed=speed, height=height,
-                                         distance=distance)
-        return guidance.approach(self.env, cfg or self.cfg, end, r, v, MASS,
-                                 GRAVITY, height)
-
-    def test_high_turns_hard_at_more_alpha(self):
-        plain = self.command(2800.0, 8000.0, cfg=Config())
-        sharp = self.command(2800.0, 8000.0)
-        self.assertIsNotNone(sharp.sharp)
-        self.assertGreater(sharp.alpha, plain.alpha - 1e-6)
-        self.assertGreater(abs(sharp.bank), abs(plain.bank))
-        self.assertLessEqual(abs(sharp.bank),
-                             self.cfg.APPROACH_SHARP_BANK_MAX_DEG + 1e-6)
-        self.assertLessEqual(sharp.alpha,
-                             self.cfg.APPROACH_SHARP_ALPHA_MAX_DEG + 1e-6)
-
-    def test_on_profile_it_is_off(self):
-        low = self.command(900.0, 8000.0)
-        self.assertIsNone(low.sharp)
-
-    def test_slow_it_hands_back_to_the_speed_law(self):
-        slow = self.command(2800.0, 8000.0, speed=40.0)  # under the door
-        self.assertIsNone(slow.sharp)
-
-
 class TestTheApproachCapturesTheCentreline(unittest.TestCase):
     """The two proportional gains it replaces are not speed-aware, and the
     approach is now flown 50% faster than they were fitted at.
@@ -4954,21 +4918,6 @@ class TestMeasuredBrakeRebalance(TestMeasuredBrake):
         brake = airbrake.choose_measured_brake(self.samples(self.SHUTTLE))
         after = brake.rebalanced(-55.0)
         self.assertGreater(after.moment, brake.moment)
-
-
-class TestConeSpeedIsEquivalentAirspeed(unittest.TestCase):
-    def test_thin_air_asks_for_more_true_airspeed(self):
-        cfg = replace(Config(), HAC_SPEED_EAS=True)
-        env = FakeEnv(cfg)
-        self.assertAlmostEqual(guidance.eas_scale(env, cfg, 0.0), 1.0)
-        high = guidance.eas_scale(env, cfg, 9000.0)
-        self.assertGreater(high, 1.3)
-        self.assertAlmostEqual(high, math.sqrt(env.density(0.0)
-                                               / env.density(9000.0)))
-
-    def test_off_is_one(self):
-        env = FakeEnv(Config())
-        self.assertEqual(guidance.eas_scale(env, Config(), 9000.0), 1.0)
 
 
 class TestTheEntryAndConeFlagsOf20260924(unittest.TestCase):
