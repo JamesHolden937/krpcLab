@@ -263,11 +263,8 @@ class Runway:
         which it has no model of -- and ``boosterland`` failure 5 is what
         happens when a predicted manoeuvre and the flown one disagree.
         """
-        # ``gate_stretch``: the cone's rollout moved further out along the
-        # extended centreline (``Config.HAC_GATE_STRETCH``); 0 elsewhere.
         along = self.horizontal(end, end["along"])
-        back = vec.scale(along, -(self.gate_dist()
-                                  + end.get("gate_stretch", 0.0)))
+        back = vec.scale(along, -self.gate_dist())
         out = vec.add(end["threshold"], back)
         return vec.scale(vec.unit(out), end["radius"] + self.cfg.GATE_ALT_M)
 

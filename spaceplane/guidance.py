@@ -1411,41 +1411,6 @@ def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,
     """
     ends = (list(runway.ends.values()) if cfg.RUNWAY_BOTH_ENDS
             else [runway.ends["09"]])
-    # ``HAC_CHOOSE_BY_ENERGY``: **the end and hand whose path the height
-    # fits, not the cheapest.**  An arrival lined up with a threshold is
-    # costed the run to the gate at any radius -- there is no turn for a
-    # wider circle to lengthen -- so between that and a whole lap (12+ km
-    # of path on the shuttle) the cone has nothing to spend a surplus with:
-    # the cone saves rolled out 1.6-5 km high on every flight, sd < 150 m
-    # (sav-spend-1006), and landed 3-13 km long.  The other end costs a
-    # half turn that the radius scales continuously.  So: of the options
-    # with a radius whose path fits the budget, the one that leaves the
-    # least unspent; if none fits, the cheapest, as before.
-    if (getattr(cfg, "HAC_CHOOSE_BY_ENERGY", False) and mass is not None
-            and height is not None):
-        speed = vec.norm(v)
-        available = hac_available(env, cfg, speed, height, mass, gravity)
-        stall = airframe.stall(env, cfg)
-        if available is not None and speed > 1.0 and stall is not None:
-            load = airframe.turn_load(env, cfg, speed, height, mass,
-                                      gravity)
-            reference = cone_speed(env, cfg, stall, height)
-            scored = None
-            for end in ends:
-                for side in (1.0, -1.0):
-                    # The plan the cone itself would fly on this option,
-                    # laps included, so the two cannot disagree.
-                    total = hac_radius(env, cfg, end, r, side, available,
-                                       speed, gravity, load,
-                                       lap_speed=reference)[4]
-                    left = available - total
-                    # Over budget is the worse side (see ``hac_radius``'s
-                    # scan): a short cone cuts to the gate low.
-                    score = left if left >= 0.0 else -2.0 * left
-                    if scored is None or score < scored[0]:
-                        scored = (score, end, side)
-            if scored is not None:
-                return scored[1], scored[2]
     best = None
     for end in ends:
         for side in (1.0, -1.0):
@@ -1521,16 +1486,8 @@ def gate_dist(env, cfg):
 
 
 def gate_alt(env, cfg, end, height=None, mass=None, gravity=9.81):
-    """The cone's rollout height: ``GATE_ALT_M``, raised by the approach's
-    own glide over ``end``'s ``gate_stretch`` (``HAC_GATE_STRETCH``) -- a
-    gate moved out along the centreline is a point on the same final, so
-    the approach needs exactly that much more height to fly it."""
-    stretch = end.get("gate_stretch", 0.0) if end else 0.0
-    if stretch <= 0.0:
-        return cfg.GATE_ALT_M
-    ratio = airframe.approach_ld(env, cfg, cfg.GATE_ALT_M if height is None
-                                 else height, mass, gravity)
-    return cfg.GATE_ALT_M + stretch / max(0.1, ratio)
+    """The cone's rollout height: ``GATE_ALT_M``."""
+    return cfg.GATE_ALT_M
 
 
 def hac_turn(cfg, angle, exit_angle, side):
@@ -1605,19 +1562,6 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
     # ``laps``, priced as a lap.  Past the gate the wrap stands: that is a
     # lap being flown.
     #
-    # ``HAC_WRAP_BEFORE_GATE`` is the same rule without the tolerance: before
-    # the gate, *any* tangent point past the rollout costs the run to the
-    # gate.  "Past" is the wrap itself -- the arc from the tangent point to
-    # the rollout, taken the way the turn goes, is longer than half a
-    # circle -- so no angle is chosen.  Before the gate a vehicle is
-    # approaching the rollout, not flying away from it, and the lap the
-    # wrap prices (50-55 km on an 8 km circle, against a few to the gate)
-    # is one nobody would fly; a lap that is really wanted is the scan's
-    # ``laps``.  Past the gate the wrap stands.
-    if (getattr(cfg, "HAC_WRAP_BEFORE_GATE", False)
-            and distance * math.cos(angle) < 0.0
-            and (side * (exit_angle - tangent)) % (2.0 * math.pi) > math.pi):
-        return to_gate, 0.0, tangent
     past_deg = float(getattr(cfg, "HAC_PAST_BEFORE_GATE_DEG", 0.0))
     if (past_deg > 0.0
             and turn > 2.0 * math.pi - math.radians(past_deg)
@@ -1814,32 +1758,6 @@ def weave_efficiency(theta_deg, reversal_s, hold_s):
     return (hold_s * math.cos(t) + reversal_s * sweep) / total
 
 
-def weave_angle(cfg, ratio, speed, gravity=9.81, roll_rate=None,
-                time_left=None):
-    """``HAC_WEAVE_HELD``: ``(theta_deg, half_period_s)`` whose swing flies
-    ``1/ratio`` times the progress.
-
-    The smallest angle whose *effective* ratio reaches ``ratio`` (the
-    largest allowed if none does).  ``time_left`` (s of path to the gate)
-    shrinks the hold, and then the angle, so the last swing fits.
-    """
-    hold = cfg.HAC_WEAVE_HOLD_S
-    top = cfg.HAC_WEAVE_MAX_DEG
-    best = (0.0, max(1.0, hold))
-    for i in range(1, int(top) + 1):
-        theta = float(i)
-        rev = weave_reversal_s(cfg, theta, speed, gravity, roll_rate)
-        h = hold
-        if time_left is not None:
-            if rev > time_left:
-                break
-            h = min(hold, time_left - rev)
-        best = (theta, rev + h)
-        if weave_efficiency(theta, rev, h) <= ratio:
-            break
-    return best
-
-
 def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
     """Path per metre of height at ``height``, flying ``speed``, with
     ``share`` of the path on the arc of ``radius`` (at the bank that holds
@@ -2004,10 +1922,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # measured about this airframe, and it is what a heading alignment cone
     # manages on the vehicle the idea was borrowed from.
     stall = airframe.stall(env, cfg)
-    # ``HAC_GATE_STRETCH``: the rollout moved out along the centreline, and
-    # the height the approach needs there (``gate_alt``).
     floor_alt = gate_alt(env, cfg, end, height, mass, gravity)
-    stretch = end.get("gate_stretch", 0.0)
     # The cone's own glide ratio, derived at the bank it holds and the speed
     # it is flown at rather than transcribed -- see ``airframe.turning_ld``.
     cone_ld = airframe.cone_ld(env, cfg, speed, height, mass, gravity)
@@ -2140,32 +2055,14 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # same progress, which is exactly the shape of the shortfall.
     surplus = max(0.0, available - total)
     weave_deg = 0.0
-    weave_half_s = cfg.HAC_WEAVE_PERIOD_S
-    held = getattr(cfg, "HAC_WEAVE_HELD", False)
     # A serpentine spends its surplus over whole cycles; one begun with less
     # than a cycle of path left is a lateral excursion into the gate.  See
-    # ``Config.HAC_WEAVE_WHOLE_CYCLE``.  Held, ``weave_angle`` fits the
-    # last swing to the path instead.
-    cycle_ok = held or total >= speed * cfg.HAC_WEAVE_PERIOD_S
-    # ``HAC_WEAVE_STRAIGHT_ONLY``: **on the circle the radius is the
-    # spending device, not the weave.**  Rotated 25-50 deg on the circle,
-    # the target takes the bank through wings level against the turn's own
-    # standing bank; the vehicle leaves the circle, the gate opens to 2-6 km
-    # and the cone dives back at the bank limit and hands over "out of
-    # height" -- 7 of 12 such exits in rot-lapstack-1006 wove on the circle,
-    # 1 of 12 that rolled out did (LOG7371, 7395, 7398).
-    if (getattr(cfg, "HAC_WEAVE_STRAIGHT_ONLY", False)
-            and lead <= cfg.HAC_JOIN_M):
-        cycle_ok = False
+    # ``Config.HAC_WEAVE_WHOLE_CYCLE``.
+    cycle_ok = total >= speed * cfg.HAC_WEAVE_PERIOD_S
     if cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M and (total > 1.0):
         ratio = vec.clamp(total / max(1.0, available), 0.0, 1.0)
-        if held:
-            weave_deg, weave_half_s = weave_angle(
-                cfg, ratio, speed, gravity, roll_rate,
-                time_left=total / max(1.0, speed))
-        else:
-            weave_deg = min(cfg.HAC_WEAVE_MAX_DEG,
-                            math.degrees(math.acos(ratio)))
+        weave_deg = min(cfg.HAC_WEAVE_MAX_DEG,
+                        math.degrees(math.acos(ratio)))
         phi = math.radians(weave_deg) * (1.0 if weave >= 0.0 else -1.0)
         wx, wy = (wx * math.cos(phi) - wy * math.sin(phi),
                   wx * math.sin(phi) + wy * math.cos(phi))
@@ -2247,7 +2144,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # The gate is at ``(0, -side * radius)`` in this circle's frame, so the
     # range to it is one hypotenuse and it is not ambiguous about anything.
     gate_range = math.hypot(distance * ux, side * radius + distance * uy)
-    approach_needed = ((gate_range + gate_dist(env, cfg) + stretch
+    approach_needed = ((gate_range + gate_dist(env, cfg)
                         + airframe.touchdown_aim(env, cfg))
                        / max(0.1, airframe.approach_ld(env, cfg, height,
                                                        mass, gravity)))
@@ -2256,7 +2153,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.path = total
     command.short = short
     command.weave_deg = weave_deg
-    command.weave_half_s = weave_half_s
     command.alpha_target_speed = target
     command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt))
                        if rungs is not None and len(rungs) >= 2 else cone_ld)
@@ -2265,7 +2161,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.lead = lead
     command.gate_range = gate_range
     command.approach_needed = approach_needed
-    command.stretch = stretch
     command.gate_alt = floor_alt
     # **On the circle means at the tangent point, not near the radius.**
     # Being 314 m outside a 16 km circle puts the tangent point *ten

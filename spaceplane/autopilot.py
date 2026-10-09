@@ -448,7 +448,6 @@ class Autopilot:
         self.hac_side = None
         self.hac_command = None
         self.hac_radius = None
-        self.hac_stretch = 0.0
         self._last_hac_ut = None
         self.deorbit_dv = None
         self.deorbit_aim_m = None
@@ -648,32 +647,9 @@ class Autopilot:
     def hac_weave_sign(self, ut):
         """Which way the cone's weave leans this tick.
 
-        Off ``HAC_WEAVE_HELD`` it is the phase clock (``weave_sign``).  Held,
-        a swing lasts the half-period the last command solved for -- the
-        reversal the airframe needs plus the hold -- and the clock restarts
-        whenever the weave was off, so the first swing is half a reversal
-        plus the hold.
+        The phase clock (``weave_sign``).
         """
-        if not getattr(self.cfg, "HAC_WEAVE_HELD", False):
-            return guidance.weave_sign(self.cfg,
-                                       ut - (self.state_since or ut))
-        last = getattr(self, "hac_command", None)
-        if self.state != "HAC" or last is None \
-                or getattr(last, "weave_deg", 0.0) <= 0.0:
-            self._weave_dir = 1.0
-            self._weave_flip_ut = ut
-            self._weave_first = True
-            return self._weave_dir
-        half = getattr(last, "weave_half_s", self.cfg.HAC_WEAVE_PERIOD_S)
-        if getattr(self, "_weave_first", False):
-            half -= 0.5 * guidance.weave_reversal_s(
-                self.cfg, last.weave_deg, last.speed,
-                self.surface_gravity, self.roll_rate.limit())
-        if ut - getattr(self, "_weave_flip_ut", ut) >= half:
-            self._weave_dir = -getattr(self, "_weave_dir", 1.0)
-            self._weave_flip_ut = ut
-            self._weave_first = False
-        return getattr(self, "_weave_dir", 1.0)
+        return guidance.weave_sign(self.cfg, ut - (self.state_since or ut))
 
     def log_roll_rate(self, ut):
         """What the vehicle was measured to roll at, as a phase ends."""
@@ -4097,14 +4073,6 @@ class Autopilot:
             return self.cfg.HAC_EXIT_SURPLUS_M
         speed = vec.norm(snap.velocity)
         height = vec.norm(snap.position) - self.env.equatorial_radius
-        at_target = getattr(self.cfg, "HAC_EXIT_LAP_AT_TARGET", False)
-        if at_target:
-            # ``HAC_EXIT_LAP_AT_TARGET``: the lap the plan prices -- at the
-            # cone's target speed, not the speed the gate is reached at.
-            stall = airframe.stall(self.env, self.cfg)
-            if stall is not None:
-                speed = min(speed, guidance.cone_speed(self.env, self.cfg,
-                                                       stall, height))
         radius = max(self.cfg.HAC_RADIUS_MIN_M,
                      guidance.hac_hold_radius(self.cfg, speed,
                                               self.surface_gravity))
@@ -4114,10 +4082,6 @@ class Autopilot:
         # ``HAC_EXIT_LAP_FRACTION``: past this share of a lap, the lap is
         # the nearer answer.
         lap *= float(getattr(self.cfg, "HAC_EXIT_LAP_FRACTION", 1.0))
-        if at_target:
-            # Lap once the surplus passes a lap less what the approach can
-            # spend: the lap then leaves the approach no more than that.
-            lap -= self.cfg.HAC_EXIT_SURPLUS_M
         return max(self.cfg.HAC_EXIT_SURPLUS_M, lap)
 
     def hac_flap_brake(self, snap, command, height):
@@ -4138,32 +4102,14 @@ class Autopilot:
         if needed is None:
             return
         sink = max(0.0, -vec.dot(snap.velocity, vec.unit(snap.position)))
-        # ``HAC_FLAP_ARREST_EXCESS``: only the sink *over the cone's own
-        # glide* needs arresting -- the rest is the descent the profile
-        # already flies.  Charged whole, 117-179 m/s at 200 m/s read as
-        # 1.4-3.2 km of arrest and stowed every deployment within 3-7 s
-        # (LOG4052, 4065, 4067).
         nominal = 0.0
-        if getattr(self.cfg, "HAC_FLAP_ARREST_EXCESS", False):
-            speed = vec.norm(snap.velocity)
-            ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
-                                     snap.mass, self.surface_gravity)
-            nominal = speed / math.sqrt(1.0 + max(0.1, ratio) ** 2)
         arrest = (max(0.0, sink * sink - nominal * nominal)
                   / (2.0 * max(0.1, self.cfg.HAC_FLAP_ARREST_G)
                      * self.surface_gravity))
         surplus = height - needed
         saturated = (getattr(command, "weave_deg", 0.0)
                      >= self.cfg.HAC_WEAVE_MAX_DEG - 0.5)
-        # ``HAC_FLAP_BRAKE_ON_SURPLUS``: the weave need not be pinned.  It
-        # sat at ~44 of 50 deg on every shuttle cone of LOG3846-3875 while
-        # 1-2 km of surplus reached the rollout, so the brake never came out
-        # and the approach was handed what it cannot spend.
-        if getattr(self.cfg, "HAC_FLAP_BRAKE_ON_SURPLUS", False):
-            saturated = True
-        if (self.roll_needs_the_flaps(snap)
-                and not getattr(self.cfg, "HAC_FLAP_BRAKE_IGNORES_ROLL",
-                                False)):
+        if self.roll_needs_the_flaps(snap):
             if self.flap_brake_out and self.set_flap_brake(False):
                 self.logbook.event(snap.ut, "cone flap brake in: rolling "
                                    "(bank %+.1f flown, %+.1f commanded, slip "
@@ -4729,11 +4675,8 @@ class Autopilot:
         dt = max(0.05, snap.ut - (self._last_hac_ut or snap.ut))
         self._last_hac_ut = snap.ut
 
-        def plan(stretch, cfg=None):
-            end = self.end
-            if stretch > 0.0:
-                end = dict(self.end, gate_stretch=stretch)
-            return guidance.hac(self.env, cfg or self.cfg, end, snap.position,
+        def plan():
+            return guidance.hac(self.env, self.cfg, self.end, snap.position,
                                 snap.velocity, snap.mass,
                                 self.surface_gravity, height,
                                 self.hac_side,
@@ -4745,13 +4688,7 @@ class Autopilot:
                                 ld_scale=getattr(self, "hac_ld_scale",
                                                  None))
 
-        command = plan(self.hac_stretch)
-        if command is not None and getattr(self.cfg, "HAC_PAST_KEEPS_LINEUP",
-                                           False):
-            command = self.hac_keep_lineup(snap, command, plan)
-        if command is not None and getattr(self.cfg, "HAC_GATE_STRETCH",
-                                           False):
-            command = self.hac_gate_stretch(snap, command, height, dt, plan)
+        command = plan()
         if command is None:
             # **No answer, not a zero.**  Degenerate geometry here means over
             # the centre of the circle or stopped; holding the last command
@@ -4770,11 +4707,6 @@ class Autopilot:
         self.log_hac_ladder(snap, height)
         if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
             self.hac_split_brake(snap, command, height, dt)
-        spiral = self.hac_spiral(snap, command, height)
-        if spiral is not None:
-            self.steer = Steer(alpha=spiral[0], bank=spiral[1])
-            self.aim(spiral[0], spiral[1], snap)
-            return
         alpha = min(command.alpha, self.alpha_ceiling)
         self.steer = Steer(alpha=alpha, bank=command.bank)
         self.aim(alpha, command.bank, snap)
@@ -5002,218 +4934,6 @@ class Autopilot:
                                        speed, held, sink, cap_sink,
                                        float(getattr(command, "excess", 0.0)
                                              or 0.0)))
-
-    def hac_keep_lineup(self, snap, command, plan):
-        """``HAC_PAST_KEEPS_LINEUP``: a lined-up vehicle that a weave swing
-        carries a little past the rollout is still lined up, unless the lap
-        that wrap implies is one it can fly.
-
-        The wrap is deliberate (``HAC_EXIT_PAST_DEG``'s comment): a vehicle
-        past the rollout and too high owes its lap.  But a lap it cannot
-        afford is not a plan.  Flown with the polar priced right, the cone
-        lined up on its widest circle 15 km out with surplus, wove at 50
-        deg to spend it, swung 12 deg past the rollout, read turn 348 and a
-        106 km path, went ``short``, dropped the weave -- its only spender
-        there -- and flew straight in 2.3 km high (LOG8655, 8665).  So:
-        when the plan is short only because of a wrap inside
-        ``HAC_EXIT_PAST_DEG`` and the last tick was lined up, plan it lined
-        up (the past band as the overshoot tolerance) and keep that plan if
-        it is not short."""
-        past = float(getattr(self.cfg, "HAC_EXIT_PAST_DEG", 0.0))
-        wrapped = command.turn_deg > 360.0 - past
-        if (command.short and wrapped
-                and getattr(self, "_hac_lined_up", False)):
-            relaxed = getattr(self, "_cfg_past", None)
-            if relaxed is None:
-                import dataclasses
-                relaxed = self._cfg_past = dataclasses.replace(
-                    self.cfg, HAC_OVERSHOOT_DEG=max(
-                        past, float(getattr(self.cfg, "HAC_OVERSHOOT_DEG",
-                                            0.0))))
-            lined = plan(self.hac_stretch, cfg=relaxed)
-            if lined is not None and not lined.short:
-                if not getattr(self, "_hac_kept_logged", False):
-                    self._hac_kept_logged = True
-                    self.logbook.event(
-                        snap.ut, "cone: %.0f deg past the rollout and a lap "
-                        "owed it cannot fly (path %.0f) -- kept lined up "
-                        "(path %.0f, need %.0f)" % (
-                            360.0 - command.turn_deg, command.path,
-                            lined.path, lined.needed_height))
-                command = lined
-        self._hac_lined_up = (command.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
-                              or command.turn_deg > 360.0 - past
-                              and not command.short)
-        return command
-
-    def hac_gate_stretch(self, snap, command, height, dt, plan):
-        """``HAC_GATE_STRETCH``: move the rollout out along the centreline
-        while the plan has height it cannot spend; back in when short.
-
-        The signal is the plan's own surplus, ``height - needed_height``
-        with no lap owed -- the quantity that was being handed over (LOG8401
-        read +1.7 km of it at the gate and rolled out +1.9).  One step of
-        ``HAC_RADIUS_RATE_M_S * dt`` per tick, re-planned at the candidate
-        and taken only if that plan still owes no lap, is not short, and
-        has not wrapped the turn: a gate moved behind a vehicle already
-        lined up reads ~360 deg to go, which is a lap, not a longer final.
-        Returns the command to fly.
-        """
-        step = self.cfg.HAC_RADIUS_RATE_M_S * dt
-        surplus = height - command.needed_height
-        old = self.hac_stretch
-        candidate = None
-        if command.laps == 0 and surplus > 0.0:
-            top = float(self.cfg.HAC_GATE_STRETCH_MAX_M)
-            if old < top:
-                candidate = min(top, old + step)
-        elif command.needed_height > height and old > 0.0:
-            candidate = max(0.0, old - step)
-        if candidate is None:
-            return command
-        trial = plan(candidate)
-        if trial is None:
-            return command
-        # **A step must spend, not reprice.**  Lined up outside the gate,
-        # moving the gate toward the vehicle swaps straight path priced at
-        # the cone's ratio (~2.3) for the same path at the approach's (4.2):
-        # the plan's surplus grows and nothing is spent (kspSim LOG8459,
-        # 8463, 8465 grew 2.5-2.9 km at turn 0 and rolled out +1.2-1.8 km
-        # over need, against +0.2-0.65 without).  Out, the plan's need must
-        # rise; in, it must fall.
-        if candidate > old:
-            jump = abs(trial.turn_deg - command.turn_deg)
-            if (trial.laps != 0 or trial.needed_height > height
-                    or trial.needed_height <= command.needed_height
-                    or jump > 90.0):
-                return command
-        elif trial.needed_height >= command.needed_height:
-            return command
-        self.hac_stretch = candidate
-        if (old == 0.0) != (candidate == 0.0) or int(old / 1000.0) != \
-                int(candidate / 1000.0):
-            self.logbook.event(
-                snap.ut, "cone gate stretch %.0f -> %.0f m (surplus %+.0f, "
-                "turn %.0f, gate alt %.0f)"
-                % (old, candidate, surplus, trial.turn_deg,
-                   getattr(trial, "gate_alt", self.cfg.GATE_ALT_M)))
-        return trial
-
-    def hac_spiral(self, snap, command, height):
-        """``HAC_SPIRAL_DUMP``: tight descending 360s over the gate.
-
-        Returns ``(alpha, bank)`` while spiralling, else ``None``.
-
-        The cone hands the approach anything short of a whole lap
-        (``hac_exit_surplus``: ``2 pi R / cone_ld``, ~8 km of height at its
-        2 km minimum radius), and the approach can spend ~0.8 km of it.  The
-        cone saves flown with ``CANARD_TRIM`` rolled out lined up 4-4.6 km
-        over need and landed 3-14 km long (sav-sharp-1007).  A tight spiral
-        is the quantum in between: at ``HAC_SPIRAL_BANK_DEG`` 60 and ~90 m/s
-        the radius is ~480 m, and the turn's load is drag -- the user's
-        split-S/sharp-turn idea, 2026-10-07, flown where it returns the
-        vehicle to the same point on the same heading.
-
-        Started lined up at the gate with no lap owed and surplus over
-        ``HAC_EXIT_SURPLUS_M`` plus one lap's estimated cost; the cost of
-        each lap is then *measured* (height lost per 360 deg of track), and
-        at each pass through the runway heading another lap is flown only if
-        it still leaves the approach its allowance.  Alpha holds the cone's
-        speed at the turn's load, so the descent is whatever that speed
-        costs.
-        """
-        if not getattr(self.cfg, "HAC_SPIRAL_DUMP", False):
-            return None
-        needed = getattr(command, "approach_needed", command.needed_height)
-        surplus = height - needed
-        allowance = float(self.cfg.HAC_EXIT_SURPLUS_M)
-        speed = vec.norm(snap.velocity)
-        up = vec.unit(snap.position)
-        track = vec.project_out(snap.velocity, up)
-        if vec.norm(track) < 1.0:
-            return None
-        track = vec.unit(track)
-        g = self.surface_gravity
-        stall = airframe.stall(self.env, self.cfg)
-        v_ref = guidance.cone_speed(self.env, self.cfg, stall, height)
-        cap = min(self.alpha_ceiling,
-                  float(self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG))
-        # **The bank the alpha cap can hold**, with a tenth in hand.  At 60
-        # deg the turn needs 2 g, ~16 deg at cone speed; capped at 14 the
-        # load fell short, the nose dropped and the spiral became a dive --
-        # 128 m/s, stopped mid-lap, flare at 138 m/s (LOG8432).
-        cla, _ = self.env.coefficients(cap, v_ref, height)
-        q_ref = 0.5 * self.env.density(height) * v_ref * v_ref
-        load = 0.9 * q_ref * cla / max(1.0, snap.mass * g)
-        if load <= 1.05:
-            return None
-        bank_deg = min(float(self.cfg.HAC_SPIRAL_BANK_DEG),
-                       math.degrees(math.acos(1.0 / load)))
-        state = getattr(self, "_spiral", None)
-        aligned = (command.turn_deg <= self.cfg.HAC_EXIT_TURN_DEG
-                   or command.turn_deg >= 360.0 - float(
-                       getattr(self.cfg, "HAC_EXIT_PAST_DEG", 0.0)))
-        if state is None:
-            if getattr(self, "_spiral_done", False):
-                return None
-            radius = speed * speed / (g * math.tan(math.radians(bank_deg)))
-            ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
-                                     snap.mass, g) or 1.5
-            estimate = 2.0 * math.pi * radius / max(0.5, ratio)
-            if not (aligned and command.laps == 0
-                    and command.gate_range <= self.cfg.HAC_ROLLOUT_M
-                    and surplus > allowance + estimate):
-                return None
-            state = self._spiral = {"track": track, "turned": 0.0,
-                                    "lap_h": height, "cost": estimate,
-                                    "laps": 0, "h0": height}
-            self.logbook.event(snap.ut, "spiral dump: start h=%.0f surplus "
-                               "%.0f, lap estimated %.0f m (r %.0f m, bank "
-                               "%.0f, v_ref %.0f)" % (height, surplus,
-                                                     estimate, radius,
-                                                     bank_deg, v_ref))
-        # Track turned since the last tick, signed about the vertical.
-        step = math.degrees(math.atan2(
-            vec.dot(vec.cross(state["track"], track), up),
-            vec.dot(state["track"], track)))
-        state["track"] = track
-        state["turned"] += abs(step)
-        if state["turned"] >= 360.0 * (state["laps"] + 1) - 30.0 and aligned:
-            state["laps"] += 1
-            state["cost"] = max(1.0, state["lap_h"] - height)
-            state["lap_h"] = height
-            again = surplus - state["cost"] >= allowance
-            self.logbook.event(snap.ut, "spiral dump: lap %d cost %.0f m, "
-                               "surplus %.0f -> %s" % (
-                                   state["laps"], state["cost"], surplus,
-                                   "another" if again else "done"))
-            if not again:
-                self._spiral, self._spiral_done = None, True
-                return None
-        # Stop while the rest of the turn back to the runway heading can
-        # still be paid for, or on an overspeed (a spiral turning into a
-        # dive), or a stall.
-        left = max(0.0, 360.0 * (state["laps"] + 1) - state["turned"])
-        rest = state["cost"] * left / 360.0
-        if (surplus - rest < allowance * 0.5
-                or speed > 1.25 * v_ref
-                or (stall and speed < 1.5 * stall)):
-            self.logbook.event(snap.ut, "spiral dump: stop mid-lap, surplus "
-                               "%.0f (rest of lap ~%.0f), %.1f m/s"
-                               % (surplus, rest, speed))
-            self._spiral, self._spiral_done = None, True
-            return None
-        load = 1.0 / math.cos(math.radians(bank_deg))
-        alpha = trajectory.alpha_for_load(self.env, v_ref, height, snap.mass,
-                                          g, load)
-        if alpha is None:
-            alpha = float(self.cfg.HAC_SPIRAL_ALPHA_MAX_DEG)
-        alpha += self.cfg.APPROACH_SPEED_KP * (speed - v_ref)
-        alpha = vec.clamp(alpha, 0.0, cap)
-        side = getattr(self, "_spiral_side", None)
-        if side is None:
-            side = self._spiral_side = 1.0 if command.bank >= 0.0 else -1.0
-        return (alpha, side * bank_deg)
 
     def log_hac_ladder(self, snap, height):
         """``HAC_LD_AT_TARGET``, every 60 s of the cone: what each rung of the ladder was
@@ -6896,14 +6616,8 @@ def compact_line(state, snap, run):
             bits.append("ldk=%.2f pld=%.2f"
                         % (getattr(run, "hac_ld_scale", None) or 0.0,
                            getattr(c, "plan_ld", 0.0)))
-        if getattr(run.cfg, "HAC_GATE_STRETCH", False):
-            bits.append("str=%5.0f" % getattr(c, "stretch", 0.0))
         if getattr(run.cfg, "HAC_SPLIT_BRAKE", False):
             bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
-        if getattr(run.cfg, "HAC_WEAVE_HELD", False):
-            bits.append("wh=%4.1f wd=%+.0f"
-                        % (getattr(c, "weave_half_s", 0.0),
-                           getattr(run, "_weave_dir", 0.0)))
     if state == APPROACH and getattr(run, "command", None) is not None:
         c = run.command
         bits.append("sink=%5.1f/%5.1f" % (c.sink, c.wanted_sink))

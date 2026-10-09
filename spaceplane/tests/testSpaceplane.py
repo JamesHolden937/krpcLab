@@ -5292,11 +5292,10 @@ class TestTheExponentialFlare(unittest.TestCase):
 
 
 class HeldWeave(unittest.TestCase):
-    """``HAC_WEAVE_HELD``: the angle is solved for the swing actually flown."""
+    """The weave's effective path ratio and reversal time."""
 
     def cfg(self, **kw):
-        return replace(Config(), HAC_WEAVE_HELD=True, HAC_WEAVE_MAX_DEG=75.0,
-                       **kw)
+        return replace(Config(), HAC_WEAVE_MAX_DEG=75.0, **kw)
 
     def test_efficiency_is_cos_when_held_forever(self):
         self.assertAlmostEqual(guidance.weave_efficiency(60.0, 0.0, 10.0),
@@ -5306,20 +5305,6 @@ class HeldWeave(unittest.TestCase):
         t = math.radians(50.0)
         self.assertAlmostEqual(guidance.weave_efficiency(50.0, 30.0, 0.0),
                                math.sin(t) / t, places=6)
-
-    def test_angle_exceeds_the_naive_acos(self):
-        # A held swing is less efficient than ``1/cos``: more angle needed.
-        theta, half = guidance.weave_angle(self.cfg(), 0.8, 125.0, 9.81, 8.0)
-        self.assertGreater(theta, math.degrees(math.acos(0.8)))
-        rev = guidance.weave_reversal_s(self.cfg(), theta, 125.0, 9.81, 8.0)
-        self.assertAlmostEqual(half, rev + self.cfg().HAC_WEAVE_HOLD_S)
-
-    def test_last_swing_fits_the_time_left(self):
-        cfg = self.cfg()
-        theta, half = guidance.weave_angle(cfg, 0.5, 125.0, 9.81, 8.0,
-                                           time_left=30.0)
-        self.assertLessEqual(half, 30.0 + 1e-9)
-        self.assertLess(theta, cfg.HAC_WEAVE_MAX_DEG)
 
     def test_steeper_weave_bank_reverses_faster(self):
         slow = guidance.weave_reversal_s(self.cfg(), 50.0, 125.0, 9.81, 8.0)
@@ -5380,143 +5365,6 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
         run = self.run_(True, autopilot_module.APPROACH)
         self.assertAlmostEqual(run.valve_error(self.snap(35.0)), 5.0, places=3)
 
-
-
-class TestHacWeaveStraightOnly(unittest.TestCase):
-    """``HAC_WEAVE_STRAIGHT_ONLY``: no weave on the circle, where it fights
-    the turn's standing bank (rot-lapstack-1006, LOG7371)."""
-
-    def command(self, on):
-        cfg = replace(Config(), HAC_WEAVE_STRAIGHT_ONLY=on)
-        env = FakeEnv(cfg)
-        end = env.runway.ends["09"]
-        side, radius, height = 1.0, 2000.0, 6000.0
-        gate, _, across, _ = guidance.hac_frame(env, cfg, end)
-        centre = vec.add(gate, vec.scale(across, side * radius))
-        # Half a turn to go, on the circle, with the radius held so the
-        # height it cannot spend is surplus.
-        p = vec.add(centre, vec.scale(across, side * radius))
-        up = vec.unit(p)
-        r = vec.scale(up, vec.norm(gate) + height)
-        tangent = vec.unit(vec.cross(up, vec.unit(vec.sub(p, centre))))
-        return guidance.hac(env, cfg, end, r, vec.scale(tangent, 110.0),
-                            MASS, GRAVITY, height, side,
-                            previous=radius, max_step=1.0)
-
-    def test_the_circle_weaves_without_the_flag(self):
-        command = self.command(False)
-        self.assertTrue(command.on_circle)
-        self.assertGreater(command.surplus, Config().HAC_WEAVE_DEADBAND_M)
-        self.assertGreater(command.weave_deg, 10.0)
-
-    def test_the_circle_holds_its_bank_with_the_flag(self):
-        on, off = self.command(True), self.command(False)
-        self.assertEqual(on.weave_deg, 0.0)
-        self.assertLess(abs(on.bank), abs(off.bank))
-        self.assertGreater(on.bank * off.bank, 0.0, "the turn changed hand")
-
-
-class TestHacGateStretch(unittest.TestCase):
-    """``HAC_GATE_STRETCH``: the rollout moves out along the centreline and
-    the gate rises by the approach's glide over the move."""
-
-    def setUp(self):
-        self.cfg = Config()
-        self.env = FakeEnv(self.cfg)
-        self.end = self.env.runway.ends["09"]
-
-    def plan(self, stretch, height=6000.0):
-        cfg, env = self.cfg, self.env
-        end = dict(self.end, gate_stretch=stretch) if stretch else self.end
-        side, radius = 1.0, 2000.0
-        gate, _, across, _ = guidance.hac_frame(env, cfg, self.end)
-        centre = vec.add(gate, vec.scale(across, side * radius))
-        p = vec.add(centre, vec.scale(across, side * radius))
-        up = vec.unit(p)
-        r = vec.scale(up, vec.norm(gate) + height)
-        tangent = vec.unit(vec.cross(up, vec.unit(vec.sub(p, centre))))
-        return guidance.hac(env, cfg, end, r, vec.scale(tangent, 110.0),
-                            MASS, GRAVITY, height, side,
-                            previous=radius, max_step=1.0)
-
-    def test_the_gate_moves_out_along_the_centreline(self):
-        a = self.env.runway.low_gate(self.end)
-        b = self.env.runway.low_gate(dict(self.end, gate_stretch=3000.0))
-        self.assertAlmostEqual(vec.norm(vec.sub(a, b)), 3000.0, delta=15.0)
-        # Further from the threshold, not nearer.
-        t = self.end["threshold"]
-        self.assertGreater(vec.norm(vec.sub(b, t)), vec.norm(vec.sub(a, t)))
-
-    def test_the_gate_rises_on_the_approach_glide(self):
-        end = dict(self.end, gate_stretch=4200.0)
-        self.assertAlmostEqual(
-            guidance.gate_alt(self.env, self.cfg, end),
-            self.cfg.GATE_ALT_M + 4200.0 / self.cfg.APPROACH_BEST_LD)
-        self.assertEqual(guidance.gate_alt(self.env, self.cfg, self.end),
-                         self.cfg.GATE_ALT_M)
-
-    def test_a_stretched_plan_needs_more_height(self):
-        off, on = self.plan(0.0), self.plan(3000.0)
-        self.assertEqual(off.stretch, 0.0)
-        self.assertEqual(on.stretch, 3000.0)
-        self.assertGreater(on.path, off.path)
-        self.assertGreater(on.needed_height, off.needed_height)
-        self.assertGreater(on.approach_needed, off.approach_needed)
-
-    def controller(self, stretch=0.0):
-        logged = []
-        run = SimpleNamespace(
-            cfg=replace(self.cfg, HAC_GATE_STRETCH=True), hac_stretch=stretch,
-            logbook=SimpleNamespace(event=lambda ut, text: logged.append(text)))
-        return run, logged
-
-    def command(self, needed, turn=180.0, laps=0, stretch=0.0):
-        return SimpleNamespace(needed_height=needed, turn_deg=turn, laps=laps,
-                               stretch=stretch, gate_alt=self.cfg.GATE_ALT_M)
-
-    def test_surplus_grows_the_stretch_one_step(self):
-        run, _ = self.controller()
-        trial = self.command(3500.0, turn=175.0, stretch=200.0)
-        got = autopilot_module.Autopilot.hac_gate_stretch(
-            run, SimpleNamespace(ut=1.0), self.command(3000.0), 4000.0, 0.5,
-            lambda s: trial)
-        step = self.cfg.HAC_RADIUS_RATE_M_S * 0.5
-        self.assertEqual(run.hac_stretch, step)
-        self.assertIs(got, trial)
-
-    def test_a_move_that_wraps_the_turn_is_refused(self):
-        run, _ = self.controller()
-        first = self.command(3000.0, turn=5.0)
-        got = autopilot_module.Autopilot.hac_gate_stretch(
-            run, SimpleNamespace(ut=1.0), first, 4000.0, 0.5,
-            lambda s: self.command(3100.0, turn=355.0))
-        self.assertEqual(run.hac_stretch, 0.0)
-        self.assertIs(got, first)
-
-    def test_a_move_that_owes_a_lap_or_goes_short_is_refused(self):
-        for trial in (self.command(3100.0, laps=1),
-                      self.command(4100.0)):
-            run, _ = self.controller()
-            autopilot_module.Autopilot.hac_gate_stretch(
-                run, SimpleNamespace(ut=1.0), self.command(3000.0), 4000.0,
-                0.5, lambda s, t=trial: t)
-            self.assertEqual(run.hac_stretch, 0.0)
-
-    def test_a_move_that_only_reprices_is_refused(self):
-        run, _ = self.controller()
-        Autopilot = autopilot_module.Autopilot
-        Autopilot.hac_gate_stretch(
-            run, SimpleNamespace(ut=1.0), self.command(3000.0, turn=0.0),
-            4000.0, 0.5, lambda s: self.command(2950.0, turn=0.0))
-        self.assertEqual(run.hac_stretch, 0.0)
-
-    def test_short_shrinks_it(self):
-        run, _ = self.controller(stretch=1000.0)
-        autopilot_module.Autopilot.hac_gate_stretch(
-            run, SimpleNamespace(ut=1.0), self.command(4500.0), 4000.0, 0.5,
-            lambda s: self.command(4400.0))
-        self.assertEqual(run.hac_stretch,
-                         1000.0 - self.cfg.HAC_RADIUS_RATE_M_S * 0.5)
 
 
 class TestConeEntryEnergy(unittest.TestCase):

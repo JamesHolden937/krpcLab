@@ -342,13 +342,6 @@ class Config:
     # 0.5-1.2 km of surplus (LOG6224, 6305, 6309, 6314).  On the runway 2/12
     # vs 0/12.
     HAC_EXIT_PAST_DEG: float = 25.0
-    # **... and in the plan, when the lap that wrap implies is unaffordable**
-    # (``Autopilot.hac_keep_lineup``): a lined-up vehicle swung past the
-    # rollout by the weave read turn 348, a lap it could not fly, went
-    # ``short``, dropped the weave and flew straight in 2.3 km high
-    # (LOG8655, 8665, with ``HAC_LD_FLOWN_POLAR``).  Plan it lined up while
-    # that plan is not short.  Off.
-    HAC_PAST_KEEPS_LINEUP: bool = False
     # **The split rudder as the cone's speedbrake** (``Autopilot.
     # hac_split_brake``; the user, 2026-10-08: "we have 2 rudders, you can
     # split them").  ``HAC_SPLIT_FACTOR``: (deploy angle, L/D with / without)
@@ -410,44 +403,6 @@ class Config:
     # 0.5 is the symmetric choice, and a short lap can still cut to the
     # gate where a high rollout cannot lose height.  1.0 is the old rule.
     HAC_EXIT_LAP_FRACTION: float = 1.0
-    # **Price the exit's lap as the plan prices it.**  The exit took the
-    # hold radius at the speed the gate is reached at (~140 m/s, 2.7 km)
-    # where the plan flies laps at the cone's target speed (2.0 km): 9-14
-    # km of height against the ~6.5 a lap at the gate costs (cone save
-    # rigoff4: +4.9 km lapped to -1.6).  rot-bank-1006: 6 of the 8 rigoff
-    # losses rolled out 4-8 km high and broke at the flare.  With this on
-    # the exit allowance is that lap less ``HAC_EXIT_SURPLUS_M``.  Off.
-    HAC_EXIT_LAP_AT_TARGET: bool = False
-    # ``HAC_SPIRAL_DUMP`` (off): tight descending 360s over the gate when the
-    # cone is lined up with more surplus than the approach can spend but
-    # less than a lap (``Autopilot.hac_spiral``).  Each lap's cost is
-    # measured, not fitted.  The user's sharp-turn idea, 2026-10-07.
-    HAC_SPIRAL_DUMP: bool = False
-    HAC_SPIRAL_BANK_DEG: float = 60.0
-    HAC_SPIRAL_ALPHA_MAX_DEG: float = 14.0   # under the canard trim's 15
-    # **Spend a sub-lap surplus as final, not as a high handover**
-    # (``Autopilot.hac_gate_stretch``).  The cone's continuous spending
-    # devices are the radius and the weave; once both saturate, anything
-    # short of a lap (~5-8 km of height on the shuttle) is handed to an
-    # approach that spends ~0.5 -- the cone saves rolled out 2-4.6 km over
-    # need with laps=0 (sav-sharp-1007: LOG8401 +1.9 km, LOG8404 +4.1,
-    # LOG8416 +4.6, all landing +3..+14 km).  With this on, while the plan
-    # reads surplus the rollout point moves out along the extended
-    # centreline at ``HAC_RADIUS_RATE_M_S`` and the gate rises by the
-    # approach's own glide over the extra distance (``guidance.gate_alt``),
-    # so the surplus becomes a longer final -- a path that is continuous
-    # from zero, where a lap is quantised.  It only grows while the move
-    # does not wrap the turn (a gate moved behind a lined-up vehicle is a
-    # lap), and shrinks when the plan reads short.  Off.
-    # **Flown null (sav-stretch-1008, 12 v 12 on qs_s2_hac0-5):** engaged
-    # on 4, grew to 0.2-1.35 km, handovers unchanged (+1.2..+2.3 km over
-    # need).  The high saves enter the cone *straight in* -- on the
-    # extended centreline outside the gate, turn ~2 deg, 11 km out
-    # (LOG8477) -- where moving the gate out cannot add path, only reprice
-    # it, so the step test refuses it correctly.  The surplus there needs
-    # a turn away from the runway, i.e. a lap, or drag.
-    HAC_GATE_STRETCH: bool = False
-    HAC_GATE_STRETCH_MAX_M: float = 12000.0  # safety bound, not a fit
     # How near the gate counts as being at it.  ``GATE_CAPTURE_M`` is the
     # straight-in gate's own answer to the same question and this is
     # deliberately the same size.
@@ -460,11 +415,6 @@ class Config:
     # deg turn, the plan called itself short, stopped weaving and handed
     # over 5.4 km high.  0 is the committed behaviour.
     HAC_PAST_BEFORE_GATE_DEG: float = 0.0
-    # **The same rule with no tolerance** (``guidance.hac_path``): before the
-    # gate, any tangent point past the rollout -- the wrap itself, not an
-    # angle -- costs the run to the gate.  The constant-free form of
-    # ``HAC_PAST_BEFORE_GATE_DEG``.  Off until flown.
-    HAC_WRAP_BEFORE_GATE: bool = False
     # **Price a lap at the speed it will be flown** (``guidance.hac_radius``):
     # laps take their radius floor from the cone's target speed, not the
     # entry speed.  At 270 m/s the floor is 7.4 km and no lap ever fits, so
@@ -509,57 +459,16 @@ class Config:
     # when the table is ready.  Off.
     HAC_AIM_DERIVED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     HAC_LADDER_STEP_M: float = 500.0
-    # At cone entry, choose the runway end and hand whose path the budget
-    # fits with the least left over, not the cheapest one
-    # (``guidance.hac_choose``): an arrival lined up with a threshold has
-    # nothing between the run to the gate and a whole lap.  Off.
-    HAC_CHOOSE_BY_ENERGY: bool = False
-    # **The cone's flap brake on surplus alone** (``hac_flap_brake``).  It
-    # waited for the weave to pin at ``HAC_WEAVE_MAX_DEG``, which on the
-    # shuttle it never does (~44 deg), and so never deployed in LOG3846-3875
-    # while the cone exited 1-2 km above what the approach needed on most
-    # flights (conesum: R saturated at 16 km, flown 20 km at L/D 1.9).  With
-    # this on the brake comes out whenever the surplus over the cone's own
-    # profile, less the arrest height of the sink it builds, exceeds
-    # ``HAC_WEAVE_DEADBAND_M``.  Off until paired.
-    HAC_FLAP_BRAKE_ON_SURPLUS: bool = False
     # Arm the measured brake from this craft's last vacuum measurement
     # when engaged in the air (``Autopilot._load_brake_cache``,
     # ``logs/brakecache/``, written by every vacuum probe).  Off: an
     # air-start save has no brake.
     AIRBRAKE_CACHE: bool = False
-    # ...and **not stowed for the roll** in the cone.  ``FLAP_BRAKE_YIELDS_
-    # TO_ROLL`` was written for the hypersonic glide (LOG3680, 3690: the
-    # elevon brake out, roll authority gone, departure at Mach 5-6); in the
-    # subsonic cone the vehicle is always adjusting its bank, and under
-    # ``HAC_FLAP_BRAKE_ON_SURPLUS`` the brake came out and was stowed 0.4-0.6 s
-    # later "rolling" on every flight (LOG4035, 4037) -- it never spent
-    # anything.  Off until paired.
-    HAC_FLAP_BRAKE_IGNORES_ROLL: bool = False
     HAC_WEAVE_DEADBAND_M: float = 800.0     # surplus worth weaving for
-    # Weave only on the join leg, never on the circle (``guidance.hac``):
-    # on the circle the weave fights the turn's standing bank and walks the
-    # vehicle off it (rot-lapstack-1006: 7 of 12 "out of height" exits wove
-    # on the circle, 1 of 12 rolled-out ones).  Off until flown.
-    HAC_WEAVE_STRAIGHT_ONLY: bool = False
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.
     HAC_WEAVE_PERIOD_S: float = 24.0
-    # **A weave that is flown, not only commanded** (``guidance.weave_angle``).
-    # Over the eight cones of ``rot-ballast2-1001`` the gate-distance gained
-    # per metre flown was **0.76-0.80 whatever the weave commanded** (cos
-    # 0.55-0.81): reversing the track from +50 to -50 deg at 45 deg of bank
-    # and 125 m/s takes ~23 s of turn plus ~10 s of roll, and the clock
-    # reversed every 24 s, so the vehicle spent each swing turning and never
-    # reached the angle.  The surplus over the profile stayed at +1.3-1.8 km
-    # from cone entry to the gate.  With this on, each swing lasts the
-    # reversal the airframe needs (turn at the weave's bank, roll at the
-    # measured roll rate) plus ``HAC_WEAVE_HOLD_S`` held at the angle, and
-    # the angle is solved for the *effective* path ratio of that swing --
-    # ``(H cos t + T sin(t)/t) / (H + T)`` -- not ``1/cos``.  Near the gate
-    # the hold shrinks and the angle is limited to a swing that still fits.
-    HAC_WEAVE_HELD: bool = False
     HAC_WEAVE_HOLD_S: float = 20.0
     # The bank the weave reverses at; 0 is ``HAC_BANK_MAX_DEG``.  A
     # steeper bank reverses faster and costs lift, both of which spend.
@@ -575,10 +484,6 @@ class Config:
     HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     # The pull-up assumed when pricing the height a sink costs to arrest.
     HAC_FLAP_ARREST_G: float = 0.5
-    # Charge only the sink over the cone's own glide (``speed / sqrt(1 +
-    # cone_ld^2)``) as height to arrest.  Off, the brake stowed 3 s after
-    # every deployment on rot-ptrim-1007 (LOG7965, 7970, 7978, 7986).
-    HAC_FLAP_ARREST_EXCESS: bool = False
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
