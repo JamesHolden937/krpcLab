@@ -4052,7 +4052,8 @@ class Autopilot:
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
         self.set_rcs(False, snap)
-        self.coast_warp(snap)
+        if not self.coast_trim(snap):
+            self.coast_warp(snap)
         self.end = self.env.runway.choose(snap.position, snap.velocity)
         self.env.refresh(
             snap.ut, vec.norm(snap.velocity),
@@ -4100,6 +4101,118 @@ class Autopilot:
             self.set_warp(True, factor=self.cfg.COAST_WARP_FACTOR)
             self.log_interface_actual(snap)
             self.enter(GLIDE, snap.ut, "runway %s" % self.end["name"])
+
+    def coast_trim(self, snap):
+        """``COAST_TRIM``: once the post-burn flip has settled, put the arc
+        back on the burn's aim with RCS translation along the nose.
+
+        The measurement is the burn's own stop test
+        (``guidance.deorbit_remaining`` at ``deorbit_aim_m``), re-run from
+        the state the flip left, so a trim that owes nothing changes
+        nothing.  Translation is on the nose axis only: at the entry
+        attitude the nose is ``ENTRY_ALPHA_DEG`` above the velocity, so a
+        push along it is mostly along-track with a radial part of the same
+        sign (aft is retrograde and down -- both shorten), and the loop is
+        closed on the re-measured error, not on the direction.  The
+        acceleration and the axis's sign are learned from what each pulse
+        delivered.  Returns True while it holds the coast out of warp."""
+        cfg = self.cfg
+        if not getattr(cfg, "COAST_TRIM", False) or self.deorbit_aim_m is None:
+            return False
+        t = getattr(self, "_trim", None)
+        if t is None:
+            t = self._trim = {"done": False, "since": None, "spent": 0.0,
+                              "last": None, "sign": 1.0, "first": None,
+                              "accel": float(cfg.COAST_TRIM_ACCEL_M_S2),
+                              "n": 0, "now": None}
+        if t["done"]:
+            return False
+        if (snap.dynamic_pressure > float(cfg.COAST_TRIM_MAX_Q_PA)
+                or snap.height_above_runway <= cfg.ENTRY_INTERFACE_M):
+            return self._trim_finish(snap, "out of vacuum")
+        err = self.pointing_error(snap)
+        if err < 0.0 or err > float(cfg.COAST_TRIM_ALIGN_DEG):
+            t["since"] = None
+            t["last"] = None
+            self._trim_translate(0.0)
+            return True
+        if t["since"] is None:
+            t["since"] = snap.ut
+        if snap.ut - t["since"] < float(cfg.COAST_TRIM_SETTLE_S):
+            return True
+        progress, owed = guidance.deorbit_remaining(
+            self.env, snap.position, snap.velocity, snap.mass, cfg,
+            self.end, self.deorbit_aim_m)
+        if owed is None:
+            return self._trim_finish(snap, "no gradient (error %s)" % (
+                "-" if progress is None else "%+.0f m" % progress))
+        t["now"] = (progress, owed)
+        if t["first"] is None:
+            t["first"] = (progress, owed)
+            self.logbook.event(
+                snap.ut, "coast trim: settled %.0f s after the burn, the arc "
+                         "is %+.0f m off the burn's aim, %+.2f m/s owed"
+                % (snap.ut - (self.cutoff_state[0] if getattr(
+                    self, "cutoff_state", None) else snap.ut),
+                   progress, owed))
+        last = t["last"]
+        if last is not None:
+            dt = snap.ut - last[0]
+            push = last[2]
+            if dt > 0.0 and abs(push) > 0.05:
+                # Retrograde dv delivered since; a push along the nose
+                # (positive) should deliver ``-push * accel * dt``.
+                accel = -(last[1] - owed) / (push * dt)
+                if accel < -0.02:
+                    t["sign"] = -t["sign"]
+                    self.logbook.event(snap.ut, "coast trim: the nose axis "
+                                                "pushes the other way -- "
+                                                "flipped")
+                elif accel > 0.01:
+                    t["accel"] = 0.5 * t["accel"] + 0.5 * accel
+        if abs(owed) <= float(cfg.COAST_TRIM_DEADBAND_M_S):
+            return self._trim_finish(snap, "on aim")
+        if t["spent"] >= float(cfg.COAST_TRIM_MAX_DV_M_S):
+            return self._trim_finish(snap, "budget spent")
+        dt = (snap.ut - last[0]) if last is not None else cfg.ORBIT_TICK_S
+        dt = max(0.1, dt)
+        # Owed retrograde is a push aft.  Seven-tenths of the step, so a
+        # wrong acceleration guess undershoots rather than rings.
+        push = -math.copysign(min(1.0, 0.7 * abs(owed)
+                                  / (t["accel"] * dt)), owed)
+        t["spent"] += abs(push) * t["accel"] * dt
+        self._trim_translate(push * t["sign"])
+        t["last"] = (snap.ut, owed, push)
+        t["n"] += 1
+        return True
+
+    def _trim_translate(self, forward):
+        """Translation along the nose (-1..1), RCS forced open while it is
+        nonzero and handed back to the valve when it is not."""
+        try:
+            if forward:
+                self.control.rcs = True
+            self.control.forward = float(forward)
+            if not forward:
+                self._apply_rcs(bool(self.rcs.on))
+        except Exception:                               # noqa: BLE001
+            pass
+
+    def _trim_finish(self, snap, why):
+        t = self._trim
+        t["done"] = True
+        self._trim_translate(0.0)
+        first, now = t["first"], t["now"]
+        self.logbook.event(
+            snap.ut, "coast trim done (%s): %s -> %s, %d pulses, ~%.2f m/s, "
+                     "accel %.2f m/s^2 at full input, axis %+d"
+            % (why,
+               "-" if first is None or first[0] is None
+               else "%+.0f m %+.2f m/s" % first,
+               "-" if now is None or now[0] is None
+               else "%+.0f m %+.2f m/s" % now,
+               t["n"], t["spent"], t["accel"], int(t["sign"])))
+        return False
 
     def coast_warp(self, snap):
         """Rails-warp the vacuum part of the fall to the interface.
