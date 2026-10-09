@@ -437,9 +437,6 @@ class Autopilot:
         self.env.holdable = trajectory.Holdable(cfg)
         if getattr(cfg, "HOLDABLE_PRIOR", False):
             self._load_holdable_prior(ut)
-        self.env.flown_polar = None
-        if getattr(cfg, "HAC_LD_FLOWN_POLAR", False):
-            self._load_flown_polar(ut)
         self._below_ground_since = None
         self.prediction = None
         # Latched once, at the cone's entry: recomputing it every tick flips
@@ -512,7 +509,7 @@ class Autopilot:
         self.drain_modules = self._find_drain()
         self.airbrake = airbrake_mod.Brake(cfg)
         self.flap_brake = self._find_brake()
-        # ``HAC_SPLIT_BRAKE``: the mirrored vertical pair, kept apart from
+        # The split rudder: the mirrored vertical pair, kept apart from
         # whatever ``measure_flap_brake`` later puts in ``flap_brake``.
         self.split_pair = list(getattr(self.flap_brake, "pair", None) or ())
         self.split_angle = 0.0
@@ -2379,31 +2376,6 @@ class Autopilot:
     # tested from those saves was disconnected (sav-spend-1006).  The set is
     # a property of the craft, not the flight: key it on the surfaces and
     # reuse it.
-
-    def _load_flown_polar(self, ut):
-        """``HAC_LD_FLOWN_POLAR``: this craft's flown cone polar from
-        ``logs/conepolar/`` (``tools/conepolar.py``), and say so."""
-        try:
-            import json
-            key = trajectory.holdprior_key(self.vessel.name,
-                                           len(self.vessel.parts.all))
-            path = os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "logs", "conepolar",
-                trajectory.holdprior_slug(key) + ".json")
-            if not os.path.exists(path):
-                self.logbook.event(ut, "flown polar: none for %r (%s)"
-                                   % (key, path))
-                return
-            with open(path) as fh:
-                data = json.load(fh)
-            self.env.flown_polar = data
-            self.logbook.event(
-                ut, "flown polar: %r from %d logs below Mach %.1f: %s"
-                % (key, data.get("logs", 0), data.get("mach_max", 0.9),
-                   " ".join("%.0f:%.0f/%.2f" % (b[0], b[1], b[1] / b[2])
-                            for b in data["bins"])))
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(ut, "flown polar: not loaded (%s)" % (exc,))
 
     def _load_holdable_prior(self, ut):
         """``HOLDABLE_PRIOR``: seed ``env.holdable`` from this craft's file
@@ -4705,8 +4677,6 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         self.log_hac_ladder(snap, height)
-        if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
-            self.hac_split_brake(snap, command, height, dt)
         alpha = min(command.alpha, self.alpha_ceiling)
         self.steer = Steer(alpha=alpha, bank=command.bank)
         self.aim(alpha, command.bank, snap)
@@ -4786,79 +4756,6 @@ class Autopilot:
             self.split_angle = angle
         return done
 
-    def hac_split_brake(self, snap, command, height, dt):
-        """``HAC_SPLIT_BRAKE``: spend the cone's surplus as drag.
-
-        The twin fins deployed as a mirrored pair are a speedbrake with no
-        yaw or roll (``tools/splitprobe.py``: at 38 deg the lower cone's L/D
-        3.28 -> 2.00, the approach's 4.17 -> 1.89, yaw and roll 0.0; the
-        cost is a nose-down moment the elevons trim).  It is continuous, so
-        it reaches the surplus between the widest no-lap circle and a lap
-        that no radius can (rot-polar-1008: 1-4 km of height).
-
-        The plan prices the path still to fly at ``plan_ld``; spending the
-        whole height down to the gate over that path needs ``path / (height
-        - gate)``.  Their ratio is the L/D factor wanted, and
-        ``HAC_SPLIT_FACTOR`` (the measured factor against angle) turns it
-        into an angle.  Stowed when short, when a lap is owed (the lap is
-        the spender), and on leaving the cone (``run_approach``).
-        """
-        if not self.split_pair:
-            return
-        gate = float(getattr(command, "gate_alt", self.cfg.GATE_ALT_M))
-        ld = float(getattr(command, "plan_ld", 0.0) or 0.0)
-        want = 0.0
-        # **Only on the branch the plan priced** (``HAC_SPLIT_ON_BRANCH``):
-        # the flown polar's rising side.  Deployed at cone entry while the
-        # speed law was still braking the vehicle stalled at ~20 deg (L/D
-        # ~1.2 where the plan priced 2.3), brake and stall together ran two
-        # inc flights out of height 13.6 km from the gate (LOG8714, 8719).
-        # So: achieved alpha under the polar's lift peak, and the speed
-        # within ``HAC_SPLIT_SPEED_FRAC`` of the cone's target.
-        on_branch = True
-        if getattr(self.cfg, "HAC_SPLIT_ON_BRANCH", False):
-            polar = getattr(self.env, "flown_polar", None)
-            peak = None
-            if polar and polar.get("bins"):
-                peak = max(polar["bins"], key=lambda b: b[1])[0]
-            target = getattr(command, "alpha_target_speed", None)
-            speed = vec.norm(snap.velocity)
-            on_branch = ((peak is None or snap.alpha_actual < peak)
-                         and (not target or speed <= target * float(
-                             self.cfg.HAC_SPLIT_SPEED_FRAC)))
-        # ``HAC_SPLIT_RESERVE_M``: spend down to a little above the gate's
-        # need, not to it -- unbraked, the cone ended 230-550 m short of the
-        # approach's need on 8 of 12 brake flights (rot-split-1008).
-        floor = gate + float(getattr(self.cfg, "HAC_SPLIT_RESERVE_M", 0.0))
-        if (on_branch and not command.short and command.laps == 0
-                and ld > 0.0 and height > floor and command.path > 0.0):
-            factor = (command.path / (height - floor)) / ld
-            table = sorted(self.cfg.HAC_SPLIT_FACTOR)
-            if factor < 1.0:
-                want = table[-1][0]
-                for (a0, f0), (a1, f1) in zip(table, table[1:]):
-                    if f1 <= factor <= f0:
-                        want = a0 + (a1 - a0) * (f0 - factor) / max(1e-6, f0 - f1)
-                        break
-        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
-        # Slewed on its own state (see ``approach_split_brake``).
-        cmd = getattr(self, "_hac_split_cmd", self.split_angle)
-        cmd = vec.clamp(want, cmd - step, cmd + step)
-        if cmd < 1.0 and want == 0.0:
-            cmd = 0.0
-        self._hac_split_cmd = cmd
-        new = cmd
-        if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
-                self.split_angle == 0.0):
-            was = self.split_angle
-            if self.set_split(new) and (was == 0.0) != (new == 0.0):
-                self.logbook.event(snap.ut, "cone split brake %s at h=%.0f: "
-                                   "%.0f deg (plan L/D %.2f, wanted factor "
-                                   "%.2f)" % ("out" if new else "in", height,
-                                              new, ld, (command.path / max(
-                                                  1.0, height - gate)) / ld
-                                              if ld else 0.0))
-
     def approach_split_factor(self, angle):
         """The approach's L/D factor at split-rudder ``angle``, off
         ``APPROACH_SPLIT_FACTOR``; 1.0 with no pair."""
@@ -4926,7 +4823,7 @@ class Autopilot:
         dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
                                   or snap.ut))
         self._split_app_ut = snap.ut
-        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
+        step = float(self.cfg.SPLIT_RATE_DEG_S) * dt
         # The slew runs on its own state: a short tick's step is under the
         # 1 deg the fins are moved for, and slewed from the *applied* angle
         # it never accumulated -- LOG8881 held the brake out from 113 m/s
@@ -6520,8 +6417,6 @@ def compact_line(state, snap, run):
             bits.append("ldk=%.2f pld=%.2f"
                         % (getattr(run, "hac_ld_scale", None) or 0.0,
                            getattr(c, "plan_ld", 0.0)))
-        if getattr(run.cfg, "HAC_SPLIT_BRAKE", False):
-            bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == APPROACH and getattr(run, "command", None) is not None:
         c = run.command
         bits.append("sink=%5.1f/%5.1f" % (c.sink, c.wanted_sink))

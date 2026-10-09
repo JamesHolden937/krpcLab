@@ -1729,14 +1729,9 @@ def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
         return None
     bank = min(cfg.HAC_BANK_MAX_DEG, math.degrees(
         math.atan(speed * speed / max(1.0, gravity * radius))))
-    level = (airframe.flown_turning_ld(env, cfg, speed, height, mass,
-                                       gravity, 0.0)
-             or airframe.turning_ld(env, cfg, speed, height, mass, gravity,
-                                    0.0))
-    banked = (airframe.flown_turning_ld(env, cfg, speed, height, mass,
-                                        gravity, bank)
-              or airframe.turning_ld(env, cfg, speed, height, mass, gravity,
-                                     bank))
+    level = airframe.turning_ld(env, cfg, speed, height, mass, gravity, 0.0)
+    banked = airframe.turning_ld(env, cfg, speed, height, mass, gravity,
+                                 bank)
     if level is None or banked is None or level <= 0.0 or banked <= 0.0:
         return None
     return 1.0 / ((1.0 - share) / level + share / banked)
@@ -1936,10 +1931,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         # corrected by a measurement, where ``HAC_LD`` was one airframe's
         # whole-cone average (1.86 on the old craft; the shuttle's cones
         # fly 2.1-2.6 per planned metre, conesum).
-        # ``ld_scale`` is the vehicle against the *probe*; a ladder priced
-        # off the flown polar is the vehicle already (``HAC_LD_FLOWN_POLAR``).
-        if (rungs is not None and measured and ld_scale
-                and not getattr(env, "flown_polar", None)):
+        if rungs is not None and measured and ld_scale:
             rungs = [(h, p * ld_scale) for h, p in rungs]
         if rungs is not None and len(rungs) >= 2:
             top = rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt)

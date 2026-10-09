@@ -315,26 +315,7 @@ class Config:
     # 0.5-1.2 km of surplus (LOG6224, 6305, 6309, 6314).  On the runway 2/12
     # vs 0/12.
     HAC_EXIT_PAST_DEG: float = 25.0
-    # **The split rudder as the cone's speedbrake** (``Autopilot.
-    # hac_split_brake``; the user, 2026-10-08: "we have 2 rudders, you can
-    # split them").  ``HAC_SPLIT_FACTOR``: (deploy angle, L/D with / without)
-    # at the lower cone's state (5 km, 120 m/s, 8 deg), measured by
-    # ``tools/splitprobe.py`` on qs_shuttle2 -- re-run it on any other craft;
-    # 38 is where the fins stop adding drag (45 adds ~2%).  Pair with
-    # ``HAC_LD_FLOWN_POLAR``: ``ld_scale`` measures the brake's own drag and
-    # would count it twice.  Off.
-    HAC_SPLIT_BRAKE: bool = False
-    HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
-                               (30.0, 0.665), (38.0, 0.61))
-    HAC_SPLIT_RATE_DEG_S: float = 10.0
-    # Brake only on the polar's rising branch and with the deceleration
-    # done (``Autopilot.hac_split_brake``); and stop this far above the
-    # gate's need.  rot-split-1008: 7/12 v 5/12, long landings 1 v 5, but
-    # two lost to a brake opened while still stalled at cone entry, and
-    # 8/12 ended 230-550 m short.  Off.
-    HAC_SPLIT_ON_BRANCH: bool = False
-    HAC_SPLIT_SPEED_FRAC: float = 1.15
-    HAC_SPLIT_RESERVE_M: float = 0.0
+    SPLIT_RATE_DEG_S: float = 10.0  # the split rudder's slew
     # **The split rudder on the runway** (``Autopilot.ground_spoiler``; the
     # user, 2026-10-08: deploy it on landing so the runway can be shorter):
     # full out at main-gear contact, left out.  Off.
@@ -418,14 +399,6 @@ class Config:
     # airframe flies.  Off.
     HAC_LD_MEASURED: bool = True  # default 2026-10-09
     HAC_LD_MEASURED_TAU_S: float = 20.0
-    # **The cone's ratio off the polar it has flown** (``airframe.
-    # flown_turning_ld``; ``tools/conepolar.py`` writes ``logs/conepolar/``
-    # from the logs).  The swept table is re-probed at the surfaces' present
-    # deflection and priced 2.5 km at L/D 0.85-1.72 at cone entry where the
-    # cone flew 3.3-3.7 (rot-ladder-1008).  Subsonic rungs only, the polar's
-    # rising branch (flown lift peaks ~139 m^2 near 12 deg); ``ld_scale`` is
-    # not applied on top.  Off.
-    HAC_LD_FLOWN_POLAR: bool = False
     # **The entry aim off the same table** (``guidance.straight_in_reach``):
     # ``HAC_GATE_LD`` 1.35 is the old craft's; this computes the ground a
     # straight-in at the cone's speed covers per metre of height, once,
