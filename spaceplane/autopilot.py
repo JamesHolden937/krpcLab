@@ -4932,6 +4932,43 @@ class Autopilot:
                                                   1.0, height - gate)) / ld
                                               if ld else 0.0))
 
+    def approach_split(self, snap, command, height, trigger, sink):
+        """``APPROACH_SPLIT_ON_GUARD``: the split rudder in the approach,
+        while ``APPROACH_SINK_GUARD`` has capped the sink with surplus left.
+
+        The guard turned every dive into a long landing -- zero dives and
+        zero losses, but 7 of 12 long (rot-guard-1008): the energy it will
+        not let become sink has to go somewhere.  At capped sink, drag cannot
+        become a dive, so the brake spends *speed*, which is survivable and
+        floats less.  Out at full (``ROLLOUT_SPLIT_DEG``) while the guard
+        holds and there is surplus; stowed ``AIRBRAKE_STOW_LEAD_S`` of sink
+        above the flare door, so the flare gets a clean airframe."""
+        if not getattr(self, "split_pair", None):
+            return
+        excess = float(getattr(command, "excess", 0.0) or 0.0)
+        stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
+        want = 0.0
+        if (getattr(command, "sink_guard", False) and excess > 0.0
+                and height > stow):
+            want = float(self.cfg.ROLLOUT_SPLIT_DEG)
+        elif self.split_angle > 0.0 and height > stow and excess > 0.0:
+            # Hold it out between guard ticks while surplus remains.
+            want = self.split_angle
+        dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
+                                  or snap.ut))
+        self._split_app_ut = snap.ut
+        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
+        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
+        if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
+                self.split_angle == 0.0):
+            was = self.split_angle
+            if self.set_split(new) and (was == 0.0) != (new == 0.0):
+                self.logbook.event(snap.ut, "approach split brake %s at "
+                                   "h=%.0f: excess %+.0f m, %.0f m/s, sink "
+                                   "%.0f" % ("out" if new else "in", height,
+                                             excess, vec.norm(snap.velocity),
+                                             sink))
+
     def hac_keep_lineup(self, snap, command, plan):
         """``HAC_PAST_KEEPS_LINEUP``: a lined-up vehicle that a weave swing
         carries a little past the rollout is still lined up, unless the lap
@@ -5192,8 +5229,12 @@ class Autopilot:
 
     def run_approach(self, snap):
         """Geometric final: the threshold, the centreline, and the speed floor."""
-        if getattr(self, "split_angle", 0.0) > 0.0 and self.set_split(0.0):
-            self.logbook.event(snap.ut, "cone split brake in: the approach")
+        if (getattr(self, "split_angle", 0.0) > 0.0
+                and not getattr(self, "_split_cone_stowed", False)):
+            self._split_cone_stowed = True
+            if self.set_split(0.0):
+                self.logbook.event(snap.ut, "cone split brake in: the "
+                                   "approach")
         if (getattr(self, "flap_brake_out", False)
                 and not getattr(self, "_cone_flaps_stowed", False)):
             # The approach's brake law starts from stowed.
@@ -5231,6 +5272,8 @@ class Autopilot:
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
         self.command_airbrake(snap, command, height, trigger, sink)
+        if getattr(self.cfg, "APPROACH_SPLIT_ON_GUARD", False):
+            self.approach_split(snap, command, height, trigger, sink)
         brake = getattr(self, "airbrake", None)
         self.bay_brake(snap, getattr(command, "excess", None), "approach",
                        brake is not None and brake.saturated >= float(
@@ -6789,6 +6832,8 @@ def compact_line(state, snap, run):
     if state == APPROACH and getattr(run.cfg, "APPROACH_SINK_GUARD", False):
         bits.append("sg=%d" % (1 if getattr(getattr(run, "command", None),
                                             "sink_guard", False) else 0))
+        if getattr(run.cfg, "APPROACH_SPLIT_ON_GUARD", False):
+            bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == HAC and getattr(run, "hac_command", None) is not None:
         c = run.hac_command
         # The cone's whole state in five numbers: how much turn is left, the

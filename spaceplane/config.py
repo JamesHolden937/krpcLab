@@ -2522,6 +2522,11 @@ class Config:
     APPROACH_SINK_GUARD_M_S: float = 8.0
     APPROACH_SINK_GUARD_BANK_DEG: float = 15.0
     APPROACH_SINK_GUARD_FACTOR: float = 1.5
+    # The split rudder spends the approach's surplus as speed while the
+    # guard caps the sink (``Autopilot.approach_split``); stowed before the
+    # flare door.  Guard alone: 0 dives, 0 lost, 7/12 long (rot-guard-1008).
+    # Off.
+    APPROACH_SPLIT_ON_GUARD: bool = False
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
