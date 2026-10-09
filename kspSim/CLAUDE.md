@@ -100,10 +100,16 @@ different craft).
 7. **The approach and landing do not follow the game** (2026-10-06): the
    same configuration (cone flags of that session) stops -1.2..-3.5 km
    *short* in the sim and 1-2 km *long* on the farm (sim-aim-1006 against
-   rot-weave-1006). Screen the cone here -- its handover surplus agreed
-   with the farm's -- but fly anything about the aim, the approach or the
-   flare on the farm.
-8. A few flights per screen end the deorbit burn on its 60 s guard, coast
+   rot-weave-1006). Fly anything about the aim, the approach or the flare
+   on the farm -- and, since gap 8, the cone too.
+8. **The shuttle's subsonic lift does not follow the game** (2026-10-08):
+   the autopilot's `LiftTrim` reads Mach 0-0.5 lift at **1.51x** the table
+   in the sim against **0.54-0.63x** in the game, and the cone's priced L/D
+   differs accordingly.  Do not screen cone energy, cone speed or anything
+   priced off the subsonic table here (sim-eas-1008 lost 2/4 where the
+   farm's failure was a different shape).  Likely the old "sim cone reads
+   short" gap.
+9. A few flights per screen end the deorbit burn on its 60 s guard, coast
    another orbit and write ~600 MB of log (LOG6616, 6618, 6709; deleted).
    `simarms.sh` now times a flight out at 600 s wall.
 
