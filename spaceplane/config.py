@@ -1893,6 +1893,11 @@ class Config:
     COAST_TRIM_ACCEL_M_S2: float = 0.3      # first guess at full input; learned
     COAST_TRIM_MAX_DV_M_S: float = 5.0      # a budget, not a target
     COAST_TRIM_MAX_Q_PA: float = 20.0       # past this the air is the steering
+    # An instrument: every this many game seconds of COAST (0 = off), the
+    # burn's stop test re-run from the present state -- the arc's error
+    # against the burn's aim, what it owes, and why when it cannot say --
+    # with the pointing error and vertical speed beside it.
+    COAST_WATCH_S: float = 0.0
 
     # -- the drain ---------------------------------------------------------
     # 2.780 t of the 9.495 t on board, so 29% of the vehicle and a 29% cut in

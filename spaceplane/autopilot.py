@@ -4052,6 +4052,7 @@ class Autopilot:
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
         self.set_rcs(False, snap)
+        self.coast_watch(snap)
         if not self.coast_trim(snap):
             self.coast_warp(snap)
         self.end = self.env.runway.choose(snap.position, snap.velocity)
@@ -4185,6 +4186,33 @@ class Autopilot:
         t["last"] = (snap.ut, owed, push)
         t["n"] += 1
         return True
+
+    def coast_watch(self, snap):
+        """``COAST_WATCH_S``: the burn's stop test, re-run through the coast."""
+        every = float(getattr(self.cfg, "COAST_WATCH_S", 0.0))
+        last = getattr(self, "_coast_watch_ut", None)
+        if every <= 0.0 or (last is not None and snap.ut - last < every):
+            return
+        self._coast_watch_ut = snap.ut
+        record = {}
+        progress, owed = guidance.deorbit_remaining(
+            self.env, snap.position, snap.velocity, snap.mass, self.cfg,
+            self.end, self.deorbit_aim_m, record=record)
+        why = ""
+        pred = record.get("prediction")
+        if progress is None and pred is not None:
+            why = " (reached %s skipped %s t2g %.0f)" % (
+                pred.reached, pred.skipped, pred.time_to_go)
+        vs = vec.dot(snap.velocity, vec.unit(snap.position))
+        self.logbook.event(
+            snap.ut, "coast watch: err %s owes %s, aim %s, end %s, point "
+                     "%.1f deg, vs %+.2f, q %.1f%s"
+            % ("-" if progress is None else "%+.0f" % progress,
+               "-" if owed is None else "%+.2f" % owed,
+               "-" if self.deorbit_aim_m is None
+               else "%+.0f" % self.deorbit_aim_m,
+               self.end["name"] if self.end else "-",
+               self.pointing_error(snap), vs, snap.dynamic_pressure, why))
 
     def _trim_translate(self, forward):
         """Translation along the nose (-1..1), RCS forced open while it is
