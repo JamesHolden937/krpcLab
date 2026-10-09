@@ -819,7 +819,7 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             accel=None, roll_lag_s=None):
+             accel=None, roll_lag_s=None, ld_factor=1.0):
     """Geometric final: hold the speed, track the centreline, spend the excess.
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
@@ -914,6 +914,12 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``airframe.approach_ld``.  The approach flies 2.25 x stall, not the
     # 78 m/s best glide sits at, and the two ratios differ by a third.
     best_ld = airframe.approach_ld(env, cfg, height, mass, gravity)
+    # ``APPROACH_SPLIT_BRAKE``: the split rudder's L/D factor at its present
+    # angle.  The surplus and the S-turn are sized against the ratio the
+    # vehicle is flying, so the weave spends only what the brake does not;
+    # the design sink below stays on the clean ratio.
+    clean_ld = best_ld
+    best_ld = best_ld * vec.clamp(float(ld_factor or 1.0), 0.1, 1.0)
     target = (cfg.FLARE_SHALLOW_APPROACH_FACTOR if False
               else cfg.APPROACH_FACTOR) * stall
     floor = cfg.APPROACH_SPEED_FLOOR_FACTOR * stall
@@ -1194,7 +1200,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # 8745, 8755).  ``APPROACH_SINK_GUARD_FACTOR`` x (the held speed over
     # the approach's glide ratio): ~1.5 x 26 m/s, the top of every intact
     # flare on record.  Bound, the vehicle lands long instead of diving.
-    design = max(target, floor) / max(0.1, best_ld)
+    design = max(target, floor) / max(0.1, clean_ld)
     cap_sink = min(wanted_sink + guard, design * float(getattr(
         cfg, "APPROACH_SINK_GUARD_FACTOR", 1.5)))
     if (getattr(cfg, "APPROACH_SINK_GUARD", False) and speed > 1.0
@@ -1231,6 +1237,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``spaceplane.airbrake``.
     command.target_speed = target
     command.speed_floor = floor
+    command.clean_ld = clean_ld
+    command.design_sink = design
     return command
 
 

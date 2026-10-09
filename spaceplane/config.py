@@ -2527,6 +2527,27 @@ class Config:
     # flare door.  Guard alone: 0 dives, 0 lost, 7/12 long (rot-guard-1008).
     # Off.
     APPROACH_SPLIT_ON_GUARD: bool = False
+    # **The split rudder as the approach's speedbrake, by geometry**
+    # (``Autopilot.approach_split_brake``) -- the Shuttle's outer glide
+    # slope: alpha still holds the speed, the brake makes that speed cost a
+    # steeper path.  Opened to the L/D factor ``distance / (height x
+    # APPROACH_BEST_LD)`` that makes the straight path to the aim spend the
+    # height, never steeper than ``APPROACH_SPLIT_SINK_FACTOR`` x the design
+    # sink (the top of the intact flares), only at or above
+    # ``APPROACH_SPLIT_SPEED_FRAC`` of the held speed (no brake while a slow
+    # handover is still making speed), stowed ``AIRBRAKE_STOW_LEAD_S`` of
+    # sink above the flare door.  The S-turn is then sized against the
+    # *braked* ratio, so it only spends what the brake cannot.  135 base
+    # flights of 2026-10-08: a rollout surplus over ~800 m lands 3-8 km long
+    # (ratio ~3.5) or dives into the flare at 86-112 m/s (ratio ~1.9).
+    # ``APPROACH_SPLIT_FACTOR``: (deploy angle, L/D factor) on final -- 38
+    # deg measured 0.45 by ``splitprobe.py`` (4.17 -> 1.89); the rest are
+    # the cone's curve scaled to that end point.  Off.
+    APPROACH_SPLIT_BRAKE: bool = False
+    APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
+                                    (30.0, 0.53), (38.0, 0.45))
+    APPROACH_SPLIT_SINK_FACTOR: float = 1.5
+    APPROACH_SPLIT_SPEED_FRAC: float = 0.97
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is

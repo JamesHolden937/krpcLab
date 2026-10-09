@@ -4978,6 +4978,88 @@ class Autopilot:
                                              excess, vec.norm(snap.velocity),
                                              sink))
 
+    def approach_split_factor(self, angle):
+        """The approach's L/D factor at split-rudder ``angle``, off
+        ``APPROACH_SPLIT_FACTOR``; 1.0 with no pair."""
+        if not getattr(self, "split_pair", None) or angle <= 0.0:
+            return 1.0
+        table = sorted(self.cfg.APPROACH_SPLIT_FACTOR)
+        if angle >= table[-1][0]:
+            return table[-1][1]
+        for (a0, f0), (a1, f1) in zip(table, table[1:]):
+            if a0 <= angle <= a1:
+                return f0 + (f1 - f0) * (angle - a0) / max(1e-6, a1 - a0)
+        return 1.0
+
+    def approach_split_brake(self, snap, command, height, trigger, sink):
+        """``APPROACH_SPLIT_BRAKE``: the split rudder opened to the glide
+        ratio the geometry asks for.
+
+        The approach holds its speed with alpha, so drag that appears is
+        paid for in path angle: at a fixed speed the brake *is* a steeper
+        glide, the Shuttle's outer glide slope.  The wanted factor is the
+        straight path to the aim over the path the height buys clean,
+        ``distance / (height x APPROACH_BEST_LD)``, re-solved every tick so
+        it is a loop on the geometry and not a schedule.  Bounded three
+        ways, each one of the 2026-10-08 failures: no steeper than
+        ``APPROACH_SPLIT_SINK_FACTOR`` x the design sink (dives above ~40
+        m/s of sink did not survive the flare); not while slower than
+        ``APPROACH_SPLIT_SPEED_FRAC`` of the held speed (a slow handover is
+        still making speed, and a brake there is a dive, failure 1 of
+        ``airbrake``); and stowed ``AIRBRAKE_STOW_LEAD_S`` of sink above
+        the flare door, so the flare gets the airframe it was sized on."""
+        if not getattr(self, "split_pair", None):
+            return
+        speed = vec.norm(snap.velocity)
+        held = max(float(getattr(command, "target_speed", 0.0) or 0.0),
+                   float(getattr(command, "speed_floor", 0.0) or 0.0))
+        clean = float(getattr(command, "clean_ld", 0.0) or
+                      self.cfg.APPROACH_BEST_LD)
+        design = float(getattr(command, "design_sink", 0.0) or 0.0)
+        stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
+        cap_sink = float(self.cfg.APPROACH_SPLIT_SINK_FACTOR) * design
+        want = 0.0
+        reason = ""
+        if height <= stow:
+            reason = "flare door"
+        elif held > 0.0 and speed < float(
+                self.cfg.APPROACH_SPLIT_SPEED_FRAC) * held:
+            reason = "slow"
+        elif cap_sink > 0.0 and sink > cap_sink:
+            reason = "sink"
+        elif command.distance > 50.0 and height > 1.0 and clean > 0.0:
+            factor = command.distance / (height * clean)
+            # The steepest path the sink cap allows at this speed.
+            if cap_sink > 0.0:
+                factor = max(factor, speed / (cap_sink * clean))
+            table = sorted(self.cfg.APPROACH_SPLIT_FACTOR)
+            if factor < 1.0:
+                want = table[-1][0]
+                for (a0, f0), (a1, f1) in zip(table, table[1:]):
+                    if f1 <= factor <= f0:
+                        want = a0 + (a1 - a0) * (f0 - factor) / max(
+                            1e-6, f0 - f1)
+                        break
+            reason = "factor %.2f" % factor
+        dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
+                                  or snap.ut))
+        self._split_app_ut = snap.ut
+        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
+        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
+        if new < 1.0 and want == 0.0:
+            new = 0.0
+        if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
+                self.split_angle == 0.0):
+            was = self.split_angle
+            if self.set_split(new) and (was == 0.0) != (new == 0.0):
+                self.logbook.event(snap.ut, "approach split brake %s at "
+                                   "h=%.0f: %s, %.0f m/s (held %.0f), sink "
+                                   "%.0f (cap %.0f), excess %+.0f" % (
+                                       "out" if new else "in", height, reason,
+                                       speed, held, sink, cap_sink,
+                                       float(getattr(command, "excess", 0.0)
+                                             or 0.0)))
+
     def hac_keep_lineup(self, snap, command, plan):
         """``HAC_PAST_KEEPS_LINEUP``: a lined-up vehicle that a weave swing
         carries a little past the rollout is still lined up, unless the lap
@@ -5238,7 +5320,8 @@ class Autopilot:
 
     def run_approach(self, snap):
         """Geometric final: the threshold, the centreline, and the speed floor."""
-        if (getattr(self, "split_angle", 0.0) > 0.0
+        split_brake = getattr(self.cfg, "APPROACH_SPLIT_BRAKE", False)
+        if (getattr(self, "split_angle", 0.0) > 0.0 and not split_brake
                 and not getattr(self, "_split_cone_stowed", False)):
             self._split_cone_stowed = True
             if self.set_split(0.0):
@@ -5265,7 +5348,9 @@ class Autopilot:
             weave=guidance.weave_sign(
                 self.cfg, snap.ut - (self.state_since or snap.ut),
                 period=self.scurve_half_period_s()),
-            roll_lag_s=self.roll_lag_s())
+            roll_lag_s=self.roll_lag_s(),
+            ld_factor=(self.approach_split_factor(self.split_angle)
+                       if split_brake else 1.0))
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
@@ -5283,6 +5368,8 @@ class Autopilot:
         self.command_airbrake(snap, command, height, trigger, sink)
         if getattr(self.cfg, "APPROACH_SPLIT_ON_GUARD", False):
             self.approach_split(snap, command, height, trigger, sink)
+        if split_brake:
+            self.approach_split_brake(snap, command, height, trigger, sink)
         brake = getattr(self, "airbrake", None)
         self.bay_brake(snap, getattr(command, "excess", None), "approach",
                        brake is not None and brake.saturated >= float(
@@ -5352,6 +5439,15 @@ class Autopilot:
 
     def run_flare(self, snap):
         """The last fifteen metres, which are their own problem."""
+        if (getattr(self.cfg, "APPROACH_SPLIT_BRAKE", False)
+                and getattr(self, "split_angle", 0.0) > 0.0
+                and not getattr(self, "_split_flare_stowed", False)):
+            # The approach stows ahead of the door; a door reached early
+            # (a sink jump) still gets the clean airframe.
+            self._split_flare_stowed = True
+            if self.set_split(0.0):
+                self.logbook.event(snap.ut, "approach split brake in: the "
+                                   "flare")
         # Nothing below the glide permits RCS; close what it left open.
         self.set_rcs(False, snap)
         self.set_throttle(0.0)
@@ -6843,6 +6939,8 @@ def compact_line(state, snap, run):
                                             "sink_guard", False) else 0))
         if getattr(run.cfg, "APPROACH_SPLIT_ON_GUARD", False):
             bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
+    if state == APPROACH and getattr(run.cfg, "APPROACH_SPLIT_BRAKE", False):
+        bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == HAC and getattr(run, "hac_command", None) is not None:
         c = run.hac_command
         # The cone's whole state in five numbers: how much turn is left, the
