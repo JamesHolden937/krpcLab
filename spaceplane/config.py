@@ -2312,8 +2312,10 @@ class Config:
     # (ratio ~3.5) or dives into the flare at 86-112 m/s (ratio ~1.9).
     # ``APPROACH_SPLIT_FACTOR``: (deploy angle, L/D factor) on final -- 38
     # deg measured 0.45 by ``splitprobe.py`` (4.17 -> 1.89); the rest are
-    # the cone's curve scaled to that end point.  Off.
-    APPROACH_SPLIT_BRAKE: bool = False
+    # the cone's curve scaled to that end point.  rot-asb2-1009 (gated on
+    # the stall): 15/18 on the runway v 6/18, lost 1 v 7, 18/18 intact;
+    # surpluses of +800..+1667 m stopped at +838..+1673.  Default.
+    APPROACH_SPLIT_BRAKE: bool = True  # default 2026-10-09: rot-asb2-1009 15/18 v 6/18, lost 1 v 7
     APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
                                     (30.0, 0.53), (38.0, 0.45))
     APPROACH_SPLIT_SINK_FACTOR: float = 1.5
