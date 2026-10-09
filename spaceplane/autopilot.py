@@ -1848,6 +1848,20 @@ class Autopilot:
         self.gear_geometry(snap)
         self.wheel_watch(snap)
         self.ground_watch(snap)
+        if (getattr(self.cfg, "ROLLOUT_SPLIT_BRAKE", False)
+                and not getattr(self, "_split_ground_done", False)
+                and getattr(self, "split_pair", None)
+                and (landed or self.main_wheels_grounded())):
+            # ``ROLLOUT_SPLIT_BRAKE``: the split rudder full out on the
+            # mains, as the Shuttle's speedbrake opened at main-gear
+            # touchdown -- +54% drag at 80 m/s (``tools/splitprobe.py``),
+            # no yaw or roll; its nose-down moment helps the derotation.
+            self._split_ground_done = True
+            if self.set_split(float(self.cfg.ROLLOUT_SPLIT_DEG)):
+                self.logbook.event(snap.ut, "rollout split brake out: %.0f "
+                                   "deg at %.1f m/s" % (
+                                       self.split_angle,
+                                       vec.norm(snap.velocity)))
         if getattr(self, "_ground_spoiler_done", False):
             return
         grounded = self.main_wheels_grounded()

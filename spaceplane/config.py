@@ -377,6 +377,11 @@ class Config:
     HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
                                (30.0, 0.665), (38.0, 0.61))
     HAC_SPLIT_RATE_DEG_S: float = 10.0
+    # **The split rudder on the runway** (``Autopilot.ground_spoiler``; the
+    # user, 2026-10-08: deploy it on landing so the runway can be shorter):
+    # full out at main-gear contact, left out.  Off.
+    ROLLOUT_SPLIT_BRAKE: bool = False
+    ROLLOUT_SPLIT_DEG: float = 38.0
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one
