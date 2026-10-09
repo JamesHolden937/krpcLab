@@ -437,6 +437,9 @@ class Autopilot:
         self.env.holdable = trajectory.Holdable(cfg)
         if getattr(cfg, "HOLDABLE_PRIOR", False):
             self._load_holdable_prior(ut)
+        self.env.flown_polar = None
+        if getattr(cfg, "HAC_LD_FLOWN_POLAR", False):
+            self._load_flown_polar(ut)
         self._below_ground_since = None
         self.prediction = None
         # Latched once, at the cone's entry: recomputing it every tick flips
@@ -2382,6 +2385,31 @@ class Autopilot:
     # tested from those saves was disconnected (sav-spend-1006).  The set is
     # a property of the craft, not the flight: key it on the surfaces and
     # reuse it.
+
+    def _load_flown_polar(self, ut):
+        """``HAC_LD_FLOWN_POLAR``: this craft's flown cone polar from
+        ``logs/conepolar/`` (``tools/conepolar.py``), and say so."""
+        try:
+            import json
+            key = trajectory.holdprior_key(self.vessel.name,
+                                           len(self.vessel.parts.all))
+            path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "logs", "conepolar",
+                trajectory.holdprior_slug(key) + ".json")
+            if not os.path.exists(path):
+                self.logbook.event(ut, "flown polar: none for %r (%s)"
+                                   % (key, path))
+                return
+            with open(path) as fh:
+                data = json.load(fh)
+            self.env.flown_polar = data
+            self.logbook.event(
+                ut, "flown polar: %r from %d logs below Mach %.1f: %s"
+                % (key, data.get("logs", 0), data.get("mach_max", 0.9),
+                   " ".join("%.0f:%.0f/%.2f" % (b[0], b[1], b[1] / b[2])
+                            for b in data["bins"])))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(ut, "flown polar: not loaded (%s)" % (exc,))
 
     def _load_holdable_prior(self, ut):
         """``HOLDABLE_PRIOR``: seed ``env.holdable`` from this craft's file

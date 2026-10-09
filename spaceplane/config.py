@@ -479,6 +479,14 @@ class Config:
     # airframe flies.  Off.
     HAC_LD_MEASURED: bool = False
     HAC_LD_MEASURED_TAU_S: float = 20.0
+    # **The cone's ratio off the polar it has flown** (``airframe.
+    # flown_turning_ld``; ``tools/conepolar.py`` writes ``logs/conepolar/``
+    # from the logs).  The swept table is re-probed at the surfaces' present
+    # deflection and priced 2.5 km at L/D 0.85-1.72 at cone entry where the
+    # cone flew 3.3-3.7 (rot-ladder-1008).  Subsonic rungs only, the polar's
+    # rising branch (flown lift peaks ~139 m^2 near 12 deg); ``ld_scale`` is
+    # not applied on top.  Off.
+    HAC_LD_FLOWN_POLAR: bool = False
     # **The entry aim off the same table** (``guidance.straight_in_reach``):
     # ``HAC_GATE_LD`` 1.35 is the old craft's; this computes the ground a
     # straight-in at the cone's speed covers per metre of height, once,

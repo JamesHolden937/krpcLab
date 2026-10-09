@@ -5801,3 +5801,32 @@ class TestAeroRefreshNearMach(unittest.TestCase):
         e = self.env(True)
         e._mach_now = None
         self.assertIsNone(e._rows_near())
+
+
+class TestFlownPolar(unittest.TestCase):
+    """``HAC_LD_FLOWN_POLAR``: the ladder off the polar the cone flew."""
+
+    POLAR = {"mach_max": 0.9, "bins": [
+        [1.0, 68.9, 17.5, 1], [5.0, 95.4, 30.6, 1], [9.0, 128.6, 48.0, 1],
+        [13.0, 138.5, 70.6, 1], [17.0, 94.0, 77.5, 1]]}
+
+    def setUp(self):
+        self.cfg = Config(HAC_LD_FLOWN_POLAR=True)
+        self.env = FakeEnv(self.cfg)
+        self.env.flown_polar = self.POLAR
+
+    def ld(self, speed, height=3000.0, mass=30000.0, bank=0.0):
+        return airframe.flown_turning_ld(self.env, self.cfg, speed, height,
+                                         mass, 9.81, bank)
+
+    def test_rising_branch_only(self):
+        # Faster needs less lift: lower alpha, better ratio.
+        self.assertGreater(self.ld(140.0), self.ld(100.0))
+
+    def test_more_lift_than_the_wing_makes_is_no_answer(self):
+        self.assertIsNone(self.ld(30.0))
+
+    def test_off_or_supersonic_is_no_answer(self):
+        self.assertIsNone(self.ld(400.0))
+        self.env.flown_polar = None
+        self.assertIsNone(self.ld(120.0))

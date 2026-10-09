@@ -273,6 +273,50 @@ def turning_ld(env, cfg, speed, altitude, mass, gravity, bank):
     return (cla / cda) * cosb / PLANNING_BIAS
 
 
+def flown_turning_ld(env, cfg, speed, altitude, mass, gravity, bank):
+    """``HAC_LD_FLOWN_POLAR``: ``turning_ld`` off the polar the cone has
+    flown (``env.flown_polar``, ``tools/conepolar.py``), or ``None`` (off,
+    no polar, supersonic, or more lift than the flown wing makes).
+
+    The swept table is re-probed with the surfaces at their present
+    deflection and read L/D 0.85-1.72 at 2.5 km at cone entry where the cone
+    flew 3.3-3.7 (rot-ladder-1008); the flown polar is the airframe trimmed
+    at each alpha.  Only its rising branch is used: its lift peaks at ~139
+    m^2 near 12 deg and the cone spends most ticks past that, at L/D ~1.2,
+    which is a brake the speed law applies, not a glide the plan can fly."""
+    polar = getattr(env, "flown_polar", None)
+    if not getattr(cfg, "HAC_LD_FLOWN_POLAR", False) or not polar:
+        return None
+    try:
+        if env.mach(speed, altitude) >= polar.get("mach_max", 0.9):
+            return None
+        q = 0.5 * env.density(altitude) * speed * speed
+    except Exception:                                       # noqa: BLE001
+        return None
+    if q <= 0.0 or mass <= 0.0:
+        return None
+    cosb = math.cos(math.radians(min(abs(bank), 75.0)))
+    need = mass * gravity / max(0.2, cosb) / q
+    rows = polar["bins"]
+    peak = max(range(len(rows)), key=lambda i: rows[i][1])
+    rows = rows[:peak + 1]
+    if need > rows[-1][1]:
+        return None
+    if need <= rows[0][1]:
+        ld = rows[0][1] / rows[0][2]
+    else:
+        ld = None
+        for (a0, l0, d0), (a1, l1, d1) in zip(
+                [r[:3] for r in rows], [r[:3] for r in rows[1:]]):
+            if l0 <= need <= l1 and l1 > l0:
+                f = (need - l0) / (l1 - l0)
+                ld = (l0 + f * (l1 - l0)) / (d0 + f * (d1 - d0))
+                break
+        if ld is None:
+            return None
+    return ld * cosb / PLANNING_BIAS
+
+
 def turn_load(env, cfg, speed, altitude, mass, gravity):
     """The lateral load the wing can actually pay for, in g.
 
