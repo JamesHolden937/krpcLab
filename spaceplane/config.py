@@ -233,7 +233,7 @@ class Config:
     # ROLLOUT.  ``_SIGN``: + deflection is nose-up on qs_shuttle2's canards
     # (tabprobe).  Never commands exactly 0 -- under AtmosphereAutopilot a
     # deploy angle of 0 freezes the surface where it is.
-    CANARD_TRIM: bool = False
+    CANARD_TRIM: bool = True  # default 2026-10-09: the measured best config since 10-07
     CANARD_TRIM_TAU_S: float = 5.0
     # **Only where the canards are linear, and only when settled.**  Their
     # nose-up effect falls with alpha and *reverses* past ~24 deg (+15 deg
@@ -274,17 +274,17 @@ class Config:
     # swing onto yaw (rot-lapstack-1006: long arrivals sit at +0.4 of pitch,
     # 8-12 deg short, for 30 s after the 38 km reversal).  TAU 0 = the pitch
     # axis's time_to_peak.  Off until flown.
-    GLIDE_PITCH_OFFLOAD: bool = False
+    GLIDE_PITCH_OFFLOAD: bool = True  # default 2026-10-09
     GLIDE_PITCH_OFFLOAD_TAU_S: float = 0.0
     # The share of pitch authority the trim may take; the rest is kRPC's
     # headroom for transients (at 1.0 the trim pinned the elevons nose-up,
     # rot-offload-1007).  A fraction of authority, not a tuned angle.
-    GLIDE_PITCH_OFFLOAD_MAX: float = 0.8
+    GLIDE_PITCH_OFFLOAD_MAX: float = 0.6  # default 2026-10-09 (was 0.8)
     # Offload only above this Mach, bleeding off below (0 = the whole
     # glide).  The reversal it cures is at Mach 5-4; with the trim held
     # through Mach 2.5-1.2 the arrivals were on position but 2 km low
     # (rot-offload2-1007).
-    GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 0.0
+    GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 3.0  # default 2026-10-09 (was 0)
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is
@@ -416,7 +416,7 @@ class Config:
     # Replaces ``HAC_LD`` without re-fitting it: the table supplies how the
     # ratio changes with height, the flight supplies the scale, on whatever
     # airframe flies.  Off.
-    HAC_LD_MEASURED: bool = False
+    HAC_LD_MEASURED: bool = True  # default 2026-10-09
     HAC_LD_MEASURED_TAU_S: float = 20.0
     # **The cone's ratio off the polar it has flown** (``airframe.
     # flown_turning_ld``; ``tools/conepolar.py`` writes ``logs/conepolar/``
