@@ -365,6 +365,18 @@ class Config:
     # (LOG8655, 8665, with ``HAC_LD_FLOWN_POLAR``).  Plan it lined up while
     # that plan is not short.  Off.
     HAC_PAST_KEEPS_LINEUP: bool = False
+    # **The split rudder as the cone's speedbrake** (``Autopilot.
+    # hac_split_brake``; the user, 2026-10-08: "we have 2 rudders, you can
+    # split them").  ``HAC_SPLIT_FACTOR``: (deploy angle, L/D with / without)
+    # at the lower cone's state (5 km, 120 m/s, 8 deg), measured by
+    # ``tools/splitprobe.py`` on qs_shuttle2 -- re-run it on any other craft;
+    # 38 is where the fins stop adding drag (45 adds ~2%).  Pair with
+    # ``HAC_LD_FLOWN_POLAR``: ``ld_scale`` measures the brake's own drag and
+    # would count it twice.  Off.
+    HAC_SPLIT_BRAKE: bool = False
+    HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
+                               (30.0, 0.665), (38.0, 0.61))
+    HAC_SPLIT_RATE_DEG_S: float = 10.0
     # How much height the cone may still hand the approach when it rolls
     # out.  Not zero: the approach has an S-turn for exactly this and a
     # whole extra lap to shed 700 m is a nineteen kilometre answer to a one

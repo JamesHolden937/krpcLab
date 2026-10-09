@@ -513,6 +513,10 @@ class Autopilot:
         self.drain_modules = self._find_drain()
         self.airbrake = airbrake_mod.Brake(cfg)
         self.flap_brake = self._find_brake()
+        # ``HAC_SPLIT_BRAKE``: the mirrored vertical pair, kept apart from
+        # whatever ``measure_flap_brake`` later puts in ``flap_brake``.
+        self.split_pair = list(getattr(self.flap_brake, "pair", None) or ())
+        self.split_angle = 0.0
         self.air_drag_out = 0.0
         self.flap_brake_out = False
         self.airbrake_ut = None
@@ -4761,6 +4765,8 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         self.log_hac_ladder(snap, height)
+        if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
+            self.hac_split_brake(snap, command, height, dt)
         spiral = self.hac_spiral(snap, command, height)
         if spiral is not None:
             self.steer = Steer(alpha=spiral[0], bank=spiral[1])
@@ -4834,6 +4840,61 @@ class Autopilot:
                           command.turn_deg, height, needed,
                           command.gate_range, command.radius, command.laps,
                           getattr(command, "stretch", 0.0)))
+
+    def set_split(self, angle):
+        """Both halves of the split rudder to ``angle`` (0 stows)."""
+        done = 0
+        for surface in self.split_pair:
+            if self._deploy_surface(surface, angle, angle > 0.0):
+                done += 1
+        if done:
+            self.split_angle = angle
+        return done
+
+    def hac_split_brake(self, snap, command, height, dt):
+        """``HAC_SPLIT_BRAKE``: spend the cone's surplus as drag.
+
+        The twin fins deployed as a mirrored pair are a speedbrake with no
+        yaw or roll (``tools/splitprobe.py``: at 38 deg the lower cone's L/D
+        3.28 -> 2.00, the approach's 4.17 -> 1.89, yaw and roll 0.0; the
+        cost is a nose-down moment the elevons trim).  It is continuous, so
+        it reaches the surplus between the widest no-lap circle and a lap
+        that no radius can (rot-polar-1008: 1-4 km of height).
+
+        The plan prices the path still to fly at ``plan_ld``; spending the
+        whole height down to the gate over that path needs ``path / (height
+        - gate)``.  Their ratio is the L/D factor wanted, and
+        ``HAC_SPLIT_FACTOR`` (the measured factor against angle) turns it
+        into an angle.  Stowed when short, when a lap is owed (the lap is
+        the spender), and on leaving the cone (``run_approach``).
+        """
+        if not self.split_pair:
+            return
+        gate = float(getattr(command, "gate_alt", self.cfg.GATE_ALT_M))
+        ld = float(getattr(command, "plan_ld", 0.0) or 0.0)
+        want = 0.0
+        if (not command.short and command.laps == 0 and ld > 0.0
+                and height > gate and command.path > 0.0):
+            factor = (command.path / (height - gate)) / ld
+            table = sorted(self.cfg.HAC_SPLIT_FACTOR)
+            if factor < 1.0:
+                want = table[-1][0]
+                for (a0, f0), (a1, f1) in zip(table, table[1:]):
+                    if f1 <= factor <= f0:
+                        want = a0 + (a1 - a0) * (f0 - factor) / max(1e-6, f0 - f1)
+                        break
+        step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
+        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
+        if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
+                self.split_angle == 0.0):
+            was = self.split_angle
+            if self.set_split(new) and (was == 0.0) != (new == 0.0):
+                self.logbook.event(snap.ut, "cone split brake %s at h=%.0f: "
+                                   "%.0f deg (plan L/D %.2f, wanted factor "
+                                   "%.2f)" % ("out" if new else "in", height,
+                                              new, ld, (command.path / max(
+                                                  1.0, height - gate)) / ld
+                                              if ld else 0.0))
 
     def hac_keep_lineup(self, snap, command, plan):
         """``HAC_PAST_KEEPS_LINEUP``: a lined-up vehicle that a weave swing
@@ -5095,6 +5156,8 @@ class Autopilot:
 
     def run_approach(self, snap):
         """Geometric final: the threshold, the centreline, and the speed floor."""
+        if getattr(self, "split_angle", 0.0) > 0.0 and self.set_split(0.0):
+            self.logbook.event(snap.ut, "cone split brake in: the approach")
         if (getattr(self, "flap_brake_out", False)
                 and not getattr(self, "_cone_flaps_stowed", False)):
             # The approach's brake law starts from stowed.
@@ -6708,6 +6771,8 @@ def compact_line(state, snap, run):
                            getattr(c, "plan_ld", 0.0)))
         if getattr(run.cfg, "HAC_GATE_STRETCH", False):
             bits.append("str=%5.0f" % getattr(c, "stretch", 0.0))
+        if getattr(run.cfg, "HAC_SPLIT_BRAKE", False):
+            bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
         if getattr(run.cfg, "HAC_WEAVE_HELD", False):
             bits.append("wh=%4.1f wd=%+.0f"
                         % (getattr(c, "weave_half_s", 0.0),

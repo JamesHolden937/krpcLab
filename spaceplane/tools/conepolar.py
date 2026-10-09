@@ -61,6 +61,11 @@ def main(argv=None):
                 continue
             if "] HAC " not in line:
                 continue
+            # Ticks with the split rudder out (``spb=``) are the brake, not
+            # the airframe.
+            spb = re.search(r"spb=\s*([0-9.]+)", line)
+            if spb and float(spb.group(1)) > 0.0:
+                continue
             a, act, q, mach = (AOA.search(line), ACT.search(line),
                                Q.search(line), MACH.search(line))
             if not (a and act and q and mach):
