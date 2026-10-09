@@ -1174,8 +1174,39 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
             bank = bank_toward(r, v, want, sharp[2]) if sharp[2] > 0.1 \
                 else 0.0
 
+    # ``APPROACH_SINK_GUARD``: **never dive steeper than the path to the
+    # aim.**  Below its target speed the law unloads to make speed and the
+    # S-turn banks to spend height, together: LOG8699 handed over at 92 m/s
+    # against ~113 with +430 m of surplus, flew alpha 0-1 at 30-40 deg of
+    # bank, wanted 36 m/s of sink and had 86 at the flare door (125 m/s,
+    # destroyed, 2.2 km short).  About one flight in five of 2026-10-08 died
+    # that way.  A dive steeper than the path lands short as well as hard,
+    # and a slow vehicle on the path is survivable well above the stall.
+    # So when the sink passes the path's by ``APPROACH_SINK_GUARD_M_S`` the
+    # wings come level and alpha is floored at the load that flies the
+    # path, plus the inner loop's pull toward it.
+    guard = float(getattr(cfg, "APPROACH_SINK_GUARD_M_S", 0.0))
+    command_guard = False
+    if (getattr(cfg, "APPROACH_SINK_GUARD", False) and speed > 1.0
+            and sink > wanted_sink + guard):
+        path = math.asin(vec.clamp(wanted_sink / speed, -1.0, 1.0))
+        flying = math.asin(vec.clamp(sink / speed, -1.0, 1.0))
+        load = math.cos(path) + float(getattr(cfg, "APPROACH_PATH_KN", 1.5)) \
+            * (flying - path)
+        load = vec.clamp(load, 1.0, float(getattr(cfg, "APPROACH_LOAD_MAX",
+                                                  1.6)))
+        floor_alpha = alpha_for_load(env, speed, height, mass, gravity, load)
+        if floor_alpha is not None and floor_alpha > alpha:
+            alpha = min(floor_alpha, cfg.APPROACH_ALPHA_MAX_DEG)
+        # The S-turn and the centreline capture share ``bank``: cap it
+        # rather than zero it, so the capture keeps working.
+        cap = float(getattr(cfg, "APPROACH_SINK_GUARD_BANK_DEG", 15.0))
+        bank = vec.clamp(bank, -cap, cap)
+        command_guard = True
+
     command = ApproachCommand(alpha, bank, sink, wanted_sink, cross,
                               heading_error, distance, height, speed)
+    command.sink_guard = command_guard
     command.sharp = sharp
     command.cross_rate = cross_rate
     command.cross_time = cross_time

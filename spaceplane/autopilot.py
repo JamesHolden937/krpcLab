@@ -6785,6 +6785,9 @@ def compact_line(state, snap, run):
                            getattr(c, "plan_ld", 0.0)))
         if getattr(run.cfg, "HAC_GATE_STRETCH", False):
             bits.append("str=%5.0f" % getattr(c, "stretch", 0.0))
+        if getattr(run.cfg, "APPROACH_SINK_GUARD", False) and state == APPROACH:
+            c2 = getattr(run, "command", None)
+            bits.append("sg=%d" % (1 if getattr(c2, "sink_guard", False) else 0))
         if getattr(run.cfg, "HAC_SPLIT_BRAKE", False):
             bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
         if getattr(run.cfg, "HAC_WEAVE_HELD", False):

@@ -2504,6 +2504,15 @@ class Config:
     # 40-65 degrees below the horizon, and a bound on the *path* says that
     # cannot happen whatever the speed or the mass.  ``cos(35)`` is 0.82 g.
     APPROACH_DIVE_MAX_DEG: float = 35.0
+    # **Never dive steeper than the path to the aim** (``guidance.approach``,
+    # ``APPROACH_SINK_GUARD``): sink past the path's by this much levels the
+    # wings and floors alpha at the load that flies the path.  The dive above
+    # allowed ~63 m/s of sink at 110 m/s where the flare has arrested 30-39
+    # on every intact landing; ~1 flight in 5 on 2026-10-08 entered the flare
+    # at 95-133 m/s with 57-93 of sink (LOG8699: wanted 36, flew 86).  Off.
+    APPROACH_SINK_GUARD: bool = False
+    APPROACH_SINK_GUARD_M_S: float = 8.0
+    APPROACH_SINK_GUARD_BANK_DEG: float = 15.0
     # The inner loop's gain, in g per radian of path error.  ``L = m g cos
     # theta`` describes a *steady* glide, and commanding it open-loop is a
     # positive feedback on an airframe that delivers 85% of the angle it is
