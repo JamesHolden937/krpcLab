@@ -959,7 +959,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # Surplus height is then spent the way a glider spends it, with the
     # S-turn above, and the worst case is landing long instead of arriving
     # nose-down.
-    alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
+    # ``APPROACH_ALPHA_MIN_DEG``: below zero only while holding speed.
+    low = float(cfg.ALPHA_MIN_DEG)
+    neg = float(getattr(cfg, "APPROACH_ALPHA_MIN_DEG", 0.0))
+    if neg < low and held > 0.0:
+        frac = float(getattr(cfg, "APPROACH_NEG_ALPHA_SPEED_FRAC", 0.97))
+        share = vec.clamp((speed / held - (frac - 0.1)) / 0.1, 0.0, 1.0)
+        low = low + share * (neg - low)
+    alpha = vec.clamp(alpha, low, cfg.APPROACH_ALPHA_MAX_DEG)
 
     # **How far off the centreline to fly, to spend the height that is
     # left.**  Serpentining at ``theta`` flies ``1/cos(theta)`` times as far
@@ -1126,7 +1133,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
         alpha += cfg.APPROACH_PATH_KP * vec.clamp(excess,
                                                   -cfg.APPROACH_PATH_LIMIT_M,
                                                   cfg.APPROACH_PATH_LIMIT_M)
-        alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
+        alpha = vec.clamp(alpha, low, cfg.APPROACH_ALPHA_MAX_DEG)
 
     design = max(target, floor) / max(0.1, clean_ld)
 

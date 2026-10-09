@@ -403,7 +403,9 @@ class Environment:
         # (alpha, Mach) -> Cl*A, Cd*A.  ``None`` means never probed; the
         # interpolation holds the nearest measured value rather than
         # extrapolating a coefficient into a regime nobody has asked about.
-        self._alphas = tuple(float(a) for a in cfg.ALPHA_BINS)
+        self._alphas = tuple(sorted(set(
+            float(a) for a in tuple(getattr(cfg, "ALPHA_BINS_NEGATIVE", ())
+                                    or ()) + tuple(cfg.ALPHA_BINS))))
         self._machs = tuple(float(m) for m in cfg.MACH_BINS)
         self._probe_alt = list(float(a) for a in cfg.PROBE_ALTITUDES)
         self.lift = Table(self._alphas, self._machs)
