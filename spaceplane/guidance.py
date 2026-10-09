@@ -2056,8 +2056,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         forward = side * math.degrees(
             math.atan(speed * speed / max(1.0, gravity * radius)))
     cap = cfg.HAC_BANK_MAX_DEG
-    if held and weave_deg > 0.0:
-        cap = weave_bank(cfg)
     signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed
