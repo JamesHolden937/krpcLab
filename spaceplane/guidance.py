@@ -962,7 +962,10 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``APPROACH_ALPHA_MIN_DEG``: below zero only while holding speed.
     low = float(cfg.ALPHA_MIN_DEG)
     neg = float(getattr(cfg, "APPROACH_ALPHA_MIN_DEG", 0.0))
-    if neg < low and held > 0.0:
+    # Only while the brake is out: the floor is there to hold speed under
+    # its drag.  Without that, a low handover flew -2.5 deg to *make* speed
+    # with 260 m too little height (LOG8880).
+    if neg < low and held > 0.0 and float(ld_factor or 1.0) < 0.99:
         frac = float(getattr(cfg, "APPROACH_NEG_ALPHA_SPEED_FRAC", 0.92))
         share = vec.clamp((speed / held - (frac - 0.1)) / 0.1, 0.0, 1.0)
         low = low + share * (neg - low)

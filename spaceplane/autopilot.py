@@ -4841,7 +4841,13 @@ class Autopilot:
                         want = a0 + (a1 - a0) * (f0 - factor) / max(1e-6, f0 - f1)
                         break
         step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
-        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
+        # Slewed on its own state (see ``approach_split_brake``).
+        cmd = getattr(self, "_hac_split_cmd", self.split_angle)
+        cmd = vec.clamp(want, cmd - step, cmd + step)
+        if cmd < 1.0 and want == 0.0:
+            cmd = 0.0
+        self._hac_split_cmd = cmd
+        new = cmd
         if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
                 self.split_angle == 0.0):
             was = self.split_angle
@@ -4920,9 +4926,16 @@ class Autopilot:
                                   or snap.ut))
         self._split_app_ut = snap.ut
         step = float(self.cfg.HAC_SPLIT_RATE_DEG_S) * dt
-        new = vec.clamp(want, self.split_angle - step, self.split_angle + step)
-        if new < 1.0 and want == 0.0:
-            new = 0.0
+        # The slew runs on its own state: a short tick's step is under the
+        # 1 deg the fins are moved for, and slewed from the *applied* angle
+        # it never accumulated -- LOG8881 held the brake out from 113 m/s
+        # to 79 after "slow" had asked for it in at 107.
+        cmd = getattr(self, "_split_cmd", self.split_angle)
+        cmd = vec.clamp(want, cmd - step, cmd + step)
+        if cmd < 1.0 and want == 0.0:
+            cmd = 0.0
+        self._split_cmd = cmd
+        new = cmd
         if abs(new - self.split_angle) >= 1.0 or (new == 0.0) != (
                 self.split_angle == 0.0):
             was = self.split_angle
