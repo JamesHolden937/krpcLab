@@ -5161,3 +5161,64 @@ exposes a geometric gap no constant closes.  Fourth attempt on spending a
 sub-lap surplus would be the same method again (sharp turn, spiral, stretch
 all null): change the method -- e.g. plan the lap at entry, where the
 flown polar now says it is needed, or give the entry aim the gap to avoid.
+
+**Night (~2000-2330): the cone's lap gap, the split rudder, the approach
+dive.**  All flags below off; best config = offload + canard trim +
+measured cone L/D.  Farm restarted every 2 rounds; swap ~20 GB at the end
+of each half.
+- `HAC_PAST_KEEPS_LINEUP` (new): with the flown polar the cone lined up on
+  its widest circle 15 km out, wove at 50, swung 12 deg past the rollout,
+  read turn 348 / a 106 km "lap", went short, dropped the weave and flew in
+  2.3 km high (LOG8655, 8665).  Keep it lined up unless that lap is
+  affordable.  rot-keep-a/b-1008: 3/12 v 2/12 -- swamped: 10 of 24 flights
+  entered the flare at 95-133 m/s (the approach dive), ~1 in 5 all day.
+- **Online (the user asked):** nothing general-purpose exists in kRPC.
+  Closest: kyooni18/KSL (kRPC + C, one shuttle, prior-flight aero evidence
+  with airbrake-state separation), giuliodondi/kOS-ShuttleEntrySim (kOS,
+  RO).  The Shuttle's TAEM fixes energy *before* the HAC (S-turns, MEP,
+  energy-v-range corridor, dynamic-pressure profile), chooses
+  overhead/straight-in by energy, and uses a speedbrake throughout.
+- **The split rudder** (the user: "we have 2 rudders, you can split
+  them"), `tools/splitprobe.py` (new): both Big-S fins at Deploy Angle 38
+  -> drag +101% on approach (L/D 4.17 -> 1.89), +52% lower cone (3.28 ->
+  2.00), +54% flare; **yaw and roll 0.0**; nose-down ~60 m^3 q; 45 adds
+  ~2%.  The old approach "airbrake" only ever moved the flaps -- the pair
+  was armed and never deployed.  **Sideslip** (the user's skid idea):
+  +68% drag at 10 deg, but one fin makes ~50 m^3 q of yaw (less past 20
+  deg) against ~28 m^3 q per degree of weathercock: ~3.5 deg holdable,
+  ~+17%, with roll coupling.  The split wins.
+- `HAC_SPLIT_BRAKE` (new): angle from the measured L/D factor so the
+  remaining path spends the height to the gate.  rot-split-1008 (with
+  polar + keep): **7/12 v 5/12, long 1 v 5, high 4/4** -- but two inc
+  flights opened it at cone entry still stalled and ran out of height
+  13.6 km out (LOG8714, 8719).  `HAC_SPLIT_ON_BRANCH` gates it to the
+  flown polar's rising branch with the deceleration done.
+- **Rollout** (the user asked): over 161 intact landings the roll was
+  already ~380 m median (55 m/s, 3.4 m/s^2; p90 ~870); the 19 "ROLLOUT"
+  losses are mostly hard arrivals that die on contact (>= 11).  The
+  measured elevon+canard ground spoiler already deploys from orbit (LOG8687:
+  6 surfaces, +-14.4/-25); `ROLLOUT_SPLIT_BRAKE` (new) adds the fins.
+- **`APPROACH_SINK_GUARD`** (new): the approach's speed law may dive 35 deg
+  (~63 m/s of sink) to make speed while the S-turn banks 40 at alpha ~1
+  (LOG8699: wanted 36, flew 86 at the door, 2.2 km short).  v1 capped at
+  the path to the aim and never fired (handed over high, the path is
+  itself steep): **stack 5/12 v 9/12** (rot-stack-1008; a 400 m brake
+  reserve also handed over higher -- retired).  v2 caps at 1.5 x the
+  approach's design sink: rot-guard-1008 (4 per orbit): **guard + rollout
+  brake 0 dives, 0 lost, but 7/12 long** (2/12 on the runway, base 6/12);
+  full stack 4/12.
+- `APPROACH_SPLIT_ON_GUARD` (new): the split rudder spends the guard's
+  surplus as speed.  rot-gsplit-1008: **6/12 v 5/12, long 3 v 6, inc 4/4**;
+  but four reached the flare at 44-54 m/s and LOG8801 stalled 2.8 km short
+  -> stowed below the flare's target speed (e2a21b2).
+- rot-gsplit2-1008 (repeat, speed floor): **guard+split 2/12 v base
+  7/12**; the approach brake never deployed (`split=0` on all 12), yet 7
+  reached the flare at 38-46 m/s and 6 landed short.  **The slow flares
+  are the guard's own**: capping sink floors alpha at the path load, the
+  alpha is draggy, the speed bleeds to the stall.  It trades dives for
+  stalls.  Pooled over rot-guard / gsplit / gsplit2 it is worse than the
+  base; off.  Capping a symptom (sink) without managing the energy only
+  moves the failure -- the dives start from high handovers (+0.8-1.1 km
+  over need), which is where to act.
+- Base (best config) on the three orbits tonight: 9/12, 6/12, 5/12,
+  7/12.
