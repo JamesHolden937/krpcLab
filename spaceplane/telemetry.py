@@ -423,7 +423,7 @@ class Telemetry:
         ``mains`` are the braked wheels' parts.  Returns the per-part
         corner table (vessel frame) for ``Autopilot.ground_watch``, or None.
         Sets ``wheel_clearance`` and ``tail_angle_deg`` only when ``apply``
-        (``GEAR_GEOMETRY_DEPLOYED``)."""
+        (never, since 2026-10-09: null)."""
         frame = self.vessel.reference_frame
         try:
             wheel_parts = [w.part for w in self.vessel.parts.wheels]

@@ -24,7 +24,6 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
-import re
 from dataclasses import dataclass
 
 from common import vec
@@ -67,9 +66,6 @@ class Prediction:
     high: float = 0.0          # altitude above the gate at closest approach
     long: float = 0.0          # along-track miss at the gate altitude
     cross: float = 0.0         # lateral offset from the centreline there
-    # ``GLIDE_CONE_ENERGY``: the cone-entry energy's error as ground (see
-    # ``guidance.cone_energy_long``).  0 when off or unknown.
-    energy_long: float = 0.0
     # **The predicted handover**: ``(altitude, speed)`` where the arc first
     # meets the cone's entry test (Mach at most ``HAC_ENTRY_MACH`` and within
     # ``HAC_ENTRY_DIST_M`` of the gate, or down to the gate's altitude), so
@@ -166,15 +162,8 @@ def past_interface(env, cfg, altitude):
     where the glide flies rather than the coast.
 
     ``ENTRY_INTERFACE_M`` (58 km) is a Kerbin altitude with no recorded
-    reason.  Under ``ENTRY_INTERFACE_AT_AIR`` the interface is the top of
-    the atmosphere the game reports for the body: the glide's solve
-    propagates the whole remaining entry at the bank it commands, so it is
-    well posed from the first air, and thin air only makes the bank cheap.
+    reason.
     """
-    if getattr(cfg, "ENTRY_INTERFACE_AT_AIR", False):
-        depth = getattr(env, "atmosphere_depth", None)
-        if depth:
-            return altitude < float(depth)
     return altitude < float(cfg.ENTRY_INTERFACE_M)
 
 
@@ -491,18 +480,6 @@ def lift_direction(r, v, bank_deg):
                             vec.scale(side, math.sin(bank))))
 
 
-def holdprior_key(name, parts):
-    """Which craft a ``HOLDABLE_PRIOR`` file belongs to: the vessel's name and
-    its part count at load, exactly as every log's ``vessel:`` line prints
-    them (both airframes are called "Untitled Space Craft")."""
-    return "%s|%d" % (name, int(parts))
-
-
-def holdprior_slug(key):
-    """A file name for ``holdprior_key``."""
-    return re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
-
-
 class Holdable:
     """The angle of attack this airframe can hold, learned while flying it.
 
@@ -550,82 +527,10 @@ class Holdable:
         # ``(alpha achieved, q, mach)``.  One such sample is enough to
         # predict the ceiling everywhere denser; see ``prior``.
         self.anchor = None
-        # ``HOLDABLE_PRIOR``: what this craft held while saturated on earlier
-        # flights, as ``[(q_lo, q_hi, alpha)]`` above ``prior_mach``.  Set by
-        # ``set_prior``; empty means no prior and the old behaviour.
-        self.prior = []
-        self.prior_mach = 0.0
-
-    def set_prior(self, cells, mach_floor=0.0):
-        """Seed the ceiling with what earlier flights of this craft held.
-
-        **The learner only knows a ceiling once the vehicle has hit it**, and
-        the predictor plans the rest of the glide on whatever it knows.  A
-        flight that tracks 40-44 deg in the first kilopascal reads "no
-        ceiling" for the denser air below and plans on 44 there; at 3-5 kPa
-        it holds 23-28, makes 20-40% less drag than the plan, and arrives
-        5-14 km long (rot-lapstack-1006: act/commanded drag 0.59-0.80 on
-        every long flight at 38-32 km, 0.83-1.07 on every on-profile one;
-        the table at the *achieved* alpha is within 4% on all of them).
-        The prior is that ceiling measured -- by ``tools/holdprior.py``
-        from this craft's own logs -- so the plan knows it from the first
-        tick.  Forced non-increasing in ``q``: the ceiling only falls as the
-        air thickens, the same rule ``limit`` extrapolates by.
-        """
-        # A cell may carry its Mach band (``holdprior.py --by-mach``): the
-        # rule then holds within each band, because the trim limit is a
-        # moment balance that moves with Mach (``_band``) -- at 4.4 kPa the
-        # shuttle holds 35 deg at Mach 3-4 and 25 at Mach 1.2-3.
-        groups = {}
-        for cell in cells:
-            lo, hi, a = (float(x) for x in cell[:3])
-            mach = (tuple(float(x) for x in cell[3:5]) if len(cell) >= 5
-                    else None)
-            groups.setdefault(mach, []).append((lo, hi, a))
-        out = []
-        for mach, group in groups.items():
-            low = None
-            for lo, hi, a in sorted(group):
-                low = a if low is None else min(low, a)
-                out.append((lo, hi, low) if mach is None
-                           else (lo, hi, low) + mach)
-        self.prior = sorted(out)
-        self.prior_mach = float(mach_floor)
-
-    def prior_at(self, q, mach=None):
-        """The prior ceiling at ``q``, or ``None`` (no prior, subsonic of
-        what it was measured over, or outside the q it was measured at)."""
-        if not self.prior:
-            return None
-        if mach is not None and mach < self.prior_mach:
-            return None
-        # Only where it was measured: past its densest bin the learner's own
-        # downward extrapolation answers, as it always has.
-        for cell in self.prior:
-            lo, hi, a = cell[:3]
-            if len(cell) >= 5 and (mach is None
-                                   or not cell[3] <= mach < cell[4]):
-                continue
-            if lo <= q < hi:
-                return a
-        return None
 
     def _bin(self, q):
         per = max(1, int(self.cfg.HOLDABLE_Q_DECADE_BINS))
         return int(math.floor(per * math.log10(max(1.0, q))))
-
-    def _band(self, mach):
-        """``HOLDABLE_BY_MACH``: the Mach regime a sample belongs to, or 0.
-
-        Binned by ``q`` alone, the 36 deg the shuttle holds at Mach 4 and
-        3 kPa answered for Mach 0.7 at 3 kPa, where it holds 18 with the
-        pitch input saturated (rot-offmach-1007, LOG7727: "commanded 26,
-        achieving 18.7, learned 38.5").  The trim limit is a moment balance
-        and the centre of pressure moves with Mach, so each regime learns its
-        own ceiling.  The edges are aerodynamic regimes, not this craft."""
-        if not getattr(self.cfg, "HOLDABLE_BY_MACH", False) or mach is None:
-            return 0
-        return 1 + sum(1 for e in self.cfg.HOLDABLE_MACH_EDGES if mach >= e)
 
     def observe(self, commanded, achieved, q, mach=None):
         """One tick of evidence.  Cheap enough to call every tick, and is."""
@@ -637,7 +542,7 @@ class Holdable:
             # comment records -- and taking it as one would raise the limit
             # above anything the vehicle holds steadily.
             return
-        index = (self._band(mach), self._bin(q))
+        index = self._bin(q)
         short = commanded - achieved
         current = self.bins.get(index)
         saturated = short > float(self.cfg.HOLDABLE_SATURATED_DEG)
@@ -662,54 +567,23 @@ class Holdable:
         else:
             # Tracking: the ceiling is at least what was asked for.
             if current is None:
-                # **Above the prior is evidence against it.**  The prior is
-                # what flights held *when they saturated*; a flight tracking
-                # above it here is not one of those, and left to the prior it
-                # plans less drag than it is making (rot-prior-1006: inc held
-                # its command at 38-32 km and handed the cone over 0.4-1.7 km
-                # low under the prior).  Its own bin, at the command.
-                prior = self.prior_at(q, mach)
-                if prior is not None and commanded > prior:
-                    self.bins[index] = [commanded, 1]
-                    self.generation += 1
                 return
             current[0] = max(current[0], commanded)
             current[1] += 1
         self.generation += 1
 
     def limit(self, q, mach=None):
-        """The ceiling at this ``q``, or ``None`` where there is no evidence.
-
-        With a prior (``set_prior``), the vehicle's own evidence at this
-        ``q`` still wins; where it has none, the prior answers, and an
-        extrapolation is never above it.
-        """
+        """The ceiling at this ``q``, or ``None`` where there is no evidence."""
         if q < float(self.cfg.HOLDABLE_MIN_Q):
             return None
-        prior = self.prior_at(q, mach)
-        band = self._band(mach)
-        # A query with no Mach under ``HOLDABLE_BY_MACH`` sees every band.
-        any_band = band == 0 and getattr(self.cfg, "HOLDABLE_BY_MACH", False)
-        trusted = [(i[1], v[0]) for i, v in self.bins.items()
-                   if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)
-                   and (any_band or i[0] == band)]
-        if any_band and trusted:
-            # The lowest ceiling any regime showed at each q bin.
-            low = {}
-            for i, v in trusted:
-                low[i] = min(v, low.get(i, v))
-            trusted = list(low.items())
+        trusted = [(i, v[0]) for i, v in self.bins.items()
+                   if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)]
         if not trusted:
-            if prior is None:
-                return None
-            return prior + float(self.cfg.HOLDABLE_MARGIN_DEG)
+            return None
         index = self._bin(q)
         exact = dict(trusted)
         if index in exact:
             best = exact[index]
-        elif prior is not None:
-            below = [v for i, v in trusted if i < index]
-            best = min([prior] + below)
         else:
             below = [v for i, v in trusted if i < index]
             above = [v for i, v in trusted if i > index]
@@ -730,10 +604,8 @@ class Holdable:
         trusted = sorted((i, v) for i, v in self.bins.items()
                          if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES))
         per = max(1, int(self.cfg.HOLDABLE_Q_DECADE_BINS))
-        by_mach = getattr(self.cfg, "HOLDABLE_BY_MACH", False)
-        return " ".join("%s%.0fPa:%.1f/%d" % (
-            ("m%d:" % i[0]) if by_mach else "",
-            10.0 ** (i[1] / float(per)), v[0], v[1]) for i, v in trusted)
+        return " ".join("%.0fPa:%.1f/%d" % (
+            10.0 ** (i / float(per)), v[0], v[1]) for i, v in trusted)
 
 
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):

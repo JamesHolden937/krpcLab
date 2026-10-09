@@ -30,7 +30,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from spaceplane.trajectory import holdprior_key, holdprior_slug  # noqa: E402
+
+
+def holdprior_key(name, parts):
+    """Which craft a file belongs to: the vessel's name and its part count
+    at load, as every log's ``vessel:`` line prints them."""
+    return "%s|%d" % (name, int(parts))
+
+
+def holdprior_slug(key):
+    """A file name for ``holdprior_key``."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
 
 VESSEL = re.compile(r"vessel: (.*?)\s+(\d+) parts")
 AOA = re.compile(r"aoa=\s*[-0-9.]+/\s*([-0-9.]+)")

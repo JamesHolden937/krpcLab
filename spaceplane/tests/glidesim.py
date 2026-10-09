@@ -91,14 +91,11 @@ def fly(cfg, dv, longitude=0.0, verbose=True, jitter=0.0):
     tick = cfg.GLIDE_TICK_S
     solved = 0
     while t < 4000.0:
-        altitude = vec.norm(r) - env.equatorial_radius
         height = vec.norm(r) - env.target_radius
         distance = trajectory.surface_distance(env, r, gate)
         if height <= cfg.HAC_ALT_M or distance <= cfg.HAC_ENTRY_DIST_M:
             break
-        if (height <= cfg.ENTRY_INTERFACE_M
-                if not getattr(cfg, "ENTRY_INTERFACE_AT_AIR", False)
-                else trajectory.past_interface(env, cfg, altitude)):
+        if height <= cfg.ENTRY_INTERFACE_M:
             new, prediction = guidance.solve_glide(env, r, v, MASS, cfg, end,
                                                    steer.alpha, steer.bank)
             solved += 1

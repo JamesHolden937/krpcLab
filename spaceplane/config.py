@@ -172,51 +172,6 @@ class Config:
     # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
     FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
     FLARE_PITCH_P_MAX: float = 0.5
-    # **The same proportional term in HAC and APPROACH.**  kRPC's attitude
-    # loop is a rate loop: its only path from a *held* angle error to a held
-    # input is the integrator, and on a statically stable wing every change
-    # of alpha needs a changed standing input.  When the cone's speed law
-    # drops its alpha command, the shuttle stays 7-9 deg high for 30-90 s
-    # with the pitch input unsaturated at +0.3..+0.5 (the integrator
-    # unwinding at ~0.003/s), flies L/D ~1.2 and runs out of height:
-    # over 480 rigoff flights of 2026-10-07 the flights holding that state
-    # on >= 20% of cone/approach ticks landed 3/173 on the runway (145
-    # short), those under 5% 114/185 (LOG8104 against LOG8083).
-    PITCH_P_CONE: bool = False
-    # **Hand the standing trim to the body frame and clear kRPC's integrators**
-    # (``Autopilot.cone_trim_handoff``), HAC and APPROACH.  ``PITCH_P_CONE``
-    # was null (rot-pitchp-1007, 8/18 vs 6/18): kRPC wound up against it.
-    # kRPC's own diagnostic log (scratch apwatch, LOG8144) says why the cone
-    # sticks: its PID integrators live in a roll-invariant frame carried by
-    # parallel transport of the nose, which a spiral twists against the body
-    # (phi 34 deg on a wings-level vehicle), so the nose-up trim they hold
-    # comes out as body pitch +0.29 and body yaw -0.53 -- the 4-7 deg pitch
-    # and heading error and the 3.6 deg slip -- and unwinds at ~0.002/s.
-    # A manual input is applied in the body frame, which nothing rotates.
-    # Every ``_S`` game seconds, with the nose within ``_TOL_DEG`` of its
-    # command, the roll settled and nothing saturated, the summed pitch and
-    # yaw inputs become the manual trim and kRPC is re-engaged, whose
-    # ``Start()`` zeroes the integrators and re-seats the frame.  The flare
-    # keeps the trim and adds ``FLARE_PITCH_P`` on top; ROLLOUT ramps it out.
-    # **The cargo bay doors as a speedbrake** (``Autopilot.bay_brake``),
-    # never commanded before 2026-10-07.  Measured on qs_s2_hac0 with
-    # ``simulate_aerodynamic_force_at`` (scratch bayprobe): open adds 10-30%
-    # drag at 90-220 m/s and slightly *adds* lift (L/D 5.5 -> 4.75 at 0
-    # deg, 3.9 -> 3.4 at 5) -- drag, not a lift dump, unlike the measured
-    # flap "spoiler".  The missing half of ``PROPELLANT_TRIM``: trimmed, the
-    # cone flies L/D 2.6 and lands 7-15 km long with nothing to spend it.
-    # **Last resort only** (the user): open once, when the cone's radius
-    # is at its cap with no lap or the approach's S-turns are saturated,
-    # with more than ``HAC_WEAVE_DEADBAND_M`` still to spend (cone: over
-    # ``needed_height``; approach: ``command.excess``); shut when it is
-    # spent, and never reopened.  Not commanded from the flare door on.
-    # kspSim does not model the doors (its gap 4).
-    BAY_BRAKE: bool = False
-    # The approach counts as saturated when its S-turn spent this share of
-    # the recent window at its cap (``airbrake.saturated``, the ``sat=``
-    # column).  Doors open once, last resort, and stay open until the
-    # surplus is spent (the user, 2026-10-07).
-    BAY_BRAKE_SATURATED: float = 0.8
     # **Trim on the canards, by moving them ourselves** (``Autopilot.
     # canard_trim``).  Trimming through control travel is this airframe's
     # largest drag: full nose-up input at alpha 5, 90 m/s costs 34% of the
@@ -224,7 +179,7 @@ class Config:
     # nose-up *with* +6 kN of lift and +2 kN of drag (scratch tabprobe,
     # 2026-10-07).  And a standing input held by kRPC sits in its
     # roll-invariant integrators, which the cone twists into pitch-and-yaw
-    # error (``CONE_TRIM_HANDOFF``'s note).  So the forward mirrored pair is
+    # error (rot-handoff-1007).  So the forward mirrored pair is
     # taken off kRPC with ``ControlSurface.deflection_override`` and driven
     # as a trim: it integrates the low-passed summed pitch input toward
     # zero over ``_TAU_S`` (deadband ``_DEADBAND``), capped at ``_MAX`` of
@@ -259,9 +214,6 @@ class Config:
     CANARD_TRIM_MAX: float = 0.6
     CANARD_TRIM_MAX_MACH: float = 0.0
     CANARD_TRIM_SIGN: float = 1.0
-    CONE_TRIM_HANDOFF: bool = False
-    CONE_TRIM_HANDOFF_S: float = 5.0
-    CONE_TRIM_HANDOFF_TOL_DEG: float = 1.5
     ALPHA_TRIM_MIN_DEG: float = -2.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_MAX_DEG: float = 4.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0
@@ -370,22 +322,6 @@ class Config:
     # entry speed.  At 270 m/s the floor is 7.4 km and no lap ever fits, so
     # 5-7 km of surplus went out of the gate (LOG4152, 4171).  Off.
     HAC_LAP_AT_TARGET_SPEED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
-    # **The cone's glide ratio at the speed and bank it will be flown at**
-    # (``guidance._hac_planned_ld``): the swept table at the cone's target
-    # speed, wings level on the straight legs and at the circle's bank on
-    # the arc, divided by ``airframe.PLANNING_BIAS``.  ``HAC_LD`` 1.86 is a
-    # whole-cone average of a Mach 0.7 entry at 22 deg of alpha (flown 1.4)
-    # and a subsonic straight-in at 6 (2.7-3.0 flown, and the table agrees:
-    # ``ld=`` act/mdl 2.97/2.98 on LOG4051).  With the phantom path gone
-    # (above) the cone read itself short at 6.1 km and still rolled out
-    # 1.1 km high (LOG4086).
-    # **Priced slice by slice down to the gate** (``guidance.hac_ladder``),
-    # each at the target speed at *that* height: the first version took the
-    # ratio where the vehicle was, read 1.16 at 13 km (thin air, high trim
-    # alpha), called itself short, and found its 2 km of surplus below 7 km
-    # with 5 km of path left -- weave pinned at 50, out +2.0 km (LOG4091).
-    # Off until paired.
-    HAC_LD_AT_TARGET: bool = False
     # **The cone's ratio as a measured curve** (``guidance.hac``,
     # ``Autopilot.hac_ld_scale``): the ladder above, every rung scaled by
     # the vehicle's measured L/D (kRPC's force, ``act=``) over the table's
@@ -840,38 +776,11 @@ class Config:
     SOLVE_MAX_RANGE_PROBES: int = 6
 
     GLIDE_RESERVE_M: float = 500.0
-    # **Aim the glide at the energy the cone wants to be entered with**
-    # (``guidance.cone_entry_energy`` / ``cone_energy_long``; the user,
-    # 2026-10-08: "adjust cone entry energy").  The target is the middle of
-    # what the cone can spend without a lap from the state the prediction
-    # enters it in -- its tightest circle to its widest plus the weave,
-    # down its own ladder -- and the predicted energy is read where the arc
-    # meets the cone's entry test, not at the 12 km crossing (which is why
-    # ``GLIDE_ENERGY_AIM`` was refuted).  The difference is ground at the
-    # aim's ratio, added to the miss.  Over 60 orbit flights (rot-orbits,
-    # rot-sharp*-1007) entries delivered 17-28 km of energy height and the
-    # cone handed over ~20% of the excess over ~17 km.  Off.
-    GLIDE_CONE_ENERGY: bool = False
-    # **... against the cone's ceiling, not the middle of its ladder band**
-    # (``guidance.cone_entry_energy``): the gate's energy plus the longest
-    # no-lap path at the airframe's L/D at ``HAC_ALPHA_MAX_DEG``.  The
-    # ladder band read 14-35 km for one entry state; the cone flies 26-29 km
-    # of path from every entry and absorbs ~20-21 km of energy height at
-    # most (24 farm orbit flights, rot-orbits/rot-sharp1-1007).  Needs
-    # ``GLIDE_CONE_ENERGY``.  Off.
-    GLIDE_CONE_CEILING: bool = False
     GLIDE_RESERVE_FROM_ALT_M: float = 12000.0
     GLIDE_RESERVE_TO_ALT_M: float = 12000.0
 
     # -- entry -------------------------------------------------------------
     ENTRY_INTERFACE_M: float = 58000.0      # where to stop coasting and fly
-    # **The interface at the top of the air** (``trajectory.past_interface``):
-    # the glide takes over where the body's atmosphere begins, as the game
-    # reports it, instead of at 58 km -- a Kerbin altitude in the initial
-    # commit with no recorded reason, which means nothing on another body.
-    # The glide's solve propagates the whole remaining entry, so it is well
-    # posed from the first air.  Off until paired.
-    ENTRY_INTERFACE_AT_AIR: bool = False
     # -- the upper entry, where the solve has leverage but no authority ----
     # Holdability is discovered, not computed: simulate_aerodynamic_force_at
     # returns a force and not a moment, so the pitching moment at an attitude
@@ -1052,23 +961,10 @@ class Config:
     # to express a tuple on a command line.  Off by default: see the numbers.
     ALPHA_TRACKING_ON: bool = False
     HOLDABLE_Q_DECADE_BINS: int = 6         # bins per decade of dynamic pressure
-    # ``Holdable._band``: learn the ceiling per Mach regime as well as per
-    # q -- the trim limit moves with the centre of pressure.  Off until flown.
-    HOLDABLE_BY_MACH: bool = False
-    HOLDABLE_MACH_EDGES: tuple = (0.8, 1.2, 2.0, 3.0, 5.0)
     HOLDABLE_SATURATED_DEG: float = 2.5     # command - achieved, to count
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **Seed the learned alpha ceiling from this craft's earlier flights**
-    # (``Holdable.set_prior``; written by ``spaceplane/tools/holdprior.py``
-    # to ``logs/holdprior/``, keyed by vessel name and part count).  The
-    # learner knows a ceiling only once the vehicle hits it, so a glide that
-    # has not saturated yet plans 40-44 deg into air where it holds 23-28:
-    # every long rigoff arrival of rot-lapstack-1006 made 20-40% less drag
-    # at 38-32 km than its prediction.  No file for the craft: no prior.
-    # Off until flown.
-    HOLDABLE_PRIOR: bool = False
 
     # -- the ceiling, measured by a probe instead of inferred in flight ----
 
@@ -1574,14 +1470,6 @@ class Config:
     # instrument.
     WHEEL_WATCH_S: float = 0.0
     WHEEL_WATCH_RELIST_S: float = 0.5
-    # **The landing geometry measured with the gear down**
-    # (``Telemetry.measure_gear_geometry``).  The first-sample box is read
-    # with the gear up on every save, so on the shuttle the "wheels" were
-    # the belly (1.82 m; the tyres are 3.72) and the tail-strike angle 11.0
-    # deg (the engine bell reaches the runway at ~25 about the mains).  On:
-    # re-measured from every part's box once the mains report deployed, and
-    # the clearance and the tail angle replaced.
-    GEAR_GEOMETRY_DEPLOYED: bool = False
     # ``Autopilot.ground_watch``: every part's lowest point above the
     # terrain, and the flex of the four closest, from wheels-6-m until this
     # many game seconds after contact (0 = off).  An instrument.
@@ -2072,12 +1960,6 @@ class Config:
     PROBE_SPEED_FLOOR: float = 30.0
     AERO_REFRESH_UT: float = 1.0
     AERO_ROWS_PER_REFRESH: int = 2
-    # **Re-probe only the Mach rows being flown** (``Environment.
-    # _rows_near``): the probe sees the surfaces as they are deflected now,
-    # so a subsonic row re-probed mid-glide describes an airframe trimmed for
-    # Mach 3 -- L/D 0.85-1.72 at 2.5 km where the cone flies 3.3-3.7
-    # (rot-ladder-1008).  Off.
-    AERO_REFRESH_NEAR_MACH: bool = False
     AERO_SMOOTHING: float = 0.35            # new sample's weight
     SOUND_SPEED_FALLBACK_M_S: float = 340.0
     DENSITY_TABLE_STEP_M: float = 250.0
@@ -2411,15 +2293,10 @@ class Config:
     # threshold, on the shuttle".  The general form derives it per vehicle:
     # touchdown = aim + flare float (door speed vs stall, L/D) and that plus
     # the rollout (v_td^2 / 2 a_brake) must fit the runway.
-    # ``TOUCHDOWN_AIM_DERIVED`` has the float half and no rollout term, and
-    # has never been flown on the farm.  spaceplane/CLAUDE.md, "Next".
+    # A derived aim with the float half and no rollout term
+    # (``TOUCHDOWN_AIM_DERIVED``) crashed 5-9 km short on four saves and was
+    # deleted 2026-10-09.  spaceplane/CLAUDE.md, "Next".
     TOUCHDOWN_AIM_M: float = 1800.0
-    # **The aim derived** (``airframe.touchdown_aim``): the touchdown zone
-    # (this fraction of ``RUNWAY_LENGTH_M`` -- the user's rule, aim at the
-    # near end so the rollout has the room) less the flare's float at best
-    # glide.  The cone now exits within a few hundred metres (rot-chain3),
-    # which is the condition the comment above set for moving it.  Off.
-    TOUCHDOWN_AIM_DERIVED: bool = False
     # **The approach's aim nearer, the cone's left alone** (metres; 0 =
     # off).  Flown 2026-10-05 on the rigoff cone saves with
     # FLARE_ALIGN_ALT_M=30: every save that missed missed *long* -- they
@@ -2432,7 +2309,6 @@ class Config:
     # unshifted aim): on the rigoff cone saves, on the runway intact 13/15
     # against 5/15, interleaved (sav-shift3-1005, LOG6244-6279).
     APPROACH_AIM_SHIFT_M: float = 1000.0
-    TOUCHDOWN_ZONE_FRACTION: float = 0.25
     FLARE_RAMP_S: float = 0.4
 
     # -- the propagator ----------------------------------------------------

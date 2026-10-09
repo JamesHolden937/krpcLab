@@ -35,11 +35,7 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
-    if prediction.reached and getattr(prediction, "handover_met", False):
-        prediction.energy_long = cone_energy_long(env, cfg,
-                                                  prediction.handover)
-    return steer, prediction, (prediction.long + prediction.energy_long,
-                               prediction.cross)
+    return steer, prediction, (prediction.long, prediction.cross)
 
 
 def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,
@@ -1231,129 +1227,6 @@ def hac_available(env, cfg, speed, height, mass, gravity):
     return max(0.0, height + excess - cfg.GATE_ALT_M) * ratio
 
 
-def cone_entry_energy(env, cfg, end, r, v, mass, gravity):
-    """``GLIDE_CONE_ENERGY``: the energy height (``h + v^2/2g``) the cone
-    wants to be entered with at ``r``/``v`` -- the middle of what it can
-    spend from there without a lap -- as ``(low, mid, high)``, or ``None``.
-
-    Everything is the cone's own machinery at the entry state: the path to
-    the rollout over every radius it may fly (``hac_cost``, floored at the
-    circle the airframe holds at the cone's speed), the longest of them
-    stretched by the weave at its limit (``weave_efficiency``), each priced
-    down the cone's ladder (``hac_ladder``), plus the speed term the cone's
-    budget counts (``(v^2 - v_final^2)/2g`` over the gate's target speed).
-    ``low`` is the tightest circle, ``high`` the widest plus the weave.  At
-    a straight-in entry the two nearly meet -- the cone has no authority
-    there but the weave -- which is the geometry this measures rather than
-    assumes.
-    """
-    stall = airframe.stall(env, cfg)
-    if stall is None or mass is None or gravity <= 0.0:
-        return None
-    height = vec.norm(r) - env.equatorial_radius
-    side = hac_side(env, cfg, end, r, v)
-    target = cone_speed(env, cfg, stall, height)
-    load = airframe.turn_load(env, cfg, target, height, mass, gravity)
-    floor = max(cfg.HAC_RADIUS_MIN_M,
-                hac_hold_radius(cfg, target, gravity, load))
-    floor = min(floor, cfg.HAC_RADIUS_MAX_M)
-    plans = []
-    steps = 24
-    for i in range(steps + 1):
-        radius = floor + (cfg.HAC_RADIUS_MAX_M - floor) * i / float(steps)
-        cost = hac_cost(env, cfg, end, r, v, side, radius)
-        if cost is None:
-            continue
-        state = hac_state(env, cfg, end, r, side, radius)
-        _, turn, _ = hac_path(cfg, state[0], state[1], state[2], side,
-                              radius)
-        plans.append((cost, radius, turn))
-    if not plans:
-        return None
-    short = min(plans)
-    long = max(plans)
-    try:
-        rev = weave_reversal_s(cfg, cfg.HAC_WEAVE_MAX_DEG, target, gravity)
-        eff = weave_efficiency(cfg.HAC_WEAVE_MAX_DEG, rev,
-                               cfg.HAC_WEAVE_HOLD_S)
-    except Exception:                                       # noqa: BLE001
-        eff = 1.0
-    final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
-    speed_term = final * final / (2.0 * gravity)
-
-    def need(path, radius, turn):
-        top = max(height, cfg.GATE_ALT_M) + 30000.0
-        rungs = hac_ladder(env, cfg, top, mass, gravity,
-                           lambda h: cone_speed(env, cfg, stall, h),
-                           radius, turn, 0, max(1.0, path))
-        if rungs is None or len(rungs) < 2:
-            return None
-        return ladder_height(rungs, path, 1.0) + speed_term
-
-    if getattr(cfg, "GLIDE_CONE_CEILING", False):
-        # **The most the cone can spend without a lap**, priced at the
-        # ratio it actually spends at.  The ladder above prices path at the
-        # cone's target speed scaled by ``ldk``, and read 14-35 km for the
-        # same entry state on eight sim flights (sim-easce-1008).  Flown,
-        # the cone covers 26-29 km of path from *every* entry on 24 farm
-        # orbit flights, whatever the radius, and its one energy control is
-        # how long it stays at the alpha cap: ~1.5 m of path per metre of
-        # energy there, ~3.1 below it.  So the ceiling is the gate's energy
-        # plus the longest no-lap path (widest circle, weave at its limit)
-        # at the airframe's own L/D at the cap -- ``straight_in_reach``'s
-        # "steepest", off the table.  Entries above ~20-21 km roll out high
-        # and land 4-6 km long (LOG8340, 8348, 8351); below it they roll out
-        # within +-0.5 km.  Returned as ``(ceiling, ceiling, ceiling)``.
-        mid_h = 0.5 * (height + cfg.GATE_ALT_M)
-        speed = cone_speed(env, cfg, stall, mid_h)
-        try:
-            cla, cda = env.coefficients(cfg.HAC_ALPHA_MAX_DEG, speed, mid_h)
-        except Exception:                                   # noqa: BLE001
-            return None
-        if cla <= 0.0 or cda <= 0.0:
-            return None
-        ceiling = (gate_alt(env, cfg, end, mass=mass, gravity=gravity)
-                   + speed_term + long[0] / max(0.1, eff) / (cla / cda))
-        return ceiling, ceiling, ceiling
-
-    low = need(short[0], short[1], short[2])
-    high = need(long[0] / max(0.1, eff), long[1], long[2])
-    if low is None or high is None:
-        return None
-    return low, 0.5 * (low + high), high
-
-
-def cone_energy_long(env, cfg, handover):
-    """``GLIDE_CONE_ENERGY``: the predicted cone-entry energy against what
-    the cone wants (``env.cone_energy``, set each glide tick from
-    ``cone_entry_energy``), as along-track metres at the ratio that places
-    the aim -- so a surplus reads long and the glide spends it before the
-    cone has to.  ``handover`` is the prediction's ``(altitude, speed)``
-    where the arc met the cone's entry test; 0 when it did not (the
-    fallback there is the 12 km crossing ``GLIDE_ENERGY_AIM`` was refuted
-    on), when off, or when the cone could not say."""
-    if not getattr(cfg, "GLIDE_CONE_ENERGY", False) or not handover:
-        return 0.0
-    want = getattr(env, "cone_energy", None)
-    if want is None:
-        return 0.0
-    altitude, speed = handover
-    radius = env.equatorial_radius + altitude
-    gravity = env.mu / (radius * radius)
-    ratio = (getattr(getattr(env, "runway", None), "aim_ld", None)
-             or cfg.HAC_GATE_LD)
-    # **A surplus only.**  The predicted entry energy is low on every
-    # flight on record (60 of 60 orbit flights, by 0.5-13 km of energy
-    # height 50 km out; rot-orbits/rot-sharp*-1007), so a predicted surplus
-    # is a lower bound on a real one, while a predicted deficit is mostly
-    # the prediction's own pessimism.  Priced both ways, the glide read
-    # -14 km from 260 to 40 km out, flattened to save energy it already had
-    # and entered the cone with 24 km (kspSim LOG8501, against 17-18.6
-    # without).  The deficit side is left to the position aim.
-    return ratio * max(0.0, altitude + speed * speed / (2.0 * gravity)
-                       - want[1])
-
-
 def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,
                height=None):
     """``(end, side)``: which way round, **and which way down the runway**.
@@ -1739,7 +1612,7 @@ def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
 
 def hac_ladder(env, cfg, height, mass, gravity, reference, radius, turn,
                laps, total, floor=None):
-    """``HAC_LD_AT_TARGET``: path the height still pays for, slice by slice.
+    """Path the height still pays for, slice by slice.
 
     ``[(h, path from GATE_ALT_M up to h)]`` in ``HAC_LADDER_STEP_M`` steps
     to ``height``, each slice priced at the cone's target speed *at that
@@ -1911,8 +1784,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
                                                     gravity, load,
                                                     lap_speed=reference)
     measured = getattr(cfg, "HAC_LD_MEASURED", False)
-    if getattr(cfg, "HAC_LD_AT_TARGET", False) or measured:
-        # ``HAC_LD_AT_TARGET``: price the path still to fly at the ratio the
+    if measured:
+        # Price the path still to fly at the ratio the
         # vehicle will fly it at -- the swept table at the cone's own
         # target speed, wings level on the straight legs and at the circle's
         # bank on the arc -- then plan again.  ``HAC_LD`` 1.86 is a
