@@ -1056,7 +1056,13 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     in_flare *= vec.clamp(
         float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
     cross_time = to_flare + in_flare
-    timely = abs(cross) / max(1.0, cross_time)
+    # ``APPROACH_CAPTURE_TAU_SHARE``: close as an exponential whose time
+    # constant is this share of the time left, rather than at the constant
+    # rate that zeroes the offset exactly at the wheels (1.0).  At 1.0 the
+    # flare inherits the whole closing rate: 34 of 113 flights entered it
+    # 100-200 m off and 5 of those stopped off the strip (2026-10-09).
+    timely = abs(cross) / max(1.0, cross_time * vec.clamp(
+        float(getattr(cfg, "APPROACH_CAPTURE_TAU_SHARE", 1.0)), 0.05, 1.0))
     wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
     lean_side = None
     if scurve_deg > 0.0:

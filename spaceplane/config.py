@@ -1352,6 +1352,11 @@ class Config:
     # 0.0 (finish at the door) enters the flare on the centreline and drifts
     # 60-80 m during it.  ``APPROACH_CAPTURE_BY_FLARE`` is the hard 0.
     APPROACH_CAPTURE_FLARE_SHARE: float = 1.0
+    # The capture's time constant as a share of the time left to the wheels
+    # (``guidance.approach``): 1.0 closes at a constant rate that reaches the
+    # centreline at touchdown; below it the offset decays early and the
+    # flare inherits less lateral rate.
+    APPROACH_CAPTURE_TAU_SHARE: float = 1.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
     GEAR_ALT_M: float = 800.0
