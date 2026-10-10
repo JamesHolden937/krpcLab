@@ -5303,3 +5303,46 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
 
 
 
+
+
+class TestTheTerminalGlideSolvesOnEntryEnergy(unittest.TestCase):
+    """``GLIDE_TAEM_ENERGY``: the miss is energy at the cone entry, signed
+    like ``long`` (surplus positive), continuous across the entry tests."""
+
+    def setUp(self):
+        from spaceplane.config import Config
+        self.cfg = Config()
+        self.env = SimpleNamespace(mu=3.5316e12, equatorial_radius=600000.0)
+        self.g = self.env.mu / 600000.0 ** 2
+
+    def predicted(self, h, v, met, long):
+        return trajectory.Prediction(
+            position=(0, 0, 0), velocity=(0, 0, 0), time_to_go=0.0,
+            speed=v, altitude=h, reached=True, grounded=False, steps=0,
+            long=long, handover=(h, v), handover_met=met)
+
+    def test_met_reads_energy_against_target(self):
+        p = self.predicted(15000.0, 200.0, True, 3000.0)
+        want = 15000.0 + 200.0 ** 2 / (2 * self.g) - 13000.0
+        self.assertAlmostEqual(guidance.taem_miss(self.env, self.cfg, p,
+                                                  13000.0), want, places=3)
+
+    def test_crossing_out_of_reach_of_the_circle_owes_path(self):
+        entry = self.cfg.HAC_ENTRY_DIST_M
+        at = self.predicted(12000.0, 150.0, False, -entry)
+        far = self.predicted(12000.0, 150.0, False, -entry - 5000.0)
+        base = guidance.taem_miss(self.env, self.cfg, at, 13000.0)
+        less = guidance.taem_miss(self.env, self.cfg, far, 13000.0)
+        self.assertAlmostEqual(base - less, 5000.0 / self.cfg.HAC_LD, places=3)
+
+    def test_crossing_past_the_gate_is_surplus(self):
+        short = self.predicted(12000.0, 150.0, False, 0.0)
+        past = self.predicted(12000.0, 150.0, False, 4000.0)
+        self.assertAlmostEqual(
+            guidance.taem_miss(self.env, self.cfg, past, 13000.0)
+            - guidance.taem_miss(self.env, self.cfg, short, 13000.0), 4000.0)
+
+    def test_no_arrival_is_no_answer(self):
+        p = self.predicted(12000.0, 150.0, False, 0.0)
+        p.reached = False
+        self.assertIsNone(guidance.taem_miss(self.env, self.cfg, p, 13000.0))

@@ -435,6 +435,11 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
+        # ``GLIDE_TAEM_ENERGY`` / ``_ALPHA``: set by the glide below
+        # ``GLIDE_TAEM_MACH``, ``None`` everywhere else.
+        self.env.taem = None
+        self.env.taem_alpha_cap = None
+        self.taem_flown = None
         self._below_ground_since = None
         self.prediction = None
         # Latched once, at the cone's entry: recomputing it every tick flips
@@ -4244,6 +4249,48 @@ class Autopilot:
                                % (snap.parts_lost,
                                   ", ".join(snap.parts_lost_names) or "?"))
 
+    def taem_update(self, snap):
+        """``GLIDE_TAEM_ENERGY`` / ``GLIDE_TAEM_ALPHA``: below
+        ``GLIDE_TAEM_MACH`` hang the cone's entry-energy target and the alpha
+        being flown on ``env``, so every propagation this tick sees them."""
+        cfg = self.cfg
+        if not (cfg.GLIDE_TAEM_ENERGY or cfg.GLIDE_TAEM_ALPHA):
+            return
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                                   # noqa: BLE001
+            return
+        if mach > cfg.GLIDE_TAEM_MACH:
+            return
+        if cfg.GLIDE_TAEM_ENERGY and self.env.taem is None:
+            target = guidance.taem_target(self.env, cfg)
+            if target is not None:
+                self.env.taem = target
+                self.logbook.event(
+                    snap.ut, "terminal glide at M%.2f: solving on cone entry "
+                             "energy, target %.0f m (HAC_ALT_M %.0f + cone "
+                             "speed + margin %.0f)"
+                    % (mach, target, cfg.HAC_ALT_M, cfg.GLIDE_TAEM_MARGIN_M))
+        if cfg.GLIDE_TAEM_ALPHA:
+            # A running mean of what the vehicle holds, reversals and all:
+            # the propagation is of the alpha flown, not the one commanded.
+            now = snap.ut
+            held = snap.alpha_actual
+            if self.taem_flown is None:
+                self.taem_flown = (held, now)
+                self.logbook.event(now, "terminal glide at M%.2f: propagating "
+                                        "the flown alpha (%.1f now)"
+                                   % (mach, held))
+            else:
+                mean, last = self.taem_flown
+                k = min(1.0, max(0.0, now - last)
+                        / max(0.1, cfg.GLIDE_TAEM_ALPHA_TAU_S))
+                self.taem_flown = (mean + k * (held - mean), now)
+            self.env.taem_alpha_cap = (self.taem_flown[0]
+                                       + cfg.HOLDABLE_MARGIN_DEG)
+
     def run_glide(self, snap):
         """Solve the angle of attack and bank, every tick, to hit the gate.
 
@@ -4294,7 +4341,9 @@ class Autopilot:
         # and still short of its own target would have the brake on -- which
         # is failure 22, "the vehicle was braking while it was short", in the
         # reserve's frame.
-        reserve = guidance.glide_reserve(self.env, self.cfg, snap.position)
+        self.taem_update(snap)
+        reserve = (0.0 if self.env.taem is not None else
+                   guidance.glide_reserve(self.env, self.cfg, snap.position))
         self.env.roll_lag_s = (self.roll_damper.tp
                                if self.roll_damper is not None else None)
         self.env.spending = (self.last_miss is None
@@ -4408,6 +4457,15 @@ class Autopilot:
         self.ratchet_alpha(snap)
 
         miss = self.miss(snap)
+        if (miss is not None and self.env.taem is not None
+                and self.prediction is not None):
+            # The terminal glide's miss is the energy it hands the cone, and
+            # everything downstream that reads ``last_miss`` (the speed floor's
+            # ``spending``, the glide flap brake) acts on that.
+            energy = guidance.taem_miss(self.env, self.cfg, self.prediction,
+                                        self.env.taem)
+            if energy is not None:
+                miss = (energy, miss[1])
         if miss is not None:
             self.last_miss = miss
         self.glide_flap_brake(snap, reserve, dt)
@@ -4497,6 +4555,8 @@ class Autopilot:
                     snap.ut, "runway %s -> %s: cheaper from here"
                     % (self.end["name"], chosen["name"]))
                 self.end = chosen
+            self.env.taem = None
+            self.env.taem_alpha_cap = None
             self.enter(HAC, snap.ut,
                        "over the field long=%+.0f cross=%+.0f d=%.0f "
                        "h=%.0f v=%.0f turning %s"
@@ -6364,8 +6424,18 @@ def compact_line(state, snap, run):
     # the column a deliberately long entry is indistinguishable in the log
     # from a solve that has stopped converging.
     if state == GLIDE:
-        bits.append("rsv=%6.0f" % guidance.glide_reserve(env, run.cfg,
-                                                         snap.position))
+        taem = getattr(env, "taem", None)
+        bits.append("rsv=%6.0f" % (0.0 if taem is not None else
+                                   guidance.glide_reserve(env, run.cfg,
+                                                          snap.position)))
+        # ``GLIDE_TAEM_*``: in the terminal glide ``long=`` is the entry
+        # energy's surplus over ``tE`` (metres), and ``taf`` the alpha the
+        # propagator flies.
+        if taem is not None:
+            bits.append("tE=%5.0f" % taem)
+        flown = getattr(env, "taem_alpha_cap", None)
+        if flown is not None:
+            bits.append("taf=%4.1f" % flown)
     # **Which law flew this tick.**  ``max`` means the propagated arc did not
     # reach the gate and the vehicle is bracketing for distance rather than
     # nulling a miss (``guidance.max_range``).  It is here because the two

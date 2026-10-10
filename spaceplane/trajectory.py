@@ -685,6 +685,11 @@ def acceleration(env, r, v, mass, steer):
                                        or getattr(steer, "holdable", None),
                                        env, speed / env.speed_of_sound(altitude))
                 alpha = tracked_alpha(steer.cfg, alpha, q)
+                # ``GLIDE_TAEM_ALPHA``: the alpha the vehicle is flying,
+                # set by the glide each tick; ``None`` everywhere else.
+                flown = getattr(env, "taem_alpha_cap", None)
+                if flown is not None:
+                    alpha = min(alpha, flown)
             cla, cda = env.coefficients(alpha, speed, altitude)
             vhat = vec.scale(v, 1.0 / speed)
             if cda > 0.0:

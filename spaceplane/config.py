@@ -434,6 +434,31 @@ class Config:
     # Only at or below this Mach (0: any).  The trouble it is for is the
     # terminal glide's (failure 98); the hypersonic one is untested.
     GLIDE_FLAP_MACH_MAX: float = 0.0
+    # **The terminal glide solves on the energy it hands the cone, not on
+    # where it crosses ``HAC_ALT_M``.**  Below ``GLIDE_TAEM_MACH`` the miss
+    # the glide nulls is the predicted energy height (``h + v^2/2g``) at the
+    # predicted cone entry, less what the cone plans to enter with
+    # (``HAC_ALT_M`` at ``cone_speed``) plus ``GLIDE_TAEM_MARGIN_M``.  A
+    # range crossing is satisfiable by a steep plunge: every default flight
+    # of rot-bfl-1010 crossed 12 km where it aimed and entered the cone at
+    # 14.4-17.7 km, Mach 1.0-1.3, with 17-25 km of energy height against
+    # the cone's ~12.6 -- and ``ph=`` had said so from Mach 3.  An entry
+    # predicted short of the entry circle (on height, further out) needs
+    # ``HAC_LD`` more path per metre, which is added to the target.
+    GLIDE_TAEM_ENERGY: bool = False
+    GLIDE_TAEM_MACH: float = 3.0
+    GLIDE_TAEM_MARGIN_M: float = 1500.0
+    # **And the propagator flies the alpha the vehicle is flying.**  Below
+    # ``GLIDE_TAEM_MACH`` the shuttle holds ~0.65 of the ~40 deg the glide
+    # commands, and ``Holdable`` never learns it there: the reversals keep it
+    # in its quiet window (LOG9426 ends with no bin above 2.2 kPa, the glide
+    # having flown its last minutes at ~5 kPa).  This caps the *propagated*
+    # alpha at a running mean of the achieved one, reversals included, over
+    # ``GLIDE_TAEM_ALPHA_TAU_S``.  The command is not capped: the vehicle
+    # holds a fraction of it, so a command clamp at "held + margin" ratchets
+    # down without end.
+    GLIDE_TAEM_ALPHA: bool = False
+    GLIDE_TAEM_ALPHA_TAU_S: float = 10.0
     ALPHA_MIN_DEG: float = 0.0
     # The *solve's* floor, which is not the same number and is the single most
     # important line in this file.  Range against angle of attack is U-shaped:

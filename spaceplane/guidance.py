@@ -35,7 +35,54 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
-    return steer, prediction, (prediction.long, prediction.cross)
+    first = prediction.long
+    taem = getattr(env, "taem", None)
+    if taem is not None:
+        got = taem_miss(env, cfg, prediction, taem)
+        if got is not None:
+            first = got
+    return steer, prediction, (first, prediction.cross)
+
+
+def taem_target(env, cfg):
+    """``GLIDE_TAEM_ENERGY``: the energy height (m) the cone plans to be
+    entered with, plus the margin; ``None`` with no table to price it."""
+    stall = airframe.stall(env, cfg)
+    if stall is None:
+        return None
+    speed = cone_speed(env, cfg, stall, cfg.HAC_ALT_M)
+    g = env.mu / (env.equatorial_radius ** 2)
+    return cfg.HAC_ALT_M + speed * speed / (2.0 * g) + cfg.GLIDE_TAEM_MARGIN_M
+
+
+def taem_miss(env, cfg, prediction, target):
+    """The terminal glide's miss, in metres of energy height: predicted
+    energy at the predicted cone entry against ``target``.
+
+    Positive is surplus, so it has the sign of ``long`` and the solve's
+    controls act on it the same way (more drag, more bank: less energy).
+
+    * Entry met on the distance test: ``h + v^2/2g`` there, less the target.
+    * Entry on height first (the arc crosses ``HAC_ALT_M`` further out):
+      the same, with the path still to fly to the entry circle priced at
+      the cone's glide ratio and added to the target.
+    * Crossing past the gate: there is no entry energy to read, and the
+      along-track overshoot is the surplus.
+    ``None`` when the arc never gets down (the range solve has that case).
+    """
+    if prediction.handover is None or not prediction.reached:
+        return None
+    altitude, speed = prediction.handover
+    g = env.mu / (env.equatorial_radius ** 2)
+    energy = altitude + speed * speed / (2.0 * g)
+    miss = energy - target
+    if prediction.handover_met:
+        return miss
+    if prediction.long >= 0.0:
+        return miss + prediction.long
+    entry = float(cfg.HAC_ENTRY_DIST_M)
+    ld = airframe.cone_ld(env, cfg, speed, altitude, None, g)
+    return miss + min(0.0, prediction.long + entry) / ld
 
 
 def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,
@@ -270,7 +317,8 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     # The glide aims past the gate by a reserve that decays to nothing --
     # deliberately long, spending the margin through the altitudes where
     # shedding is cheap.  See ``glide_reserve``.
-    target = glide_reserve(env, cfg, r)
+    target = (0.0 if getattr(env, "taem", None) is not None
+              else glide_reserve(env, cfg, r))
     if abs(m0[0] - target) <= cfg.SOLVE_DEADBAND_M:
         alpha, magnitude = alpha0, abs(bank0)
     else:
