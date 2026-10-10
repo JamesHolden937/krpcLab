@@ -654,51 +654,6 @@ def tracked_alpha(cfg, alpha, q):
     return alpha * table[-1][1]
 
 
-def split_shape(cfg, angle):
-    """The split rudder's drag at ``angle`` as a share of its drag at the
-    table's last angle, off ``HAC_SPLIT_FACTOR`` (the measured L/D factor):
-    ``(1/F(angle) - 1) / (1/F(top) - 1)``, 0 stowed and 1 at the stop."""
-    table = sorted(cfg.HAC_SPLIT_FACTOR)
-    if angle <= 0.0 or not table:
-        return 0.0
-    top = table[-1][1]
-    f = top
-    for (a0, f0), (a1, f1) in zip(table, table[1:]):
-        if a0 <= angle <= a1:
-            f = f0 + (f1 - f0) * (angle - a0) / max(1e-6, a1 - a0)
-            break
-    full = 1.0 / max(0.05, top) - 1.0
-    return 0.0 if full <= 0.0 else (1.0 / max(0.05, f) - 1.0) / full
-
-
-def glide_split_drag(env, cfg, speed, altitude):
-    """``GLIDE_SPLIT_BRAKE``: the fractional drag the split rudder adds at
-    this state, at the angle the glide holds it at (``env.glide_split_deg``,
-    one number per tick, the same for the whole prediction) -- and only
-    below ``GLIDE_SPLIT_MACH``, where the vehicle deploys it.  Off the
-    environment for the reason ``holdable`` is: every propagation carries
-    ``env``, so none of them can forget the brake the glide is flying."""
-    angle = float(getattr(env, "glide_split_deg", 0.0) or 0.0)
-    if angle <= 0.0 or not getattr(cfg, "GLIDE_SPLIT_BRAKE", False):
-        return 0.0
-    try:
-        mach = speed / env.speed_of_sound(altitude)
-    except Exception:                                   # noqa: BLE001
-        return 0.0
-    if mach >= float(cfg.GLIDE_SPLIT_MACH):
-        return 0.0
-    table = sorted(cfg.GLIDE_SPLIT_DRAG)
-    frac = table[-1][1]
-    if mach <= table[0][0]:
-        frac = table[0][1]
-    else:
-        for (m0, f0), (m1, f1) in zip(table, table[1:]):
-            if m0 <= mach <= m1:
-                frac = f0 + (f1 - f0) * (mach - m0) / max(1e-6, m1 - m0)
-                break
-    return frac * split_shape(cfg, angle)
-
-
 def acceleration(env, r, v, mass, steer):
     """Total acceleration in the rotating body frame."""
     a = gravity_at(env, r)
@@ -731,8 +686,6 @@ def acceleration(env, r, v, mass, steer):
                                        env, speed / env.speed_of_sound(altitude))
                 alpha = tracked_alpha(steer.cfg, alpha, q)
             cla, cda = env.coefficients(alpha, speed, altitude)
-            if steer is not None and steer.cfg is not None:
-                cda *= 1.0 + glide_split_drag(env, steer.cfg, speed, altitude)
             vhat = vec.scale(v, 1.0 / speed)
             if cda > 0.0:
                 a = vec.add(a, vec.scale(vhat, -cda * q / mass))
