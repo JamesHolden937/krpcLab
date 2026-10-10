@@ -4473,14 +4473,27 @@ class Autopilot:
         # faster than it spends height.  A cone that cannot pay now can
         # pay later; one entered anyway never can.
         if derived:
-            # The glide has done its job when it is down to the entry's
-            # height or over the point it was aiming at: the high gate
-            # abeam or behind.  No distance constant, and no backstop is
-            # needed for a flat arrival -- it reaches the gate either way.
+            # **Entered when the cone can pay for its own plan**: the
+            # cone's guidance, asked from here exactly as its first tick
+            # would ask it, does not come back ``short``.  Not on height:
+            # a fixed 12 km arrived out of height 24 of 33 times, and the
+            # 3 km distance test only worked by firing 2-5 km higher
+            # (LOG9347: over the high gate at 11.9 km, out of height 9 km
+            # short).  The backstop is the gate abeam or behind -- the
+            # glide has nothing left to aim at.
             gate = self.env.runway.gate(self.end)
-            reached = (height <= self.cfg.HAC_ALT_M
-                       or trajectory.gate_behind(snap.position,
-                                                 snap.velocity, gate))
+            affordable = False
+            if can_turn:
+                end, side = guidance.hac_choose(
+                    self.env, self.cfg, self.env.runway, snap.position,
+                    snap.velocity, mass=snap.mass,
+                    gravity=self.surface_gravity, height=height)
+                plan = guidance.hac(self.env, self.cfg, end, snap.position,
+                                    snap.velocity, snap.mass,
+                                    self.surface_gravity, height, side)
+                affordable = plan is not None and not plan.short
+            reached = affordable or trajectory.gate_behind(
+                snap.position, snap.velocity, gate)
         else:
             reached = (height <= self.cfg.HAC_ALT_M
                        or distance <= self.cfg.HAC_ENTRY_DIST_M)
@@ -4514,9 +4527,12 @@ class Autopilot:
                 self.end = chosen
             self.enter(HAC, snap.ut,
                        "over the field long=%+.0f cross=%+.0f d=%.0f "
-                       "h=%.0f turning %s"
+                       "h=%.0f turning %s%s"
                        % (miss[0], miss[1], distance, height,
-                          "left" if self.hac_side > 0 else "right"))
+                          "left" if self.hac_side > 0 else "right",
+                          (" (%s)" % ("affordable" if affordable
+                                      else "gate abeam"))
+                          if derived else ""))
             self.log_cone_ladder(snap, height)
 
     def log_cone_ladder(self, snap, height):

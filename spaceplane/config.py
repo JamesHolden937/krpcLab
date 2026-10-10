@@ -405,11 +405,14 @@ class Config:
     # The veto becomes the question Mach 1.5 stood in for: does the circle
     # the airframe can hold at this speed (``guidance.hac_hold_radius``) fit
     # inside ``HAC_RADIUS_MAX_M``?  Mach 1.5 admitted a ~26 km circle against
-    # the 16 km cap (the LOG2756 shape).  The trigger becomes "the glide has
-    # done its job": down to ``HAC_ALT_M``, or the high gate abeam or behind
-    # -- the glide aims at that point, so arriving over it is the handover.
-    # The 3 km distance test fired on every flight of rot-v2-1010, 14.3-17.4
-    # km up in a ~37 deg dive against the 12 km aimed for.
+    # the 16 km cap (the LOG2756 shape).  The trigger becomes the cone's own
+    # budget: ``guidance.hac`` asked from here, for the cheapest end and
+    # hand, does not come back ``short``; backstop, the high gate abeam or
+    # behind.  The 3 km distance test fired on every flight of rot-v2-1010,
+    # 14.3-17.4 km up in a ~37 deg dive; a gate-height trigger was flown in
+    # rot-smoke-hed-1010 and LOG9347 arrived over the gate at 11.9 km and
+    # ran out of height 9 km short (the old 12 km trigger: 24/33 out of
+    # height).  The predicted handover (log only) uses the backstop.
     HAC_ENTRY_DERIVED: bool = False
 
     # -- angle of attack ---------------------------------------------------
