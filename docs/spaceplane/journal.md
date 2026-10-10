@@ -2109,3 +2109,40 @@ this orbit (the glide's own solve from the coast state, or the window's
 corners -- not the stop test), or (b) take the disturbance out: flip on the
 wheels slowly, or before the drag matters, or do the flip *before* the
 burn's final tick.
+
+## Session, 2026-10-09 evening (~1630-): the eccentric save was invalid; the approach brake's relay
+
+**`qs_shuttle2_ecc_rigoff` had its periapsis at 69 km, inside the 70 km
+atmosphere** (the user caught it).  A retrograde burn at periapsis cannot
+lower it, so every "deorbit" from that save was a 34 m/s apoapsis trim and
+then ~1800 s of drag decay at q 1-10 Pa -- which is why the burn's stop
+test could never measure (t2g > 1500 s) and why a 0.4 m/s vertical-speed
+spread from the post-burn flip made 40 km.  **Everything the 10-08/10-09
+sessions concluded about "the eccentric orbit" is about that invalid
+orbit** (the coast-flip mechanism, `COAST_TRIM`, the window/glide drag
+disagreement).  Regenerated at **77 x 135 km** (`savegen.py --source
+qs_shuttle2_rigoff --prograde 30 --radial -70`).
+
+Baseline on the new save, defaults `9abe7afd` (rot-ecc2-1009, 3 cycles):
+ecc **12/18** stopped within +-1200 m (10/18 also on the strip), against
+~1/4 on the old save; rigoff 5/6, inc 5/6, high 5/6.  Pooled 27/36; the
+commonest miss is long (9/36: +1.2..+4.8 km).
+
+**Why long** (78 default flights of rot-asb2/conf/roll/flare/prior-1009,
+`landsum.py`): 14 long, 4 short.  Short ones handed over with a negative
+surplus (-300..-530 m).  Long ones mostly handed over +650..+1200 m high
+and crossed the threshold still hundreds of metres up: LOG9013 at 1000 m
+over the threshold, touching down past the runway end into the sea.  The
+approach's split brake is a relay: out -> path steepens -> sink passes the
+cap (1.5 x design) -> **stowed** -> the clean airframe accelerates down the
+same steep path (92 -> 118 m/s) -> the speed-path law pulls up to bleed it
+(vs -21 -> -5) and the vehicle levels at 1000 m.  13 of 14 long flights
+stowed on sink at least once (44 of 60 good ones did too).
+**`APPROACH_SPLIT_SINK_FADE`** (new, off): over the cap the brake fades
+linearly across `fade x cap` instead of stowing, and does not back off
+while faster than the held speed.  Flown in rot-fade-1009 (below).
+
+Housekeeping: journal pruned 315 -> 130 KB (old-craft and single-fin eras
+condensed, full text at `f8d63c5`); regenerable files untracked (plugin
+DLLs, 11 savegen saves via `saves/derived.txt`, run output); `setup.sh`,
+GPL-3.0-or-later, Code of Conduct, CONTRIBUTING.md.
