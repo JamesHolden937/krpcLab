@@ -360,8 +360,6 @@ class Config:
     # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
     # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
     HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
-    # The pull-up assumed when pricing the height a sink costs to arrest.
-    HAC_FLAP_ARREST_G: float = 0.5
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
@@ -2189,10 +2187,10 @@ class Config:
     # Over the cap, the brake fades out across this fraction of it rather
     # than stowing, and holds while faster than the held speed; 0 is the
     # stow (``Autopilot.approach_split_brake``).
-    APPROACH_SPLIT_SINK_FADE: float = 0.0
+    APPROACH_SPLIT_SINK_FADE: float = 0.3  # default 2026-10-10: rot-v2-1010, package 22/24 v 16/24
     # The same for the speed gate: under ``APPROACH_SPLIT_MIN_SPEED_FACTOR``
     # x stall the brake fades across this fraction of it; 0 is the stow.
-    APPROACH_SPLIT_SLOW_FADE: float = 0.0
+    APPROACH_SPLIT_SLOW_FADE: float = 0.15  # default 2026-10-10: rot-v2-1010
     # **The split rudder as the cone's throttled speedbrake**
     # (``Autopilot.hac_split_brake``; the user, 2026-10-08 "split the
     # rudders", 2026-10-09 "throttle it").  ``HAC_SPLIT_FACTOR``: (deploy
@@ -2201,7 +2199,7 @@ class Config:
     # The measured cone L/D is taken clean and the plan flies the braked
     # one, so the brake is not learned away.  ``HAC_SPLIT_SPEED_FADE``: the
     # brake fades out over this fraction below the cone's target speed.
-    HAC_SPLIT_BRAKE: bool = False
+    HAC_SPLIT_BRAKE: bool = True  # default 2026-10-10: rot-v2-1010
     HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
                                (30.0, 0.665), (38.0, 0.61))
     HAC_SPLIT_SPEED_FADE: float = 0.15
@@ -2210,16 +2208,17 @@ class Config:
     # airframe, a brake does not).  Spenders in order: the split rudder, the
     # opposed-flap spoiler throttled on the surplus the rudder leaves (full
     # at the weave's own threshold, ``HAC_WEAVE_DEADBAND_M`` /
-    # ``APPROACH_SCURVE_M``), and only then the weave or S-turn.  Replaces
-    # the spoiler's on/off triggers (``hac_flap_brake``, ``command_airbrake``),
-    # which waited for the weave to saturate.  Pair with ``HAC_SPLIT_BRAKE``.
-    BRAKES_BEFORE_WEAVE: bool = False
+    # ``APPROACH_SCURVE_M``), and only then the weave or S-turn.  Measured
+    # as a package with the five settings around it, interleaved over four
+    # orbits: 22/24 on the strip and intact against 16/24, long 1 v 5
+    # (rot-v2-1010).  Pair with ``HAC_SPLIT_BRAKE``.
+    BRAKES_BEFORE_WEAVE: bool = True  # default 2026-10-10: rot-v2-1010
     # ... and in the cone the weave waits for the rudder too
     # (``Autopilot.hac_weave_allowed``): it keyed on 800 m of *path*
     # surplus, ~270 m of height, and spent the surplus before the brake's
     # slew got there (smoke rot-smoke-pkg-1009: weave 34-95 ticks with the
     # rudder at 0-26 deg).
-    HAC_WEAVE_AFTER_BRAKE: bool = False
+    HAC_WEAVE_AFTER_BRAKE: bool = True  # default 2026-10-10: rot-v2-1010
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and

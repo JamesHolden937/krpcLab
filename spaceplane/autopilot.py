@@ -2455,48 +2455,6 @@ class Autopilot:
             self.flap_brake_out = bool(out)
         return bool(done)
 
-    def command_airbrake(self, snap, command, height, flare_trigger=0.0,
-                         sink=0.0):
-        """One tick of the brake, against the approach's own surplus.
-
-        The trigger is ``guidance.approach``'s weave command sitting at its
-        cap -- the guidance saying it has run out of range control -- with
-        surplus height still unspent; see ``spaceplane.airbrake`` for why
-        that rather than an altitude, and ``GEAR_DRAG_FRACTION`` for what
-        happens to drag that is not commanded against a surplus.
-        """
-        previous = self.airbrake.extended
-        dt = 0.0 if self.airbrake_ut is None else max(0.0,
-                                                      snap.ut - self.airbrake_ut)
-        self.airbrake_ut = snap.ut
-        wanted = self.airbrake.update(
-            dt, getattr(command, "scurve_deg", 0.0),
-            float(self.cfg.APPROACH_SCURVE_MAX_DEG),
-            getattr(command, "excess", 0.0), height, flare_trigger, sink,
-            getattr(command, "speed", None),
-            getattr(command, "target_speed", None),
-            gravity=self.surface_gravity)
-        # **A spoiler serves the approach's descent, it does not replace
-        # it.**  See ``Config.AIRBRAKE_SINK_TRACK``.
-        track = float(getattr(self.cfg, "AIRBRAKE_SINK_TRACK_M_S", 0.0))
-        want_sink = getattr(command, "wanted_sink", None)
-        if wanted and want_sink is not None and (sink > want_sink + track):
-            wanted = False
-            self.airbrake.extended = False
-            self.airbrake.last_reason = ("sink %.0f past the %.0f the "
-                                         "approach wants" % (sink, want_sink))
-        flaps = getattr(self, "flap_brake", None) is not None
-        if not flaps:
-            self.airbrake.extended = previous
-            return
-        if wanted == previous:
-            return
-        if flaps:
-            self.set_flap_brake(wanted)
-        self.logbook.event(snap.ut, "airbrake %s at %.0f m: %s"
-                           % ("out" if wanted else "in", height,
-                              self.airbrake.last_reason))
-
     def set_rcs(self, permitted, snap=None):
         """RCS on only while something is actually turning the vehicle.
 
@@ -3997,51 +3955,6 @@ class Autopilot:
         lap *= float(getattr(self.cfg, "HAC_EXIT_LAP_FRACTION", 1.0))
         return max(self.cfg.HAC_EXIT_SURPLUS_M, lap)
 
-    def hac_flap_brake(self, snap, command, height):
-        """``HAC_FLAP_BRAKE``: the spoiler as the cone's descent authority
-        once the weave is saturated.
-
-        Out when the weave sits at ``HAC_WEAVE_MAX_DEG`` with more than
-        ``HAC_WEAVE_DEADBAND_M`` of surplus over ``needed_height``.  In when
-        the surplus is gone -- **counting the height it takes to arrest the
-        sink the spoiler built**, ``sink^2 / (2 a)`` at
-        ``HAC_FLAP_ARREST_G``, because stowing on "surplus spent" leaves a
-        vehicle falling at 100 m/s with nothing left to stop it in (LOG3593,
-        the approach's version of the same brake).
-        """
-        if getattr(self, "flap_brake", None) is None:
-            return
-        needed = getattr(command, "needed_height", None)
-        if needed is None:
-            return
-        sink = max(0.0, -vec.dot(snap.velocity, vec.unit(snap.position)))
-        nominal = 0.0
-        arrest = (max(0.0, sink * sink - nominal * nominal)
-                  / (2.0 * max(0.1, self.cfg.HAC_FLAP_ARREST_G)
-                     * self.surface_gravity))
-        surplus = height - needed
-        saturated = (getattr(command, "weave_deg", 0.0)
-                     >= self.cfg.HAC_WEAVE_MAX_DEG - 0.5)
-        if self.roll_needs_the_flaps(snap):
-            if self.flap_brake_out and self.set_flap_brake(False):
-                self.logbook.event(snap.ut, "cone flap brake in: rolling "
-                                   "(bank %+.1f flown, %+.1f commanded, slip "
-                                   "%+.1f)" % (flown_bank(snap),
-                                               self.commanded_bank,
-                                               snap.sideslip))
-            return
-        out = self.flap_brake_out
-        if not out and saturated and surplus > self.cfg.HAC_WEAVE_DEADBAND_M \
-                and surplus - arrest > self.cfg.HAC_WEAVE_DEADBAND_M:
-            out = True
-        elif out and surplus - arrest < 0.5 * self.cfg.HAC_WEAVE_DEADBAND_M:
-            out = False
-        if out != self.flap_brake_out and self.set_flap_brake(out):
-            self.logbook.event(snap.ut, "cone flap brake %s: surplus %+.0f, "
-                               "sink %.0f (arrest %.0f m)"
-                               % ("OUT" if out else "in", surplus, sink,
-                                  arrest))
-
     def run_coast(self, snap):
         """Fall to the entry interface, already in the entry attitude.
 
@@ -4594,13 +4507,10 @@ class Autopilot:
         self.ratchet_alpha(snap)
         if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
             self.hac_split_brake(snap, command, height, dt)
-        if getattr(self.cfg, "BRAKES_BEFORE_WEAVE", False):
-            needed = getattr(command, "needed_height", None)
-            self.throttle_spoiler(
-                snap, 0.0 if needed is None else height - needed,
-                float(self.cfg.HAC_WEAVE_DEADBAND_M), True, "cone", height)
-        else:
-            self.hac_flap_brake(snap, command, height)
+        needed = getattr(command, "needed_height", None)
+        self.throttle_spoiler(
+            snap, 0.0 if needed is None else height - needed,
+            float(self.cfg.HAC_WEAVE_DEADBAND_M), True, "cone", height)
         needed = getattr(command, "needed_height", None)
         self._hac_surplus = None if needed is None else height - needed
         # Rolled out, or out of height.  The second is not a failure mode:
@@ -5019,20 +4929,13 @@ class Autopilot:
         # (``FLARE_ALT_M + FLARE_LEAD_S * sink``) and the next aircraft's is
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
-        if getattr(self.cfg, "BRAKES_BEFORE_WEAVE", False):
-            if split_brake:
-                self.approach_split_brake(snap, command, height, trigger,
-                                          sink)
-            stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(
-                0.0, sink)
-            self.throttle_spoiler(snap, getattr(command, "excess", 0.0),
-                                  float(self.cfg.APPROACH_SCURVE_M),
-                                  height > stow, "approach", height)
-        else:
-            self.command_airbrake(snap, command, height, trigger, sink)
-            if split_brake:
-                self.approach_split_brake(snap, command, height, trigger,
-                                          sink)
+        if split_brake:
+            self.approach_split_brake(snap, command, height, trigger, sink)
+        stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(
+            0.0, sink)
+        self.throttle_spoiler(snap, getattr(command, "excess", 0.0),
+                              float(self.cfg.APPROACH_SCURVE_M),
+                              height > stow, "approach", height)
         if height <= trigger:
             self.flare_since = snap.ut
             self.enter(FLARE, snap.ut, "h=%.1f v=%.1f sink=%.1f cross=%+.0f"
