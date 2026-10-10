@@ -5303,3 +5303,25 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
 
 
 
+
+
+class TestConeEntryDerived(unittest.TestCase):
+    """``HAC_ENTRY_DERIVED``: the gate-abeam trigger and the turn veto."""
+
+    def test_gate_behind(self):
+        r = (600000.0, 0.0, 0.0)
+        v = (0.0, 250.0, -100.0)                   # flying +y, descending
+        ahead = (600000.0, 3000.0, 0.0)
+        behind = (600000.0, -500.0, 0.0)
+        abeam = (600000.0, 0.0, 800.0)
+        self.assertFalse(trajectory.gate_behind(r, v, ahead))
+        self.assertTrue(trajectory.gate_behind(r, v, behind))
+        self.assertTrue(trajectory.gate_behind(r, v, abeam))
+
+    def test_veto_is_the_hold_radius(self):
+        cfg = Config()
+        # Mach ~0.85 at 12 km fits the 16 km cap; Mach 1.5 does not.
+        self.assertLessEqual(guidance.hac_hold_radius(cfg, 250.0, 9.81),
+                             cfg.HAC_RADIUS_MAX_M)
+        self.assertGreater(guidance.hac_hold_radius(cfg, 443.0, 9.81),
+                           cfg.HAC_RADIUS_MAX_M)

@@ -401,6 +401,16 @@ class Config:
     # airframe can hold at Mach 1.5 is 21 km at 45 degrees of bank, which
     # is the wide end.
     HAC_ENTRY_MACH: float = 1.50
+    # **The two entry constants above, derived** (the user, 2026-10-10).
+    # The veto becomes the question Mach 1.5 stood in for: does the circle
+    # the airframe can hold at this speed (``guidance.hac_hold_radius``) fit
+    # inside ``HAC_RADIUS_MAX_M``?  Mach 1.5 admitted a ~26 km circle against
+    # the 16 km cap (the LOG2756 shape).  The trigger becomes "the glide has
+    # done its job": down to ``HAC_ALT_M``, or the high gate abeam or behind
+    # -- the glide aims at that point, so arriving over it is the handover.
+    # The 3 km distance test fired on every flight of rot-v2-1010, 14.3-17.4
+    # km up in a ~37 deg dive against the 12 km aimed for.
+    HAC_ENTRY_DERIVED: bool = False
 
     # -- angle of attack ---------------------------------------------------
     # Measured: max lift at 30 deg at every altitude, max L/D at 20 deg, and

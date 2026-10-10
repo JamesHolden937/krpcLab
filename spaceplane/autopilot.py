@@ -4447,13 +4447,18 @@ class Autopilot:
             mach = self.env.mach(speed, altitude)
         except Exception:                           # noqa: BLE001
             mach = 9.9
-        # **The veto, calculated.**  ``HAC_ENTRY_MACH`` is a Mach
-        # number standing in for a turn radius, and the speed of sound
-        # is not part of the question -- see ``guidance.hac_enterable``,
-        # which asks whether the circle the airframe can hold fits the
-        # one the cone may fly.  ``None`` means the derivation is off
-        # and the Mach constant is still the veto.
-        can_turn = mach <= self.cfg.HAC_ENTRY_MACH
+        # **The veto, calculated** (``HAC_ENTRY_DERIVED``).
+        # ``HAC_ENTRY_MACH`` is a Mach number standing in for a turn
+        # radius, and the speed of sound is not part of the question:
+        # derived, the cone is enterable once the circle the airframe can
+        # hold at this speed fits the widest one the cone may fly.
+        derived = bool(getattr(self.cfg, "HAC_ENTRY_DERIVED", False))
+        if derived:
+            can_turn = (guidance.hac_hold_radius(self.cfg, speed,
+                                                 self.surface_gravity)
+                        <= self.cfg.HAC_RADIUS_MAX_M)
+        else:
+            can_turn = mach <= self.cfg.HAC_ENTRY_MACH
         # **Entered when it can pay for itself, not at an altitude.**
         # See ``cone_affordable``.  ``HAC_ENTRY_DIST_M`` stays as the
         # backstop it was written to be -- an arrival flat enough to
@@ -4467,8 +4472,18 @@ class Autopilot:
         # against the cone's 1.49, so gliding on buys affordability
         # faster than it spends height.  A cone that cannot pay now can
         # pay later; one entered anyway never can.
-        reached = (height <= self.cfg.HAC_ALT_M
-                   or distance <= self.cfg.HAC_ENTRY_DIST_M)
+        if derived:
+            # The glide has done its job when it is down to the entry's
+            # height or over the point it was aiming at: the high gate
+            # abeam or behind.  No distance constant, and no backstop is
+            # needed for a flat arrival -- it reaches the gate either way.
+            gate = self.env.runway.gate(self.end)
+            reached = (height <= self.cfg.HAC_ALT_M
+                       or trajectory.gate_behind(snap.position,
+                                                 snap.velocity, gate))
+        else:
+            reached = (height <= self.cfg.HAC_ALT_M
+                       or distance <= self.cfg.HAC_ENTRY_DIST_M)
         ready = can_turn and reached
         if ready:
             tune_autopilot(self.autopilot,
