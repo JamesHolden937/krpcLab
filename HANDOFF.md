@@ -41,6 +41,29 @@ lift (`spoilerprobe.py`): not built.
 
 ## Next, in order
 
+0. **First thing (the user, 2026-10-10): replace the cone-entry
+   constants with derived tests.**  `run_glide` enters HAC on
+   `mach <= HAC_ENTRY_MACH` (1.5, hand-set) and `height <= HAC_ALT_M or
+   distance <= HAC_ENTRY_DIST_M` (3 km).  Both are arbitrary:
+   - Mach 1.5 stands in for a turn radius and contradicts the cone's own
+     limit: the holdable circle at Mach 1.5 is ~20 km
+     (`guidance.hac_hold_radius`, 45 deg bank) against
+     `HAC_RADIUS_MAX_M` 16 km -- the LOG2756 failure shape.  The derived
+     test it was meant to defer to (`guidance.hac_enterable`,
+     `HAC_ENTRY_DERIVED`) no longer exists; comments in `run_glide`
+     (~autopilot.py:4357) and `hac_radius` (~guidance.py:1489) still cite
+     it -- fix them.  It decides nothing today (arrivals are Mach 0.8-0.9)
+     but would admit an unflyable circle on a fast arrival.
+     Replace with: enterable when `hac_hold_radius(speed) <=` the radius
+     the plan wants (at most `HAC_RADIUS_MAX_M`).
+   - The 3 km distance test is what actually fires, while the glide dives
+     at ~37 deg, so entry is at 14-18 km instead of the 12 km aimed for.
+     Replace with: enter when the glide's own prediction reaches the gate
+     height (or the vehicle is at/past the high gate), keeping a backstop
+     only for a genuinely flat arrival.
+   Build behind one flag, smoke, then fly against the defaults (24 an arm,
+   four orbits); judge on entry-height scatter (conesum `h` at entry), cone
+   exit surplus and landings.  Then item 1.
 1. **Fly `AZIMUTH_FLOOR_FROM_TURN` against the defaults**, 24 an arm:
    `spaceplane/tools/multirot.sh azf-1010 4` with 12 arm strings
    (defaults / `AZIMUTH_FLOOR_FROM_TURN=True` on rigoff, inc, high, ecc,
