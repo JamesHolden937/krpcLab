@@ -2227,12 +2227,12 @@ class Config:
     # the deadband) at ``GLIDE_SPLIT_GAIN`` deg per s per deg; every
     # propagation prices it.  ``GLIDE_SPLIT_DRAG``: (Mach, drag added at
     # the table's last angle as a fraction of the airframe's) --
-    # ``splitprobe.py --glide`` measured 0.03 at Mach 4 and 0.12 at Mach 2;
-    # below Mach 2 it is the cone table's 1/0.61 - 1 at the subsonic end,
-    # interpolated, and wants measuring at Mach 0.8-1.5.
+    # ``splitprobe.py --glide`` at 38 deg on the glide's alpha schedule
+    # (12 deg at Mach 0.8 .. 30 at Mach 4); re-probe after any change to
+    # the fins or the schedule.
     GLIDE_SPLIT_BRAKE: bool = False
     GLIDE_SPLIT_MACH: float = 2.2
-    GLIDE_SPLIT_DRAG: tuple = ((0.5, 0.64), (1.0, 0.40), (1.5, 0.22),
+    GLIDE_SPLIT_DRAG: tuple = ((0.8, 0.32), (1.0, 0.27), (1.5, 0.16),
                                (2.0, 0.12), (4.0, 0.03))
     GLIDE_SPLIT_GAIN: float = 0.5
     GLIDE_SPLIT_BANK_DEADBAND_DEG: float = 5.0
