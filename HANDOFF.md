@@ -1,90 +1,114 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-09, ~0700-1600.  History: `docs/spaceplane/journal.md`,
-"Session, 2026-10-09" (morning, afternoon, late afternoon).
+Snapshot of 2026-10-09 evening (~1630-2010).  History:
+`docs/spaceplane/journal.md`, "Session, 2026-10-09 evening".
 
-Defaults fingerprint **`9abe7afd`**.  Committed and pushed.  Farm stopped.
+Defaults fingerprint **`b9f653fc`** (no default changed today: every new
+mechanism is a flag, off).  Committed and pushed.  Farm stopped, sleep
+inhibitor released.  No worktrees open.
 
 ## The headline
 
-**The split rudder as the approach's speedbrake (`APPROACH_SPLIT_BRAKE`,
-default) lands the shuttle 46/66 on the runway (70%)** over
-rigoff/inc/high, against 61/135 (45%) for 10-08's best configuration;
-head to head with it off, 24/30 v 8/30.  Rigoff alone: 16/22 on today's
-defaults.  Losses ~1 in 15.
+1. **The old `qs_shuttle2_ecc_rigoff` was an invalid orbit** (periapsis 69
+   km, inside the 70 km atmosphere -- the user caught it).  Everything 10-08
+   and 10-09 said about "the eccentric orbit's post-burn flip" is about
+   that invalid save.  Regenerated at **77 x 135 km**; it now lands like the
+   others (rot-ecc2-1009: 12/18 within the runway's length).
+2. **Brakes before weaving** (the user's direction): spend surplus with the
+   split rudder first (no attitude change), the spoiler second (yields to
+   roll), and bank/weave/S-turn last.  Built as flags, partly flown.
 
-How it works: the cone hands over 0.6-1.7 km high ~6 km out (a ~28 deg
-path); the fins open to the L/D factor `distance / (height x
-APPROACH_BEST_LD)` every tick while alpha holds speed.  Gated on 1.45 x
-stall (the shuttle cannot fly below ~+1 deg alpha on final; its steady glide
-is ~80 m/s, the 115 m/s target is never held).
+## Where it stands (defaults)
 
-## What else changed today
+rot-ecc2-1009 (fresh farm, 36 flights): **27/36 within the runway's length,
+22/36 also on the strip and intact**; ecc 12/18, rigoff/inc/high 5/6 each.
+rot-fade-1009: defaults 21/24 (18/24 strip+intact).  rot-pkg-1009 (late,
+swap 21-22 GB): defaults 12/18.  **Batch-to-batch drift is large; compare
+only arms interleaved in one batch.**
 
-- **Cleanup** (the user asked): ~35 flags measured-and-off deleted with
-  their code (list in `spaceplane/CLAUDE.md`); the 10-08 best config
-  promoted.  **Root rule: a flag ends as the default or deleted.**
-  Suite 559 pass, pyflakes clean on spaceplane, smoke 4/6 landed.
-- Deleted late: `HOLDABLE_PRIOR` + `_BY_MACH` (rot-prior-1009: ecc 3/12 v
-  3/12 pooled, null), `COAST_TRIM` (below), and 11 older parked flags.
-- New instrument `COAST_WATCH_S` (0 = off): the burn's stop test re-run
-  every N s of COAST, with pointing error, vertical speed and q.
-- The burn's exit line now says `range error unmeasured (stopped on the
-  solved dv)` instead of printing `+0 m` when the stop test had no answer.
-- `spaceplane/tools/multirot.sh`: arms over the farm, restart every 2
-  rounds, arm list rotated by 2 per cycle.
+Failure causes (114 default flights, `landsum.py` + log reading):
+- **Long** (~20%): the cone hands over +650..+1200 m high; the approach's
+  split brake stowed on its sink cap -> clean airframe accelerated (92 ->
+  118 m/s) -> speed law pulled up -> crossed the threshold ~1000 m up
+  (LOG9013).  The cone's on/off flap brake never fired (0/36).
+- **Short** (~4%): handed over 300-530 m low; nothing can recover it.
+- **Off-strip** (~7%): flare entered 100-200 m off the centreline.  The
+  approach capture closes at a constant rate timed to finish *at the
+  wheels*; the S-turn puts the offset there (no S-turn -> 35 m mean
+  cross at the flare, 0 off-strip; heavy S-turn -> ~100 m).
 
-## Where it stands
+## Flags added today (all off) and what they measured
 
-| | runway | note |
+| flag | what | measured |
 |---|---|---|
-| rigoff/inc/high (defaults) | 46/66 | long <1.4 km (flare entries 86-96 m/s), off-strip 40-60 m, a few short / partial breakups |
-| `qs_shuttle` (single fin, brake absent) | 5/6 stop on the runway | rigid-attach save |
-| `qs_shuttle2_ecc_rigoff` | ~1 in 4 | **cone arrival +10..+50 km long** |
+| `APPROACH_SPLIT_SINK_FADE` | approach brake fades over its sink cap instead of stowing; holds while fast | rot-fade-1009, 24 an arm: 19/24 v 18/24 strip+intact, shorts 3 v 1 -- **null alone**; kept only inside the package |
+| `APPROACH_SPLIT_SLOW_FADE` | same for its speed gate | only inside the package |
+| `HAC_SPLIT_BRAKE` | the cone's split rudder, throttled to the L/D factor that spends the height to the gate; cone L/D measured clean, plan flies the braked one | package v1 |
+| `BRAKES_BEFORE_WEAVE` | spoiler throttled on the surplus the rudder leaves (yields to roll, stowed for the flare); approach S-turn only once both brakes are at their stops | package v1 |
+| `HAC_WEAVE_AFTER_BRAKE` | the cone's weave waits for the rudder to saturate (or fade out at low speed) | **unflown** (v2) |
+| `GLIDE_SPLIT_BRAKE` | split rudder below Mach 2.2 in the glide, angle integrating the bank the solve spends past 30 deg; every propagation prices it | **unflown**; `GLIDE_SPLIT_DRAG` below Mach 2 is interpolated -- measure first |
+| `APPROACH_CAPTURE_TAU_SHARE` | lateral capture as an exponential (share of time left) instead of constant rate to the wheels | **unflown**; try 0.35 |
 
-## The blocker: the eccentric orbit's coast
+**Package v1** (`HAC_SPLIT_BRAKE`, `BRAKES_BEFORE_WEAVE`, both fades 0.3 /
+0.15), rot-pkg-1009, 18 an arm, stopped after 3 of 4 cycles: **12/18 v
+12/18 strip+intact** (13 v 12 within the runway's length); every package
+flight stopped within 28 m of the centreline (defaults up to 109 m), but
+long 3 v 4.  Smoke (rot-smoke-pkg-1009) 6/6.  Why not more: in the cone
+the weave keyed on 800 m of *path* surplus (~270 m of height) and spent it
+before the rudder's slew got there (weave 34-95 ticks, rudder 0-26 deg) --
+which is what `HAC_WEAVE_AFTER_BRAKE` fixes.
 
-All ecc burns are identical (34 m/s).  **The miss is made in the ~90 s
-post-burn flip to entry attitude** (full input, pointing error 100-160 deg,
-at 69 km, q ~1 Pa): vertical speed ~200 s later orders the arrivals
-exactly (-6.8 m/s -> +11 km ... -6.4 -> +50 km, rot-prior-1009).  Same
-energy to 0.2 m/s; it is the path angle on a grazing entry.
-
-**On that orbit the burn's stop test cannot measure** (rot-watch-1009,
-`COAST_WATCH_S=5`): t2g 1830 s > `DEORBIT_MAX_TIME_TO_GO_S` 1500 straight
-after cutoff, so the burn has always ended on the solved dv, open loop;
-readable only mid-flip, against an aim of +760 km.  `COAST_TRIM` (RCS
-translation closed on that stop test) therefore closed on nothing: its first
-prograde pulse took three flights to +69..+78 km.  Deleted.
-
-Next, either:
-1. **Correct with a measurement that exists there**: the glide's own solve
-   (or the window's corners) propagated from the settled coast state,
-   trimmed with RCS along the nose before the air (q < ~20 Pa).  Check
-   first, with `COAST_WATCH_S`-style logging, that it reads the same miss
-   the glide later sees at the interface.
-2. **Or remove the disturbance**: a slower wheel-only flip, the flip done
-   before the drag matters, or the burn's last measurement taken after it.
-Do not fit `DEORBIT_CENTRE_BIAS_M` (the 51000 trap).
+Probe: `splitprobe.py --glide` -- the split rudder at 38 deg adds +1% drag
+at Mach 6-7.5 (alpha 35-40), +3% at Mach 4, **+12% at Mach 2**; yaw/roll
+0.  Shadowed at high alpha; worth something only below ~Mach 2.
 
 ## Next, in order
 
-1. The eccentric orbit (above).
-2. Remaining misses on the good orbits: fast flare entries (86-96 m/s
-   float long; braking in the flare was null) -- likely TAEM before the
-   cone so the handover is not 0.6-1.7 km high; the flare's lateral entry
-   (off-strip 40-60 m).
-3. Classify the short landings / partial breakups by cause (not done).
-4. Carried: `TOUCHDOWN_AIM_M`/`APPROACH_AIM_SHIFT_M` per vehicle.
+1. **Probes (farm up, one instance, minutes):**
+   `spaceplane/tools/splitprobe.py 0 --glide --angles 0,20,38` (now
+   includes Mach 0.8/1.0/1.5 -> fix `GLIDE_SPLIT_DRAG`) and
+   `spaceplane/tools/spoilerprobe.py 0` (is a pitch-neutral lift dump
+   worth anything at hypersonic speed against the elevon margin the glide
+   lacks? the user's question; expectation: no).
+2. **Smoke v2** on all four orbits: package v1 + `HAC_WEAVE_AFTER_BRAKE`
+   (+ `GLIDE_SPLIT_BRAKE` once its table is measured).  Check the logs:
+   cone `spb=` should reach the 30s before `wv=` goes non-zero; `glide
+   split brake out` below Mach 2.2; no Tracebacks.
+3. **Fly v2 against the defaults**, 4 orbits interleaved,
+   `spaceplane/tools/multirot.sh TAG 4 ...` (24 an arm, ~80 min on a
+   fresh farm).  Promote the package if it wins (and delete
+   `hac_flap_brake`/`command_airbrake`, which it replaces); delete it if
+   not.
+4. `APPROACH_CAPTURE_TAU_SHARE=0.35` on the winner (off-strip).
+5. Upstream: the cone exit height scatter (+-1 km) is the root of long
+   and short.
+
+Arm string for v2:
+`LOG_INTERVAL_UT=0.5;HAC_SPLIT_BRAKE=True;BRAKES_BEFORE_WEAVE=True;HAC_WEAVE_AFTER_BRAKE=True;APPROACH_SPLIT_SINK_FADE=0.3;APPROACH_SPLIT_SLOW_FADE=0.15`
+
+## Repo changes today (not flight code)
+
+- Journal pruned 315 -> 130 KB (full text at `f8d63c5`).
+- Untracked what regenerates: plugin DLLs (`mkbase.sh` builds all three
+  with `mcs`), 11 savegen saves (`saves/derived.txt`; `syncSaves.sh
+  check|push` rebuilds them byte-identical), `verify*.txt`.
+- `setup.sh` (asks for the KSP install, checks mods, venvs, derived saves,
+  optional farm), GPL-3.0-or-later `LICENSE`, `CODE_OF_CONDUCT.md`,
+  `CONTRIBUTING.md`.  Claude pushes directly to `main`; branch
+  protection was not set (the classifier blocked it; the user can do it
+  in GitHub settings).
+- The user's live KSP install lacks `PersistentThrust`, which the farm's
+  `base/` has (setup.sh warns).
 
 ## Traps paid today
 
-- **Smoke-fly after any refactor**: smoke flights caught a NameError, a
-  slew bug and a dive that a 70-minute batch would have spent.
-- **"range error +0 m" was a None** on the ecc orbit (fixed in the log).
-  Check a stop test actually measured before building on it.
-- A batch label (`LOG_INTERVAL_UT=0.5`) means nothing across a day in which
-  the defaults moved: group by `defaults=` fingerprint as well.
-- A command alpha below ~+1 deg on final is not flown -- check `aoa=`
-  cmd/actual.
-- Batches of one configuration swing 56-83%: pool before believing a level.
+- **Check a save's orbit before believing anything flown from it**
+  (periapsis vs atmosphere depth): two sessions went into an invalid save.
+- "could not pause after the load" hits ~1 flight in 15; all instances run
+  the same time-scale DLL (md5 checked), so the message's "old plugin"
+  guess is wrong.  Exclude those flights.
+- Swap still reaches 21-22 GB within 2 rounds of six; restart per cycle
+  (multirot does) and compare only within one batch.
+- A scripted edit landed in the wrong function (`enter` has no
+  docstring); diff after every splice.
+- `pkill -f` patterns with quotes do not match the process's argv.

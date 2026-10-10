@@ -2146,3 +2146,23 @@ Housekeeping: journal pruned 315 -> 130 KB (old-craft and single-fin eras
 condensed, full text at `f8d63c5`); regenerable files untracked (plugin
 DLLs, 11 savegen saves via `saves/derived.txt`, run output); `setup.sh`,
 GPL-3.0-or-later, Code of Conduct, CONTRIBUTING.md.
+
+**Later the same evening (~1800-2010): brakes before weaving.**
+rot-fade-1009 (24 an arm, 4 orbits, fresh farm): `APPROACH_SPLIT_SINK_FADE`
+19/24 v 18/24 strip+intact, shorts 3 v 1 -- null alone.  The user asked
+why the brakes were rationed behind the weave ("that's manoeuvring the
+airframe"); the S-turn tracks the off-strip landings (no S-turn: 35 m mean
+cross at the flare, 0/13 off-strip; 30-60 ticks: 97 m, 5/52), and the
+cone's on/off flap brake fired 0/36.  Built: `HAC_SPLIT_BRAKE` (rebuilt
+throttled, with the cone L/D measured clean and the plan at the braked
+L/D -- the deleted version learned its own drag and planned it away),
+`BRAKES_BEFORE_WEAVE` (throttled spoiler second, S-turn last),
+`APPROACH_SPLIT_SLOW_FADE`, `HAC_WEAVE_AFTER_BRAKE`, `GLIDE_SPLIT_BRAKE`,
+`APPROACH_CAPTURE_TAU_SHARE`; tools `splitprobe.py --glide`,
+`spoilerprobe.py`.  `splitprobe.py --glide`: the split rudder at 38 deg
+adds +1% drag at Mach 6-7.5, +3% at Mach 4, +12% at Mach 2 -- shadowed at
+high alpha.  rot-smoke-pkg-1009: package v1 6/6.  rot-pkg-1009 (stopped by
+the user after 3 of 4 cycles, 18 an arm, swap 21-22 GB): **12/18 v 12/18**
+strip+intact; package flights all within 28 m of the centreline, long 3 v
+4; the cone still wove before its rudder opened (path-surplus threshold
+~270 m of height), hence `HAC_WEAVE_AFTER_BRAKE`.  Next: HANDOFF.md.

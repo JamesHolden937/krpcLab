@@ -25,8 +25,9 @@ comes from that fresh prediction.
 ## The target is the shuttle
 
 `qs_shuttle2` (Mk3, twin fins, ~30 t at landing) and its orbits
-`qs_shuttle2_rigoff` / `_inc_rigoff` / `_high_rigoff` (and `_ecc_rigoff`,
-which arrives ~17 km long). **The old craft (`qs_plane`) is retired** (the
+`qs_shuttle2_rigoff` / `_inc_rigoff` / `_high_rigoff` / `_ecc_rigoff`
+(77 x 135 km since 2026-10-09; the earlier ecc save was invalid, periapsis
+inside the atmosphere). **The old craft (`qs_plane`) is retired** (the
 user, 2026-10-03: a flying brick with no real wings). Don't tune for it or
 judge changes on it; its saves stay in `saves/` as history.
 
@@ -34,35 +35,31 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-09 evening, fingerprint `9abe7afd`)
+## Where it stands (2026-10-09 night, fingerprint `b9f653fc`)
 
-**The split rudder speedbrake on final is the default** (`APPROACH_SPLIT_BRAKE`):
-rigoff/inc/high land **46/66 on the runway (70%)**, against 61/135 (45%)
-the day before; head to head with it off, 24/30 v 8/30.  The cone hands
-over 0.6-1.7 km high ~6 km out (a ~28 deg path); the fins open to the L/D
-factor the geometry asks for and alpha holds speed, so the drag buys path
-angle.  Gated on 1.45 x stall: **the shuttle cannot fly below ~+1 deg of
-alpha on final**, so its steady glide is ~80 m/s and the approach's 115
-m/s target is never held.
+Defaults: **27/36 within the runway's length, 22/36 on the strip and
+intact** over all four orbits (rot-ecc2-1009); batch-to-batch drift is
+large (12/18 .. 21/24), so compare only interleaved arms.  Misses: long
+(the cone hands over +650..+1200 m high and the approach brake stowed on
+its sink cap -> accelerated -> pulled up), short (handed over low),
+off-strip (the S-turn plus a capture timed to finish at the wheels).
 
-Remaining on the good orbits: a few long by <1.4 km (fast flare entries),
-a few short, off-strip by 40-60 m.  **The eccentric orbit
-(`qs_shuttle2_ecc_rigoff`) is the blocker**: it reaches the cone 10-50 km
-long, and the miss is made by the ~90 s post-burn flip to entry attitude
-at 69 km (vertical speed after it orders the arrivals exactly).  On that
-orbit the burn's stop test cannot measure (t2g > 1500 s), so the burn ends
-on the solved dv (root HANDOFF.md).  The single-fin `qs_shuttle`
-(no pair, brake absent) stops on the runway 5/6.
+**The direction (the user's): brakes before weaving.**  Split rudder
+first (no attitude change), spoiler second (it is the roll surfaces, so it
+yields to roll), weave / S-turn last.  Flags built, all off:
+`HAC_SPLIT_BRAKE`, `BRAKES_BEFORE_WEAVE`, `HAC_WEAVE_AFTER_BRAKE`,
+`APPROACH_SPLIT_SINK_FADE`, `APPROACH_SPLIT_SLOW_FADE`,
+`GLIDE_SPLIT_BRAKE`, `APPROACH_CAPTURE_TAU_SHARE`.  Package v1 12/18 v
+12/18 (every flight within 28 m of the centreline); v2 adds the cone's
+weave held for the rudder.  The split rudder is worthless above ~Mach 2
+(`splitprobe.py --glide`: +1% drag at Mach 6-7.5, +12% at Mach 2).
 
 ## Next, in order
 
-1. The eccentric orbit: correct the flip's disturbance with a measurement
-   that exists there (not the stop test), or take the disturbance out.
-2. Fast flare entries (86-96 m/s float long) -- braking in the flare was
-   null; and the flare's lateral entry.
-3. **Energy management the Shuttle's way**: a TAEM segment before the cone
-   so the handover is not 1-1.7 km high; overhead v straight-in by energy.
-4. `TOUCHDOWN_AIM_M` / `APPROACH_AIM_SHIFT_M` per vehicle.
+The root [HANDOFF.md](../HANDOFF.md) has the commands: probes
+(`splitprobe.py --glide`, `spoilerprobe.py`), smoke v2, fly v2 v defaults
+(24 an arm), promote or delete; then `APPROACH_CAPTURE_TAU_SHARE=0.35`;
+then the cone's exit-height scatter.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -102,7 +99,7 @@ on the solved dv (root HANDOFF.md).  The single-fin `qs_shuttle`
 journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE`,
 `CONE_TRIM_HANDOFF`, `HAC_LD_AT_TARGET`, `GLIDE_CONE_ENERGY`/`_CEILING`,
 `ENTRY_INTERFACE_AT_AIR`, `GEAR_GEOMETRY_DEPLOYED`, `AERO_REFRESH_NEAR_MACH`,
-`TOUCHDOWN_AIM_DERIVED`, `BAY_BRAKE`, `HAC_SPLIT_BRAKE`, `HAC_SPLIT_ON_BRANCH`,
+`TOUCHDOWN_AIM_DERIVED`, `BAY_BRAKE`, `HAC_SPLIT_ON_BRANCH` (`HAC_SPLIT_BRAKE` rebuilt the same evening),
 `HAC_LD_FLOWN_POLAR`, `ROLLOUT_SPLIT_BRAKE`, `FLARE_SPLIT_BRAKE`,
 `APPROACH_SPEED_KI`, `APPROACH_ALPHA_MIN_DEG`, `ALPHA_BINS_NEGATIVE`, `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 `HAC_SPEED_PATH`, `HAC_SHORT_BEST_GLIDE`, `APPROACH_SINK_GUARD`,
@@ -126,7 +123,8 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 ./spaceplane/tools/armsum.py --by X --against '(default)' logs/LOG88*   # one line per arm
 ./spaceplane/tools/conesum.py --settled logs/LOG88*
 ./spaceplane/tools/conepolar.py             # the cone's flown polar -> logs/conepolar/
-./spaceplane/tools/splitprobe.py 0          # the split rudder's drag, yaw, roll
+./spaceplane/tools/splitprobe.py 0 [--glide] # the split rudder's drag, yaw, roll
+./spaceplane/tools/spoilerprobe.py 0         # each surface as a spoiler; the best pitch-neutral lift dump
 
 python3 -m unittest spaceplane.tests.testSpaceplane   # offline, no KSP
 ./testInstances/actuators.py 0               # every module setting of the craft
