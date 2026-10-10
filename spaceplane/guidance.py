@@ -1714,7 +1714,7 @@ def cone_speed(env, cfg, stall, height):
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
         previous=None, max_step=None, weave=0.0, roll_rate=None,
-        ld_scale=None):
+        ld_scale=None, weave_ok=True):
     """Circle down to the gate, and let the radius carry the energy error.
 
     The one control decision here is **how wide to turn**.  The path still to
@@ -1896,7 +1896,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # than a cycle of path left is a lateral excursion into the gate.  See
     # ``Config.HAC_WEAVE_WHOLE_CYCLE``.
     cycle_ok = total >= speed * cfg.HAC_WEAVE_PERIOD_S
-    if cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M and (total > 1.0):
+    # ``weave_ok`` False (``HAC_WEAVE_AFTER_BRAKE``): the brake can still
+    # spend this, so the airframe is not manoeuvred for it.
+    if weave_ok and cycle_ok and surplus > cfg.HAC_WEAVE_DEADBAND_M \
+            and total > 1.0:
         ratio = vec.clamp(total / max(1.0, available), 0.0, 1.0)
         weave_deg = min(cfg.HAC_WEAVE_MAX_DEG,
                         math.degrees(math.acos(ratio)))

@@ -4569,7 +4569,8 @@ class Autopilot:
                                 weave=self.hac_weave_phase(snap)
                                 * self.hac_weave_sign(snap.ut),
                                 roll_rate=self.roll_rate.limit(),
-                                ld_scale=self.hac_plan_ld_scale())
+                                ld_scale=self.hac_plan_ld_scale(),
+                                weave_ok=self.hac_weave_allowed(snap))
 
         command = plan()
         if command is None:
@@ -4737,6 +4738,26 @@ class Autopilot:
                 self.logbook.event(snap.ut, "%s spoiler %s at h=%.0f: %.0f "
                                    "deg, %s" % (phase, "out" if cmd else "in",
                                                 height, cmd, reason))
+
+    def hac_weave_allowed(self, snap):
+        """``HAC_WEAVE_AFTER_BRAKE``: the cone weaves only for what the split
+        rudder cannot spend -- the rudder at its stop, or faded out because
+        the cone is slow (``HAC_SPLIT_SPEED_FADE``), or absent.  True with
+        the flag off."""
+        if not (getattr(self.cfg, "HAC_WEAVE_AFTER_BRAKE", False)
+                and getattr(self.cfg, "HAC_SPLIT_BRAKE", False)
+                and getattr(self, "split_pair", None)):
+            return True
+        if self.split_saturated():
+            return True
+        last = getattr(self, "hac_command", None)
+        target = float(getattr(last, "alpha_target_speed", 0.0) or 0.0)
+        fade = float(self.cfg.HAC_SPLIT_SPEED_FADE)
+        if target > 0.0 and fade > 0.0:
+            speed = vec.norm(snap.velocity)
+            if speed < (1.0 - 0.5 * fade) * target:
+                return True      # the brake is half faded or more
+        return False
 
     def hac_split_factor(self, angle):
         """The cone's L/D factor at split-rudder ``angle``, off

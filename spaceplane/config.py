@@ -2214,6 +2214,12 @@ class Config:
     # the spoiler's on/off triggers (``hac_flap_brake``, ``command_airbrake``),
     # which waited for the weave to saturate.  Pair with ``HAC_SPLIT_BRAKE``.
     BRAKES_BEFORE_WEAVE: bool = False
+    # ... and in the cone the weave waits for the rudder too
+    # (``Autopilot.hac_weave_allowed``): it keyed on 800 m of *path*
+    # surplus, ~270 m of height, and spent the surplus before the brake's
+    # slew got there (smoke rot-smoke-pkg-1009: weave 34-95 ticks with the
+    # rudder at 0-26 deg).
+    HAC_WEAVE_AFTER_BRAKE: bool = False
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and
