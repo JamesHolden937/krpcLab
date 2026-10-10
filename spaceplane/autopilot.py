@@ -496,6 +496,10 @@ class Autopilot:
         self.deorbit_speed_prev = None
         self.deorbit_ticks = 0
         self.deorbit_done = False   # see fly_deorbit_burn
+        self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
+        self.sas_node = None
+        self.sas_since = None
+        self.sas_aligned_prev = False
         self.interface_logged = False
         self.cutoff_state = None
         self.cutoff_logged = False
@@ -2780,6 +2784,8 @@ class Autopilot:
             # a warped tick covers twenty seconds of orbit.
             self.set_warp(True)    # release
             return
+        if self.cfg.DEORBIT_SAS_ALIGN and not self.sas_settled(snap, dv):
+            return
         self.deorbit_dv = dv
         self.deorbit_since = snap.ut
         self._thrust_limit_pending = True
@@ -2934,6 +2940,94 @@ class Autopilot:
                 self.logbook.event(0.0, "rails warp refused (%r); the wait "
                                         "will run at 1x" % (exc,))
 
+    def sas_settled(self, snap, dv):
+        """Hold the burn attitude with stock SAS on a maneuver node; True once settled.
+
+        ``DEORBIT_SAS_ALIGN``.  The node is the solution as of this tick: a
+        retrograde ``dv`` two seconds out, moved every tick as the search
+        re-solves, so SAS's Maneuver mode points where the burn will be
+        flown.  kRPC's autopilot is disengaged for the duration -- the two
+        fight otherwise -- and ``engage`` is kept from re-engaging it.
+        """
+        ut = snap.ut
+        speed = vec.norm(snap.velocity)
+        retro = vec.scale(snap.velocity, -1.0 / max(1.0, speed))
+        self.commanded_nose = retro
+        self.commanded_alpha, self.commanded_bank = 180.0, 0.0
+        if not self.sas_hold:
+            self.sas_hold = True
+            self.sas_since = ut
+            self.sas_aligned_prev = False
+            set_autopilot_engaged(self.autopilot, False)
+            mode = "maneuver"
+            try:
+                self.sas_node = self.control.add_node(ut + 2.0,
+                                                      prograde=-float(dv))
+            except Exception as exc:                        # noqa: BLE001
+                self.sas_node = None
+                self.logbook.event(ut, "maneuver node refused (%r)" % (exc,))
+            try:
+                self.control.sas = True
+            except Exception:                               # noqa: BLE001
+                pass
+            modes = self.conn.space_center.SASMode
+            try:
+                if self.sas_node is None:
+                    raise RuntimeError("no node")
+                self.autopilot.sas_mode = modes.maneuver
+            except Exception:                               # noqa: BLE001
+                mode = "retrograde"
+                try:
+                    self.autopilot.sas_mode = modes.retrograde
+                except Exception as exc:                    # noqa: BLE001
+                    mode = "stability (%r)" % (exc,)
+            self.logbook.event(ut, "SAS has the attitude: %s mode, node dv "
+                                   "%.1f m/s, %.1f deg off retrograde"
+                               % (mode, dv,
+                                  vec.angle_between(snap.nose, retro)))
+        elif self.sas_node is not None:
+            try:
+                self.sas_node.ut = ut + 2.0
+                self.sas_node.prograde = -float(dv)
+            except Exception:                               # noqa: BLE001
+                pass
+        # Urgent: a window is waiting on this turn (see fly_deorbit_burn).
+        self.set_rcs(True, snap)
+        align = vec.angle_between(snap.nose, retro)
+        aligned = align <= self.cfg.DEORBIT_COMMIT_ALIGN_DEG
+        settled = aligned and self.sas_aligned_prev
+        self.sas_aligned_prev = aligned
+        waited = ut - self.sas_since
+        if settled or waited >= self.cfg.DEORBIT_SAS_SETTLE_MAX_S:
+            self.logbook.event(ut, "SAS %s after %.0f s, %.1f deg off "
+                                   "retrograde -- committing"
+                               % ("settled" if settled else "timed out",
+                                  waited, align))
+            return True
+        self.panel.set_start_label("aligning: %.0f deg" % align)
+        return False
+
+    def sas_release(self, ut):
+        """Hand the attitude back to kRPC's autopilot and delete the node."""
+        if not self.sas_hold:
+            return
+        self.sas_hold = False
+        try:
+            self.control.remove_nodes()
+        except Exception:                                   # noqa: BLE001
+            pass
+        self.sas_node = None
+        try:
+            self.control.sas = False
+        except Exception:                                   # noqa: BLE001
+            pass
+        error = set_autopilot_engaged(self.autopilot, True)
+        self.logbook.event(ut, "SAS released, kRPC autopilot %s"
+                           % ("re-engaged" if error is None
+                              else "refused (%s)" % (error,)))
+        if error is not None:
+            self.autopilot_engaged = False   # engage_autopilot retries
+
     def fly_deorbit_burn(self, snap):
         """Point retrograde, burn, and stop when the arc already reaches.
 
@@ -3070,6 +3164,7 @@ class Autopilot:
                 or self.deorbit_done):
             self.set_throttle(0.0)
             self.restore_thrust_limits()
+            self.sas_release(snap.ut)
             self.cutoff_state = (snap.ut, snap.position, snap.velocity,
                                  snap.mass)
             self.log_deorbit_window(snap)
@@ -5405,7 +5500,7 @@ class Autopilot:
         if self.panel.terminate_pressed():
             self.finish("terminated from the panel")
             return snap
-        if self.state != STANDBY:
+        if self.state != STANDBY and not self.sas_hold:
             self.engage_autopilot(snap.ut)
         if self.grounded_early(snap):
             return snap
@@ -5935,6 +6030,10 @@ class Autopilot:
             pass
 
     def finish(self, reason):
+        try:
+            self.sas_release(self.last_ut or 0.0)
+        except Exception:                                   # noqa: BLE001
+            pass
         self.finished_reason = reason
         self.running = False
 

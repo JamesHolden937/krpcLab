@@ -1776,6 +1776,20 @@ class Config:
     # ~2 game-s before ignition) still governs the burn after it.
     GOVERN_PEAK_WINDOW_S: float = 60.0
     DEORBIT_ALIGN_DEG: float = 8.0
+    # **Line up on the stock maneuver node with SAS before committing**
+    # (the user, 2026-10-10).  Without it the wait holds the entry attitude
+    # (~100-140 deg off retrograde), the flip starts only at commit, and the
+    # burn lights mid-slew: 30 s and ~7 deg of overshoot on the farm, a
+    # coning slew that never settled live (LOG9339).  With it, the first
+    # solution places a node, SAS (Maneuver mode, Retrograde if the core has
+    # no Maneuver) takes the attitude from kRPC's autopilot, the search keeps
+    # re-solving and moving the node, and the burn commits only once the nose
+    # is within ``DEORBIT_COMMIT_ALIGN_DEG`` on two successive ticks -- or
+    # after ``DEORBIT_SAS_SETTLE_MAX_S`` regardless.  The burn flies under
+    # SAS; kRPC's autopilot is re-engaged at cutoff.
+    DEORBIT_SAS_ALIGN: bool = False
+    DEORBIT_COMMIT_ALIGN_DEG: float = 3.0
+    DEORBIT_SAS_SETTLE_MAX_S: float = 120.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
     DEORBIT_MAX_BURN_S: float = 60.0
