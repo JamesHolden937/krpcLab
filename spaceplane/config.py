@@ -602,6 +602,10 @@ class Config:
     # the second reversal there is a +-30 flip energy never asked for.
     # Glide only; the deorbit keeps its aim.  ``guidance.glide_bank_min``.
     GLIDE_BANK_MIN_DEG: float = 0.0
+    # A bank reversal is free again only once the *flown* bank has reached
+    # the side it is committed to (``flown_bank``), not the rate-limited
+    # command.  See ``run_glide``.
+    GLIDE_SETTLE_ON_FLOWN: bool = False
     BANK_RATE_DEG_S: float = 8.0
     # A tick counts as a sample only when the command led the flown bank by
     # at least this -- the vehicle was being asked for more than it gave.
