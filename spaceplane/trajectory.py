@@ -68,8 +68,8 @@ class Prediction:
     cross: float = 0.0         # lateral offset from the centreline there
     # **The predicted handover**: ``(altitude, speed)`` where the arc first
     # meets the cone's entry test (Mach at most ``HAC_ENTRY_MACH`` and within
-    # ``HAC_ENTRY_DIST_M`` of the gate -- under ``HAC_ENTRY_DERIVED``, a
-    # holdable circle and the gate abeam -- or down to the gate's altitude), so
+    # ``HAC_ENTRY_DIST_M`` of the gate -- under ``HAC_ENTRY_DERIVED`` a
+    # holdable circle instead of the Mach -- or down to the gate's altitude), so
     # the log can set the energy the prediction promises the cone against
     # the one it gets.  ``None`` when the arc never meets it.
     handover: object = None
@@ -435,16 +435,6 @@ def plateau_edge(env, frac, speed, altitude):
                 break
     cache[key] = out
     return out
-
-
-def gate_behind(r, v, gate):
-    """True once ``gate`` is abeam or behind: the horizontal velocity no
-    longer closes on it.  ``HAC_ENTRY_DERIVED``'s "arrived" test."""
-    up = vec.unit(r)
-    to_gate = vec.sub(gate, r)
-    to_gate = vec.sub(to_gate, vec.scale(up, vec.dot(to_gate, up)))
-    v_h = vec.sub(v, vec.scale(up, vec.dot(v, up)))
-    return vec.dot(v_h, to_gate) <= 0.0
 
 
 def gravity_at(env, r):
@@ -862,10 +852,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             distance = surface_distance(env, r, gate)
             if closest is None or distance < closest:
                 closest = distance
-            if entry_derived:
-                arrived = gate_behind(r, v, gate)
-            else:
-                arrived = entry_dist > 0.0 and distance <= entry_dist
+            arrived = entry_dist > 0.0 and distance <= entry_dist
             if handover is None and arrived and descending:
                 try:
                     if entry_derived:

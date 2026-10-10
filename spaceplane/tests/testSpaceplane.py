@@ -5306,17 +5306,7 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
 
 
 class TestConeEntryDerived(unittest.TestCase):
-    """``HAC_ENTRY_DERIVED``: the gate-abeam trigger and the turn veto."""
-
-    def test_gate_behind(self):
-        r = (600000.0, 0.0, 0.0)
-        v = (0.0, 250.0, -100.0)                   # flying +y, descending
-        ahead = (600000.0, 3000.0, 0.0)
-        behind = (600000.0, -500.0, 0.0)
-        abeam = (600000.0, 0.0, 800.0)
-        self.assertFalse(trajectory.gate_behind(r, v, ahead))
-        self.assertTrue(trajectory.gate_behind(r, v, behind))
-        self.assertTrue(trajectory.gate_behind(r, v, abeam))
+    """``HAC_ENTRY_DERIVED``: the turn veto is the holdable circle."""
 
     def test_veto_is_the_hold_radius(self):
         cfg = Config()

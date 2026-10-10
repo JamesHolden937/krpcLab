@@ -401,18 +401,20 @@ class Config:
     # airframe can hold at Mach 1.5 is 21 km at 45 degrees of bank, which
     # is the wide end.
     HAC_ENTRY_MACH: float = 1.50
-    # **The two entry constants above, derived** (the user, 2026-10-10).
-    # The veto becomes the question Mach 1.5 stood in for: does the circle
-    # the airframe can hold at this speed (``guidance.hac_hold_radius``) fit
-    # inside ``HAC_RADIUS_MAX_M``?  Mach 1.5 admitted a ~26 km circle against
-    # the 16 km cap (the LOG2756 shape).  The trigger becomes the cone's own
-    # budget: ``guidance.hac`` asked from here, for the cheapest end and
-    # hand, does not come back ``short``; backstop, the high gate abeam or
-    # behind.  The 3 km distance test fired on every flight of rot-v2-1010,
-    # 14.3-17.4 km up in a ~37 deg dive; a gate-height trigger was flown in
-    # rot-smoke-hed-1010 and LOG9347 arrived over the gate at 11.9 km and
-    # ran out of height 9 km short (the old 12 km trigger: 24/33 out of
-    # height).  The predicted handover (log only) uses the backstop.
+    # **The Mach veto above, derived** (the user, 2026-10-10): enterable
+    # once the circle the airframe can hold at this speed
+    # (``guidance.hac_hold_radius``) fits inside ``HAC_RADIUS_MAX_M`` --
+    # ~347 m/s at 45 deg and margin 1.3, where Mach 1.5 admitted ~440 m/s
+    # and a 26 km circle (``hac_radius`` then clamps it silently to 16, the
+    # LOG2756 shape).  In rot-v2-1010, 4 of 48 entries were at 360-398 m/s
+    # and three of them were the batch's misses (+1.7 km, +2.7 km, lost;
+    # all rolled out 0.7-1.2 km high).  The trigger stays
+    # ``HAC_ENTRY_DIST_M``: deriving it was flown twice and lost both times
+    # -- the gate's height (LOG9347, out of height 9 km short) and the
+    # cone's own plan affordable (rot-smoke-hed2-1010, 4/6 on the runway:
+    # entered with no margin against a plan ratio the cone does not
+    # achieve).  What the 3 km test stands in for is the 2-5 km of height
+    # the cone needs above ``HAC_ALT_M``.
     HAC_ENTRY_DERIVED: bool = False
 
     # -- angle of attack ---------------------------------------------------

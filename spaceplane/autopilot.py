@@ -4459,44 +4459,14 @@ class Autopilot:
                         <= self.cfg.HAC_RADIUS_MAX_M)
         else:
             can_turn = mach <= self.cfg.HAC_ENTRY_MACH
-        # **Entered when it can pay for itself, not at an altitude.**
-        # See ``cone_affordable``.  ``HAC_ENTRY_DIST_M`` stays as the
-        # backstop it was written to be -- an arrival flat enough to
-        # reach the field before the cone is ever affordable still has
-        # to be taken -- and ``HAC_ALT_M`` keeps its other job, the
-        # entry's aim point in ``Runway.high_gate``, where it is not a
-        # trigger.
-        #
-        # **Waiting is what makes this the earliest flyable entry
-        # rather than a delay**: the straight glide's ratio is 2.3-3.0
-        # against the cone's 1.49, so gliding on buys affordability
-        # faster than it spends height.  A cone that cannot pay now can
-        # pay later; one entered anyway never can.
-        if derived:
-            # **Entered when the cone can pay for its own plan**: the
-            # cone's guidance, asked from here exactly as its first tick
-            # would ask it, does not come back ``short``.  Not on height:
-            # a fixed 12 km arrived out of height 24 of 33 times, and the
-            # 3 km distance test only worked by firing 2-5 km higher
-            # (LOG9347: over the high gate at 11.9 km, out of height 9 km
-            # short).  The backstop is the gate abeam or behind -- the
-            # glide has nothing left to aim at.
-            gate = self.env.runway.gate(self.end)
-            affordable = False
-            if can_turn:
-                end, side = guidance.hac_choose(
-                    self.env, self.cfg, self.env.runway, snap.position,
-                    snap.velocity, mass=snap.mass,
-                    gravity=self.surface_gravity, height=height)
-                plan = guidance.hac(self.env, self.cfg, end, snap.position,
-                                    snap.velocity, snap.mass,
-                                    self.surface_gravity, height, side)
-                affordable = plan is not None and not plan.short
-            reached = affordable or trajectory.gate_behind(
-                snap.position, snap.velocity, gate)
-        else:
-            reached = (height <= self.cfg.HAC_ALT_M
-                       or distance <= self.cfg.HAC_ENTRY_DIST_M)
+        # **Within ``HAC_ENTRY_DIST_M`` of the high gate, or down to
+        # ``HAC_ALT_M``.**  In practice the distance test fires, 14-17 km
+        # up in a ~37 deg dive, and that height above ``HAC_ALT_M`` is what
+        # the cone needs: entered at the gate's own height (LOG9347) or as
+        # soon as the cone's plan is affordable (rot-smoke-hed2-1010) it
+        # runs out of height.  See ``Config.HAC_ENTRY_DERIVED``.
+        reached = (height <= self.cfg.HAC_ALT_M
+                   or distance <= self.cfg.HAC_ENTRY_DIST_M)
         ready = can_turn and reached
         if ready:
             tune_autopilot(self.autopilot,
@@ -4527,12 +4497,9 @@ class Autopilot:
                 self.end = chosen
             self.enter(HAC, snap.ut,
                        "over the field long=%+.0f cross=%+.0f d=%.0f "
-                       "h=%.0f turning %s%s"
-                       % (miss[0], miss[1], distance, height,
-                          "left" if self.hac_side > 0 else "right",
-                          (" (%s)" % ("affordable" if affordable
-                                      else "gate abeam"))
-                          if derived else ""))
+                       "h=%.0f v=%.0f turning %s"
+                       % (miss[0], miss[1], distance, height, speed,
+                          "left" if self.hac_side > 0 else "right"))
             self.log_cone_ladder(snap, height)
 
     def log_cone_ladder(self, snap, height):
