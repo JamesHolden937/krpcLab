@@ -5355,3 +5355,18 @@ class TestBankFromLift(unittest.TestCase):
         self.assertEqual(guidance.hac_bank_limit(
             self._Env(30.0), cfg, 200.0, 5000.0, 30000.0, 9.81),
             cfg.HAC_BANK_MAX_DEG)
+
+
+class TestBankFromFlownPolar(unittest.TestCase):
+    def test_flown_peak_wins(self):
+        cfg = replace(Config(), HAC_BANK_FROM_LIFT=True)
+        env = TestBankFromLift._Env(300.0)
+        env.flown_polar = {"mach_max": 0.9,
+                           "bins": [[5.0, 95.0, 30.0, 100],
+                                    [11.0, 139.0, 58.0, 100],
+                                    [15.0, 103.0, 83.0, 100]]}
+        # q 10 kPa x 139 x 0.7 / (30 t g) = 3.31 g -> 72.4 deg
+        n = 10000.0 * 139.0 * 0.70 / (30000.0 * 9.81)
+        self.assertAlmostEqual(
+            guidance.hac_bank_limit(env, cfg, 200.0, 5000.0, 30000.0, 9.81),
+            math.degrees(math.acos(1.0 / n)), places=3)

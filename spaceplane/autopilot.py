@@ -399,6 +399,9 @@ class Autopilot:
         logbook.event(ut, "instance: kRPC %s" % (_connection_name(conn),))
 
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
+        self.env.flown_polar = None
+        if getattr(cfg, "HAC_BANK_FROM_LIFT", False):
+            self._load_flown_polar(ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
         self.panel = ControlPanel(conn)
@@ -4510,6 +4513,33 @@ class Autopilot:
             if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
                 self.log_bank_limit(snap, "entry")
 
+    def _load_flown_polar(self, ut):
+        """This craft's flown cone polar from ``logs/conepolar/``
+        (``tools/conepolar.py``; regenerated, not tracked), and say so."""
+        try:
+            import json
+            import re
+            key = "%s|%d" % (self.vessel.name, len(self.vessel.parts.all))
+            slug = re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
+            path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "logs", "conepolar",
+                slug + ".json")
+            if not os.path.exists(path):
+                self.logbook.event(ut, "flown polar: none for %r (%s) -- "
+                                       "the bank limit reads the table"
+                                   % (key, path))
+                return
+            with open(path) as fh:
+                data = json.load(fh)
+            self.env.flown_polar = data
+            self.logbook.event(
+                ut, "flown polar: %r from %d logs below Mach %.1f, lift "
+                    "peak %.0f m^2" % (key, data.get("logs", 0),
+                                       data.get("mach_max", 0.9),
+                                       max(b[1] for b in data["bins"])))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(ut, "flown polar: not loaded (%s)" % (exc,))
+
     def log_bank_limit(self, snap, where):
         """``HAC_BANK_FROM_LIFT``: the derived bank limit and its inputs."""
         speed = vec.norm(snap.velocity)
@@ -4524,11 +4554,12 @@ class Autopilot:
                                         snap.mass, self.surface_gravity)
         self.logbook.event(snap.ut, "bank limit at cone %s: %.0f deg (table "
                                     "load %s g at %.0f deg alpha, lift trim %s,"
-                                    " v=%.0f h=%.0f)"
+                                    " flown polar %s, v=%.0f h=%.0f)"
                            % (where, limit,
                               "--" if load is None else "%.2f" % load,
                               self.cfg.HAC_ALPHA_MAX_DEG,
                               "--" if trim is None else "%.2f" % trim,
+                              "yes" if self.env.flown_polar else "no",
                               speed, alt))
 
     def log_cone_ladder(self, snap, height):
