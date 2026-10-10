@@ -1787,7 +1787,11 @@ class Config:
     # is within ``DEORBIT_COMMIT_ALIGN_DEG`` on two successive ticks -- or
     # after ``DEORBIT_SAS_SETTLE_MAX_S`` regardless.  The burn flies under
     # SAS; kRPC's autopilot is re-engaged at cutoff.
-    DEORBIT_SAS_ALIGN: bool = False
+    # **Default 2026-10-10** (rot-smoke-sas-1010, LOG9340-9345): 6/6 took
+    # Maneuver mode and settled 0.1-0.6 deg off in 20-24 s; worst pointing
+    # while burning 0.6-1.0 deg (5.7 on the 64 m/s high-orbit burn) against
+    # ~7 deg before; 6/6 stopped on the runway.
+    DEORBIT_SAS_ALIGN: bool = True
     DEORBIT_COMMIT_ALIGN_DEG: float = 3.0
     DEORBIT_SAS_SETTLE_MAX_S: float = 120.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
