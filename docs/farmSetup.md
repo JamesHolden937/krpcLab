@@ -68,6 +68,10 @@ builds a fresh prefix on first launch, which is slower.
 
 ## Build it
 
+`./setup.sh` at the root does all of this: it asks for your install's path
+and the instance count, checks the tools below, then runs the same steps.
+By hand:
+
 ```bash
 cd testInstances
 ./mkbase.sh                 # base/ from your install: stripped, kRPC autostart,

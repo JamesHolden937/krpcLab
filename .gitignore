@@ -47,3 +47,4 @@ saves/qs_shuttle2_high_rigoff.sfs
 saves/qs_shuttle2_ecc_rigoff.sfs
 # Output of a farm verification run.
 testInstances/verify*.txt
+.kspPath

@@ -15,6 +15,22 @@ and log readers.
 | `testInstances/` | the measurement farm's scripts (the game copies are **not** included) |
 | `docs/` | design notes, failure histories, session journals |
 
+## Setup
+
+```bash
+git clone https://github.com/JamesHolden937/krpcLab.git && cd krpcLab
+./setup.sh
+```
+
+`setup.sh` asks for the path of your KSP install (the folder holding
+`GameData`; it is only ever read), checks that kRPC 0.6.0 and the mods the
+reference saves were flown with are there, builds the Python environment,
+regenerates the derived saves, and offers to build the measurement farm.
+Unattended: `./setup.sh --ksp "/path/to/Kerbal Space Program" --no-farm -y`
+(or `--farm 6`). You need KSP 1.12 with [kRPC
+0.6.0](https://github.com/krpc/krpc/releases) and Python 3; the farm's extra
+requirements are in [docs/farmSetup.md](docs/farmSetup.md).
+
 ## Quick start
 
 ```bash
@@ -29,3 +45,20 @@ KSP; no game files are distributed here.
 
 [CLAUDE.md](CLAUDE.md) and each autopilot's own `CLAUDE.md` describe the
 project's conventions and current state in detail.
+
+## Contributing and licence
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Pull requests are reviewed and merged
+by the maintainer.
+
+krpcLab is free software: you can redistribute it and/or modify it under the
+terms of the [GNU General Public License](LICENSE) as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. It is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. Copyright (C) 2026 JamesHolden937 and the
+krpcLab contributors.
+
+Kerbal Space Program is a trademark of its owners; this project is not
+affiliated with them and distributes no game files.
