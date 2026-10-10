@@ -589,7 +589,13 @@ class Autopilot:
             return
         if min(cla, cda, mla, mda) <= 0.01:
             return
-        inst = vec.clamp((cla / cda) / (mla / mda), 0.5, 2.0)
+        inst = (cla / cda) / (mla / mda)
+        if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
+            # The brake's drag is commanded, not the airframe's: measured
+            # through it, the scale would learn the brake and the cone would
+            # plan the brake away (the deleted version's self-cancellation).
+            inst /= self.hac_split_factor(getattr(self, "split_angle", 0.0))
+        inst = vec.clamp(inst, 0.5, 2.0)
         last = getattr(self, "_hac_ld_ut", None)
         prev = getattr(self, "hac_ld_scale", None)
         self._hac_ld_ut = snap.ut
@@ -4563,8 +4569,7 @@ class Autopilot:
                                 weave=self.hac_weave_phase(snap)
                                 * self.hac_weave_sign(snap.ut),
                                 roll_rate=self.roll_rate.limit(),
-                                ld_scale=getattr(self, "hac_ld_scale",
-                                                 None))
+                                ld_scale=self.hac_plan_ld_scale())
 
         command = plan()
         if command is None:
@@ -4587,6 +4592,8 @@ class Autopilot:
         self.aim(alpha, command.bank, snap)
         self.ratchet_alpha(snap)
         self.hac_flap_brake(snap, command, height)
+        if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
+            self.hac_split_brake(snap, command, height, dt)
         needed = getattr(command, "needed_height", None)
         self._hac_surplus = None if needed is None else height - needed
         # Rolled out, or out of height.  The second is not a failure mode:
@@ -4658,6 +4665,86 @@ class Autopilot:
             self.split_angle = angle
         return done
 
+    def hac_split_factor(self, angle):
+        """The cone's L/D factor at split-rudder ``angle``, off
+        ``HAC_SPLIT_FACTOR``; 1.0 with no pair."""
+        if not getattr(self, "split_pair", None) or angle <= 0.0:
+            return 1.0
+        table = sorted(self.cfg.HAC_SPLIT_FACTOR)
+        if angle >= table[-1][0]:
+            return table[-1][1]
+        for (a0, f0), (a1, f1) in zip(table, table[1:]):
+            if a0 <= angle <= a1:
+                return f0 + (f1 - f0) * (angle - a0) / max(1e-6, a1 - a0)
+        return 1.0
+
+    def hac_plan_ld_scale(self):
+        """The ``ld_scale`` the cone plans with: the measured clean scale
+        times the brake's factor at the angle it is flying, so the plan
+        prices the path at the L/D the vehicle actually has.  ``None`` (the
+        table) when nothing is measured and nothing is deployed."""
+        scale = getattr(self, "hac_ld_scale", None)
+        if not getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
+            return scale
+        factor = self.hac_split_factor(getattr(self, "split_angle", 0.0))
+        if factor >= 1.0:
+            return scale
+        return (1.0 if scale is None else scale) * factor
+
+    def hac_split_brake(self, snap, command, height, dt):
+        """``HAC_SPLIT_BRAKE``: the split rudder as the cone's throttled
+        speedbrake, the first spender of its surplus.
+
+        The plan prices the remaining path at the braked L/D
+        (``hac_plan_ld_scale``), so ``clean = plan_ld / factor(angle)``.
+        Spending the height down to the gate over that path needs a factor
+        ``path / ((height - gate) x clean)``; ``HAC_SPLIT_FACTOR`` turns it
+        into an angle, re-solved every tick.  With the brake at that angle
+        the plan's surplus is ~0, so the weave and the laps spend only what
+        the brake cannot (factor below the table's end) and a short cone
+        gets a clean airframe (factor over 1).  Faded with the speed below
+        the cone's target across ``HAC_SPLIT_SPEED_FADE`` of it: braking a
+        slow cone stalled it and ran two flights out of height (LOG8714,
+        8719)."""
+        if not self.split_pair:
+            return
+        gate = float(getattr(command, "gate_alt", self.cfg.GATE_ALT_M))
+        plan_ld = float(getattr(command, "plan_ld", 0.0) or 0.0)
+        clean = plan_ld / max(0.05, self.hac_split_factor(self.split_angle))
+        want = 0.0
+        factor = None
+        if clean > 0.0 and height > gate + 1.0 and command.path > 0.0:
+            factor = command.path / ((height - gate) * clean)
+            table = sorted(self.cfg.HAC_SPLIT_FACTOR)
+            if factor < 1.0:
+                want = table[-1][0]
+                for (a0, f0), (a1, f1) in zip(table, table[1:]):
+                    if f1 <= factor <= f0:
+                        want = a0 + (a1 - a0) * (f0 - factor) / max(
+                            1e-6, f0 - f1)
+                        break
+        target = float(getattr(command, "alpha_target_speed", 0.0) or 0.0)
+        fade = float(self.cfg.HAC_SPLIT_SPEED_FADE)
+        if target > 0.0 and fade > 0.0:
+            speed = vec.norm(snap.velocity)
+            want *= vec.clamp((speed - (1.0 - fade) * target)
+                              / (fade * target), 0.0, 1.0)
+        step = float(self.cfg.SPLIT_RATE_DEG_S) * dt
+        cmd = getattr(self, "_split_cmd", self.split_angle)
+        cmd = vec.clamp(want, cmd - step, cmd + step)
+        if cmd < 1.0 and want == 0.0:
+            cmd = 0.0
+        self._split_cmd = cmd
+        if abs(cmd - self.split_angle) >= 1.0 or (cmd == 0.0) != (
+                self.split_angle == 0.0):
+            was = self.split_angle
+            if self.set_split(cmd) and (was == 0.0) != (cmd == 0.0):
+                self.logbook.event(
+                    snap.ut, "cone split brake %s at h=%.0f: %.0f deg "
+                    "(clean L/D %.2f, wanted factor %s)"
+                    % ("out" if cmd else "in", height, cmd, clean,
+                       "-" if factor is None else "%.2f" % factor))
+
     def approach_split_factor(self, angle):
         """The approach's L/D factor at split-rudder ``angle``, off
         ``APPROACH_SPLIT_FACTOR``; 1.0 with no pair."""
@@ -4709,10 +4796,15 @@ class Autopilot:
         # 1000 m.  The feed-forward bound below already keeps the *steady*
         # sink under the cap; what crosses it is a transient.
         fade = float(getattr(self.cfg, "APPROACH_SPLIT_SINK_FADE", 0.0))
+        # ``APPROACH_SPLIT_SLOW_FADE``: under the speed gate the brake fades
+        # across this fraction of it instead of stowing at the line.
+        slow_fade = float(getattr(self.cfg, "APPROACH_SPLIT_SLOW_FADE", 0.0))
+        gate_speed = float(self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR) * (
+            stall or 0.0)
         scale = 1.0
         if height <= stow:
             reason = "flare door"
-        elif stall and speed < float(
+        elif stall and speed < (1.0 - slow_fade) * float(
                 self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR) * stall:
             reason = "slow"
         elif cap_sink > 0.0 and sink > cap_sink and (
@@ -4736,6 +4828,9 @@ class Autopilot:
                         want = a0 + (a1 - a0) * (f0 - factor) / max(
                             1e-6, f0 - f1)
                         break
+            if slow_fade > 0.0 and gate_speed > 0.0 and speed < gate_speed:
+                scale *= vec.clamp((speed - (1.0 - slow_fade) * gate_speed)
+                                   / (slow_fade * gate_speed), 0.0, 1.0)
             want *= scale
             reason = "factor %.2f" % factor
             if scale < 1.0:
@@ -6191,6 +6286,8 @@ def compact_line(state, snap, run):
             bits.append("ldk=%.2f pld=%.2f"
                         % (getattr(run, "hac_ld_scale", None) or 0.0,
                            getattr(c, "plan_ld", 0.0)))
+        if getattr(run.cfg, "HAC_SPLIT_BRAKE", False):
+            bits.append("spb=%4.1f" % getattr(run, "split_angle", 0.0))
     if state == APPROACH and getattr(run, "command", None) is not None:
         c = run.command
         bits.append("sink=%5.1f/%5.1f" % (c.sink, c.wanted_sink))

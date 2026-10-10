@@ -2190,6 +2190,21 @@ class Config:
     # than stowing, and holds while faster than the held speed; 0 is the
     # stow (``Autopilot.approach_split_brake``).
     APPROACH_SPLIT_SINK_FADE: float = 0.0
+    # The same for the speed gate: under ``APPROACH_SPLIT_MIN_SPEED_FACTOR``
+    # x stall the brake fades across this fraction of it; 0 is the stow.
+    APPROACH_SPLIT_SLOW_FADE: float = 0.0
+    # **The split rudder as the cone's throttled speedbrake**
+    # (``Autopilot.hac_split_brake``; the user, 2026-10-08 "split the
+    # rudders", 2026-10-09 "throttle it").  ``HAC_SPLIT_FACTOR``: (deploy
+    # angle, L/D factor) at the lower cone's state (5 km, 120 m/s, 8 deg),
+    # ``tools/splitprobe.py`` on qs_shuttle2 -- re-run it on another craft.
+    # The measured cone L/D is taken clean and the plan flies the braked
+    # one, so the brake is not learned away.  ``HAC_SPLIT_SPEED_FADE``: the
+    # brake fades out over this fraction below the cone's target speed.
+    HAC_SPLIT_BRAKE: bool = False
+    HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
+                               (30.0, 0.665), (38.0, 0.61))
+    HAC_SPLIT_SPEED_FADE: float = 0.15
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and
