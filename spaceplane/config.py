@@ -149,6 +149,17 @@ class Config:
     # short (nine flights, spread sd ~11 km).
     HAC_GATE_LD: float = 1.35
     HAC_BANK_MAX_DEG: float = 45.0
+    # **The bank the cone may fly, from the wing rather than a number**
+    # (the user, 2026-10-10: "set the limit to what it can handle").
+    # ``guidance.hac_bank_limit``: ``acos(1/n)``, ``n`` the load available
+    # at ``HAC_ALPHA_MAX_DEG`` off the table, discounted by the measured
+    # lift (``LiftTrim``) and at least ``airframe.MARGIN``; floored at
+    # ``HAC_BANK_MAX_DEG``, capped at 75.  It sets the bank cap and the
+    # tightest circle the plan may offer (``hac_hold_radius``), so laps
+    # get cheaper and a steep turn is also a brake (induced drag ~ n^2).
+    # 45 deg asks 1.41 g and the cone pulls a median 1.06
+    # (``airframe.turn_load``), so the wing is far from its limit there.
+    HAC_BANK_FROM_LIFT: bool = False
     HAC_HEADING_KP: float = 1.2             # deg of bank per deg of track error
     HAC_CAPTURE_M: float = 4000.0           # radial error that saturates the cut
     # Speed in the turn, as a multiple of **the approach speed** at that

@@ -4040,8 +4040,11 @@ class Autopilot:
         speed = vec.norm(snap.velocity)
         height = vec.norm(snap.position) - self.env.equatorial_radius
         radius = max(self.cfg.HAC_RADIUS_MIN_M,
-                     guidance.hac_hold_radius(self.cfg, speed,
-                                              self.surface_gravity))
+                     guidance.hac_hold_radius(
+                         self.cfg, speed, self.surface_gravity,
+                         bank=guidance.hac_bank_limit(
+                             self.env, self.cfg, speed, height, snap.mass,
+                             self.surface_gravity)))
         ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
                                  snap.mass, self.surface_gravity)
         lap = 2.0 * math.pi * radius / max(0.1, ratio)
@@ -4454,8 +4457,11 @@ class Autopilot:
         # hold at this speed fits the widest one the cone may fly.
         derived = bool(getattr(self.cfg, "HAC_ENTRY_DERIVED", False))
         if derived:
-            can_turn = (guidance.hac_hold_radius(self.cfg, speed,
-                                                 self.surface_gravity)
+            can_turn = (guidance.hac_hold_radius(
+                self.cfg, speed, self.surface_gravity,
+                bank=guidance.hac_bank_limit(
+                    self.env, self.cfg, speed, altitude, snap.mass,
+                    self.surface_gravity))
                         <= self.cfg.HAC_RADIUS_MAX_M)
         else:
             can_turn = mach <= self.cfg.HAC_ENTRY_MACH
@@ -4501,6 +4507,29 @@ class Autopilot:
                        % (miss[0], miss[1], distance, height, speed,
                           "left" if self.hac_side > 0 else "right"))
             self.log_cone_ladder(snap, height)
+            if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
+                self.log_bank_limit(snap, "entry")
+
+    def log_bank_limit(self, snap, where):
+        """``HAC_BANK_FROM_LIFT``: the derived bank limit and its inputs."""
+        speed = vec.norm(snap.velocity)
+        alt = vec.norm(snap.position) - self.env.equatorial_radius
+        load = airframe.turn_load(self.env, self.cfg, speed, alt, snap.mass,
+                                  self.surface_gravity)
+        try:
+            trim = self.env.lift_trim.measured(self.env.mach(speed, alt))
+        except Exception:                                   # noqa: BLE001
+            trim = None
+        limit = guidance.hac_bank_limit(self.env, self.cfg, speed, alt,
+                                        snap.mass, self.surface_gravity)
+        self.logbook.event(snap.ut, "bank limit at cone %s: %.0f deg (table "
+                                    "load %s g at %.0f deg alpha, lift trim %s,"
+                                    " v=%.0f h=%.0f)"
+                           % (where, limit,
+                              "--" if load is None else "%.2f" % load,
+                              self.cfg.HAC_ALPHA_MAX_DEG,
+                              "--" if trim is None else "%.2f" % trim,
+                              speed, alt))
 
     def log_cone_ladder(self, snap, height):
         """One line at cone entry: the ladder's price of each 1 km of height
@@ -4659,6 +4688,8 @@ class Autopilot:
                     snap.ut, "alpha ceiling released for the landing: %.1f "
                              "-> %.1f deg" % (self.alpha_ceiling, released))
                 self.alpha_ceiling = released
+            if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
+                self.log_bank_limit(snap, "exit")
             self.enter(APPROACH, snap.ut,
                        "%s turn=%.0f h=%.0f (needed %.0f) gate=%.0f "
                        "(circle %.0f) laps=%d stretch=%.0f"

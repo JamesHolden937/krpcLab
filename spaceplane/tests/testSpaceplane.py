@@ -5315,3 +5315,43 @@ class TestConeEntryDerived(unittest.TestCase):
                              cfg.HAC_RADIUS_MAX_M)
         self.assertGreater(guidance.hac_hold_radius(cfg, 443.0, 9.81),
                            cfg.HAC_RADIUS_MAX_M)
+
+
+class TestBankFromLift(unittest.TestCase):
+    """``HAC_BANK_FROM_LIFT``: acos(1/n) off the wing, floored and capped."""
+
+    class _Env:
+        def __init__(self, cla, trim=None):
+            self.cla = cla
+            self.lift_trim = SimpleNamespace(measured=lambda mach: trim)
+
+        def density(self, altitude):
+            return 0.5
+
+        def coefficients(self, alpha, speed, altitude):
+            return self.cla, 10.0
+
+        def mach(self, speed, altitude):
+            return speed / 300.0
+
+    def test_off_is_the_constant(self):
+        cfg = Config()
+        self.assertEqual(guidance.hac_bank_limit(self._Env(300.0), cfg, 200.0,
+                                                 5000.0, 30000.0, 9.81),
+                         cfg.HAC_BANK_MAX_DEG)
+
+    def test_derived(self):
+        cfg = replace(Config(), HAC_BANK_FROM_LIFT=True)
+        # q = 0.5*0.5*200^2 = 10 kPa; n = 10000*300/(30000*9.81) = 10.2
+        # x MARGIN 0.7 = 7.1 g -> acos(1/7.1) = 81.9 -> capped at 75
+        self.assertAlmostEqual(guidance.hac_bank_limit(
+            self._Env(300.0), cfg, 200.0, 5000.0, 30000.0, 9.81), 75.0)
+        # trim 0.2 -> n = 2.04 -> 60.7 deg
+        got = guidance.hac_bank_limit(self._Env(300.0, trim=0.2), cfg, 200.0,
+                                      5000.0, 30000.0, 9.81)
+        self.assertAlmostEqual(got, math.degrees(math.acos(
+            30000.0 * 9.81 / (10000.0 * 300.0 * 0.2))), places=3)
+        # not enough lift for more than the floor -> the floor
+        self.assertEqual(guidance.hac_bank_limit(
+            self._Env(30.0), cfg, 200.0, 5000.0, 30000.0, 9.81),
+            cfg.HAC_BANK_MAX_DEG)
