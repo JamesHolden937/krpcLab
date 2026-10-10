@@ -25,7 +25,19 @@ instances() {
   for d in "$HERE"/ksp[0-9]*; do [ -d "$d" ] && basename "$d" | sed 's/^ksp//'; done
 }
 
+# The saves ../saves/derived.txt lists are savegen.py outputs and are not
+# tracked: rebuild them from their sources before anything compares or copies.
+derive() {
+  local out src args
+  while read -r out src args; do
+    case "$out" in ''|'#'*) continue ;; esac
+    "$HERE/../tools/savegen.py" --save-dir "$SAVES" --source "$src" -o "$out" \
+        $args >/dev/null || { echo "derive $out failed" >&2; exit 1; }
+  done < "$SAVES/derived.txt"
+}
+
 cmd="${1:-check}"; shift || true
+case "$cmd" in check|push) derive ;; esac
 case "$cmd" in
   check)
     status=0

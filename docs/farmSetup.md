@@ -85,9 +85,9 @@ for n in 0 1 2 3 4 5; do ./mkclone.sh $n; done
 - `timescaleSrc/` sets the physics time scale from a file that the
   harness writes (`common/timescale.py`, `tools/timescale.py`).
 
-The `.dll` files beside the sources are prebuilt for convenience. To rebuild
-them, use the `mcs` lines in `testInstances/README.md` against your own
-`base/KSP_x64_Data/Managed/`.
+The `.dll` files are not tracked: `mkbase.sh` builds all three (the two
+above and `collisionSpySrc/`) with `mcs` (mono) against your own
+`base/KSP_x64_Data/Managed/`, so install mono first.
 
 ## Run it
 

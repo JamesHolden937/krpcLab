@@ -31,3 +31,19 @@ kspSim/data/ksc_terrain.json
 .wt-*/
 .venv
 .venv-pypy
+
+# Built from the tracked .cs by testInstances/mkbase.sh (mcs against KSP's
+# own Managed assemblies).
+testInstances/*Src/*.dll
+# savegen.py outputs listed in saves/derived.txt; syncSaves.sh rebuilds them.
+saves/qs_e[2468]0.sfs
+saves/qs_e[2468]0.loadmeta
+saves/qs_shuttle_inc.sfs
+saves/qs_shuttle_high.sfs
+saves/qs_shuttle2_inc.sfs
+saves/qs_shuttle2_high.sfs
+saves/qs_shuttle2_inc_rigoff.sfs
+saves/qs_shuttle2_high_rigoff.sfs
+saves/qs_shuttle2_ecc_rigoff.sfs
+# Output of a farm verification run.
+testInstances/verify*.txt

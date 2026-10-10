@@ -12,6 +12,12 @@ A new save made on one instance (`spaceplane/tools/entrysave.py`,
 `tools/savegen.py`) is `pull`ed here, committed, and `push`ed to the farm.
 `mkclone.sh` pushes these into every new clone.
 
+**Derived saves are not tracked.**  The saves `derived.txt` lists are
+`tools/savegen.py` outputs from a tracked source save (byte-identical on
+regeneration); `syncSaves.sh check` and `push` rebuild them first, so they
+appear here after either.  Add a savegen-made save as a line there, not as a
+file.
+
 Read off each save's active vessel (part count, situation, altitude):
 
 | save | vehicle | state |

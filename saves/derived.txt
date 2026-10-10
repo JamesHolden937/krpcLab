@@ -1,0 +1,15 @@
+# Saves that tools/savegen.py writes from a tracked source save, byte for
+# byte.  They are not tracked (.gitignore); testInstances/syncSaves.sh
+# regenerates them before every check and push.  One per line:
+#   OUT SOURCE SAVEGEN-ARGS...
+qs_e20                  qs_plane            --prograde 20
+qs_e40                  qs_plane            --prograde 40
+qs_e60                  qs_plane            --prograde 60
+qs_e80                  qs_plane            --prograde 80
+qs_shuttle_inc          qs_shuttle          --normal 100
+qs_shuttle_high         qs_shuttle          --prograde 80
+qs_shuttle2_inc         qs_shuttle2         --normal 100
+qs_shuttle2_high        qs_shuttle2         --prograde 80
+qs_shuttle2_inc_rigoff  qs_shuttle2_rigoff  --normal 100
+qs_shuttle2_high_rigoff qs_shuttle2_rigoff  --prograde 80
+qs_shuttle2_ecc_rigoff  qs_shuttle2_rigoff  --prograde 30 --radial -70

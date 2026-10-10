@@ -110,7 +110,7 @@ if [ -f "$HERE/autoloadSrc/AutoLoadSave.cs" ]; then
     cp -f "$HERE/autoloadSrc/autoload.cfg" "$D/"
     echo "auto-load plugin installed"
   else
-    echo "WARNING: no BoosterlandAutoLoad.dll and no mcs -- instances will" >&2
+    echo "WARNING: no mcs (mono) to build BoosterlandAutoLoad.dll -- instances will" >&2
     echo "         sit at the main menu and never open their kRPC port." >&2
   fi
 fi
@@ -142,6 +142,22 @@ if [ -f "$HERE/timescaleSrc/TimeScale.cs" ]; then
         > "$BASE/timescale.txt"
     echo "time-scale plugin installed (off by default)"
   fi
+fi
+
+# --- the collision instrument ---------------------------------------------
+# Logs every collision and joint break of the active vessel to KSP.log as
+# "[CollisionSpy] ...".  Built from source like the two above.
+if [ -f "$HERE/collisionSpySrc/CollisionSpy.cs" ] && command -v mcs >/dev/null; then
+  M="$BASE/KSP_x64_Data/Managed"
+  D="$BASE/GameData/CollisionSpy"
+  mkdir -p "$D"
+  mcs -target:library -out:"$D/CollisionSpy.dll" \
+      -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.dll" \
+      -r:"$M/UnityEngine.CoreModule.dll" -r:"$M/UnityEngine.PhysicsModule.dll" \
+      -r:"$M/UnityEngine.UI.dll" \
+      "$HERE/collisionSpySrc/CollisionSpy.cs" || {
+        echo "CollisionSpy build failed" >&2; exit 1; }
+  echo "CollisionSpy installed"
 fi
 
 # --- frame rate: vsync off, and only as many frames as the speedup needs ---
