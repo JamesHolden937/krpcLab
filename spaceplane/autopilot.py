@@ -4200,6 +4200,8 @@ class Autopilot:
         # is failure 22, "the vehicle was braking while it was short", in the
         # reserve's frame.
         reserve = guidance.glide_reserve(self.env, self.cfg, snap.position)
+        self.env.roll_lag_s = (self.roll_damper.tp
+                               if self.roll_damper is not None else None)
         self.env.spending = (self.last_miss is None
                              or self.last_miss[0] >= reserve)
         alpha0 = vec.clamp(self.steer.alpha, self.cfg.ALPHA_MIN_DEG,
