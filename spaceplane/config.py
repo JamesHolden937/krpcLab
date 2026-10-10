@@ -647,6 +647,10 @@ class Config:
     AZIMUTH_DEADBAND_PER_KM: float = 0.012  # deg of error per km still to run
     AZIMUTH_DEADBAND_MIN_DEG: float = 0.5
     AZIMUTH_DEADBAND_MAX_DEG: float = 12.0
+    # The azimuth band never narrower than the heading the vehicle turns
+    # through in one roll time to peak at its present lean
+    # (``guidance._bank_sign``).
+    AZIMUTH_FLOOR_FROM_TURN: bool = False
     # **The reversal has to be triggered on the cross-track, not only on the
     # azimuth.**  A deadband that widens with range to go permits a
     # cross-track *proportional* to range: at 500 km the azimuth deadband is

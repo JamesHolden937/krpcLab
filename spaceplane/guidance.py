@@ -512,6 +512,22 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     deadband = vec.clamp(cfg.AZIMUTH_DEADBAND_PER_KM * distance / 1000.0,
                          cfg.AZIMUTH_DEADBAND_MIN_DEG,
                          cfg.AZIMUTH_DEADBAND_MAX_DEG)
+    # ``AZIMUTH_FLOOR_FROM_TURN``: **no band narrower than the heading the
+    # vehicle turns through while it rolls.**  A relay on heading whose
+    # actuator lags ``env.roll_lag_s`` (the roll's measured time to peak)
+    # swings the track by ``omega * lag`` past the band whatever the band
+    # is, so a band below that only raises the reversal rate: at the 0.5
+    # deg floor every default glide ended in six reversals a minute, the
+    # flown bank overshooting to 85-180 deg with 10-25 deg of slip.
+    lag = getattr(env, "roll_lag_s", None)
+    if getattr(cfg, "AZIMUTH_FLOOR_FROM_TURN", False) and lag:
+        speed = vec.norm(v)
+        lean = math.radians(min(abs(bank0), 80.0))
+        if speed > 1.0 and lean > 0.0:
+            g = vec.norm(trajectory.gravity_at(env, r))
+            turned = math.degrees(g * math.tan(lean) / speed) * float(lag)
+            deadband = max(deadband,
+                           min(turned, cfg.AZIMUTH_DEADBAND_MAX_DEG))
     # Either test may call for a reversal.  The azimuth one alone cannot:
     # its deadband widens with range to go, which permits a cross-track
     # proportional to range -- 23 km of offset at 500 km is 2.6 deg against a
