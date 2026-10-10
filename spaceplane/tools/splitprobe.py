@@ -7,7 +7,8 @@ Loads ``save`` (default ``qs_shuttle2_rigoff``, in vacuum, where deflecting a
 surface costs nothing), deploys the two Big-S tail fins together at each
 ``Deploy Angle`` in ``--angles`` (read back after setting: the part clamps
 it), and at each setting probes ``simulate_aerodynamic_wrench_at`` at the
-cone's and the approach's states.  Reports, against the stowed fins:
+cone's and the approach's states (``--glide``: the entry glide's, Mach 2-7.5
+at its alpha).  Reports, against the stowed fins:
 added drag (dCdA), lift (dClA), and the yawing, pitching and rolling moments
 (dCnA, dCmA, dClA_roll) per unit q -- so whether the pair really splits
 (yaw near zero) and how much brake it is, as a fraction of the airframe's
@@ -68,6 +69,8 @@ def main():
     ap.add_argument("--one-side", action="store_true")
     # Sideslip as the brake instead (fins stowed): the airflow yawed by beta.
     ap.add_argument("--slip", default="")
+    # The glide's states instead of the cone's and the approach's.
+    ap.add_argument("--glide", action="store_true")
     args = ap.parse_args()
     base = os.path.join(ROOT, "testInstances", "ksp%s" % args.instance)
     conn = krpc.connect(name="splitprobe", address="127.0.0.1",
@@ -105,6 +108,9 @@ def main():
     # (label, altitude m, true airspeed m/s, alpha deg)
     states = [("cone hi", 10000.0, 200.0, 15.0), ("cone lo", 5000.0, 120.0, 8.0),
               ("approach", 1500.0, 110.0, 4.0), ("flare", 200.0, 80.0, 8.0)]
+    if args.glide:
+        states = [("M2", 22000.0, 600.0, 20.0), ("M4", 32000.0, 1200.0, 30.0),
+                  ("M6", 40000.0, 1800.0, 35.0), ("M7.5", 50000.0, 2200.0, 40.0)]
 
     def probe(alt, speed, alpha, beta=0.0):
         a = math.radians(alpha)
