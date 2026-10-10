@@ -35,30 +35,27 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-10, fingerprint `ca5fef06`)
+## Where it stands (2026-10-10, fingerprint `66f98be6`)
 
-**Brakes before weaving is the default** (the user's direction): split
-rudder first (no attitude change), spoiler second (it is the roll
-surfaces, so it yields to roll), weave / S-turn last.  Interleaved over
-four orbits, rot-v2-1010: **22/24 on the strip and intact** against the
-old defaults' 16/24, long 1 v 5.  The split rudder in the *glide* departed
-4 of 6 flights and is deleted; it is worthless above ~Mach 2 anyway
-(`splitprobe.py --glide`).
+**Brakes before weaving is the default** (split rudder first, spoiler
+second, weave / S-turn last), the deorbit burn lines up on **stock SAS
+on a maneuver node** (`DEORBIT_SAS_ALIGN`), and the glide's azimuth band
+is floored by the turn one roll time covers (`AZIMUTH_FLOOR_FROM_TURN`).
+rot-bfl-1010's defaults arm: **21/23 stopped on the runway** over four
+orbits, 23/23 intact, 0 in the water; the two off it were high-orbit,
+~1.4 km past the end.
 
-Open: every glide ends in a lateral limit cycle (~6 reversals a minute,
-flown bank past 90, slip 10-25) -- the 0.5 deg azimuth deadband against a
-~3 s roll lag.  `AZIMUTH_FLOOR_FROM_TURN` (off) halves the reversals in
-smoke; it needs its comparison.  And the cone cannot plan a lap for
-surplus between ~23 and ~45 km of path (laps=0 always), so its entry
-height scatter (13.8-18 km, entered 3 km out in a ~37 deg dive) reaches
-the exit at ~0.65.
+Open: the cone cannot plan a lap (laps=0 always) and is entered at 14-18
+km against `HAC_ALT_M` 12, so it spends surplus height with alpha past
+its ~13 deg lift peak -- which bleeds speed, not height, and lands high
+arrivals long.  Bank-limit and entry-trigger fixes both lost (deleted
+2026-10-10, journal).
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md) has the commands: fly
-`AZIMUTH_FLOOR_FROM_TURN` v the defaults (24 an arm), promote or delete;
-then the cone's lap gap / entry trigger; then
-`APPROACH_CAPTURE_TAU_SHARE=0.35`.
+The root [HANDOFF.md](../HANDOFF.md): make the cone spend surplus height
+as path (wider circle / partial lap / S-turn, alpha capped at the lift
+peak); LOG9375; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -106,7 +103,8 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 `HAC_GATE_STRETCH`, `HAC_PAST_KEEPS_LINEUP`, `HAC_EXIT_LAP_AT_TARGET`,
 `HAC_WRAP_BEFORE_GATE`, `HAC_CHOOSE_BY_ENERGY`, `HAC_WEAVE_HELD`,
 `HAC_WEAVE_STRAIGHT_ONLY`, the cone flap-brake variants, `PROPELLANT_TRIM*`,
-`AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`, `GLIDE_ENERGY_AIM`.
+`AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`, `GLIDE_ENERGY_AIM`, `HAC_ENTRY_DERIVED`,
+`HAC_BANK_FROM_LIFT`.
 
 ## Commands
 

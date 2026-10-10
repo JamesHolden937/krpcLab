@@ -2212,3 +2212,57 @@ Defaults `b9f653fc` -> **`ca5fef06`**.
   the high gate) while the glide dives at ~37 deg, so entries are at 13.8-
   18.0 km against `HAC_ALT_M` 12; exit height follows entry at ~0.65.  The
   brakes are now what spends that surplus.
+
+## Session, 2026-10-10 day (~1100-1600)
+
+Defaults `ca5fef06` -> **`66f98be6`**.
+
+- **`DEORBIT_SAS_ALIGN` promoted** (the user: "make a stock maneuver
+  node and use SAS to align it", after watching kRPC's autopilot cone
+  around the burn vector live, LOG9339).  kRPC's autopilot disengages;
+  a node 2 s ahead carries the solved dv, SAS holds maneuver mode, commit
+  at <= 3 deg on two ticks or 120 s.  rot-smoke-sas-1010 (LOG9340-9345):
+  settled 0.1-0.6 deg in 20-24 s; error while burning 0.6-1.0 deg (5.7 on
+  the high orbit) v ~7; 6/6 on the runway.  The "model said" dv on the
+  first burn tick is overstated (unlimited thrust before the limit); log
+  only.
+- **`AZIMUTH_FLOOR_FROM_TURN` promoted.**  rot-hedazf-1010 (16 an arm,
+  three orbits, three pause-fault flights in): defaults / HED / AZF on the
+  strip and kept 11 / 11 / 12, intact 14 / 15 / 15, long 4 / 2 / 1,
+  glide-end reversals 4.9 / 5.3 / 3.5 a minute.
+- **`HAC_ENTRY_DERIVED` deleted.**  Cone entry on a holdable circle and
+  (v1) the gate's height: LOG9347 out of height, 9 km short; (v2) the
+  cone's plan affordable: rot-smoke-hed2-1010 4/6 (LOG9355 out of height
+  with 269 deg left, LOG9354 +3.7 km).  Veto-only it changed one flight of
+  16 (LOG9403, still long).  The 3 km distance trigger works *because* it
+  fires early: the cone needs 2-5 km above `HAC_ALT_M`.
+- **Fast cone entries are where the misses were**: > ~347 m/s, 1 arrival
+  in 12, mostly ecc/high; 6 of 7 missed over rot-v2-1010 and
+  rot-hedazf-1010.  The holdable circle at 45 deg and those speeds is
+  ~26 km against the 16 km cap.
+- **`HAC_BANK_FROM_LIFT` deleted** (the user: bank to ~70 deg, "set the
+  limit to what it can handle", "calculate it at runtime" for different
+  loads).  Cone bank limit `acos(1/n)`, n from the highest lift this
+  flight measured at this Mach (`FlownLift`, binned by Mach and alpha,
+  less `MARGIN`), at the mass now; floor 45, cap 75; also the entry veto.
+  Versions: table lift at `HAC_ALPHA_MAX_DEG` (overstates the wing ~2x:
+  the cone's flown lift peaks ~139 m^2 near 11-13 deg, ~90-100 at 15-25,
+  table ~300); the flown polar file; in-flight subsonic-only; in-flight
+  by Mach.  rot-smoke-bfl-1010 (LOG9406-9411): 5/6, limit 45 at every
+  entry ("none yet"), 51-62 by exit, flown bank to 100 once, alpha 25-32.
+  LOG9410 +4.5 km: arrived lined up, never banked, the alpha brake at
+  24-26 deg bled speed not height, came out slow and 2 km high.
+  **rot-bfl-1010** (4 cycles, 12 arm strings, defaults v BFL on inc,
+  high, ecc, high, ecc, rigoff; 23 an arm after one pause fault each;
+  swap 23 GB at the end): stopped on the runway **21/23 v 17/23**, in the
+  water 0 v 2, kept 23 v 23; BFL misses LOG9427 +2466 (water), 9451
+  +2509 (water), 9446 +2106, 9415 -6321 (inc), plus 9417/9422 just past
+  the end; all but 9415 high orbit, entering the cone at ~17.6 km with
+  the limit at 45.  The steeper bank lower down tightened the circle, so
+  less path was flown with the height in hand.
+- **The common lesson** (LOG9410 and the BFL misses): the cone's surplus
+  is height; it must be spent as path.  A tighter circle or an alpha
+  brake past the lift peak spends speed or nothing, and the vehicle
+  arrives high and slow, where the split brake fades.
+- `docs/spaceplane/constantsAudit.md`: ~30 hard-coded values sorted into
+  tiers by what each stands in for.
