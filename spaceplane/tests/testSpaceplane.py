@@ -5336,8 +5336,10 @@ class TestBankFromLift(unittest.TestCase):
         for _ in range(20):
             env.flown_lift.observe(0.5, 11.3, 139.0, 200.0)
             env.flown_lift.observe(0.5, 15.1, 103.0, 220.0)
-            env.flown_lift.observe(1.5, 11.3, 400.0, 200.0)   # supersonic
-        self.assertAlmostEqual(env.flown_lift.peak()[0], 139.0)
+            env.flown_lift.observe(1.5, 11.3, 400.0, 200.0)   # another Mach
+        self.assertAlmostEqual(env.flown_lift.peak(0.67)[0], 139.0)
+        self.assertAlmostEqual(env.flown_lift.peak(1.6)[0], 400.0)
+        self.assertIsNone(env.flown_lift.peak(3.2))
         # q 10 kPa x 139 x 0.7 / (30 t g) = 3.31 g -> 72.4 deg
         n = 10000.0 * 139.0 * 0.70 / (30000.0 * 9.81)
         self.assertAlmostEqual(
@@ -5347,5 +5349,6 @@ class TestBankFromLift(unittest.TestCase):
         heavy = guidance.hac_bank_limit(env, cfg, 200.0, 5000.0, 45000.0,
                                         9.81)
         self.assertLess(heavy, math.degrees(math.acos(1.0 / n)))
-        self.assertLessEqual(guidance.hac_bank_limit(
-            env, cfg, 900.0, 5000.0, 30000.0, 9.81), 75.0)
+        # Mach 3 has nothing measured: the floor
+        self.assertEqual(guidance.hac_bank_limit(
+            env, cfg, 900.0, 5000.0, 30000.0, 9.81), cfg.HAC_BANK_MAX_DEG)

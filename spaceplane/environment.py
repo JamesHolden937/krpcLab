@@ -206,49 +206,61 @@ class LiftTrim:
 
 
 class FlownLift:
-    """The lift this vehicle has made, subsonic, binned by achieved alpha.
+    """The lift this vehicle has made, binned by Mach and achieved alpha.
 
     ``HAC_BANK_FROM_LIFT``'s wing.  Measured in this flight, because what
     sets it -- mass, centre of gravity, the deflection it takes to trim --
     changes with every load, and a polar written down for one load is a
     different aircraft carrying another (the user, 2026-10-10).  The cone's
-    flown lift peaks near 12 deg at about half the table's and falls past it
-    (``tools/conepolar.py``, 207 logs), so the table cannot stand in.
+    flown lift peaks near 12-15 deg at about half the table's and falls
+    past it (``tools/conepolar.py``), so the table cannot stand in.
 
-    ``peak`` is the largest bin with ``LIFT_TRIM_MIN_SAMPLES`` behind it: a
-    *lower bound* on the wing, which is the safe side -- it can only
-    understate what the vehicle can pull.  ``None`` before any bin has.
-    Samples are filtered as ``LiftTrim``'s are (ratio to the table inside
-    ``LIFT_TRIM_MIN``..``MAX``) and smoothed with ``LIFT_TRIM_SMOOTHING``.
+    Binned by Mach as ``LiftTrim`` is, so the glide's last minute answers
+    for the cone's entry speed: subsonic-only, nothing had been measured by
+    cone entry on any flight of rot-smoke-bfl-1010 and the limit sat at its
+    floor exactly where it mattered.  ``peak(mach)`` is the largest alpha
+    bin of that Mach bin with ``LIFT_TRIM_MIN_SAMPLES`` behind it: a *lower
+    bound* on the wing, which only understates what it can pull.  ``None``
+    when that Mach has no such bin.  Samples are filtered as ``LiftTrim``'s
+    are and smoothed with ``LIFT_TRIM_SMOOTHING``.
     """
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.bins = {}          # alpha bin -> (cla, samples)
+        self.bins = {}          # (mach bin, alpha bin) -> (cla, samples)
+
+    def _mach_key(self, mach):
+        return int(max(0.0, mach)
+                   / max(0.1, float(self.cfg.LIFT_TRIM_MACH_BIN)))
 
     def observe(self, mach, alpha, measured_cla, table_cla):
         cfg = self.cfg
-        if mach >= float(cfg.FLOWN_LIFT_MACH_MAX) or alpha < 0.0:
+        if alpha < 0.0:
             return
         if table_cla <= cfg.LIFT_TRIM_MIN_CLA or measured_cla <= 0.0:
             return
         if not (cfg.LIFT_TRIM_MIN <= measured_cla / table_cla
                 <= cfg.LIFT_TRIM_MAX):
             return
-        key = int(alpha / max(0.5, float(cfg.FLOWN_LIFT_ALPHA_BIN_DEG)))
+        key = (self._mach_key(mach),
+               int(alpha / max(0.5, float(cfg.FLOWN_LIFT_ALPHA_BIN_DEG))))
         cla, samples = self.bins.get(key, (measured_cla, 0))
         weight = float(cfg.LIFT_TRIM_SMOOTHING)
         self.bins[key] = (cla + weight * (measured_cla - cla), samples + 1)
 
-    def peak(self):
-        """``(cla, alpha)`` of the best-supported highest bin, or ``None``."""
+    def peak(self, mach):
+        """``(cla, alpha)`` of the best-supported highest bin at this Mach,
+        or ``None``."""
         width = max(0.5, float(self.cfg.FLOWN_LIFT_ALPHA_BIN_DEG))
+        want = self._mach_key(mach)
         best = None
-        for key, (cla, samples) in self.bins.items():
+        for (mkey, akey), (cla, samples) in self.bins.items():
+            if mkey != want:
+                continue
             if samples < int(self.cfg.LIFT_TRIM_MIN_SAMPLES):
                 continue
             if best is None or cla > best[0]:
-                best = (cla, (key + 0.5) * width)
+                best = (cla, (akey + 0.5) * width)
         return best
 
 

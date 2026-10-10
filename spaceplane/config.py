@@ -152,8 +152,8 @@ class Config:
     # **The bank the cone may fly, from the wing rather than a number**
     # (the user, 2026-10-10: "set the limit to what it can handle").
     # ``guidance.hac_bank_limit``: ``acos(1/n)``, ``n`` the load at the
-    # highest lift *this flight* has measured subsonic
-    # (``environment.FlownLift``, binned by achieved alpha), at the mass
+    # highest lift *this flight* has measured at this Mach
+    # (``environment.FlownLift``, binned by Mach and achieved alpha), at the mass
     # now, less ``airframe.MARGIN`` -- every load measures its own wing.
     # Nothing measured yet: the floor.  Floored at
     # ``HAC_BANK_MAX_DEG``, capped at 75.  It sets the bank cap and the
@@ -166,7 +166,6 @@ class Config:
     # 45 deg asks 1.41 g and the cone pulls a median 1.06
     # (``airframe.turn_load``), so the wing is far from its limit there.
     HAC_BANK_FROM_LIFT: bool = False
-    FLOWN_LIFT_MACH_MAX: float = 0.9      # FlownLift: subsonic, as conepolar
     FLOWN_LIFT_ALPHA_BIN_DEG: float = 2.0
     HAC_HEADING_KP: float = 1.2             # deg of bank per deg of track error
     HAC_CAPTURE_M: float = 4000.0           # radial error that saturates the cut

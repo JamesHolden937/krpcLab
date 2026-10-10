@@ -1451,17 +1451,17 @@ def hac_bank_limit(env, cfg, speed, height, mass, gravity=9.81):
     # for the speed law to work in.  Not the table: it reads ~300 m^2 at
     # ``HAC_ALPHA_MAX_DEG`` where the cone's flown lift peaks ~139 near 12
     # deg and falls past it -- above that, alpha is drag (the speed law's
-    # brake), not lift a turn can lean on.  Nothing measured yet, or
-    # supersonic: the floor.
+    # brake), not lift a turn can lean on.  Nothing measured yet at this
+    # Mach: the floor.
     flown = getattr(env, "flown_lift", None)
-    got = flown.peak() if flown is not None else None
-    if got is None:
+    if flown is None:
         return floor
     try:
-        if env.mach(speed, height) >= float(cfg.FLOWN_LIFT_MACH_MAX):
-            return floor
+        got = flown.peak(env.mach(speed, height))
         q = 0.5 * env.density(height) * speed * speed
     except Exception:                                       # noqa: BLE001
+        return floor
+    if got is None:
         return floor
     load = q * got[0] * airframe.MARGIN / (mass * gravity)
     if load <= 1.0:

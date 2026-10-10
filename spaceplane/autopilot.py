@@ -4516,7 +4516,7 @@ class Autopilot:
         """``HAC_BANK_FROM_LIFT``: the derived bank limit and its inputs."""
         speed = vec.norm(snap.velocity)
         alt = vec.norm(snap.position) - self.env.equatorial_radius
-        peak = self.env.flown_lift.peak()
+        peak = self.env.flown_lift.peak(self.env.mach(speed, alt))
         limit = guidance.hac_bank_limit(self.env, self.cfg, speed, alt,
                                         snap.mass, self.surface_gravity)
         self.logbook.event(snap.ut, "bank limit at cone %s: %.0f deg (flown "
