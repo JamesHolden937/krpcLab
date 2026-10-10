@@ -68,8 +68,7 @@ class Prediction:
     cross: float = 0.0         # lateral offset from the centreline there
     # **The predicted handover**: ``(altitude, speed)`` where the arc first
     # meets the cone's entry test (Mach at most ``HAC_ENTRY_MACH`` and within
-    # ``HAC_ENTRY_DIST_M`` of the gate -- under ``HAC_ENTRY_DERIVED`` a
-    # holdable circle instead of the Mach -- or down to the gate's altitude), so
+    # ``HAC_ENTRY_DIST_M`` of the gate, or down to the gate's altitude), so
     # the log can set the energy the prediction promises the cone against
     # the one it gets.  ``None`` when the arc never meets it.
     handover: object = None
@@ -785,9 +784,6 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     handover_state = None
     entry_mach = float(getattr(cfg, "HAC_ENTRY_MACH", 0.0) or 0.0)
     entry_dist = float(getattr(cfg, "HAC_ENTRY_DIST_M", 0.0) or 0.0)
-    entry_derived = bool(getattr(cfg, "HAC_ENTRY_DERIVED", False))
-    if entry_derived:
-        from .guidance import hac_hold_radius as hold_radius   # cycle
 
     def answer(rr, vv, tt, ss, reached, grounded):
         radius = vec.norm(rr)
@@ -855,13 +851,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             arrived = entry_dist > 0.0 and distance <= entry_dist
             if handover is None and arrived and descending:
                 try:
-                    if entry_derived:
-                        slow = (hold_radius(
-                            cfg, speed, env.mu / (radius * radius))
-                            <= cfg.HAC_RADIUS_MAX_M)
-                    else:
-                        slow = (speed <= entry_mach
-                                * env.speed_of_sound(altitude))
+                    slow = speed <= entry_mach * env.speed_of_sound(altitude)
                 except Exception:                       # noqa: BLE001
                     slow = False
                 if slow:

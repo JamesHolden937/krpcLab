@@ -5305,18 +5305,6 @@ class TestValveIgnoresAlphaShortfall(unittest.TestCase):
 
 
 
-class TestConeEntryDerived(unittest.TestCase):
-    """``HAC_ENTRY_DERIVED``: the turn veto is the holdable circle."""
-
-    def test_veto_is_the_hold_radius(self):
-        cfg = Config()
-        # Mach ~0.85 at 12 km fits the 16 km cap; Mach 1.5 does not.
-        self.assertLessEqual(guidance.hac_hold_radius(cfg, 250.0, 9.81),
-                             cfg.HAC_RADIUS_MAX_M)
-        self.assertGreater(guidance.hac_hold_radius(cfg, 443.0, 9.81),
-                           cfg.HAC_RADIUS_MAX_M)
-
-
 class TestBankFromLift(unittest.TestCase):
     """``HAC_BANK_FROM_LIFT``: acos(1/n) off the lift this flight made."""
 

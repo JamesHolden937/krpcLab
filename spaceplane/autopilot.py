@@ -4450,13 +4450,15 @@ class Autopilot:
             mach = self.env.mach(speed, altitude)
         except Exception:                           # noqa: BLE001
             mach = 9.9
-        # **The veto, calculated** (``HAC_ENTRY_DERIVED``).
+        # **The veto, calculated** (``HAC_BANK_FROM_LIFT``).
         # ``HAC_ENTRY_MACH`` is a Mach number standing in for a turn
-        # radius, and the speed of sound is not part of the question:
-        # derived, the cone is enterable once the circle the airframe can
-        # hold at this speed fits the widest one the cone may fly.
-        derived = bool(getattr(self.cfg, "HAC_ENTRY_DERIVED", False))
-        if derived:
+        # radius: with the bank derived from the wing, the cone is
+        # enterable once the circle the airframe can hold at this speed and
+        # that bank fits the widest one the cone may fly.  Paired with the
+        # bank on purpose: alone (``HAC_ENTRY_DERIVED``, rot-hedazf-1010) it
+        # only delayed a fast arrival, which kept its energy and landed
+        # long; the bank is what lets the cone hold and brake on it.
+        if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
             can_turn = (guidance.hac_hold_radius(
                 self.cfg, speed, self.surface_gravity,
                 bank=guidance.hac_bank_limit(
@@ -4470,7 +4472,7 @@ class Autopilot:
         # up in a ~37 deg dive, and that height above ``HAC_ALT_M`` is what
         # the cone needs: entered at the gate's own height (LOG9347) or as
         # soon as the cone's plan is affordable (rot-smoke-hed2-1010) it
-        # runs out of height.  See ``Config.HAC_ENTRY_DERIVED``.
+        # runs out of height (journal, 2026-10-10).
         reached = (height <= self.cfg.HAC_ALT_M
                    or distance <= self.cfg.HAC_ENTRY_DIST_M)
         ready = can_turn and reached

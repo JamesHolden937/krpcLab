@@ -1527,7 +1527,7 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     # **The clamp that hid the impossible case.**  When the airframe's own
     # floor is wider than the cone is allowed to be, taking the minimum
     # throws the airframe away and offers a circle it cannot hold.  Under
-    # ``HAC_ENTRY_DERIVED`` the phase is not entered until the floor fits,
+    # ``HAC_BANK_FROM_LIFT`` the phase is not entered until the floor fits,
     # and speed only falls inside the cone, so this can no longer bind and
     # keeping it would only restore the silence.  With the flag off it is
     # exactly the clamp it always was.
