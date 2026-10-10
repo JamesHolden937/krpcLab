@@ -2205,6 +2205,15 @@ class Config:
     HAC_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.945), (20.0, 0.81),
                                (30.0, 0.665), (38.0, 0.61))
     HAC_SPLIT_SPEED_FADE: float = 0.15
+    # **Brakes before the weave** (``Autopilot.throttle_spoiler``,
+    # ``brakes_saturated``; the user, 2026-10-09: the weave manoeuvres the
+    # airframe, a brake does not).  Spenders in order: the split rudder, the
+    # opposed-flap spoiler throttled on the surplus the rudder leaves (full
+    # at the weave's own threshold, ``HAC_WEAVE_DEADBAND_M`` /
+    # ``APPROACH_SCURVE_M``), and only then the weave or S-turn.  Replaces
+    # the spoiler's on/off triggers (``hac_flap_brake``, ``command_airbrake``),
+    # which waited for the weave to saturate.  Pair with ``HAC_SPLIT_BRAKE``.
+    BRAKES_BEFORE_WEAVE: bool = False
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and

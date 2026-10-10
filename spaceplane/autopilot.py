@@ -4591,9 +4591,15 @@ class Autopilot:
         self.steer = Steer(alpha=alpha, bank=command.bank)
         self.aim(alpha, command.bank, snap)
         self.ratchet_alpha(snap)
-        self.hac_flap_brake(snap, command, height)
         if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
             self.hac_split_brake(snap, command, height, dt)
+        if getattr(self.cfg, "BRAKES_BEFORE_WEAVE", False):
+            needed = getattr(command, "needed_height", None)
+            self.throttle_spoiler(
+                snap, 0.0 if needed is None else height - needed,
+                float(self.cfg.HAC_WEAVE_DEADBAND_M), True, "cone", height)
+        else:
+            self.hac_flap_brake(snap, command, height)
         needed = getattr(command, "needed_height", None)
         self._hac_surplus = None if needed is None else height - needed
         # Rolled out, or out of height.  The second is not a failure mode:
@@ -4664,6 +4670,73 @@ class Autopilot:
         if done:
             self.split_angle = angle
         return done
+
+    def split_saturated(self):
+        """The split rudder at its table's last angle, or there is none."""
+        if not getattr(self, "split_pair", None):
+            return True
+        top = max(a for a, _ in self.cfg.APPROACH_SPLIT_FACTOR)
+        return getattr(self, "split_angle", 0.0) >= top - 1.0
+
+    def brakes_saturated(self):
+        """``BRAKES_BEFORE_WEAVE``: both brakes at their stops (or absent),
+        so the S-turn may spend what they cannot.  True with the flag off."""
+        if not getattr(self.cfg, "BRAKES_BEFORE_WEAVE", False):
+            return True
+        if not self.split_saturated():
+            return False
+        if getattr(self, "flap_brake", None) is None:
+            return True
+        return (getattr(self, "_spoiler_deg", 0.0)
+                >= float(self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG) - 1.0)
+
+    def throttle_spoiler(self, snap, surplus, full_at, allowed, phase,
+                         height):
+        """``BRAKES_BEFORE_WEAVE``: the opposed-flap spoiler as the second,
+        throttled brake -- after the split rudder (which costs no attitude),
+        before the weave or S-turn (which manoeuvre the airframe).
+
+        Opened only once the rudder is at its stop, to
+        ``AIRBRAKE_DEPLOY_ANGLE_DEG x surplus / full_at`` (full at the
+        surplus that would start the weave, so the weave only ever sees
+        what both brakes leave), slewed at ``SPLIT_RATE_DEG_S``.  It deploys
+        the elevons, the roll surfaces, so it gives them back whenever the
+        bank is off its command (``roll_needs_the_flaps``; LOG3680/3690
+        lost control the tick a fixed brake went out), and it is stowed when
+        ``allowed`` is False (the flare door)."""
+        if getattr(self, "flap_brake", None) is None:
+            return
+        top = float(self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
+        want = 0.0
+        reason = "surplus %+.0f" % surplus
+        if not allowed:
+            reason = "stowed for the flare"
+        elif self.roll_needs_the_flaps(snap):
+            reason = "rolling"
+        elif self.split_saturated() and surplus > 0.0 and full_at > 0.0:
+            want = top * vec.clamp(surplus / full_at, 0.0, 1.0)
+        last = getattr(self, "_spoiler_ut", None)
+        dt = 0.05 if last is None else max(0.0, snap.ut - last)
+        self._spoiler_ut = snap.ut
+        cmd = getattr(self, "_spoiler_deg", 0.0)
+        step = float(self.cfg.SPLIT_RATE_DEG_S) * dt
+        cmd = vec.clamp(want, cmd - step, cmd + step)
+        if reason in ("rolling", "stowed for the flare"):
+            cmd = 0.0                   # the surfaces back at once
+        if cmd < 1.0 and want == 0.0:
+            cmd = 0.0
+        was = getattr(self, "_spoiler_deg", 0.0)
+        self._spoiler_deg = cmd
+        moved = abs(cmd - getattr(self, "_spoiler_applied", 0.0)) >= 1.0 \
+            or (cmd == 0.0) != (getattr(self, "_spoiler_applied", 0.0) == 0.0)
+        if not moved:
+            return
+        if self.set_flap_brake(cmd > 0.0, base_deg=max(cmd, 0.0)):
+            self._spoiler_applied = cmd
+            if (was == 0.0) != (cmd == 0.0):
+                self.logbook.event(snap.ut, "%s spoiler %s at h=%.0f: %.0f "
+                                   "deg, %s" % (phase, "out" if cmd else "in",
+                                                height, cmd, reason))
 
     def hac_split_factor(self, angle):
         """The cone's L/D factor at split-rudder ``angle``, off
@@ -4909,7 +4982,8 @@ class Autopilot:
                 period=self.scurve_half_period_s()),
             roll_lag_s=self.roll_lag_s(),
             ld_factor=(self.approach_split_factor(self.split_angle)
-                       if split_brake else 1.0))
+                       if split_brake else 1.0),
+            scurve_ok=self.brakes_saturated())
         self.command = command
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
@@ -4924,9 +4998,20 @@ class Autopilot:
         # (``FLARE_ALT_M + FLARE_LEAD_S * sink``) and the next aircraft's is
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
-        self.command_airbrake(snap, command, height, trigger, sink)
-        if split_brake:
-            self.approach_split_brake(snap, command, height, trigger, sink)
+        if getattr(self.cfg, "BRAKES_BEFORE_WEAVE", False):
+            if split_brake:
+                self.approach_split_brake(snap, command, height, trigger,
+                                          sink)
+            stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(
+                0.0, sink)
+            self.throttle_spoiler(snap, getattr(command, "excess", 0.0),
+                                  float(self.cfg.APPROACH_SCURVE_M),
+                                  height > stow, "approach", height)
+        else:
+            self.command_airbrake(snap, command, height, trigger, sink)
+            if split_brake:
+                self.approach_split_brake(snap, command, height, trigger,
+                                          sink)
         if height <= trigger:
             self.flare_since = snap.ut
             self.enter(FLARE, snap.ut, "h=%.1f v=%.1f sink=%.1f cross=%+.0f"

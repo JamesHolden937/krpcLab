@@ -778,8 +778,11 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
 
 
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             accel=None, roll_lag_s=None, ld_factor=1.0):
+             accel=None, roll_lag_s=None, ld_factor=1.0, scurve_ok=True):
     """Geometric final: hold the speed, track the centreline, spend the excess.
+
+    ``scurve_ok`` False holds the S-turn back (``BRAKES_BEFORE_WEAVE``: the
+    brakes are not yet at their stops).
 
     No prediction at all, on purpose.  From the gate in, the vehicle is under
     a minute from the ground with a glide ratio of 3.4; there is nothing left
@@ -973,7 +976,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     scurve_stop = (distance + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0))
                    > cfg.APPROACH_SCURVE_STOP_M)
     scurve_deg = 0.0
-    if excess > cfg.APPROACH_SCURVE_M and scurve_stop and (height > 150.0):
+    if (scurve_ok and excess > cfg.APPROACH_SCURVE_M and scurve_stop
+            and height > 150.0):
         affordable = max(1.0, height * best_ld)
         ratio = vec.clamp(max(0.0, distance) / affordable, 0.0, 1.0)
         scurve_deg = min(cfg.APPROACH_SCURVE_MAX_DEG,
