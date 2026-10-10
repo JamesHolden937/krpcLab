@@ -2220,6 +2220,22 @@ class Config:
     # slew got there (smoke rot-smoke-pkg-1009: weave 34-95 ticks with the
     # rudder at 0-26 deg).
     HAC_WEAVE_AFTER_BRAKE: bool = False
+    # **The split rudder in the late glide** (``Autopilot.glide_split_brake``,
+    # ``trajectory.glide_split_drag``; the user, 2026-10-09: "Mach 2 to the
+    # HAC has room for braking").  Deployed below ``GLIDE_SPLIT_MACH`` at an
+    # angle that integrates the solve's bank past ``SOLVE_BANK_MIN_DEG`` (+/-
+    # the deadband) at ``GLIDE_SPLIT_GAIN`` deg per s per deg; every
+    # propagation prices it.  ``GLIDE_SPLIT_DRAG``: (Mach, drag added at
+    # the table's last angle as a fraction of the airframe's) --
+    # ``splitprobe.py --glide`` measured 0.03 at Mach 4 and 0.12 at Mach 2;
+    # below Mach 2 it is the cone table's 1/0.61 - 1 at the subsonic end,
+    # interpolated, and wants measuring at Mach 0.8-1.5.
+    GLIDE_SPLIT_BRAKE: bool = False
+    GLIDE_SPLIT_MACH: float = 2.2
+    GLIDE_SPLIT_DRAG: tuple = ((0.5, 0.64), (1.0, 0.40), (1.5, 0.22),
+                               (2.0, 0.12), (4.0, 0.03))
+    GLIDE_SPLIT_GAIN: float = 0.5
+    GLIDE_SPLIT_BANK_DEADBAND_DEG: float = 5.0
     # **Gated on the stall, not on the held speed.**  The shuttle cannot
     # fly below ~+1 deg of alpha on final (commanded -2..-5, flown +0.3..+4:
     # LOG8880, 8887, 8924; integral action on the speed only wound up and

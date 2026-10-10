@@ -546,6 +546,10 @@ class Autopilot:
         self.state = state
         self.state_since = ut
         self.log_authority(ut)
+        if state != GLIDE and getattr(self.env, "glide_split_deg", 0.0):
+            # The glide's brake angle is the glide's: no later propagation
+            # may price it (the cone's brake is its own, ``hac_split_brake``).
+            self.env.glide_split_deg = 0.0
 
     def derive_hac_aim(self, snap):
         """``HAC_AIM_DERIVED``: set the entry aim's ratio once, off the table,
@@ -4401,6 +4405,8 @@ class Autopilot:
         if miss is not None:
             self.last_miss = miss
         self.glide_flap_brake(snap, reserve, dt)
+        if getattr(self.cfg, "GLIDE_SPLIT_BRAKE", False):
+            self.glide_split_brake(snap, dt)
         # Both tests, and the altitude one is not optional: a horizontal
         # distance alone captures the gate while the vehicle is still fifty
         # kilometres above it, doing Mach 7 straight over the top.  Offline
@@ -4738,6 +4744,57 @@ class Autopilot:
                 self.logbook.event(snap.ut, "%s spoiler %s at h=%.0f: %.0f "
                                    "deg, %s" % (phase, "out" if cmd else "in",
                                                 height, cmd, reason))
+
+    def glide_split_brake(self, snap, dt):
+        """``GLIDE_SPLIT_BRAKE``: the split rudder as the late glide's range
+        control, ahead of bank.
+
+        One angle, ``env.glide_split_deg``, that every propagation applies
+        below ``GLIDE_SPLIT_MACH`` (``trajectory.glide_split_drag``) -- so
+        the solve sees the brake it will fly.  The angle integrates the bank
+        the solve is spending past its minimum lean
+        (``SOLVE_BANK_MIN_DEG``): bank over the minimum is the solve
+        shortening the glide, so the brake opens, the prediction reads
+        shorter and the solve gives the bank back; bank at the minimum and
+        the brake closes.  Bank keeps the heading (the reversals); the brake
+        takes the range.  The fins move only below ``GLIDE_SPLIT_MACH``,
+        where they are worth something (``splitprobe.py --glide``: +1% of
+        drag at Mach 6-7.5, +12% at Mach 2)."""
+        if not getattr(self, "split_pair", None):
+            return
+        excess = (abs(getattr(self, "bank_wanted", 0.0) or 0.0)
+                  - float(self.cfg.SOLVE_BANK_MIN_DEG)
+                  - float(self.cfg.GLIDE_SPLIT_BANK_DEADBAND_DEG))
+        if excess < 0.0:
+            excess = min(0.0, excess + 2.0 * float(
+                self.cfg.GLIDE_SPLIT_BANK_DEADBAND_DEG))
+        top = max(a for a, _ in self.cfg.HAC_SPLIT_FACTOR)
+        angle = float(getattr(self.env, "glide_split_deg", 0.0) or 0.0)
+        angle = vec.clamp(angle + float(self.cfg.GLIDE_SPLIT_GAIN) * excess
+                          * dt, 0.0, top)
+        self.env.glide_split_deg = angle
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return
+        want = angle if mach < float(self.cfg.GLIDE_SPLIT_MACH) else 0.0
+        step = float(self.cfg.SPLIT_RATE_DEG_S) * max(0.05, dt)
+        cmd = getattr(self, "_split_cmd", self.split_angle)
+        cmd = vec.clamp(want, cmd - step, cmd + step)
+        if cmd < 1.0 and want == 0.0:
+            cmd = 0.0
+        self._split_cmd = cmd
+        if abs(cmd - self.split_angle) >= 1.0 or (cmd == 0.0) != (
+                self.split_angle == 0.0):
+            was = self.split_angle
+            if self.set_split(cmd) and (was == 0.0) != (cmd == 0.0):
+                self.logbook.event(snap.ut, "glide split brake %s at Mach "
+                                   "%.2f: %.0f deg (bank wanted %.0f)"
+                                   % ("out" if cmd else "in", mach, cmd,
+                                      abs(getattr(self, "bank_wanted", 0.0)
+                                          or 0.0)))
 
     def hac_weave_allowed(self, snap):
         """``HAC_WEAVE_AFTER_BRAKE``: the cone weaves only for what the split
