@@ -663,7 +663,7 @@ class Config:
     # The azimuth band never narrower than the heading the vehicle turns
     # through in one roll time to peak at its present lean
     # (``guidance._bank_sign``).
-    AZIMUTH_FLOOR_FROM_TURN: bool = False
+    AZIMUTH_FLOOR_FROM_TURN: bool = True   # default 2026-10-10: rot-hedazf-1010, glide-end reversals 3.5 v 4.9 a minute, 12/16 on the strip v 11, long 1 v 4
     # **The reversal has to be triggered on the cross-track, not only on the
     # azimuth.**  A deadband that widens with range to go permits a
     # cross-track *proportional* to range: at 500 km the azimuth deadband is
