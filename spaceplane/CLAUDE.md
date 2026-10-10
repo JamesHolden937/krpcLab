@@ -35,31 +35,30 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-09 night, fingerprint `b9f653fc`)
+## Where it stands (2026-10-10, fingerprint `ca5fef06`)
 
-Defaults: **27/36 within the runway's length, 22/36 on the strip and
-intact** over all four orbits (rot-ecc2-1009); batch-to-batch drift is
-large (12/18 .. 21/24), so compare only interleaved arms.  Misses: long
-(the cone hands over +650..+1200 m high and the approach brake stowed on
-its sink cap -> accelerated -> pulled up), short (handed over low),
-off-strip (the S-turn plus a capture timed to finish at the wheels).
+**Brakes before weaving is the default** (the user's direction): split
+rudder first (no attitude change), spoiler second (it is the roll
+surfaces, so it yields to roll), weave / S-turn last.  Interleaved over
+four orbits, rot-v2-1010: **22/24 on the strip and intact** against the
+old defaults' 16/24, long 1 v 5.  The split rudder in the *glide* departed
+4 of 6 flights and is deleted; it is worthless above ~Mach 2 anyway
+(`splitprobe.py --glide`).
 
-**The direction (the user's): brakes before weaving.**  Split rudder
-first (no attitude change), spoiler second (it is the roll surfaces, so it
-yields to roll), weave / S-turn last.  Flags built, all off:
-`HAC_SPLIT_BRAKE`, `BRAKES_BEFORE_WEAVE`, `HAC_WEAVE_AFTER_BRAKE`,
-`APPROACH_SPLIT_SINK_FADE`, `APPROACH_SPLIT_SLOW_FADE`,
-`GLIDE_SPLIT_BRAKE`, `APPROACH_CAPTURE_TAU_SHARE`.  Package v1 12/18 v
-12/18 (every flight within 28 m of the centreline); v2 adds the cone's
-weave held for the rudder.  The split rudder is worthless above ~Mach 2
-(`splitprobe.py --glide`: +1% drag at Mach 6-7.5, +12% at Mach 2).
+Open: every glide ends in a lateral limit cycle (~6 reversals a minute,
+flown bank past 90, slip 10-25) -- the 0.5 deg azimuth deadband against a
+~3 s roll lag.  `AZIMUTH_FLOOR_FROM_TURN` (off) halves the reversals in
+smoke; it needs its comparison.  And the cone cannot plan a lap for
+surplus between ~23 and ~45 km of path (laps=0 always), so its entry
+height scatter (13.8-18 km, entered 3 km out in a ~37 deg dive) reaches
+the exit at ~0.65.
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md) has the commands: probes
-(`splitprobe.py --glide`, `spoilerprobe.py`), smoke v2, fly v2 v defaults
-(24 an arm), promote or delete; then `APPROACH_CAPTURE_TAU_SHARE=0.35`;
-then the cone's exit-height scatter.
+The root [HANDOFF.md](../HANDOFF.md) has the commands: fly
+`AZIMUTH_FLOOR_FROM_TURN` v the defaults (24 an arm), promote or delete;
+then the cone's lap gap / entry trigger; then
+`APPROACH_CAPTURE_TAU_SHARE=0.35`.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -95,13 +94,13 @@ then the cone's exit-height scatter.
   an arm to tell 45% from 65%. Interleave arms (`rotfly.sh`) and restart the
   farm every 2 rounds (swap reaches ~20 GB).
 
-**Removed 2026-10-09** (refuted, null, or superseded; history in the
+**Removed 2026-10-09/10** (refuted, null, or superseded; history in the
 journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE`,
 `CONE_TRIM_HANDOFF`, `HAC_LD_AT_TARGET`, `GLIDE_CONE_ENERGY`/`_CEILING`,
 `ENTRY_INTERFACE_AT_AIR`, `GEAR_GEOMETRY_DEPLOYED`, `AERO_REFRESH_NEAR_MACH`,
 `TOUCHDOWN_AIM_DERIVED`, `BAY_BRAKE`, `HAC_SPLIT_ON_BRANCH` (`HAC_SPLIT_BRAKE` rebuilt the same evening),
 `HAC_LD_FLOWN_POLAR`, `ROLLOUT_SPLIT_BRAKE`, `FLARE_SPLIT_BRAKE`,
-`APPROACH_SPEED_KI`, `APPROACH_ALPHA_MIN_DEG`, `ALPHA_BINS_NEGATIVE`, `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
+`APPROACH_SPEED_KI`, `APPROACH_ALPHA_MIN_DEG`, `GLIDE_SPLIT_BRAKE`, `GLIDE_SETTLE_ON_FLOWN`, `hac_flap_brake`/`command_airbrake`, `ALPHA_BINS_NEGATIVE`, `HAC_SPEED_EAS`, `HAC_IAS_FROM_STALL`,
 `HAC_SPEED_PATH`, `HAC_SHORT_BEST_GLIDE`, `APPROACH_SINK_GUARD`,
 `APPROACH_SPLIT_ON_GUARD`, `APPROACH_SHARP_TURN`, `HAC_SPIRAL_DUMP`,
 `HAC_GATE_STRETCH`, `HAC_PAST_KEEPS_LINEUP`, `HAC_EXIT_LAP_AT_TARGET`,

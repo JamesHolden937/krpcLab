@@ -2166,3 +2166,49 @@ the user after 3 of 4 cycles, 18 an arm, swap 21-22 GB): **12/18 v 12/18**
 strip+intact; package flights all within 28 m of the centreline, long 3 v
 4; the cone still wove before its rudder opened (path-surplus threshold
 ~270 m of height), hence `HAC_WEAVE_AFTER_BRAKE`.  Next: HANDOFF.md.
+
+## Session, 2026-10-09 night (~2200-0020)
+
+Defaults `b9f653fc` -> **`ca5fef06`**.
+
+- **Probes.**  `splitprobe.py 0 --glide --angles 0,20,38`: the split
+  rudder at 38 deg adds +32% drag at Mach 0.8 (alpha 12), +27% at 1.0,
+  +16% at 1.5, +12% at 2, +3% at 4, +1% at 6-7.5; yaw/roll 0.
+  `spoilerprobe.py 1`: the best pitch-neutral lift dump (elevon pairs
+  weighted fore/aft) removes 8% of lift at Mach 2, 6% at 4, 5% at 6, 4% at
+  7.5 -- not worth building against the glide's elevon margin.
+- **`GLIDE_SPLIT_BRAKE` deleted.**  rot-smoke-v2-1010 (v2 package +
+  glide split, 6 flights): 4 lost 19-33 km short.  Each departed within
+  ~15 s of the fins going out at Mach 2.2 (only 10 deg): alpha to 85, slip
+  +-43, flown bank +-165 (LOG9275).  Package v1 without it had been 6/6.
+- **Promoted brakes-before-weave** (`HAC_SPLIT_BRAKE`,
+  `BRAKES_BEFORE_WEAVE`, `HAC_WEAVE_AFTER_BRAKE`,
+  `APPROACH_SPLIT_SINK_FADE=0.3`, `APPROACH_SPLIT_SLOW_FADE=0.15`).
+  rot-v2-1010-c0..c3 (fresh farm per cycle, 12 arm strings: defaults v v2
+  on rigoff, inc, high, ecc, rigoff, ecc): **v2 22/24 on the strip and
+  intact v 16/24**; within the runway's length 22 v 17; long 1 v 5, short 1
+  v 2; parts kept 24 v 22; ecc 8/8 v 4/9.  Deleted `hac_flap_brake`,
+  `command_airbrake`, `HAC_FLAP_ARREST_G`.
+- **The glide ends in a lateral limit cycle, every flight.**  Over the 36
+  default flights of rot-ecc2-1009: 4-7 bank-sign reversals in the last 60
+  s before GLIDE -> HAC, flown bank peaking 84-178 deg, slip 7-23 deg.  The
+  command swings +-54 deg on a ~7 s half-period; the vehicle lags ~3 s and
+  overshoots.  Reversals trigger on the azimuth deadband, which is at its
+  0.5 deg floor near the field (0.012 deg/km x ~40 km), while the predicted
+  cross swings +-1000 m with the heading.
+  - `GLIDE_SETTLE_ON_FLOWN` (reversal settles on the flown bank, not the
+    30 deg/s command): rot-smoke-settle-1010, reversals 4-7 (unchanged),
+    6/6 landed.  The flown bank overshoots past 30 within ~2 s, so the
+    guard never held.  **Deleted** (null on its mechanism).
+  - `AZIMUTH_FLOOR_FROM_TURN` (off; azimuth band >= g tan|bank|/v x the
+    roll damper's time to peak, capped 12 deg): rot-smoke-azf-1010 on the
+    new defaults, 6/6 landed intact (one 39 m off the strip); reversals in
+    the last 60 s 2-5 (mean 3.3 v ~6), peak flown bank still 92-111.
+    **Not yet compared against the defaults.**
+- **The cone never plans a lap** (laps=0, 36/36): a lap at the lap floor
+  radius is ~22 km of path, so between the widest laps-0 circle (~23 km
+  planned) and ~45 km nothing fits, and the plan reads ~23.2 km whatever
+  the entry height.  The cone is entered on `HAC_ENTRY_DIST_M` (3 km from
+  the high gate) while the glide dives at ~37 deg, so entries are at 13.8-
+  18.0 km against `HAC_ALT_M` 12; exit height follows entry at ~0.65.  The
+  brakes are now what spends that surplus.
