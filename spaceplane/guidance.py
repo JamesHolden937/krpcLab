@@ -1434,11 +1434,9 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
 def hac_bank_limit(env, cfg, speed, height, mass, gravity=9.81):
     """The steepest bank the wing can hold here, in degrees.
 
-    ``HAC_BANK_FROM_LIFT``: ``acos(1 / n)``, ``n`` the load at the peak of
-    the lift this craft's cone has flown (``env.flown_polar``) less
-    ``airframe.MARGIN``; with no flown polar (a new craft, or supersonic),
-    the table's load at the cone's alpha ceiling (``airframe.turn_load``)
-    taken down by ``LiftTrim`` and never by less than ``MARGIN``.  Floored at ``HAC_BANK_MAX_DEG`` -- what has been
+    ``HAC_BANK_FROM_LIFT``: ``acos(1 / n)``, ``n`` the load at the highest
+    lift this flight has measured subsonic (``env.flown_lift``), at the mass
+    now, less ``airframe.MARGIN``.  Floored at ``HAC_BANK_MAX_DEG`` -- what has been
     flown -- and capped at the 75 deg the cone's load arithmetic already
     stops at (``turning_ld``, ``hac``'s trim).  Off, or with no answer, it
     is ``HAC_BANK_MAX_DEG``.
@@ -1448,36 +1446,24 @@ def hac_bank_limit(env, cfg, speed, height, mass, gravity=9.81):
         return floor
     if height is None or mass is None or mass <= 0.0 or speed <= 0.0:
         return floor
-    load = None
-    # **The lift the cone has flown, first.**  ``env.flown_polar`` is this
-    # craft's cone polar off its own logs (``tools/conepolar.py``): lift
-    # peaks ~139 m^2 near 12 deg and *falls* past it (~90-100 at 15-25), so
-    # the table read at ``HAC_ALPHA_MAX_DEG`` (~300) is a wing the cone
-    # does not have.  Above 13 deg the extra alpha is drag, which the speed
-    # law uses as a brake -- not lift a turn can lean on.
-    polar = getattr(env, "flown_polar", None)
-    if polar and polar.get("bins"):
-        try:
-            if env.mach(speed, height) < polar.get("mach_max", 0.9):
-                peak = max(row[1] for row in polar["bins"])
-                q = 0.5 * env.density(height) * speed * speed
-                load = q * peak * airframe.MARGIN / (mass * gravity)
-        except Exception:                                   # noqa: BLE001
-            load = None
-    if load is None:
-        load = airframe.turn_load(env, cfg, speed, height, mass, gravity)
-        if load is None:
+    # **The lift this flight has made, at this mass** (``FlownLift``):
+    # the highest subsonic lift measured so far, less ``airframe.MARGIN``
+    # for the speed law to work in.  Not the table: it reads ~300 m^2 at
+    # ``HAC_ALPHA_MAX_DEG`` where the cone's flown lift peaks ~139 near 12
+    # deg and falls past it -- above that, alpha is drag (the speed law's
+    # brake), not lift a turn can lean on.  Nothing measured yet, or
+    # supersonic: the floor.
+    flown = getattr(env, "flown_lift", None)
+    got = flown.peak() if flown is not None else None
+    if got is None:
+        return floor
+    try:
+        if env.mach(speed, height) >= float(cfg.FLOWN_LIFT_MACH_MAX):
             return floor
-        share = airframe.MARGIN
-        trim = getattr(env, "lift_trim", None)
-        if trim is not None:
-            try:
-                measured = trim.measured(env.mach(speed, height))
-            except Exception:                               # noqa: BLE001
-                measured = None
-            if measured is not None:
-                share = min(share, measured)
-        load *= share
+        q = 0.5 * env.density(height) * speed * speed
+    except Exception:                                       # noqa: BLE001
+        return floor
+    load = q * got[0] * airframe.MARGIN / (mass * gravity)
     if load <= 1.0:
         return floor
     return vec.clamp(math.degrees(math.acos(1.0 / load)), floor, 75.0)
