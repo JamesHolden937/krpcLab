@@ -848,8 +848,8 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             distance = surface_distance(env, r, gate)
             if closest is None or distance < closest:
                 closest = distance
-            arrived = entry_dist > 0.0 and distance <= entry_dist
-            if handover is None and arrived and descending:
+            if (handover is None and entry_dist > 0.0
+                    and distance <= entry_dist and descending):
                 try:
                     slow = speed <= entry_mach * env.speed_of_sound(altitude)
                 except Exception:                       # noqa: BLE001

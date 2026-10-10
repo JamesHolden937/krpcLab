@@ -24,11 +24,11 @@ or deleted.
 
 | constant | value | stands in for | replace with |
 |---|---|---|---|
-| `HAC_BANK_MAX_DEG` | 45 | the bank the wing can hold | `HAC_BANK_FROM_LIFT` (built: in-flight `FlownLift` peak at the mass now) |
-| `HAC_ALPHA_MAX_DEG` | 22 | two things: the lift ceiling and the speed law's drag brake | lift: the flown lift peak (`FlownLift`); brake: a measured drag-vs-alpha choice, separately |
+| `HAC_BANK_MAX_DEG` | 45 | the bank the wing can hold | `HAC_BANK_FROM_LIFT` (in-flight lift peak at the mass now) was flown and **deleted** (rot-bfl-1010: 17/23 on the runway v 21/23): nothing is measured at cone-entry speed, so it was 45 where it mattered, and the steeper bank lower down shortened the circle and left high arrivals high. Retry only with the entry-speed lift measured before entry, and the surplus spent as path |
+| `HAC_ALPHA_MAX_DEG` | 22 | two things: the lift ceiling and the speed law's drag brake | lift: the flown lift peak; brake: a measured drag-vs-alpha choice, separately |
 | `ALPHA_MAX_DEG`, `GLIDE_ALPHA_MAX_DEG`, `ENTRY_ALPHA_DEG`, `GLIDE_ALPHA_DEG`, `APPROACH_ALPHA_MAX_DEG`, `FLARE_ALPHA_DEG` | 32, 40, 22, 20, 28, 30 | the polar's shape per regime | the measured polar per Mach band (the glide already learns its ceiling, `ratchet_alpha`) |
 | `FLARE_TOUCHDOWN_ALPHA_DEG` | 13 | tail-strike geometry | the measured tail-strike angle (logged every flight, 20.6 deg on the shuttle) x `TAIL_STRIKE_MARGIN` |
-| `BANK_MAX_DEG`, `APPROACH_BANK_MAX_DEG`, `APPROACH_BANK_COMP_MAX_DEG`, `FLARE_BANK_MAX_DEG` | 70, 40, 60, 12 | the same lift limit as the cone's, per phase | `hac_bank_limit`'s law generalised |
+| `BANK_MAX_DEG`, `APPROACH_BANK_MAX_DEG`, `APPROACH_BANK_COMP_MAX_DEG`, `FLARE_BANK_MAX_DEG` | 70, 40, 60, 12 | the same lift limit as the cone's, per phase | a lift-derived limit, once one wins in the cone |
 | literal in `guidance.approach` | 10 deg below 150 m | wing-strike clearance | wingtip ground clearance from the part geometry and height (as the tail strike is) |
 | `airframe.MARGIN` | 0.70 | the share of table lift the wing makes | `LiftTrim` measures it (reads 0.74) |
 | `HAC_LD`, `HAC_GATE_LD`, `airframe.PLANNING_BIAS` | 1.86, 1.35, 1.09 | the cone's glide ratio (`cone_ld` returns the constant) | the flown polar's L/D at the cone's alpha and bank (`turning_ld`, fed by measured lift *and drag*) |

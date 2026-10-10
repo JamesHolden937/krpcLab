@@ -149,24 +149,6 @@ class Config:
     # short (nine flights, spread sd ~11 km).
     HAC_GATE_LD: float = 1.35
     HAC_BANK_MAX_DEG: float = 45.0
-    # **The bank the cone may fly, from the wing rather than a number**
-    # (the user, 2026-10-10: "set the limit to what it can handle").
-    # ``guidance.hac_bank_limit``: ``acos(1/n)``, ``n`` the load at the
-    # highest lift *this flight* has measured at this Mach
-    # (``environment.FlownLift``, binned by Mach and achieved alpha), at the mass
-    # now, less ``airframe.MARGIN`` -- every load measures its own wing.
-    # Nothing measured yet: the floor.  Floored at
-    # ``HAC_BANK_MAX_DEG``, capped at 75.  It sets the bank cap and the
-    # tightest circle the plan may offer (``hac_hold_radius``), so laps
-    # get cheaper and a steep turn is also a brake (induced drag ~ n^2).
-    # It also replaces ``HAC_ENTRY_MACH`` as the cone-entry veto: the
-    # circle holdable at this speed and this bank must fit
-    # ``HAC_RADIUS_MAX_M`` (Mach 1.5 admitted a 26 km circle; in
-    # rot-v2-1010 and rot-hedazf-1010, 6 of 7 entries above ~347 m/s missed).
-    # 45 deg asks 1.41 g and the cone pulls a median 1.06
-    # (``airframe.turn_load``), so the wing is far from its limit there.
-    HAC_BANK_FROM_LIFT: bool = False
-    FLOWN_LIFT_ALPHA_BIN_DEG: float = 2.0
     HAC_HEADING_KP: float = 1.2             # deg of bank per deg of track error
     HAC_CAPTURE_M: float = 4000.0           # radial error that saturates the cut
     # Speed in the turn, as a multiple of **the approach speed** at that

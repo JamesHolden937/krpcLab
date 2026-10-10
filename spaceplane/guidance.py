@@ -1431,45 +1431,7 @@ def hac_path(cfg, distance, angle, exit_angle, side, radius):
     return max(lead + radius * turn, to_gate), turn, tangent
 
 
-def hac_bank_limit(env, cfg, speed, height, mass, gravity=9.81):
-    """The steepest bank the wing can hold here, in degrees.
-
-    ``HAC_BANK_FROM_LIFT``: ``acos(1 / n)``, ``n`` the load at the highest
-    lift this flight has measured subsonic (``env.flown_lift``), at the mass
-    now, less ``airframe.MARGIN``.  Floored at ``HAC_BANK_MAX_DEG`` -- what has been
-    flown -- and capped at the 75 deg the cone's load arithmetic already
-    stops at (``turning_ld``, ``hac``'s trim).  Off, or with no answer, it
-    is ``HAC_BANK_MAX_DEG``.
-    """
-    floor = float(cfg.HAC_BANK_MAX_DEG)
-    if not getattr(cfg, "HAC_BANK_FROM_LIFT", False):
-        return floor
-    if height is None or mass is None or mass <= 0.0 or speed <= 0.0:
-        return floor
-    # **The lift this flight has made, at this mass** (``FlownLift``):
-    # the highest subsonic lift measured so far, less ``airframe.MARGIN``
-    # for the speed law to work in.  Not the table: it reads ~300 m^2 at
-    # ``HAC_ALPHA_MAX_DEG`` where the cone's flown lift peaks ~139 near 12
-    # deg and falls past it -- above that, alpha is drag (the speed law's
-    # brake), not lift a turn can lean on.  Nothing measured yet at this
-    # Mach: the floor.
-    flown = getattr(env, "flown_lift", None)
-    if flown is None:
-        return floor
-    try:
-        got = flown.peak(env.mach(speed, height))
-        q = 0.5 * env.density(height) * speed * speed
-    except Exception:                                       # noqa: BLE001
-        return floor
-    if got is None:
-        return floor
-    load = q * got[0] * airframe.MARGIN / (mass * gravity)
-    if load <= 1.0:
-        return floor
-    return vec.clamp(math.degrees(math.acos(1.0 / load)), floor, 75.0)
-
-
-def hac_hold_radius(cfg, speed, gravity=9.81, load=None, bank=None):
+def hac_hold_radius(cfg, speed, gravity=9.81, load=None):
     """The tightest circle the airframe can hold at ``speed``.
 
     ``R = v^2 / (g tan(bank))`` with ``HAC_HOLD_MARGIN`` on top, which is
@@ -1483,13 +1445,13 @@ def hac_hold_radius(cfg, speed, gravity=9.81, load=None, bank=None):
     failure 33's shape, a clamp making two configurations look identical
     while faithfully reporting the one that was ignored.
     """
-    bank = math.radians(cfg.HAC_BANK_MAX_DEG if bank is None else bank)
+    bank = math.radians(cfg.HAC_BANK_MAX_DEG)
     return (cfg.HAC_HOLD_MARGIN * speed * speed
             / max(0.1, gravity * math.tan(bank)))
 
 
 def hac_radius(env, cfg, end, r, side, available, speed=None,
-               gravity=9.81, load=None, lap_speed=None, mass=None):
+               gravity=9.81, load=None, lap_speed=None):
     """The radius (and extra laps) whose path spends exactly the height left.
 
     A scan rather than an inversion.  ``path`` is not monotone in the radius
@@ -1520,14 +1482,11 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     # the descent somewhere between the plan and the vehicle.
     floor = cfg.HAC_RADIUS_MIN_M
     if speed is not None:
-        height = vec.norm(r) - env.equatorial_radius
-        floor = max(floor, hac_hold_radius(
-            cfg, speed, gravity, load,
-            bank=hac_bank_limit(env, cfg, speed, height, mass, gravity)))
+        floor = max(floor, hac_hold_radius(cfg, speed, gravity, load))
     # **The clamp that hid the impossible case.**  When the airframe's own
     # floor is wider than the cone is allowed to be, taking the minimum
     # throws the airframe away and offers a circle it cannot hold.  Under
-    # ``HAC_BANK_FROM_LIFT`` the phase is not entered until the floor fits,
+    # ``HAC_ENTRY_DERIVED`` the phase is not entered until the floor fits,
     # and speed only falls inside the cone, so this can no longer bind and
     # keeping it would only restore the silence.  With the flag off it is
     # exactly the clamp it always was.
@@ -1544,9 +1503,7 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
             and lap_speed is not None and speed is not None):
         lap_floor = max(cfg.HAC_RADIUS_MIN_M,
                         hac_hold_radius(cfg, min(speed, lap_speed), gravity,
-                                        load, bank=hac_bank_limit(
-                                            env, cfg, min(speed, lap_speed),
-                                            cfg.GATE_ALT_M, mass, gravity)))
+                                        load))
         lap_floor = min(lap_floor, floor)
 
     def scan(laps):
@@ -1669,9 +1626,8 @@ def _hac_planned_ld(env, cfg, speed, height, mass, gravity, radius, share):
     ``None`` if the table cannot answer."""
     if speed <= 1.0:
         return None
-    bank = min(hac_bank_limit(env, cfg, speed, height, mass, gravity),
-               math.degrees(math.atan(speed * speed
-                                      / max(1.0, gravity * radius))))
+    bank = min(cfg.HAC_BANK_MAX_DEG, math.degrees(
+        math.atan(speed * speed / max(1.0, gravity * radius))))
     level = airframe.turning_ld(env, cfg, speed, height, mass, gravity, 0.0)
     banked = airframe.turning_ld(env, cfg, speed, height, mass, gravity,
                                  bank)
@@ -1852,8 +1808,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     radius, laps, turn, tangent, total = hac_radius(env, cfg, end, r, side,
                                                     available, speed,
                                                     gravity, load,
-                                                    lap_speed=reference,
-                                                    mass=mass)
+                                                    lap_speed=reference)
     measured = getattr(cfg, "HAC_LD_MEASURED", False)
     if measured:
         # Price the path still to fly at the ratio the
@@ -1881,8 +1836,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
             top = rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt)
             available = rungs[-1][1] + excess_height * top
             radius, laps, turn, tangent, total = hac_radius(
-                env, cfg, end, r, side, available, speed, gravity, load,
-                mass=mass)
+                env, cfg, end, r, side, available, speed, gravity, load)
     # **The plan is a commanded geometry, and a commanded geometry that
     # steps is a commanded bank that steps.**  Unlimited, the scan flips
     # between two qualitatively different manoeuvres -- a 2 km circle with
@@ -1988,7 +1942,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if lead <= cfg.HAC_JOIN_M:
         forward = side * math.degrees(
             math.atan(speed * speed / max(1.0, gravity * radius)))
-    cap = hac_bank_limit(env, cfg, speed, height, mass, gravity)
+    cap = cfg.HAC_BANK_MAX_DEG
     signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed

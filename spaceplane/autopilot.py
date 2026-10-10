@@ -4040,11 +4040,8 @@ class Autopilot:
         speed = vec.norm(snap.velocity)
         height = vec.norm(snap.position) - self.env.equatorial_radius
         radius = max(self.cfg.HAC_RADIUS_MIN_M,
-                     guidance.hac_hold_radius(
-                         self.cfg, speed, self.surface_gravity,
-                         bank=guidance.hac_bank_limit(
-                             self.env, self.cfg, speed, height, snap.mass,
-                             self.surface_gravity)))
+                     guidance.hac_hold_radius(self.cfg, speed,
+                                              self.surface_gravity))
         ratio = airframe.cone_ld(self.env, self.cfg, speed, height,
                                  snap.mass, self.surface_gravity)
         lap = 2.0 * math.pi * radius / max(0.1, ratio)
@@ -4450,29 +4447,26 @@ class Autopilot:
             mach = self.env.mach(speed, altitude)
         except Exception:                           # noqa: BLE001
             mach = 9.9
-        # **The veto, calculated** (``HAC_BANK_FROM_LIFT``).
-        # ``HAC_ENTRY_MACH`` is a Mach number standing in for a turn
-        # radius: with the bank derived from the wing, the cone is
-        # enterable once the circle the airframe can hold at this speed and
-        # that bank fits the widest one the cone may fly.  Paired with the
-        # bank on purpose: alone (``HAC_ENTRY_DERIVED``, rot-hedazf-1010) it
-        # only delayed a fast arrival, which kept its energy and landed
-        # long; the bank is what lets the cone hold and brake on it.
-        if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
-            can_turn = (guidance.hac_hold_radius(
-                self.cfg, speed, self.surface_gravity,
-                bank=guidance.hac_bank_limit(
-                    self.env, self.cfg, speed, altitude, snap.mass,
-                    self.surface_gravity))
-                        <= self.cfg.HAC_RADIUS_MAX_M)
-        else:
-            can_turn = mach <= self.cfg.HAC_ENTRY_MACH
-        # **Within ``HAC_ENTRY_DIST_M`` of the high gate, or down to
-        # ``HAC_ALT_M``.**  In practice the distance test fires, 14-17 km
-        # up in a ~37 deg dive, and that height above ``HAC_ALT_M`` is what
-        # the cone needs: entered at the gate's own height (LOG9347) or as
-        # soon as the cone's plan is affordable (rot-smoke-hed2-1010) it
-        # runs out of height (journal, 2026-10-10).
+        # **The veto, calculated.**  ``HAC_ENTRY_MACH`` is a Mach
+        # number standing in for a turn radius, and the speed of sound
+        # is not part of the question -- see ``guidance.hac_enterable``,
+        # which asks whether the circle the airframe can hold fits the
+        # one the cone may fly.  ``None`` means the derivation is off
+        # and the Mach constant is still the veto.
+        can_turn = mach <= self.cfg.HAC_ENTRY_MACH
+        # **Entered when it can pay for itself, not at an altitude.**
+        # See ``cone_affordable``.  ``HAC_ENTRY_DIST_M`` stays as the
+        # backstop it was written to be -- an arrival flat enough to
+        # reach the field before the cone is ever affordable still has
+        # to be taken -- and ``HAC_ALT_M`` keeps its other job, the
+        # entry's aim point in ``Runway.high_gate``, where it is not a
+        # trigger.
+        #
+        # **Waiting is what makes this the earliest flyable entry
+        # rather than a delay**: the straight glide's ratio is 2.3-3.0
+        # against the cone's 1.49, so gliding on buys affordability
+        # faster than it spends height.  A cone that cannot pay now can
+        # pay later; one entered anyway never can.
         reached = (height <= self.cfg.HAC_ALT_M
                    or distance <= self.cfg.HAC_ENTRY_DIST_M)
         ready = can_turn and reached
@@ -4509,22 +4503,6 @@ class Autopilot:
                        % (miss[0], miss[1], distance, height, speed,
                           "left" if self.hac_side > 0 else "right"))
             self.log_cone_ladder(snap, height)
-            if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
-                self.log_bank_limit(snap, "entry")
-
-    def log_bank_limit(self, snap, where):
-        """``HAC_BANK_FROM_LIFT``: the derived bank limit and its inputs."""
-        speed = vec.norm(snap.velocity)
-        alt = vec.norm(snap.position) - self.env.equatorial_radius
-        peak = self.env.flown_lift.peak(self.env.mach(speed, alt))
-        limit = guidance.hac_bank_limit(self.env, self.cfg, speed, alt,
-                                        snap.mass, self.surface_gravity)
-        self.logbook.event(snap.ut, "bank limit at cone %s: %.0f deg (flown "
-                                    "lift peak %s, mass %.2f t, v=%.0f h=%.0f)"
-                           % (where, limit,
-                              "none yet" if peak is None
-                              else "%.0f m^2 at %.0f deg" % peak,
-                              snap.mass / 1000.0, speed, alt))
 
     def log_cone_ladder(self, snap, height):
         """One line at cone entry: the ladder's price of each 1 km of height
@@ -4683,8 +4661,6 @@ class Autopilot:
                     snap.ut, "alpha ceiling released for the landing: %.1f "
                              "-> %.1f deg" % (self.alpha_ceiling, released))
                 self.alpha_ceiling = released
-            if getattr(self.cfg, "HAC_BANK_FROM_LIFT", False):
-                self.log_bank_limit(snap, "exit")
             self.enter(APPROACH, snap.ut,
                        "%s turn=%.0f h=%.0f (needed %.0f) gate=%.0f "
                        "(circle %.0f) laps=%d stretch=%.0f"
@@ -6040,10 +6016,9 @@ class Autopilot:
                 altitude = (vec.norm(snap.position)
                             - self.env.equatorial_radius)
                 mach = self.env.mach(speed, altitude)
-                table_cla = self.env.lift.lookup(snap.alpha_actual, mach)
-                self.env.lift_trim.observe(mach, measured_cla, table_cla)
-                self.env.flown_lift.observe(mach, snap.alpha_actual,
-                                            measured_cla, table_cla)
+                self.env.lift_trim.observe(
+                    mach, measured_cla,
+                    self.env.lift.lookup(snap.alpha_actual, mach))
             except Exception:                           # noqa: BLE001
                 pass
         if not self.logbook.telemetry(snap.ut, compact_line(self.state, snap,
