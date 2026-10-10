@@ -1,5 +1,51 @@
 # HANDOFF — read this first, rewrite it last
 
+**Interim snapshot, 2026-10-10 ~0000 (session in progress).**  Defaults
+fingerprint **`ca5fef06`**, committed and pushed.  Farm UP; the smoke
+batch `logs/rot-smoke-azf-1010.txt` (AZIMUTH_FLOOR_FROM_TURN, 6 flights,
+4 orbits) was flying when the session paused -- read it with
+`/tmp/.../glideend.py`-style reversal counts (last-60-s bank sign changes,
+max |bnk|, max |slip| before GLIDE -> HAC) and landsum.
+
+## This session (2026-10-09 night)
+
+- Probes: split rudder at 38 deg adds +32% drag at Mach 0.8, +27% at 1.0,
+  +16% at 1.5, +12% at 2, +3% at 4 (`splitprobe.py 0 --glide`).  The
+  pitch-neutral lift dump at hypersonic speed is 4-5% of lift
+  (`spoilerprobe.py`): not worth building.
+- `GLIDE_SPLIT_BRAKE` **deleted**: 4 of 6 departed (alpha 85, slip 43,
+  bank 165) within ~15 s of the fins deploying at Mach 2.2
+  (rot-smoke-v2-1010, LOG9273-9278).
+- **Promoted** the brakes-before-weave package (HAC_SPLIT_BRAKE,
+  BRAKES_BEFORE_WEAVE, HAC_WEAVE_AFTER_BRAKE, approach fades 0.3/0.15):
+  rot-v2-1010, 24 an arm interleaved over 4 orbits, **22/24 v 16/24 on the
+  strip and intact**, long 1 v 5, intact 24 v 22; ecc 8/8 v 4/9.  Deleted
+  `hac_flap_brake`, `command_airbrake`, `HAC_FLAP_ARREST_G`.
+- Found: **every glide ends in a lateral limit cycle** -- ~6 bank
+  reversals in the last 60 s, flown bank 85-180 deg, slip 10-25 deg (36/36
+  default flights).  Driver: `_bank_sign`'s azimuth deadband at its 0.5
+  deg floor against a ~3 s roll lag.  `GLIDE_SETTLE_ON_FLOWN` (settle the
+  reversal on the flown bank) was null on the mechanism (6 v 6) and is
+  deleted.  `AZIMUTH_FLOOR_FROM_TURN` (off; band >= g tan(bank)/v x roll
+  damper tp, capped 12 deg) is in smoke.
+- Found: the cone **never plans a lap** (laps=0 in 36/36): a lap costs
+  ~22 km of path, so available path between ~23 and ~45 km cannot be
+  planned and the surplus goes to brakes/weave.  Cone entry fires on
+  `HAC_ENTRY_DIST_M` 3 km out while the glide dives at ~37 deg, i.e. at
+  14.6-18 km instead of 12; exit height follows entry height at ~0.65.
+
+## Next
+
+1. Read the azf smoke; if clean, `multirot.sh azf-1010 4` with arms
+   defaults v `AZIMUTH_FLOOR_FROM_TURN=True` x 4 orbits (12 arm strings,
+   rigoff and ecc doubled).  Promote or delete.
+2. The cone's lap gap: a fractional lap / wider radius range, or enter
+   the cone on the glide's predicted gate height rather than 3 km out.
+3. `APPROACH_CAPTURE_TAU_SHARE=0.35` (off-strip), still unflown.
+
+---
+Previous snapshot (2026-10-09 evening) follows for its traps and history.
+
 Snapshot of 2026-10-09 evening (~1630-2010).  History:
 `docs/spaceplane/journal.md`, "Session, 2026-10-09 evening".
 
