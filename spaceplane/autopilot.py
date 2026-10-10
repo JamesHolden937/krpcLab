@@ -4378,21 +4378,7 @@ class Autopilot:
         # again.
         if side != self.bank_side:
             settled = min(self.cfg.SOLVE_BANK_MIN_DEG, abs(wanted))
-            # ``GLIDE_SETTLE_ON_FLOWN``: **the vehicle's lean, not the
-            # command's.**  The command slews at the measured roll rate
-            # (30 deg/s) and reaches 30 deg in a second; the airframe takes
-            # its roll time to peak, so tested on the command the relay was
-            # free again before the vehicle had rolled and the last minute
-            # of every glide limit-cycled (six reversals, flown bank past
-            # 90, slip 10-20).  Backstop: a lean the vehicle never reaches
-            # in four times its time to peak is not one waiting will bring.
-            lean = self.steer.bank
-            if getattr(self.cfg, "GLIDE_SETTLE_ON_FLOWN", False):
-                flown = flown_bank(snap)
-                waited = snap.ut - (self.bank_reversed_ut or snap.ut)
-                if flown == flown and waited < 4.0 * self.attitude_settle_s:
-                    lean = flown
-            if lean * self.bank_side >= settled:
+            if self.steer.bank * self.bank_side >= settled:
                 self.bank_side, self.bank_reversed_ut = side, snap.ut
         wanted = self.bank_side * abs(wanted)
         # **The lean the vehicle is trying to hold, after every clamp and
