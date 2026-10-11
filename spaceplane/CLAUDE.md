@@ -35,7 +35,7 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
-## Where it stands (2026-10-10, fingerprint `66f98be6`)
+## Where it stands (2026-10-10, fingerprint `a4b58a35`)
 
 **Brakes before weaving is the default** (split rudder first, spoiler
 second, weave / S-turn last), the deorbit burn lines up on **stock SAS
@@ -46,16 +46,16 @@ orbits, 23/23 intact, 0 in the water; the two off it were high-orbit,
 ~1.4 km past the end.
 
 Open: the cone cannot plan a lap (laps=0 always) and is entered at 14-18
-km against `HAC_ALT_M` 12, so it spends surplus height with alpha past
-its ~13 deg lift peak -- which bleeds speed, not height, and lands high
-arrivals long.  Bank-limit and entry-trigger fixes both lost (deleted
-2026-10-10, journal).
+km against `HAC_ALT_M` 12.  In progress (off, 2026-10-10 evening):
+`GLIDE_TAEM_ENERGY` / `GLIDE_TAEM_ALPHA` make the glide hand the cone its
+planned energy instead -- 14-15 km entry energy against 19-21 on 19/24
+farm flights, but an alpha ratchet through the solver and a missing range
+constraint made worse tails (root HANDOFF.md).
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md): make the cone spend surplus height
-as path (wider circle / partial lap / S-turn, alpha capped at the lift
-peak); LOG9375; then `docs/spaceplane/constantsAudit.md` top-down.
+The root [HANDOFF.md](../HANDOFF.md): fix TAEM's two defects and re-fly;
+else make the cone spend surplus height as path; LOG9375; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 

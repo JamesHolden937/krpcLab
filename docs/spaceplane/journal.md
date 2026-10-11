@@ -2266,3 +2266,38 @@ Defaults `ca5fef06` -> **`66f98be6`**.
   arrives high and slow, where the split brake fades.
 - `docs/spaceplane/constantsAudit.md`: ~30 hard-coded values sorted into
   tiers by what each stands in for.
+
+## Session, 2026-10-10 evening: fix the glide, not the cone (TAEM)
+
+The user: "the cone getting surplus height is the primary failure method.
+why don't we fix the glide instead of making the cone absorb so much
+energy?"  Diagnosis: with honest alpha (the shuttle holds 0.65-0.75 of the
+command below Mach 3) the propagator predicts 7-11 km of surplus energy
+height at cone entry, and the glide solves on range at the 12 km crossing,
+which says nothing about the speed it arrives with.
+
+Built `GLIDE_TAEM_ENERGY` (below `GLIDE_TAEM_MACH` the solve nulls the
+predicted cone-entry energy h + v^2/2g against `HAC_ALT_M` at cone speed +
+`GLIDE_TAEM_MARGIN_M` 1500, ~14.1 km) and `GLIDE_TAEM_ALPHA` (propagate
+min(command, EMA of achieved alpha + margin)).  Commit 6b60b36, off.
+
+- **kspSim** (sim-taem-1010, sim-taem2-1010; `DEORBIT_SAS_ALIGN=False`
+  because the sim's SAS is a stub and the first 12 flights all timed out
+  in orbit): at Mach 3 no change -- the solve is saturated (alpha 40-42,
+  bank 50-70, "no brake armed").  Mach 4.5 entry E 16.4-19.4 km, Mach 6
+  15.4-19.6, defaults 19.7-20.7.
+- **Farm taem-1010** (4 cycles, defaults v TAEM Mach 4.5 + both flags,
+  four orbits, 24 an arm, LOG9480-9527): typical cone-entry energy
+  **14-15 km v 19-21**; on the runway 19/24 v 18/23; along mean +2.8 sd
+  4.2 v +1.0 sd 1.2.  TAEM tails: LOG9490 +16 km water and 9505 +7.5 km
+  water and 9510 -6.4 km lost (all high orbit), 9483 -12 km (inc), 9519
+  -2.1.  Defaults tails: 9496 -27 km broke up (ecc), 9518 -5.6, 9504 -4.9,
+  9484 +1.8, 9499 +1.3 (high).
+- **Two defects**: (1) the alpha cap binds the solver: above it the
+  prediction is flat in alpha, so with +12 km surplus the command walked
+  36 -> 21, the vehicle followed and the cap followed it (9490 entered the
+  cone at 437 m/s, 17 km); (2) no range constraint: 9483 solved energy from
+  Mach 4.5 into a 4.5 km deficit and crossed 12 km 16.6 km from the gate.
+- Not promoted; flags stay for the fix (surplus may only raise alpha;
+  miss = the shorter of range and energy), then the same batch, then
+  promote or delete.

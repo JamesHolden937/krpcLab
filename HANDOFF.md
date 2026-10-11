@@ -1,81 +1,87 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-10 afternoon (~1100 -> 1600).  History:
-`docs/spaceplane/journal.md`, "Session, 2026-10-10 day".
+Snapshot of 2026-10-10 evening (~1600 -> 1830).  History:
+`docs/spaceplane/journal.md`, "Session, 2026-10-10 evening".
 
-Defaults fingerprint **`66f98be6`** (was `ca5fef06`).  Committed and
-pushed.  Farm stopped, sleep inhibitor released.  No worktrees open.
-`howItWorks.pdf` updated (SAS line-up, azimuth floor).
+Defaults fingerprint **`a4b58a35`** (was `66f98be6`; only new off-flags
+added, default behaviour unchanged).  **Committed, not pushed** (the
+user: "don't push").  Farm stopped, sleep inhibitor released.  No
+worktrees open.  `howItWorks.pdf` unchanged (no default changed).
 
 ## The headline
 
-1. **The deorbit burn lines up on stock SAS** (`DEORBIT_SAS_ALIGN`,
-   promoted; the user's idea after flying it live).  A maneuver node 2 s
-   ahead, SAS in maneuver mode, commit at <= 3 deg on two ticks or 120 s.
-   rot-smoke-sas-1010 (LOG9340-9345): settled 0.1-0.6 deg in 20-24 s,
-   0.6-1.0 deg while burning (5.7 on the high orbit) v ~7 before; 6/6 on
-   the runway.
-2. **`AZIMUTH_FLOOR_FROM_TURN` promoted.**  rot-hedazf-1010 (16 an arm,
-   three orbits): glide-end reversals 3.5 v 4.9 a minute, on the strip 12
-   v 11, long 1 v 4.  The flown-bank overshoot past 90 deg is unchanged
-   (the roll loop).
-3. **The defaults are strong:** rot-bfl-1010 defaults arm (23 flights,
-   four orbits, LOG9412-9459) **21/23 stopped on the runway, 23/23 kept
-   18+ parts, 0 in the water**; the two off it were high-orbit flights
-   +1.35 / +1.44 km, just past the end.
-4. **Two cone experiments deleted** (below).  The lesson both taught:
-   **the cone's surplus is height, and it has to be spent as path.**
-   Anything that shortens the path (tighter circle) or spends speed
-   instead (alpha past the lift peak as a brake) lands high arrivals long.
+The user's redirect: **fix the glide so it hands the cone the energy the
+cone plans for, instead of making the cone absorb 5-9 km of surplus
+height.**  Built as two off-flags (commit 6b60b36):
 
-## Deleted this session (code back to 3ecfc1a + the AZF promotion)
+- `GLIDE_TAEM_ENERGY` (+ `GLIDE_TAEM_MACH`, `GLIDE_TAEM_MARGIN_M`): below
+  `GLIDE_TAEM_MACH` the glide solve nulls the predicted **cone-entry
+  energy height** (h + v^2/2g where the arc meets the entry test) against
+  `HAC_ALT_M` at cone speed + margin (~14.1 km), not the 12 km crossing.
+  `guidance.taem_target` / `taem_miss`; reserve 0 in TAEM; telemetry
+  `tE=`, and `long=` is the energy surplus in metres.
+- `GLIDE_TAEM_ALPHA` (+ `GLIDE_TAEM_ALPHA_TAU_S`): the propagator flies
+  min(command, EMA of achieved alpha + `HOLDABLE_MARGIN_DEG`)
+  (`env.taem_alpha_cap`, `taf=`).
 
-| flag | what | why deleted |
+**Result, farm `taem-1010`** (4 cycles, defaults v TAEM at Mach 4.5 with
+both flags, rigoff/inc/high/ecc, 24 an arm, LOG9480-9527):
+
+| | defaults | TAEM |
 |---|---|---|
-| `HAC_ENTRY_DERIVED` | cone entry from a holdable circle and the gate | gate-height trigger: LOG9347 out of height, 9 km short; plan-affordable trigger: rot-smoke-hed2-1010 4/6; veto alone changed 1 flight of 16 (rot-hedazf-1010, LOG9403, still long) |
-| `HAC_BANK_FROM_LIFT` | cone bank limit `acos(1/n)` from lift measured in flight (`FlownLift`) at the mass now, floor 45, cap 75; also the entry veto | rot-bfl-1010: **17/23 v 21/23** on the runway, 2 in the water, all high-orbit misses +1.2..+2.5 km.  It read 45 at **every** cone entry (no lift measured at entry speed), and opened to 60-75 lower down, which tightened the circle so the high arrivals (entry h ~17.6 km) spent less path |
+| cone-entry energy, typical | 19-21 km | **14-15 km** (target 14.1) |
+| on the runway (\|along\| <= 1.2 km) | 18/23 | 19/24 |
+| along mean / sd | +1.0 / 1.2 km | +2.8 / 4.2 km |
+| tails | -27 km broke up (9496), -5.6, -4.9, +1.8 | **+16 water (9490), +7.5 water (9505), -12 (9483), -6.4 lost (9510)**, -2.1 |
 
-`docs/spaceplane/constantsAudit.md` (new): ~30 hard-coded values sorted by
-what they stand in for, with what should compute each.  The user wants
-them removed ("they hide structural issues").
+It does what it aims at on 19/24 (those all stop ~+0.8 km, high orbit
+included), but **not promoted**: two mechanism defects made the tails.
+
+1. **Alpha ratchet through the solver** (9490, 9505, 9510, high orbit).
+   With the propagated alpha capped at flown+margin, commands above the
+   cap predict identically, so the solve can't see alpha helping; with
+   +12 km surplus it walked the command 36 -> 21 deg, the vehicle
+   followed, the cap followed the vehicle (30 -> 21), cone entered at
+   437 m/s, 17 km.
+2. **No range constraint** (9483, inc).  Solving energy from Mach 4.5
+   left it 4.5 km energy-short; min alpha wings-level still crossed 12 km
+   16.6 km out of the gate, 12 km short.
+
+Sim screen before it (logs/sim-taem-1010.txt, sim-taem2-1010.txt): at
+Mach 3 the switch-over changes nothing (solve saturated below Mach 3:
+alpha 40-42, bank 50-70 with reversals); at 4.5 / 6 entry energy fell
+from ~20 to 16-17 km.  Sim needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
 
 ## Next, in order
 
-1. **The cone's surplus-height problem** (old item 3, the lap gap).  laps
-   = 0 in every flight; entries are 14-18 km against `HAC_ALT_M` 12 (the
-   3 km `HAC_ENTRY_DIST_M` test fires while the glide dives ~37 deg).
-   The cone then spends the surplus with alpha past its ~13 deg lift peak
-   (`HAC_ALPHA_MAX_DEG` 22 is a drag brake in practice), which bleeds
-   **speed**, not height: LOG9410 arrived lined up, never banked, came out
-   slow (~91 m/s) and 2 km high, the split brake faded on the slow side,
-   +4.5 km long.  Make the plan spend surplus as path: a wider circle up
-   to `HAC_RADIUS_MAX_M`, a partial lap, an S-turn in the cone, and cap
-   the cone's alpha at the flown lift peak.  Screen in kspSim (guidance),
-   then the farm, 24 an arm, four orbits.  Steeper bank is fine **when it
-   lengthens the path** (more turn), not when it shrinks the circle.
-2. LOG9375 (rot-hedazf-1010): exited the cone needing 6.6 km more height,
-   lost 27 km short.  Not looked at.
-3. The constants audit, top-down, one flag each: in-flight polar with
-   drag as well as lift; part properties from kRPC (canard range literal
-   37.5, `SPLIT_FULL_DEG`, `RESOURCE_KG_PER_UNIT`); wing/tail-strike
-   limits from geometry; then tier 2.  Parked-off flags `AIRBRAKE_CACHE`,
-   `ALPHA_TRACKING_ON`: promote or delete.
-4. If the glide's overshoot past 90 deg of bank matters: the roll loop
-   (30 deg/s command slew against a ~3 s response), not the sign law.
-5. `APPROACH_CAPTURE_TAU_SHARE=0.35` (off, unflown).
-6. The deorbit's "model said" log figure is wrong on the first burn tick
-   (unlimited thrust before the limit applies); log-only.
+1. **Fix the two TAEM defects, then re-fly the same batch**:
+   (a) in surplus the solve may only *raise* alpha (or: don't let the cap
+   bind the solver's alpha search -- cap the prediction's alpha but keep
+   the command at max while surplus > 0); (b) the miss is the shorter of
+   range and energy (energy can't override a range short).  Screen in
+   kspSim (`DEORBIT_SAS_ALIGN=False`), then farm 24 an arm, four orbits,
+   **restart the farm first** (swap ended at 23.6 GB).  Promote or delete
+   both flags on that result -- no parking.
+2. If TAEM wins: the cone's surplus-height work (old item 1) mostly goes
+   away; re-read conesum on the new entries before touching the cone.
+   If it loses: the cone spends surplus as path (wider circle / partial
+   lap / S-turn, alpha capped at the lift peak).
+3. LOG9375: exited the cone needing 6.6 km more height, lost 27 km short.
+4. `docs/spaceplane/constantsAudit.md` top-down; parked-off
+   `AIRBRAKE_CACHE`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`:
+   promote or delete.
+5. Glide bank overshoot past 90 deg: the roll loop, not the sign law.
+6. Deorbit "model said" log figure wrong on first burn tick (log-only).
 
 ## Traps paid this session
 
-- **Cone entry is a fragile balance.**  Both derived entry triggers ran
-  out of height; the 3 km test works because it fires early.  Change the
-  plan's use of the surplus, not when the cone starts.
-- A smoke run of a bank limit read "flown lift peak none yet" on all six
-  entries: the glide is below Mach 1.5 for seconds before the cone.
-  Check that a measured quantity exists *where it is used* before flying.
-- Waiters: `pgrep -f` self-matches, and `ps | grep` catches the launching
-  shell; wait on the real PID (`pgrep -f "^bash spaceplane/tools/..."`).
-- Swap reached 23 GB by the end of rot-bfl-1010 (multirot restarts per
-  cycle, but the last cycle still ends heavy).  Restart before comparing.
-- "could not pause after the load": 1 per arm this batch; excluded.
+- **kspSim's SAS is a stub**: every deorbit times out on the 60 s guard
+  under today's `DEORBIT_SAS_ALIGN` default.  Fly sims with
+  `DEORBIT_SAS_ALIGN=False`.
+- **Idle kspSim servers hold ~400 MB swap each** (22.6 GB before the
+  farm).  Kill them: `kill $(pgrep -f "m kspSim[.]run")`.
+  `pkill -f "kspSim/run.py"` matched and killed the calling shell.
+- Capping the *propagated* alpha at what is flown re-creates the command
+  ratchet through the solver unless the solver's alpha search is fenced.
+- Swap still ends a 4-cycle multirot at ~23 GB; restart before comparing.
+- "could not pause after the load": 2 this batch (LOG9502, 9504), kept.
