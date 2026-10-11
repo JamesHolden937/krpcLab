@@ -3590,9 +3590,16 @@ class Autopilot:
         # floor rule below can charge one tick rather than the dead time.
         self._deorbit_prev_tick_ut = self._deorbit_tick_ut
         self._deorbit_tick_ut = snap.ut
-        if align > self.cfg.DEORBIT_ALIGN_DEG:
+        misaligned = align > self.cfg.DEORBIT_ALIGN_DEG
+        if misaligned:
             self.set_throttle(0.0)
-            return
+            # **Not once the burn has reached its dv.**  The stop test below
+            # needs ``DEORBIT_EXIT_TICKS`` in a row, and a nose that drifts
+            # off between them (SAS chasing a spent node, node-1011: four
+            # burns done, never handed over, entered tail-first) would
+            # otherwise hold the phase here for the rest of the flight.
+            if self.deorbit_ticks == 0:
+                return
         record = {} if getattr(self.cfg, "DIAG_INTERFACE", False) else None
         progress, needed = guidance.deorbit_remaining(
             self.env, snap.position, snap.velocity, snap.mass,
@@ -3647,6 +3654,15 @@ class Autopilot:
         # burn shut down 770 km long.
         if owed <= 0.0:
             self.deorbit_ticks += 1
+            if self.deorbit_ticks == 1 and self.sas_hold \
+                    and self.cfg.DEORBIT_SAS_NODE:
+                # The node is spent: hold the attitude rather than chase
+                # what is left of its burn vector.
+                try:
+                    self.autopilot.sas_mode = \
+                        self.conn.space_center.SASMode.stability_assist
+                except Exception:                           # noqa: BLE001
+                    pass
         else:
             self.deorbit_ticks = 0
         if (self.deorbit_ticks >= int(self.cfg.DEORBIT_EXIT_TICKS)
@@ -3676,6 +3692,8 @@ class Autopilot:
             self.enter(COAST if self.cfg.DRAIN else DRAIN, snap.ut,
                        "burn guard at %.0f s"
                        % self.cfg.DEORBIT_MAX_BURN_S)
+            return
+        if misaligned:
             return
         # Taper on the dv the burn still owes rather than running full
         # throttle into a threshold.  The sensitivity is ~25 km of range per
@@ -6372,18 +6390,6 @@ class Autopilot:
             if settled:
                 cap = float(self.cfg.GLIDE_PITCH_OFFLOAD_MAX)
                 trim = vec.clamp(trim + k * (float(total) - trim), -cap, cap)
-        elif self._glide_pitch_rescue(snap, dt):
-            # ``GLIDE_PITCH_RESCUE_DEG``: below the offload's Mach the trim
-            # integrates a pitch error kRPC is not closing, and holds what it
-            # took for the rest of the glide.
-            band = float(self.cfg.GLIDE_PITCH_RESCUE_DEG)
-            err = self._pitch_assist_err
-            if err is not None and abs(err) > band:
-                cap = float(self.cfg.GLIDE_PITCH_OFFLOAD_MAX)
-                trim = vec.clamp(
-                    trim + k * (err - math.copysign(band, err))
-                    / float(self.cfg.GLIDE_PITCH_RESCUE_FULL_DEG), -cap, cap)
-            self._offload_live = True
         else:
             trim -= trim * k
             if abs(trim) < 0.005:
@@ -6397,44 +6403,6 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 pass
         self._pitch_assist = trim
-
-    def _glide_pitch_rescue(self, snap, dt):
-        """Whether ``GLIDE_PITCH_RESCUE_DEG`` owns the glide's pitch trim
-        this tick (below ``GLIDE_PITCH_OFFLOAD_MIN_MACH``, where the offload
-        otherwise bleeds off).
-
-        kRPC scales its pitch gains to the torque the surfaces *could* give,
-        8 MN m at 5-50 kPa, so its integral runs on a clock of minutes and a
-        standing aerodynamic moment is left unanswered: LOG9641 (the user's
-        186 km polar) held +0.2 of pitch against a 16-22 deg error for 100 s
-        from Mach 2.8, flew alpha 5 where 20-28 was commanded, dived to
-        50 kPa and reached the cone at Mach 1.5 with 5 km of energy to
-        spare -- and departed in the cone's first bank swing.  It engages
-        on a sustained error past the band (the arrivals the offload's Mach
-        floor was fitted on stay inside it) and, once engaged, holds until
-        the glide ends."""
-        band = float(getattr(self.cfg, "GLIDE_PITCH_RESCUE_DEG", 0.0))
-        if band <= 0.0 or self.state != GLIDE:
-            self._rescue_s = 0.0
-            return False
-        err = getattr(self, "_pitch_assist_err", None)
-        total = getattr(snap, "pitch_input", None)
-        if err is None or total is None or abs(float(total)) >= 0.98:
-            return getattr(self, "_rescue_on", False)
-        if not getattr(self, "_rescue_on", False):
-            # Nose *below* the command only: that is the dive.  Engaged on
-            # a nose-high error it did not close it (sim LOG9645, LOG9651).
-            self._rescue_s = (getattr(self, "_rescue_s", 0.0) + dt
-                              if err > band else 0.0)
-            if self._rescue_s < float(self.cfg.GLIDE_PITCH_RESCUE_HOLD_S):
-                return False
-            self._rescue_on = True
-            self.logbook.event(
-                snap.ut, "glide pitch rescue: %+.1f deg of pitch error for "
-                         "%.0f s at +%.2f of input, trim %+.2f -- integrating"
-                % (err, self._rescue_s, float(total),
-                   getattr(self, "_pitch_assist", 0.0)))
-        return True
 
     def _trim_tanks(self):
         """Every tank of each propellant, by station along the vessel's
