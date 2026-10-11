@@ -2927,6 +2927,24 @@ def deorbit_dv_floor(env, r, v, periapsis_alt):
     return now - after
 
 
+def node_components(env, r, v, direction, normal_sign=1.0):
+    """``direction`` (body frame) as a node's ``(prograde, normal, radial)``.
+
+    The node's axes are the *inertial* orbit's at ``r``, ``v``: prograde
+    along the inertial velocity, radial out the part of ``r`` square to it,
+    normal along the orbit's angular momentum.  The cross product's sign
+    depends on the frame's handedness (kRPC's are left-handed), so the
+    caller passes ``normal_sign`` -- checked against the node's own
+    ``burn_vector`` once.
+    """
+    v_in = vec.add(v, vec.cross(env.omega, r))
+    p = vec.unit(v_in)
+    q = vec.unit(vec.project_out(r, p))
+    n = vec.scale(vec.unit(vec.cross(r, v_in)), normal_sign)
+    return (vec.dot(direction, p), vec.dot(direction, n),
+            vec.dot(direction, q))
+
+
 def orbit_period(env, r, v):
     """The vacuum orbit's period in seconds (``inf`` for an escape)."""
     v_in = vec.add(v, vec.cross(env.omega, r))

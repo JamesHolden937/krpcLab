@@ -248,6 +248,13 @@ class Config:
     GLIDE_PITCH_RESCUE_HOLD_S: float = 8.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
+    # **A load-factor cap on the cone's alpha** (LOG9641: entered at 441
+    # m/s and 28.5 kPa, the ceiling released 8 -> 32, alpha 41, a rolling
+    # departure).  The cone flies no higher alpha than the one whose lift
+    # (the table at the q and Mach being flown) reaches this many times the
+    # weight.  Ordinary entries (130-270 m/s at 12 km, 3-4 kPa) never
+    # reach it.  0 = off.
+    HAC_LOAD_MAX: float = 0.0
     # Roll out when there is this little turn left, or when the height is
     # gone -- whichever comes first.  The second is not a fallback, it is the
     # floor the cone is flown above: below the low gate's altitude there is
@@ -1858,6 +1865,14 @@ class Config:
     # test and the burn never lit.  The node stays, for the map view; the
     # attitude comes from the navball's surface speed mode.
     DEORBIT_SAS_SURFACE: bool = True
+    # **The node carries the solved burn instead** (the user, 2026-10-11):
+    # surface retrograde x dv at the node's time, resolved into the node's
+    # prograde / normal / radial (``guidance.node_components``), and SAS on
+    # Maneuver -- one direction for the search, the node, the map view and
+    # the hold, and an inertial hold through the burn rather than one that
+    # follows the turning surface velocity.  Overrides
+    # ``DEORBIT_SAS_SURFACE`` when on.
+    DEORBIT_SAS_NODE: bool = False
     # A hold that has stopped improving inside the burn's own tolerance
     # (``DEORBIT_ALIGN_DEG``) for this long commits rather than waiting out
     # ``DEORBIT_SAS_SETTLE_MAX_S``: whatever is keeping it off the commit
