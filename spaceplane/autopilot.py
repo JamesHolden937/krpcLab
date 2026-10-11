@@ -3855,6 +3855,48 @@ class Autopilot:
         self._engine_isp = best
         return best
 
+    def mixture(self):
+        """Each drained resource's share of what the engine burns, from the
+        engine's own propellant ratios; ``None`` when no engine says.
+
+        **The drain empties both tanks at one rate, the engine does not
+        burn them at one rate.**  What is left after the valve is off the
+        engine's 9:11 mixture, so a total of units is not what the burn can
+        spend: a 500 km orbit's 252 m/s burn ran dry at ~240 m/s on a
+        budget that read 301 (sim LOG9624).  Cached: it does not change.
+        """
+        if getattr(self, "_mixture", False) is not False:
+            return self._mixture
+        names = tuple(self.cfg.DRAIN_RESOURCES)
+        share = None
+        try:
+            for engine in self.vessel.parts.engines:
+                ratios = dict(engine.propellant_ratios)
+                if all(name in ratios for name in names):
+                    total = sum(float(ratios[n]) for n in names)
+                    if total > 0.0:
+                        share = {n: float(ratios[n]) / total for n in names}
+                        break
+        except Exception:                               # noqa: BLE001
+            share = None
+        self._mixture = share
+        return share
+
+    def usable_units(self, amounts):
+        """Units of the drained resources the engine can burn: the scarcer
+        one over its share of the mixture (all of them without a mixture)."""
+        share = self.mixture() if hasattr(self, "vessel") else None
+        if not share:
+            return sum(amounts.values())
+        return min(amounts.get(n, 0.0) / f for n, f in share.items() if f > 0)
+
+    def snap_usable(self, snap):
+        names = tuple(self.cfg.DRAIN_RESOURCES)
+        fields = {"LiquidFuel": snap.liquid_fuel, "Oxidizer": snap.oxidizer}
+        if not all(n in fields for n in names):
+            return snap.liquid_fuel + snap.oxidizer
+        return self.usable_units({n: fields[n] for n in names})
+
     def drain_reserve_units(self, snap):
         """How much propellant the pre-burn drain must leave, in units.
 
@@ -3915,13 +3957,13 @@ class Autopilot:
         names = tuple(self.cfg.DRAIN_RESOURCES)
 
         def aboard():
-            total = 0.0
+            amounts = {}
             for name in names:
                 try:
-                    total += read.amount(name)
+                    amounts[name] = read.amount(name)
                 except Exception:                       # noqa: BLE001
-                    pass
-            return total
+                    amounts[name] = 0.0
+            return self.usable_units(amounts)
 
         deadline = time.time() + float(self.cfg.DRAIN_TIMEOUT_S)
         left = aboard()
@@ -4114,7 +4156,7 @@ class Autopilot:
         if not self.interface_logged and self.deorbit_dv is not None:
             self.interface_logged = True
             self.log_interface_prediction(snap)
-        remaining = snap.liquid_fuel + snap.oxidizer
+        remaining = self.snap_usable(snap)
         # **Which drain this is.**  With ``DRAIN_BEFORE_BURN`` the phase runs
         # once, before the deorbit, and stops at a reserve the burn can spend;
         # the leftover then stays aboard for the entry rather than being
@@ -4197,10 +4239,19 @@ class Autopilot:
                 # through the burn, which is the disturbance this mode exists
                 # to move, put back in the worst possible place.
                 self.stop_drain(snap)
+            # **The budget from what is left now, not what was watched.**
+            # The valve can run on after the watch closes it (sim LOG9610:
+            # watched 388 units, 227 left); the burn spends what is here.
+            isp = self.vehicle_vacuum_isp(snap)
+            per_unit = float(self.cfg.RESOURCE_KG_PER_UNIT)
+            if pre and isp > 0.0 and snap.mass > remaining * per_unit:
+                self.burn_budget_dv = isp * 9.80665 * math.log(
+                    snap.mass / (snap.mass - remaining * per_unit))
             self.logbook.event(snap.ut, "drained in %.1f s, mass now %.3f t, "
-                                        "%.1f units left"
+                                        "%.1f usable units left (%.0f m/s)"
                                % (snap.ut - self.drain_started,
-                                  snap.mass / 1000.0, remaining))
+                                  snap.mass / 1000.0, remaining,
+                                  self.burn_budget_dv or 0.0))
             self.enter(after, snap.ut)
             return
         if snap.ut - self.drain_started > self.cfg.DRAIN_TIMEOUT_S:
