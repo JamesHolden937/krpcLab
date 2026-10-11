@@ -5,6 +5,9 @@ Snapshot of 2026-10-11 ~0020.  History: `docs/spaceplane/journal.md`,
 
 Defaults fingerprint **`f0b8f9b9`** (was `bc9ac544`).  Committed and
 pushed.  Farm stopped, sim servers stopped, sleep inhibitor released.
+**Nothing has been flown on the farm**: the first batch was killed for
+memory, and the user then asked that the farm not be launched -- start it
+only when they say so.
 
 ## The headline
 
@@ -53,9 +56,13 @@ the sim's known short approach (kspSim gap 7).  Before: 200-650 km off.
    from a script file first):
    `spaceplane/tools/multirot.sh orbits-1011 4` with arms
    `qs_shuttle2_{rigoff,inc_rigoff,high_rigoff,ecc_rigoff,i30_rigoff,
-   i60_rigoff,retro_rigoff,e500_rigoff,e500i45_rigoff}|`.  The first four
-   are the regression check against taemfix-1010 (23/24); the last five
-   are the new shapes (`saves/derived.txt`).  Read `deorbit reach:` and
+   i60_rigoff,i90_rigoff,retro_rigoff,e500_rigoff,e500i45_rigoff}|`.  The
+   first four are the regression check against taemfix-1010 (23/24); the
+   rest are the new shapes (`saves/derived.txt`).  **`i90` (87 km polar)
+   is the user's case** -- LOG9599 was near-polar -- so read it first.
+   Memory: with the farm alone up, swap read 18.9 GB and 7 GB available
+   (a desktop indexer, `baloo_file_extractor`, held 2.4 GB); check
+   `free -g` before launching.  Read `deorbit reach:` and
    `deorbit plan:` lines (and `refused:` counts when no window is found).
 2. If the farm agrees, the how-it-works PDF's DEORBIT section (plan,
    sideways reach, entry limits from the air, usable propellant) and the
