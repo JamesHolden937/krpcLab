@@ -5129,6 +5129,35 @@ class TestTheEnvelopeIsFlown(unittest.TestCase):
         return [n for n, (m, r) in self.mods.items() if r.key.deployed]
 
 
+class TestTheConeLoadCap(unittest.TestCase):
+    """``HAC_LOAD_MAX``: inactive at an ordinary cone entry, binding at
+    LOG9641's 441 m/s / 28.5 kPa."""
+
+    def run_(self, limit):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.cfg = replace(Config(), HAC_LOAD_MAX=limit)
+        run.env = FakeEnv(run.cfg)
+        return run
+
+    def snap(self, speed, q):
+        return types.SimpleNamespace(
+            dynamic_pressure=q, mass=31400.0, velocity=(speed, 0.0, 0.0),
+            position=(R_KERBIN + 10000.0, 0.0, 0.0))
+
+    def test_off_and_ordinary_entries_are_not_capped(self):
+        self.assertIsNone(self.run_(0.0).load_alpha_cap(
+            self.snap(441.0, 28500.0)))
+        self.assertIsNone(self.run_(1.2).load_alpha_cap(
+            self.snap(200.0, 3500.0)))
+
+    def test_a_fast_entry_is_capped(self):
+        # The fake airframe lifts a fifth of the shuttle (ClA 17 at 32 deg
+        # against ~90 transonic), so its limit is scaled to match.
+        cap = self.run_(1.2).load_alpha_cap(self.snap(441.0, 28500.0))
+        self.assertIsNotNone(cap)
+        self.assertLess(cap, 20.0)
+
+
 class TestTheWheelWatch(unittest.TestCase):
     """``WHEEL_WATCH_S`` logs on a change from gear-down, re-reading the
     list, and stops a span after contact."""

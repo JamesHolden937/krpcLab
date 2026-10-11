@@ -520,6 +520,7 @@ class Autopilot:
         self.deorbit_done = False   # see fly_deorbit_burn
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
         self.node_normal_sign = None    # DEORBIT_SAS_NODE, from a read-back
+        self._load_capped = False       # HAC_LOAD_MAX binding last tick
         self.sas_node = None
         self.sas_since = None
         self.sas_aligned_prev = False
@@ -3359,6 +3360,28 @@ class Autopilot:
                            % (mode, dv, node_ut,
                               vec.angle_between(snap.nose, retro)))
 
+    def load_alpha_cap(self, snap):
+        """``HAC_LOAD_MAX``: the highest alpha whose lift stays within that
+        many weights at this q and Mach, or None (off, no table, or no
+        alpha binds)."""
+        limit = float(self.cfg.HAC_LOAD_MAX)
+        if limit <= 0.0 or not self.env.ready():
+            return None
+        q = snap.dynamic_pressure
+        speed = vec.norm(snap.velocity)
+        if q <= 0.0 or speed < 1.0:
+            return None
+        weight = snap.mass * self.env.mu / vec.norm(snap.position) ** 2
+        altitude = vec.norm(snap.position) - self.env.equatorial_radius
+        top = float(self.cfg.ALPHA_MAX_DEG)
+        alpha = top
+        while alpha >= 0.0:
+            cla, _ = self.env.coefficients(alpha, speed, altitude)
+            if q * cla <= limit * weight:
+                return None if alpha >= top else alpha
+            alpha -= 0.5
+        return 0.0
+
     def place_burn_node(self, snap, dv, node_ut):
         """Set ``sas_node`` to surface retrograde x ``dv`` at ``node_ut``.
 
@@ -5232,6 +5255,19 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         alpha = min(command.alpha, self.alpha_ceiling)
+        cap = self.load_alpha_cap(snap)
+        if cap is not None and cap < alpha:
+            if not self._load_capped:
+                self.logbook.event(snap.ut, "cone alpha capped by load: %.1f "
+                                            "-> %.1f deg at q=%.0f Pa (%.1f g)"
+                                   % (alpha, cap, snap.dynamic_pressure,
+                                      self.cfg.HAC_LOAD_MAX))
+            self._load_capped = True
+            alpha = cap
+        elif self._load_capped:
+            self._load_capped = False
+            self.logbook.event(snap.ut, "cone alpha load cap released at "
+                                        "q=%.0f Pa" % snap.dynamic_pressure)
         self.steer = Steer(alpha=alpha, bank=command.bank)
         self.aim(alpha, command.bank, snap)
         self.ratchet_alpha(snap)

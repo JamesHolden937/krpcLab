@@ -248,6 +248,13 @@ class Config:
     GLIDE_PITCH_RESCUE_HOLD_S: float = 8.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
+    # **A load-factor cap on the cone's alpha** (LOG9641: entered at 441
+    # m/s and 28.5 kPa, the ceiling released 8 -> 32, alpha 41, a rolling
+    # departure).  The cone flies no higher alpha than the one whose lift
+    # (the table at the q and Mach being flown) reaches this many times the
+    # weight.  Ordinary entries (130-270 m/s at 12 km, 3-4 kPa) never
+    # reach it.  0 = off.
+    HAC_LOAD_MAX: float = 0.0
     # Roll out when there is this little turn left, or when the height is
     # gone -- whichever comes first.  The second is not a fallback, it is the
     # floor the cone is flown above: below the low gate's altitude there is
