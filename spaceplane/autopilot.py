@@ -6297,8 +6297,10 @@ class Autopilot:
         if err is None or total is None or abs(float(total)) >= 0.98:
             return getattr(self, "_rescue_on", False)
         if not getattr(self, "_rescue_on", False):
+            # Nose *below* the command only: that is the dive.  Engaged on
+            # a nose-high error it did not close it (sim LOG9645, LOG9651).
             self._rescue_s = (getattr(self, "_rescue_s", 0.0) + dt
-                              if abs(err) > band else 0.0)
+                              if err > band else 0.0)
             if self._rescue_s < float(self.cfg.GLIDE_PITCH_RESCUE_HOLD_S):
                 return False
             self._rescue_on = True
