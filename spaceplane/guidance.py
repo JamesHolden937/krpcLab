@@ -82,7 +82,14 @@ def taem_miss(env, cfg, prediction, target):
         return miss + prediction.long
     entry = float(cfg.HAC_ENTRY_DIST_M)
     ld = airframe.cone_ld(env, cfg, speed, altitude, None, g)
-    return miss + min(0.0, prediction.long + entry) / ld
+    short = min(0.0, prediction.long + entry)
+    # **Energy cannot override a range short.**  An arc that crosses
+    # ``HAC_ALT_M`` out of reach of the entry circle needs distance, and the
+    # attitude that maximises entry energy (a plunge at minimum alpha) is
+    # not the one that maximises range (best glide).  Solving energy alone
+    # there flew LOG9483 at minimum alpha wings-level and crossed 12 km
+    # 12 km short of the circle; the shorter of the two misses steers.
+    return min(miss + short / ld, short)
 
 
 def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,
@@ -360,6 +367,15 @@ def _solve_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0,
     # which is still worth having where the curve *is* locally monotone.
     alpha = alpha0
     best = abs(m0[0] - target)
+    # **In terminal-glide surplus alpha may only rise** (``GLIDE_TAEM_ALPHA``).
+    # The propagator flies min(command, flown alpha + margin), so every
+    # candidate above the cap predicts the same arc and only lower ones look
+    # different; with surplus in hand the solve walked the command down, the
+    # vehicle followed, the cap followed the vehicle, and LOG9490 entered the
+    # cone at 437 m/s from 17 km (36 -> 21 deg).  Bank takes the surplus.
+    raise_only = (getattr(env, "taem", None) is not None
+                  and getattr(env, "taem_alpha_cap", None) is not None
+                  and m0[0] - target > 0.0)
     da = cfg.SOLVE_ALPHA_PROBE_DEG
     if alpha0 + da > top:
         da = -da
@@ -409,6 +425,8 @@ def _solve_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0,
                                     floor, top))
     for candidate in candidates:
         if abs(candidate - alpha0) < 0.05:
+            continue
+        if raise_only and candidate < alpha0:
             continue
         _, probe, miss = _fly(env, r, v, mass, cfg, end, gate, candidate,
                               sign * magnitude)

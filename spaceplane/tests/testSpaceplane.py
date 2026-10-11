@@ -5333,7 +5333,14 @@ class TestTheTerminalGlideSolvesOnEntryEnergy(unittest.TestCase):
         far = self.predicted(12000.0, 150.0, False, -entry - 5000.0)
         base = guidance.taem_miss(self.env, self.cfg, at, 13000.0)
         less = guidance.taem_miss(self.env, self.cfg, far, 13000.0)
-        self.assertAlmostEqual(base - less, 5000.0 / self.cfg.HAC_LD, places=3)
+        self.assertLess(less, base)
+        # Energy cannot override a range short: 5 km out of reach reads -5 km
+        # however much energy the arc carries.
+        self.assertAlmostEqual(less, -5000.0, places=3)
+        rich = self.predicted(12000.0, 400.0, False, -entry - 5000.0)
+        self.assertAlmostEqual(
+            guidance.taem_miss(self.env, self.cfg, rich, 13000.0), -5000.0,
+            places=3)
 
     def test_crossing_past_the_gate_is_surplus(self):
         short = self.predicted(12000.0, 150.0, False, 0.0)
