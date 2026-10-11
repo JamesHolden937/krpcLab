@@ -961,8 +961,8 @@ class Config:
     #     12000+          0.77   0.77   0.73     143
     #
     # against the table's 1.02, 1.01, 0.89, 0.74, 0.72 -- within 0.06
-    # everywhere.  **The table is not the problem.  ALPHA_TRACKING_ON is.**
-    # With the flag off ``tracked_alpha`` returns the command unchanged, so
+    # everywhere.  **The table is not the problem; not flying it was.**
+    # Untracked, ``tracked_alpha`` returns the command unchanged, so
     # every propagation in the program -- the glide's solve and the burn's
     # alike -- believes the vehicle holds 100% of the angle it is given
     # through the whole dense entry, where it actually holds 74-84%.
@@ -983,10 +983,9 @@ class Config:
     ALPHA_TRACKING: tuple = ((1000.0, 1.02), (2000.0, 1.01),
                              (4000.0, 0.89), (8000.0, 0.74),
                              (16000.0, 0.72), (32000.0, 0.72))
-    # Gated by a flag rather than by emptying the table, so the experiment
-    # above can be run with ``--set ALPHA_TRACKING_ON=True`` without having
-    # to express a tuple on a command line.  Off by default: see the numbers.
-    ALPHA_TRACKING_ON: bool = False
+    # Flown only by the deorbit window's corners (``Steer.tracked``): the
+    # glide's solve exploits it (failure 10) and ``Holdable`` learns the
+    # ceiling live instead.
     HOLDABLE_Q_DECADE_BINS: int = 6         # bins per decade of dynamic pressure
     HOLDABLE_SATURATED_DEG: float = 2.5     # command - achieved, to count
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
@@ -1379,11 +1378,6 @@ class Config:
     # 0.0 (finish at the door) enters the flare on the centreline and drifts
     # 60-80 m during it.  ``APPROACH_CAPTURE_BY_FLARE`` is the hard 0.
     APPROACH_CAPTURE_FLARE_SHARE: float = 1.0
-    # The capture's time constant as a share of the time left to the wheels
-    # (``guidance.approach``): 1.0 closes at a constant rate that reaches the
-    # centreline at touchdown; below it the offset decays early and the
-    # flare inherits less lateral rate.
-    APPROACH_CAPTURE_TAU_SHARE: float = 1.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
     GEAR_ALT_M: float = 800.0

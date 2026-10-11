@@ -15,7 +15,6 @@ safe, and it is boosterland's "Aim, then stop" one phase earlier: a solve that
 runs all the way to the tarmac is solving a manoeuvre it has no model of.
 """
 import math
-from dataclasses import replace
 
 from common import vec
 from . import airframe, trajectory
@@ -1142,13 +1141,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     in_flare *= vec.clamp(
         float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
     cross_time = to_flare + in_flare
-    # ``APPROACH_CAPTURE_TAU_SHARE``: close as an exponential whose time
-    # constant is this share of the time left, rather than at the constant
-    # rate that zeroes the offset exactly at the wheels (1.0).  At 1.0 the
-    # flare inherits the whole closing rate: 34 of 113 flights entered it
-    # 100-200 m off and 5 of those stopped off the strip (2026-10-09).
-    timely = abs(cross) / max(1.0, cross_time * vec.clamp(
-        float(getattr(cfg, "APPROACH_CAPTURE_TAU_SHARE", 1.0)), 0.05, 1.0))
+    timely = abs(cross) / max(1.0, cross_time)
     wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
     lean_side = None
     if scurve_deg > 0.0:
@@ -2423,7 +2416,6 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     # believing a command the airframe cannot hold makes the long end of that
     # span too long.  Measured: the centred window landed 19.7 km short with
     # the corners optimistic, on a span only 47 km wide.
-    honest = replace(cfg, ALPHA_TRACKING_ON=True) if replace else cfg
     corners = []
     # **Which diagonal of the command box is the real one.**  See
     # ``DEORBIT_WINDOW_CORNERS_FIXED``: range falls with alpha over the whole
@@ -2433,7 +2425,8 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     box = ((cfg.SOLVE_ALPHA_MIN_DEG, cfg.BANK_MAX_DEG),
            (cfg.ALPHA_MAX_DEG, cfg.SOLVE_BANK_MIN_DEG))
     for index, (alpha, bank) in enumerate(box):
-        steer = Steer(alpha=alpha, bank=bank, cfg=honest, mass=mass)
+        steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                      tracked=True)
         prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                         target_radius=vec.norm(gate))
         if not prediction.reached or prediction.skipped:

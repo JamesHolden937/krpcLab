@@ -2271,8 +2271,8 @@ class TestTheDeorbitAimIsComputedNotFitted(unittest.TestCase):
         which exploits it, and on for these two propagations, which nothing
         solves against."""
         source = inspect.getsource(guidance.deorbit_window)
-        self.assertIn("ALPHA_TRACKING_ON=True", source)
-        self.assertFalse(Config().ALPHA_TRACKING_ON,
+        self.assertIn("tracked=True", source)
+        self.assertFalse(trajectory.Steer().tracked,
                          "the solve must still not see it")
 
     def test_a_corner_that_does_not_fly_is_not_a_bound(self):
