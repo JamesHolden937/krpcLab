@@ -5,7 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Session procedure (standing, every session)
 
 **Work autonomously.** Don't ask whether to go on to the next batch, fix or
-experiment. **Only ask permission for things that affect disk space outside
+experiment. **Never ask before starting the farm or flying a batch on it**
+-- not even when an earlier session or HANDOFF.md says the user wanted it
+left down (the user, 2026-10-11: "don't ever ask me again ... I'll tell you
+to stop when I need my CPU"). If a test needs the farm, start it and fly;
+the user interrupts when they need the CPU, and that stop lasts only until
+the next time a test needs it. **Only ask permission for things that affect disk space outside
 this directory**; anything confined to krpcLab (craft/save variants, farm
 instances, venv installs, commits) needs no asking. Pick the best next step, do it, and report what you did and why.
 Interrupting is the user's job, not asking permission. **Commit before
