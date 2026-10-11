@@ -72,6 +72,6 @@ time-scale governor, warp, timeouts, numerical guards (`1e-6`, clamps on
 
 ## Flags still parked off
 
-`AIRBRAKE_CACHE`, `ALPHA_TRACKING_ON` -- promote or delete (root CLAUDE.md).
+`AIRBRAKE_CACHE` (never flown; arms the brake on air-start saves) -- promote or delete (root CLAUDE.md).
 `LOOP_PACING_GAME_TIME` (the harness sets it) and `DIAG_INTERFACE`
 (diagnostic) are infrastructure.

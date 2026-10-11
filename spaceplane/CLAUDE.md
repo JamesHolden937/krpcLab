@@ -48,27 +48,26 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-10, fingerprint `a4b58a35`)
+## Where it stands (2026-10-10 night, fingerprint `101fc0e0`)
 
-**Brakes before weaving is the default** (split rudder first, spoiler
-second, weave / S-turn last), the deorbit burn lines up on **stock SAS
-on a maneuver node** (`DEORBIT_SAS_ALIGN`), and the glide's azimuth band
-is floored by the turn one roll time covers (`AZIMUTH_FLOOR_FROM_TURN`).
-rot-bfl-1010's defaults arm: **21/23 stopped on the runway** over four
-orbits, 23/23 intact, 0 in the water; the two off it were high-orbit,
-~1.4 km past the end.
+**The terminal glide solves on cone-entry energy** (`GLIDE_TAEM_*`,
+promoted 2026-10-10): below Mach 4.5 the glide nulls the predicted energy
+height at the cone's entry against what the cone plans for (~14.1 km),
+with the prediction flying the alpha achieved.  taemfix-1010: **23/24 on
+the runway v 20/24, high orbit 6/6, 0 lost**.  Also default: brakes before
+weaving, the deorbit burn lined up on stock SAS, the azimuth floor.
 
-Open: the cone cannot plan a lap (laps=0 always) and is entered at 14-18
-km against `HAC_ALT_M` 12.  In progress (off, 2026-10-10 evening):
-`GLIDE_TAEM_ENERGY` / `GLIDE_TAEM_ALPHA` make the glide hand the cone its
-planned energy instead -- 14-15 km entry energy against 19-21 on 19/24
-farm flights, but an alpha ratchet through the solver and a missing range
-constraint made worse tails (root HANDOFF.md).
+Off, built, unflown on the farm: `ABORT_NORTH` (every divert goes north;
+sim: 8/8 stopped 158-197 m north) and `GROUND_SPOILER_ON_NOSE` (the
+touchdown bounce at 68-76 m/s, 3 of 5 breakups).  Open: an inc-orbit
+glide energy deficit (one ~8-10 km short per 24, both arms); two
+low-speed rollouts that ran off the edge.
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md): fix TAEM's two defects and re-fly;
-else make the cone spend surplus height as path; LOG9375; then `docs/spaceplane/constantsAudit.md` top-down.
+The root [HANDOFF.md](../HANDOFF.md): fly `ABORT_NORTH` and
+`GROUND_SPOILER_ON_NOSE` on the farm and promote or delete; the inc glide
+energy deficit; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -117,7 +116,7 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 `HAC_WRAP_BEFORE_GATE`, `HAC_CHOOSE_BY_ENERGY`, `HAC_WEAVE_HELD`,
 `HAC_WEAVE_STRAIGHT_ONLY`, the cone flap-brake variants, `PROPELLANT_TRIM*`,
 `AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`, `GLIDE_ENERGY_AIM`, `HAC_ENTRY_DERIVED`,
-`HAC_BANK_FROM_LIFT`.
+`HAC_BANK_FROM_LIFT`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`.
 
 ## Commands
 

@@ -2301,3 +2301,58 @@ min(command, EMA of achieved alpha + margin)).  Commit 6b60b36, off.
 - Not promoted; flags stay for the fix (surplus may only raise alpha;
   miss = the shorter of range and energy), then the same batch, then
   promote or delete.
+
+### Session, 2026-10-10 night (~1800-1950)
+
+**TAEM fixed and promoted.**  The two defects of taem-1010, both fixed
+behind the same flags (commit after 3c331ec): (1) while the predicted
+energy is in surplus the glide's alpha search may only *raise* alpha
+(`_solve_range`, `raise_only`), so the flown-alpha cap cannot ratchet the
+command down; (2) when the arc crosses `HAC_ALT_M` out of reach of the
+entry circle, `taem_miss` returns min(energy miss + short/L/D, short): a
+range short is never overridden by energy.
+- kspSim (sim-taemfix-1010, LOG9528-9535): no ratchet (alpha command held
+  40-44, bank 70 reversing); the TAEM arm landed 3.7-5.1 km short v ~0 --
+  the sim's cone runs short of the game's (entries at 16-17 km energy
+  still ran out); not used to judge.
+- **Farm taemfix-1010** (4 cycles, defaults v TAEM at Mach 4.5, four
+  orbits, 24 an arm, LOG9536-9583): **on the runway 23/24 v 20/24; high
+  orbit 6/6 v 3/6; lost 0 v 1** (9560, high, +2.2 km in the water).  Cone
+  entry 12-15 km at 195-275 m/s v 12-17.6 km at 210-330.  The one TAEM
+  miss, 9577 (inc) -7.6 km, has a twin in the defaults arm (9543, inc,
+  -10.5): both reach 12 km 10-12 km before the circle; in 9577 the solve
+  went to alpha ~20, bank ~0 (saturated stretch) while the energy-short
+  grew from -1 km at Mach 4 to -10 km at Mach 0.9.  A shared glide energy
+  deficit on inc, not TAEM.
+- **Promoted** `GLIDE_TAEM_ENERGY`, `GLIDE_TAEM_ALPHA`, `GLIDE_TAEM_MACH`
+  4.5 (06d5032).
+
+**Touchdown bounce** (taemfix-1010): 3 of the 5 part-loss landings
+(9567, 9578, 9580; both arms) touched down at 68-76 m/s, pitched from
+alpha 2-4 to 11-15 deg in one tick against full nose-down elevon
+(pin -0.97), flew to 17-22 m and came down at 10-15 m/s of sink.  The
+bounce scales with airspeed (9580 at 3.2 m/s sink bounced 17 m; 9537 at
+4.3 m/s, 66 m/s, 4 m), and the jump lands on the tick the ground spoiler
+deploys (elevon set, two surfaces at -25).  Built `GROUND_SPOILER_ON_NOSE`
+(off): the spoiler waits for the nose wheel (or 4 s).  Unflown.  The other
+two (9542, 9545, 47-57 m/s) stayed on the ground and ran 28-49 m off the
+centreline: not looked at.
+
+**Every divert goes north** (the user: the space center is south of the
+runway).  Built `ABORT_NORTH` (off): on final once the height over best
+glide to the threshold is below -30 m, on the rollout once the stop at the
+achieved deceleration runs past the far end, the tracked line moves 150 m
+north (`guidance.north_side`, off the pole, either end).  kspSim
+(sim-north-1010, LOG9584-9591, 3 arms x 3): **every flight diverted and
+stopped 158-197 m north** by KSP's latitude -- but every sim flight was
+short (sim bias), so the overrun trigger never fired and false triggers
+are unmeasured.  The farm batch north-1010 was stopped in its first round
+(the user wanted to fly it); nothing measured.  The DOWN line now gives
+metres north/south of the runway line from KSP's latitude.
+
+Cleanups: `ALPHA_TRACKING_ON` deleted (the deorbit window's corners fly
+the table via `Steer.tracked`), `APPROACH_CAPTURE_TAU_SHARE` deleted
+(never flown, 1.0 a no-op), the deorbit "model said" figure charged at the
+acceleration each interval began with (it read 84-144 m/s v 26-64).
+The goal went into spaceplane/CLAUDE.md: >= 95% on the runway, 0 lost,
+worst miss < 3 km, four orbits, two airframes.

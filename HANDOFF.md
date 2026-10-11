@@ -1,87 +1,83 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-10 evening (~1600 -> 1830).  History:
-`docs/spaceplane/journal.md`, "Session, 2026-10-10 evening".
+Snapshot of 2026-10-10 night (~1800 -> 1955).  History:
+`docs/spaceplane/journal.md`, "Session, 2026-10-10 night".
 
-Defaults fingerprint **`a4b58a35`** (was `66f98be6`; only new off-flags
-added, default behaviour unchanged).  **Committed, not pushed** (the
-user: "don't push").  Farm stopped, sleep inhibitor released.  No
-worktrees open.  `howItWorks.pdf` unchanged (no default changed).
+Defaults fingerprint **`101fc0e0`**.  Flight behaviour = `b9eba0f3`
+(TAEM promoted); `101fc0e0` only adds two off-flags.  Committed and pushed.
+Farm stopped, sleep inhibitor released, no worktrees.  `howItWorks.pdf`
+rewritten (terminal glide).  **The user is flying the defaults live** --
+they stopped the session to play with it.
 
 ## The headline
 
-The user's redirect: **fix the glide so it hands the cone the energy the
-cone plans for, instead of making the cone absorb 5-9 km of surplus
-height.**  Built as two off-flags (commit 6b60b36):
+**The terminal glide now solves on cone-entry energy, by default.**
+`GLIDE_TAEM_ENERGY` + `GLIDE_TAEM_ALPHA` at `GLIDE_TAEM_MACH` 4.5, with
+last session's two defects fixed: in surplus the alpha search may only
+raise alpha (no ratchet through the flown-alpha cap), and out of reach of
+the entry circle the miss is the shorter of energy and range.
 
-- `GLIDE_TAEM_ENERGY` (+ `GLIDE_TAEM_MACH`, `GLIDE_TAEM_MARGIN_M`): below
-  `GLIDE_TAEM_MACH` the glide solve nulls the predicted **cone-entry
-  energy height** (h + v^2/2g where the arc meets the entry test) against
-  `HAC_ALT_M` at cone speed + margin (~14.1 km), not the 12 km crossing.
-  `guidance.taem_target` / `taem_miss`; reserve 0 in TAEM; telemetry
-  `tE=`, and `long=` is the energy surplus in metres.
-- `GLIDE_TAEM_ALPHA` (+ `GLIDE_TAEM_ALPHA_TAU_S`): the propagator flies
-  min(command, EMA of achieved alpha + `HOLDABLE_MARGIN_DEG`)
-  (`env.taem_alpha_cap`, `taf=`).
+Farm **taemfix-1010** (24 an arm, four orbits, LOG9536-9583):
 
-**Result, farm `taem-1010`** (4 cycles, defaults v TAEM at Mach 4.5 with
-both flags, rigoff/inc/high/ecc, 24 an arm, LOG9480-9527):
-
-| | defaults | TAEM |
+| | old defaults | TAEM (now default) |
 |---|---|---|
-| cone-entry energy, typical | 19-21 km | **14-15 km** (target 14.1) |
-| on the runway (\|along\| <= 1.2 km) | 18/23 | 19/24 |
-| along mean / sd | +1.0 / 1.2 km | +2.8 / 4.2 km |
-| tails | -27 km broke up (9496), -5.6, -4.9, +1.8 | **+16 water (9490), +7.5 water (9505), -12 (9483), -6.4 lost (9510)**, -2.1 |
+| on the runway (\|along\| <= 1.2 km) | 20/24 | **23/24** |
+| high orbit on the runway | 3/6 | **6/6** |
+| lost | 1 (9560, +2.2 km, water) | 0 |
+| cone entry | 12-17.6 km, 210-330 m/s | 12-15 km, 195-275 m/s |
 
-It does what it aims at on 19/24 (those all stop ~+0.8 km, high orbit
-included), but **not promoted**: two mechanism defects made the tails.
+The goal (in spaceplane/CLAUDE.md, the user's): **>= 95% on the runway, 0
+lost, worst miss < 3 km, four orbits, two airframes; every divert north**
+(the space center is south of the runway).
 
-1. **Alpha ratchet through the solver** (9490, 9505, 9510, high orbit).
-   With the propagated alpha capped at flown+margin, commands above the
-   cap predict identically, so the solve can't see alpha helping; with
-   +12 km surplus it walked the command 36 -> 21 deg, the vehicle
-   followed, the cap followed the vehicle (30 -> 21), cone entered at
-   437 m/s, 17 km.
-2. **No range constraint** (9483, inc).  Solving energy from Mach 4.5
-   left it 4.5 km energy-short; min alpha wings-level still crossed 12 km
-   16.6 km out of the gate, 12 km short.
+## Built, off, not yet flown on the farm
 
-Sim screen before it (logs/sim-taem-1010.txt, sim-taem2-1010.txt): at
-Mach 3 the switch-over changes nothing (solve saturated below Mach 3:
-alpha 40-42, bank 50-70 with reversals); at 4.5 / 6 entry energy fell
-from ~20 to 16-17 km.  Sim needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
+- **`ABORT_NORTH`** (+ `ABORT_NORTH_OFFSET_M` 150, `ABORT_SHORT_M` 30):
+  on final, once height over best glide to the threshold < -30 m; on the
+  rollout, once the stop at the achieved deceleration passes the far end
+  -> the tracked line moves 150 m north (`guidance.north_side`, off the
+  pole).  kspSim sim-north-1010 (LOG9584-9591): 8/8 diverted, stopped
+  158-197 m north by KSP latitude -- but all sim flights were short, so
+  the **overrun trigger never fired and false triggers are unmeasured**.
+  The farm batch north-1010 was stopped in round 0: nothing measured.
+- **`GROUND_SPOILER_ON_NOSE`** (+ `_NOSE_TIMEOUT_S` 4): the ground spoiler
+  waits for the nose wheel.  3 of taemfix-1010's 5 part-loss landings
+  (9567, 9578, 9580) were a bounce: touchdown 68-76 m/s, alpha 2-4 -> 11-15
+  in the spoiler's tick against full nose-down elevon, 17-22 m up, second
+  contact at 10-15 m/s sink.  Bounce scales with airspeed, not sink.
 
 ## Next, in order
 
-1. **Fix the two TAEM defects, then re-fly the same batch**:
-   (a) in surplus the solve may only *raise* alpha (or: don't let the cap
-   bind the solver's alpha search -- cap the prediction's alpha but keep
-   the command at max while surplus > 0); (b) the miss is the shorter of
-   range and energy (energy can't override a range short).  Screen in
-   kspSim (`DEORBIT_SAS_ALIGN=False`), then farm 24 an arm, four orbits,
-   **restart the farm first** (swap ended at 23.6 GB).  Promote or delete
-   both flags on that result -- no parking.
-2. If TAEM wins: the cone's surplus-height work (old item 1) mostly goes
-   away; re-read conesum on the new entries before touching the cone.
-   If it loses: the cone spends surplus as path (wider circle / partial
-   lap / S-turn, alpha capped at the lift peak).
-3. LOG9375: exited the cone needing 6.6 km more height, lost 27 km short.
-4. `docs/spaceplane/constantsAudit.md` top-down; parked-off
-   `AIRBRAKE_CACHE`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`:
-   promote or delete.
-5. Glide bank overshoot past 90 deg: the roll loop, not the sign law.
-6. Deorbit "model said" log figure wrong on first burn tick (log-only).
+1. **Farm: defaults v `ABORT_NORTH` v `GROUND_SPOILER_ON_NOSE`**, four
+   orbits, 24 an arm (restart the farm first).  For ABORT_NORTH read the
+   `divert north` events: any on a flight that would have stopped on the
+   runway is a false trigger; the DOWN line's "m north/south of the runway
+   line" says where the misses went.  The overrun trigger may need a
+   forced test (`APPROACH_AIM_SHIFT_M=-1500`, a few flights).  For the
+   spoiler: bounce height (max h in ROLLOUT) against touchdown speed.
+   Promote or delete each.
+2. **The inc glide energy deficit**: one inc flight per 24 lands 8-10 km
+   short in both arms (9577, 9543): 12 km reached 10-12 km before the
+   circle; the TAEM solve saturates at alpha ~20, bank ~0 while the short
+   grows from -1 km (Mach 4) to -10 km (Mach 0.9).  Is the stretch alpha
+   right (best glide transonic), or is the deficit set at the burn?
+3. Two rollouts ran off the edge at 47-57 m/s without bouncing (9542,
+   9545): 28-49 m off the centreline.
+4. `docs/spaceplane/constantsAudit.md` top-down; `AIRBRAKE_CACHE` (never
+   flown) promote or delete.
+5. Glide bank overshoot past 90 deg (roll loop); kspSim shows bank -70
+   commanded, -90 flown.
+6. LOG9375 (old): exited the cone needing 6.6 km more height.
 
 ## Traps paid this session
 
-- **kspSim's SAS is a stub**: every deorbit times out on the 60 s guard
-  under today's `DEORBIT_SAS_ALIGN` default.  Fly sims with
-  `DEORBIT_SAS_ALIGN=False`.
-- **Idle kspSim servers hold ~400 MB swap each** (22.6 GB before the
-  farm).  Kill them: `kill $(pgrep -f "m kspSim[.]run")`.
-  `pkill -f "kspSim/run.py"` matched and killed the calling shell.
-- Capping the *propagated* alpha at what is flown re-creates the command
-  ratchet through the solver unless the solver's alpha search is fenced.
-- Swap still ends a 4-cycle multirot at ~23 GB; restart before comparing.
-- "could not pause after the load": 2 this batch (LOG9502, 9504), kept.
+- **kspSim lands short of the game now**: with TAEM on, sim flights end
+  1.5-5.7 km short where the farm's stop ~+0.8 km.  Don't judge range in
+  the sim; it showed the ratchet gone and the divert's direction.
+- kspSim still needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
+- `pkill -f "<pattern>"` with the pattern in the same command line kills
+  the calling shell (exit 144).  Kill by PID from `ps -eo pid,args | awk
+  '/[p]attern/'`.
+- multirot's arm numbers rotate per cycle: group by the log's own config
+  line (`armsum.py --by`), never by the `armN` label.
+- Swap ends a 4-cycle multirot at ~21-23 GB; restart before comparing.
