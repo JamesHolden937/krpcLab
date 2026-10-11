@@ -798,7 +798,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         radius = vec.norm(rr)
         long = cross = 0.0
         if gate is not None and end is not None:
-            long, cross = miss_components(env, end, rr, gate)
+            long, cross = miss_components(env, end, rr, gate, vv)
         return Prediction(
             position=tuple(rr), velocity=tuple(vv), time_to_go=tt,
             speed=vec.norm(vv), altitude=radius - env.equatorial_radius,
@@ -900,7 +900,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
     return answer(r, v, t, steps, False, False)
 
 
-def miss_components(env, end, predicted, gate):
+def miss_components(env, end, predicted, gate, velocity=None):
     """``(long, cross)`` metres from the gate, along and across the runway.
 
     Arc lengths through the tangent plane at the gate, not a chord projection.
@@ -915,8 +915,18 @@ def miss_components(env, end, predicted, gate):
     ``long=``/``cross=`` columns exist: a great-circle distance cannot tell an
     overshoot from an undershoot, and those want opposite corrections.
     """
-    along = env.runway.horizontal(end, end["along"])
     up = vec.unit(gate)
+    along = env.runway.horizontal(end, end["along"])
+    # **Along the arrival's ground track when it is known, not the runway.**
+    # The glide nulls ``long``; resolved on the runway heading, an arrival
+    # crossing the runway at an angle puts its whole overshoot into
+    # ``cross`` and reads as on range: LOG9599 held ``long`` ~+500 m with
+    # ``cross`` -650 km and overflew KSC at Mach 6.7.  On the farm's
+    # near-equatorial orbits the two frames are the same.
+    if velocity is not None:
+        track = vec.project_out(velocity, up)
+        if vec.norm(track) > 1.0:
+            along = vec.unit(track)
     across = vec.unit(vec.cross(up, along))
     other = vec.unit(predicted)
     angle = math.acos(vec.clamp(vec.dot(up, other), -1.0, 1.0))

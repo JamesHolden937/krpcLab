@@ -1508,7 +1508,8 @@ class Autopilot:
         gate = self.env.runway.gate(self.end)
         long, cross = trajectory.miss_components(self.env, self.end,
                                                  self.prediction.position,
-                                                 gate)
+                                                 gate,
+                                                 self.prediction.velocity)
         return long, cross
 
     def gate_distance(self, snap):
