@@ -35,6 +35,16 @@ The bar is generality across the shuttle family (cargo / big-wing /
 mass-distribution variants): per-craft laws and measured curves, not
 constants fitted to one save.
 
+**The goal (the user, 2026-10-10): >= 95% stopped on the runway
+(|along| <= 1.2 km), 0 lost (no water, no breakup), worst miss under
+~3 km** -- on all four orbits and at least two airframes of the family.
+Losses matter more than overruns: a 1.4 km overrun is untidy, a water
+landing is a failure.  Telling 95% from 85% takes ~60 flights, so judge
+it on pooled batches; at 24 an arm read the tails as well as the count.
+Each remaining miss is its own failure mode (cone out of energy, glide
+arriving high, high orbit long) -- remove them one by one.  Above ~97%
+the misses are mostly the farm's own faults, not the autopilot.
+
 ## Where it stands (2026-10-10, fingerprint `a4b58a35`)
 
 **Brakes before weaving is the default** (split rudder first, spoiler
