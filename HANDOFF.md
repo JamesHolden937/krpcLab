@@ -8,8 +8,15 @@ pushed.  Farm stopped, sim servers stopped, sleep inhibitor released.
 
 ## The headline
 
-**LOG9599 (the user's live flight, 160 km inclined) overflew KSC at Mach
-6.7, 650 km abeam.**  Two bugs, both invisible on the farm's
+**LOG9599 (the user's live flight, 160 km near-polar) overflew KSC at
+Mach 6.7.**  The pass was good -- it crossed the extended centreline ~2 km
+off the line, 40 km west of the threshold, at 47 km -- but it arrived
+nearly perpendicular to the runway, so the glide's runway-frame `long`
+was ~-30..-40 km everywhere near KSC and only reached 0 about 650 km past
+it (`long=+1411 cross=-650146` at glide entry).  The solve aimed there
+and flew for range (30 deg bank, a climb 49.5 -> 50.9 km).  **Bug 2 below
+is the cause; bug 1 would not have refused that pass**, but is the same
+blindness for passes that miss KSC.  Both invisible on the farm's
 near-equatorial saves:
 
 1. The deorbit decision was along-track only (`forward_arc` projects the

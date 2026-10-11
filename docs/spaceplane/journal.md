@@ -2399,11 +2399,18 @@ Unflown: the user is testing it live.  Defaults fingerprint `bc9ac544`.
 **LOG9599**, the user's live flight on the new defaults: the planned
 deorbit worked mechanically (window 855 s ahead, warp_to, surface SAS
 0.1 deg, 89 m/s) and the vehicle overflew KSC at Mach 6.7, entering the
-glide with `long=+1411 cross=-650146`.  Two causes, both along-track
-blindness: (1) nothing in the deorbit decision measured cross-track --
-`forward_arc` projects the gate into the orbit plane, so any pass is
-"reachable"; (2) the glide nulls `long` on the runway heading, and an
-arrival crossing the runway at an angle reads its overshoot as `cross`.
+glide with `long=+1411 cross=-650146`.  **The pass was good** (closest
+approach rwy=40365 ral=-40319: on the extended centreline, 40 km out, at
+47 km and Mach 6.7); the orbit was near-polar, so the track crossed the
+runway at ~86 deg and the runway-frame `long` sat at -30..-40 km all
+round KSC, reaching 0 only ~650 km down track.  The glide solved for
+that point and flew for range (30 deg bank, climbing 49.5 -> 50.9 km).
+Cause: (2) below.  (1) is the same blindness at the deorbit, which this
+pass happened not to need: (1) nothing in the deorbit decision measured
+cross-track -- `forward_arc` projects the gate into the orbit plane, so
+any pass is "reachable"; (2) the glide nulls `long` on the runway
+heading, and an arrival crossing the runway at an angle reads its
+overshoot as `cross`.
 Reproduced in kspSim with a new orbit override
 (`qs_shuttle2@pe=160,inc=30,lan=40`: splashed 210 km off, LOG9600).
 
