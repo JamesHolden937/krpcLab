@@ -15,7 +15,6 @@ safe, and it is boosterland's "Aim, then stop" one phase earlier: a solve that
 runs all the way to the tarmac is solving a manoeuvre it has no model of.
 """
 import math
-from dataclasses import replace
 
 from common import vec
 from . import airframe, trajectory
@@ -859,9 +858,28 @@ def alpha_for_speed(env, cfg, speed, sink, height, mass, gravity, target,
     return alpha
 
 
+def north_side(env, end, r):
+    """+1 when the runway's ``across`` axis points north at ``r``, else -1.
+
+    Off the body's pole (``body.reference_frame``'s +y), not off the sign
+    convention of ``across``, so it holds on either runway end and in either
+    frame handedness.  The space center lies south of the runway: every
+    divert goes north (``ABORT_NORTH``).
+    """
+    up = vec.unit(r)
+    along = env.runway.horizontal(end, end["along"])
+    across = vec.unit(vec.cross(up, along))
+    north = vec.project_out((0.0, 1.0, 0.0), up)
+    return 1.0 if vec.dot(across, north) >= 0.0 else -1.0
+
+
 def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
-             accel=None, roll_lag_s=None, ld_factor=1.0, scurve_ok=True):
+             accel=None, roll_lag_s=None, ld_factor=1.0, scurve_ok=True,
+             divert=0.0):
     """Geometric final: hold the speed, track the centreline, spend the excess.
+
+    ``divert`` (m, signed like ``across``) moves the line tracked off the
+    centreline: ``ABORT_NORTH`` sets it once the runway is out of reach.
 
     ``scurve_ok`` False holds the S-turn back (``BRAKES_BEFORE_WEAVE``: the
     brakes are not yet at their stops).
@@ -920,7 +938,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
 
     offset = vec.sub(vec.scale(vec.unit(r), vec.norm(end["threshold"])), aim)
     distance = -vec.dot(offset, along)          # positive: still short of aim
-    cross = vec.dot(offset, across)
+    cross = vec.dot(offset, across) - float(divert or 0.0)
 
     track = vec.project_out(v, up)
     heading_error = 0.0
@@ -1142,13 +1160,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     in_flare *= vec.clamp(
         float(getattr(cfg, "APPROACH_CAPTURE_FLARE_SHARE", 1.0)), 0.0, 1.0)
     cross_time = to_flare + in_flare
-    # ``APPROACH_CAPTURE_TAU_SHARE``: close as an exponential whose time
-    # constant is this share of the time left, rather than at the constant
-    # rate that zeroes the offset exactly at the wheels (1.0).  At 1.0 the
-    # flare inherits the whole closing rate: 34 of 113 flights entered it
-    # 100-200 m off and 5 of those stopped off the strip (2026-10-09).
-    timely = abs(cross) / max(1.0, cross_time * vec.clamp(
-        float(getattr(cfg, "APPROACH_CAPTURE_TAU_SHARE", 1.0)), 0.05, 1.0))
+    timely = abs(cross) / max(1.0, cross_time)
     wanted_rate = -math.copysign(min(stoppable, timely, speed), cross)
     lean_side = None
     if scurve_deg > 0.0:
@@ -1223,6 +1235,11 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     command.cross_rate = cross_rate
     command.cross_time = cross_time
     command.excess = excess
+    # Height over the best glide to the *threshold* (the tarmac's start),
+    # not the aim: below zero the runway is out of reach (``ABORT_NORTH``).
+    to_threshold = max(0.0, distance - airframe.touchdown_aim(env, cfg)
+                       + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0)))
+    command.threshold_excess = height - to_threshold / max(0.1, best_ld)
     command.scurve_deg = scurve_deg
     # **The speed the approach is trying to hold, published.**  Anything that
     # adds drag has to know it: a glider that ends up below this can only get
@@ -2423,7 +2440,6 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     # believing a command the airframe cannot hold makes the long end of that
     # span too long.  Measured: the centred window landed 19.7 km short with
     # the corners optimistic, on a span only 47 km wide.
-    honest = replace(cfg, ALPHA_TRACKING_ON=True) if replace else cfg
     corners = []
     # **Which diagonal of the command box is the real one.**  See
     # ``DEORBIT_WINDOW_CORNERS_FIXED``: range falls with alpha over the whole
@@ -2433,7 +2449,8 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     box = ((cfg.SOLVE_ALPHA_MIN_DEG, cfg.BANK_MAX_DEG),
            (cfg.ALPHA_MAX_DEG, cfg.SOLVE_BANK_MIN_DEG))
     for index, (alpha, bank) in enumerate(box):
-        steer = Steer(alpha=alpha, bank=bank, cfg=honest, mass=mass)
+        steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                      tracked=True)
         prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                         target_radius=vec.norm(gate))
         if not prediction.reached or prediction.skipped:

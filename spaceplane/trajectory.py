@@ -132,6 +132,9 @@ class Steer:
     mass: float = 0.0
     reversing: bool = True      # predict the mean of a reversing entry
     holdable: object = None     # the learned alpha ceiling, if any
+    # Fly ``ALPHA_TRACKING`` (``tracked_alpha``): only the deorbit window's
+    # two corners, which nothing solves against.
+    tracked: bool = False
     # **Where the hot entry stops making drag and starts making lift**, as an
     # airspeed.  ``ENTRY_MAX_DRAG`` flies the vehicle broadside while it is
     # faster than this and hands the angle of attack back to the range solve
@@ -623,7 +626,7 @@ def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     return alpha if limit is None else min(alpha, limit)
 
 
-def tracked_alpha(cfg, alpha, q):
+def tracked_alpha(cfg, alpha, q, tracked=False):
     """The angle of attack the vehicle will hold, given what it was asked.
 
     Measured, not assumed: see ``Config.ALPHA_TRACKING``.  In thin air this
@@ -633,8 +636,7 @@ def tracked_alpha(cfg, alpha, q):
     of a trajectory the vehicle does not fly, which is the error this project
     has now made in five places.
     """
-    if not getattr(cfg, "ALPHA_TRACKING_ON", False) \
-            and not getattr(cfg, "_tracking_forced", False):
+    if not tracked:
         return alpha
     table = getattr(cfg, "ALPHA_TRACKING", ())
     if not table or q <= 0.0:
@@ -684,7 +686,8 @@ def acceleration(env, r, v, mass, steer):
                                        getattr(env, "holdable", None)
                                        or getattr(steer, "holdable", None),
                                        env, speed / env.speed_of_sound(altitude))
-                alpha = tracked_alpha(steer.cfg, alpha, q)
+                alpha = tracked_alpha(steer.cfg, alpha, q,
+                                      getattr(steer, "tracked", False))
                 # ``GLIDE_TAEM_ALPHA``: the alpha the vehicle is flying,
                 # set by the glide each tick; ``None`` everywhere else.
                 flown = getattr(env, "taem_alpha_cap", None)
