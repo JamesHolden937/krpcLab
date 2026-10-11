@@ -498,6 +498,7 @@ class Autopilot:
         self.deorbit_burned = 0.0
         self.deorbit_modelled = 0.0   # the open-loop estimate, log only
         self.deorbit_model_ut = None  # its own clock; see fly_deorbit_burn
+        self.deorbit_model_accel = 0.0  # the acceleration that interval began at
         self.deorbit_speed_prev = None
         self.deorbit_ticks = 0
         self.deorbit_done = False   # see fly_deorbit_burn
@@ -3089,11 +3090,18 @@ class Autopilot:
         # A number kept "for the log only" is still read, and still
         # believed.  Its own clock, so the taper's horizon below -- which
         # deliberately measures from the last *burning* tick -- is untouched.
+        #
+        # **At the acceleration the interval began with**, not the one read
+        # at its end: at commit the engine is unlit (``max_accel`` 0) and the
+        # limiter lands a tick later, so the end-of-interval figure billed
+        # the first second of the burn at full, unlimited thrust and read
+        # 84-144 m/s against 26-64 delivered (LOG9520-9527).
         if self.deorbit_model_ut is not None:
             self.deorbit_modelled += (
-                self.throttle * max(0.1, snap.max_accel)
+                self.throttle * self.deorbit_model_accel
                 * max(0.0, snap.ut - self.deorbit_model_ut))
         self.deorbit_model_ut = snap.ut
+        self.deorbit_model_accel = max(0.0, snap.max_accel)
         # **On the first tick the engine can answer, not at commit.**  At
         # commit the engine is often not yet lit, ``max_accel`` reads zero,
         # and the first version of this returned silently -- the whole
@@ -3101,7 +3109,9 @@ class Autopilot:
         if getattr(self, "_thrust_limit_pending", False) \
                 and snap.max_accel > 0.0:
             self._thrust_limit_pending = False
-            self.limit_burn_thrust(snap, self.deorbit_dv)
+            limited = self.limit_burn_thrust(snap, self.deorbit_dv)
+            if limited is not None:
+                self.deorbit_model_accel = limited
         # Every tick, before the alignment test can return early, so the
         # floor rule below can charge one tick rather than the dead time.
         self._deorbit_prev_tick_ut = self._deorbit_tick_ut
@@ -3842,7 +3852,8 @@ class Autopilot:
         0.60 -- flown, arrival unchanged.  ``available_thrust`` honours the limiter, so
         the taper's own ``max_accel`` follows without being told.
 
-        Off (0) by default; restored at shutdown.
+        Off (0) by default; restored at shutdown.  Returns the limited
+        acceleration, or ``None`` when no limit was set.
         """
         want = float(getattr(self.cfg, "DEORBIT_MIN_BURN_S", 0.0) or 0.0)
         if want <= 0.0 or dv is None or dv <= 0.0:
@@ -3868,6 +3879,7 @@ class Autopilot:
                            % (limit, len(self._thrust_limits), accel,
                               accel * limit, dv, dv / (accel * limit),
                               dv / accel))
+        return accel * limit
 
     def restore_thrust_limits(self):
         for engine, limit in getattr(self, "_thrust_limits", None) or []:
