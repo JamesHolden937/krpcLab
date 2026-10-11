@@ -1378,6 +1378,16 @@ class Config:
     # 0.0 (finish at the door) enters the flare on the centreline and drifts
     # 60-80 m during it.  ``APPROACH_CAPTURE_BY_FLARE`` is the hard 0.
     APPROACH_CAPTURE_FLARE_SHARE: float = 1.0
+    # **Every divert goes north** (the user, 2026-10-10): the space center
+    # lies south of the runway.  When the runway is out of reach the vehicle
+    # lands ``ABORT_NORTH_OFFSET_M`` north of the centreline instead of on
+    # its extension: on final once the height over best glide to the
+    # threshold falls below ``-ABORT_SHORT_M``, on the rollout once the
+    # stopping distance at the deceleration being achieved runs past the far
+    # end.  Latched; ``guidance.north_side`` finds north off the pole.
+    ABORT_NORTH: bool = False
+    ABORT_NORTH_OFFSET_M: float = 150.0
+    ABORT_SHORT_M: float = 30.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
     GEAR_ALT_M: float = 800.0

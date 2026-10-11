@@ -532,6 +532,8 @@ class Autopilot:
         self.flare_since = None
         self.gear_down = False
         self.touchdown_ut = None
+        self.divert = 0.0           # ``ABORT_NORTH``: metres along ``across``
+        self._rollout_decel = None  # (speed, ut, smoothed decel)
         self.touchdown_speed = None
         self.last_miss = (0.0, 0.0)
         self.stop_distance = None
@@ -5083,8 +5085,14 @@ class Autopilot:
             roll_lag_s=self.roll_lag_s(),
             ld_factor=(self.approach_split_factor(self.split_angle)
                        if split_brake else 1.0),
-            scurve_ok=self.brakes_saturated())
+            scurve_ok=self.brakes_saturated(),
+            divert=self.divert)
         self.command = command
+        short = getattr(command, "threshold_excess", None)
+        if (self.cfg.ABORT_NORTH and not self.divert and short is not None
+                and short < -float(self.cfg.ABORT_SHORT_M)):
+            self.divert_north(snap, "short of the threshold by %.0f m of "
+                                    "height at h=%.0f" % (-short, height))
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
         trigger = guidance.flare_door(self.cfg, sink, vec.norm(snap.velocity),
                                       self.env)
@@ -5211,7 +5219,8 @@ class Autopilot:
                                         snap.position, snap.velocity,
                                         snap.mass,
                                         self.surface_gravity, height,
-                                        roll_lag_s=self.roll_lag_s())
+                                        roll_lag_s=self.roll_lag_s(),
+                                        divert=self.divert)
             bank = vec.clamp(lateral.bank, -limit, limit)
         self.steer = Steer(alpha=alpha, bank=bank)
         # **Below the levelling height the reference is the runway, not the
@@ -5315,6 +5324,19 @@ class Autopilot:
                          self.end["threshold"])
         cross = vec.dot(offset, across)
         self.rollout_cross = cross
+        if self.cfg.ABORT_NORTH and not self.divert:
+            # The stop at the deceleration actually achieved, against the
+            # tarmac left: past the far end, divert north.
+            down = vec.dot(offset, along)
+            decel = self.rollout_decel(snap.ut, speed)
+            if decel is not None and speed > 5.0:
+                stop = speed * speed / (2.0 * max(0.2, decel))
+                left = float(self.cfg.RUNWAY_LENGTH_M) - down
+                if stop > left:
+                    self.divert_north(snap, "overrun: stopping in %.0f m "
+                                            "with %.0f m of tarmac left at "
+                                            "%.0f m/s" % (stop, left, speed))
+        cross -= self.divert
         # Full deflection only once the wheels are slow: see
         # ``Config.ROLLOUT_STEER_FULL_M_S``.
         taper = min(1.0, (self.cfg.ROLLOUT_STEER_FULL_M_S
@@ -5355,9 +5377,33 @@ class Autopilot:
             self.enter(STOPPED, snap.ut, "stopped %.0f m along the runway, "
                                         "%+.1f m off the centreline, "
                                         "%.1f s from %.1f m/s (%.2f m/s^2)"
-                       % (self.stop_distance, cross, rolled,
+                       % (self.stop_distance, self.rollout_cross, rolled,
                           self.touchdown_speed or 0.0,
                           (self.touchdown_speed or 0.0) / rolled))
+
+    def divert_north(self, snap, why):
+        """``ABORT_NORTH``: latch the tracked line north of the centreline."""
+        self.divert = (guidance.north_side(self.env, self.end, snap.position)
+                       * float(self.cfg.ABORT_NORTH_OFFSET_M))
+        self.logbook.event(snap.ut, "divert north %.0f m (across %+.0f): %s"
+                           % (self.cfg.ABORT_NORTH_OFFSET_M, self.divert, why))
+
+    def rollout_decel(self, ut, speed):
+        """The rollout's deceleration, m/s^2, smoothed over ~1 s of game
+        time; ``None`` until two ticks have been seen."""
+        prev = self._rollout_decel
+        if prev is None:
+            self._rollout_decel = (speed, ut, None)
+            return None
+        last_speed, last_ut, smooth = prev
+        dt = ut - last_ut
+        if dt <= 1e-3:
+            return smooth
+        raw = (last_speed - speed) / dt
+        smooth = raw if smooth is None else smooth + (raw - smooth) * min(
+            1.0, dt)
+        self._rollout_decel = (speed, ut, smooth)
+        return smooth
 
     def log_holdable(self, ut):
         """What this flight learned about the airframe, once, at the end.

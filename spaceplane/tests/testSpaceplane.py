@@ -5353,3 +5353,42 @@ class TestTheTerminalGlideSolvesOnEntryEnergy(unittest.TestCase):
         p = self.predicted(12000.0, 150.0, False, 0.0)
         p.reached = False
         self.assertIsNone(guidance.taem_miss(self.env, self.cfg, p, 13000.0))
+
+
+class TestDivertsGoNorth(unittest.TestCase):
+    """``ABORT_NORTH``: the space center is south of the runway, so the
+    divert's sign comes off the pole, whichever end is landed on."""
+
+    def setUp(self):
+        from common import vec as v
+        radius = 600000.0
+
+        def at(lon_deg):
+            lon = math.radians(lon_deg)
+            return (radius * math.cos(lon), 0.0, radius * math.sin(lon))
+
+        west, east = at(-74.72), at(-74.50)
+        along = v.unit(v.sub(east, west))
+
+        class Runway:
+            def horizontal(self, end, direction):
+                return v.unit(v.project_out(direction, v.unit(end["threshold"])))
+
+        self.env = types.SimpleNamespace(runway=Runway())
+        self.e09 = {"threshold": west, "along": along}
+        self.e27 = {"threshold": east, "along": v.scale(along, -1.0)}
+        self.r = at(-74.6)
+        self.v = v
+
+    def north_of(self, end):
+        v = self.v
+        up = v.unit(self.r)
+        across = v.unit(v.cross(up, self.env.runway.horizontal(end, end["along"])))
+        shift = v.scale(across, guidance.north_side(self.env, end, self.r))
+        return shift[1]
+
+    def test_both_ends_divert_toward_the_pole(self):
+        self.assertGreater(self.north_of(self.e09), 0.9)
+        self.assertGreater(self.north_of(self.e27), 0.9)
+        self.assertEqual(guidance.north_side(self.env, self.e09, self.r),
+                         -guidance.north_side(self.env, self.e27, self.r))
