@@ -5457,14 +5457,26 @@ class Autopilot:
         on = (abs(down) <= 0.5 * self.cfg.RUNWAY_LENGTH_M
               and abs(side) <= 0.5 * self.cfg.RUNWAY_WIDTH_M)
         whole = parts >= 0.9 * (self.parts_at_start or parts)
+        # **North or south of the centreline, in KSP's own latitude** -- the
+        # space center is south of the runway, so the side matters, and
+        # ``across`` flips sign between the two ends.
+        north = ""
+        try:
+            lat = self.vessel.flight(self.frame).latitude
+            mid = 0.5 * (self.cfg.RUNWAY_09_LAT + self.cfg.RUNWAY_27_LAT)
+            metres = math.radians(lat - mid) * self.env.equatorial_radius
+            north = ", %.0f m %s of the runway line" % (
+                abs(metres), "north" if metres >= 0.0 else "south")
+        except Exception:                               # noqa: BLE001
+            pass
         self.logbook.event(snap.ut,
                            "DOWN: %s -- %.0f m from the runway midpoint "
-                           "(along %+.0f, across %+.0f), %s, "
+                           "(along %+.0f, across %+.0f)%s, %s, "
                            "touchdown %.1f m/s, %d of %s parts"
                            % ("ON THE RUNWAY" if on and whole else
                               "on the runway but broken up" if on else
                               "off the runway",
-                              distance, down, side, snap.situation,
+                              distance, down, side, north, snap.situation,
                               self.touchdown_speed or 0.0,
                               parts, self.parts_at_start or "?"))
         self.finish("landed")
