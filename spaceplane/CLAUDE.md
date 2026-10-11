@@ -44,6 +44,9 @@ it on pooled batches; at 24 an arm read the tails as well as the count.
 Each remaining miss is its own failure mode (cone out of energy, glide
 arriving high, high orbit long) -- remove them one by one.  Above ~97%
 the misses are mostly the farm's own faults, not the autopilot.
+**Every divert goes north**: the space center lies south of the runway, so a
+flight that cannot make or stop on the runway lands north of it
+(`ABORT_NORTH`); a miss to the south counts as a loss.
 
 ## Where it stands (2026-10-10, fingerprint `a4b58a35`)
 
