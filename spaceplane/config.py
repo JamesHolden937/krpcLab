@@ -248,6 +248,19 @@ class Config:
     # node-1011's 16 i90 flights (cone entries 167-313 m/s); unmeasured on
     # a fast entry, which the farm has not produced.
     HAC_LOAD_MAX: float = 3.0
+    # **A cone short of height flies the alpha that stretches it** (node-
+    # 1011: every short landing on the inclined orbits left the cone 0.4-3
+    # km low after flying it at L/D 1.94-2.25 and alpha 8-9, where the good
+    # ones flew 2.25-2.75 at ~7; the flown polar's L/D rises as alpha falls,
+    # 2.05 at 13 deg to 3.13 at 5).  When even the tightest circle is longer
+    # than the path the height pays for (``available``), the cone needs
+    # ``total / available`` times the ratio it is getting: the flown polar
+    # (``logs/conepolar/<craft>.json``, ``tools/conepolar.py``) gives the
+    # alpha below the lift peak that delivers it, and the alpha command is
+    # capped there (at the best bin when even that is short).  No file, no
+    # change.  ``HAC_SHORT_BEST_GLIDE`` (table best-L/D alpha, all or
+    # nothing) was refuted on the sim only, whose subsonic lift is gap 8.
+    HAC_SHORT_POLAR: bool = False
     # Roll out when there is this little turn left, or when the height is
     # gone -- whichever comes first.  The second is not a fallback, it is the
     # floor the cone is flown above: below the low gate's altitude there is

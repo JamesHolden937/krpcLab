@@ -2085,8 +2085,19 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
                         + airframe.touchdown_aim(env, cfg))
                        / max(0.1, airframe.approach_ld(env, cfg, height,
                                                        mass, gravity)))
+    short_alpha = None
+    polar = getattr(env, "flown_polar", None)
+    # Only once the tightest circle is too long (``short``): until then the
+    # radius carries the energy error, as the cone is built to.
+    if (getattr(cfg, "HAC_SHORT_POLAR", False) and polar and short
+            and 0.0 < available < total):
+        short_alpha = airframe.polar_short_alpha(polar, alpha,
+                                                 total / available)
+        if short_alpha is not None and short_alpha < alpha:
+            alpha = max(cfg.ALPHA_MIN_DEG, short_alpha)
     command = HacCommand(alpha, bank, math.degrees(turn), distance, radius,
                          laps, side, height, needed, speed, sink)
+    command.short_alpha = short_alpha
     command.path = total
     command.short = short
     command.weave_deg = weave_deg

@@ -5158,6 +5158,29 @@ class TestTheConeLoadCap(unittest.TestCase):
         self.assertLess(cap, Config().ALPHA_MAX_DEG)
 
 
+class TestTheShortConePolar(unittest.TestCase):
+    """``airframe.polar_short_alpha`` walks down the flown polar's
+    low-alpha branch to the ratio a short cone needs."""
+
+    POLAR = {"bins": [[1.0, 69.0, 17.5], [5.0, 95.0, 30.6],
+                      [9.0, 129.0, 48.0], [13.0, 139.0, 70.6],
+                      [17.0, 94.0, 77.5]]}
+
+    def test_no_shortfall_keeps_the_alpha(self):
+        self.assertAlmostEqual(
+            airframe.polar_short_alpha(self.POLAR, 9.0, 1.0), 9.0)
+
+    def test_a_shortfall_lowers_it_and_saturates_at_the_best_bin(self):
+        a = airframe.polar_short_alpha(self.POLAR, 9.0, 1.1)
+        self.assertLess(a, 9.0)
+        self.assertGreater(a, 1.0)
+        self.assertEqual(airframe.polar_short_alpha(self.POLAR, 9.0, 3.0),
+                         1.0)
+
+    def test_no_polar_is_no_answer(self):
+        self.assertIsNone(airframe.polar_short_alpha(None, 9.0, 1.2))
+
+
 class TestTheWheelWatch(unittest.TestCase):
     """``WHEEL_WATCH_S`` logs on a change from gear-down, re-reading the
     list, and stops a span after contact."""
