@@ -5508,6 +5508,30 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         self.assertEqual(guidance.deorbit_dv_floor(ap.env, r, v, 600000.0),
                          0.0)
 
+    def test_the_node_carries_the_surface_burn(self):
+        """``node_components`` rebuilds surface retrograde x dv from the
+        node's inertial axes; on an inclined orbit it is not pure orbital
+        retrograde."""
+        ap = self.pilot()
+        r0 = R_KERBIN + 160000.0
+        v0 = math.sqrt(MU / r0)
+        inc = math.radians(60.0)
+        v_in = (0.0, v0 * math.sin(inc), v0 * math.cos(inc))
+        r = (r0, 0.0, 0.0)
+        v = vec.sub(v_in, vec.cross(ap.env.omega, r))
+        burn = vec.scale(vec.unit(v), -30.0)
+        pro, nrm, rad = guidance.node_components(ap.env, r, v, burn)
+        self.assertAlmostEqual(math.sqrt(pro ** 2 + nrm ** 2 + rad ** 2),
+                               30.0, delta=1e-6)
+        self.assertLess(pro, -29.0)
+        self.assertGreater(abs(nrm), 0.5)        # the planet's turn, across
+        p = vec.unit(v_in)
+        q = vec.unit(vec.project_out(r, p))
+        n = vec.unit(vec.cross(r, v_in))
+        rebuilt = vec.add(vec.add(vec.scale(p, pro), vec.scale(n, nrm)),
+                          vec.scale(q, rad))
+        self.assertLess(vec.norm(vec.sub(rebuilt, burn)), 1e-6)
+
     def test_a_pass_abeam_of_the_runway_is_refused(self):
         """LOG9599: along-track solved, 650 km abeam, flown past."""
         cfg = Config()

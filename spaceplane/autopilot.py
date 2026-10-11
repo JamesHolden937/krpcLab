@@ -519,6 +519,7 @@ class Autopilot:
         self.deorbit_ticks = 0
         self.deorbit_done = False   # see fly_deorbit_burn
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
+        self.node_normal_sign = None    # DEORBIT_SAS_NODE, from a read-back
         self.sas_node = None
         self.sas_since = None
         self.sas_aligned_prev = False
@@ -3317,7 +3318,12 @@ class Autopilot:
         self.sas_aligned_prev = False
         set_autopilot_engaged(self.autopilot, False)
         try:
-            self.sas_node = self.control.add_node(node_ut, prograde=-float(dv))
+            if self.cfg.DEORBIT_SAS_NODE:
+                self.sas_node = self.control.add_node(node_ut)
+                self.place_burn_node(snap, dv, node_ut)
+            else:
+                self.sas_node = self.control.add_node(node_ut,
+                                                      prograde=-float(dv))
         except Exception as exc:                            # noqa: BLE001
             self.sas_node = None
             self.logbook.event(ut, "maneuver node refused (%r)" % (exc,))
@@ -3327,7 +3333,7 @@ class Autopilot:
             pass
         modes = self.conn.space_center.SASMode
         mode = None
-        if self.cfg.DEORBIT_SAS_SURFACE:
+        if self.cfg.DEORBIT_SAS_SURFACE and not self.cfg.DEORBIT_SAS_NODE:
             try:
                 was = self.control.speed_mode
                 self.control.speed_mode = self.conn.space_center.SpeedMode.surface
@@ -3353,6 +3359,48 @@ class Autopilot:
                            % (mode, dv, node_ut,
                               vec.angle_between(snap.nose, retro)))
 
+    def place_burn_node(self, snap, dv, node_ut):
+        """Set ``sas_node`` to surface retrograde x ``dv`` at ``node_ut``.
+
+        ``DEORBIT_SAS_NODE``.  The state at the node comes from the vacuum
+        propagator; the components are dot products, so they hold in
+        whatever orientation the frame has by then.  The first placement
+        reads the node's ``burn_vector`` back to settle the normal's sign
+        and logs how far it lies from the burn the search solved.
+        """
+        r, v = snap.position, snap.velocity
+        if node_ut - snap.ut > 5.0:
+            r, v = trajectory.coast(self.env, r, v, snap.mass,
+                                    node_ut - snap.ut,
+                                    self.cfg.DEORBIT_PLAN_DT_S)
+        burn = vec.scale(vec.unit(v), -float(dv))
+        sign = self.node_normal_sign
+        pro, nrm, rad = guidance.node_components(self.env, r, v, burn,
+                                                 sign or 1.0)
+        node = self.sas_node
+        node.prograde, node.normal, node.radial = pro, nrm, rad
+        if sign is not None:
+            return
+        # Read back once, against the burn propagated to the node: the body
+        # frame has turned only by the planet's rotation over
+        # the wait (~1 deg a minute), far less than a wrong normal's sign.
+        got = node.burn_vector(self.frame)
+        self.node_normal_sign = 1.0
+        if abs(nrm) > 0.02 * abs(dv):
+            node.normal = -nrm
+            flipped = node.burn_vector(self.frame)
+            if vec.angle_between(flipped, burn) < vec.angle_between(got, burn):
+                self.node_normal_sign = -1.0
+                got = flipped
+            else:
+                node.normal = nrm
+        self.logbook.event(snap.ut, "burn node: prograde %+.1f normal %+.1f "
+                                    "radial %+.1f m/s (normal sign %+.0f), "
+                                    "%.2f deg from the solved burn"
+                           % (pro, nrm * self.node_normal_sign, rad,
+                              self.node_normal_sign,
+                              vec.angle_between(got, burn)))
+
     def sas_settled(self, snap, dv):
         """Hold the burn attitude with stock SAS; True once settled.
 
@@ -3376,8 +3424,12 @@ class Autopilot:
             self.sas_engage(snap, dv, ut + 2.0)
         elif self.sas_node is not None:
             try:
-                self.sas_node.ut = ut + 2.0
-                self.sas_node.prograde = -float(dv)
+                if self.cfg.DEORBIT_SAS_NODE:
+                    self.sas_node.ut = ut + 2.0
+                    self.place_burn_node(snap, dv, ut + 2.0)
+                else:
+                    self.sas_node.ut = ut + 2.0
+                    self.sas_node.prograde = -float(dv)
             except Exception:                               # noqa: BLE001
                 pass
         if self.sas_trigger_ut is None:
