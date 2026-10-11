@@ -1899,7 +1899,9 @@ class Config:
     # what chooses the entry's length -- and from a 500 km orbit the coast
     # alone is most of it.  The arc from the interface to the gate is the
     # same quantity with the coast taken out.
-    DEORBIT_ENTRY_ARC_MAX_M: float = 1.0e9
+    # 860 km: where the 87 km orbit committed under the burn-referenced
+    # limit (854 km from the interface, sim LOG9602, same window as before).
+    DEORBIT_ENTRY_ARC_MAX_M: float = 860000.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
     DEORBIT_MAX_BURN_S: float = 60.0
@@ -1908,8 +1910,11 @@ class Config:
     # outside a band around that the answer is known in advance and the
     # sixteen propagations a search costs are pure waste -- and they are being
     # spent every couple of seconds against a game that wants the CPU.
+    # Since ``DEORBIT_ENTRY_ARC_MAX_M`` the maximum is a screen only: the
+    # entry's length is limited from the interface, and from 500 km the
+    # coast alone is ~1900 km of arc.
     DEORBIT_RANGE_MIN_M: float = 400000.0
-    DEORBIT_RANGE_MAX_M: float = 2300000.0
+    DEORBIT_RANGE_MAX_M: float = 3600000.0
     # Waiting for a favourable pass is minutes of game time in which nothing
     # is commanded and nothing can go wrong -- the vehicle is in vacuum, on
     # rails, with the engine off.  So warp through it.  Warp is dropped the
