@@ -1434,6 +1434,17 @@ class Config:
     # the rollout currently stops, and it has to be re-cut if that moves.
     ROLLOUT_STOP_RESERVE_M: float = 300.0
     ROLLOUT_SPOILER_DEG: float = 25.0
+    # **The ground spoiler waits for the nose wheel.**  Deployed at main-gear
+    # contact its set pitches the nose up beyond full nose-down elevon at
+    # 65-76 m/s: alpha 2-4 -> 11-15 deg in one tick and the vehicle flies
+    # again, 17-22 m up, and lands the second time at 10-15 m/s of sink
+    # (taemfix-1010: LOG9567, 9578, 9580, three of the five broken
+    # landings).  The bounce scales with airspeed, not sink.  With this on
+    # the spoiler deploys once the nose wheel reports grounded (the nose
+    # gear then holds the moment), or ``GROUND_SPOILER_NOSE_TIMEOUT_S``
+    # after main contact if it never says.
+    GROUND_SPOILER_ON_NOSE: bool = False
+    GROUND_SPOILER_NOSE_TIMEOUT_S: float = 4.0
     # **The attitude to hold on the ground, which ROLLOUT was not holding at
     # all.**  ``run_rollout`` commanded brakes and nosewheel and never called
     # ``aim``, so kRPC's autopilot went on holding whatever the flare had

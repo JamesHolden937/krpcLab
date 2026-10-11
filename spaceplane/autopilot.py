@@ -1823,6 +1823,8 @@ class Autopilot:
         grounded = self.main_wheels_grounded()
         if not (landed or grounded):
             return
+        if self.cfg.GROUND_SPOILER_ON_NOSE and not self.nose_down(snap):
+            return
         self._ground_spoiler_done = True
         brake = None or getattr(
             self, "flap_brake", None)
@@ -1860,7 +1862,10 @@ class Autopilot:
                      "deploy angle read back %s"
             % (getattr(brake, "kind", "spoiler"), "out" if ok else "FAILED",
                vec.norm(snap.velocity),
-               "main wheels grounded" if grounded else "rollout",
+               ("nose down %.1f s after main contact"
+                % (snap.ut - self._spoiler_wait_since)
+                if self.cfg.GROUND_SPOILER_ON_NOSE else
+                "main wheels grounded" if grounded else "rollout"),
                len(brake.surfaces()), "/".join(readback) or "-"))
 
     def release_reaction_wheels(self, ut):
@@ -1957,6 +1962,26 @@ class Autopilot:
         if nose is not None and nose_target > 0.0:
             self.logbook.event(ut, "nose gear: %s: %s" % (
                 nose.part.title, self._set_friction(nose, nose_target)))
+
+    def nose_down(self, snap):
+        """``GROUND_SPOILER_ON_NOSE``: True once the nose wheel reports
+        grounded, or ``GROUND_SPOILER_NOSE_TIMEOUT_S`` after the first main
+        contact this asks about (a wheel that cannot say must not hold the
+        spoiler in for good)."""
+        since = getattr(self, "_spoiler_wait_since", None)
+        if since is None:
+            since = self._spoiler_wait_since = snap.ut
+        if snap.ut - since >= float(self.cfg.GROUND_SPOILER_NOSE_TIMEOUT_S):
+            return True
+        if not hasattr(self, "_nose_wheel_cache"):
+            self._nose_wheel_cache = self._nose_wheel()
+        nose = self._nose_wheel_cache
+        if nose is None:
+            return True
+        try:
+            return bool(nose.grounded)
+        except Exception:                               # noqa: BLE001
+            return True
 
     def _nose_wheel(self):
         """The frontmost wheel, by the rule ``_brake_wheels`` excludes it by."""
