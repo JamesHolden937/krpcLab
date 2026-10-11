@@ -48,7 +48,7 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-10 night, fingerprint `101fc0e0`)
+## Where it stands (2026-10-10 late, fingerprint `bc9ac544`)
 
 **The terminal glide solves on cone-entry energy** (`GLIDE_TAEM_*`,
 promoted 2026-10-10): below Mach 4.5 the glide nulls the predicted energy
@@ -56,6 +56,12 @@ height at the cone's entry against what the cone plans for (~14.1 km),
 with the prediction flying the alpha achieved.  taemfix-1010: **23/24 on
 the runway v 20/24, high orbit 6/6, 0 lost**.  Also default: brakes before
 weaving, the deorbit burn lined up on stock SAS, the azimuth floor.
+
+**The deorbit wait is planned** (2026-10-10 late, unflown): the window is
+found on the propagated orbit, `warp_to` takes the game there, SAS turns to
+*surface* retrograde in the lead (Maneuver mode held 4-5 deg off on an
+inclined orbit and never committed, LOG9598), and the coast `warp_to`s
+its release.
 
 Off, built, unflown on the farm: `ABORT_NORTH` (every divert goes north;
 sim: 8/8 stopped 158-197 m north) and `GROUND_SPOILER_ON_NOSE` (the

@@ -1,83 +1,61 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-10 night (~1800 -> 1955).  History:
-`docs/spaceplane/journal.md`, "Session, 2026-10-10 night".
+Snapshot of 2026-10-10 late (~2230).  History:
+`docs/spaceplane/journal.md`, "Session, 2026-10-10 late".
 
-Defaults fingerprint **`101fc0e0`**.  Flight behaviour = `b9eba0f3`
-(TAEM promoted); `101fc0e0` only adds two off-flags.  Committed and pushed.
-Farm stopped, sleep inhibitor released, no worktrees.  `howItWorks.pdf`
-rewritten (terminal glide).  **The user is flying the defaults live** --
-they stopped the session to play with it.
+Defaults fingerprint **`bc9ac544`** (was `101fc0e0`).  Committed and
+pushed.  Farm stopped (not started this session); sleep inhibitor
+released; no worktrees.  **The user is flying the defaults live and asked
+that no tests be flown** -- this session flew nothing.
 
 ## The headline
 
-**The terminal glide now solves on cone-entry energy, by default.**
-`GLIDE_TAEM_ENERGY` + `GLIDE_TAEM_ALPHA` at `GLIDE_TAEM_MACH` 4.5, with
-last session's two defects fixed: in surplus the alpha search may only
-raise alpha (no ratchet through the flown-alpha cap), and out of reach of
-the entry circle the miss is the shorter of energy and range.
+**The deorbit burn never lit on the user's live flight (LOG9598)**: SAS
+in Maneuver mode held 4.2-5.2 deg off the rotating-frame retrograde (the
+node is built on *orbital* retrograde; their orbit is inclined, 160 km),
+outside the 3 deg commit test.  Fixed, and the wait redesigned as asked
+("warp more aggressive, preplan the maneuver and preorient"), all default
+on and **unflown**:
 
-Farm **taemfix-1010** (24 an arm, four orbits, LOG9536-9583):
+| flag | what |
+|---|---|
+| `DEORBIT_SAS_SURFACE` | navball surface mode + SAS Retrograde (Maneuver is the fallback) |
+| `DEORBIT_ALIGN_STALL_S` 6 | a hold inside 8 deg that stops improving commits |
+| `DEORBIT_PLAN` (+ `_STEP_S` 60, `_RESOLVE_S` 8, `_HORIZON_S` 14000, `_TICK_WALL_S` 1.5, `_LEAD_S` 60, `_GRACE_S` 120, `_DT_S` 10) | scan the future orbit for the window, node there, `warp_to` 60 s before, preorient, live search commits |
+| `COAST_WARP_TO` (+ `_STEP_S`, `_MARGIN_S`, `_MIN_S`, `_HORIZON_S`) | `warp_to` the 72 km release instead of polling index 3 |
 
-| | old defaults | TAEM (now default) |
-|---|---|---|
-| on the runway (\|along\| <= 1.2 km) | 20/24 | **23/24** |
-| high orbit on the runway | 3/6 | **6/6** |
-| lost | 1 (9560, +2.2 km, water) | 0 |
-| cone entry | 12-17.6 km, 210-330 m/s | 12-15 km, 195-275 m/s |
-
-The goal (in spaceplane/CLAUDE.md, the user's): **>= 95% on the runway, 0
-lost, worst miss < 3 km, four orbits, two airframes; every divert north**
-(the space center is south of the runway).
-
-## Built, off, not yet flown on the farm
-
-- **`ABORT_NORTH`** (+ `ABORT_NORTH_OFFSET_M` 150, `ABORT_SHORT_M` 30):
-  on final, once height over best glide to the threshold < -30 m; on the
-  rollout, once the stop at the achieved deceleration passes the far end
-  -> the tracked line moves 150 m north (`guidance.north_side`, off the
-  pole).  kspSim sim-north-1010 (LOG9584-9591): 8/8 diverted, stopped
-  158-197 m north by KSP latitude -- but all sim flights were short, so
-  the **overrun trigger never fired and false triggers are unmeasured**.
-  The farm batch north-1010 was stopped in round 0: nothing measured.
-- **`GROUND_SPOILER_ON_NOSE`** (+ `_NOSE_TIMEOUT_S` 4): the ground spoiler
-  waits for the nose wheel.  3 of taemfix-1010's 5 part-loss landings
-  (9567, 9578, 9580) were a bounce: touchdown 68-76 m/s, alpha 2-4 -> 11-15
-  in the spoiler's tick against full nose-down elevon, 17-22 m up, second
-  contact at 10-15 m/s sink.  Bounce scales with airspeed, not sink.
+Read in a log: `deorbit plan: window at UT ...`, `deorbit plan: warping
+...`, `SAS has the attitude: surface retrograde mode ...`, `SAS
+settled|stalled|timed out after ...`, `coast warp_to: ...`.
 
 ## Next, in order
 
-1. **Farm: defaults v `ABORT_NORTH` v `GROUND_SPOILER_ON_NOSE`**, four
-   orbits, 24 an arm (restart the farm first).  For ABORT_NORTH read the
-   `divert north` events: any on a flight that would have stopped on the
-   runway is a false trigger; the DOWN line's "m north/south of the runway
-   line" says where the misses went.  The overrun trigger may need a
-   forced test (`APPROACH_AIM_SHIFT_M=-1500`, a few flights).  For the
-   spoiler: bounce height (max h in ROLLOUT) against touchdown speed.
-   Promote or delete each.
-2. **The inc glide energy deficit**: one inc flight per 24 lands 8-10 km
-   short in both arms (9577, 9543): 12 km reached 10-12 km before the
-   circle; the TAEM solve saturates at alpha ~20, bank ~0 while the short
-   grows from -1 km (Mach 4) to -10 km (Mach 0.9).  Is the stretch alpha
-   right (best glide transonic), or is the deficit set at the burn?
-3. Two rollouts ran off the edge at 47-57 m/s without bouncing (9542,
-   9545): 28-49 m off the centreline.
-4. `docs/spaceplane/constantsAudit.md` top-down; `AIRBRAKE_CACHE` (never
-   flown) promote or delete.
-5. Glide bank overshoot past 90 deg (roll loop); kspSim shows bank -70
-   commanded, -90 flown.
-6. LOG9375 (old): exited the cone needing 6.6 km more height.
+1. **The user's live result.**  If the plan or the surface-mode SAS
+   misbehaves, the log lines above say where.  Then fly the four farm
+   orbits (24 an arm, defaults v `DEORBIT_PLAN=False`) -- the plan picks
+   the first solvable state, as the live trigger does, so arrivals should
+   not move; check that, and that the farm's speed-up is real.
+2. **Rewrite `docs/spaceplane/howItWorks.pdf`'s DEORBIT and COAST
+   sections** once (1) confirms the behaviour -- it still describes the
+   polled warp and the Maneuver-mode line-up.
+3. Last session's list, unchanged: farm defaults v `ABORT_NORTH` v
+   `GROUND_SPOILER_ON_NOSE` (both still off, built, unmeasured on the
+   farm); the inc glide energy deficit (9577, 9543: 8-10 km short); two
+   low-speed rollouts off the edge (9542, 9545); `constantsAudit.md`;
+   `AIRBRAKE_CACHE` promote or delete; glide bank overshoot past 90 deg;
+   LOG9375.
 
 ## Traps paid this session
 
-- **kspSim lands short of the game now**: with TAEM on, sim flights end
-  1.5-5.7 km short where the farm's stop ~+0.8 km.  Don't judge range in
-  the sim; it showed the ratchet gone and the divert's direction.
-- kspSim still needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
-- `pkill -f "<pattern>"` with the pattern in the same command line kills
-  the calling shell (exit 144).  Kill by PID from `ps -eo pid,args | awk
-  '/[p]attern/'`.
-- multirot's arm numbers rotate per cycle: group by the log's own config
-  line (`armsum.py --by`), never by the `armN` label.
+- **The farm's saves are all near-equatorial**, so anything that confuses
+  orbital and surface frames passes there and fails on an inclined orbit.
+  A save on an inclined orbit (~45 deg) belongs in `saves/`.
+- `warp_to` is blocking: the panel does not answer during it (Ctrl-C does).
+
+## Traps from before (still true)
+
+- kspSim lands short of the game with TAEM on; don't judge range there.
+- kspSim needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
+- `pkill -f "<pattern>"` in the same command line kills the calling shell.
+- multirot's arm numbers rotate per cycle: group by the log's config line.
 - Swap ends a 4-cycle multirot at ~21-23 GB; restart before comparing.

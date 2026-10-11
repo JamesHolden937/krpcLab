@@ -2356,3 +2356,40 @@ the table via `Steer.tracked`), `APPROACH_CAPTURE_TAU_SHARE` deleted
 acceleration each interval began with (it read 84-144 m/s v 26-64).
 The goal went into spaceplane/CLAUDE.md: >= 95% on the runway, 0 lost,
 worst miss < 3 km, four orbits, two airframes.
+
+## Session, 2026-10-10 late (live deorbit failure; nothing flown)
+
+**The user's live flight (LOG9598) never lit the deorbit burn.**  Their
+save: shuttle, 41.9 t, a 160 km orbit, inclined (the farm's saves are
+near-equatorial at 77-135 km).  The wait warped at index 2, backed off to
+1 ("warp tick covered 425 km against a 50 km budget"), found a solution
+at UT 105240, and SAS (Maneuver mode) turned from 59 deg to **4.2-5.2 deg
+off and stayed there** -- outside `DEORBIT_COMMIT_ALIGN_DEG` 3, with the
+timeout at 120 s; the user stopped it at 60.  Forcing the engine did
+nothing because every waiting tick commands throttle 0.
+
+Cause: the node, and so Maneuver mode, is built on **orbital** retrograde;
+the search burns along, and the commit test measures against, the
+**rotating frame's** -v.  They differ by Kerbin's ~220 m/s of surface
+rotation resolved across the track: 0.1-0.6 deg on the farm's saves (the
+farm settled at 0.1-0.6 every time, rot-smoke-sas-1010), several degrees
+on an inclined orbit.  An agreement that held on every save we had.
+
+Built, default on (the user asked for all of it; they fly it live):
+- `DEORBIT_SAS_SURFACE`: navball surface speed mode + SAS Retrograde,
+  which holds the rotating frame's -v; Maneuver mode is the fallback.
+- `DEORBIT_ALIGN_STALL_S` 6: a hold within `DEORBIT_ALIGN_DEG` (8) that
+  has stopped improving commits instead of waiting out the timeout.
+- `DEORBIT_PLAN`: on entering DEORBIT, propagate the vacuum orbit
+  (`trajectory.coast`, RK4) and ask `deorbit_solution` of states every
+  60 s up to 14000 s ahead (1.5 s of work a tick), bisect the first hit
+  to 8 s; node placed there; `space_center.warp_to` 60 s before it; turn
+  to the burn attitude in the lead (`preorient`); the live search still
+  commits.  Replans if the window has not shown 120 s after it was due.
+  The learned rails warp remains only as the fallback.  Offline (fake
+  equatorial 160 km orbit) a search is ~0.15 s, so a whole orbit of
+  look-ahead is ~5 s of work.
+- `COAST_WARP_TO`: the coast `warp_to`s the release altitude (72 km)
+  from its own propagation instead of polling index 3.
+
+Unflown: the user is testing it live.  Defaults fingerprint `bc9ac544`.
