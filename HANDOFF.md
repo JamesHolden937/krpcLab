@@ -58,7 +58,19 @@ nominal.
 3. A guard on entering the cone fast: refuse or soften (weave, ceiling
    release, pitch retune) when entering well above the cone's planned
    speed -- LOG9641's tumble path is still open to any fast arrival.
-4. Then the deorbit/glide items from before: the how-it-works PDF's
+4. **SAS on the node, not surface retrograde (the user asked).**  Today
+   the search burns along *surface* retrograde (rotating-frame -v) while
+   the node is placed as pure orbital retrograde (`add_node(prograde=-dv)`,
+   `sas_engage`); on inclined orbits those differ by 4-5 deg, which is why
+   Maneuver mode never committed on LOG9598 and `DEORBIT_SAS_SURFACE` went
+   in.  Fix it at the source: build the node from the solved burn vector
+   (decompose surface -v * dv into prograde/normal/radial at node time) and
+   hold SAS on Maneuver.  One direction for search, node, map view and SAS;
+   the hold is then inertial during the burn instead of following the
+   turning surface velocity.  Check with `DEORBIT_SAS_ALIGN` on a polar
+   sim save (node error < 0.5 deg at commit), then the farm; delete
+   `DEORBIT_SAS_SURFACE` if it wins.
+5. Then the deorbit/glide items from before: the how-it-works PDF's
    DEORBIT section, `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE`, the inc
    glide energy deficit, `constantsAudit.md`.
 
