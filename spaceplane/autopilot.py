@@ -3107,13 +3107,13 @@ class Autopilot:
                     self.cfg, end, floor)
                 if check is not None:
                     self.side_reach = check["reach"]
-        cheap = skip = None
-        if self.cfg.DEORBIT_PLAN_CHEAP:
-            cheap = guidance.deorbit_dv_floor(
-                self.env, snap.position, snap.velocity,
-                float(self.cfg.DRAIN_RESERVE_PERIAPSIS_M)) or None
-            skip = 0.5 * guidance.orbit_period(self.env, snap.position,
-                                               snap.velocity)
+        # A window dearer than a surface periapsis is passed over
+        # (``plan_advance``); 0 or None (escape) turns the test off.
+        cheap = guidance.deorbit_dv_floor(
+            self.env, snap.position, snap.velocity,
+            float(self.cfg.DRAIN_RESERVE_PERIAPSIS_M)) or None
+        skip = 0.5 * guidance.orbit_period(self.env, snap.position,
+                                           snap.velocity)
         self.plan_scan = dict(t=snap.ut, r=snap.position, v=snap.velocity,
                               mass=snap.mass, prev=None, n=0, wall=0.0,
                               until=snap.ut + self.cfg.DEORBIT_PLAN_HORIZON_S,

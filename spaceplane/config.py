@@ -1886,15 +1886,12 @@ class Config:
     DEORBIT_PLAN_GRACE_S: float = 120.0
     # The vacuum propagator's step for the look-ahead (RK4, no air).
     DEORBIT_PLAN_DT_S: float = 10.0
-    # **The first window is not taken if it is dear** (rescue-1011: the
-    # 87 x 500 km orbit burned 244 m/s 68 s ahead and scattered +-17 km
-    # with 6 of 16 lost; at 45 deg 180 m/s, 23 km short every time).  A
-    # window is cheap when its burn costs no more than the one at apoapsis
-    # that puts the periapsis at the surface (``deorbit_dv_floor`` at
-    # ``DRAIN_RESERVE_PERIAPSIS_M``, the burn the reserve is sized on); a
+    # (A plan window is cheap when its burn costs no more than the one at
+    # apoapsis that puts the periapsis at the surface -- ``deorbit_dv_floor``
+    # at ``DRAIN_RESERVE_PERIAPSIS_M``, the burn the reserve is sized on.  A
     # dear one is remembered, the scan skips half an orbit past it, and the
-    # cheapest seen is taken when the horizon runs out.
-    DEORBIT_PLAN_CHEAP: bool = False
+    # cheapest seen is taken when the horizon runs out.  cheap-1011: e500
+    # 12/12 on the runway v 4/12 with 5 lost; e500i45 8/12 v 1/12.)
     # **The runway has to be within the glide's reach sideways as well as
     # along** (``guidance.deorbit_reach``).  Every other test is
     # along-track, so on an inclined orbit the search committed to a pass
