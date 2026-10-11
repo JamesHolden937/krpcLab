@@ -237,6 +237,15 @@ class Config:
     # through Mach 2.5-1.2 the arrivals were on position but 2 km low
     # (rot-offload2-1007).
     GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 3.0  # default 2026-10-09 (was 0)
+    # ``Autopilot._glide_pitch_rescue``: below that Mach, a pitch error past
+    # this band (deg) held for ``_HOLD_S`` of game time engages an integral
+    # on the trim -- ``_FULL_DEG`` of error past the band moves it one unit
+    # per pitch time_to_peak, capped at ``GLIDE_PITCH_OFFLOAD_MAX`` -- held
+    # to the end of the glide.  kRPC left a 16-22 deg error at +0.2 of input
+    # for 100 s on the user's 186 km polar (LOG9641).  0 = off.
+    GLIDE_PITCH_RESCUE_DEG: float = 0.0
+    GLIDE_PITCH_RESCUE_FULL_DEG: float = 10.0
+    GLIDE_PITCH_RESCUE_HOLD_S: float = 8.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # Roll out when there is this little turn left, or when the height is
