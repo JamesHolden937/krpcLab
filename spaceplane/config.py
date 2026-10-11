@@ -1790,6 +1790,11 @@ class Config:
     # behaviour looks different from the write-ups, start here.
     SKIP_ENTER_MARGIN_M: float = 5000.0
     DEORBIT_MAX_TIME_TO_GO_S: float = 1500.0
+    # The window's corners are clocked from the entry interface instead
+    # (``guidance.deorbit_window``): 1500 s from the burn less the ~750 s
+    # coast from an 87 km orbit, so the farm's orbits keep their entries
+    # while a 500 km orbit's 1400 s coast no longer rules every burn out.
+    DEORBIT_MAX_ENTRY_TIME_S: float = 750.0
 
     # -- thermal -----------------------------------------------------------
     # Nothing in this project had ever measured entry heating, which for a
@@ -1863,12 +1868,38 @@ class Config:
     DEORBIT_PLAN: bool = True
     DEORBIT_PLAN_STEP_S: float = 60.0
     DEORBIT_PLAN_RESOLVE_S: float = 8.0
-    DEORBIT_PLAN_HORIZON_S: float = 14000.0
+    # Three of the body's days: on an inclined orbit the ground track
+    # passes within the glide's sideways reach of KSC a few times a day.
+    DEORBIT_PLAN_HORIZON_S: float = 64800.0
     DEORBIT_PLAN_TICK_WALL_S: float = 1.5
     DEORBIT_PLAN_LEAD_S: float = 60.0
     DEORBIT_PLAN_GRACE_S: float = 120.0
     # The vacuum propagator's step for the look-ahead (RK4, no air).
     DEORBIT_PLAN_DT_S: float = 10.0
+    # **The runway has to be within the glide's reach sideways as well as
+    # along** (``guidance.deorbit_reach``).  Every other test is
+    # along-track, so on an inclined orbit the search committed to a pass
+    # 650 km abeam of KSC and flew past it at Mach 6.7 (LOG9599); the farm's
+    # near-equatorial saves pass over the runway every time and could not
+    # show it.  A pass is taken when the gate's offset from the predicted
+    # ground track is at most ``DEORBIT_CROSS_SHARE`` of the sideways reach
+    # of an entry leaning one way the whole way down -- a share, because
+    # the glide also spends its bank on range and reverses on the azimuth
+    # deadband.  Policy, not a fit.
+    DEORBIT_CROSS_SHARE: float = 0.5
+    # The plan scan skips states whose *vacuum* estimate of that offset
+    # (``guidance.offtrack_estimate``) is beyond this many times the last
+    # measured reach plus ``DEORBIT_CROSS_SCREEN_M``: only so a scan days
+    # long costs no entry propagations on passes nowhere near the runway.
+    DEORBIT_CROSS_SCREEN: float = 1.5
+    DEORBIT_CROSS_SCREEN_M: float = 150000.0
+    # **How far the entry may run, measured from the interface rather than
+    # from the burn.**  The burn-referenced ``DEORBIT_RANGE_MAX_M`` was
+    # binding on the farm (LOG9599 committed at 2293 km of 2300) -- it is
+    # what chooses the entry's length -- and from a 500 km orbit the coast
+    # alone is most of it.  The arc from the interface to the gate is the
+    # same quantity with the coast taken out.
+    DEORBIT_ENTRY_ARC_MAX_M: float = 1.0e9
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
     DEORBIT_MAX_BURN_S: float = 60.0
@@ -2039,6 +2070,11 @@ class Config:
     # three.  Deorbit dv is 32, 43 and 121 m/s respectively, which is what
     # the units-based reserve could not cover.
     DRAIN_RESERVE_DV_MS: float = 200.0
+    # ... and never less than the burn at apoapsis that brings the
+    # periapsis down to this altitude (``guidance.deorbit_dv_floor``): the
+    # orbit's own price of entering at all, which grows to ~260 m/s at
+    # 500 km.  The search's burns end at periapses of 30-50 km.
+    DRAIN_RESERVE_PERIAPSIS_M: float = 30000.0
     DRAIN_RESERVE_MARGIN: float = 1.25
 
     # -- the aerodynamic table ---------------------------------------------

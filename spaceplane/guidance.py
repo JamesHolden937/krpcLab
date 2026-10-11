@@ -2474,7 +2474,12 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
         # failure 8) -- and on this vehicle a 1500 s stretch bound happens to
         # mark that line.  It is kept, and the reason is now recorded rather
         # than inferred: boosterland failure 17's rule, one project over.
-        if prediction.time_to_go > cfg.DEORBIT_MAX_TIME_TO_GO_S:
+        # **Timed from the interface, not from the burn**
+        # (``DEORBIT_MAX_ENTRY_TIME_S``): the constraint is on the entry,
+        # and from a 500 km orbit the coast alone outlasts a clock started
+        # at the burn, so no burn there was ever an answer.
+        if prediction.time_to_go - prediction.interface_time \
+                > cfg.DEORBIT_MAX_ENTRY_TIME_S:
             return None
         corners.append(trajectory.forward_arc(env, r, v, prediction.position))
     shortest, longest = min(corners), max(corners)
@@ -2856,3 +2861,124 @@ def deorbit_solution(env, r, v, mass, cfg, end):
     if not (shortest <= want <= longest):
         return None, best[1]
     return best
+
+
+def offtrack(r, v, point):
+    """Signed metres from ``point`` to the great circle ``r``, ``v`` trace.
+
+    The ground track's own frame, not the runway's: ``miss_components``
+    resolves a miss along and across the runway heading, and a vehicle
+    arriving on a ground track inclined to the runway puts its whole
+    remaining range into ``cross`` and nothing into ``long``.
+    """
+    normal = vec.cross(r, v)
+    if vec.norm(normal) < 1e-9:
+        return 0.0
+    s = vec.dot(vec.unit(normal), vec.unit(point))
+    return math.asin(vec.clamp(s, -1.0, 1.0)) * vec.norm(point)
+
+
+def offtrack_estimate(env, r, v, seconds, point):
+    """``offtrack`` on the vacuum orbit, ``seconds`` ahead -- no propagation.
+
+    In vacuum the orbit's plane is fixed in inertial space and the body
+    turns under it, so in the rotating frame the plane's normal turns
+    backwards at the body's rate.  Good to the planet's turn over the error
+    in ``seconds`` (17 km a minute at the equator), which is what the plan
+    scan needs to skip passes that are nowhere near the runway without an
+    entry propagation each.
+    """
+    w = env.omega
+    rate = vec.norm(w)
+    v_in = vec.add(v, vec.cross(w, r))
+    normal = vec.cross(r, v_in)
+    if vec.norm(normal) < 1e-9 or rate <= 0.0:
+        return offtrack(r, v_in, point)
+    normal = vec.unit(normal)
+    axis = vec.scale(w, 1.0 / rate)
+    angle = -rate * seconds
+    c, s = math.cos(angle), math.sin(angle)
+    turned = vec.add(vec.add(vec.scale(normal, c),
+                             vec.scale(vec.cross(axis, normal), s)),
+                     vec.scale(axis, vec.dot(axis, normal) * (1.0 - c)))
+    sine = vec.dot(turned, vec.unit(point))
+    return math.asin(vec.clamp(sine, -1.0, 1.0)) * vec.norm(point)
+
+
+def deorbit_dv_floor(env, r, v, periapsis_alt):
+    """The retrograde burn at apoapsis that lowers the periapsis to
+    ``periapsis_alt``: the least any deorbit from this orbit can cost.
+    ``None`` for an escape orbit; 0 when the periapsis is already there."""
+    mu = env.mu
+    v_in = vec.add(v, vec.cross(env.omega, r))
+    radius, speed = vec.norm(r), vec.norm(v_in)
+    energy = 0.5 * speed * speed - mu / radius
+    if energy >= 0.0:
+        return None
+    a = -mu / (2.0 * energy)
+    h = vec.norm(vec.cross(r, v_in))
+    e = math.sqrt(max(0.0, 1.0 - h * h / (mu * a)))
+    ra = a * (1.0 + e)
+    rp_new = env.equatorial_radius + periapsis_alt
+    if a * (1.0 - e) <= rp_new:
+        return 0.0
+    now = math.sqrt(mu * (2.0 / ra - 1.0 / a))
+    after = math.sqrt(mu * (2.0 / ra - 2.0 / (ra + rp_new)))
+    return now - after
+
+
+def deorbit_reach(env, r, v, mass, cfg, end, dv):
+    """Where the runway sits against what the glide can reach *sideways*.
+
+    Everything else in the deorbit decision is along-track:
+    ``forward_arc`` measures round the orbit normal, so a gate 650 km to the
+    side of the ground track projects onto the orbit plane as a perfectly
+    reachable arc, and on an inclined orbit the search committed to exactly
+    that (LOG9599: entered the glide 650 km abeam and overflew KSC at
+    Mach 6.7).  Near-equatorial orbits pass over the runway every time, so
+    nothing on the farm could show it.
+
+    Two propagations from the post-burn state at the middle of the solve's
+    command box: the reversing entry the glide's range control flies (its
+    arrival gives the ground track and the entry's length), and the same
+    entry leaning one way the whole way down, whose arrival offset from that
+    track is the most the bank's sign can move the vehicle sideways.
+    Returns ``dict(off=, reach=, entry=)`` -- the gate's offset from the
+    track, that lateral reach, and the arc still to fly from the interface
+    to the gate -- or ``None`` when either arc is not an entry.
+    """
+    speed = vec.norm(v)
+    if speed < 1.0:
+        return None
+    v2 = vec.add(v, vec.scale(v, -dv / speed))
+    gate = env.runway.gate(end)
+    alpha = 0.5 * (cfg.SOLVE_ALPHA_MIN_DEG + cfg.ALPHA_MAX_DEG)
+    bank = 0.5 * (cfg.BANK_MAX_DEG + cfg.SOLVE_BANK_MIN_DEG)
+    mean = trajectory.predict(
+        env, r, v2, mass, cfg,
+        steer=Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass),
+        target_radius=vec.norm(gate))
+    if not mean.reached or mean.skipped:
+        return None
+    lean = trajectory.predict(
+        env, r, v2, mass, cfg,
+        steer=Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                    reversing=False),
+        target_radius=vec.norm(gate))
+    if not lean.reached or lean.skipped:
+        return None
+    off = offtrack(mean.position, mean.velocity, gate)
+    reach = abs(offtrack(mean.position, mean.velocity, lean.position))
+    entry = trajectory.forward_arc(env, r, v2, gate)
+    if mean.interface_position:
+        entry -= trajectory.forward_arc(env, r, v2, mean.interface_position)
+    return dict(off=off, reach=reach, entry=entry)
+
+
+def deorbit_reachable(cfg, check):
+    """Whether a ``deorbit_reach`` answer is a pass to commit to."""
+    if check is None:
+        return False
+    if abs(check["off"]) > float(cfg.DEORBIT_CROSS_SHARE) * check["reach"]:
+        return False
+    return check["entry"] <= float(cfg.DEORBIT_ENTRY_ARC_MAX_M)

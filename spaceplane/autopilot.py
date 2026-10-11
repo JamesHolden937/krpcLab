@@ -486,7 +486,14 @@ class Autopilot:
         self.plan = None                # dict(ut, dv, end) once found
         self.plan_failed_ut = None      # when the last scan found nothing
         self.plan_warped_to = None      # the warp_to target already asked for
-        self.sas_trigger_ut = None      # first tick the live search solved
+        # ``DEORBIT_CROSS_SHARE``: the last ``deorbit_reach`` and its
+        # sideways reach (metres), which screens the scan; and the dv the
+        # drain's reserve buys, which caps the burns the plan may take.
+        self.side_check = None
+        self.side_reach = None
+        self.side_logged = False
+        self.burn_budget_dv = None
+        self.sas_trigger_ut = None     # first tick the live search solved
         self.sas_best = None            # (best align, ut it was reached)
         self.speed_mode_was = None
         self.bank_intent = None
@@ -2822,6 +2829,12 @@ class Autopilot:
             self.panel.set_start_label("waiting: %+.0f km" % (best / 1000.0))
             self.set_warp(False)
             return
+        if not self.burn_affordable(dv) or not self.reachable_sideways(
+                snap.position, snap.velocity, snap.mass, self.end, dv,
+                ut=snap.ut):
+            self.panel.set_start_label("waiting: runway out of reach")
+            self.set_warp(False)
+            return
         if self.warp_factor:
             # Drop out of warp and re-ask at 1x before committing.  The
             # search's answer is a function of the state it was taken at, and
@@ -3010,17 +3023,73 @@ class Autopilot:
 
     def plan_try(self, r, v, mass):
         """``(dv, end)`` if a burn from this state would work, else None."""
+        cfg = self.cfg
         end = self.env.runway.choose(r, v)
-        reach = trajectory.forward_arc(self.env, r, v, self.env.runway.gate(end))
-        if not (self.cfg.DEORBIT_RANGE_MIN_M <= reach
-                <= self.cfg.DEORBIT_RANGE_MAX_M):
+        gate = self.env.runway.gate(end)
+        reach = trajectory.forward_arc(self.env, r, v, gate)
+        if not (cfg.DEORBIT_RANGE_MIN_M <= reach <= cfg.DEORBIT_RANGE_MAX_M):
             return None
-        dv, _ = guidance.deorbit_solution(self.env, r, v, mass, self.cfg, end)
-        return None if dv is None else (dv, end)
+        if self.side_reach is not None:
+            ground = vec.norm(vec.project_out(v, vec.unit(r))) \
+                * vec.norm(gate) / max(1.0, vec.norm(r))
+            off = guidance.offtrack_estimate(self.env, r, v,
+                                             reach / max(1.0, ground), gate)
+            if abs(off) > (cfg.DEORBIT_CROSS_SCREEN * self.side_reach
+                           + cfg.DEORBIT_CROSS_SCREEN_M):
+                return None
+        dv, _ = guidance.deorbit_solution(self.env, r, v, mass, cfg, end)
+        if dv is None or not self.burn_affordable(dv):
+            return None
+        if not self.reachable_sideways(r, v, mass, end, dv):
+            return None
+        return dv, end
+
+    def burn_affordable(self, dv):
+        """Whether the propellant the drain kept covers ``dv``."""
+        budget = self.burn_budget_dv
+        return budget is None or dv <= budget / max(
+            1.0, float(self.cfg.DRAIN_RESERVE_MARGIN))
+
+    def reachable_sideways(self, r, v, mass, end, dv, ut=None):
+        """``guidance.deorbit_reach`` at this burn, remembered and judged."""
+        check = guidance.deorbit_reach(self.env, r, v, mass, self.cfg, end,
+                                       dv)
+        self.side_check = check
+        if check is not None:
+            self.side_reach = check["reach"]
+        ok = guidance.deorbit_reachable(self.cfg, check)
+        if ut is not None and (ok or not self.side_logged):
+            self.side_logged = True
+            self.logbook.event(
+                ut, "deorbit reach: %s" % (
+                    "no entry at the middle of the command box"
+                    if check is None else
+                    "runway %+.0f km off the track, the glide reaches %.0f "
+                    "km sideways (takes %.0f%%), %.0f km to run from the "
+                    "interface (max %.0f) -- %s"
+                    % (check["off"] / 1000.0, check["reach"] / 1000.0,
+                       100.0 * self.cfg.DEORBIT_CROSS_SHARE,
+                       check["entry"] / 1000.0,
+                       min(9.99e5, self.cfg.DEORBIT_ENTRY_ARC_MAX_M / 1000.0),
+                       "taking it" if ok else "waiting")))
+        return ok
 
     def plan_start(self, snap):
         self.plan = None
         self.plan_warped_to = None
+        if self.side_reach is None:
+            # Seed the scan's screen with one measured reach, on the
+            # cheapest entry this orbit has (``deorbit_dv_floor``).
+            floor = guidance.deorbit_dv_floor(
+                self.env, snap.position, snap.velocity,
+                float(self.cfg.DRAIN_RESERVE_PERIAPSIS_M))
+            if floor is not None:
+                end = self.env.runway.choose(snap.position, snap.velocity)
+                check = guidance.deorbit_reach(
+                    self.env, snap.position, snap.velocity, snap.mass,
+                    self.cfg, end, floor)
+                if check is not None:
+                    self.side_reach = check["reach"]
         self.plan_scan = dict(t=snap.ut, r=snap.position, v=snap.velocity,
                               mass=snap.mass, prev=None, n=0, wall=0.0,
                               until=snap.ut + self.cfg.DEORBIT_PLAN_HORIZON_S)
@@ -3068,11 +3137,16 @@ class Autopilot:
                 scan["wall"] += time.monotonic() - start
                 self.plan_scan = None
                 self.plan = dict(ut=t_hit, dv=hit[0], end=hit[1])
+                side = self.side_check or {}
                 self.logbook.event(
                     snap.ut, "deorbit plan: window at UT %.0f (%.0f s ahead), "
-                             "dv %.1f m/s on runway %s; %d states scanned in "
-                             "%.1f s of work"
+                             "dv %.1f m/s on runway %s, runway %+.0f km off "
+                             "the track of %.0f reachable, %.0f km from the "
+                             "interface; %d states scanned in %.1f s of work"
                     % (t_hit, t_hit - snap.ut, hit[0], hit[1]["name"],
+                       side.get("off", 0.0) / 1000.0,
+                       side.get("reach", 0.0) / 1000.0,
+                       side.get("entry", 0.0) / 1000.0,
                        scan["n"], scan["wall"]))
                 return
             scan["prev"] = (scan["t"], scan["r"], scan["v"])
@@ -3781,6 +3855,18 @@ class Autopilot:
         """
         floor = float(self.cfg.DRAIN_RESERVE_UNITS)
         budget = float(getattr(self.cfg, "DRAIN_RESERVE_DV_MS", 0.0))
+        # **The orbit sets the burn, so it sets the budget.**  200 m/s
+        # covers every orbit the farm flies and not a 500 km one, which
+        # needs ~260 m/s at apoapsis just to bring the periapsis down to
+        # the air.  So the budget is at least that burn, computed.
+        env = getattr(self, "env", None)
+        lower = None
+        if env is not None and getattr(snap, "position", None) is not None:
+            lower = guidance.deorbit_dv_floor(
+                env, snap.position, snap.velocity,
+                float(self.cfg.DRAIN_RESERVE_PERIAPSIS_M))
+        if lower is not None:
+            budget = max(budget, lower)
         isp = self.vehicle_vacuum_isp(snap)
         if budget <= 0.0 or isp <= 0.0:
             # **A floor is not a budget, and taking one silently is how the
@@ -3828,11 +3914,15 @@ class Autopilot:
         # If this number ever reads near the solved dv, the reserve is too
         # small and the burn will die on ``burn guard`` with a dry tank.
         isp = self.vehicle_vacuum_isp(snap)
-        dry = snap.mass - left * float(self.cfg.RESOURCE_KG_PER_UNIT)
+        # ``snap`` is from before the valve opened, so the dry mass is its
+        # mass less what it carried then -- less what is left now counted
+        # the drained propellant as structure and read the budget low.
+        per_unit = float(self.cfg.RESOURCE_KG_PER_UNIT)
+        dry = snap.mass - (snap.liquid_fuel + snap.oxidizer) * per_unit
         budget = 0.0
         if isp > 0.0 and dry > 0.0:
-            budget = isp * 9.80665 * math.log(
-                (dry + left * float(self.cfg.RESOURCE_KG_PER_UNIT)) / dry)
+            budget = isp * 9.80665 * math.log((dry + left * per_unit) / dry)
+            self.burn_budget_dv = budget
         self.logbook.event(snap.ut, "drain watched down to %.1f units "
                                     "(%.0f m/s of burn at Isp %.0f)"
                            % (left, budget, isp))

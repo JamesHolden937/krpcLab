@@ -1434,6 +1434,45 @@ def load_model(path):
     return {k: (v if k == "aero" else copy.deepcopy(v)) for k, v in hit[1].items()}
 
 
+def orbit_state(body, spec):
+    """Non-rotating ``(r, v)`` for the orbit ``spec`` describes.
+
+    ``pe``/``ap`` altitudes in km (``ap`` defaults to ``pe``), ``inc`` from
+    the equator, ``lan`` the ascending node's angle from the frame's x axis,
+    ``argp`` and ``ta`` from the node and periapsis, all in degrees.  Zero
+    inclination is prograde: the orbit normal along the body's spin.
+    """
+    f = dict(pe=100.0, inc=0.0, lan=0.0, argp=0.0, ta=0.0)
+    for item in spec.split(","):
+        key, _, value = item.partition("=")
+        f[key.strip()] = float(value)
+    f.setdefault("ap", f["pe"])
+    rp = body.radius + 1000.0 * min(f["pe"], f["ap"])
+    ra = body.radius + 1000.0 * max(f["pe"], f["ap"])
+    e = (ra - rp) / (ra + rp)
+    p = rp * (1.0 + e)
+
+    def rotate(v, axis, angle):          # Rodrigues
+        c, s = math.cos(angle), math.sin(angle)
+        k = vec.unit(axis)
+        return vec.add(vec.add(vec.scale(v, c), vec.scale(vec.cross(k, v), s)),
+                       vec.scale(k, vec.dot(k, v) * (1.0 - c)))
+
+    lan = math.radians(f["lan"])
+    node = (math.cos(lan), 0.0, math.sin(lan))
+    normal = rotate(vec.unit(body.spin), node, math.radians(f["inc"]))
+    peri = rotate(node, normal, math.radians(f["argp"]))
+    side = vec.cross(normal, peri)
+    ta = math.radians(f["ta"])
+    radius = p / (1.0 + e * math.cos(ta))
+    r = vec.add(vec.scale(peri, radius * math.cos(ta)),
+                vec.scale(side, radius * math.sin(ta)))
+    k = math.sqrt(body.mu / p)
+    v = vec.add(vec.scale(peri, -k * math.sin(ta)),
+                vec.scale(side, k * (e + math.cos(ta))))
+    return r, v
+
+
 class World:
     def __init__(self):
         self.loaded = False
@@ -1450,13 +1489,19 @@ class World:
         self.steps = 0
 
     def load(self, save):
-        path = os.path.join(MODELS, save + ".json")
+        # ``base@pe=150,ap=500,inc=45,lan=30,argp=0,ta=0``: the base save's
+        # craft and fuel on another orbit (altitudes in km, angles in deg),
+        # so orbit shapes can be screened without probing a save for each.
+        base, _, spec = save.partition("@")
+        path = os.path.join(MODELS, base + ".json")
         if not os.path.exists(path):
-            raise ValueError("no model for save %r (run kspSim/tools/probe.py)" % save)
+            raise ValueError("no model for save %r (run kspSim/tools/probe.py)" % base)
         model = load_model(path)
         self.t = model["ut"]
         self.body = Body(model)
         self.vessel = Vessel(model, self)
+        if spec:
+            self.vessel.r, self.vessel.v = orbit_state(self.body, spec)
         self.save = save
         self.warp_factor = 0
         self._warp_from = self._warp_to = 1.0

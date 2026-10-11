@@ -2904,7 +2904,7 @@ class TestTheWindowClockIsLoadBearing(unittest.TestCase):
 
     def test_both_corners_are_clocked(self):
         source = inspect.getsource(guidance.deorbit_window)
-        self.assertIn("DEORBIT_MAX_TIME_TO_GO_S", source)
+        self.assertIn("DEORBIT_MAX_ENTRY_TIME_S", source)
         self.assertNotIn("index == 0", source)
 
     def test_the_reason_is_recorded_not_inferred(self):
@@ -5421,6 +5421,8 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         ap.plan_scan = None
         ap.plan_failed_ut = None
         ap.last_ut = 0.0
+        ap.side_reach = 0.0     # measured: no seeding propagation
+        ap.side_check = None
         return ap
 
     def orbit(self):
@@ -5473,6 +5475,46 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         self.assertIsNone(ap.plan)
         self.assertIsNone(ap.plan_scan)
         self.assertEqual(ap.plan_failed_ut, 5.0)
+
+    def test_the_vacuum_estimate_of_the_offtrack_follows_the_coast(self):
+        """``offtrack_estimate`` turns the inertial plane under the body;
+        checked against the rotating-frame coast it stands in for."""
+        ap = self.pilot()
+        r0 = R_KERBIN + 160000.0
+        v0 = math.sqrt(MU / r0)
+        inc = math.radians(30.0)
+        v_in = (0.0, v0 * math.sin(inc), v0 * math.cos(inc))
+        r = (r0, 0.0, 0.0)
+        v = vec.sub(v_in, vec.cross(ap.env.omega, r))
+        point = vec.scale(vec.unit((0.3, 0.1, 0.9)), R_KERBIN)
+        for seconds in (600.0, 1500.0, 4000.0):
+            r2, v2 = trajectory.coast(ap.env, r, v, MASS, seconds, 5.0)
+            truth = guidance.offtrack(
+                r2, vec.add(v2, vec.cross(ap.env.omega, r2)), point)
+            est = guidance.offtrack_estimate(ap.env, r, v, seconds, point)
+            self.assertLess(abs(est - truth), 2000.0, (seconds, est, truth))
+
+    def test_the_dv_floor_is_the_apoapsis_burn(self):
+        ap = self.pilot()
+        r0 = R_KERBIN + 500000.0
+        v0 = math.sqrt(MU / r0)
+        r = (r0, 0.0, 0.0)
+        v = vec.sub((0.0, 0.0, v0), vec.cross(ap.env.omega, r))
+        dv = guidance.deorbit_dv_floor(ap.env, r, v, 30000.0)
+        a = 0.5 * (r0 + R_KERBIN + 30000.0)
+        want = v0 - math.sqrt(MU * (2.0 / r0 - 1.0 / a))
+        self.assertAlmostEqual(dv, want, delta=0.5)
+        self.assertEqual(guidance.deorbit_dv_floor(ap.env, r, v, 600000.0),
+                         0.0)
+
+    def test_a_pass_abeam_of_the_runway_is_refused(self):
+        """LOG9599: along-track solved, 650 km abeam, flown past."""
+        cfg = Config()
+        far = dict(off=650000.0, reach=300000.0, entry=1000.0)
+        near = dict(off=-100000.0, reach=300000.0, entry=1000.0)
+        self.assertFalse(guidance.deorbit_reachable(cfg, far))
+        self.assertTrue(guidance.deorbit_reachable(cfg, near))
+        self.assertFalse(guidance.deorbit_reachable(cfg, None))
 
     def test_a_plan_holds_the_learned_warp_unless_warp_to_was_refused(self):
         ap = self.pilot()
