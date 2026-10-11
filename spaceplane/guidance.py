@@ -2927,6 +2927,16 @@ def deorbit_dv_floor(env, r, v, periapsis_alt):
     return now - after
 
 
+def orbit_period(env, r, v):
+    """The vacuum orbit's period in seconds (``inf`` for an escape)."""
+    v_in = vec.add(v, vec.cross(env.omega, r))
+    energy = 0.5 * vec.dot(v_in, v_in) - env.mu / vec.norm(r)
+    if energy >= 0.0:
+        return float("inf")
+    a = -env.mu / (2.0 * energy)
+    return 2.0 * math.pi * math.sqrt(a ** 3 / env.mu)
+
+
 def deorbit_reach(env, r, v, mass, cfg, end, dv):
     """Where the runway sits against what the glide can reach *sideways*.
 

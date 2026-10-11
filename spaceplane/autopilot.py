@@ -3107,9 +3107,17 @@ class Autopilot:
                     self.cfg, end, floor)
                 if check is not None:
                     self.side_reach = check["reach"]
+        cheap = skip = None
+        if self.cfg.DEORBIT_PLAN_CHEAP:
+            cheap = guidance.deorbit_dv_floor(
+                self.env, snap.position, snap.velocity,
+                float(self.cfg.DRAIN_RESERVE_PERIAPSIS_M)) or None
+            skip = 0.5 * guidance.orbit_period(self.env, snap.position,
+                                               snap.velocity)
         self.plan_scan = dict(t=snap.ut, r=snap.position, v=snap.velocity,
                               mass=snap.mass, prev=None, n=0, wall=0.0,
-                              until=snap.ut + self.cfg.DEORBIT_PLAN_HORIZON_S)
+                              until=snap.ut + self.cfg.DEORBIT_PLAN_HORIZON_S,
+                              cheap=cheap, skip=skip, best=None, dear=0)
 
     def plan_advance(self, snap):
         """Scan the future orbit for the first solvable state, a slice a tick.
@@ -3123,6 +3131,15 @@ class Autopilot:
         mass = scan["mass"]
         start = time.monotonic()
         while time.monotonic() - start < cfg.DEORBIT_PLAN_TICK_WALL_S:
+            if scan["t"] > scan["until"] and scan["best"] is not None:
+                t_hit, hit, side = scan["best"]
+                scan["wall"] += time.monotonic() - start
+                self.plan_scan = None
+                self.side_check = side
+                self.plan_found(snap, t_hit, hit, scan,
+                                "the cheapest of %d, none under %.1f m/s"
+                                % (scan["dear"], scan["cheap"]))
+                return
             if scan["t"] > scan["until"]:
                 scan["wall"] += time.monotonic() - start
                 self.plan_scan = None
@@ -3154,20 +3171,25 @@ class Autopilot:
                         prev = (prev[0] + half, r_mid, v_mid)
                     else:
                         t_hit, hit = prev[0] + half, mid
+                if scan["cheap"] is not None and hit[0] > scan["cheap"]:
+                    # Dear: remember it and look half an orbit on.
+                    scan["dear"] += 1
+                    if scan["best"] is None or hit[0] < scan["best"][1][0]:
+                        scan["best"] = (t_hit, hit, self.side_check)
+                    self.logbook.event(
+                        snap.ut, "deorbit plan: window at UT %.0f costs %.1f "
+                                 "m/s, over the %.1f m/s of a surface "
+                                 "periapsis; looking on" % (
+                                     t_hit, hit[0], scan["cheap"]))
+                    scan["r"], scan["v"] = trajectory.coast(
+                        self.env, scan["r"], scan["v"], mass,
+                        scan["skip"], cfg.DEORBIT_PLAN_DT_S)
+                    scan["t"] += scan["skip"]
+                    scan["prev"] = None
+                    continue
                 scan["wall"] += time.monotonic() - start
                 self.plan_scan = None
-                self.plan = dict(ut=t_hit, dv=hit[0], end=hit[1])
-                side = self.side_check or {}
-                self.logbook.event(
-                    snap.ut, "deorbit plan: window at UT %.0f (%.0f s ahead), "
-                             "dv %.1f m/s on runway %s, runway %+.0f km off "
-                             "the track of %.0f reachable, %.0f km from the "
-                             "interface; %d states scanned in %.1f s of work"
-                    % (t_hit, t_hit - snap.ut, hit[0], hit[1]["name"],
-                       side.get("off", 0.0) / 1000.0,
-                       side.get("reach", 0.0) / 1000.0,
-                       side.get("entry", 0.0) / 1000.0,
-                       scan["n"], scan["wall"]))
+                self.plan_found(snap, t_hit, hit, scan, None)
                 return
             scan["prev"] = (scan["t"], scan["r"], scan["v"])
             scan["r"], scan["v"] = trajectory.coast(
@@ -3175,6 +3197,21 @@ class Autopilot:
                 cfg.DEORBIT_PLAN_STEP_S, cfg.DEORBIT_PLAN_DT_S)
             scan["t"] += cfg.DEORBIT_PLAN_STEP_S
         scan["wall"] += time.monotonic() - start
+
+    def plan_found(self, snap, t_hit, hit, scan, note):
+        self.plan = dict(ut=t_hit, dv=hit[0], end=hit[1])
+        side = self.side_check or {}
+        self.logbook.event(
+            snap.ut, "deorbit plan: window at UT %.0f (%.0f s ahead), "
+                     "dv %.1f m/s on runway %s, runway %+.0f km off "
+                     "the track of %.0f reachable, %.0f km from the "
+                     "interface; %d states scanned in %.1f s of work%s"
+            % (t_hit, t_hit - snap.ut, hit[0], hit[1]["name"],
+               side.get("off", 0.0) / 1000.0,
+               side.get("reach", 0.0) / 1000.0,
+               side.get("entry", 0.0) / 1000.0,
+               scan["n"], scan["wall"],
+               "" if note is None else " (%s)" % note))
 
     def plan_warp(self, snap, target):
         """Warp straight to the lead with the game's own ``warp_to``.
