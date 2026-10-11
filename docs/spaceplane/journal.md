@@ -2393,3 +2393,34 @@ Built, default on (the user asked for all of it; they fly it live):
   from its own propagation instead of polling index 3.
 
 Unflown: the user is testing it live.  Defaults fingerprint `bc9ac544`.
+
+## Session, 2026-10-11 (orbit shapes; sim only, farm batch killed)
+
+**LOG9599**, the user's live flight on the new defaults: the planned
+deorbit worked mechanically (window 855 s ahead, warp_to, surface SAS
+0.1 deg, 89 m/s) and the vehicle overflew KSC at Mach 6.7, entering the
+glide with `long=+1411 cross=-650146`.  Two causes, both along-track
+blindness: (1) nothing in the deorbit decision measured cross-track --
+`forward_arc` projects the gate into the orbit plane, so any pass is
+"reachable"; (2) the glide nulls `long` on the runway heading, and an
+arrival crossing the runway at an angle reads its overshoot as `cross`.
+Reproduced in kspSim with a new orbit override
+(`qs_shuttle2@pe=160,inc=30,lan=40`: splashed 210 km off, LOG9600).
+
+Built (default): `guidance.deorbit_reach` / `DEORBIT_CROSS_SHARE` 0.5
+(sideways reach of a one-sided entry at the command box's middle,
+105-135 km on the shuttle); `offtrack_estimate` screen and a 3-day plan
+horizon; track-frame `miss_components`.  For 500 km: entry arc and
+clock measured from the top of the air (an interface-at-58-km version
+let a 20 m/s graze through, LOG9603), calibrated on the 87 km save
+(1399 km, 495 s coast + 953 s; same 26 m/s window as before); the
+reserve from the apoapsis burn to a surface periapsis; usable propellant
+(LOG9624 ran dry at 240 of a "301 m/s" budget -- the drain leaves fuel
+and oxidizer off the 9:11 mixture); the budget was also being divided by
+the margin twice (500 km: "dv 85" refusals).
+
+Sim matrix (LOG9630-9637), all eight shapes reach the field, Mach-5
+states long within 1.2 km; before the fixes the inclined ones ended
+200-650 km away.  Farm saves added (`saves/derived.txt`): i30, i60,
+retro, e500, e500i45.  The farm batch `orbits-1011` was killed for
+memory in round 0 (stray sim servers); nothing flown on the farm.

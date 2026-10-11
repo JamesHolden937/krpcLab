@@ -1,56 +1,82 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-10 late (~2230).  History:
-`docs/spaceplane/journal.md`, "Session, 2026-10-10 late".
+Snapshot of 2026-10-11 ~0020.  History: `docs/spaceplane/journal.md`,
+"Session, 2026-10-11 (orbit shapes)".
 
-Defaults fingerprint **`bc9ac544`** (was `101fc0e0`).  Committed and
-pushed.  Farm stopped (not started this session); sleep inhibitor
-released; no worktrees.  **The user is flying the defaults live and asked
-that no tests be flown** -- this session flew nothing.
+Defaults fingerprint **`f0b8f9b9`** (was `bc9ac544`).  Committed and
+pushed.  Farm stopped, sim servers stopped, sleep inhibitor released.
 
 ## The headline
 
-**The deorbit burn never lit on the user's live flight (LOG9598)**: SAS
-in Maneuver mode held 4.2-5.2 deg off the rotating-frame retrograde (the
-node is built on *orbital* retrograde; their orbit is inclined, 160 km),
-outside the 3 deg commit test.  Fixed, and the wait redesigned as asked
-("warp more aggressive, preplan the maneuver and preorient"), all default
-on and **unflown**:
+**LOG9599 (the user's live flight, 160 km inclined) overflew KSC at Mach
+6.7, 650 km abeam.**  Two bugs, both invisible on the farm's
+near-equatorial saves:
 
-| flag | what |
-|---|---|
-| `DEORBIT_SAS_SURFACE` | navball surface mode + SAS Retrograde (Maneuver is the fallback) |
-| `DEORBIT_ALIGN_STALL_S` 6 | a hold inside 8 deg that stops improving commits |
-| `DEORBIT_PLAN` (+ `_STEP_S` 60, `_RESOLVE_S` 8, `_HORIZON_S` 14000, `_TICK_WALL_S` 1.5, `_LEAD_S` 60, `_GRACE_S` 120, `_DT_S` 10) | scan the future orbit for the window, node there, `warp_to` 60 s before, preorient, live search commits |
-| `COAST_WARP_TO` (+ `_STEP_S`, `_MARGIN_S`, `_MIN_S`, `_HORIZON_S`) | `warp_to` the 72 km release instead of polling index 3 |
+1. The deorbit decision was along-track only (`forward_arc` projects the
+   gate into the orbit plane), so it committed to a pass nowhere near KSC.
+   Now `guidance.deorbit_reach` propagates a reversing and a one-sided
+   entry from the post-burn state and a pass is taken only if the gate is
+   within `DEORBIT_CROSS_SHARE` (0.5) of the sideways reach (~105-135 km
+   on the shuttle).  The plan scan screens states with a vacuum estimate
+   (`offtrack_estimate`) and looks 3 days ahead (`DEORBIT_PLAN_HORIZON_S`
+   64800).
+2. The glide nulled `long` resolved on the **runway heading**; an arrival
+   crossing the runway at an angle put its overshoot into `cross`.
+   `miss_components` now resolves along the arrival's ground track.
 
-Read in a log: `deorbit plan: window at UT ...`, `deorbit plan: warping
-...`, `SAS has the attitude: surface retrograde mode ...`, `SAS
-settled|stalled|timed out after ...`, `coast warp_to: ...`.
+For orbits up to 500 km: the entry limits are measured from the top of
+the air instead of the burn (`DEORBIT_ENTRY_ARC_MAX_M` 1400 km,
+`DEORBIT_MAX_ENTRY_TIME_S` 1005 s, calibrated so the 87 km save commits
+on the same window as before; `DEORBIT_RANGE_MAX_M` is now a screen,
+3600 km); the drain reserve is at least the apoapsis burn to a surface
+periapsis; the drain and the burn budget count **usable** propellant
+(the scarcer of fuel/oxidizer over the engine's mixture -- a 500 km burn
+ran dry otherwise).
+
+**Measured in kspSim only** (matrix of 8, `qs_shuttle2@...` specs,
+LOG9630-9637): every shape reaches the field -- 87 km, 160/30, 500/0,
+500/45, 250/90, 100x500/20, 80x300/60, 120/150 retro; Mach-5 states
+120-195 km out with long within 1.2 km.  Landings 2-22 km short, which is
+the sim's known short approach (kspSim gap 7).  Before: 200-650 km off.
 
 ## Next, in order
 
-1. **The user's live result.**  If the plan or the surface-mode SAS
-   misbehaves, the log lines above say where.  Then fly the four farm
-   orbits (24 an arm, defaults v `DEORBIT_PLAN=False`) -- the plan picks
-   the first solvable state, as the live trigger does, so arrivals should
-   not move; check that, and that the farm's speed-up is real.
-2. **Rewrite `docs/spaceplane/howItWorks.pdf`'s DEORBIT and COAST
-   sections** once (1) confirms the behaviour -- it still describes the
-   polled warp and the Maneuver-mode line-up.
-3. Last session's list, unchanged: farm defaults v `ABORT_NORTH` v
-   `GROUND_SPOILER_ON_NOSE` (both still off, built, unmeasured on the
-   farm); the inc glide energy deficit (9577, 9543: 8-10 km short); two
-   low-speed rollouts off the edge (9542, 9545); `constantsAudit.md`;
-   `AIRBRAKE_CACHE` promote or delete; glide bank overshoot past 90 deg;
-   LOG9375.
+1. **Fly the farm batch that was killed** (memory: 8 stray kspSim servers
+   were left beside the farm -- kill them with `pkill -f "kspSim[.]run"`
+   from a script file first):
+   `spaceplane/tools/multirot.sh orbits-1011 4` with arms
+   `qs_shuttle2_{rigoff,inc_rigoff,high_rigoff,ecc_rigoff,i30_rigoff,
+   i60_rigoff,retro_rigoff,e500_rigoff,e500i45_rigoff}|`.  The first four
+   are the regression check against taemfix-1010 (23/24); the last five
+   are the new shapes (`saves/derived.txt`).  Read `deorbit reach:` and
+   `deorbit plan:` lines (and `refused:` counts when no window is found).
+2. If the farm agrees, the how-it-works PDF's DEORBIT section (plan,
+   sideways reach, entry limits from the air, usable propellant) and the
+   GLIDE's miss frame.
+3. Last session's list: `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE` (built,
+   off, unflown on the farm); the inc glide energy deficit; low-speed
+   rollouts off the edge; `constantsAudit.md`; `AIRBRAKE_CACHE`.
+
+## Open from this session
+
+- The 100x500 km pass reached Mach 5 with 50 km of cross-track (landed
+  anyway in the sim); the plan's 12-hour look-ahead missed an 80x300 km
+  pass by ~80 km and replanned (long-horizon RK4 drift) -- harmless,
+  costs a replan.
+- A burn whose stop test tapers can creep to the 60 s guard (polar run,
+  LOG9607); seen once since the propellant fix, never on the farm.
 
 ## Traps paid this session
 
-- **The farm's saves are all near-equatorial**, so anything that confuses
-  orbital and surface frames passes there and fails on an inclined orbit.
-  A save on an inclined orbit (~45 deg) belongs in `saves/`.
-- `warp_to` is blocking: the panel does not answer during it (Ctrl-C does).
+- **Kill sims with `pkill -f "kspSim[.]run"`**, not `kspSim/run.py` (the
+  process is `-m kspSim.run`); left running they cost ~0.4 GB each and the
+  farm batch was killed for memory.
+- The sim's Mach < 4.5 glide departs in attitude on non-aligned arrivals
+  (alpha 40-70 deg commanded 19): sim gap, judge the terminal glide on the
+  farm.
+- `forward_arc`/`miss_components` on the runway frame agree with the
+  track frame only when the track is along the runway -- every farm save
+  until today.
 
 ## Traps from before (still true)
 
@@ -59,3 +85,4 @@ settled|stalled|timed out after ...`, `coast warp_to: ...`.
 - `pkill -f "<pattern>"` in the same command line kills the calling shell.
 - multirot's arm numbers rotate per cycle: group by the log's config line.
 - Swap ends a 4-cycle multirot at ~21-23 GB; restart before comparing.
+- `warp_to` is blocking: the panel does not answer during it.

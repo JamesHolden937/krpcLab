@@ -39,6 +39,14 @@ volume. Nothing is promoted on sim evidence alone; confirm on the farm.
 | `makecraft.sh` | the whole new-craft procedure (below) |
 | `observe.py`, `krpcproxy.py`, `simfly.sh` | passive temperature observer (`--fluxes`: heat flows and thermal masses too); recording proxy; N sims at once (`PILOT=booster` flies quickfly) |
 
+## Any orbit, without a model per save
+
+`--save "qs_shuttle2@pe=160,ap=500,inc=45,lan=100,argp=0,ta=0"` loads the
+base save's model on another orbit (`world.orbit_state`: altitudes km,
+angles deg, `lan` from the frame's x axis, zero inclination prograde).
+The craft, fuel and UT are the base save's.  How the deorbit's generality
+across orbit shapes is screened (2026-10-11).
+
 ## Regenerated, not tracked
 
 `kspSim/data/ksc_terrain.json` (the KSC ground grid): `./kspSim/tools/kscterrain.py
