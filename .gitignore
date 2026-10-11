@@ -49,6 +49,7 @@ saves/qs_shuttle2_i60_rigoff.sfs
 saves/qs_shuttle2_retro_rigoff.sfs
 saves/qs_shuttle2_e500_rigoff.sfs
 saves/qs_shuttle2_e500i45_rigoff.sfs
+saves/qs_shuttle2_i90_rigoff.sfs
 saves/qs_shuttle2_ecc_rigoff.sfs
 # Output of a farm verification run.
 testInstances/verify*.txt

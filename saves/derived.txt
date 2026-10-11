@@ -21,3 +21,4 @@ qs_shuttle2_i60_rigoff      qs_shuttle2_rigoff  --normal 1963.9 --prograde -1133
 qs_shuttle2_retro_rigoff    qs_shuttle2_rigoff  --normal 1133.8 --prograde -4231.5
 qs_shuttle2_e500_rigoff     qs_shuttle2_rigoff  --prograde 248.0
 qs_shuttle2_e500i45_rigoff  qs_shuttle2_rigoff  --normal 1778.8 --prograde -488.7
+qs_shuttle2_i90_rigoff      qs_shuttle2_rigoff  --normal 2267.6 --prograde -2267.6
