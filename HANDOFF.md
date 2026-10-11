@@ -1,102 +1,82 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-11 ~0020.  History: `docs/spaceplane/journal.md`,
-"Session, 2026-10-11 (orbit shapes)".
+Snapshot of 2026-10-11 ~1130.  History: `docs/spaceplane/journal.md`,
+"Session, 2026-10-11 late morning (the user's polar dive)".
 
-Defaults fingerprint **`f0b8f9b9`** (was `bc9ac544`).  Committed and
-pushed.  Farm stopped, sim servers stopped, sleep inhibitor released.
-**Nothing has been flown on the farm**: the first batch was killed for
-memory, and the user then asked that the farm not be launched -- start it
-only when they say so.
+Defaults fingerprint **`7904409b`** (was `f0b8f9b9`; the only change is
+three new config fields, the flag below, off).  Committed and pushed.
+Farm stopped, sims stopped, sleep inhibitor released.
+
+**Standing (the user, 2026-10-11): never ask before starting the farm or
+flying a batch** -- now in root `CLAUDE.md`.
 
 ## The headline
 
-**LOG9599 (the user's live flight, 160 km near-polar) overflew KSC at
-Mach 6.7.**  The pass was good -- it crossed the extended centreline ~2 km
-off the line, 40 km west of the threshold, at 47 km -- but it arrived
-nearly perpendicular to the runway, so the glide's runway-frame `long`
-was ~-30..-40 km everywhere near KSC and only reached 0 about 650 km past
-it (`long=+1411 cross=-650146` at glide entry).  The solve aimed there
-and flew for range (30 deg bank, a climb 49.5 -> 50.9 km).  **Bug 2 below
-is the cause; bug 1 would not have refused that pass**, but is the same
-blindness for passes that miss KSC.  Both invisible on the farm's
-near-equatorial saves:
+**The live 186 km polar (LOG9641) dived in the glide below Mach 3**, then
+tumbled in the cone's first bank swing.  kRPC held +0.2 of pitch against a
+16-22 deg nose-low error for 100 s once the offload bled off at Mach 3
+(its gains are scaled to the 8 MN m the surfaces *could* give, so its
+integral runs on minutes): alpha 5 where 20-28 was commanded, 50 kPa, cone
+entered at the Mach 1.5 veto at 441 m/s / 9.7 km.  There, ±45 deg weave +
+alpha ceiling released 8 -> 32 + pitch retuned to 3 s at 28 kPa -> alpha
+41, bank +79/+123/+172, recovered at 5.5 km and 85 m/s.  No abort in the
+log; it ends in the cone (broken pipe -- the game closed).
 
-1. The deorbit decision was along-track only (`forward_arc` projects the
-   gate into the orbit plane), so it committed to a pass nowhere near KSC.
-   Now `guidance.deorbit_reach` propagates a reversing and a one-sided
-   entry from the post-burn state and a pass is taken only if the gate is
-   within `DEORBIT_CROSS_SHARE` (0.5) of the sideways reach (~105-135 km
-   on the shuttle).  The plan scan screens states with a vacuum estimate
-   (`offtrack_estimate`) and looks 3 days ahead (`DEORBIT_PLAN_HORIZON_S`
-   64800).
-2. The glide nulled `long` resolved on the **runway heading**; an arrival
-   crossing the runway at an angle put its overshoot into `cross`.
-   `miss_components` now resolves along the arrival's ground track.
+**Built, off: `GLIDE_PITCH_RESCUE_DEG`** (`_FULL_DEG` 10, `_HOLD_S` 8,
+`Autopilot._glide_pitch_rescue`): below the offload's Mach, a nose-low
+pitch error past the band for 8 s engages an integral on the manual trim,
+held to the end of the glide.  **Sim** (LOG9642-9661, 10 orbit pairs):
+reproduces the dive in 2/3 polar baselines; with it, >+10 deg error ticks
+below Mach 3 58 -> 21 and no cone entry above 245 m/s.  Engaging on a
+nose-*high* error did not close it (LOG9645, 9651), hence nose-low only.
 
-For orbits up to 500 km: the entry limits are measured from the top of
-the air instead of the burn (`DEORBIT_ENTRY_ARC_MAX_M` 1400 km,
-`DEORBIT_MAX_ENTRY_TIME_S` 1005 s, calibrated so the 87 km save commits
-on the same window as before; `DEORBIT_RANGE_MAX_M` is now a screen,
-3600 km); the drain reserve is at least the apoapsis burn to a surface
-periapsis; the drain and the burn budget count **usable** propellant
-(the scarcer of fuel/oxidizer over the engine's mixture -- a 500 km burn
-ran dry otherwise).
+**Farm batch `rescue-1011` (logs/rot-rescue-1011-c0..4.txt, LOG9662-9721)
+is unreadable for the flag because the baseline is broken:** default
+`qs_shuttle2_rigoff` 2/5 on the runway (taemfix-1010: 23/24), arrivals
+-23..+14 km.  Per arm (RWY/total): i90 off 4/5, on 3/10; e500 off 5/10,
+on 5/10; e500i45 off 4/10, on 4/10; rigoff off 2/5, on 0 flown (the 8-arm
+rotation never reached arm 7).  Swap ended at 20.7 GB.
 
-**Measured in kspSim only** (matrix of 8, `qs_shuttle2@...` specs,
-LOG9630-9637): every shape reaches the field -- 87 km, 160/30, 500/0,
-500/45, 250/90, 100x500/20, 80x300/60, 120/150 retro; Mach-5 states
-120-195 km out with long within 1.2 km.  Landings 2-22 km short, which is
-the sim's known short approach (kspSim gap 7).  Before: 200-650 km off.
+**The cause on rigoff is last session's deorbit planner** (sim-only, never
+farm-flown before this): the same save planned dv 25.9 m/s 436 s ahead
+(LOG9673, 9721: on the runway), 27.1 at 2595 s (LOG9685, -5 km), **246 m/s
+68 s ahead** (LOG9697, broke up) and **179 m/s 22685 s ahead** (LOG9709,
++8 km water).  Same save, four different windows -- the plan is not
+deterministic in the state it starts from, and it accepts burns 10x the
+nominal.
 
 ## Next, in order
 
-1. **Fly the farm batch that was killed** (memory: 8 stray kspSim servers
-   were left beside the farm -- kill them with `pkill -f "kspSim[.]run"`
-   from a script file first):
-   `spaceplane/tools/multirot.sh orbits-1011 4` with arms
-   `qs_shuttle2_{rigoff,inc_rigoff,high_rigoff,ecc_rigoff,i30_rigoff,
-   i60_rigoff,i90_rigoff,retro_rigoff,e500_rigoff,e500i45_rigoff}|`.  The
-   first four are the regression check against taemfix-1010 (23/24); the
-   rest are the new shapes (`saves/derived.txt`).  **`i90` (87 km polar)
-   is the user's case** -- LOG9599 was near-polar -- so read it first.
-   Memory: with the farm alone up, swap read 18.9 GB and 7 GB available
-   (a desktop indexer, `baloo_file_extractor`, held 2.4 GB); check
-   `free -g` before launching.  Read `deorbit reach:` and
-   `deorbit plan:` lines (and `refused:` counts when no window is found).
-2. If the farm agrees, the how-it-works PDF's DEORBIT section (plan,
-   sideways reach, entry limits from the air, usable propellant) and the
-   GLIDE's miss frame.
-3. Last session's list: `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE` (built,
-   off, unflown on the farm); the inc glide energy deficit; low-speed
-   rollouts off the edge; `constantsAudit.md`; `AIRBRAKE_CACHE`.
-
-## Open from this session
-
-- The 100x500 km pass reached Mach 5 with 50 km of cross-track (landed
-  anyway in the sim); the plan's 12-hour look-ahead missed an 80x300 km
-  pass by ~80 km and replanned (long-horizon RK4 drift) -- harmless,
-  costs a replan.
-- A burn whose stop test tapers can creep to the 60 s guard (polar run,
-  LOG9607); seen once since the propellant fix, never on the farm.
+1. **Fix the deorbit plan's window choice** before any other farm work:
+   why the same save gets 26 vs 246 m/s (look at what differs when the
+   scan starts -- drain timing; ksp4 "could not pause after the load"
+   in c0), and reject/penalise windows whose dv is far above the
+   orbit's minimum.  Then re-fly rigoff/inc/high/ecc against taemfix-1010.
+2. Re-fly `GLIDE_PITCH_RESCUE_DEG=8` vs off on a working baseline
+   (i90, e500, e500i45, rigoff; use an even arm count per 6 instances so
+   every arm is flown); promote or delete.
+3. A guard on entering the cone fast: refuse or soften (weave, ceiling
+   release, pitch retune) when entering well above the cone's planned
+   speed -- LOG9641's tumble path is still open to any fast arrival.
+4. Then the deorbit/glide items from before: the how-it-works PDF's
+   DEORBIT section, `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE`, the inc
+   glide energy deficit, `constantsAudit.md`.
 
 ## Traps paid this session
 
-- **Kill sims with `pkill -f "kspSim[.]run"`**, not `kspSim/run.py` (the
-  process is `-m kspSim.run`); left running they cost ~0.4 GB each and the
-  farm batch was killed for memory.
-- The sim's Mach < 4.5 glide departs in attitude on non-aligned arrivals
-  (alpha 40-70 deg commanded 19): sim gap, judge the terminal glide on the
-  farm.
-- `forward_arc`/`miss_components` on the runway frame agree with the
-  track frame only when the track is along the runway -- every farm save
-  until today.
+- `multirot.sh` with 8 arms on 6 instances x 2 rounds never flew arm 7
+  in 5 cycles; arm 0 and 6 got 5.  Pick arm counts that divide 12.
+- The live craft (`shuttle`, 41.7 t) is the farm's craft with full tanks;
+  after the drain both are 31.4 t.  Not a discrepancy.
+- `pgrep -af KSP_x64` matches its own shell -- it does not mean a game
+  is up.
 
 ## Traps from before (still true)
 
-- kspSim lands short of the game with TAEM on; don't judge range there.
-- kspSim needs `DEORBIT_SAS_ALIGN=False` (stub SAS).
-- `pkill -f "<pattern>"` in the same command line kills the calling shell.
+- Kill sims with `pkill -f "kspSim[.]run"`.
+- kspSim lands short of the game (gap 7) and its sub-Mach-4.5 glide
+  departs on non-aligned arrivals: don't judge range there.
+- kspSim needs `DEORBIT_SAS_ALIGN=False`.
 - multirot's arm numbers rotate per cycle: group by the log's config line.
-- Swap ends a 4-cycle multirot at ~21-23 GB; restart before comparing.
+- Swap ends a 5-cycle multirot at ~21 GB; restart before comparing.
 - `warp_to` is blocking: the panel does not answer during it.

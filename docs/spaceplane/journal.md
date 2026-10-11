@@ -2431,3 +2431,29 @@ states long within 1.2 km; before the fixes the inclined ones ended
 200-650 km away.  Farm saves added (`saves/derived.txt`): i30, i60,
 retro, e500, e500i45.  The farm batch `orbits-1011` was killed for
 memory in round 0 (stray sim servers); nothing flown on the farm.
+
+## Session, 2026-10-11 late morning (the user's polar dive)
+
+**LOG9641**, the user's live 186 km / 89 deg flight: deorbit and entry
+good; below Mach 3 the offload bled off and kRPC never took the pitch
+moment back (+0.2 of input, 16-22 deg nose-low error, 100 s; alpha 5 vs
+20-28 commanded), the glide dived to 50 kPa and entered the cone at the
+Mach 1.5 veto, 441 m/s.  The cone's ±45 weave, the alpha-ceiling release
+8 -> 32 and the 3 s pitch retune together gave alpha 41 and a rolling
+departure (bank to +172); recovered at 5.5 km, 85 m/s.  No abort logged.
+
+Built `GLIDE_PITCH_RESCUE_DEG` (off): a nose-low error past 8 deg for 8 s
+below the offload's Mach engages an integral on the trim, held to the end
+of the glide.  kspSim, 10 orbit pairs (LOG9642-9661): the dive reproduced
+in 2/3 polar baselines; with the flag, ticks of >+10 deg error below Mach
+3 fell 58 -> 21 and no cone entry above 245 m/s.  Engagements on a
+nose-high error did not close it (LOG9645, 9651) -> nose-low only.
+
+Farm `rescue-1011` (5 cycles, LOG9662-9721): the baseline itself is broken
+-- default rigoff 2/5 on the runway against taemfix-1010's 23/24.  The
+2026-10-11 deorbit planner picked four different windows on one save:
+25.9 m/s (2 on the runway), 27.1, 246 (68 s ahead, broke up), 179 (6.3 h
+ahead, water).  The flag cannot be read against that; per arm RWY: i90
+4/5 off v 3/10 on, e500 5/10 v 5/10, e500i45 4/10 v 4/10; rigoff-on never
+flown (8 arms on 6 instances).  Next: make the plan's window choice
+deterministic and reject high-dv windows, then re-fly the flag.
