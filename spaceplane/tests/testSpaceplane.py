@@ -40,7 +40,7 @@ from spaceplane import autopilot as autopilot_module     # noqa: E402
 from spaceplane import rollrate as rollrate_mod           # noqa: E402
 from spaceplane.config import Config, apply_overrides, differences  # noqa: E402
 from spaceplane.trajectory import Steer                 # noqa: E402
-from spaceplane.tests.fakeplane import FakeEnv, circular_state, FAKE_STALL  # noqa: E402
+from spaceplane.tests.fakeplane import FakeEnv, circular_state, FAKE_STALL, MU, R_KERBIN  # noqa: E402
 import types  # noqa: E402
 # An environment that knows only the fake airframe's stall, for the laws
 # that read nothing else from it.
@@ -5392,3 +5392,136 @@ class TestDivertsGoNorth(unittest.TestCase):
         self.assertGreater(self.north_of(self.e27), 0.9)
         self.assertEqual(guidance.north_side(self.env, self.e09, self.r),
                          -guidance.north_side(self.env, self.e27, self.r))
+
+
+class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
+    """``DEORBIT_PLAN``: the window is found on the future orbit, the burn
+    attitude is taken before it, and a hold that stops improving inside the
+    burn's tolerance commits instead of waiting out the timeout (LOG9598:
+    SAS steady at 4.2-5.2 deg against a 3 deg test, the burn never lit)."""
+
+    class Log:
+        def __init__(self):
+            self.lines = []
+
+        def event(self, ut, text):
+            self.lines.append(text)
+
+    class Panel:
+        def set_start_label(self, text):
+            pass
+
+    def pilot(self, **over):
+        ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
+        ap.cfg = Config(**over)
+        ap.env = FakeEnv(ap.cfg)
+        ap.logbook = self.Log()
+        ap.panel = self.Panel()
+        ap.plan = None
+        ap.plan_scan = None
+        ap.plan_failed_ut = None
+        ap.last_ut = 0.0
+        return ap
+
+    def orbit(self):
+        r0 = R_KERBIN + 100000.0
+        v0 = math.sqrt(MU / r0)
+        w = FakeEnv(Config()).omega
+        # Rotating-frame velocity of an equatorial circular orbit.
+        v_rot = vec.sub((0.0, 0.0, v0), vec.cross(w, (r0, 0.0, 0.0)))
+        return (r0, 0.0, 0.0), v_rot, r0
+
+    def test_the_vacuum_coast_keeps_a_circular_orbit_circular(self):
+        ap = self.pilot()
+        r, v, r0 = self.orbit()
+        r2, _ = trajectory.coast(ap.env, r, v, MASS, 3000.0, 10.0)
+        self.assertLess(abs(vec.norm(r2) - r0), 50.0)
+        self.assertEqual(trajectory.coast(ap.env, r, v, MASS, 0.0), (r, v))
+
+    def test_the_scan_finds_and_bisects_the_first_window(self):
+        ap = self.pilot(DEORBIT_PLAN_STEP_S=60.0, DEORBIT_PLAN_RESOLVE_S=8.0,
+                        DEORBIT_PLAN_TICK_WALL_S=30.0)
+        r, v, r0 = self.orbit()
+        # The truth: the window opens when the vehicle has gone 600 s round (under half an orbit, so the angle does not fold).
+        truth, _ = trajectory.coast(ap.env, r, v, MASS, 600.0, 10.0)
+        ahead = vec.unit(truth)
+        start = vec.unit(r)
+        swept = math.acos(max(-1.0, min(1.0, vec.dot(start, ahead))))
+
+        def plan_try(rr, vv, mass):
+            gone = math.acos(max(-1.0, min(1.0, vec.dot(start,
+                                                        vec.unit(rr)))))
+            return (42.0, {"name": "09"}) if gone >= swept - 1e-9 else None
+
+        ap.plan_try = plan_try
+        ap.plan_start(SimpleNamespace(ut=0.0, position=r, velocity=v,
+                                      mass=MASS))
+        ap.plan_advance(SimpleNamespace(ut=0.0))
+        self.assertIsNotNone(ap.plan)
+        self.assertLessEqual(abs(ap.plan["ut"] - 600.0), 8.0 + 1.0)
+        self.assertGreaterEqual(ap.plan["ut"], 600.0 - 1.0)
+        self.assertEqual(ap.plan["dv"], 42.0)
+
+    def test_no_window_falls_back_to_the_live_search(self):
+        ap = self.pilot(DEORBIT_PLAN_HORIZON_S=600.0,
+                        DEORBIT_PLAN_TICK_WALL_S=30.0)
+        r, v, _ = self.orbit()
+        ap.plan_try = lambda rr, vv, mass: None
+        ap.plan_start(SimpleNamespace(ut=0.0, position=r, velocity=v,
+                                      mass=MASS))
+        ap.plan_advance(SimpleNamespace(ut=5.0))
+        self.assertIsNone(ap.plan)
+        self.assertIsNone(ap.plan_scan)
+        self.assertEqual(ap.plan_failed_ut, 5.0)
+
+    def test_a_plan_holds_the_learned_warp_unless_warp_to_was_refused(self):
+        ap = self.pilot()
+        self.assertFalse(ap.plan_holds_warp())
+        ap.plan = dict(ut=1000.0, dv=40.0, end=None)
+        self.assertTrue(ap.plan_holds_warp())
+        ap.plan["nowarp"] = True
+        ap.last_ut = 100.0
+        self.assertFalse(ap.plan_holds_warp())
+        ap.last_ut = 1000.0 - ap.cfg.DEORBIT_PLAN_LEAD_S
+        self.assertTrue(ap.plan_holds_warp())
+
+    def _hold(self, ap, ut, off_deg):
+        """One ``sas_settled`` tick with the nose ``off_deg`` from retrograde."""
+        v = (0.0, 0.0, 2200.0)
+        a = math.radians(off_deg)
+        nose = (math.sin(a), 0.0, -math.cos(a))
+        snap = SimpleNamespace(ut=ut, position=(700000.0, 0.0, 0.0),
+                               velocity=v, nose=nose, dynamic_pressure=0.0)
+        return ap.sas_settled(snap, 40.0)
+
+    def held_pilot(self):
+        ap = self.pilot()
+        ap.sas_hold = True            # the hold began in the lead
+        ap.sas_since = 0.0
+        ap.sas_node = None
+        ap.sas_aligned_prev = False
+        ap.sas_trigger_ut = None
+        ap.sas_best = None
+        ap.set_rcs = lambda permitted, snap=None: None
+        return ap
+
+    def test_a_steady_offset_inside_the_burn_tolerance_commits(self):
+        ap = self.held_pilot()
+        stall = ap.cfg.DEORBIT_ALIGN_STALL_S
+        self.assertFalse(self._hold(ap, 100.0, 4.4))
+        self.assertFalse(self._hold(ap, 100.0 + stall / 2, 4.4))
+        self.assertTrue(self._hold(ap, 100.0 + stall + 0.1, 4.4))
+        self.assertIn("stalled", ap.logbook.lines[-1])
+
+    def test_a_steady_offset_outside_it_does_not(self):
+        ap = self.held_pilot()
+        off = ap.cfg.DEORBIT_ALIGN_DEG + 2.0
+        self.assertFalse(self._hold(ap, 100.0, off))
+        self.assertFalse(self._hold(ap, 100.0 + 3 * ap.cfg.DEORBIT_ALIGN_STALL_S,
+                                    off))
+
+    def test_aligned_twice_commits_at_once(self):
+        ap = self.held_pilot()
+        self.assertFalse(self._hold(ap, 100.0, 1.0))
+        self.assertTrue(self._hold(ap, 102.0, 1.0))
+        self.assertIn("settled", ap.logbook.lines[-1])

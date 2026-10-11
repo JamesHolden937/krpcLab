@@ -481,6 +481,14 @@ class Autopilot:
         self.warp_last = None           # (ut, position) of the last warped tick
         self.warp_arc = None            # metres of orbit the last one covered
         self.warp_refused = False
+        # ``DEORBIT_PLAN``: the look-ahead scan and the window it found.
+        self.plan_scan = None           # dict while scanning, else None
+        self.plan = None                # dict(ut, dv, end) once found
+        self.plan_failed_ut = None      # when the last scan found nothing
+        self.plan_warped_to = None      # the warp_to target already asked for
+        self.sas_trigger_ut = None      # first tick the live search solved
+        self.sas_best = None            # (best align, ut it was reached)
+        self.speed_mode_was = None
         self.bank_intent = None
         self.bank_reversed_ut = None
         self.bank_side = None
@@ -2789,11 +2797,14 @@ class Autopilot:
         # Before anything decides how far to jump next, record how far the
         # last jump actually went.  See ``watch_warp``.
         self.watch_warp(snap)
+        if self.cfg.DEORBIT_PLAN and self.plan_tick(snap):
+            return
         self.end = self.env.runway.choose(snap.position, snap.velocity)
         reach = trajectory.forward_arc(self.env, snap.position, snap.velocity,
                                        self.env.runway.gate(self.end))
         self.set_throttle(0.0)
-        self.set_rcs(False)
+        if not self.sas_hold and not self.plan_leading(snap.ut):
+            self.set_rcs(False)
         if not (self.cfg.DEORBIT_RANGE_MIN_M <= reach
                 <= self.cfg.DEORBIT_RANGE_MAX_M):
             # Out of reach either way; the search would only confirm it, and
@@ -2955,7 +2966,8 @@ class Autopilot:
         if factor is not None:
             wanted = 0 if release else int(factor)
         else:
-            wanted = 0 if (release or not self.cfg.WARP_WAIT) \
+            wanted = 0 if (release or not self.cfg.WARP_WAIT
+                           or self.plan_holds_warp()) \
                 else int(self.warp_ceiling)
         if wanted == self.warp_factor:
             return
@@ -2973,37 +2985,228 @@ class Autopilot:
                 self.logbook.event(0.0, "rails warp refused (%r); the wait "
                                         "will run at 1x" % (exc,))
 
-    def sas_settled(self, snap, dv):
-        """Hold the burn attitude with stock SAS on a maneuver node; True once settled.
+    # ------------------------------------------------------------------
+    # ``DEORBIT_PLAN``: find the window ahead, warp to it, turn before it.
+    # ------------------------------------------------------------------
 
-        ``DEORBIT_SAS_ALIGN``.  The node is the solution as of this tick: a
-        retrograde ``dv`` two seconds out, moved every tick as the search
-        re-solves, so SAS's Maneuver mode points where the burn will be
-        flown.  kRPC's autopilot is disengaged for the duration -- the two
-        fight otherwise -- and ``engage`` is kept from re-engaging it.
+    def plan_leading(self, ut):
+        """True in the lead before a planned window, when the turn is flown."""
+        plan = self.plan
+        return (plan is not None
+                and ut >= plan["ut"] - self.cfg.DEORBIT_PLAN_LEAD_S - 5.0)
+
+    def plan_holds_warp(self):
+        """No learned rails warp while a plan stands -- ``warp_to`` has it.
+
+        Unless the game refused ``warp_to``: then the learned warp carries
+        the wait as far as the lead, and 1x from there.
         """
+        plan = self.plan
+        if plan is None:
+            return False
+        if plan.get("nowarp") and not self.plan_leading(self.last_ut or 0.0):
+            return False
+        return True
+
+    def plan_try(self, r, v, mass):
+        """``(dv, end)`` if a burn from this state would work, else None."""
+        end = self.env.runway.choose(r, v)
+        reach = trajectory.forward_arc(self.env, r, v, self.env.runway.gate(end))
+        if not (self.cfg.DEORBIT_RANGE_MIN_M <= reach
+                <= self.cfg.DEORBIT_RANGE_MAX_M):
+            return None
+        dv, _ = guidance.deorbit_solution(self.env, r, v, mass, self.cfg, end)
+        return None if dv is None else (dv, end)
+
+    def plan_start(self, snap):
+        self.plan = None
+        self.plan_warped_to = None
+        self.plan_scan = dict(t=snap.ut, r=snap.position, v=snap.velocity,
+                              mass=snap.mass, prev=None, n=0, wall=0.0,
+                              until=snap.ut + self.cfg.DEORBIT_PLAN_HORIZON_S)
+
+    def plan_advance(self, snap):
+        """Scan the future orbit for the first solvable state, a slice a tick.
+
+        The orbit in vacuum is deterministic, so the scan's timeline is
+        absolute and survives being spread over ticks.  A hit is bisected
+        back towards the last miss to ``DEORBIT_PLAN_RESOLVE_S``.
+        """
+        cfg = self.cfg
+        scan = self.plan_scan
+        mass = scan["mass"]
+        start = time.monotonic()
+        while time.monotonic() - start < cfg.DEORBIT_PLAN_TICK_WALL_S:
+            if scan["t"] > scan["until"]:
+                scan["wall"] += time.monotonic() - start
+                self.plan_scan = None
+                self.plan_failed_ut = snap.ut
+                self.logbook.event(snap.ut, "deorbit plan: no window in the "
+                                            "next %.0f s (%d states, %.1f s "
+                                            "of work); the live search waits "
+                                            "on the learned warp"
+                                   % (cfg.DEORBIT_PLAN_HORIZON_S, scan["n"],
+                                      scan["wall"]))
+                return
+            hit = self.plan_try(scan["r"], scan["v"], mass)
+            scan["n"] += 1
+            if hit is not None:
+                t_hit = scan["t"]
+                prev = scan["prev"]
+                while prev is not None and t_hit - prev[0] \
+                        > cfg.DEORBIT_PLAN_RESOLVE_S:
+                    half = 0.5 * (t_hit - prev[0])
+                    r_mid, v_mid = trajectory.coast(
+                        self.env, prev[1], prev[2], mass, half,
+                        cfg.DEORBIT_PLAN_DT_S)
+                    mid = self.plan_try(r_mid, v_mid, mass)
+                    scan["n"] += 1
+                    if mid is None:
+                        prev = (prev[0] + half, r_mid, v_mid)
+                    else:
+                        t_hit, hit = prev[0] + half, mid
+                scan["wall"] += time.monotonic() - start
+                self.plan_scan = None
+                self.plan = dict(ut=t_hit, dv=hit[0], end=hit[1])
+                self.logbook.event(
+                    snap.ut, "deorbit plan: window at UT %.0f (%.0f s ahead), "
+                             "dv %.1f m/s on runway %s; %d states scanned in "
+                             "%.1f s of work"
+                    % (t_hit, t_hit - snap.ut, hit[0], hit[1]["name"],
+                       scan["n"], scan["wall"]))
+                return
+            scan["prev"] = (scan["t"], scan["r"], scan["v"])
+            scan["r"], scan["v"] = trajectory.coast(
+                self.env, scan["r"], scan["v"], mass,
+                cfg.DEORBIT_PLAN_STEP_S, cfg.DEORBIT_PLAN_DT_S)
+            scan["t"] += cfg.DEORBIT_PLAN_STEP_S
+        scan["wall"] += time.monotonic() - start
+
+    def plan_warp(self, snap, target):
+        """Warp straight to the lead with the game's own ``warp_to``.
+
+        Blocking, and nothing is commanded meanwhile: the vehicle is in
+        vacuum with the engine off, so there is nothing to command.
+        """
+        self.set_warp(True)
+        self.set_rcs(False)
+        if self.plan_warped_to != target:
+            # Logged once: a ``warp_to`` that came back early is re-issued
+            # on the next tick rather than leaving the wait at 1x.
+            self.logbook.event(snap.ut, "deorbit plan: warping %.0f s to UT "
+                                        "%.0f, %.0f s before the window"
+                               % (target - snap.ut, target,
+                                  self.cfg.DEORBIT_PLAN_LEAD_S))
+        self.plan_warped_to = target
+        try:
+            self.conn.space_center.warp_to(target)
+        except Exception as exc:                            # noqa: BLE001
+            self.plan["nowarp"] = True
+            self.logbook.event(snap.ut, "warp_to refused (%r); the learned "
+                                        "warp carries the wait" % (exc,))
+
+    def plan_tick(self, snap):
+        """Run the plan; True when it has used this tick.
+
+        Scanning holds 1x and skips the live search.  With a window found:
+        before the lead, warp to it; in the lead, turn to the burn attitude
+        and let the live search commit as before.  A window that has not
+        shown ``DEORBIT_PLAN_GRACE_S`` after it was due is replanned from
+        the state now.
+        """
+        cfg = self.cfg
         ut = snap.ut
+        if self.plan is None:
+            if self.plan_scan is None:
+                if (self.plan_failed_ut is not None
+                        and ut - self.plan_failed_ut
+                        < 0.5 * cfg.DEORBIT_PLAN_HORIZON_S):
+                    return False
+                self.plan_start(snap)
+            self.plan_advance(snap)
+            if self.plan is None:
+                if self.plan_scan is None:
+                    return False        # nothing found: the old wait
+                self.set_throttle(0.0)
+                self.set_warp(True)
+                self.panel.set_start_label("planning: %.0f s ahead"
+                                           % (self.plan_scan["t"] - ut))
+                return True
+        plan = self.plan
+        lead_at = plan["ut"] - cfg.DEORBIT_PLAN_LEAD_S
+        if ut < lead_at - 5.0:
+            if not plan.get("nowarp"):
+                self.set_throttle(0.0)
+                self.plan_warp(snap, lead_at)
+                return True
+            self.panel.set_start_label("window in %.0f s" % (plan["ut"] - ut))
+            return False
+        if ut > plan["ut"] + cfg.DEORBIT_PLAN_GRACE_S \
+                and self.sas_trigger_ut is None:
+            self.logbook.event(ut, "deorbit plan: the window due at UT %.0f "
+                                   "has not appeared; replanning" % plan["ut"])
+            self.sas_release(ut)
+            self.plan_failed_ut = None
+            self.plan_start(snap)
+            return True
+        if self.sas_trigger_ut is None:
+            self.preorient(snap)
+        return False
+
+    def preorient(self, snap):
+        """Turn to the burn attitude in the lead, before the window opens."""
         speed = vec.norm(snap.velocity)
         retro = vec.scale(snap.velocity, -1.0 / max(1.0, speed))
         self.commanded_nose = retro
         self.commanded_alpha, self.commanded_bank = 180.0, 0.0
-        if not self.sas_hold:
-            self.sas_hold = True
-            self.sas_since = ut
-            self.sas_aligned_prev = False
-            set_autopilot_engaged(self.autopilot, False)
-            mode = "maneuver"
+        if self.cfg.DEORBIT_SAS_ALIGN:
+            if not self.sas_hold:
+                self.sas_engage(snap, self.plan["dv"], self.plan["ut"])
+        else:
+            set_autopilot_attitude(self.autopilot, retro)
+        self.set_rcs(True, snap)
+        self.panel.set_start_label(
+            "window in %.0f s, %.0f deg off"
+            % (self.plan["ut"] - snap.ut, vec.angle_between(snap.nose, retro)))
+
+    def sas_engage(self, snap, dv, node_ut):
+        """Hand the attitude to stock SAS on surface retrograde; place the node.
+
+        ``DEORBIT_SAS_SURFACE``: the navball in surface mode and SAS on
+        Retrograde holds the rotating frame's -v, which is the direction the
+        search burns along.  Maneuver mode (the node, built on *orbital*
+        retrograde) is the fallback where surface mode is refused.  The
+        node is placed either way, so the plan shows in the map view.
+        """
+        ut = snap.ut
+        speed = vec.norm(snap.velocity)
+        retro = vec.scale(snap.velocity, -1.0 / max(1.0, speed))
+        self.sas_hold = True
+        self.sas_since = ut
+        self.sas_aligned_prev = False
+        set_autopilot_engaged(self.autopilot, False)
+        try:
+            self.sas_node = self.control.add_node(node_ut, prograde=-float(dv))
+        except Exception as exc:                            # noqa: BLE001
+            self.sas_node = None
+            self.logbook.event(ut, "maneuver node refused (%r)" % (exc,))
+        try:
+            self.control.sas = True
+        except Exception:                                   # noqa: BLE001
+            pass
+        modes = self.conn.space_center.SASMode
+        mode = None
+        if self.cfg.DEORBIT_SAS_SURFACE:
             try:
-                self.sas_node = self.control.add_node(ut + 2.0,
-                                                      prograde=-float(dv))
-            except Exception as exc:                        # noqa: BLE001
-                self.sas_node = None
-                self.logbook.event(ut, "maneuver node refused (%r)" % (exc,))
-            try:
-                self.control.sas = True
+                was = self.control.speed_mode
+                self.control.speed_mode = self.conn.space_center.SpeedMode.surface
+                self.speed_mode_was = was
+                self.autopilot.sas_mode = modes.retrograde
+                mode = "surface retrograde"
             except Exception:                               # noqa: BLE001
-                pass
-            modes = self.conn.space_center.SASMode
+                mode = None
+        if mode is None:
+            mode = "maneuver"
             try:
                 if self.sas_node is None:
                     raise RuntimeError("no node")
@@ -3014,34 +3217,66 @@ class Autopilot:
                     self.autopilot.sas_mode = modes.retrograde
                 except Exception as exc:                    # noqa: BLE001
                     mode = "stability (%r)" % (exc,)
-            self.logbook.event(ut, "SAS has the attitude: %s mode, node dv "
-                                   "%.1f m/s, %.1f deg off retrograde"
-                               % (mode, dv,
-                                  vec.angle_between(snap.nose, retro)))
+        self.logbook.event(ut, "SAS has the attitude: %s mode, node dv "
+                               "%.1f m/s at UT %.0f, %.1f deg off retrograde"
+                           % (mode, dv, node_ut,
+                              vec.angle_between(snap.nose, retro)))
+
+    def sas_settled(self, snap, dv):
+        """Hold the burn attitude with stock SAS; True once settled.
+
+        ``DEORBIT_SAS_ALIGN``.  The node is the solution as of this tick: a
+        retrograde ``dv`` two seconds out, moved every tick as the search
+        re-solves.  kRPC's autopilot is disengaged for the duration -- the two
+        fight otherwise -- and ``engage`` is kept from re-engaging it.  With a
+        plan the hold usually began in the lead (``preorient``) and this
+        finds the vehicle already pointing.
+
+        Commits on two aligned ticks in a row; or once the error has sat
+        inside the burn's own tolerance without improving for
+        ``DEORBIT_ALIGN_STALL_S``; or after ``DEORBIT_SAS_SETTLE_MAX_S``.
+        """
+        ut = snap.ut
+        speed = vec.norm(snap.velocity)
+        retro = vec.scale(snap.velocity, -1.0 / max(1.0, speed))
+        self.commanded_nose = retro
+        self.commanded_alpha, self.commanded_bank = 180.0, 0.0
+        if not self.sas_hold:
+            self.sas_engage(snap, dv, ut + 2.0)
         elif self.sas_node is not None:
             try:
                 self.sas_node.ut = ut + 2.0
                 self.sas_node.prograde = -float(dv)
             except Exception:                               # noqa: BLE001
                 pass
+        if self.sas_trigger_ut is None:
+            self.sas_trigger_ut = ut
+            self.sas_best = None
         # Urgent: a window is waiting on this turn (see fly_deorbit_burn).
         self.set_rcs(True, snap)
         align = vec.angle_between(snap.nose, retro)
         aligned = align <= self.cfg.DEORBIT_COMMIT_ALIGN_DEG
         settled = aligned and self.sas_aligned_prev
         self.sas_aligned_prev = aligned
-        waited = ut - self.sas_since
-        if settled or waited >= self.cfg.DEORBIT_SAS_SETTLE_MAX_S:
-            self.logbook.event(ut, "SAS %s after %.0f s, %.1f deg off "
-                                   "retrograde -- committing"
-                               % ("settled" if settled else "timed out",
-                                  waited, align))
+        if self.sas_best is None or align < self.sas_best[0] - 0.2:
+            self.sas_best = (align, ut)
+        stalled = (align <= self.cfg.DEORBIT_ALIGN_DEG
+                   and ut - self.sas_best[1] >= self.cfg.DEORBIT_ALIGN_STALL_S)
+        waited = ut - self.sas_trigger_ut
+        if settled or stalled or waited >= self.cfg.DEORBIT_SAS_SETTLE_MAX_S:
+            self.logbook.event(ut, "SAS %s after %.0f s (%.0f s of hold), "
+                                   "%.1f deg off retrograde -- committing"
+                               % ("settled" if settled
+                                  else "stalled" if stalled else "timed out",
+                                  waited, ut - (self.sas_since or ut), align))
             return True
         self.panel.set_start_label("aligning: %.0f deg" % align)
         return False
 
     def sas_release(self, ut):
         """Hand the attitude back to kRPC's autopilot and delete the node."""
+        self.sas_trigger_ut = None
+        self.sas_best = None
         if not self.sas_hold:
             return
         self.sas_hold = False
@@ -3054,6 +3289,12 @@ class Autopilot:
             self.control.sas = False
         except Exception:                                   # noqa: BLE001
             pass
+        if self.speed_mode_was is not None:
+            try:
+                self.control.speed_mode = self.speed_mode_was
+            except Exception:                               # noqa: BLE001
+                pass
+            self.speed_mode_was = None
         error = set_autopilot_engaged(self.autopilot, True)
         self.logbook.event(ut, "SAS released, kRPC autopilot %s"
                            % ("re-engaged" if error is None
@@ -4161,6 +4402,21 @@ class Autopilot:
             self.log_interface_actual(snap)
             self.enter(GLIDE, snap.ut, "runway %s" % self.end["name"])
 
+    def coast_time_to(self, snap, altitude):
+        """Seconds of unpowered arc until ``altitude``, or None if not within
+        ``COAST_WARP_TO_HORIZON_S``.  Vacuum only -- the release is above the
+        air -- so this is the orbit, to the step."""
+        r, v = snap.position, snap.velocity
+        radius = self.env.equatorial_radius + altitude
+        step = float(self.cfg.COAST_WARP_TO_STEP_S)
+        t = 0.0
+        while t < self.cfg.COAST_WARP_TO_HORIZON_S:
+            if vec.norm(r) <= radius:
+                return t
+            r, v = trajectory.coast(self.env, r, v, snap.mass, step, step)
+            t += step
+        return None
+
     def coast_watch(self, snap):
         """``COAST_WATCH_S``: the burn's stop test, re-run through the coast."""
         every = float(getattr(self.cfg, "COAST_WATCH_S", 0.0))
@@ -4210,6 +4466,34 @@ class Autopilot:
         altitude = vec.norm(snap.position) - self.env.equatorial_radius
         release = altitude <= (self.env.atmosphere_depth
                                + self.cfg.COAST_WARP_STOP_M)
+        if getattr(self, "_coast_warp_done", False):
+            return                  # the last seconds to the release at 1x
+        if self.cfg.COAST_WARP_TO and not release \
+                and getattr(self, "_coast_warped_to", None) is None:
+            # **Straight to the release with the game's ``warp_to``**: the
+            # vacuum arc is the propagator's two-body problem, so when it
+            # crosses the release altitude is known now, and the game steps
+            # its own rates down to it instead of the loop polling one index.
+            seconds = self.coast_time_to(snap, self.env.atmosphere_depth
+                                         + self.cfg.COAST_WARP_STOP_M)
+            self._coast_warped_to = snap.ut + (seconds or 0.0)
+            if seconds is not None and seconds > self.cfg.COAST_WARP_TO_MIN_S:
+                target = snap.ut + seconds - self.cfg.COAST_WARP_TO_MARGIN_S
+                self.set_warp(True, factor=self.cfg.COAST_WARP_FACTOR)
+                self.logbook.event(snap.ut, "coast warp_to: %.0f s to %.0f km "
+                                            "(UT %.0f)"
+                                   % (target - snap.ut,
+                                      (self.env.atmosphere_depth
+                                       + self.cfg.COAST_WARP_STOP_M) / 1000.0,
+                                      target))
+                try:
+                    self.conn.space_center.warp_to(target)
+                    self._coast_warp_done = True
+                    return
+                except Exception as exc:                    # noqa: BLE001
+                    self.logbook.event(snap.ut, "warp_to refused (%r); "
+                                                "polling index %d"
+                                       % (exc, self.cfg.COAST_WARP_FACTOR))
         was = self.warp_factor
         self.set_warp(release, factor=self.cfg.COAST_WARP_FACTOR)
         if self.warp_factor == was:

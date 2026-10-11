@@ -1834,6 +1834,41 @@ class Config:
     DEORBIT_SAS_ALIGN: bool = True
     DEORBIT_COMMIT_ALIGN_DEG: float = 3.0
     DEORBIT_SAS_SETTLE_MAX_S: float = 120.0
+    # **SAS holds *surface* retrograde, the direction the search burns
+    # along** (the rotating frame's -v).  Maneuver mode points at the node,
+    # which KSP builds on *orbital* retrograde: the two differ by Kerbin's
+    # ~220 m/s of rotation resolved across the track -- 0.1-0.6 deg on the
+    # farm's near-equatorial saves, 4.2-5.2 deg on the user's inclined
+    # 160 km orbit (LOG9598), where SAS held steady outside the 3 deg commit
+    # test and the burn never lit.  The node stays, for the map view; the
+    # attitude comes from the navball's surface speed mode.
+    DEORBIT_SAS_SURFACE: bool = True
+    # A hold that has stopped improving inside the burn's own tolerance
+    # (``DEORBIT_ALIGN_DEG``) for this long commits rather than waiting out
+    # ``DEORBIT_SAS_SETTLE_MAX_S``: whatever is keeping it off the commit
+    # test is not going to go away.
+    DEORBIT_ALIGN_STALL_S: float = 6.0
+    # **Plan the window ahead instead of finding it by warping into it**
+    # (the user, 2026-10-10).  On entering DEORBIT the orbit is propagated
+    # forwards in vacuum and ``deorbit_solution`` is asked of the future
+    # states every ``DEORBIT_PLAN_STEP_S`` (then bisected to
+    # ``DEORBIT_PLAN_RESOLVE_S``), at most ``DEORBIT_PLAN_HORIZON_S`` ahead
+    # and ``DEORBIT_PLAN_TICK_WALL_S`` of work a tick.  The first solvable
+    # time is the window: a node goes there, the game warps straight to
+    # ``DEORBIT_PLAN_LEAD_S`` before it (``warp_to``, the game's own
+    # rate stepping -- the learned rails warp is only the fallback when no
+    # window is found), and the vehicle turns to the burn attitude in the
+    # lead.  The live trigger still decides the commit; a window that has
+    # not appeared ``DEORBIT_PLAN_GRACE_S`` after it was due is replanned.
+    DEORBIT_PLAN: bool = True
+    DEORBIT_PLAN_STEP_S: float = 60.0
+    DEORBIT_PLAN_RESOLVE_S: float = 8.0
+    DEORBIT_PLAN_HORIZON_S: float = 14000.0
+    DEORBIT_PLAN_TICK_WALL_S: float = 1.5
+    DEORBIT_PLAN_LEAD_S: float = 60.0
+    DEORBIT_PLAN_GRACE_S: float = 120.0
+    # The vacuum propagator's step for the look-ahead (RK4, no air).
+    DEORBIT_PLAN_DT_S: float = 10.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
     DEORBIT_MAX_BURN_S: float = 60.0
@@ -1938,6 +1973,14 @@ class Config:
     COAST_WARP: bool = True
     COAST_WARP_FACTOR: int = 3              # an index into KSP's rate table
     COAST_WARP_STOP_M: float = 2000.0       # release this far above the air
+    # ``warp_to`` the release instead of polling index ``COAST_WARP_FACTOR``
+    # (the user, 2026-10-10: warp harder).  The polled index stays as the
+    # fallback where the game refuses ``warp_to``, and as a no-op hold after.
+    COAST_WARP_TO: bool = True
+    COAST_WARP_TO_STEP_S: float = 5.0       # propagator step finding the time
+    COAST_WARP_TO_MARGIN_S: float = 5.0     # stop this much short of it
+    COAST_WARP_TO_MIN_S: float = 30.0       # not worth a warp under this
+    COAST_WARP_TO_HORIZON_S: float = 4000.0
     # The eccentric orbit's misses track the coast's vertical speed after
     # the post-burn flip (rot-prior-1009: -6.8 m/s +11 km .. -6.4 m/s +50
     # km on identical burns).  ``COAST_TRIM`` (RCS translation closed on the

@@ -969,3 +969,18 @@ def surface_distance(env, a, b):
     ua, ub = vec.unit(a), vec.unit(b)
     dot = vec.clamp(vec.dot(ua, ub), -1.0, 1.0)
     return env.target_radius * math.acos(dot)
+
+
+def coast(env, r, v, mass, seconds, dt=10.0):
+    """The state ``seconds`` ahead on an unpowered, unsteered arc (RK4).
+
+    In vacuum this is the orbit, in the rotating frame like everything
+    else; the deorbit plan scans the future with it.
+    """
+    if seconds <= 0.0:
+        return r, v
+    n = max(1, int(math.ceil(seconds / max(0.1, dt))))
+    h = seconds / n
+    for _ in range(n):
+        r, v = _rk4(env, r, v, mass, h, None)
+    return r, v
