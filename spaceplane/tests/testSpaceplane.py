@@ -5155,7 +5155,7 @@ class TestTheConeLoadCap(unittest.TestCase):
         # against ~90 transonic), so its limit is scaled to match.
         cap = self.run_(1.2).load_alpha_cap(self.snap(441.0, 28500.0))
         self.assertIsNotNone(cap)
-        self.assertLess(cap, 20.0)
+        self.assertLess(cap, Config().ALPHA_MAX_DEG)
 
 
 class TestTheWheelWatch(unittest.TestCase):
