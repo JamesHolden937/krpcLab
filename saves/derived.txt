@@ -13,3 +13,11 @@ qs_shuttle2_high        qs_shuttle2         --prograde 80
 qs_shuttle2_inc_rigoff  qs_shuttle2_rigoff  --normal 100
 qs_shuttle2_high_rigoff qs_shuttle2_rigoff  --prograde 80
 qs_shuttle2_ecc_rigoff  qs_shuttle2_rigoff  --prograde 30 --radial -70
+# Orbit shapes for the deorbit's generality (2026-10-11): from 87 km
+# circular, rotated to 30/60/150 deg, and raised to an 87 x 500 km orbit
+# at 0 and 45 deg.
+qs_shuttle2_i30_rigoff      qs_shuttle2_rigoff  --normal 1133.8 --prograde -303.8
+qs_shuttle2_i60_rigoff      qs_shuttle2_rigoff  --normal 1963.9 --prograde -1133.8
+qs_shuttle2_retro_rigoff    qs_shuttle2_rigoff  --normal 1133.8 --prograde -4231.5
+qs_shuttle2_e500_rigoff     qs_shuttle2_rigoff  --prograde 248.0
+qs_shuttle2_e500i45_rigoff  qs_shuttle2_rigoff  --normal 1778.8 --prograde -488.7
