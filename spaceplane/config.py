@@ -1790,11 +1790,12 @@ class Config:
     # behaviour looks different from the write-ups, start here.
     SKIP_ENTER_MARGIN_M: float = 5000.0
     DEORBIT_MAX_TIME_TO_GO_S: float = 1500.0
-    # The window's corners are clocked from the entry interface instead
-    # (``guidance.deorbit_window``): 1500 s from the burn less the ~750 s
-    # coast from an 87 km orbit, so the farm's orbits keep their entries
-    # while a 500 km orbit's 1400 s coast no longer rules every burn out.
-    DEORBIT_MAX_ENTRY_TIME_S: float = 750.0
+    # The window's corners are clocked from the top of the atmosphere
+    # instead (``guidance.deorbit_window``): 1500 s from the burn less the
+    # 495 s coast to 70 km from an 87 km orbit, so the farm's orbits keep
+    # their entries while a 500 km orbit's 1200 s coast no longer rules
+    # every burn out.
+    DEORBIT_MAX_ENTRY_TIME_S: float = 1005.0
 
     # -- thermal -----------------------------------------------------------
     # Nothing in this project had ever measured entry heating, which for a
@@ -1899,9 +1900,9 @@ class Config:
     # what chooses the entry's length -- and from a 500 km orbit the coast
     # alone is most of it.  The arc from the interface to the gate is the
     # same quantity with the coast taken out.
-    # 860 km: where the 87 km orbit committed under the burn-referenced
-    # limit (854 km from the interface, sim LOG9602, same window as before).
-    DEORBIT_ENTRY_ARC_MAX_M: float = 860000.0
+    # 1400 km: where the 87 km orbit commits under the burn-referenced
+    # limit (1399 km from the top of the air, sim; same window as before).
+    DEORBIT_ENTRY_ARC_MAX_M: float = 1400000.0
     # A burn that never satisfies its stop test must still end.  At 13 m/s^2
     # this is 780 m/s, well past anything the search can ask for.
     DEORBIT_MAX_BURN_S: float = 60.0
@@ -2078,8 +2079,9 @@ class Config:
     # ... and never less than the burn at apoapsis that brings the
     # periapsis down to this altitude (``guidance.deorbit_dv_floor``): the
     # orbit's own price of entering at all, which grows to ~260 m/s at
-    # 500 km.  The search's burns end at periapses of 30-50 km.
-    DRAIN_RESERVE_PERIAPSIS_M: float = 30000.0
+    # 500 km.  The search's burns end at periapses of 30-50 km; sized to
+    # the surface, so the steeper burns a high orbit takes still fit.
+    DRAIN_RESERVE_PERIAPSIS_M: float = 0.0
     DRAIN_RESERVE_MARGIN: float = 1.25
 
     # -- the aerodynamic table ---------------------------------------------

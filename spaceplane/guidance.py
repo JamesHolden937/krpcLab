@@ -2474,11 +2474,11 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
         # failure 8) -- and on this vehicle a 1500 s stretch bound happens to
         # mark that line.  It is kept, and the reason is now recorded rather
         # than inferred: boosterland failure 17's rule, one project over.
-        # **Timed from the interface, not from the burn**
+        # **Timed from the top of the atmosphere, not from the burn**
         # (``DEORBIT_MAX_ENTRY_TIME_S``): the constraint is on the entry,
         # and from a 500 km orbit the coast alone outlasts a clock started
         # at the burn, so no burn there was ever an answer.
-        if prediction.time_to_go - prediction.interface_time \
+        if prediction.time_to_go - prediction.entry_time \
                 > cfg.DEORBIT_MAX_ENTRY_TIME_S:
             return None
         corners.append(trajectory.forward_arc(env, r, v, prediction.position))
@@ -2969,10 +2969,15 @@ def deorbit_reach(env, r, v, mass, cfg, end, dv):
         return None
     off = offtrack(mean.position, mean.velocity, gate)
     reach = abs(offtrack(mean.position, mean.velocity, lean.position))
+    # From the top of the atmosphere, not ``ENTRY_INTERFACE_M``: a shallow
+    # burn spends its length between 70 and 58 km, and measured from 58 km
+    # a 20 m/s graze looked like a short entry (sim LOG9603).
     entry = trajectory.forward_arc(env, r, v2, gate)
-    if mean.interface_position:
-        entry -= trajectory.forward_arc(env, r, v2, mean.interface_position)
-    return dict(off=off, reach=reach, entry=entry)
+    if mean.entry_position:
+        entry -= trajectory.forward_arc(env, r, v2, mean.entry_position)
+    return dict(off=off, reach=reach, entry=entry,
+                clock=mean.time_to_go - mean.entry_time,
+                coast=mean.entry_time)
 
 
 def deorbit_reachable(cfg, check):

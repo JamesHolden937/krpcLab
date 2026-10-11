@@ -5423,6 +5423,7 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         ap.last_ut = 0.0
         ap.side_reach = 0.0     # measured: no seeding propagation
         ap.side_check = None
+        ap.plan_refusals = {}
         return ap
 
     def orbit(self):

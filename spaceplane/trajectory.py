@@ -100,6 +100,7 @@ class Prediction:
     interface_position: tuple = ()
     interface_velocity: tuple = ()
     interface_time: float = 0.0
+    entry_time: float = 0.0    # when ``entry_position`` was reached
     # True when this arc was chosen by ``guidance.max_range`` rather than by
     # nulling a miss -- i.e. the gate was out of reach and the vehicle is
     # flying for distance.  Carried on the prediction so the telemetry can
@@ -817,11 +818,12 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             entry_velocity=(() if air_v is None else tuple(air_v)),
             interface_position=(() if iface_r is None else tuple(iface_r)),
             interface_velocity=(() if iface_v is None else tuple(iface_v)),
-            interface_time=(0.0 if iface_t is None else iface_t))
+            interface_time=(0.0 if iface_t is None else iface_t),
+            entry_time=(0.0 if air_t is None else air_t))
 
     entry_r = entry_v = None
     iface_r = iface_v = iface_t = None
-    air_r = air_v = None
+    air_r = air_v = air_t = None
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
         altitude = radius - env.equatorial_radius
@@ -841,7 +843,7 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         # split the vacuum leg from the aerodynamic one would put 5 km of
         # air on the wrong side of the line.
         if air_r is None and altitude < env.atmosphere_depth:
-            air_r, air_v = r, v
+            air_r, air_v, air_t = r, v, t
         if altitude < env.atmosphere_depth - cfg.SKIP_ENTER_MARGIN_M:
             if not entered:
                 entry_r, entry_v = r, v
