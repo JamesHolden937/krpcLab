@@ -445,8 +445,8 @@ class Config:
     # the cone's ~12.6 -- and ``ph=`` had said so from Mach 3.  An entry
     # predicted short of the entry circle (on height, further out) needs
     # ``HAC_LD`` more path per metre, which is added to the target.
-    GLIDE_TAEM_ENERGY: bool = False
-    GLIDE_TAEM_MACH: float = 3.0
+    GLIDE_TAEM_ENERGY: bool = True  # default 2026-10-10: taemfix-1010
+    GLIDE_TAEM_MACH: float = 4.5
     GLIDE_TAEM_MARGIN_M: float = 1500.0
     # **And the propagator flies the alpha the vehicle is flying.**  Below
     # ``GLIDE_TAEM_MACH`` the shuttle holds ~0.65 of the ~40 deg the glide
@@ -457,7 +457,7 @@ class Config:
     # ``GLIDE_TAEM_ALPHA_TAU_S``.  The command is not capped: the vehicle
     # holds a fraction of it, so a command clamp at "held + margin" ratchets
     # down without end.
-    GLIDE_TAEM_ALPHA: bool = False
+    GLIDE_TAEM_ALPHA: bool = True  # default 2026-10-10: taemfix-1010
     GLIDE_TAEM_ALPHA_TAU_S: float = 10.0
     ALPHA_MIN_DEG: float = 0.0
     # The *solve's* floor, which is not the same number and is the single most
