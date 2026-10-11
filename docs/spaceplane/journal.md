@@ -2457,3 +2457,38 @@ ahead, water).  The flag cannot be read against that; per arm RWY: i90
 4/5 off v 3/10 on, e500 5/10 v 5/10, e500i45 4/10 v 4/10; rigoff-on never
 flown (8 arms on 6 instances).  Next: make the plan's window choice
 deterministic and reject high-dv windows, then re-fly the flag.
+
+## Session, 2026-10-11 afternoon (the plan's dear windows)
+
+**Correction to the morning's entry:** the deorbit plan is deterministic.
+The "four windows on one save" were four saves (LOG9673 rigoff, 9685 i90,
+9697 e500, 9709 e500i45); each plans the same window every flight.
+rescue-1011 per save: rigoff 13/13 on the runway, i90 mostly; the broken
+arms were the two 87 x 500 km orbits, which took the *first* solvable
+window whatever it cost -- e500 244 m/s 68 s ahead (a periapsis burn,
+arrivals -4..+17 km, 6/16 lost), e500i45 180 m/s (23 km short every time).
+
+**Cheap windows (default):** a window costs no more than the apoapsis burn
+to a surface periapsis (`deorbit_dv_floor`, the reserve's own quantity),
+else the scan skips half an orbit and takes the cheapest at the horizon.
+kspSim (LOG9734-9745, `DEORBIT_SAS_ALIGN=False`): e500 38-40 m/s v
+145-236, e500i45 55-57 v 200-238; arrivals -0.9..+5.4 km v -36..-55 and 4
+lost.  Farm cheap-1011 (LOG9746-9793, 12 an arm): e500 12/12 v 4/12 (5
+lost), e500i45 8/12 v 1/12 (arrivals -0.35..+1.8 km v -17..-31).  The four
+e500i45 misses arrived on target and stopped 1.3-3.5 km short (cone surplus
+-0.8..-1 km) -- a landing-chain shortfall, open.
+
+**node-1011** (LOG9794-9841, 8 an arm, 6 arms): no fast cone entry in any
+arm (167-313 m/s), so the polar dive did not reproduce on the farm.
+`GLIDE_PITCH_RESCUE_DEG=8` engaged on nearly every healthy glide and flew
+i90 4/8 (resc) and 5/8 (resc + load cap) v 6/8 -> **deleted**.
+`HAC_LOAD_MAX` 3 g never bound -> **default** (a guard for LOG9641's
+441 m/s / 28.5 kPa entry, where the table puts alpha 32 at ~8 g;
+unmeasured on such an entry).  `DEORBIT_SAS_NODE` (node from the solved
+surface burn, SAS on Maneuver): the node read back 0.66 deg from the
+solved burn and SAS settled to 0.1 deg in 6-8 s, but **4/8 e500i45 burns
+never left DEORBIT**: with the node spent SAS chased its residual, the nose
+left `DEORBIT_ALIGN_DEG`, and the alignment early-return skipped the stop
+test for the rest of the flight (entered tail-first, water 111-120 km
+short).  Fixed for every mode: once owed reached 0 the stop test runs
+through a misaligned tick, and a spent node hands SAS to stability assist.

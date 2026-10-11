@@ -3475,6 +3475,17 @@ class Autopilot:
                                % ("settled" if settled
                                   else "stalled" if stalled else "timed out",
                                   waited, ut - (self.sas_since or ut), align))
+            if self.cfg.DEORBIT_SAS_NODE:
+                # **The burn is held inertially, not on the node.**  A node
+                # being burned down points its remainder anywhere at the end,
+                # and SAS chasing it took the nose out of the burn's band
+                # with a fraction of a m/s owed (node2-1011: 6/12 burns never
+                # cut off).  At commit the nose is on the node; hold that.
+                try:
+                    self.autopilot.sas_mode = \
+                        self.conn.space_center.SASMode.stability_assist
+                except Exception:                           # noqa: BLE001
+                    pass
             return True
         self.panel.set_start_label("aligning: %.0f deg" % align)
         return False
@@ -3654,15 +3665,6 @@ class Autopilot:
         # burn shut down 770 km long.
         if owed <= 0.0:
             self.deorbit_ticks += 1
-            if self.deorbit_ticks == 1 and self.sas_hold \
-                    and self.cfg.DEORBIT_SAS_NODE:
-                # The node is spent: hold the attitude rather than chase
-                # what is left of its burn vector.
-                try:
-                    self.autopilot.sas_mode = \
-                        self.conn.space_center.SASMode.stability_assist
-                except Exception:                           # noqa: BLE001
-                    pass
         else:
             self.deorbit_ticks = 0
         if (self.deorbit_ticks >= int(self.cfg.DEORBIT_EXIT_TICKS)
