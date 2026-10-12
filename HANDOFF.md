@@ -1,5 +1,34 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-12: the deorbit burn lights half a burn early (fingerprint `01de6e69`)
+
+The user: "make sure deorbit burn in spaceplane lander starts the burn 1/2
+burn seconds early. it's the most accurate way to do it."  Commit
+`1137fac`, unflown on the farm (the user tests live).
+
+- `deorbit_solution` answers an *impulsive* dv, and the live trigger used
+  to ask it of the present state and light at once -- so the burn's centre
+  fell half a burn after the point it was solved at.  Now
+  (`DEORBIT_BURN_LEAD_SHARE` 0.5, default) the trigger coasts the state
+  ahead by half the burn (`trajectory.coast`, vacuum) and solves there;
+  a solution lights the engine now.  Burn length
+  `Autopilot.burn_seconds`: max(`DEORBIT_MIN_BURN_S`, dv x mass / sum of
+  the unshielded engines' `max_vacuum_thrust`) -- the limiter's duration,
+  readable before ignition.  The dv comes from the last tick's answer (or
+  the plan's), re-solved once when the lead moves > 0.25 s.  The window,
+  sideways-reach check and stop-test aim are taken at the same ahead
+  state; the SAS node sits at the burn centre (`max(2 s, lead)` out).
+  Logged as `burn lead: lighting N s before the impulsive point`.
+- On the shuttle the burn is 3 s (the limiter's floor), so the lead is
+  1.5 s -- ~3.5 km of orbit.  The stop test is closed-loop from the live
+  state, so the range was already nulled; what moves is where along the
+  orbit the dv is delivered.
+- Sim smoke LOG10019 (`qs_shuttle2`): lead 1.5 s on a 3.0 s burn, no
+  errors (the sim simulates no nodes or SAS modes, so the rest of that
+  flight is not evidence).  Suite 595 OK.
+- **How-it-works PDF still not regenerated** (behind since 2026-10-11 night;
+  now also on the burn lead).
+
 ## 2026-10-11 night: RCS on saturation, false north-divert fixed (fingerprint `86b1f89a`)
 
 Both unflown on the farm; the user tests live (commit `9c7455b`).
@@ -52,7 +81,7 @@ user's live flights disagree.
 Snapshot of 2026-10-11 ~2100.  History: `docs/spaceplane/journal.md`,
 "Session, 2026-10-11 evening (the cone holds dynamic pressure)".
 
-Defaults fingerprint **`86b1f89a`**.  Committed and pushed to
+Defaults fingerprint **`01de6e69`** (2026-10-12).  Committed and pushed to
 origin/main.  Farm stopped, sleep inhibitor released.  The how-it-works
 PDF is behind (see above).
 

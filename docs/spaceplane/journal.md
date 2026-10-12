@@ -2625,3 +2625,14 @@ LOG9921-10016 within 40 m of the centreline), and the lateral capture
 already runs through the flare to the wheels (`APPROACH_CAPTURE_FLARE_SHARE`
 1.0) with nosewheel steering on the rollout, so no new late-lateral law.
 Fingerprint 86b1f89a.
+
+## Session, 2026-10-12 (the deorbit burn lights half a burn early)
+
+The user asked for the deorbit burn to start half its duration early.  The
+live trigger committed when an impulsive dv solved from the *present*
+state and lit at once, so every burn was centred half a burn late.  Now
+`DEORBIT_BURN_LEAD_SHARE` 0.5: the impulsive solve is asked of the state
+coasted half a burn ahead (burn length = max(`DEORBIT_MIN_BURN_S`, dv over
+the engines' full vacuum thrust)), and the node sits at the burn centre.
+On the shuttle: 1.5 s on a 3 s burn.  Sim smoke LOG10019 only (no errors);
+unflown on the farm, the user tests live.  Fingerprint 01de6e69.
