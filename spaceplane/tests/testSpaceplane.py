@@ -5652,7 +5652,7 @@ class TestHacSpeedQ(unittest.TestCase):
     pressure at every height above the gate."""
 
     def test_constant_dynamic_pressure(self):
-        off = Config()
+        off = replace(Config(), HAC_SPEED_Q=False)
         on = replace(off, HAC_SPEED_Q=True)
         env = FakeEnv(off)
         gate = guidance.cone_speed(env, on, 50.0, on.GATE_ALT_M)

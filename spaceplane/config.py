@@ -175,8 +175,13 @@ class Config:
     # alpha for the same load) from cone entry to the handover, set by the
     # speed the approach already takes over and nothing else.  The glide's
     # cone-entry energy (``taem_target``) is left on the old speed, so this
-    # changes the cone alone.  Off until flown.
-    HAC_SPEED_Q: bool = False
+    # changes the cone alone.  The cone brake's slow-fade is then against
+    # the stall (``Autopilot.hac_split_brake``), not this target.
+    # rot-speedq2-1011 (8 an orbit an arm, interleaved): **19/24 v 14/24**,
+    # RCS open in the cone 15-40 s v 92-99, slowest 92-107 m/s v 76-86;
+    # misses moved from out-of-height (water, wrecks) to rolled-out-high
+    # (two rigoff overruns +4-5 km).  Default 2026-10-11.
+    HAC_SPEED_Q: bool = True  # default 2026-10-11: rot-speedq2-1011 19/24 v 14/24
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,
