@@ -5646,20 +5646,20 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         self.assertIn("settled", ap.logbook.lines[-1])
 
 
-class TestHacEasFloor(unittest.TestCase):
-    """``HAC_EAS_FLOOR``: the cone's true-airspeed target never asks for
-    less than the floor's equivalent airspeed, and is untouched below it."""
 
-    def test_floor_raises_the_thin_upper_cone_only(self):
+class TestHacSpeedQ(unittest.TestCase):
+    """``HAC_SPEED_Q``: the cone's target holds the gate's dynamic
+    pressure at every height above the gate."""
+
+    def test_constant_dynamic_pressure(self):
         off = Config()
-        on = replace(off, HAC_EAS_FLOOR=True)
+        on = replace(off, HAC_SPEED_Q=True)
         env = FakeEnv(off)
-        stall = 50.0
-        base = guidance.cone_speed(env, off, stall, 12000.0)
-        high = guidance.cone_speed(env, on, stall, 12000.0)
-        rho = env.density(12000.0) / env.density(0.0)
-        self.assertGreater(high, base)
-        self.assertAlmostEqual(high * math.sqrt(rho),
-                               on.HAC_EAS_FLOOR_FACTOR * stall, places=6)
-        self.assertEqual(guidance.cone_speed(env, on, stall, on.GATE_ALT_M),
-                         guidance.cone_speed(env, off, stall, on.GATE_ALT_M))
+        gate = guidance.cone_speed(env, on, 50.0, on.GATE_ALT_M)
+        self.assertEqual(gate, guidance.cone_speed(env, off, 50.0, 12000.0))
+        q_gate = env.density(on.GATE_ALT_M) * gate * gate
+        for h in (4000.0, 8000.0, 12000.0):
+            v = guidance.cone_speed(env, on, 50.0, h)
+            self.assertAlmostEqual(env.density(h) * v * v / q_gate, 1.0,
+                                   places=9)
+        self.assertEqual(guidance.cone_speed(env, on, 50.0, 500.0), gate)

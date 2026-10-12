@@ -162,23 +162,21 @@ class Config:
     # is retuned.
     HAC_SPEED_FACTOR: float = 1.00          # x the approach speed
     HAC_SPEED_KP: float = 0.20              # deg of alpha per m/s of excess
-    # **A floor on the cone's dynamic pressure** (``guidance.cone_speed``).
-    # The target above is a *true* airspeed built from the sea-level
-    # (equivalent) stall speed, so in the thin upper cone it asks for less
-    # than the stall: 106 m/s true at 12.2 km is ~41 m/s equivalent against
-    # a stall of 50.  The speed law pins alpha at the cap chasing it, the
-    # cone bleeds to 70-90 m/s at 4-6 km on every flight (LOG9890-9913,
-    # LOG9920 at 1.47 kPa) and flies with RCS open for 80-120 s of its
-    # ~220 s, the surfaces short of authority at that q.  With this on the
-    # target never falls below ``HAC_EAS_FLOOR_FACTOR`` x the stall speed
-    # *equivalent* -- a minimum q, which is a minimum surface authority
-    # and a minimum stall margin.  A floor, not a held EAS: holding the
-    # approach's 108 m/s equivalent all the way up is 280 m/s true at 12
-    # km and was refuted twice (rot-cone-1005 0/12, rot-polar-1008 1/12).
-    # 1.3 is the conventional approach margin over the stall.  Off until
-    # flown.
-    HAC_EAS_FLOOR: bool = False
-    HAC_EAS_FLOOR_FACTOR: float = 1.3
+    # **The cone holds the dynamic pressure it hands over, not a true
+    # airspeed** (``guidance.cone_speed``).  The target above is a constant
+    # *true* airspeed, so in thin air it asks for a low *equivalent* one:
+    # 106 m/s true at 12.2 km is ~41 m/s equivalent, against a stall of 50.
+    # Holding 1 g that slowly takes the wing past its own lift peak --
+    # flown lift peaks near 12 deg of alpha, and the cone sits at 14-18
+    # with L/D 1.3 (LOG9899/9905/9907/9920) -- it bleeds to 70-90 m/s at
+    # 4-6 km and flies with RCS open for 80-120 s of a ~220 s cone.  With
+    # this on the target is the speed whose dynamic pressure equals the
+    # target's at ``GATE_ALT_M``: the same surface authority (and the same
+    # alpha for the same load) from cone entry to the handover, set by the
+    # speed the approach already takes over and nothing else.  The glide's
+    # cone-entry energy (``taem_target``) is left on the old speed, so this
+    # changes the cone alone.  Off until flown.
+    HAC_SPEED_Q: bool = False
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,

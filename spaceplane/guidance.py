@@ -49,7 +49,9 @@ def taem_target(env, cfg):
     stall = airframe.stall(env, cfg)
     if stall is None:
         return None
-    speed = cone_speed(env, cfg, stall, cfg.HAC_ALT_M)
+    # The old constant true airspeed even under ``HAC_SPEED_Q``: the glide's
+    # delivery is not what that flag measures.
+    speed = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
     g = env.mu / (env.equatorial_radius ** 2)
     return cfg.HAC_ALT_M + speed * speed / (2.0 * g) + cfg.GLIDE_TAEM_MARGIN_M
 
@@ -1809,31 +1811,21 @@ def ladder_height(rungs, path, fallback_ld):
 def cone_speed(env, cfg, stall, height):
     """The cone's target true airspeed at ``height``, wings level.
 
-    A constant true airspeed, raised by ``HAC_EAS_FLOOR`` wherever it
-    would be less than ``HAC_EAS_FLOOR_FACTOR`` x the stall speed in
-    equivalent terms (``stall`` is equivalent airspeed) -- the thin upper
-    cone, where the constant asks for less than the stall itself.
+    ``HAC_SPEED_Q``: the speed at ``height`` whose dynamic pressure is the
+    target's at ``GATE_ALT_M`` (constant equivalent airspeed, the handover's),
+    so the surfaces have the same authority all the way down.  Below the
+    gate, or where the density cannot answer, the gate's speed.
     """
     speed = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
-    if getattr(cfg, "HAC_EAS_FLOOR", False):
-        floor = eas_floor(env, cfg, stall, height)
-        if floor is not None:
-            speed = max(speed, floor)
+    if getattr(cfg, "HAC_SPEED_Q", False) and height > cfg.GATE_ALT_M:
+        try:
+            rho_gate = env.density(cfg.GATE_ALT_M)
+            rho = env.density(height)
+        except Exception:                                   # noqa: BLE001
+            return speed
+        if rho_gate and rho and rho > 0.0:
+            speed *= math.sqrt(rho_gate / rho)
     return speed
-
-
-def eas_floor(env, cfg, stall, height):
-    """``HAC_EAS_FLOOR``: the true airspeed at ``height`` that is
-    ``HAC_EAS_FLOOR_FACTOR`` x ``stall`` equivalent, or ``None`` where the
-    density cannot answer."""
-    try:
-        rho0 = env.density(0.0)
-        rho = env.density(max(0.0, height))
-    except Exception:                                       # noqa: BLE001
-        return None
-    if not rho0 or rho is None or rho <= 0.0:
-        return None
-    return cfg.HAC_EAS_FLOOR_FACTOR * stall * math.sqrt(rho0 / rho)
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
