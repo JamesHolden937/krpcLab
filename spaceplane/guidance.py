@@ -1659,6 +1659,37 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     return best[1], best[2], best[3], best[4], best[5]
 
 
+def ease_bank(cfg, prev, want, prev_rate, limit, dt):
+    """Slew the bank command from ``prev`` toward ``want``: up to ``limit``
+    deg/s, but accelerating into it and decelerating out of it over
+    ``BANK_EASE_S``, so the command arrives at the new lean *slowly*.
+
+    A command slewed at a constant rate and stopped dead at its target hands
+    kRPC a lead it closes at full roll rate and cannot stop: LOG10017's
+    glide reversals swung 15-20 deg past every lean (-41 commanded, -62
+    flown; +47, +64).  The rate itself is kept -- the vehicle may roll as
+    fast as it is measured to -- only the start and the stop are shaped.
+    ``BANK_EASE_S`` 0 is the old constant-rate clamp.  Returns ``(bank,
+    rate)``; pass the rate back next tick.
+    """
+    remaining = want - prev
+    ease = float(getattr(cfg, "BANK_EASE_S", 0.0) or 0.0)
+    if dt <= 0.0:
+        return prev, 0.0
+    if ease <= 0.0 or limit <= 0.0:
+        step = vec.clamp(remaining, -limit * dt, limit * dt)
+        return prev + step, step / dt
+    if abs(remaining) < 1e-6:
+        return want, 0.0
+    sense = 1.0 if remaining > 0.0 else -1.0
+    accel = limit / ease
+    moving = max(0.0, (prev_rate or 0.0) * sense)
+    speed = min(limit, moving + accel * dt,
+                math.sqrt(2.0 * accel * abs(remaining)))
+    step = min(abs(remaining), speed * dt)
+    return prev + sense * step, sense * step / dt
+
+
 def weave_sign(cfg, elapsed, period=None):
     """Which way a serpentine is leaning, ``elapsed`` into the phase.
 
@@ -2044,12 +2075,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         forward = side * math.degrees(
             math.atan(speed * speed / max(1.0, gravity * radius)))
     cap = cfg.HAC_BANK_MAX_DEG
-    # A weave reverses at its own bank (``HAC_WEAVE_BANK_DEG``, 0 is the
-    # cone's limit): a gentler, wider swing, the bank the planner's
-    # ``weave_reversal_s`` already assumes.
-    # Never below the bank the circle itself needs, plus room to correct.
-    if weave_deg > 0.0:
-        cap = min(cap, max(weave_bank(cfg), abs(forward) + 10.0))
     signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed

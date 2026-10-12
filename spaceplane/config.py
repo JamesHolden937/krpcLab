@@ -394,15 +394,16 @@ class Config:
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.
-    # 48 s and a 30 deg bank (the user, 2026-10-11: gentler and wider; was
-    # 24 s at the cone's 45): at 24 s the reversal at 45 deg took longer
+    # 48 s (the user, 2026-10-11: gentler and wider; was 24 s; the bank is
+    # not capped -- the reversal is eased, ``BANK_EASE_S``): at 24 s the
+    # reversal at 45 deg took longer
     # than the half-cycle, so the weave never held its angle and spent less
     # than its plan.  Unflown on the farm.
     HAC_WEAVE_PERIOD_S: float = 48.0
     HAC_WEAVE_HOLD_S: float = 20.0
     # The bank the weave reverses at; 0 is ``HAC_BANK_MAX_DEG``.  A
     # steeper bank reverses faster and costs lift, both of which spend.
-    HAC_WEAVE_BANK_DEG: float = 30.0
+    HAC_WEAVE_BANK_DEG: float = 0.0
     # Roll rate the reversal is timed with when none has been measured.
     HAC_WEAVE_ROLL_RATE_DEG_S: float = 8.0
     # The weave's first swing leans the way the vehicle is already banked.
@@ -683,6 +684,15 @@ class Config:
     # Glide only; the deorbit keeps its aim.  ``guidance.glide_bank_min``.
     GLIDE_BANK_MIN_DEG: float = 0.0
     BANK_RATE_DEG_S: float = 8.0
+    # **The bank command eases in and out** (``guidance.ease_bank``): it
+    # reaches the measured roll rate over this many seconds and decelerates
+    # to a stop over the same, so the lean arrives slowly instead of being
+    # stopped dead at full rate -- LOG10017's glide reversals swung 15-20
+    # deg past every lean, and the cone's weave was an unslewed +-45 step.
+    # Glide, cone and approach.  0 = the constant-rate clamp (and no slew
+    # at all in the cone).  Default 2026-10-11 (the user: fast roll is fine,
+    # the swing is not); unflown on the farm.
+    BANK_EASE_S: float = 3.0
     # A tick counts as a sample only when the command led the flown bank by
     # at least this -- the vehicle was being asked for more than it gave.
     BANK_RATE_SAT_DEG: float = 5.0

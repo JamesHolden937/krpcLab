@@ -2588,3 +2588,9 @@ Made default unflown on the farm (the user tests live): APPROACH_BANK_FLOOR_DEG
 6, HAC_WEAVE_CLOCK_FROM_START, HAC_WEAVE_PERIOD_S 48, HAC_WEAVE_BANK_DEG 30
 (now wired as the weave's bank cap), HAC_SPEED_ERR_MAX_MS 25,
 AZIMUTH_FLOOR_TURN_FACTOR 2, ABORT_NORTH.  Fingerprint 19f22149.
+
+Amended the same evening (the user: "don't cap the bank angle ... fast roll
+is fine but it has a tendency to swing"): `HAC_WEAVE_BANK_DEG` back to 0 and
+its cap removed; instead `BANK_EASE_S` 3 shapes the bank command's slew
+(accelerate to the measured rate, decelerate into the lean) in glide, cone
+and approach.  The cone had no bank slew at all before.  Fingerprint e520dd48.

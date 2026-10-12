@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `19f22149`)
+## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `e520dd48`)
 
 The user's live flight LOG10017 touched down **230 m south of the
 centreline** (on the grass, rolled back onto the runway; the DOWN line only
@@ -16,8 +16,13 @@ themselves ("fix, don't test"), so these went straight in as defaults,
 - `APPROACH_BANK_FLOOR_DEG` 6 -- the final's bank limit never drops to 0.
 - `HAC_WEAVE_CLOCK_FROM_START` -- the weave's clock starts with the weave
   (LOG10017 flew a 2-s stub swing, +31 then -28).
-- `HAC_WEAVE_PERIOD_S` 24 -> 48, `HAC_WEAVE_BANK_DEG` 0 -> 30 (now actually
-  caps the weave's bank, floored at the circle's own bank + 10).
+- `HAC_WEAVE_PERIOD_S` 24 -> 48.  The bank is *not* capped (the user: fast
+  roll is fine, the swing is the problem).
+- `BANK_EASE_S` 3 (`guidance.ease_bank`): the bank command accelerates to
+  the measured roll rate and decelerates into the new lean over 3 s, in the
+  glide, the cone (which had no slew at all -- weave reversals were +-45
+  steps) and the approach.  An 80 deg reversal at 13.5 deg/s: 8.8 s v 5.9.
+  LOG10017's glide overshot every lean by 15-20 deg.
 - `HAC_SPEED_ERR_MAX_MS` 25 -- the cone's speed law acts on at most 25 m/s
   of error (LOG10017 pushed over from 159 to 231 m/s at 160 m/s of sink).
 - `AZIMUTH_FLOOR_TURN_FACTOR` 2 -- the glide's reversal band is twice the

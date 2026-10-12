@@ -5091,9 +5091,9 @@ class Autopilot:
         # that never reversed at all -- a spurious lift bonus wearing a duty
         # cycle's clothes.
         self.bank_wanted = wanted
-        bank = vec.clamp(wanted,
-                         self.steer.bank - self.bank_rate() * dt,
-                         self.steer.bank + self.bank_rate() * dt)
+        bank, self._bank_ease_rate = guidance.ease_bank(
+            self.cfg, self.steer.bank, wanted,
+            getattr(self, "_bank_ease_rate", 0.0), self.bank_rate(), dt)
         self.steer = Steer(alpha=alpha, bank=bank)
         self.aim(alpha, bank, snap)
         self.ratchet_alpha(snap)
@@ -5321,8 +5321,16 @@ class Autopilot:
             self._load_capped = False
             self.logbook.event(snap.ut, "cone alpha load cap released at "
                                         "q=%.0f Pa" % snap.dynamic_pressure)
-        self.steer = Steer(alpha=alpha, bank=command.bank)
-        self.aim(alpha, command.bank, snap)
+        # The cone's bank is eased like the glide's (``guidance.ease_bank``):
+        # a weave reversal was a +-45 deg step handed straight to kRPC.
+        bank = command.bank
+        if float(getattr(self.cfg, "BANK_EASE_S", 0.0) or 0.0) > 0.0:
+            bank, self._bank_ease_rate = guidance.ease_bank(
+                self.cfg, self.steer.bank, command.bank,
+                getattr(self, "_bank_ease_rate", 0.0),
+                max(1.0, self.bank_rate()), dt)
+        self.steer = Steer(alpha=alpha, bank=bank)
+        self.aim(alpha, bank, snap)
         self.ratchet_alpha(snap)
         if getattr(self.cfg, "HAC_SPLIT_BRAKE", False):
             self.hac_split_brake(snap, command, height, dt)
@@ -5845,7 +5853,9 @@ class Autopilot:
             dt = 0.0
         else:
             dt = max(0.0, snap.ut - last_ut)
-        bank = vec.clamp(want, prev - rate * dt, prev + rate * dt)
+        bank, self._bank_ease_rate = guidance.ease_bank(
+            self.cfg, prev, want, getattr(self, "_bank_ease_rate", 0.0),
+            rate, dt)
         self._app_bank, self._app_bank_ut = bank, snap.ut
         return bank
 
