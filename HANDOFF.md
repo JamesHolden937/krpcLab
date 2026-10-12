@@ -1,94 +1,111 @@
 # HANDOFF — read this first, rewrite it last
 
-Snapshot of 2026-10-11 ~1130.  History: `docs/spaceplane/journal.md`,
-"Session, 2026-10-11 late morning (the user's polar dive)".
+Snapshot of 2026-10-11 ~1705.  History: `docs/spaceplane/journal.md`,
+"Session, 2026-10-11 afternoon (the plan's dear windows)".
 
-Defaults fingerprint **`7904409b`** (was `f0b8f9b9`; the only change is
-three new config fields, the flag below, off).  Committed and pushed.
-Farm stopped, sims stopped, sleep inhibitor released.
+Defaults fingerprint **`bbcacd22`**.  Committed locally, **not pushed**
+(the user: "do not push").  Farm stopped, sleep inhibitor released.
+The how-it-works PDF was **not** updated this session (see Next, 3).
 
 **Standing (the user, 2026-10-11): never ask before starting the farm or
-flying a batch** -- now in root `CLAUDE.md`.
+flying a batch** -- in root `CLAUDE.md`.
 
-## The headline
+## FIRST THING: fly the round that was stopped
 
-**The live 186 km polar (LOG9641) dived in the glide below Mach 3**, then
-tumbled in the cone's first bank swing.  kRPC held +0.2 of pitch against a
-16-22 deg nose-low error for 100 s once the offload bled off at Mach 3
-(its gains are scaled to the 8 MN m the surfaces *could* give, so its
-integral runs on minutes): alpha 5 where 20-28 was commanded, 50 kPa, cone
-entered at the Mach 1.5 veto at 441 m/s / 9.7 km.  There, ±45 deg weave +
-alpha ceiling released 8 -> 32 + pitch retuned to 3 s at 28 kPa -> alpha
-41, bank +79/+123/+172, recovered at 5.5 km and 85 m/s.  No abort in the
-log; it ends in the cone (broken pipe -- the game closed).
+The user stopped the session as `short-1011` started (killed in round 0;
+`logs/rot-short-1011-c0.txt` and any LOG99xx from it are partial --
+ignore them).  Re-fly it as is, on a freshly restarted farm:
 
-**Built, off: `GLIDE_PITCH_RESCUE_DEG`** (`_FULL_DEG` 10, `_HOLD_S` 8,
-`Autopilot._glide_pitch_rescue`): below the offload's Mach, a nose-low
-pitch error past the band for 8 s engages an integral on the manual trim,
-held to the end of the glide.  **Sim** (LOG9642-9661, 10 orbit pairs):
-reproduces the dive in 2/3 polar baselines; with it, >+10 deg error ticks
-below Mach 3 58 -> 21 and no cone entry above 245 m/s.  Engaging on a
-nose-*high* error did not close it (LOG9645, 9651), hence nose-low only.
+```bash
+cd testInstances && ./nosleep.sh start && ./start.sh && cd ..
+spaceplane/tools/multirot.sh short-1011 4 \
+  "qs_shuttle2_i90_rigoff|" "qs_shuttle2_i90_rigoff|HAC_SHORT_POLAR=True" \
+  "qs_shuttle2_e500i45_rigoff|" "qs_shuttle2_e500i45_rigoff|HAC_SHORT_POLAR=True" \
+  "qs_shuttle2_rigoff|" "qs_shuttle2_rigoff|HAC_SHORT_POLAR=True"
+```
 
-**Farm batch `rescue-1011` (logs/rot-rescue-1011-c0..4.txt, LOG9662-9721)
-is unreadable for the flag because the baseline is broken:** default
-`qs_shuttle2_rigoff` 2/5 on the runway (taemfix-1010: 23/24), arrivals
--23..+14 km.  Per arm (RWY/total): i90 off 4/5, on 3/10; e500 off 5/10,
-on 5/10; e500i45 off 4/10, on 4/10; rigoff off 2/5, on 0 flown (the 8-arm
-rotation never reached arm 7).  Swap ended at 20.7 GB.
+~19 min a cycle, ~76 min.  Group by each log's `config:` line (arm numbers
+rotate).  Promote `HAC_SHORT_POLAR` if i90/e500i45 short landings fall
+without rigoff moving; delete it otherwise.  It needs
+`logs/conepolar/Untitled_Space_Craft_31.json` (present; regenerate with
+`spaceplane/tools/conepolar.py logs/LOG9[6-9]??` -- not tracked).
 
-**The cause on rigoff is last session's deorbit planner** (sim-only, never
-farm-flown before this): the same save planned dv 25.9 m/s 436 s ahead
-(LOG9673, 9721: on the runway), 27.1 at 2595 s (LOG9685, -5 km), **246 m/s
-68 s ahead** (LOG9697, broke up) and **179 m/s 22685 s ahead** (LOG9709,
-+8 km water).  Same save, four different windows -- the plan is not
-deterministic in the state it starts from, and it accepts burns 10x the
-nominal.
+## What changed today (all default unless marked)
+
+- **Cheap deorbit windows.**  The plan was deterministic all along (the
+  morning's "four windows on one save" were four saves).  It took the
+  first solvable window whatever it cost: e500 244 m/s at periapsis, e500i45
+  180 m/s.  Now a window must cost no more than the apoapsis burn to a
+  surface periapsis (`deorbit_dv_floor` at `DRAIN_RESERVE_PERIAPSIS_M`);
+  dearer ones are skipped half an orbit at a time, cheapest taken at the
+  horizon.  cheap-1011 (LOG9746-9793): **e500 12/12 v 4/12 (5 lost),
+  e500i45 8/12 v 1/12** (arrivals -0.35..+1.8 km v -17..-31).
+- **The burn node.**  The node carries surface retrograde x dv at its time
+  resolved into prograde/normal/radial (`guidance.node_components`; normal
+  sign read back from `burn_vector` once, logged as `burn node: ...`).  SAS
+  holds Maneuver to commit, then **stability assist through the burn**.
+  `DEORBIT_SAS_SURFACE` deleted.  node3-1011 (LOG9890-9913): 0/24
+  stranded burns, e500i45 7/12 v 5/12, i90 10/12 v 9/12.
+- **Burn stop through a drifting nose**: once owed reached 0 the stop test
+  runs on misaligned ticks (it used to return early forever -- node-1011's
+  4/8 tail-first water landings).
+- **`HAC_LOAD_MAX` 3 g**: cone alpha capped at the lift of 3 weights at the
+  q flown (LOG9641's 441 m/s / 28.5 kPa entry: alpha 32 is ~8 g on the
+  table).  Never bound in 16 i90 flights; unmeasured on a fast entry.
+- **`GLIDE_PITCH_RESCUE` deleted**: no dive on the farm; i90 4/8 and 5/8
+  v 6/8 (node-1011, LOG9794-9841).
+- **Off, unmeasured: `HAC_SHORT_POLAR`** (the round above).
+
+## The finding behind HAC_SHORT_POLAR
+
+Every inclined-orbit miss is the cone running short, not the deorbit or
+glide: arrival within ~1 km, cone entered with the usual ~14.0 km energy
+height, exit `out of height` 0.4-3 km low, 4-6 km from the gate, landing
+1.3-7.7 km short (i90 in the water).  conesum: short flights flew the cone
+at L/D 1.94-2.25, alpha 8-9 flown, 99-108 m/s; good ones 2.25-2.75, alpha
+~7, 104-113 m/s.  Flown polar: L/D 2.45 at 11 deg, 2.67 at 9, 2.87 at 7,
+2.97 at 5.  The law: once even the tightest circle is too long for the
+height, cap alpha where the polar gives `total/available` times the ratio.
+It is aggressive (10% short: 9 -> 5.6 deg) -- watch for long arrivals.
+
+## Where each orbit stands (latest farm, default)
+
+rigoff 13/13; e500 12/12; i90 ~9-10/12 (losses: cone short -> water);
+e500i45 7-8/12 (cone short, 1-3.5 km).  ~87% pooled against the goal of
+>= 95% and 0 lost.
 
 ## Next, in order
 
-1. **Fix the deorbit plan's window choice** before any other farm work:
-   why the same save gets 26 vs 246 m/s (look at what differs when the
-   scan starts -- drain timing; ksp4 "could not pause after the load"
-   in c0), and reject/penalise windows whose dv is far above the
-   orbit's minimum.  Then re-fly rigoff/inc/high/ecc against taemfix-1010.
-2. Re-fly `GLIDE_PITCH_RESCUE_DEG=8` vs off on a working baseline
-   (i90, e500, e500i45, rigoff; use an even arm count per 6 instances so
-   every arm is flown); promote or delete.
-3. A guard on entering the cone fast: refuse or soften (weave, ceiling
-   release, pitch retune) when entering well above the cone's planned
-   speed -- LOG9641's tumble path is still open to any fast arrival.
-4. **SAS on the node, not surface retrograde (the user asked).**  Today
-   the search burns along *surface* retrograde (rotating-frame -v) while
-   the node is placed as pure orbital retrograde (`add_node(prograde=-dv)`,
-   `sas_engage`); on inclined orbits those differ by 4-5 deg, which is why
-   Maneuver mode never committed on LOG9598 and `DEORBIT_SAS_SURFACE` went
-   in.  Fix it at the source: build the node from the solved burn vector
-   (decompose surface -v * dv into prograde/normal/radial at node time) and
-   hold SAS on Maneuver.  One direction for search, node, map view and SAS;
-   the hold is then inertial during the burn instead of following the
-   turning surface velocity.  Check with `DEORBIT_SAS_ALIGN` on a polar
-   sim save (node error < 0.5 deg at commit), then the farm; delete
-   `DEORBIT_SAS_SURFACE` if it wins.
-5. Then the deorbit/glide items from before: the how-it-works PDF's
-   DEORBIT section, `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE`, the inc
-   glide energy deficit, `constantsAudit.md`.
+1. Re-fly `short-1011` (above); promote or delete.
+2. If the cone is still short on inclined arrivals: check whether the
+   deficit scales with the heading change the cone flies (the glide's
+   TAEM target is a constant, `guidance.taem_target`) and price the turn.
+3. **How-it-works PDF** (`docs/spaceplane/howItWorks.pdf`): the DEORBIT
+   section is stale -- cheap-window plan, burn node + stability-assist
+   hold, the stop test, the cone's load cap (and HAC_SHORT_POLAR if
+   promoted).  Then push when the user allows it.
+4. Older items: `ABORT_NORTH`, `GROUND_SPOILER_ON_NOSE` (both off,
+   unflown on the farm), `docs/spaceplane/constantsAudit.md`.
+5. The live craft (`shuttle|31`) has no flown polar of its own
+   (`HAC_SHORT_POLAR` would do nothing live until it does).
 
 ## Traps paid this session
 
-- `multirot.sh` with 8 arms on 6 instances x 2 rounds never flew arm 7
-  in 5 cycles; arm 0 and 6 got 5.  Pick arm counts that divide 12.
-- The live craft (`shuttle`, 41.7 t) is the farm's craft with full tanks;
-  after the drain both are 31.4 t.  Not a discrepancy.
-- `pgrep -af KSP_x64` matches its own shell -- it does not mean a game
-  is up.
+- **Read the save name off each log before comparing.**  The handoff's
+  headline was four saves misread as one.
+- A `&&` chain ending in `| tail` commits on a failing test -- check the
+  suite's own exit status.
+- landsum drops some logs (44 of 48); for outcome counts use the
+  harness lines in `logs/rot-*.txt` joined to each log's `config:` line.
+- kspSim has no `qs_shuttle2_rigoff` model: orbit specs go on
+  `qs_shuttle2@pe=..`, and it needs `DEORBIT_SAS_ALIGN=False` (SAS modes
+  not simulated -- the burn node can only be judged on the farm).
+- Six fresh instances put 10-17 GB into zram at boot; normal.
 
 ## Traps from before (still true)
 
 - Kill sims with `pkill -f "kspSim[.]run"`.
-- kspSim lands short of the game (gap 7) and its sub-Mach-4.5 glide
-  departs on non-aligned arrivals: don't judge range there.
-- kspSim needs `DEORBIT_SAS_ALIGN=False`.
-- multirot's arm numbers rotate per cycle: group by the log's config line.
-- Swap ends a 5-cycle multirot at ~21 GB; restart before comparing.
+- kspSim lands short of the game (gap 7); its subsonic lift is wrong
+  (gap 8) -- don't screen cone energy there.
+- multirot: arm counts must divide 12; arm numbers rotate per cycle.
 - `warp_to` is blocking: the panel does not answer during it.
