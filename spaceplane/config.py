@@ -2816,14 +2816,20 @@ class Config:
     # -- the vehicle -------------------------------------------------------
     STARTUP_ACTION_GROUP: int = 0           # 0 = none; this craft needs none
     ENABLE_RCS: bool = True
-    # **Where the glide's RCS is for: the supersonic reversals.**  Flown in
-    # the sim with the q ceiling lifted (LOG3463-3466), the valve took the
-    # shuttle's arrival from +1.3 to +0.3 km and its mistracked ticks below
-    # Mach 4 from ~80% to ~31% -- and then emptied the tank, 230 of 429
-    # units subsonic in the cone, because nothing after GLIDE ever closed it.
-    # Below this Mach the glide does not permit it (0: everywhere); the later
-    # phases now close the valve themselves.
-    GLIDE_RCS_MACH_MIN: float = 1.0  # default 2026-09-25: the shuttle chain, 4/4 landed (LOG3656-3661) vs 0/4
+    # **In air RCS is always armed and fires on saturation** (the user,
+    # 2026-10-11): from GLIDE through FLARE the valve opens when an axis's
+    # summed control input (kRPC's read-back, autopilot included) has sat
+    # at ``RCS_SAT_INPUT`` for ``RCS_SAT_ON_S`` while the pointing error
+    # has not closed by ``RCS_SAT_CLOSING_FRACTION`` -- the surfaces and
+    # wheels are out of authority and losing.  It closes once the input has
+    # stayed under ``RCS_SAT_RELEASE`` for ``RCS_SETTLE_S`` (or the error
+    # relay settles).  ``RCS_Q_MAX_PA`` still shuts it.  Replaces the
+    # glide's Mach floor and the no-RCS-below-the-glide rule (unflown; the
+    # user tests live).  See ``common.rcs``.
+    RCS_SAT_INPUT: float = 0.95
+    RCS_SAT_ON_S: float = 0.5
+    RCS_SAT_CLOSING_FRACTION: float = 0.2
+    RCS_SAT_RELEASE: float = 0.6
     # **Permission is not demand.**  ``COAST_RCS`` and the burn say where RCS
     # is *allowed*; what actually opens the valve is a pointing error that
     # nothing else is closing.  kRPC's autopilot hunts, and a thruster held

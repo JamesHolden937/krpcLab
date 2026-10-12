@@ -2569,7 +2569,19 @@ class Autopilot:
             self.flap_brake_out = bool(out)
         return bool(done)
 
-    def set_rcs(self, permitted, snap=None):
+    def input_saturation(self, snap):
+        """The largest summed control input magnitude, 0-1, or ``None``
+        when kRPC gave no read-back (then the valve keeps the error relay:
+        a missing input must not read as an unsaturated one)."""
+        tel = getattr(self, "telemetry", None)
+        if (snap is None or tel is None
+                or getattr(tel, "pitch_input", None) is None
+                or getattr(tel, "yaw_input", None) is None):
+            return None
+        return max(abs(float(getattr(snap, name, 0.0) or 0.0))
+                   for name in ("pitch_input", "yaw_input", "roll_input"))
+
+    def set_rcs(self, permitted, snap=None, air=False):
         """RCS on only while something is actually turning the vehicle.
 
         The phase says where thrusters are *allowed*; ``rcs.Valve`` decides
@@ -2578,12 +2590,18 @@ class Autopilot:
         happens inside the phase that needed the slew: the flip costs a few
         seconds of thruster and the settling afterwards costs more than the
         flip.  See ``common.rcs``.
+
+        ``air``: GLIDE through FLARE, where the valve fires on the control
+        input's saturation rather than on the pointing error alone
+        (``RCS_SAT_*``).
         """
         self.rcs.update(snap.ut if snap is not None else 0.0, permitted,
                         self.valve_error(snap),
                         None if snap is None else snap.dynamic_pressure,
                         apply=self._apply_rcs,
-                        hold=self.reversal_under_way(snap))
+                        hold=self.reversal_under_way(snap),
+                        saturation=(self.input_saturation(snap) if air
+                                    else None))
         self.rcs_on = self.rcs.on
 
     def _apply_rcs(self, wanted):
@@ -4988,26 +5006,9 @@ class Autopilot:
         # experiment needs it (docs/spaceplane/design.md, "High alpha: what the
         # airframe gives and what it will hold"), and because "RCS cannot
         # help here" should be a measurement rather than an assumption.
-        permitted = True
-        if permitted and self.cfg.GLIDE_RCS_MACH_MIN > 0.0:
-            # Only where the reversals need it.  See ``GLIDE_RCS_MACH_MIN``.
-            try:
-                permitted = self.env.mach(
-                    vec.norm(snap.velocity),
-                    vec.norm(snap.position) - self.env.equatorial_radius
-                ) >= self.cfg.GLIDE_RCS_MACH_MIN
-            except Exception:                               # noqa: BLE001
-                pass
-            # ``ATTITUDE_YAW_WITH_RCS``: a turn in progress keeps its valve.
-            # Below the Mach floor permission used to lapse on the tick,
-            # shutting the valve with 10.8 deg of pointing error and 20 of
-            # slip and snapping yaw from 4.8 s back to 22.6 mid-recovery --
-            # LOG3802 then swung the bank past its command six times and
-            # was lost 25 km short.  Open stays open until the relay settles
-            # on its own; only then does the floor apply.
-            if not permitted and getattr(self.rcs, "on", False):
-                permitted = True
-        self.set_rcs(permitted, snap)
+        # Always armed in air; the valve fires on saturation.  See
+        # ``RCS_SAT_INPUT``.
+        self.set_rcs(True, snap, air=True)
         self.env.refresh(
             snap.ut, vec.norm(snap.velocity),
             vec.norm(snap.position) - self.env.equatorial_radius)
@@ -5284,14 +5285,9 @@ class Autopilot:
         always designed for -- lined up, at the gate's altitude, at the
         approach speed -- however the entry happened to arrive.
         """
-        # Nothing below the glide permits RCS; close what it left open --
-        # except, under ``ATTITUDE_YAW_WITH_RCS``, a turn still in progress:
-        # shutting it on the first HAC tick snapped yaw from the thrusters'
-        # figure back to 22.6 s mid-recovery and tumbled the vehicle
-        # transonic (LOG3802, 3805, 3838, 3844).  Open stays open until the
-        # relay settles on its own, the GLIDE Mach-floor rule; once shut it
-        # stays shut.
-        self.set_rcs(getattr(self.rcs, "on", False), snap)
+        # Always armed in air; the valve fires on saturation.  See
+        # ``RCS_SAT_INPUT``.
+        self.set_rcs(True, snap, air=True)
         self.set_throttle(0.0)
         if not getattr(self, "_glide_flaps_stowed", False):
             # The glide's brake is the glide's; the cone has its own energy.
@@ -5783,7 +5779,7 @@ class Autopilot:
             if self.set_flap_brake(False):
                 self.logbook.event(snap.ut, "cone flap brake in: the approach")
         # Nothing below the glide permits RCS; close what it left open.
-        self.set_rcs(False, snap)
+        self.set_rcs(True, snap, air=True)
         self.set_throttle(0.0)
         self.env.refresh(
             snap.ut, vec.norm(snap.velocity),
@@ -5911,7 +5907,7 @@ class Autopilot:
                 self.logbook.event(snap.ut, "approach split brake in: the "
                                    "flare")
         # Nothing below the glide permits RCS; close what it left open.
-        self.set_rcs(False, snap)
+        self.set_rcs(True, snap, air=True)
         self.set_throttle(0.0)
         height = snap.landing_height
         elapsed = snap.ut - (self.flare_since or snap.ut)

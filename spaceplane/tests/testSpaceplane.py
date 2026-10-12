@@ -3476,7 +3476,6 @@ class TestTheSpaceplaneShutsItsThrustersInAir(unittest.TestCase):
         is guarded by Mach instead: no thrusters in the subsonic air."""
         self.assertGreater(self.cfg.RCS_Q_MAX_PA, 0.0)
         self.assertLessEqual(self.cfg.RCS_Q_MAX_PA, 20000.0)
-        self.assertGreaterEqual(self.cfg.GLIDE_RCS_MACH_MIN, 1.0)
 
     def test_the_deadband_cannot_invert(self):
         """ON below OFF is a relay that latches on and never lets go."""
@@ -5007,16 +5006,71 @@ class TestAHighApproachFliesSlower(unittest.TestCase):
                         src.index("command.target_speed = target"))
 
 
-class TestTheMachFloorLetsATurnFinish(unittest.TestCase):
-    """``ATTITUDE_YAW_WITH_RCS``: below ``GLIDE_RCS_MACH_MIN`` an open valve
-    is not forced shut mid-turn (LOG3802)."""
+class TestTheValveFiresOnSaturation(unittest.TestCase):
+    """``RCS_SAT_*``: in air the valve opens when an input is pinned and
+    the turn is not closing, and closes once the input comes off the stop."""
 
-    def test_the_glide_keeps_an_open_valve(self):
-        src = inspect.getsource(autopilot_module.Autopilot)
-        i = src.index("GLIDE_RCS_MACH_MIN")
-        chunk = src[i:i + 2500]
-        self.assertIn("ATTITUDE_YAW_WITH_RCS", chunk)
-        self.assertIn('getattr(self.rcs, "on", False)', chunk)
+    def valve(self):
+        from common import rcs
+        return rcs.Valve(Config())
+
+    def step(self, v, ut, sat, err, q=1000.0):
+        return v.update(ut, True, err, q, saturation=sat)
+
+    def test_a_large_error_alone_does_not_open_it(self):
+        v = self.valve()
+        for k in range(20):
+            self.assertFalse(self.step(v, k * 0.1, 0.5, 20.0))
+
+    def test_pinned_and_not_closing_opens_it(self):
+        v = self.valve()
+        self.assertFalse(self.step(v, 0.0, 1.0, 10.0))
+        self.assertFalse(self.step(v, 0.3, 1.0, 10.0))
+        self.assertTrue(self.step(v, 0.6, 1.0, 10.0))
+
+    def test_pinned_but_closing_stays_shut(self):
+        v = self.valve()
+        err = 10.0
+        for k in range(10):
+            self.assertFalse(self.step(v, k * 0.2, 1.0, err))
+            err *= 0.8
+
+    def test_it_closes_after_the_input_releases(self):
+        v = self.valve()
+        for ut in (0.0, 0.6):
+            self.step(v, ut, 1.0, 10.0)
+        self.assertTrue(v.on)
+        self.assertTrue(self.step(v, 1.0, 0.3, 8.0))
+        self.assertTrue(self.step(v, 2.5, 0.3, 8.0))
+        self.assertFalse(self.step(v, 3.1, 0.3, 8.0))
+
+    def test_the_q_ceiling_still_shuts_it(self):
+        v = self.valve()
+        for ut in (0.0, 0.6):
+            self.step(v, ut, 1.0, 10.0, q=30000.0)
+        self.assertFalse(v.on)
+
+    def test_no_read_back_keeps_the_error_relay(self):
+        run = object.__new__(autopilot_module.Autopilot)
+        run.telemetry = SimpleNamespace(pitch_input=None, yaw_input=None)
+        self.assertIsNone(run.input_saturation(
+            SimpleNamespace(pitch_input=0.0, yaw_input=0.0, roll_input=0.0)))
+
+    def test_every_air_phase_arms_it(self):
+        for name in ("run_glide", "run_hac", "run_approach", "run_flare"):
+            src = inspect.getsource(getattr(autopilot_module.Autopilot, name))
+            self.assertIn("set_rcs(True, snap, air=True)", src, name)
+        src = inspect.getsource(autopilot_module.Autopilot.run_rollout)
+        self.assertIn("set_rcs(False, snap)", src)
+
+
+class TestTheThresholdReachIsOnTheCleanRatio(unittest.TestCase):
+    """``ABORT_NORTH``: a runway out of reach only with the split rudder
+    held out is not out of reach (LOG10018)."""
+
+    def test_the_source_divides_by_the_clean_ratio(self):
+        src = inspect.getsource(guidance.approach)
+        self.assertIn("to_threshold / max(0.1, clean_ld)", src)
 
 
 class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):

@@ -1240,9 +1240,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     command.excess = excess
     # Height over the best glide to the *threshold* (the tarmac's start),
     # not the aim: below zero the runway is out of reach (``ABORT_NORTH``).
+    # On the *clean* ratio: the split rudder can be stowed, so a runway out
+    # of reach only with the brake held out is not out of reach.  Divided
+    # by the braked ratio, LOG10018 rolled out of the cone 23.5 deg of
+    # brake out, read "1268 m short" at h=2691, diverted north onto the
+    # grass and touched down 1290 m past the threshold.
     to_threshold = max(0.0, distance - airframe.touchdown_aim(env, cfg)
                        + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0)))
-    command.threshold_excess = height - to_threshold / max(0.1, best_ld)
+    command.threshold_excess = height - to_threshold / max(0.1, clean_ld)
     command.scurve_deg = scurve_deg
     # **The speed the approach is trying to hold, published.**  Anything that
     # adds drag has to know it: a glider that ends up below this can only get
