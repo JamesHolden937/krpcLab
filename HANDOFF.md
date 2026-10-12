@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `e520dd48`)
+## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `160acc93`)
 
 The user's live flight LOG10017 touched down **230 m south of the
 centreline** (on the grass, rolled back onto the runway; the DOWN line only
@@ -18,11 +18,16 @@ themselves ("fix, don't test"), so these went straight in as defaults,
   (LOG10017 flew a 2-s stub swing, +31 then -28).
 - `HAC_WEAVE_PERIOD_S` 24 -> 48.  The bank is *not* capped (the user: fast
   roll is fine, the swing is the problem).
-- `BANK_EASE_S` 3 (`guidance.ease_bank`): the bank command accelerates to
-  the measured roll rate and decelerates into the new lean over 3 s, in the
-  glide, the cone (which had no slew at all -- weave reversals were +-45
-  steps) and the approach.  An 80 deg reversal at 13.5 deg/s: 8.8 s v 5.9.
-  LOG10017's glide overshot every lean by 15-20 deg.
+- `BANK_ACCEL_SHARE` 0.5 (`guidance.bank_accel`, `ease_bank`,
+  `Autopilot.bank_accel`): the bank command speeds up and brakes at half
+  the bank's angular acceleration from kRPC's `available_torque` /
+  `moment_of_inertia` (read 1 Hz, smoothed), roll and yaw combined about
+  the velocity vector at the flown alpha, braking where the remaining angle
+  equals the stopping distance.  Glide alpha 44 no RCS: 5.6 deg/s^2, an
+  80 deg reversal 8.0 s; with RCS 12.5; cone alpha 5: ~200 (effectively
+  unbraked -- any swing left in the cone is kRPC's tune, not the torque).
+  Glide, cone (no slew before) and approach.  LOG10017's glide overshot
+  every lean by 15-20 deg.
 - `HAC_SPEED_ERR_MAX_MS` 25 -- the cone's speed law acts on at most 25 m/s
   of error (LOG10017 pushed over from 159 to 231 m/s at 160 m/s of sink).
 - `AZIMUTH_FLOOR_TURN_FACTOR` 2 -- the glide's reversal band is twice the

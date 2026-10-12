@@ -1659,30 +1659,57 @@ def hac_radius(env, cfg, end, r, side, available, speed=None,
     return best[1], best[2], best[3], best[4], best[5]
 
 
-def ease_bank(cfg, prev, want, prev_rate, limit, dt):
-    """Slew the bank command from ``prev`` toward ``want``: up to ``limit``
-    deg/s, but accelerating into it and decelerating out of it over
-    ``BANK_EASE_S``, so the command arrives at the new lean *slowly*.
+def bank_accel(torque, inertia, alpha_deg):
+    """Angular acceleration of the *bank*, deg/s^2, from the torque the
+    vehicle has (``torque``, ``inertia`` as kRPC's (pitch, roll, yaw)).
 
-    A command slewed at a constant rate and stopped dead at its target hands
-    kRPC a lead it closes at full roll rate and cannot stop: LOG10017's
-    glide reversals swung 15-20 deg past every lean (-41 commanded, -62
-    flown; +47, +64).  The rate itself is kept -- the vehicle may roll as
-    fast as it is measured to -- only the start and the stop are shaped.
-    ``BANK_EASE_S`` 0 is the old constant-rate clamp.  Returns ``(bank,
-    rate)``; pass the rate back next tick.
+    Bank turns the lift about the velocity vector, and at angle of attack
+    ``alpha`` that axis is ``cos(alpha)`` body roll plus ``sin(alpha)`` body
+    yaw -- so each axis must supply its share and the slower one sets the
+    rate: ``min(a_roll / cos, a_yaw / sin)``.  On the shuttle body roll is
+    ~1400 deg/s^2 and yaw ~6, so at alpha 40 the yaw axis makes a reversal
+    stoppable at ~10 deg/s^2, and at alpha 5 at ~70.  ``None`` if either
+    axis cannot answer.
     """
-    remaining = want - prev
-    ease = float(getattr(cfg, "BANK_EASE_S", 0.0) or 0.0)
+    try:
+        a_roll = abs(torque[1]) / inertia[1]
+        a_yaw = abs(torque[2]) / inertia[2]
+    except (TypeError, ZeroDivisionError, IndexError):
+        return None
+    if a_roll <= 0.0:
+        return None
+    a = math.radians(min(80.0, abs(alpha_deg or 0.0)))
+    out = a_roll / max(1e-3, math.cos(a))
+    if math.sin(a) > 1e-3:
+        if a_yaw <= 0.0:
+            return None
+        out = min(out, a_yaw / math.sin(a))
+    return math.degrees(out)
+
+
+def ease_bank(prev, want, prev_rate, limit, dt, accel=None):
+    """Slew the bank command from ``prev`` toward ``want`` as the vehicle
+    can: no faster than ``limit`` deg/s (the measured roll rate), speeding
+    up at no more than ``accel`` deg/s^2 and starting to brake exactly when
+    the remaining angle is the stopping distance at that deceleration,
+    ``rate^2 / (2 accel)`` -- so the command arrives at the new lean with no
+    rate left for the vehicle to carry past it.
+
+    A command slewed at full rate and stopped dead hands kRPC a lead it
+    closes at full rate and cannot stop: LOG10017's glide reversals swung
+    15-20 deg past every lean, and the cone's weave was an unslewed step.
+    ``accel`` ``None`` (no torque reading) is the constant-rate clamp.
+    Returns ``(bank, rate)``; pass the rate back next tick.
+    """
     if dt <= 0.0:
         return prev, 0.0
-    if ease <= 0.0 or limit <= 0.0:
+    remaining = want - prev
+    if accel is None or accel <= 0.0 or limit <= 0.0:
         step = vec.clamp(remaining, -limit * dt, limit * dt)
         return prev + step, step / dt
     if abs(remaining) < 1e-6:
         return want, 0.0
     sense = 1.0 if remaining > 0.0 else -1.0
-    accel = limit / ease
     moving = max(0.0, (prev_rate or 0.0) * sense)
     speed = min(limit, moving + accel * dt,
                 math.sqrt(2.0 * accel * abs(remaining)))

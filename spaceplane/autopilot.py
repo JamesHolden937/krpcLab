@@ -1065,6 +1065,44 @@ class Autopilot:
         lead = (cmd - flown + 180.0) % 360.0 - 180.0
         return abs(lead) > float(self.cfg.BANK_RATE_SAT_DEG)
 
+    def bank_accel(self, snap):
+        """deg/s^2 the bank command may accelerate and brake at:
+        ``BANK_ACCEL_SHARE`` of what the vehicle's torque can do about the
+        velocity vector at the alpha it is flying (``guidance.bank_accel``).
+
+        The torque is kRPC's ``available_torque`` -- wheels, the surfaces at
+        this q, RCS while the valve is open -- read every
+        ``BANK_ACCEL_READ_S`` of game time with the inertia, and smoothed
+        over ``ATTITUDE_AIR_SMOOTH_S`` because the surface figure follows
+        the present deflection and chatters.  ``None`` (the constant-rate
+        clamp) with the share at 0 or no reading."""
+        share = float(getattr(self.cfg, "BANK_ACCEL_SHARE", 0.0) or 0.0)
+        if share <= 0.0:
+            return None
+        last = getattr(self, "_bank_torque_ut", None)
+        if last is None or snap.ut - last >= float(
+                self.cfg.BANK_ACCEL_READ_S) or snap.ut < last:
+            try:
+                torque = self.vessel.available_torque[0]
+                inertia = self.vessel.moment_of_inertia
+            except Exception:                           # noqa: BLE001
+                torque = inertia = None
+            if torque is not None:
+                dt = 0.0 if last is None else max(0.0, snap.ut - last)
+                tau = max(0.1, float(self.cfg.ATTITUDE_AIR_SMOOTH_S))
+                old = getattr(self, "_bank_torque", None)
+                now = tuple(abs(t) for t in torque)
+                self._bank_torque = now if old is None else tuple(
+                    o + (n - o) * dt / (tau + dt) for o, n in zip(old, now))
+                self._bank_inertia = tuple(inertia)
+            self._bank_torque_ut = snap.ut
+        torque = getattr(self, "_bank_torque", None)
+        inertia = getattr(self, "_bank_inertia", None)
+        if torque is None or inertia is None:
+            return None
+        got = guidance.bank_accel(torque, inertia, snap.krpc_aoa)
+        return None if got is None else share * got
+
     def bank_rate(self):
         """deg/s the bank command may slew at: measured by ``roll_rate``
         under ``BANK_RATE_MEASURED``, else the ``BANK_RATE_DEG_S`` constant."""
@@ -5092,8 +5130,8 @@ class Autopilot:
         # cycle's clothes.
         self.bank_wanted = wanted
         bank, self._bank_ease_rate = guidance.ease_bank(
-            self.cfg, self.steer.bank, wanted,
-            getattr(self, "_bank_ease_rate", 0.0), self.bank_rate(), dt)
+            self.steer.bank, wanted, getattr(self, "_bank_ease_rate", 0.0),
+            self.bank_rate(), dt, self.bank_accel(snap))
         self.steer = Steer(alpha=alpha, bank=bank)
         self.aim(alpha, bank, snap)
         self.ratchet_alpha(snap)
@@ -5321,14 +5359,16 @@ class Autopilot:
             self._load_capped = False
             self.logbook.event(snap.ut, "cone alpha load cap released at "
                                         "q=%.0f Pa" % snap.dynamic_pressure)
-        # The cone's bank is eased like the glide's (``guidance.ease_bank``):
-        # a weave reversal was a +-45 deg step handed straight to kRPC.
+        # The cone's bank is slewed as the vehicle can stop it, like the
+        # glide's (``guidance.ease_bank``): a weave reversal was a +-45 deg
+        # step handed straight to kRPC.
         bank = command.bank
-        if float(getattr(self.cfg, "BANK_EASE_S", 0.0) or 0.0) > 0.0:
+        accel = self.bank_accel(snap)
+        if accel is not None:
             bank, self._bank_ease_rate = guidance.ease_bank(
-                self.cfg, self.steer.bank, command.bank,
+                self.steer.bank, command.bank,
                 getattr(self, "_bank_ease_rate", 0.0),
-                max(1.0, self.bank_rate()), dt)
+                max(1.0, self.bank_rate()), dt, accel)
         self.steer = Steer(alpha=alpha, bank=bank)
         self.aim(alpha, bank, snap)
         self.ratchet_alpha(snap)
@@ -5854,8 +5894,8 @@ class Autopilot:
         else:
             dt = max(0.0, snap.ut - last_ut)
         bank, self._bank_ease_rate = guidance.ease_bank(
-            self.cfg, prev, want, getattr(self, "_bank_ease_rate", 0.0),
-            rate, dt)
+            prev, want, getattr(self, "_bank_ease_rate", 0.0), rate, dt,
+            self.bank_accel(snap))
         self._app_bank, self._app_bank_ut = bank, snap.ut
         return bank
 

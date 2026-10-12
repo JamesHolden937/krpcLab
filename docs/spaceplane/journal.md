@@ -2594,3 +2594,10 @@ is fine but it has a tendency to swing"): `HAC_WEAVE_BANK_DEG` back to 0 and
 its cap removed; instead `BANK_EASE_S` 3 shapes the bank command's slew
 (accelerate to the measured rate, decelerate into the lean) in glide, cone
 and approach.  The cone had no bank slew at all before.  Fingerprint e520dd48.
+
+Then (the user: "you can literally measure the force the control surfaces
+can exert"): the fitted 3 s ease replaced by `BANK_ACCEL_SHARE` 0.5 of the
+bank's torque-derived angular acceleration, `min(a_roll/cos a, a_yaw/sin a)`
+from `available_torque` / `moment_of_inertia`.  Shuttle: body roll ~1400
+deg/s^2, yaw ~6, so at glide alpha the yaw axis is what limits a reversal.
+Fingerprint 160acc93.

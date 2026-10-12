@@ -395,7 +395,7 @@ class Config:
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.
     # 48 s (the user, 2026-10-11: gentler and wider; was 24 s; the bank is
-    # not capped -- the reversal is eased, ``BANK_EASE_S``): at 24 s the
+    # not capped -- the reversal is braked, ``BANK_ACCEL_SHARE``): at 24 s the
     # reversal at 45 deg took longer
     # than the half-cycle, so the weave never held its angle and spent less
     # than its plan.  Unflown on the farm.
@@ -684,15 +684,21 @@ class Config:
     # Glide only; the deorbit keeps its aim.  ``guidance.glide_bank_min``.
     GLIDE_BANK_MIN_DEG: float = 0.0
     BANK_RATE_DEG_S: float = 8.0
-    # **The bank command eases in and out** (``guidance.ease_bank``): it
-    # reaches the measured roll rate over this many seconds and decelerates
-    # to a stop over the same, so the lean arrives slowly instead of being
-    # stopped dead at full rate -- LOG10017's glide reversals swung 15-20
-    # deg past every lean, and the cone's weave was an unslewed +-45 step.
+    # **The bank command is slewed as the vehicle can stop it**
+    # (``guidance.ease_bank``, ``Autopilot.bank_accel``): accelerating and
+    # braking at this share of the angular acceleration the vehicle's
+    # torque gives the bank at the alpha it flies (``available_torque`` /
+    # ``moment_of_inertia``, roll and yaw as the velocity axis needs them),
+    # and braking from the point where the remaining angle is its stopping
+    # distance.  Stopped dead at full rate, LOG10017's glide reversals
+    # swung 15-20 deg past every lean, and the cone's weave was an unslewed
+    # +-45 step.  The share leaves kRPC's controller the rest: it also
+    # holds alpha and fights the aerodynamic moments with the same torque.
     # Glide, cone and approach.  0 = the constant-rate clamp (and no slew
-    # at all in the cone).  Default 2026-10-11 (the user: fast roll is fine,
-    # the swing is not); unflown on the farm.
-    BANK_EASE_S: float = 3.0
+    # in the cone).  Default 2026-10-11 (the user: fast roll is fine, the
+    # swing is not; measure the torque, don't fit a time); unflown.
+    BANK_ACCEL_SHARE: float = 0.5
+    BANK_ACCEL_READ_S: float = 1.0
     # A tick counts as a sample only when the command led the flown bank by
     # at least this -- the vehicle was being asked for more than it gave.
     BANK_RATE_SAT_DEG: float = 5.0
