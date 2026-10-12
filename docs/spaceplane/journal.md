@@ -2564,3 +2564,27 @@ left is the brake (L/D x0.61 at the lower cone's state, less at Mach 0.8:
 +32% drag v +52%), the radius and the weave.  The remaining misses are
 on the high side.  Also this session: a global SessionStart hook pushes
 unpushed commits in any GitHub repo (pushed 16 here).
+
+## Session, 2026-10-11 late (smoothing, at the user's request)
+
+LOG10017 (the user's live flight, defaults `b5651d39`) touched down ~230 m
+south of the centreline and rolled back onto the runway.  Chain: gear down
+at 796 m swung the bank to -13; the roll damper slowed roll 5.6 -> 8.4 s;
+`approach_bank`'s limit `rate x (t_door - roll ttp)` reached 0 at ~400 m
+(both ~8.4 s), holding the capture at 0 deg with xt -50 m and drifting;
+the split-rudder stow at 374 m put +5 deg of sideslip on for the rest of
+the flight; uncommanded bank +7..+13 turned the track 5 -> 9 deg south
+through the flare.  Also seen: the glide reversed bank nine times in two
+minutes (Mach 3.4 -> 0.8, +-40 deg, every ~13 s) while 73 -> 3 km off the
+centreline -- it aims at the cone entry point, not along the axis -- and
+the cone, entered at 159 m/s under a q target of ~245, pushed over to the
+alpha floor, dived at 160 m/s of sink to 231 m/s and pulled 14 deg at 7 kPa.
+The weave's clock ran from the cone's start, so a weave that began 2 s
+before a reversal flew +31 then -28 deg.  Across speedq2-1011 the weave
+peaked at 25-35 deg with 1-3 reversals: at 24 s and 45 deg the reversal
+outlasts the half-cycle, so it never holds the angle the plan assumes.
+
+Made default unflown on the farm (the user tests live): APPROACH_BANK_FLOOR_DEG
+6, HAC_WEAVE_CLOCK_FROM_START, HAC_WEAVE_PERIOD_S 48, HAC_WEAVE_BANK_DEG 30
+(now wired as the weave's bank cap), HAC_SPEED_ERR_MAX_MS 25,
+AZIMUTH_FLOOR_TURN_FACTOR 2, ABORT_NORTH.  Fingerprint 19f22149.

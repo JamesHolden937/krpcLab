@@ -1,5 +1,36 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `19f22149`)
+
+The user's live flight LOG10017 touched down **230 m south of the
+centreline** (on the grass, rolled back onto the runway; the DOWN line only
+reads where it stopped).  Cause: the gear swing at 796 m made the roll
+damper slow roll to 8.4 s; the approach's roll-back-out bank limit
+(`rate x (t_door - roll ttp)`) hit **0 deg at 400 m**, so the capture was off
+while 50 m off and drifting; the split rudder's stow at 374 m left +5 deg
+of sideslip, the airframe rolled 7-13 deg uncommanded and the track turned
+5-9 deg south.  The user asked for smoother flying and to test it
+themselves ("fix, don't test"), so these went straight in as defaults,
+**unflown on the farm**:
+
+- `APPROACH_BANK_FLOOR_DEG` 6 -- the final's bank limit never drops to 0.
+- `HAC_WEAVE_CLOCK_FROM_START` -- the weave's clock starts with the weave
+  (LOG10017 flew a 2-s stub swing, +31 then -28).
+- `HAC_WEAVE_PERIOD_S` 24 -> 48, `HAC_WEAVE_BANK_DEG` 0 -> 30 (now actually
+  caps the weave's bank, floored at the circle's own bank + 10).
+- `HAC_SPEED_ERR_MAX_MS` 25 -- the cone's speed law acts on at most 25 m/s
+  of error (LOG10017 pushed over from 159 to 231 m/s at 160 m/s of sink).
+- `AZIMUTH_FLOOR_TURN_FACTOR` 2 -- the glide's reversal band is twice the
+  heading swept in one roll (LOG10017: nine reversals in two minutes,
+  Mach 3 -> 0.8, at +-40).
+- `ABORT_NORTH` on (the user's standing wish; sim 8/8, farm unflown).
+
+Not fixed: the split-rudder stow leaving +5 deg of sideslip on short final
+(LOG10017 at 374 m); the roll damper reading the gear swing as an
+oscillation.  Next: fly these on the farm against the previous defaults
+(`b5651d39`) if the user's live flights disagree, then the HOWITWORKS pdf
+(the weave, glide band, cone speed clamp, final bank floor changed).
+
 Snapshot of 2026-10-11 ~2100.  History: `docs/spaceplane/journal.md`,
 "Session, 2026-10-11 evening (the cone holds dynamic pressure)".
 

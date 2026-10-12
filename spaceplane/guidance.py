@@ -593,6 +593,7 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
         if speed > 1.0 and lean > 0.0:
             g = vec.norm(trajectory.gravity_at(env, r))
             turned = math.degrees(g * math.tan(lean) / speed) * float(lag)
+            turned *= float(getattr(cfg, "AZIMUTH_FLOOR_TURN_FACTOR", 1.0))
             deadband = max(deadband,
                            min(turned, cfg.AZIMUTH_DEADBAND_MAX_DEG))
     # Either test may call for a reversal.  The azimuth one alone cannot:
@@ -2046,8 +2047,9 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # A weave reverses at its own bank (``HAC_WEAVE_BANK_DEG``, 0 is the
     # cone's limit): a gentler, wider swing, the bank the planner's
     # ``weave_reversal_s`` already assumes.
+    # Never below the bank the circle itself needs, plus room to correct.
     if weave_deg > 0.0:
-        cap = min(cap, weave_bank(cfg))
+        cap = min(cap, max(weave_bank(cfg), abs(forward) + 10.0))
     signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed
@@ -2071,7 +2073,16 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
-    alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
+    # ``HAC_SPEED_ERR_MAX_MS``: the speed error the law acts on is
+    # clamped, so a cone entered far below its target accelerates a few
+    # degrees under trim instead of pushing over to the alpha floor --
+    # LOG10017 entered at 159 m/s against ~245, dived to 231 m/s at 160 m/s
+    # of sink and pulled 14 deg at 7 kPa to recover.  0 is unclamped.
+    error = speed - target
+    limit = float(getattr(cfg, "HAC_SPEED_ERR_MAX_MS", 0.0) or 0.0)
+    if limit > 0.0:
+        error = vec.clamp(error, -limit, limit)
+    alpha = trim + cfg.HAC_SPEED_KP * error
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
 
     needed = floor_alt + total / max(0.1, cone_ld)

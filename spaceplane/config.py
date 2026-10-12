@@ -162,6 +162,12 @@ class Config:
     # is retuned.
     HAC_SPEED_FACTOR: float = 1.00          # x the approach speed
     HAC_SPEED_KP: float = 0.20              # deg of alpha per m/s of excess
+    # The largest speed error the cone's law acts on (``guidance.hac``):
+    # 25 m/s is 5 deg either side of trim.  Unclamped, a cone entered 86 m/s
+    # under its q target pushed over to the alpha floor, dived at 160 m/s
+    # of sink and pulled 14 deg at 7 kPa to stop (LOG10017).  0 = unclamped.
+    # Default 2026-10-11 (the user: smoother; unflown, they test it live).
+    HAC_SPEED_ERR_MAX_MS: float = 25.0
     # **The cone holds the dynamic pressure it hands over, not a true
     # airspeed** (``guidance.cone_speed``).  The target above is a constant
     # *true* airspeed, so in thin air it asks for a low *equivalent* one:
@@ -388,11 +394,15 @@ class Config:
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
     # is what the weave is deliberately creating.
-    HAC_WEAVE_PERIOD_S: float = 24.0
+    # 48 s and a 30 deg bank (the user, 2026-10-11: gentler and wider; was
+    # 24 s at the cone's 45): at 24 s the reversal at 45 deg took longer
+    # than the half-cycle, so the weave never held its angle and spent less
+    # than its plan.  Unflown on the farm.
+    HAC_WEAVE_PERIOD_S: float = 48.0
     HAC_WEAVE_HOLD_S: float = 20.0
     # The bank the weave reverses at; 0 is ``HAC_BANK_MAX_DEG``.  A
     # steeper bank reverses faster and costs lift, both of which spend.
-    HAC_WEAVE_BANK_DEG: float = 0.0
+    HAC_WEAVE_BANK_DEG: float = 30.0
     # Roll rate the reversal is timed with when none has been measured.
     HAC_WEAVE_ROLL_RATE_DEG_S: float = 8.0
     # The weave's first swing leans the way the vehicle is already banked.
@@ -405,8 +415,8 @@ class Config:
     # The weave's clock starts when the weave does, not with the cone
     # (``Autopilot.hac_weave_sign``): a weave that began 2 s before the
     # cone clock's reversal flew a 2-s stub swing, +31 then -28 deg
-    # (LOG10017).  Off.
-    HAC_WEAVE_CLOCK_FROM_START: bool = False
+    # (LOG10017).  Default 2026-10-11.
+    HAC_WEAVE_CLOCK_FROM_START: bool = True
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
@@ -720,6 +730,11 @@ class Config:
     # The azimuth band never narrower than the heading the vehicle turns
     # through in one roll time to peak at its present lean
     # (``guidance._bank_sign``).
+    # ... times this (the user, 2026-10-11: smoother).  1 swung the glide
+    # through a reversal every ~13 s from Mach 3 to 0.8 at +-40 deg
+    # (LOG10017, nine in two minutes); 2 holds each lean twice as long,
+    # and the cone flies out the heading it leaves.  Unflown on the farm.
+    AZIMUTH_FLOOR_TURN_FACTOR: float = 2.0
     AZIMUTH_FLOOR_FROM_TURN: bool = True   # default 2026-10-10: rot-hedazf-1010, glide-end reversals 3.5 v 4.9 a minute, 12/16 on the strip v 11, long 1 v 4
     # **The reversal has to be triggered on the cross-track, not only on the
     # azimuth.**  A deadband that widens with range to go permits a
@@ -1432,7 +1447,7 @@ class Config:
     # threshold falls below ``-ABORT_SHORT_M``, on the rollout once the
     # stopping distance at the deceleration being achieved runs past the far
     # end.  Latched; ``guidance.north_side`` finds north off the pole.
-    ABORT_NORTH: bool = False
+    ABORT_NORTH: bool = True  # default 2026-10-11 (the user; farm-unflown, sim 8/8)
     ABORT_NORTH_OFFSET_M: float = 150.0
     ABORT_SHORT_M: float = 30.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
@@ -2474,8 +2489,8 @@ class Config:
     # swing did, the capture was held at 0 deg from 400 m with the vehicle
     # 50 m off and drifting, and it touched down 230 m south of the
     # centreline.  The flare itself allows ``FLARE_BANK_MAX_DEG``.  0 is
-    # the old law.
-    APPROACH_BANK_FLOOR_DEG: float = 0.0
+    # the old law.  Default 2026-10-11.
+    APPROACH_BANK_FLOOR_DEG: float = 6.0
     APPROACH_CAPTURE_KP: float = 2.0        # deg of bank per m/s of rate error
     APPROACH_CAPTURE_LAG_FACTOR: float = 2.0
     # **1.0 -- inert, and the story of why is worth more than the knob.**
