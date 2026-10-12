@@ -2492,3 +2492,27 @@ left `DEORBIT_ALIGN_DEG`, and the alignment early-return skipped the stop
 test for the rest of the flight (entered tail-first, water 111-120 km
 short).  Fixed for every mode: once owed reached 0 the stop test runs
 through a misaligned tick, and a spent node hands SAS to stability assist.
+
+**node2-1011** (LOG9842-9889, 12 an arm): the stop-test fix did not cover
+it -- 6/12 e500i45 node burns still never cut off.  The nose left the band
+with a fraction of a m/s owed (owed > 0, so neither fix fired) while SAS
+chased the nearly spent node.  Fix: SAS goes to stability assist at commit
+(an inertial hold on the node direction, which the nose is on to 0.1 deg).
+**node3-1011** (LOG9890-9913): 0/24 stranded; e500i45 7/12 (0 lost) v
+node2's default 5/12 (1 lost), i90 10/12 v 9/12 -> **the burn node is the
+default**; `DEORBIT_SAS_SURFACE` and the orbital-retrograde node deleted.
+
+**The inclined-orbit misses are the cone running short.**  Every short
+landing (i90 water 3-7.7 km short, e500i45 1.3-3.5 km short) arrived
+within ~1 km, entered the cone with the usual ~14.0 km of energy height,
+and left it `out of height` 0.4-3 km low, 4-6 km from the gate on the
+2 km circle.  conesum: short flights flew the cone at L/D 1.94-2.25
+(track 0.95-0.98), good ones 2.25-2.75 (1.03-1.16); the short ones flew
+slower and higher (99-108 m/s at alpha 8.1-9.2 flown v 104-113 at
+6.8-8.3).  The flown polar (conepolar, 259 logs): L/D 2.45 at 11 deg,
+2.67 at 9, 2.87 at 7, 2.97 at 5 -- lower alpha glides further.  Built
+`HAC_SHORT_POLAR` (off): when even the tightest circle is longer than the
+height pays for, cap alpha where the flown polar gives `total/available`
+times the ratio at the present alpha.  (`HAC_SHORT_BEST_GLIDE`, table
+best-L/D alpha all-or-nothing, was refuted on the sim only -- gap 8.)
+Farm `short-1011` flying.
