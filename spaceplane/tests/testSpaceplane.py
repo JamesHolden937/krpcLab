@@ -5644,3 +5644,22 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
         self.assertFalse(self._hold(ap, 100.0, 1.0))
         self.assertTrue(self._hold(ap, 102.0, 1.0))
         self.assertIn("settled", ap.logbook.lines[-1])
+
+
+class TestHacEasFloor(unittest.TestCase):
+    """``HAC_EAS_FLOOR``: the cone's true-airspeed target never asks for
+    less than the floor's equivalent airspeed, and is untouched below it."""
+
+    def test_floor_raises_the_thin_upper_cone_only(self):
+        off = Config()
+        on = replace(off, HAC_EAS_FLOOR=True)
+        env = FakeEnv(off)
+        stall = 50.0
+        base = guidance.cone_speed(env, off, stall, 12000.0)
+        high = guidance.cone_speed(env, on, stall, 12000.0)
+        rho = env.density(12000.0) / env.density(0.0)
+        self.assertGreater(high, base)
+        self.assertAlmostEqual(high * math.sqrt(rho),
+                               on.HAC_EAS_FLOOR_FACTOR * stall, places=6)
+        self.assertEqual(guidance.cone_speed(env, on, stall, on.GATE_ALT_M),
+                         guidance.cone_speed(env, off, stall, on.GATE_ALT_M))

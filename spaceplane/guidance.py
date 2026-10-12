@@ -1807,8 +1807,33 @@ def ladder_height(rungs, path, fallback_ld):
 
 
 def cone_speed(env, cfg, stall, height):
-    """The cone's target true airspeed at ``height``, wings level."""
-    return cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+    """The cone's target true airspeed at ``height``, wings level.
+
+    A constant true airspeed, raised by ``HAC_EAS_FLOOR`` wherever it
+    would be less than ``HAC_EAS_FLOOR_FACTOR`` x the stall speed in
+    equivalent terms (``stall`` is equivalent airspeed) -- the thin upper
+    cone, where the constant asks for less than the stall itself.
+    """
+    speed = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+    if getattr(cfg, "HAC_EAS_FLOOR", False):
+        floor = eas_floor(env, cfg, stall, height)
+        if floor is not None:
+            speed = max(speed, floor)
+    return speed
+
+
+def eas_floor(env, cfg, stall, height):
+    """``HAC_EAS_FLOOR``: the true airspeed at ``height`` that is
+    ``HAC_EAS_FLOOR_FACTOR`` x ``stall`` equivalent, or ``None`` where the
+    density cannot answer."""
+    try:
+        rho0 = env.density(0.0)
+        rho = env.density(max(0.0, height))
+    except Exception:                                       # noqa: BLE001
+        return None
+    if not rho0 or rho is None or rho <= 0.0:
+        return None
+    return cfg.HAC_EAS_FLOOR_FACTOR * stall * math.sqrt(rho0 / rho)
 
 
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
@@ -2048,8 +2073,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     trim = alpha_for_load(env, speed, height, mass, gravity, load)
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
-    target = (cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR
-              * stall * math.sqrt(load))
+    target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
     alpha = trim + cfg.HAC_SPEED_KP * (speed - target)
     alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
 
