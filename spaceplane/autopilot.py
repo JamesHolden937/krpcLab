@@ -5531,9 +5531,28 @@ class Autopilot:
                             1e-6, f0 - f1)
                         break
         target = float(getattr(command, "alpha_target_speed", 0.0) or 0.0)
+        speed = vec.norm(snap.velocity)
+        if getattr(self.cfg, "HAC_SPEED_Q", False):
+            # **Slow means near the stall, not under the target.**  Under
+            # ``HAC_SPEED_Q`` the target is a dynamic pressure the cambered
+            # wing often cannot reach at the lowest alpha it may fly, and
+            # faded against it the brake spent 15-30 deg of its 38 while
+            # base-orbit cones rolled out 1.4-2.9 km high (rot-speedq-1011,
+            # LOG9931/9951).  The gate is the approach brake's own:
+            # ``APPROACH_SPLIT_MIN_SPEED_FACTOR`` x the stall at the turn's
+            # load, in equivalent airspeed.
+            stall = airframe.stall(self.env, self.cfg)
+            target = 0.0
+            rho0 = self.env.density(0.0)
+            rho = self.env.density(snap.mean_altitude)
+            if stall and rho0 and rho and rho > 0.0:
+                load = 1.0 / max(0.2, math.cos(math.radians(
+                    min(abs(float(command.bank)), 75.0))))
+                target = (float(self.cfg.APPROACH_SPLIT_MIN_SPEED_FACTOR)
+                          * stall * math.sqrt(load))
+                speed *= math.sqrt(rho / rho0)
         fade = float(self.cfg.HAC_SPLIT_SPEED_FADE)
         if target > 0.0 and fade > 0.0:
-            speed = vec.norm(snap.velocity)
             want *= vec.clamp((speed - (1.0 - fade) * target)
                               / (fade * target), 0.0, 1.0)
         step = float(self.cfg.SPLIT_RATE_DEG_S) * dt
