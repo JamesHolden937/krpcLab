@@ -2516,3 +2516,51 @@ height pays for, cap alpha where the flown polar gives `total/available`
 times the ratio at the present alpha.  (`HAC_SHORT_BEST_GLIDE`, table
 best-L/D alpha all-or-nothing, was refuted on the sim only -- gap 8.)
 Farm `short-1011` flying.
+
+## Session, 2026-10-11 evening (~1730-2100): the cone holds dynamic pressure
+
+Defaults `bbcacd22` -> **`b5651d39`**.  `short-1011` (HAC_SHORT_POLAR) was
+not re-flown; the session went to a live-flight question instead.
+
+**The user's live flight** (LOG9920, a high near-polar orbit, defaults):
+landed on the centreline, but the cone went slow -- 176 -> 70 m/s from 12
+to 5 km at 24-26 deg commanded, RCS open 119 s of a 244 s cone.  Cause:
+`cone_speed` was a constant *true* airspeed (~106 m/s) built from the
+sea-level (equivalent) stall, so at 12 km it asked for ~41 m/s equivalent
+against a 50 m/s stall; the speed law pinned alpha at the cap.  Binned
+flown lift v achieved alpha (LOG9899/9905/9907/9920): lift peaks near 12
+deg (ClA ~160, L/D ~2.5) and the slow stretch is flown at 14-18 deg (L/D
+1.3) -- past the peak.  Not specific to that orbit: every farm flight of
+node3-1011 bled to 72-91 m/s at 4-6 km with RCS open 78-119 s of ~220.
+
+- `HAC_EAS_FLOOR` (1.3 x stall equivalent as a floor) was written and
+  replaced before flying: the user rejected the 1.3 as arbitrary.
+- **`HAC_SPEED_Q`** (the user's "speed with the same control surface
+  authority"): the target holds the gate target's dynamic pressure at
+  every height -- no new constant.  ~112 m/s true at the gate, ~245 at 12
+  km.  The glide's TAEM target left on the old speed.
+- **speedq-1011** (LOG9921-9967, 8 an orbit an arm): RCS in the cone 18-36
+  s v 81-104, slowest 102-119 m/s v 80-87; i90 7/8 v 6/8, e500i45 8/8 v
+  6/8, **rigoff 3/8 v 8/8** -- five rolled out 1.4-2.9 km high with R at
+  16 km, weave 50, and the split rudder at 15-30 of 38 deg.  The brake
+  fade was against the cone target, which the cambered wing cannot reach
+  at alpha 0 (flown lift at 0 deg is above the table's), so it sat a few
+  % under target and the brake throttled itself.  A table-based cap on
+  the target (speed at `ALPHA_MIN_DEG`) was written and reverted: the
+  table under-reads low-alpha lift, so it would not bind.
+- Fix: under `HAC_SPEED_Q` the cone brake fades near the stall (the
+  approach brake's `APPROACH_SPLIT_MIN_SPEED_FACTOR` 1.45 x stall at the
+  turn's load, in equivalent airspeed).
+- **speedq2-1011** (LOG9968-10015): **Q 19/24 v base 14/24**; i90 6/8 v
+  7/8, e500i45 7/8 v 2/8, rigoff 6/8 v 5/8.  Q: RCS 15-40 s v 92-99,
+  slowest 92-107 v 76-86.  Q misses: two rigoff rolled out 4.2 km high
+  (+4.0, +5.2 km), one i90 high (-2.9 km), one e500i45 out of height
+  (-2.3), one breakup on the runway (19 parts).  Base misses were six out
+  of height (water and wrecks, 5-29 parts) -- its e500i45 2/8 is worse
+  than speedq-1011's 6/8 (scatter).  **Promoted.**
+
+The constant-q cone cannot dump energy through stall drag; what it has
+left is the brake (L/D x0.61 at the lower cone's state, less at Mach 0.8:
++32% drag v +52%), the radius and the weave.  The remaining misses are
+on the high side.  Also this session: a global SessionStart hook pushes
+unpushed commits in any GitHub repo (pushed 16 here).

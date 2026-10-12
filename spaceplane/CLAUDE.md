@@ -48,7 +48,15 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-10 late, fingerprint `bc9ac544`)
+## Where it stands (2026-10-11 evening, fingerprint `b5651d39`)
+
+**The cone holds dynamic pressure** (`HAC_SPEED_Q`, promoted 2026-10-11):
+its speed target is the gate target's q at every height (~245 m/s true at
+12 km), not a constant true airspeed that is below the stall up high.
+speedq2-1011: **19/24 v 14/24**, RCS in the cone 15-40 s v 92-99.  Its
+misses are now high (rolled out 3-4 km over, overruns), not out of height.
+
+## Earlier (2026-10-10 late, fingerprint `bc9ac544`)
 
 **The terminal glide solves on cone-entry energy** (`GLIDE_TAEM_*`,
 promoted 2026-10-10): below Mach 4.5 the glide nulls the predicted energy
