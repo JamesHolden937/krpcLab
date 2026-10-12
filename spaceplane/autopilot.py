@@ -519,7 +519,7 @@ class Autopilot:
         self.deorbit_ticks = 0
         self.deorbit_done = False   # see fly_deorbit_burn
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
-        self.node_normal_sign = None    # DEORBIT_SAS_NODE, from a read-back
+        self.node_normal_sign = None    # the burn node's, from a read-back
         self._load_capped = False       # HAC_LOAD_MAX binding last tick
         self.sas_node = None
         self.sas_since = None
@@ -3303,13 +3303,13 @@ class Autopilot:
             % (self.plan["ut"] - snap.ut, vec.angle_between(snap.nose, retro)))
 
     def sas_engage(self, snap, dv, node_ut):
-        """Hand the attitude to stock SAS on surface retrograde; place the node.
+        """Place the solved burn as a node and hand the attitude to SAS on it.
 
-        ``DEORBIT_SAS_SURFACE``: the navball in surface mode and SAS on
-        Retrograde holds the rotating frame's -v, which is the direction the
-        search burns along.  Maneuver mode (the node, built on *orbital*
-        retrograde) is the fallback where surface mode is refused.  The
-        node is placed either way, so the plan shows in the map view.
+        The node carries surface retrograde x ``dv`` at its time
+        (``place_burn_node``), so the search, the node, the map view and the
+        hold point one way; SAS holds Maneuver until commit, then stability
+        assist through the burn (``sas_settled``).  Retrograde is the
+        fallback where the core has no Maneuver mode.
         """
         ut = snap.ut
         speed = vec.norm(snap.velocity)
@@ -3319,12 +3319,8 @@ class Autopilot:
         self.sas_aligned_prev = False
         set_autopilot_engaged(self.autopilot, False)
         try:
-            if self.cfg.DEORBIT_SAS_NODE:
-                self.sas_node = self.control.add_node(node_ut)
-                self.place_burn_node(snap, dv, node_ut)
-            else:
-                self.sas_node = self.control.add_node(node_ut,
-                                                      prograde=-float(dv))
+            self.sas_node = self.control.add_node(node_ut)
+            self.place_burn_node(snap, dv, node_ut)
         except Exception as exc:                            # noqa: BLE001
             self.sas_node = None
             self.logbook.event(ut, "maneuver node refused (%r)" % (exc,))
@@ -3333,28 +3329,17 @@ class Autopilot:
         except Exception:                                   # noqa: BLE001
             pass
         modes = self.conn.space_center.SASMode
-        mode = None
-        if self.cfg.DEORBIT_SAS_SURFACE and not self.cfg.DEORBIT_SAS_NODE:
+        mode = "maneuver"
+        try:
+            if self.sas_node is None:
+                raise RuntimeError("no node")
+            self.autopilot.sas_mode = modes.maneuver
+        except Exception:                                   # noqa: BLE001
+            mode = "retrograde"
             try:
-                was = self.control.speed_mode
-                self.control.speed_mode = self.conn.space_center.SpeedMode.surface
-                self.speed_mode_was = was
                 self.autopilot.sas_mode = modes.retrograde
-                mode = "surface retrograde"
-            except Exception:                               # noqa: BLE001
-                mode = None
-        if mode is None:
-            mode = "maneuver"
-            try:
-                if self.sas_node is None:
-                    raise RuntimeError("no node")
-                self.autopilot.sas_mode = modes.maneuver
-            except Exception:                               # noqa: BLE001
-                mode = "retrograde"
-                try:
-                    self.autopilot.sas_mode = modes.retrograde
-                except Exception as exc:                    # noqa: BLE001
-                    mode = "stability (%r)" % (exc,)
+            except Exception as exc:                        # noqa: BLE001
+                mode = "stability (%r)" % (exc,)
         self.logbook.event(ut, "SAS has the attitude: %s mode, node dv "
                                "%.1f m/s at UT %.0f, %.1f deg off retrograde"
                            % (mode, dv, node_ut,
@@ -3385,7 +3370,7 @@ class Autopilot:
     def place_burn_node(self, snap, dv, node_ut):
         """Set ``sas_node`` to surface retrograde x ``dv`` at ``node_ut``.
 
-        ``DEORBIT_SAS_NODE``.  The state at the node comes from the vacuum
+        The state at the node comes from the vacuum
         propagator; the components are dot products, so they hold in
         whatever orientation the frame has by then.  The first placement
         reads the node's ``burn_vector`` back to settle the normal's sign
@@ -3447,12 +3432,8 @@ class Autopilot:
             self.sas_engage(snap, dv, ut + 2.0)
         elif self.sas_node is not None:
             try:
-                if self.cfg.DEORBIT_SAS_NODE:
-                    self.sas_node.ut = ut + 2.0
-                    self.place_burn_node(snap, dv, ut + 2.0)
-                else:
-                    self.sas_node.ut = ut + 2.0
-                    self.sas_node.prograde = -float(dv)
+                self.sas_node.ut = ut + 2.0
+                self.place_burn_node(snap, dv, ut + 2.0)
             except Exception:                               # noqa: BLE001
                 pass
         if self.sas_trigger_ut is None:
@@ -3475,17 +3456,16 @@ class Autopilot:
                                % ("settled" if settled
                                   else "stalled" if stalled else "timed out",
                                   waited, ut - (self.sas_since or ut), align))
-            if self.cfg.DEORBIT_SAS_NODE:
-                # **The burn is held inertially, not on the node.**  A node
-                # being burned down points its remainder anywhere at the end,
-                # and SAS chasing it took the nose out of the burn's band
-                # with a fraction of a m/s owed (node2-1011: 6/12 burns never
-                # cut off).  At commit the nose is on the node; hold that.
-                try:
-                    self.autopilot.sas_mode = \
-                        self.conn.space_center.SASMode.stability_assist
-                except Exception:                           # noqa: BLE001
-                    pass
+            # **The burn is held inertially, not on the node.**  A node being
+            # burned down points its remainder anywhere at the end, and SAS
+            # chasing it took the nose out of the burn's band with a fraction
+            # of a m/s owed (node2-1011: 6/12 burns never cut off).  At commit
+            # the nose is on the node; hold that.
+            try:
+                self.autopilot.sas_mode = \
+                    self.conn.space_center.SASMode.stability_assist
+            except Exception:                               # noqa: BLE001
+                pass
             return True
         self.panel.set_start_label("aligning: %.0f deg" % align)
         return False

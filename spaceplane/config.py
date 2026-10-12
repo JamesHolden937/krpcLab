@@ -1849,23 +1849,13 @@ class Config:
     DEORBIT_SAS_ALIGN: bool = True
     DEORBIT_COMMIT_ALIGN_DEG: float = 3.0
     DEORBIT_SAS_SETTLE_MAX_S: float = 120.0
-    # **SAS holds *surface* retrograde, the direction the search burns
-    # along** (the rotating frame's -v).  Maneuver mode points at the node,
-    # which KSP builds on *orbital* retrograde: the two differ by Kerbin's
-    # ~220 m/s of rotation resolved across the track -- 0.1-0.6 deg on the
-    # farm's near-equatorial saves, 4.2-5.2 deg on the user's inclined
-    # 160 km orbit (LOG9598), where SAS held steady outside the 3 deg commit
-    # test and the burn never lit.  The node stays, for the map view; the
-    # attitude comes from the navball's surface speed mode.
-    DEORBIT_SAS_SURFACE: bool = True
-    # **The node carries the solved burn instead** (the user, 2026-10-11):
-    # surface retrograde x dv at the node's time, resolved into the node's
-    # prograde / normal / radial (``guidance.node_components``), and SAS on
-    # Maneuver -- one direction for the search, the node, the map view and
-    # the hold, and an inertial hold through the burn rather than one that
-    # follows the turning surface velocity.  Overrides
-    # ``DEORBIT_SAS_SURFACE`` when on.
-    DEORBIT_SAS_NODE: bool = False
+    # (The node carries the solved burn: surface retrograde x dv at the
+    # node's time resolved into prograde / normal / radial
+    # (``guidance.node_components``); SAS holds Maneuver to commit and
+    # stability assist through the burn.  Default 2026-10-11, node3-1011:
+    # e500i45 7/12 v 5/12, i90 10/12 v 9/12; it replaced the surface-mode
+    # retrograde hold, which held 4-5 deg off an orbital-retrograde node on
+    # inclined orbits, LOG9598.)
     # A hold that has stopped improving inside the burn's own tolerance
     # (``DEORBIT_ALIGN_DEG``) for this long commits rather than waiting out
     # ``DEORBIT_SAS_SETTLE_MAX_S``: whatever is keeping it off the commit
