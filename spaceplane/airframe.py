@@ -335,3 +335,36 @@ def alpha_ceiling(env, cfg):
     """The highest angle of attack worth commanding: ``ALPHA_MAX_DEG``.
     (The table's own stall angle was ``AIRFRAME_DERIVED``, removed.)"""
     return cfg.ALPHA_MAX_DEG
+
+
+def polar_short_alpha(polar, alpha_now, multiplier):
+    """``HAC_SHORT_POLAR``: the alpha whose flown L/D is ``multiplier``
+    times the flown L/D at ``alpha_now``, on the polar's low-alpha branch
+    (bins up to the lift peak); the branch's lowest alpha when no bin
+    reaches it; ``None`` without a usable polar."""
+    bins = sorted((b[0], b[1], b[2]) for b in (polar or {}).get("bins", ())
+                  if len(b) >= 3 and b[2] > 0.0)
+    if len(bins) < 2:
+        return None
+    peak = max(range(len(bins)), key=lambda i: bins[i][1])
+    branch = [(a, cl / cd) for a, cl, cd in bins[:peak + 1]]
+    if len(branch) < 2:
+        return None
+    every = [(a, cl / cd) for a, cl, cd in bins]
+
+    def ld_at(table, a):
+        if a <= table[0][0]:
+            return table[0][1]
+        for (a0, l0), (a1, l1) in zip(table, table[1:]):
+            if a <= a1:
+                return l0 + (l1 - l0) * (a - a0) / max(1e-9, a1 - a0)
+        return table[-1][1]
+
+    want = ld_at(every, alpha_now) * max(1.0, multiplier)
+    # Highest alpha on the branch that still makes ``want``.
+    for (a0, l0), (a1, l1) in reversed(list(zip(branch, branch[1:]))):
+        if l1 >= want:
+            return a1
+        if l0 >= want:
+            return a0 + (a1 - a0) * (l0 - want) / max(1e-9, l0 - l1)
+    return branch[0][0]

@@ -435,6 +435,9 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
+        self.env.flown_polar = None
+        if cfg.HAC_SHORT_POLAR:
+            self._load_flown_polar(ut)
         # ``GLIDE_TAEM_ENERGY`` / ``_ALPHA``: set by the glide below
         # ``GLIDE_TAEM_MACH``, ``None`` everywhere else.
         self.env.taem = None
@@ -521,6 +524,7 @@ class Autopilot:
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
         self.node_normal_sign = None    # the burn node's, from a read-back
         self._load_capped = False       # HAC_LOAD_MAX binding last tick
+        self._short_polar = False       # HAC_SHORT_POLAR binding last tick
         self.sas_node = None
         self.sas_since = None
         self.sas_aligned_prev = False
@@ -3345,6 +3349,32 @@ class Autopilot:
                            % (mode, dv, node_ut,
                               vec.angle_between(snap.nose, retro)))
 
+    def _load_flown_polar(self, ut):
+        """``HAC_SHORT_POLAR``: this craft's flown cone polar from
+        ``logs/conepolar/`` (``tools/conepolar.py``), and say so."""
+        try:
+            import json
+            import re
+            key = "%s|%d" % (self.vessel.name, len(self.vessel.parts.all))
+            path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "logs", "conepolar",
+                re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_") + ".json")
+            if not os.path.exists(path):
+                self.logbook.event(ut, "flown polar: none for %r (%s)"
+                                   % (key, path))
+                return
+            with open(path) as fh:
+                data = json.load(fh)
+            self.env.flown_polar = data
+            self.logbook.event(
+                ut, "flown polar: %r from %d logs: %s"
+                % (key, data.get("logs", 0),
+                   " ".join("%.0f:%.2f" % (b[0], b[1] / b[2])
+                            for b in data["bins"] if b[2] > 0)))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(ut, "flown polar: not loaded (%s)" % (exc,))
+
     def load_alpha_cap(self, snap):
         """``HAC_LOAD_MAX``: the highest alpha whose lift stays within that
         many weights at this q and Mach, or None (off, no table, or no
@@ -5255,6 +5285,13 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         alpha = min(command.alpha, self.alpha_ceiling)
+        short = getattr(command, "short_alpha", None) is not None \
+            and command.alpha <= command.short_alpha + 1e-6
+        if short != self._short_polar:
+            self._short_polar = short
+            self.logbook.event(snap.ut, "cone short of height: %s" % (
+                "alpha held at %.1f deg off the flown polar (path %.0f m)"
+                % (command.alpha, command.path) if short else "released"))
         cap = self.load_alpha_cap(snap)
         if cap is not None and cap < alpha:
             if not self._load_capped:
