@@ -1,5 +1,38 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-11 night: RCS on saturation, false north-divert fixed (fingerprint `86b1f89a`)
+
+Both unflown on the farm; the user tests live (commit `9c7455b`).
+
+- **RCS is always armed in air and fires on saturation** (the user's
+  design).  GLIDE, HAC, APPROACH and FLARE all call `set_rcs(True, snap,
+  air=True)`; `common.rcs.Valve.demand_saturated` opens when the largest
+  summed control input (kRPC's `control.pitch/yaw/roll` read-back,
+  autopilot included) has sat at `RCS_SAT_INPUT` 0.95 for `RCS_SAT_ON_S`
+  0.5 s and the pointing error has not closed by `RCS_SAT_CLOSING_FRACTION`
+  20% over that window; it closes once the input stays under
+  `RCS_SAT_RELEASE` 0.6 for `RCS_SETTLE_S`, or the error relay settles.
+  `RCS_Q_MAX_PA` and the glide's reversal hold still apply; ROLLOUT is
+  off; vacuum phases keep the error relay.  `GLIDE_RCS_MACH_MIN` deleted.
+  In LOG10017/10018 the inputs were pinned on 2 of ~850 air ticks, so
+  expect it to open rarely.  **Watch:** the LOG4352 case (pitch thrusters
+  driving alpha through the trim limit at Mach 5) -- a steady trim
+  saturation with a non-closing error now qualifies.
+- **`ABORT_NORTH` false divert fixed.**  The approach's threshold-reach
+  test divided by the *split-braked* L/D: LOG10018 rolled out of the cone
+  with 23.5 deg of brake, read "1268 m short" at h=2691 (L/D ~1.9), latched
+  a 150 m north divert, and touched down 1290 m *past* the threshold on the
+  grass.  It now divides by the clean ratio (~+900 m in hand there).  Farm
+  lateral tracking is fine (91/95 of LOG9921-10016 stopped within 40 m;
+  those batches predate `ABORT_NORTH` as default), so this was the live
+  grass landings' main cause.  LOG10017's 230 m south touchdown was the
+  final's bank limit hitting 0 (fixed below by `APPROACH_BANK_FLOOR_DEG`).
+- Stale: one farm instance (ksp4) was still up from an earlier session;
+  stopped.  Suite 595 OK.
+- **How-it-works PDF not regenerated** -- it is now behind on the RCS law,
+  the divert test, the weave, the glide band, the cone speed clamp and the
+  final bank floor.
+
 ## 2026-10-11 late: smoothing defaults, flown only by the user (fingerprint `160acc93`)
 
 The user's live flight LOG10017 touched down **230 m south of the
@@ -7,46 +40,21 @@ centreline** (on the grass, rolled back onto the runway; the DOWN line only
 reads where it stopped).  Cause: the gear swing at 796 m made the roll
 damper slow roll to 8.4 s; the approach's roll-back-out bank limit
 (`rate x (t_door - roll ttp)`) hit **0 deg at 400 m**, so the capture was off
-while 50 m off and drifting; the split rudder's stow at 374 m left +5 deg
-of sideslip, the airframe rolled 7-13 deg uncommanded and the track turned
-5-9 deg south.  The user asked for smoother flying and to test it
-themselves ("fix, don't test"), so these went straight in as defaults,
-**unflown on the farm**:
-
-- `APPROACH_BANK_FLOOR_DEG` 6 -- the final's bank limit never drops to 0.
-- `HAC_WEAVE_CLOCK_FROM_START` -- the weave's clock starts with the weave
-  (LOG10017 flew a 2-s stub swing, +31 then -28).
-- `HAC_WEAVE_PERIOD_S` 24 -> 48.  The bank is *not* capped (the user: fast
-  roll is fine, the swing is the problem).
-- `BANK_ACCEL_SHARE` 0.5 (`guidance.bank_accel`, `ease_bank`,
-  `Autopilot.bank_accel`): the bank command speeds up and brakes at half
-  the bank's angular acceleration from kRPC's `available_torque` /
-  `moment_of_inertia` (read 1 Hz, smoothed), roll and yaw combined about
-  the velocity vector at the flown alpha, braking where the remaining angle
-  equals the stopping distance.  Glide alpha 44 no RCS: 5.6 deg/s^2, an
-  80 deg reversal 8.0 s; with RCS 12.5; cone alpha 5: ~200 (effectively
-  unbraked -- any swing left in the cone is kRPC's tune, not the torque).
-  Glide, cone (no slew before) and approach.  LOG10017's glide overshot
-  every lean by 15-20 deg.
-- `HAC_SPEED_ERR_MAX_MS` 25 -- the cone's speed law acts on at most 25 m/s
-  of error (LOG10017 pushed over from 159 to 231 m/s at 160 m/s of sink).
-- `AZIMUTH_FLOOR_TURN_FACTOR` 2 -- the glide's reversal band is twice the
-  heading swept in one roll (LOG10017: nine reversals in two minutes,
-  Mach 3 -> 0.8, at +-40).
-- `ABORT_NORTH` on (the user's standing wish; sim 8/8, farm unflown).
-
-Not fixed: the split-rudder stow leaving +5 deg of sideslip on short final
-(LOG10017 at 374 m); the roll damper reading the gear swing as an
-oscillation.  Next: fly these on the farm against the previous defaults
-(`b5651d39`) if the user's live flights disagree, then the HOWITWORKS pdf
-(the weave, glide band, cone speed clamp, final bank floor changed).
+while 50 m off and drifting.  Defaults added, unflown on the farm:
+`APPROACH_BANK_FLOOR_DEG` 6, `HAC_WEAVE_CLOCK_FROM_START`,
+`HAC_WEAVE_PERIOD_S` 48, `BANK_ACCEL_SHARE` 0.5 (bank command braked on
+measured torque), `HAC_SPEED_ERR_MAX_MS` 25, `AZIMUTH_FLOOR_TURN_FACTOR` 2,
+`ABORT_NORTH` on.  Not fixed: the split-rudder stow leaving +5 deg of
+sideslip on short final; the roll damper reading the gear swing as an
+oscillation.  Next: fly these on the farm against `b5651d39` if the
+user's live flights disagree.
 
 Snapshot of 2026-10-11 ~2100.  History: `docs/spaceplane/journal.md`,
 "Session, 2026-10-11 evening (the cone holds dynamic pressure)".
 
-Defaults fingerprint **`b5651d39`**.  Committed and pushed to
+Defaults fingerprint **`86b1f89a`**.  Committed and pushed to
 origin/main.  Farm stopped, sleep inhibitor released.  The how-it-works
-PDF is current (deorbit plan and burn node, the cone's speed law).
+PDF is behind (see above).
 
 A global SessionStart hook (`~/.claude/hooks/pushOnStart.sh`) now pushes
 unpushed commits in any GitHub repo at session start; read its

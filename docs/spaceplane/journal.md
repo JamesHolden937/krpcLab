@@ -2601,3 +2601,27 @@ bank's torque-derived angular acceleration, `min(a_roll/cos a, a_yaw/sin a)`
 from `available_torque` / `moment_of_inertia`.  Shuttle: body roll ~1400
 deg/s^2, yaw ~6, so at glide alpha the yaw axis is what limits a reversal.
 Fingerprint 160acc93.
+
+## Session, 2026-10-11 night (RCS on saturation; the false north-divert)
+
+The user asked how RCS was gated in the air and proposed instead: always
+armed, firing the moment every other control is saturated.  Before, the
+glide permitted RCS above Mach 1 only (`GLIDE_RCS_MACH_MIN`), HAC only kept
+a valve the glide left open, and APPROACH/FLARE forced it shut; inside a
+permitted phase a 5/1.5 deg pointing-error relay fired it.  Now GLIDE
+through FLARE arm it and `Valve.demand_saturated` fires on the summed
+control-input read-back pinned at 0.95 for 0.5 s with the error not closing
+by 20%; closes 2 s after the input drops below 0.6.  `GLIDE_RCS_MACH_MIN`
+deleted.  Unflown (the user tests live).  LOG10017/10018 had inputs pinned
+on 2 of ~850 air ticks.
+
+The user also reported landings on the grass beside the runway.  LOG10018:
+`ABORT_NORTH`'s threshold-reach test divided by the split-braked L/D (brake
+23.5 deg at the cone's rollout, ~1.9) and latched a north divert at h=2691
+reading "1268 m short"; the vehicle touched down 1290 m past the threshold,
+150 m north.  On the clean 4.2 it had ~900 m in hand; the test now uses the
+clean ratio.  Farm lateral tracking was already good (91/95 of
+LOG9921-10016 within 40 m of the centreline), and the lateral capture
+already runs through the flare to the wheels (`APPROACH_CAPTURE_FLARE_SHARE`
+1.0) with nosewheel steering on the rollout, so no new late-lateral law.
+Fingerprint 86b1f89a.
