@@ -521,6 +521,8 @@ class Autopilot:
         self.deorbit_speed_prev = None
         self.deorbit_ticks = 0
         self.deorbit_done = False   # see fly_deorbit_burn
+        self.deorbit_dv_guess = None    # DEORBIT_BURN_LEAD_SHARE's dv
+        self.deorbit_lead = 0.0
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
         self.node_normal_sign = None    # the burn node's, from a read-back
         self._load_capped = False       # HAC_LOAD_MAX binding last tick
@@ -2901,16 +2903,40 @@ class Autopilot:
             self.set_warp(False)   # nothing to act on: warp
             return
 
-        dv, best = guidance.deorbit_solution(self.env, snap.position,
-                                             snap.velocity,
-                                             snap.mass,
-                                             self.cfg, self.end)
+        # **Solved half a burn ahead** (``DEORBIT_BURN_LEAD_SHARE``): the
+        # search answers an impulsive dv, so it is asked of the state the
+        # burn's centre will be at, and a solution there lights the engine
+        # now.  The lead needs the dv, so it comes from the last answer
+        # (or the plan's), re-solved once if it moved the lead much.
+        guess = self.deorbit_dv_guess
+        if guess is None and self.plan is not None:
+            guess = self.plan.get("dv")
+        if guess is None:
+            guess, _ = guidance.deorbit_solution(
+                self.env, snap.position, snap.velocity, snap.mass,
+                self.cfg, self.end)
+        lead = self.burn_lead(guess, snap.mass)
+        for _ in range(2):
+            r_s, v_s = trajectory.coast(self.env, snap.position,
+                                        snap.velocity, snap.mass, lead,
+                                        self.cfg.DEORBIT_PLAN_DT_S)
+            dv, best = guidance.deorbit_solution(self.env, r_s, v_s,
+                                                 snap.mass, self.cfg,
+                                                 self.end)
+            if dv is None:
+                break
+            self.deorbit_dv_guess = dv
+            fresh = self.burn_lead(dv, snap.mass)
+            if abs(fresh - lead) < 0.25:
+                break
+            lead = fresh
+        self.deorbit_lead = lead
         if dv is None:
             self.panel.set_start_label("waiting: %+.0f km" % (best / 1000.0))
             self.set_warp(False)
             return
         if not self.burn_affordable(dv) or not self.reachable_sideways(
-                snap.position, snap.velocity, snap.mass, self.end, dv,
+                r_s, v_s, snap.mass, self.end, dv,
                 ut=snap.ut):
             self.panel.set_start_label("waiting: runway out of reach")
             self.set_warp(False)
@@ -2934,8 +2960,7 @@ class Autopilot:
         # off means.
         self.deorbit_aim_m = None
         self.deorbit_aim_m = guidance.deorbit_chosen_aim(
-            self.env, snap.position, snap.velocity,
-            snap.mass, self.cfg, self.end, dv)
+            self.env, r_s, v_s, snap.mass, self.cfg, self.end, dv)
         # The aim is no longer one number -- it is a share of the entry each
         # candidate flies (``guidance.deorbit_aim``) -- so log the rule, not
         # ``DEORBIT_LONG_BIAS_M``, which is only its floor and would read as
@@ -2945,9 +2970,8 @@ class Autopilot:
         # ``DEORBIT_WINDOW_BIAS`` is a share of a width, and a share of
         # an unlogged width is not a measurement.
         window = guidance.deorbit_window(
-            self.env, snap.position,
-            vec.add(snap.velocity,
-                    vec.scale(vec.unit(snap.velocity), -dv)),
+            self.env, r_s,
+            vec.add(v_s, vec.scale(vec.unit(v_s), -dv)),
             snap.mass, self.cfg, self.end,
             self.env.runway.gate(self.end))
         if window is None:
@@ -2985,6 +3009,11 @@ class Autopilot:
                            % (self.warp_ceiling,
                               "%.0f km" % (self.warp_arc / 1000.0)
                               if self.warp_arc is not None else "no warped tick"))
+        self.logbook.event(snap.ut, "burn lead: lighting %.1f s before the "
+                                    "impulsive point (%.0f%% of a %.1f s "
+                                    "burn)"
+                           % (lead, 100.0 * self.cfg.DEORBIT_BURN_LEAD_SHARE,
+                              self.burn_seconds(dv, snap.mass) or 0.0))
         return self.fly_deorbit_burn(snap)
 
     def watch_warp(self, snap):
@@ -3530,12 +3559,14 @@ class Autopilot:
         retro = vec.scale(snap.velocity, -1.0 / max(1.0, speed))
         self.commanded_nose = retro
         self.commanded_alpha, self.commanded_bank = 180.0, 0.0
+        # The node at the burn's centre: the impulse it stands for.
+        node_ut = ut + max(2.0, getattr(self, "deorbit_lead", 0.0))
         if not self.sas_hold:
-            self.sas_engage(snap, dv, ut + 2.0)
+            self.sas_engage(snap, dv, node_ut)
         elif self.sas_node is not None:
             try:
-                self.sas_node.ut = ut + 2.0
-                self.place_burn_node(snap, dv, ut + 2.0)
+                self.sas_node.ut = node_ut
+                self.place_burn_node(snap, dv, node_ut)
             except Exception:                               # noqa: BLE001
                 pass
         if self.sas_trigger_ut is None:
@@ -4068,6 +4099,42 @@ class Autopilot:
             best = 0.0
         self._engine_isp = best
         return best
+
+    def burn_seconds(self, dv, mass):
+        """How long a ``dv`` burn lasts, unlit engines included.
+
+        The duration ``limit_burn_thrust`` will give it: never under
+        ``DEORBIT_MIN_BURN_S``, otherwise ``dv`` over the full vacuum thrust
+        of every unshielded engine (a property of the engine, so it reads
+        the same before ignition, when ``max_accel`` is 0).  Cached; ``None``
+        when no engine says.
+        """
+        thrust = getattr(self, "_engine_thrust", None)
+        if thrust is None:
+            thrust = 0.0
+            try:
+                for engine in self.vessel.parts.engines:
+                    try:
+                        if not engine.part.shielded:
+                            thrust += float(engine.max_vacuum_thrust or 0.0)
+                    except Exception:                   # noqa: BLE001
+                        continue
+            except Exception:                           # noqa: BLE001
+                thrust = 0.0
+            self._engine_thrust = thrust
+        if thrust <= 0.0 or mass <= 0.0 or dv is None:
+            return None
+        return max(float(self.cfg.DEORBIT_MIN_BURN_S or 0.0),
+                   dv * mass / thrust)
+
+    def burn_lead(self, dv, mass):
+        """Seconds between ignition and the impulsive point the burn is
+        solved at: ``DEORBIT_BURN_LEAD_SHARE`` of ``burn_seconds``."""
+        share = float(self.cfg.DEORBIT_BURN_LEAD_SHARE or 0.0)
+        if share <= 0.0 or dv is None:
+            return 0.0
+        seconds = self.burn_seconds(dv, mass)
+        return 0.0 if seconds is None else share * seconds
 
     def mixture(self):
         """Each drained resource's share of what the engine burns, from the

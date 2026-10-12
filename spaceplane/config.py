@@ -2624,6 +2624,16 @@ class Config:
     # reads 17.8 at the burn and gets a 0.60 limit (LOG2925-2926), with the
     # arrival unchanged.  0 = never touch the limiter.
     DEORBIT_MIN_BURN_S: float = 3.0
+    # **Light the burn this share of its duration before the impulsive
+    # point** (the user, 2026-10-12: half, the standard finite-burn lead).
+    # ``deorbit_solution`` answers an *impulsive* dv, so the live trigger
+    # asks it of the state ``share x T`` ahead (vacuum coast) and commits
+    # when that solves: the burn then straddles the point it was solved at
+    # instead of starting there.  T = max(``DEORBIT_MIN_BURN_S``, dv over
+    # the engines' full vacuum thrust), the duration the limiter gives
+    # (``Autopilot.burn_seconds``).  The node goes at the burn's centre.
+    # 0 lights at the impulsive point.
+    DEORBIT_BURN_LEAD_SHARE: float = 0.5
     GLIDE_TICK_S: float = 1.0
 
     # -- the loop ----------------------------------------------------------
