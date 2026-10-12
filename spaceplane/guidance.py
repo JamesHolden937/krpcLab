@@ -2043,6 +2043,11 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         forward = side * math.degrees(
             math.atan(speed * speed / max(1.0, gravity * radius)))
     cap = cfg.HAC_BANK_MAX_DEG
+    # A weave reverses at its own bank (``HAC_WEAVE_BANK_DEG``, 0 is the
+    # cone's limit): a gentler, wider swing, the bank the planner's
+    # ``weave_reversal_s`` already assumes.
+    if weave_deg > 0.0:
+        cap = min(cap, weave_bank(cfg))
     signed = vec.clamp(forward + cfg.HAC_HEADING_KP * error, -cap, cap)
     magnitude = abs(signed)
     error = signed

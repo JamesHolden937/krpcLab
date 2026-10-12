@@ -402,6 +402,11 @@ class Config:
     # 0.9, and departed 11 of 17 times in kspSim (2 of ~24 otherwise; the
     # farm, 3 departures, all from a positive glide bank -- rot-base-1006).
     HAC_WEAVE_FIRST_WITH_BANK: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
+    # The weave's clock starts when the weave does, not with the cone
+    # (``Autopilot.hac_weave_sign``): a weave that began 2 s before the
+    # cone clock's reversal flew a 2-s stub swing, +31 then -28 deg
+    # (LOG10017).  Off.
+    HAC_WEAVE_CLOCK_FROM_START: bool = False
     # How fast the commanded circle may change size.  The radius is the
     # cone's plan, and an unrated plan chatters between two manoeuvres that
     # have nothing in common -- see ``guidance.hac``.  At 400 m/s a full
@@ -2462,6 +2467,15 @@ class Config:
     # a bounded bank.  Above this the vehicle is not flying an approach any
     # more and a larger load demand is not the answer.
     APPROACH_BANK_COMP_MAX_DEG: float = 60.0
+    # **A floor under the bank the approach may roll back out of**
+    # (``Autopilot.approach_bank``).  That limit is ``roll rate x (time to
+    # the flare door - roll time_to_peak)``, and it reaches 0 at ~400 m
+    # whenever the roll damper has slowed roll to ~8 s: LOG10017's gear
+    # swing did, the capture was held at 0 deg from 400 m with the vehicle
+    # 50 m off and drifting, and it touched down 230 m south of the
+    # centreline.  The flare itself allows ``FLARE_BANK_MAX_DEG``.  0 is
+    # the old law.
+    APPROACH_BANK_FLOOR_DEG: float = 0.0
     APPROACH_CAPTURE_KP: float = 2.0        # deg of bank per m/s of rate error
     APPROACH_CAPTURE_LAG_FACTOR: float = 2.0
     # **1.0 -- inert, and the story of why is worth more than the knob.**

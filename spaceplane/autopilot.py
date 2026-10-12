@@ -682,8 +682,24 @@ class Autopilot:
     def hac_weave_sign(self, ut):
         """Which way the cone's weave leans this tick.
 
-        The phase clock (``weave_sign``).
+        The phase clock (``weave_sign``).  ``HAC_WEAVE_CLOCK_FROM_START``:
+        the clock runs from the tick the weave began, not from the cone's
+        start, so the first swing is a whole one -- off the cone's clock a
+        weave that began 2 s before a reversal flew +31 deg then -28
+        (LOG10017) -- and the first swing is re-chosen with the bank
+        (``hac_weave_phase``) every time the weave restarts.
         """
+        if getattr(self.cfg, "HAC_WEAVE_CLOCK_FROM_START", False):
+            last = getattr(self, "hac_command", None)
+            weaving = last is not None and \
+                float(getattr(last, "weave_deg", 0.0) or 0.0) > 0.0
+            if not weaving or getattr(self, "_weave_t0", None) is None:
+                self._weave_t0 = ut
+                if not weaving and getattr(self.cfg,
+                                           "HAC_WEAVE_FIRST_WITH_BANK",
+                                           False):
+                    self._weave_phase = None
+            return guidance.weave_sign(self.cfg, ut - self._weave_t0)
         return guidance.weave_sign(self.cfg, ut - (self.state_since or ut))
 
     def log_roll_rate(self, ut):
@@ -5814,6 +5830,12 @@ class Autopilot:
         settle = peak[1] if peak else 0.0
         to_door = max(0.0, height - trigger) / max(1.0, sink)
         limit = max(0.0, rate * (to_door - settle))
+        # ``APPROACH_BANK_FLOOR_DEG``: never less than this.  The limit is
+        # about not arriving at the door *steeply* banked; at zero it
+        # switches the lateral capture off for the last ~400 m, and a roll
+        # damper that slows roll on final (the gear's swing) gets there.
+        limit = max(limit, float(getattr(self.cfg,
+                                         "APPROACH_BANK_FLOOR_DEG", 0.0)))
         want = vec.clamp(bank_deg, -limit, limit)
         last_ut = getattr(self, "_app_bank_ut", None)
         prev = getattr(self, "_app_bank", None)
