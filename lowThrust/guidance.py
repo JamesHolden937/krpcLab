@@ -31,7 +31,18 @@ The planner (``plan.py``) picks the narrowest arcs that meet the deadline.
 raised only once the apoapsis is up (a periapsis raise is cheapest at the
 final apoapsis), the apoapsis lowered only once the periapsis is down.
 
-Thrust is prograde or retrograde only -- what plain SAS modes can hold.
+**Plane change.**  Normal or anti-normal arcs at the two nodes between the
+current plane and the target plane (held fixed through the transfer),
+with the same half-width and the same half-duration-early start.  A
+plane change costs the velocity it rotates, so it is cheapest where the
+vessel is slowest: a node whose radius is below eta_cut of the other
+node's is skipped, the plane waits until the apoapsis is raised, and the
+apoapsis is not lowered until the plane is done -- the plane is changed on
+the biggest orbit of the transfer.  Where a node arc and an apsis arc
+overlap, the two burns are one vector, which is cheaper than both.
+
+Pure apsis or pure plane burns are prograde/retrograde or normal/anti-
+normal -- plain SAS modes.  A combined burn points between them.
 """
 
 import math
@@ -40,12 +51,16 @@ from collections import namedtuple
 from common import vec
 from lowThrust import orbit
 
-# radii, m (None = free); ``apse`` the in-plane inertial unit vector the
-# periapsis arc is centred on (``lock_apse`` sets it).
-Target = namedtuple("Target", "ra rp apse", defaults=(None,))
-# ``prograde`` +1 / -1 / 0; ``eta`` this point's effectivity, ``err`` the
-# error (m) of the radius this arc is driving.
-Command = namedtuple("Command", "done throttle prograde eta err")
+# ra, rp: radii, m; inc, lan: rad (None = free).  ``apse`` is the in-plane
+# inertial unit vector the periapsis arc is centred on and ``normal`` the
+# target plane's unit normal; ``lock`` sets both.
+Target = namedtuple("Target", "ra rp inc lan apse normal",
+                    defaults=(None, None, None, None))
+# ``prograde`` and ``normal`` are the components of the unit thrust
+# direction along the velocity and the orbit normal; ``eta`` this point's
+# effectivity, ``err`` the error (m) of the radius an apsis arc is driving.
+Command = namedtuple("Command", "done throttle prograde normal eta err")
+COAST = None
 
 
 def lock_apse(target, el, coasting=True):
@@ -69,25 +84,60 @@ def lock_apse(target, el, coasting=True):
     return target
 
 
+def lock(target, el, cfg, coasting=True):
+    """``lock_apse``, and the target plane fixed once.
+
+    With the node longitude free, the plane keeps the current one's (the
+    smallest rotation that gives the inclination).  An equatorial orbit has
+    none, so the choice is free: it is made when the plane change may begin
+    (``_plane_may_start``) and puts the nodes on the apse line of that
+    moment, so the plane burns share the apsis arcs.  (Fixed at the start,
+    15 orbits of apoapsis raising had turned the apse line off the nodes.)
+    """
+    target = lock_apse(target, el, coasting)
+    if target.inc is None or target.normal is not None:
+        return target
+    lan = target.lan
+    if lan is None:
+        inc0, lan = orbit.inclination_lan(el.rvec, el.vvec)
+        if math.sin(inc0) < 1e-6:
+            if not (coasting and _plane_may_start(el, target, cfg)):
+                return target
+            ref = target.apse
+            lan = math.atan2(ref[1], ref[0])
+    return target._replace(normal=orbit.plane_normal(target.inc, lan))
+
+
+def _plane_may_start(el, target, cfg):
+    """The plane is changed on the biggest orbit: not while the apoapsis is
+    still being raised."""
+    return target.ra is None or el.ra >= target.ra - cfg.TOLERANCE_M
+
+
+def plane_error(el, target):
+    """Angle (rad) between the orbit plane and the target plane; 0 if free.
+    Before the target plane is fixed, the inclination still to change."""
+    if target.normal is None:
+        if target.inc is None:
+            return 0.0
+        return abs(orbit.inclination_lan(el.rvec, el.vvec)[0] - target.inc)
+    n = vec.unit(vec.cross(el.rvec, el.vvec))
+    return math.acos(max(-1.0, min(1.0, vec.dot(n, target.normal))))
+
+
 def arrived(el, target, cfg):
-    """Every targeted apsis within tolerance."""
+    """Every targeted apsis and the plane within tolerance."""
     return ((target.ra is None or abs(el.ra - target.ra) < cfg.TOLERANCE_M)
             and (target.rp is None
-                 or abs(el.rp - target.rp) < cfg.TOLERANCE_M))
+                 or abs(el.rp - target.rp) < cfg.TOLERANCE_M)
+            and plane_error(el, target)
+            < math.radians(cfg.PLANE_TOLERANCE_DEG))
 
 
-def command(el, target, accel, tick_s, eta_cut, cfg, mu):
-    """This tick's thrust command.
-
-    ``el`` the current elements (``orbit.elements``), ``target`` with its
-    apse locked, ``accel`` the acceleration the engine gives at full
-    throttle now (m/s^2, measured, never the rated figure), ``tick_s`` how
-    long the command will be held, ``eta_cut`` the arc cutoff.
-    """
-    if arrived(el, target, cfg):
-        return Command(True, 0.0, 0, 1.0, 0.0)
+def _apsis(el, target, accel, tick_s, half, cfg, mu, plane_pending):
+    """The apsis arc's burn: (seconds needed at full thrust, sign, eta,
+    err, seconds until the apsis), or COAST."""
     apse = target.apse
-    half = math.acos(max(-1.0, min(1.0, eta_cut)))
     theta = orbit.plane_angle(el.rvec, el.vvec, apse)
     d_ap = math.atan2(math.sin(theta - math.pi), math.cos(theta - math.pi))
     at_pe = abs(theta) <= abs(d_ap)          # this arc moves the apoapsis
@@ -95,19 +145,21 @@ def command(el, target, accel, tick_s, eta_cut, cfg, mu):
         off, goal, far = theta, target.ra, vec.scale(apse, -1.0)
     else:
         off, goal, far = d_ap, target.rp, apse
-    eta = math.cos(off)
     if abs(off) > half or goal is None:
-        return Command(False, 0.0, 0, eta, 0.0)
+        return COAST
 
     # Hohmann's order (an explicit flag, not ``goal is target.rp``: under
     # PyPy ``is`` compares floats by value, and a circular target deadlocked)
+    # -- and the apoapsis is not lowered while the plane still has to change.
     tol = cfg.TOLERANCE_M
     if not at_pe and target.ra is not None:
         if el.rp < goal and el.ra < target.ra - tol:
-            return Command(False, 0.0, 0, eta, 0.0)
-    if at_pe and target.rp is not None:
-        if el.ra > goal and el.rp > target.rp + tol:
-            return Command(False, 0.0, 0, eta, 0.0)
+            return COAST
+    if at_pe and el.ra > goal:
+        if target.rp is not None and el.rp > target.rp + tol:
+            return COAST
+        if plane_pending:
+            return COAST
 
     # How the radius toward ``far`` moves per m/s of prograde, numerically
     # (exact for the orbit, and no singularity at e = 0).
@@ -118,14 +170,86 @@ def command(el, target, accel, tick_s, eta_cut, cfg, mu):
                           mu)
     rate = (orbit.radius_toward(bump.p, bump.evec, far) - radius) / cfg.RATE_DV
     if rate == 0 or abs(err) < tol:
-        return Command(False, 0.0, 0, eta, err)
-    prograde = -1 if err * rate > 0 else 1
+        return COAST
+    sign = -1 if err * rate > 0 else 1
     need = abs(err) / (abs(rate) * accel)          # seconds at full thrust
 
-    # Start half the burn's duration before the apsis, so it is centred.
-    # Consistent while burning: a second of burn takes a second off the time
-    # to the apsis and half a second off the half-duration.  (Spreading it
-    # over the arc front-loaded long burns and overshot the far apsis.)
-    if off < 0 and orbit.time_to(el, el.nu - off, mu) > need / 2:
-        return Command(False, 0.0, 0, eta, err)
-    return Command(False, min(1.0, need / tick_s), prograde, eta, err)
+    wait = orbit.time_to(el, el.nu - off, mu) if off < 0 else 0.0
+    return need, sign, math.cos(off), err, wait
+
+
+def _plane(el, target, accel, tick_s, half, eta_cut, cfg, mu):
+    """The node arc's burn: (seconds needed at full thrust, sign, eta, 0,
+    seconds until the node), or COAST."""
+    delta = plane_error(el, target)
+    if delta < math.radians(cfg.PLANE_TOLERANCE_DEG) or target.normal is None:
+        return COAST
+    if not _plane_may_start(el, target, cfg):
+        return COAST                       # change the plane on the big orbit
+    n = vec.unit(vec.cross(el.rvec, el.vvec))
+    nodes = vec.unit(vec.cross(n, target.normal))
+    phi = orbit.plane_angle(el.rvec, el.vvec, nodes)
+    if abs(phi) <= math.pi / 2:
+        off, node = phi, nodes
+    else:
+        off = math.atan2(math.sin(phi - math.pi), math.cos(phi - math.pi))
+        node = vec.scale(nodes, -1.0)
+    r_node = orbit.radius_toward(el.p, el.evec, node)
+    r_other = orbit.radius_toward(el.p, el.evec, vec.scale(node, -1.0))
+    weight = r_node / max(r_node, r_other)
+    if abs(off) > half or weight < eta_cut:
+        return COAST
+    # While the periapsis still has to change, only the node on the
+    # apoapsis side, where the plane burn shares the periapsis burn: on a
+    # circular orbit both nodes are equally good, and half the change went
+    # uncombined at the other (3000 -> 100 km with 20 deg: +15%).
+    if target.rp is not None and abs(el.rp - target.rp) > cfg.TOLERANCE_M:
+        theta = orbit.plane_angle(el.rvec, el.vvec, target.apse)
+        if abs(theta) < math.pi / 2:
+            return COAST
+    # Normal thrust f tilts the orbit normal along -T * sign(f) (dh = r x f);
+    # tilt it toward the target plane.
+    tilt = vec.unit(vec.sub(target.normal, vec.scale(n, math.cos(delta))))
+    _, T, _ = orbit.rtn(el.rvec, el.vvec)
+    sign = 1 if vec.dot(T, tilt) < 0 else -1
+    need = delta * el.h / (r_node * accel)      # rotate v_t by delta, at node
+    wait = orbit.time_to(el, el.nu - off, mu) if off < 0 else 0.0
+    return need, sign, math.cos(off) * weight, 0.0, wait
+
+
+def command(el, target, accel, tick_s, eta_cut, cfg, mu):
+    """This tick's thrust command.
+
+    ``el`` the current elements (``orbit.elements``), ``target`` locked
+    (``lock``), ``accel`` the acceleration the engine gives at full throttle
+    now (m/s^2, measured, never the rated figure), ``tick_s`` how long the
+    command will be held, ``eta_cut`` the arc cutoff.
+    """
+    if arrived(el, target, cfg):
+        return Command(True, 0.0, 0.0, 0.0, 1.0, 0.0)
+    half = math.acos(max(-1.0, min(1.0, eta_cut)))
+    pending = plane_error(el, target) >= math.radians(cfg.PLANE_TOLERANCE_DEG)
+    a = _apsis(el, target, accel, tick_s, half, cfg, mu, pending)
+    p = _plane(el, target, accel, tick_s, half, eta_cut, cfg, mu)
+    err = a[3] if a else 0.0
+    # Start half the burn's duration before its apsis or node, so it is
+    # centred -- the duration of the *combined* burn when both are due, or
+    # the larger starts alone.  Consistent while burning: a second of burn
+    # takes a second off the wait and half a second off the half-duration.
+    # (Spreading a burn over the arc front-loaded it and overshot the far
+    # apsis.)
+    total = math.hypot(a[0] if a else 0.0, p[0] if p else 0.0)
+    a = a if a and a[4] <= total / 2 else COAST
+    p = p if p and p[4] <= total / 2 else COAST
+    # One vector, in proportion to what each still needs, so both finish
+    # together -- the impulsive combined burn.  (Each clipped to full
+    # throttle first, an overlap always pointed at 45 deg and a 100 -> 500 km
+    # raise with 5 deg of plane cost +11.8% on the impulsive.)
+    along = a[0] * a[1] if a else 0.0
+    across = p[0] * p[1] if p else 0.0
+    need = math.hypot(along, across)
+    if need == 0:
+        return Command(False, 0.0, 0.0, 0.0, 0.0, err)
+    eta = max(a[2] if a else 0.0, p[2] if p else 0.0)
+    return Command(False, min(1.0, need / tick_s), along / need,
+                   across / need, eta, err)

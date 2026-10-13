@@ -102,19 +102,59 @@ def speed_at(mu, r, ra, rp):
     return math.sqrt(mu * (2 / r - 2 / (ra + rp)))
 
 
-def impulsive_dv(mu, ra0, rp0, ra1, rp1):
-    """Two-burn impulsive reference for an apsides change (Hohmann-like).
+def plane_normal(inc, lan):
+    """Unit orbit normal for inclination and longitude of the ascending node
+    (rad), in the body's frame (equator = x-y, node longitude from +x)."""
+    return (math.sin(inc) * math.sin(lan), -math.sin(inc) * math.cos(lan),
+            math.cos(inc))
+
+
+def inclination_lan(r, v):
+    """(inclination, lan) of the orbit through (r, v), rad; lan is 0 for an
+    equatorial orbit."""
+    n = vec.unit(vec.cross(r, v))
+    inc = math.acos(max(-1.0, min(1.0, n[2])))
+    lan = math.atan2(n[0], -n[1]) if math.hypot(n[0], n[1]) > 1e-12 else 0.0
+    return inc, lan % (2 * math.pi)
+
+
+def plane_change_dv(el, normal_from, normal_to):
+    """Impulsive cost of rotating the orbit through (el) from one plane to
+    the other at the higher of its two nodes: only the horizontal velocity
+    turns, 2 (h / r_node) sin(delta / 2)."""
+    delta = math.acos(max(-1.0, min(1.0, vec.dot(normal_from, normal_to))))
+    if delta == 0:
+        return 0.0
+    nodes = vec.unit(vec.cross(normal_from, normal_to))
+    r_node = max(radius_toward(el.p, el.evec, nodes),
+                 radius_toward(el.p, el.evec, vec.scale(nodes, -1.0)))
+    return 2 * el.h / r_node * math.sin(delta / 2)
+
+
+def impulsive_dv(mu, ra0, rp0, ra1, rp1, di=0.0):
+    """Two-burn impulsive reference for an apsides change (Hohmann-like),
+    with a plane change of ``di`` (rad) folded into the burn at the larger
+    radius (where it is cheapest).
 
     One burn at an apsis of the start orbit sets the opposite apsis, a second
     at that new apsis sets the remaining one.  The cheaper of the two orders.
-    It is the yardstick the low-thrust transfer's dv is compared against.
+    It assumes the nodes can be put at that apsis, so it is a lower bound
+    when they are not.  The yardstick the low-thrust dv is compared against.
     """
+    def burn(va, vb, plane):
+        if not plane:
+            return abs(vb - va)
+        return math.sqrt(max(0.0, va * va + vb * vb
+                             - 2 * va * vb * math.cos(di)))
+
     def order(first_at, tgt_other, tgt_first):
         # burn at radius first_at (an apsis of the start orbit), moving the
         # opposite apsis to tgt_other; then there, move first_at to tgt_first.
-        dv1 = abs(speed_at(mu, first_at, first_at, tgt_other)
-                  - speed_at(mu, first_at, ra0, rp0))
-        dv2 = abs(speed_at(mu, tgt_other, tgt_other, tgt_first)
-                  - speed_at(mu, tgt_other, tgt_other, first_at))
+        plane_first = first_at >= tgt_other
+        dv1 = burn(speed_at(mu, first_at, ra0, rp0),
+                   speed_at(mu, first_at, first_at, tgt_other), plane_first)
+        dv2 = burn(speed_at(mu, tgt_other, tgt_other, first_at),
+                   speed_at(mu, tgt_other, tgt_other, tgt_first),
+                   not plane_first)
         return dv1 + dv2
     return min(order(rp0, ra1, rp1), order(ra0, rp1, ra1))

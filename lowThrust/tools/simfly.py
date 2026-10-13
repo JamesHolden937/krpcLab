@@ -5,7 +5,8 @@
     ./lowThrust/tools/simfly.py --start "ap=100 pe=100" --target "ap=2000" --within 6h
     ./lowThrust/tools/simfly.py ... --table           # every cutoff the planner flew
 
-Altitudes in km above the surface; an apsis left out of --target is free.
+Altitudes in km above the surface, angles in degrees (start: ap pe i lan
+argpe; target: ap pe i lan); anything left out of --target is free.
 --within takes s, m, h or d (a Kerbin day, 6 h).  Prints the plan, the
 two-burn impulsive dv it is measured against, and the burn schedule.
 """
@@ -17,18 +18,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 
+from common import vec                                    # noqa: E402
 from lowThrust import config, guidance, orbit, plan, sim  # noqa: E402
 
 UNITS = {"s": 1, "m": 60, "h": 3600, "d": 6 * 3600}
 
 
-def parse_orbit(text):
+def parse_orbit(text, fields):
+    """``ap=100 pe=100 i=6`` -> {ap: m, pe: m, i: rad, ...}."""
     out = {}
     for item in text.replace(",", " ").split():
         k, _, val = item.partition("=")
-        if k not in ("ap", "pe"):
-            raise SystemExit(f"unknown orbit field {k!r} (ap, pe)")
-        out[k] = float(val) * 1000
+        if k not in fields:
+            raise SystemExit(f"unknown orbit field {k!r} ({', '.join(fields)})")
+        out[k] = float(val) * 1000 if k in ("ap", "pe") else \
+            math.radians(float(val))
     return out
 
 
@@ -64,21 +68,30 @@ def main():
     cfg = config.apply_overrides(config.Config(), args.set)
     body = sim.KERBIN
     vessel = sim.Vessel(args.dry, args.prop, args.thrust, args.isp)
-    start = parse_orbit(args.start)
+    start = parse_orbit(args.start, ("ap", "pe", "i", "lan", "argpe"))
     s_ap = start.get("ap", start.get("pe"))
     s_pe = start.get("pe", s_ap)
-    r, v = sim.state_at_periapsis(body, s_ap, s_pe)
-    tgt = parse_orbit(args.target)
+    r, v = sim.state_at_periapsis(body, s_ap, s_pe, start.get("i", 0.0),
+                                  start.get("lan", 0.0),
+                                  start.get("argpe", 0.0))
+    tgt = parse_orbit(args.target, ("ap", "pe", "i", "lan"))
     target = guidance.Target(
         body.radius + tgt["ap"] if "ap" in tgt else None,
-        body.radius + tgt["pe"] if "pe" in tgt else None)
+        body.radius + tgt["pe"] if "pe" in tgt else None,
+        tgt.get("i"), tgt.get("lan"))
     el0 = orbit.elements(r, v, body.mu)
+    locked = guidance.lock(target, el0, cfg)
+
+    def deg(x):
+        return f"{math.degrees(x):.2f}"
+
+    def desc(d):
+        return " ".join(f"{k} {val / 1e3:.0f} km" if k in ("ap", "pe")
+                        else f"{k} {deg(val)}" for k, val in d.items())
 
     print(f"config: {' '.join(config.differences(cfg)) or '(defaults)'} "
           f"defaults_fingerprint={config.defaults_fingerprint()}")
-    print(f"{body.name}: start ap {(el0.ra - body.radius) / 1e3:.0f} km "
-          f"pe {(el0.rp - body.radius) / 1e3:.0f} km  ->  target "
-          + " ".join(f"{k} {val / 1e3:.0f} km" for k, val in tgt.items()))
+    print(f"{body.name}: start {desc(start)}  ->  target {desc(tgt)}")
     print(f"vessel {vessel.dry_kg + vessel.prop_kg:.0f} kg, "
           f"{vessel.thrust_n:.0f} N, accel "
           f"{vessel.thrust_n / (vessel.dry_kg + vessel.prop_kg):.3f} m/s^2")
@@ -89,7 +102,16 @@ def main():
     res = p.result
     ra1 = target.ra if target.ra is not None else res.el.ra
     rp1 = target.rp if target.rp is not None else res.el.rp
-    ref = orbit.impulsive_dv(body.mu, el0.ra, el0.rp, ra1, rp1)
+    # With the apsides unchanged, the plane change at the actual nodes;
+    # otherwise the Hohmann with the plane folded into the burn at the larger
+    # radius (a lower bound when the nodes are not on the apse line).
+    if target.ra is None and target.rp is None:
+        ref = (orbit.plane_change_dv(el0, vec.unit(vec.cross(r, v)),
+                                     locked.normal)
+               if locked.normal else 0.0)
+    else:
+        ref = orbit.impulsive_dv(body.mu, el0.ra, el0.rp, ra1, rp1,
+                                 guidance.plane_error(el0, locked))
 
     print(f"{'PLAN' if p.feasible else 'NO PLAN'}: {p.reason}")
     if p.table and args.table:
@@ -103,8 +125,11 @@ def main():
     print(f"  two-burn impulsive {ref:.1f} m/s  ->  low-thrust costs "
           f"{(res.dv / ref - 1) * 100 if ref else 0:+.1f}%")
     if res.el:
+        inc, lan = orbit.inclination_lan(res.el.rvec, res.el.vvec)
         print(f"  final ap {(res.el.ra - body.radius) / 1e3:.3f} km  "
-              f"pe {(res.el.rp - body.radius) / 1e3:.3f} km  "
+              f"pe {(res.el.rp - body.radius) / 1e3:.3f} km  i {deg(inc)}  "
+              f"lan {deg(lan)}  plane error "
+              f"{math.degrees(guidance.plane_error(res.el, locked)):.4f} deg "
               f"({res.reason})")
     print(f"  {len(res.burns)} burns")
     for b in res.burns[:args.burns]:

@@ -46,12 +46,23 @@ Result = namedtuple(
               "end_mass")
 
 
-def state_at_periapsis(body, ap_alt, pe_alt):
-    """(r, v) at periapsis of the orbit with these altitudes (m), in x-y."""
+def state_at_periapsis(body, ap_alt, pe_alt, inc=0.0, lan=0.0, argpe=0.0):
+    """(r, v) at periapsis of the orbit with these altitudes (m) and angles
+    (rad: inclination, longitude of the ascending node, argument of
+    periapsis), in the body's frame (equator = x-y)."""
     ra, rp = body.radius + ap_alt, body.radius + pe_alt
     if ra < rp:
         ra, rp = rp, ra
-    return (rp, 0.0, 0.0), (0.0, orbit.speed_at(body.mu, rp, ra, rp), 0.0)
+    r, v = (rp, 0.0, 0.0), (0.0, orbit.speed_at(body.mu, rp, ra, rp), 0.0)
+
+    def rot(x):          # Rz(lan) Rx(inc) Rz(argpe)
+        c, s = math.cos(argpe), math.sin(argpe)
+        x = (c * x[0] - s * x[1], s * x[0] + c * x[1], x[2])
+        c, s = math.cos(inc), math.sin(inc)
+        x = (x[0], c * x[1] - s * x[2], s * x[1] + c * x[2])
+        c, s = math.cos(lan), math.sin(lan)
+        return (c * x[0] - s * x[1], s * x[0] + c * x[1], x[2])
+    return rot(r), rot(v)
 
 
 def _rk4(r, v, m, mu, force, mdot, dt):
@@ -111,7 +122,7 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
             return finish(False, "orbit limit")
         tick = el.period / cfg.TICKS_PER_ORBIT
         accel = vessel.thrust_n / m
-        target = guidance.lock_apse(target, el, coasting=burn_open is None)
+        target = guidance.lock(target, el, cfg, coasting=burn_open is None)
         cmd = guidance.command(el, target, accel, tick, eta_cut, cfg, mu)
         if cmd.done:
             return finish(True, "arrived")
@@ -128,8 +139,10 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
             t += tick
             continue
 
-        _, T, _ = orbit.rtn(r, v)
-        force = vec.scale(T, cmd.prograde * vessel.thrust_n * cmd.throttle)
+        _, T, N = orbit.rtn(r, v)
+        force = vec.scale(vec.add(vec.scale(T, cmd.prograde),
+                                  vec.scale(N, cmd.normal)),
+                          vessel.thrust_n * cmd.throttle)
         mdot = mdot_full * cmd.throttle
         m0 = m
         h = tick / cfg.THRUST_SUBSTEPS

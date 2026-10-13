@@ -13,6 +13,8 @@ class Config:
     # --- Arrival ----------------------------------------------------------
     # Done when every targeted apsis radius is within this.
     TOLERANCE_M: float = 100.0
+    # ... and the orbit plane within this of the target plane.
+    PLANE_TOLERANCE_DEG: float = 0.01
 
     # --- Guidance (Hohmann in small burns) -----------------------------------
     # The arcs round each apsis have half-width acos(eta): ETA_DEFAULT is
