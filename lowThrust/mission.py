@@ -573,11 +573,16 @@ class Mission:
         if self._burn is None:
             self._guard_pass(c, d, el, cmd.need)
         cap = self.plan.get("cap")
-        if cap is not None and self._burn is not None \
-                and self._burn["dv"] >= cap:
-            self.plan["blocked_until"] = self.plan["arc_end"]
-            self.plan["cap"] = None
-            return 0.0, None, tick
+        if cap is not None:
+            # delivered exactly, from the first tick: high up a 1 m/s
+            # overshoot moves the next pass by days (a 5.3 m/s cap flown as
+            # 6.1 put a Duna descent back on Ike)
+            left = cap - (self._burn["dv"] if self._burn is not None else 0.0)
+            if left <= 1e-3:
+                self.plan["blocked_until"] = self.plan["arc_end"]
+                self.plan["cap"] = None
+                return 0.0, None, tick
+            return min(cmd.throttle, left / (self._accel() * tick)), d, tick
         return cmd.throttle, d, tick
 
     def _arc_eta(self, el):
@@ -594,6 +599,14 @@ class Mission:
         if tg.rp is not None:
             dv += abs(math.sqrt(mu * (2 / el.ra - 2 / (el.ra + tg.rp)))
                       - math.sqrt(mu * (2 / el.ra - 2 / (el.ra + el.rp))))
+        if any(not (el.ra < lo or el.rp > hi) for lo, hi in
+               (transfer.band(b, 1.0) for b in self._others())):
+            # crossing another moon's band (within its SOI's reach; orbits
+            # planned WAIT_SOI_MARGIN short of it are not in it): every
+            # revolution there may meet it, so as few as possible (a
+            # 0.04 m/s^2 descent round Duna at +-8 deg spent 300 days
+            # crossing Ike's orbit and met it four times)
+            return cfg.ETA_WIDE_MIN
         half = math.acos(cfg.ETA_DEFAULT)
         arc_s = 2 * half * el.rp * el.rp / el.h      # time across the arc
         passes = dv / self._accel() / max(arc_s, 1e-6)
@@ -618,7 +631,8 @@ class Mission:
         mu = cr.body.mu
         others = self._others()
         self.plan["cap"] = None
-        arc_s = 2 * math.acos(cfg.ETA_DEFAULT) * el.r * el.r / el.h
+        arc_s = 2 * math.acos(self.plan.get("eta", cfg.ETA_DEFAULT)) \
+            * el.r * el.r / el.h
         self.plan["arc_end"] = cr.t + arc_s
         if not others:
             return
@@ -748,8 +762,8 @@ class Mission:
             rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
             vinf = transfer.moon_arrival_vinf(mu, c.rp, moon.sma,
                                               math.sqrt(mu / moon.sma))
-            self.plan["b"] = transfer.impact_parameter(
-                self.plan["rc"], max(vinf, 1.0), moon.mu)
+            self.plan["b"] = transfer.aim_parameter(self.plan["rc"], vinf,
+                                                    moon)
             dv = transfer.push_dv(
                 rp_, vp_, cr.t + t_pe, mu, moon, self.plan["b"], moon.normal,
                 self._push_max(c), self._horizon)
@@ -1054,8 +1068,7 @@ class Mission:
             if big is not None:
                 return big
         vinf_guess = vec.norm(self.plan.get("vrel", (1e3, 0, 0)))
-        b = transfer.impact_parameter(self.plan["rc"], max(vinf_guess, 1.0),
-                                      dest.mu)
+        b = transfer.aim_parameter(self.plan["rc"], vinf_guess, dest)
         horizon = self.plan.get("horizon")
         if horizon is None:
             if self.kind == "planet":
@@ -1241,12 +1254,10 @@ class Mission:
                 vec.scale(u, vs), back)
 
     def _aim_b(self):
-        """The impact parameter MATCH and LOOP aim for: the capture
-        periapsis's at the matched speed, at most 0.8 of the SOI."""
-        d = self.dest
-        return min(transfer.impact_parameter(
-            self.plan["rc"], max(self.plan["match_vs"], 1.0), d.mu),
-            0.8 * d.soi)
+        """The miss distance MATCH and LOOP aim for: the capture
+        periapsis's at the matched speed (``transfer.aim_parameter``)."""
+        return transfer.aim_parameter(self.plan["rc"], self.plan["match_vs"],
+                                      self.dest)
 
     def _match_encounter(self):
         """The coast's closest approach to the destination, searched round

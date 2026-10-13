@@ -35,6 +35,19 @@ def impact_parameter(rp, vinf, mu):
     return rp * math.sqrt(1 + 2 * mu / (rp * vinf * vinf))
 
 
+def aim_parameter(rp, v, body):
+    """The miss distance to aim a coast at, passing ``body`` at relative
+    speed ``v``, for periapsis ``rp``: the angular momentum that gives rp to
+    an orbit entering the SOI at that speed (patched conics: the body pulls
+    only inside), at most 0.8 of the SOI.  From infinity a 75 m/s arrival at
+    Ike aims 1565 km out, past its 1050 km SOI, and the correction steered
+    the coast away from Ike ever faster as it slowed (ten pushes undone).
+    Any slow entry is bound on arrival; APPROACH sets the periapsis."""
+    v = max(v, 1.0)
+    x = 1 + 2 * body.mu / (rp * v * v) - 2 * body.mu / (body.soi * v * v)
+    return min(rp * math.sqrt(max(x, 0.0)), 0.8 * body.soi)
+
+
 def closest_approach(r, v, t, mu, target, horizon, samples=400, guess=None):
     """Closest approach of the coast from (r, v) at UT t to ``target`` (a
     body orbiting the same centre) within ``horizon`` seconds; with a
@@ -140,7 +153,7 @@ def _aimed(r, t, mu, target, ta, normal, rc):
     for _ in range(2):
         vrel = vec.sub(sol[1], vt)
         u = vec.unit(vrel)
-        b = impact_parameter(rc, max(vec.norm(vrel), 1.0), target.mu)
+        b = aim_parameter(rc, vec.norm(vrel), target)
         aim = vec.add(rt, vec.scale(vec.unit(vec.cross(u, target.normal)), b))
         s2 = orbit.lambert(r, aim, ta - t, mu, normal)
         if s2 is None:
@@ -239,6 +252,12 @@ def push_dv(r, v, t, mu, target, b, normal, dv_max, horizon_fn, n=40,
                 return (lo + hi) / 2
         prev_dv, prev_f = dv, fv
     return None
+
+
+def band(b, margin):
+    """The radii of ``b``'s orbit widened by ``margin`` of its SOI."""
+    return (b.sma * (1 - b.ecc) - margin * b.soi,
+            b.sma * (1 + b.ecc) + margin * b.soi)
 
 
 def first_hazard(r, v, t, mu, others, t_end, margin=1.2):
