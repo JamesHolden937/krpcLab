@@ -430,9 +430,11 @@ def rp_gradient(r, v, mu):
 # of moons), the periapsis band the burn holds (floor .. rp_max), the
 # surface (or atmosphere top), the one-pass test (burn time at most
 # ``fill`` of the time within +-``arc`` rad of periapsis), and the share
-# of the path to periapsis a long capture plans to burn over (``k``).
+# of the path to periapsis a long capture plans to burn over (``k``), and
+# the periapsis aimed for (``rc``; the burn does not lower it past that).
 Capture = namedtuple("Capture",
-                     "mu ra_cap ra_ok floor rp_max surface arc fill k")
+                     "mu ra_cap ra_ok floor rp_max surface arc fill k rc",
+                     defaults=(None,))
 
 
 def capture_need(c, mu, ra):
@@ -521,19 +523,29 @@ def capture_command(r, v, c, cap, budget):
     need, it drowned the periapsis term and a long capture sank 40 km into
     Moho.  The flight and ``fly_capture``'s prediction both fly this."""
     mu = cap.mu
-    want = vec.scale(vec.unit(v), -min(max(capture_need(c, mu, cap.ra_cap),
-                                           0.1), budget))
+    _, g = rp_gradient(r, v, mu)
+    gg = vec.dot(g, g)
+    back = vec.scale(vec.unit(v), -1.0)
+    if cap.rc is not None and c.rp <= cap.rc and gg > 0 \
+            and vec.dot(back, g) < 0:
+        # at or below the aimed periapsis, shed energy without lowering it:
+        # retrograde less its part along the periapsis gradient.  Flown
+        # plain, a long capture far out sank the periapsis to the floor and
+        # then held it there with radial thrust: Duna 612 m/s, 89% radial,
+        # for a 348 m/s impulsive need
+        side = vec.sub(back, vec.scale(g, vec.dot(back, g) / gg))
+        if vec.norm(side) > 0.2:
+            back = vec.unit(side)
+    want = vec.scale(back, min(max(capture_need(c, mu, cap.ra_cap), 0.1),
+                               budget))
     goal = 1.05 * cap.floor if c.rp < cap.floor else \
         0.95 * cap.rp_max if c.rp > cap.rp_max else None
     if c.rp < cap.floor:
         # below the floor, lift it first: retrograde would only sink it
         # further (ending near apoapsis, a capture sank 60 km into Moho)
         want = (0.0, 0.0, 0.0)
-    if goal is not None:
-        _, g = rp_gradient(r, v, mu)
-        gg = vec.dot(g, g)
-        if gg > 0:
-            want = vec.add(want, vec.scale(g, (goal - c.rp) / gg))
+    if goal is not None and gg > 0:
+        want = vec.add(want, vec.scale(g, (goal - c.rp) / gg))
     return want
 
 

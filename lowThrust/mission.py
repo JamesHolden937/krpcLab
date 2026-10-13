@@ -1364,7 +1364,7 @@ class Mission:
             d.mu, ra_cap, max(ra_cap, self._ceiling(d)), floor,
             max(cfg.CAPTURE_RP_BAND * self.plan["rc"], 1.2 * floor),
             d.radius + d.atmosphere, math.radians(cfg.CAPTURE_ARC_DEG),
-            cfg.CAPTURE_FILL, cfg.CAPTURE_PATH_SHARE)
+            cfg.CAPTURE_FILL, cfg.CAPTURE_PATH_SHARE, self.plan["rc"])
 
     def _long_capturable(self):
         """The fastest arrival a capture starting inside the SOI handles,
