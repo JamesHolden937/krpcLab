@@ -120,6 +120,9 @@ class Config:
     TICKS_PER_ORBIT: int = 180
     # RK4 steps per thrusting tick (coasting ticks are propagated exactly).
     THRUST_SUBSTEPS: int = 4
+    # A thrusting tick changes the velocity by at most this share of it
+    # (only a strong engine is ever limited by it).
+    THRUST_DV_SHARE: float = 0.02
 
     # --- Planner ---------------------------------------------------------------
     # Cutoffs flown between ETA_MIN and ETA_MAX to meet a deadline, evenly

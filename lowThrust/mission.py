@@ -367,6 +367,12 @@ class Mission:
                 return self._end(False, step)
             throttle, direction, tick = step
             if throttle > 0:
+                # no tick changes the velocity by more than THRUST_DV_SHARE:
+                # a 10 m/s^2 engine's tick at LKO was 300 m/s, the linear
+                # throttle overshot the waiting orbit into the Mun's band
+                tick = min(tick, max(0.1, cfg.THRUST_DV_SHARE
+                                     * vec.norm(cr.v)
+                                     / (self._accel() * throttle)))
                 self._thrust(direction, throttle, tick)
             else:
                 self._close_burn()
