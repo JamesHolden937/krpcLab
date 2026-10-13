@@ -225,3 +225,52 @@ capture would start 272 Mm out, past the 249 Mm where the Sun's tide is 10%
 of the engine; with that cap lifted it flew on plan and failed mid-capture
 (0.04, 0.02), never arrived (0.01) -- the cap is where the method ends.
 Very weak engines need a heliocentric rendezvous leg (open item 1).
+
+## Session, 2026-10-13 (continued): TWR 0.004 has to work
+
+The user's craft has a Kerbin TWR ~0.004 (0.04 m/s^2): "this really needs
+to work". Then: the stand-in's finite propellant is unnecessary for
+pathfinding (deleted); test 10 m/s^2; think about aerobraking (notes in
+lowThrust/CLAUDE.md). Method: grid sweeps (9 destinations x 5-8 thrusts x
+6 start dates, 270-432 flights, ~10 min on 14 cores), read every failure.
+
+1. **MATCH** (kept): an arrival too fast for an in-SOI capture is braked
+   about the star in the cruise (ZEM/ZEV onto a point just outside the SOI
+   with the capture's impact parameter). Timing from the predicted
+   encounter -- the instantaneous relative velocity 19000 Mm out read
+   20 km/s and started it at once -- plus the standoff (without it, 0.4 m/s^2
+   shed 181 of 1766 m/s). The capture law now runs only inside the SOI:
+   started outside on a planet-only prediction, a 0.04 m/s^2 capture 11 SOI
+   from Moho was wrecked by the Sun's tide. Deleted: the tidal-reach
+   constant, the 30% arrive-slow correction (vinf_max). Moho 0.04: 4/4.
+2. **Minmus past the Mun** (kept): the waiting orbit stays below the Mun's
+   band, periapsis raised until the push fits one pass. 30/30 over
+   0.02-0.4. Applied only when the default orbit's push did not fit: -40
+   m/s on strong engines but lost 3 of 12 dates (refuted).
+3. **Finite propellant deleted** (the user): Vessel(mass, thrust, isp),
+   constant mass.
+4. **Departure** (kept): a multi-pass departure ending bound with its
+   apoapsis past the SOI left in WAIT and "departed" from the Sun's
+   periapsis (3.7 km/s, once into Jool's SOI); any departure-phase SOI exit
+   now hands to CRUISE. Departure passes checked for moon hazards along the
+   RK4-flown burn (an impulse check let a 229 m/s escape meet the Mun).
+   Signed true anomaly in DEPART's arc test (unsigned, a long weak push
+   ended every minute). Refuted: limiting each pass to the arc (the default
+   engine's v_inf fell 1623 -> 765, Moho +650 m/s); a one-pass escape from
+   a raised parking periapsis (same 9-10 failures over 108 weak flights,
+   10-20% dearer once the hand-over existed).
+5. **Bugs the grid found**: guidance's plane gate and apsis arc measured
+   the periapsis differently (4000-day PARK deadlock); the cruise's
+   re-target horizon counted from the window's arrival (phantom 2 Gm miss,
+   Eeloo re-targeted into a failed capture); Lambert overflowed before its
+   limit check; APPROACH and CAPTURE crashed or gave up inside a moon's SOI
+   (they coast it now); moon passes arriving faster than the capture takes
+   are skipped (bar +25% a skip; a fixed bar skipped Mun passes for ten
+   years at 0.02).
+6. **Refuted at the end**: limiting the in-SOI capture to start inside the
+   moons (MATCH the rest) -- Ike at 0.04 fell 6/6 -> 2/6, a slow MATCH
+   arrival into Duna not steered well enough.
+
+Result (432 flights): 0.04 m/s^2 54/54, 0.1-10 m/s^2 all arrive; failures
+only at 0.02 m/s^2 in moon systems (Duna 4/6, Ike 0/6, Jool 0/6). Table in
+lowThrust/CLAUDE.md.
