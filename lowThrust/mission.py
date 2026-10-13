@@ -139,7 +139,7 @@ def _safe_until(craft, c):
 
 class Mission:
     def __init__(self, system, vessel, body, r, v, t0, dest, target, cfg,
-                 record=True):
+                 record=True, loop=None):
         self.cfg = cfg
         self.sys = system
         self.vessel = vessel
@@ -158,6 +158,8 @@ class Mission:
         self.target = None          # the in-SOI target of PUMP/PARK/FINAL
         self.plan = {}
         self.abort = None
+        self.loop = loop            # a LOOP leg follows: capture loosely,
+                                    # periapsis at this radius
         self._route()
 
     # --- bookkeeping ------------------------------------------------------
@@ -197,6 +199,8 @@ class Mission:
 
     def _capture_rp(self):
         d, tg = self.dest, self.final_target
+        if self.loop:
+            return self.loop
         alt = tg.rp if tg.rp is not None else tg.ra
         return max(alt if alt is not None else d.radius + d.atmosphere
                    + self.cfg.SAFE_ALT_M,
@@ -208,6 +212,8 @@ class Mission:
         captured at 14000 km round Duna, lowering it fell into Ike's SOI.
         A moon has no moons: up to CAPTURE_AP_FRACTION of its SOI."""
         d, tg = self.dest, self.final_target
+        if self.loop:
+            return 0.5 * d.soi
         ra = min(self.cfg.CAPTURE_AP_FRACTION * d.soi, self._ceiling(d))
         if tg.ra is not None:
             ra = max(ra, tg.ra)
@@ -231,15 +237,28 @@ class Mission:
         self.plan.update(rc=rc, ra_cap=ra_cap, rp_wait=rp_wait,
                          ra_wait=ra_wait)
         loose = cfg.CAPTURE_LOOSE_FRACTION * moon.soi
+        # at least a quarter of the escape speed at the SOI's edge: slower
+        # is falling in from rest, which the capture law takes at any
+        # engine (Laythe out-pulls 0.04 m/s^2 across its whole SOI, and
+        # read 0 here, every pass was skipped)
         self.plan["vcap"] = max(
             transfer.capturable_vinf(moon, self._accel(), rc, ra_cap,
                                      math.radians(cfg.CAPTURE_ARC_DEG),
                                      cfg.CAPTURE_FILL, loose),
-            self._long_capturable())
+            self._long_capturable(),
+            0.25 * math.sqrt(2 * moon.mu / moon.soi))
         # an arrival faster than that is matched in the parent's frame
         # (MATCH engages only then): Gilly's SOI is 126 km, and every
         # transfer from low Eve orbit arrives at 400+ m/s
         self.plan["match_vs"] = cfg.ARRIVE_MARGIN * max(self.plan["vcap"], 1.0)
+        if c.e < 1 and c.ra > 3 * moon.sma and \
+                abs(c.rp - moon.sma * (1 - moon.ecc)) < 0.05 * moon.sma:
+            # arrived on a loop whose periapsis is on the moon's orbit
+            # (``fly`` plans one for a weak engine at a many-moon planet)
+            self.plan["loop"] = True
+            self.set_phase("LOOP", f"time a periapsis pass to meet "
+                                   f"{moon.name}")
+            return
         self.target = guidance.Target(ra_wait, rp_wait, moon.inc, moon.lan)
         self.set_phase("PUMP", f"waiting orbit {self._km(ra_wait, here)} x "
                                f"{self._km(rp_wait, here)}, in {moon.name}'s "
@@ -285,6 +304,7 @@ class Mission:
             early = transfer.capture_start(self._cap_spec(), rc, v_arr,
                                            self._accel()) \
                 if v_arr <= vmax else None
+            tight = None
             if early is not None and dest.children:
                 # compare with the loose capture below: feasible is not
                 # cheap in a deep well (a Jool leg flew 10 km/s of a tight
@@ -313,6 +333,9 @@ class Mission:
                                                self._accel())
                 if early is not None and early[2] <= cfg.ARRIVE_MARGIN * dest.soi:
                     ra_cap = loose
+                    # forced, unless a tight capture was feasible and only
+                    # dearer (``fly`` loops only a forced one)
+                    self.plan["loose_forced"] = tight is None
                 else:
                     early = None
                     self.plan["ra_cap"] = ra_cap
@@ -770,6 +793,124 @@ class Mission:
             return self._push(c)
         return self._hold(c, t_pe - dv / accel / 2)
 
+    def _loop(self, c):
+        """A loop round the planet whose periapsis lies on the moon's orbit:
+        once a revolution, ahead of apoapsis, solve the tangential burn
+        there that puts the next periapsis pass on the moon's aim point
+        (skipping solutions whose revolution meets another moon), burn it
+        centred on apoapsis, then COAST (corrections, MATCH).  Apoapsis
+        burns are cheap and move the pass by days, so a solution is near.
+        A weak engine reaches a moon of a many-moon planet this way instead
+        of descending through the other moons' bands to a waiting orbit."""
+        cr, cfg, moon = self.craft, self.cfg, self.dest
+        mu = cr.body.mu
+        if c.e >= 1:
+            return 0.0, None, self._tick(c)
+        el = orbit.elements(cr.r, cr.v, mu)
+        t_ap = orbit.time_to(el, math.pi, mu)
+        accel = self._accel()
+        left = self.plan.get("loop_left")
+        if left is not None:
+            left -= self._last_dv
+            self._last_dv = 0.0
+            self.plan["loop_left"] = left
+            tick = self._tick(c)
+            if left <= 0.01:
+                self.plan.pop("loop_left")
+                self.plan["horizon"] = 1.3 * (self.plan["ca_t"] - cr.t) + 3600
+                self.set_phase("COAST", f"to {moon.name}")
+                return 0.0, None, tick
+            if self._burn is None and t_ap > left / accel / 2 \
+                    and t_ap < 0.9 * c.period:
+                return self._hold(c, t_ap - left / accel / 2)
+            return (min(1.0, left / (accel * tick)),
+                    vec.scale(vec.unit(cr.v), self.plan["loop_sign"]), tick)
+        trim = self._trim_check(c)
+        if trim is not None:
+            self.plan["trim_left"] = abs(trim)
+            self.plan["trim_sign"] = 1.0 if trim > 0 else -1.0
+            self.plan["resume"] = "LOOP"
+            self.set_phase("TRIM", f"{trim:+.1f} m/s at periapsis to miss a "
+                                   "moon")
+            return self._trim(c)
+        lead = min(0.2 * c.period, 3 * 86400.0)
+        if t_ap > lead:
+            return self._hold(c, t_ap - lead)
+        key = round(cr.t + t_ap)
+        if self.plan.get("loop_key") == key:
+            return self._hold(c, t_ap + 0.05 * c.period)
+        self.plan["loop_key"] = key
+        got = self._loop_solve(c, t_ap)
+        if got is None:
+            self.event("loop: no pass this revolution meets "
+                       f"{moon.name} cleanly")
+            return self._hold(c, t_ap + 0.05 * c.period)
+        dv, ca = got
+        self.plan.update(loop_left=abs(dv), loop_sign=1.0 if dv > 0 else -1.0,
+                         ca_t=ca.t, vrel=ca.vrel)
+        self.plan.pop("match_done", None)
+        self.event(f"loop: {dv:+.1f} m/s at apoapsis to meet {moon.name} "
+                   f"at the next periapsis")
+        return self._loop(c)
+
+    def _loop_solve(self, c, t_ap):
+        """(tangential dv at the coming apoapsis, the encounter) for the
+        smallest burn whose next periapsis pass reaches the moon's aim
+        point and whose coast meets no other moon first; or None."""
+        cr, cfg, moon = self.craft, self.cfg, self.dest
+        mu = cr.body.mu
+        ra_, va_ = orbit.propagate(cr.r, cr.v, mu, t_ap)
+        t1 = cr.t + t_ap
+        u = vec.unit(va_)
+        b = self._aim_b()
+        others = [x for x in cr.body.children if x is not moon]
+
+        def f(dv):
+            v1 = vec.add(va_, vec.scale(u, dv))
+            c1 = orbit.conic(ra_, v1, mu)
+            if c1.e >= 1:
+                return None
+            t_pe = t1 + c1.period / 2
+            ca = transfer.closest_approach(ra_, v1, t1, mu, moon, c1.period,
+                                           guess=t_pe)
+            if abs(ca.t - t_pe) > 0.2 * c1.period:
+                return None
+            return transfer.signed_miss(ca, moon.normal) - b, ca, v1
+
+        # scan the burns that shift the pass by about one moon period: at a
+        # 1.2 Gm apoapsis +-30 m/s moved it by far more than Vall's 3.6 days
+        # and a fixed grid aliased straight over the roots
+        def period(dv):
+            c1 = orbit.conic(ra_, vec.add(va_, vec.scale(u, dv)), mu)
+            return c1.period if c1.e < 1 else math.inf
+        dtdv = abs(period(0.05) - period(-0.05)) / 0.1
+        span = min(0.5 * vec.norm(va_) + 5.0,
+                   max(0.05, 1.5 * moon.period / max(dtdv, 1e-9)))
+        n = 120
+        grid = [span * (2 * i / n - 1) for i in range(n + 1)]
+        vals = [(dv, f(dv)) for dv in grid]
+        roots = []
+        for (d0, f0), (d1, f1) in zip(vals, vals[1:]):
+            if f0 is None or f1 is None or (f0[0] > 0) == (f1[0] > 0):
+                continue
+            lo, hi, flo = d0, d1, f0[0]
+            for _ in range(40):
+                mid = (lo + hi) / 2
+                fm = f(mid)
+                if fm is None:
+                    break
+                if (fm[0] > 0) == (flo > 0):
+                    lo, flo = mid, fm[0]
+                else:
+                    hi = mid
+            fm = f((lo + hi) / 2)
+            if fm is not None and abs(fm[0]) < 0.5 * moon.soi:
+                roots.append(((lo + hi) / 2, fm[1], fm[2]))
+        for dv, ca, v1 in sorted(roots, key=lambda x: abs(x[0])):
+            if transfer.first_hazard(ra_, v1, t1, mu, others, ca.t) is None:
+                return dv, ca
+        return None
+
     def _push_max(self, c):
         """The largest moon push searched: PUSH_DV_FACTOR times the
         tangential push at this periapsis that reaches the moon's orbit.  (A
@@ -927,7 +1068,8 @@ class Mission:
         # over the whole multi-year horizon (a sample a week), an Eeloo
         # cruise found the wrong minimum, read a 2 Gm miss, re-targeted,
         # and slid its arrival 1500 m/s faster before the capture failed
-        guess = self.plan.get("arrive_t") if self.kind == "planet" else None
+        guess = self.plan.get("arrive_t") if self.kind == "planet" else (
+            self.plan.get("ca_t") if self.plan.get("loop") else None)
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
                                      horizon, b, dest.normal, guess=guess)
         if guess is not None:
@@ -947,8 +1089,10 @@ class Mission:
             if orbit.conic(cr.r, cr.v, cr.body.mu).e < 1:
                 self.plan.pop("pass", None)
                 self.plan.pop("horizon", None)
-                self.set_phase("WAIT", f"no encounter ({vec.norm(ca.d) / 1e3:.0f}"
-                                       f" km from {dest.name}): a new push")
+                self.set_phase("LOOP" if self.plan.get("loop") else "WAIT",
+                               f"no encounter ({vec.norm(ca.d) / 1e3:.0f}"
+                               f" km from {dest.name}): a new "
+                               + ("loop" if self.plan.get("loop") else "push"))
                 return 0.0, None, tick
         if mag < cfg.CORRECT_DV or to_ca < cfg.CORRECT_MIN_LEAD_S:
             self.plan["next_fix"] = cr.t + max(to_ca * cfg.CORRECT_EVERY, 600)
@@ -1090,12 +1234,19 @@ class Mission:
         the cruise aims for."""
         d, vs = self.dest, self.plan["match_vs"]
         w = vec.unit(vec.cross(u, d.normal))
-        b = min(transfer.impact_parameter(self.plan["rc"], max(vs, 1.0), d.mu),
-                0.8 * d.soi)
+        b = self._aim_b()
         back = math.sqrt(max((self.cfg.MATCH_STANDOFF * d.soi) ** 2 - b * b,
                              0.0))
         return (vec.add(vec.scale(u, -back), vec.scale(w, b)),
                 vec.scale(u, vs), back)
+
+    def _aim_b(self):
+        """The impact parameter MATCH and LOOP aim for: the capture
+        periapsis's at the matched speed, at most 0.8 of the SOI."""
+        d = self.dest
+        return min(transfer.impact_parameter(
+            self.plan["rc"], max(self.plan["match_vs"], 1.0), d.mu),
+            0.8 * d.soi)
 
     def _match_encounter(self):
         """The coast's closest approach to the destination, searched round
@@ -1405,8 +1556,31 @@ def fly(system, vessel, body, r, v, t0, dest, target, cfg, record=True):
                 leg, moon, leg.radius + leg.atmosphere + cfg.SAFE_ALT_M, rc,
                 cfg.CAPTURE_AP_FRACTION * moon.soi, accel, cfg)
             tgt = guidance.Target(ra_w, rp_w, moon.inc, moon.lan)
+            if len(leg.children) >= 2:
+                # A weak engine at a many-moon planet captures loosely; the
+                # descent to a waiting orbit then crosses every other moon's
+                # band for years (Laythe, Vall at 0.04 m/s^2 met Laythe or
+                # fell into Jool).  It loops instead: captured loosely with
+                # the periapsis on the moon's orbit, then LOOP times a pass.
+                probe = Mission(system, vessel, body, r, v, t, leg, tgt, cfg,
+                                record=False)
+                loop = None
+                if not probe.abort and (probe.plan.get("loose_forced")
+                                        or "match_vs" in probe.plan):
+                    # only an engine with no tight capture: a strong one
+                    # looped too, its MATCH deep in Jool's well started an
+                    # hour out and ran out of room (Laythe 6/6 -> 3/4)
+                    loop = moon.sma * (1 - moon.ecc)
+                    # captured with the periapsis on the moon's orbit (the
+                    # capture aims it there), then only the plane matched;
+                    # shaped exactly, the loop cost 1356 m/s and 4.5 years
+                    tgt = guidance.Target(None, None, moon.inc, moon.lan)
+            else:
+                loop = None
+        else:
+            loop = None
         res = Mission(system, vessel, body, r, v, t, leg, tgt, cfg,
-                      record).run()
+                      record, loop=loop).run()
         results.append(res)
         if not res.done:
             break
