@@ -5726,3 +5726,19 @@ class TestHacSpeedQ(unittest.TestCase):
             self.assertAlmostEqual(env.density(h) * v * v / q_gate, 1.0,
                                    places=9)
         self.assertEqual(guidance.cone_speed(env, on, 50.0, 500.0), gate)
+
+
+class TestPeakHeating(unittest.TestCase):
+    """``trajectory.peak_heating``: sqrt(rho) v^3 / 1e6 at its largest."""
+
+    def test_reads_the_largest_rate_on_the_profile(self):
+        from spaceplane import trajectory as traj
+
+        class Env:
+            def density(self, altitude):
+                return 1.0e-3 if altitude < 40000 else 0.0
+
+        got = traj.peak_heating(Env(), [(2000.0, 50000.0), (2000.0, 39000.0),
+                                        (1500.0, 30000.0)])
+        self.assertAlmostEqual(got, math.sqrt(1.0e-3) * 8.0e9 / 1e6)
+        self.assertIsNone(traj.peak_heating(Env(), []))

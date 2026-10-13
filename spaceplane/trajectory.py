@@ -756,6 +756,26 @@ def _step(env, r, v, mass, dt, cfg, steer):
 
 
 
+def peak_heating(env, profile):
+    """The largest convective heating rate along a predicted descent,
+    ``sqrt(rho) v^3 / 1e6`` -- KSP's high-Mach convective coefficient
+    (``machConvectionDensityExponent`` 0.5, ``...VelocityExponent`` 3 in
+    Physics.cfg) less its constant.  ``profile`` is ``Prediction.profile``,
+    (speed, altitude) pairs.  ``None`` when there is nothing to read."""
+    best = None
+    for speed, altitude in profile or ():
+        try:
+            rho = env.density(altitude)
+        except Exception:                               # noqa: BLE001
+            return None
+        if rho is None or rho <= 0.0:
+            continue
+        heat = math.sqrt(rho) * speed ** 3 / 1e6
+        if best is None or heat > best:
+            best = heat
+    return best
+
+
 def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             target_radius=None):
     """Propagate to the gate's altitude, or to the ground, and say where.
