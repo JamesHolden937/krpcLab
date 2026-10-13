@@ -29,6 +29,10 @@ class Config:
     # shrink to nothing.  Wide arcs are faster but each pass changes the
     # orbit more: eta 0.95 cost +20% on 2000x100 -> 2000 where 0.99 cost +2.
     ETA_DEFAULT: float = 0.99
+    # A mission's orbit-shaping phases widen the arcs (down to this cutoff,
+    # +-60 deg) until the apsis changes left fit this many passes.
+    ETA_WIDE_MIN: float = 0.5
+    ARC_PASSES_MAX: float = 30.0
     ETA_MAX: float = 0.999
     ETA_MIN: float = 0.2
     # The prograde step (m/s) the radius rates are differenced over.

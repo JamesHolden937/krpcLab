@@ -236,6 +236,10 @@ class Mission:
                                      math.radians(cfg.CAPTURE_ARC_DEG),
                                      cfg.CAPTURE_FILL, loose),
             self._long_capturable())
+        # an arrival faster than that is matched in the parent's frame
+        # (MATCH engages only then): Gilly's SOI is 126 km, and every
+        # transfer from low Eve orbit arrives at 400+ m/s
+        self.plan["match_vs"] = cfg.ARRIVE_MARGIN * max(self.plan["vcap"], 1.0)
         self.target = guidance.Target(ra_wait, rp_wait, moon.inc, moon.lan)
         self.set_phase("PUMP", f"waiting orbit {self._km(ra_wait, here)} x "
                                f"{self._km(rp_wait, here)}, in {moon.name}'s "
@@ -281,6 +285,21 @@ class Mission:
             early = transfer.capture_start(self._cap_spec(), rc, v_arr,
                                            self._accel()) \
                 if v_arr <= vmax else None
+            if early is not None and dest.children:
+                # compare with the loose capture below: feasible is not
+                # cheap in a deep well (a Jool leg flew 10 km/s of a tight
+                # capture predicted at 25 km/s, then met Laythe)
+                tight = early
+                self.plan["ra_cap"] = 0.5 * dest.soi
+                lo = transfer.capture_start(self._cap_spec(), rc, v_arr,
+                                            self._accel())
+                self.plan["ra_cap"] = ra_cap
+                if lo is not None and lo[2] <= cfg.ARRIVE_MARGIN * dest.soi:
+                    mu = dest.mu
+                    lower = (math.sqrt(mu * (2 / rc - 2 / (rc + 0.5 * dest.soi)))
+                             - math.sqrt(mu * (2 / rc - 2 / (rc + ra_cap))))
+                    if lo[1] + lower < tight[1]:
+                        early = None
             if early is None and dest.children:
                 # A deep well with moons (Jool): bound below the moons is
                 # ~11 MJ/kg, and the path the law budgets for it begins
@@ -516,8 +535,11 @@ class Mission:
         coasting = self._burn is None
         self.target = guidance.lock(self.target, el, cfg, coasting)
         tick = self._tick(c)
+        if self._burn is None:
+            self.plan["eta"] = self._arc_eta(el)
         cmd = guidance.command(el, self.target, self._accel(), tick,
-                               cfg.ETA_DEFAULT, cfg, cr.body.mu)
+                               self.plan.get("eta", cfg.ETA_DEFAULT), cfg,
+                               cr.body.mu)
         if cmd.done:
             return next_phase()
         if cmd.throttle <= 0 or cr.t < self.plan.get("blocked_until", -1):
@@ -534,6 +556,29 @@ class Mission:
             self.plan["cap"] = None
             return 0.0, None, tick
         return cmd.throttle, d, tick
+
+    def _arc_eta(self, el):
+        """The arc cutoff for the coming passes: ETA_DEFAULT, widened (down
+        to ETA_WIDE_MIN) until the apsis changes still to make fit
+        ARC_PASSES_MAX passes.  At the default +-8 deg a 0.04 m/s^2 engine
+        lowering a 1.2 Gm apoapsis round Jool made ~8 m/s a pass, on orbits
+        66 days long, and ran out of the ten-year limit."""
+        cfg, mu, tg = self.cfg, self.craft.body.mu, self.target
+        dv = 0.0
+        if tg.ra is not None:
+            dv += abs(math.sqrt(mu * (2 / el.rp - 2 / (el.rp + tg.ra)))
+                      - math.sqrt(mu * (2 / el.rp - 2 / (el.rp + el.ra))))
+        if tg.rp is not None:
+            dv += abs(math.sqrt(mu * (2 / el.ra - 2 / (el.ra + tg.rp)))
+                      - math.sqrt(mu * (2 / el.ra - 2 / (el.ra + el.rp))))
+        half = math.acos(cfg.ETA_DEFAULT)
+        arc_s = 2 * half * el.rp * el.rp / el.h      # time across the arc
+        passes = dv / self._accel() / max(arc_s, 1e-6)
+        if passes <= cfg.ARC_PASSES_MAX:
+            return cfg.ETA_DEFAULT
+        half = min(math.acos(cfg.ETA_WIDE_MIN),
+                   half * passes / cfg.ARC_PASSES_MAX)
+        return math.cos(half)
 
     def _others(self):
         """The bodies a coast about the current body must stay clear of."""
@@ -718,6 +763,10 @@ class Mission:
         if t_pe <= dv / accel / 2:
             self.set_phase("PUSH", f"{dv:.1f} m/s prograde at periapsis")
             self.plan["push_left"] = dv
+            # a new trajectory: the last coast's encounter is stale (MATCH
+            # once started off one 59 h in the past)
+            for k in ("ca_t", "vrel", "match_done", "horizon"):
+                self.plan.pop(k, None)
             return self._push(c)
         return self._hold(c, t_pe - dv / accel / 2)
 
@@ -1075,7 +1124,8 @@ class Mission:
         relative velocity means nothing (read as 20 km/s, it started MATCH
         19000 Mm from Moho)."""
         cr = self.craft
-        if self.plan.get("match_done") or "ca_t" not in self.plan:
+        if self.plan.get("match_done") or "ca_t" not in self.plan \
+                or self.plan["ca_t"] <= cr.t:
             return False, tick
         v = vec.norm(self.plan["vrel"])
         if v <= self.plan["match_vs"]:
@@ -1118,7 +1168,8 @@ class Mission:
             r, vr = self._dest_rel()
             self.plan["match_done"] = True
             self.plan.pop("next_fix", None)
-            self.set_phase("CRUISE", f"matched: arriving at {v:.0f} m/s, "
+            self.set_phase("COAST" if self.kind == "moon" else "CRUISE",
+                           f"matched: arriving at {v:.0f} m/s, "
                                      f"{vec.norm(r) / 1e6:.1f} Mm from "
                                      f"{d.name}")
             return 0.0, None, tick
