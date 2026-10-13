@@ -47,7 +47,8 @@ dv by phase and the totals. Default vessel: 5 t, one 2 kN Dawn, Isp 4200
 within SOI:   FINAL
 to a moon:    PUMP -> WAIT -> PUSH -> COAST -> APPROACH -> CAPTURE -> FINAL
 to a planet:  PARK -> WAIT -> DEPART -> ESCAPE -> CRUISE [-> MATCH -> CRUISE] -> APPROACH -> CAPTURE -> FINAL
-a planet's moon: the planet leg ends in the moon leg's waiting orbit, then the moon leg
+a planet's moon: the planet leg ends in the moon leg's waiting orbit, then the moon leg;
+              a weak engine at a many-moon planet: loose capture on the moon's orbit -> LOOP -> COAST [-> MATCH] -> CAPTURE
 anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
 ```
 
@@ -94,6 +95,25 @@ anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
   the star the planet's motion is exact; a prediction about the planet
   alone breaks where the star's tide matters (0.04 m/s^2 at Moho would
   start 270 Mm out).
+- **MATCH for moons too**: a moon arrival faster than the capture takes is
+  matched in the planet's frame (Gilly: 126 km SOI). A moon's capture
+  speed is floored at a quarter of its SOI-edge escape speed (slower is
+  falling in from rest; Laythe out-pulls 0.04 m/s^2 across its SOI).
+- **Deep wells with moons** (Jool): planning compares a tight capture with a
+  loose one (0.5 SOI, low periapsis) plus the impulsive lowering after,
+  by predicted dv.
+- **LOOP** (a planet's moon, many moons, and no tight capture for this
+  engine): the planet leg captures loosely with its periapsis on the
+  moon's orbit and matches only the moon's plane; then once a revolution,
+  near apoapsis, the tangential burn that puts the next periapsis pass on
+  the moon's aim point (scan sized to shift the pass by ~one moon period;
+  passes meeting other moons skipped); then COAST and MATCH in the
+  planet's frame.
+- **Arcs widen** in orbit-shaping phases (down to cutoff 0.5, +-60 deg)
+  until the apsis changes left fit 30 passes (`ARC_PASSES_MAX`).
+- **Floor guard**: outside CAPTURE/DEPART, a bound periapsis inside the
+  atmosphere or surface is lifted along its gradient first.
+- **Thrust ticks** change the velocity by at most 2% (`THRUST_DV_SHARE`).
 - **The stand-in vessel** has constant mass and unlimited propellant
   (`Vessel(mass, thrust, isp)`): it plans paths; xenon is reported from dv.
 
@@ -113,9 +133,27 @@ Mean dv (m/s) over 6 start dates (UT 0 - 9e6 s), and arrivals where not 6/6
 | 25 kN (5) | 1133 | 1255 | 1882 | 2900 | 1898 | 3945 | 5479 | 4141 | 5881 |
 | 50 kN (10) | 1154 | 1449 | 1894 | 2914 | 2191 | 3923 | 5463 | 4115 | 5652 |
 
+### Second grid (2026-10-14): 15 destinations x 0.04 / 0.4 m/s^2 x 6 dates
+
+180 flights, 170 arrive. Mean dv (m/s), 0.04 / 0.4: Mun 1412 / 1167,
+Minmus 1494 / 1248, Duna 2812 / 1801, Ike 3652 / 1859, Eve 3880 / 3047,
+Gilly 4033 / 2782, Dres 5531 / 4705, Eeloo 6303 / 4972, Moho 7453 / 6522,
+Jool 8146 / 6001, Pol 5923 / 5228, Bop 5838 / 6753, Tylo 7455 / 7996,
+Laythe 9547 (**2/6**) / 6779, Vall **0/6** / 6333. (Gilly and Jool's moons
+were added to the stand-in this session.)
+
 ## Open, in order
 
-1. **0.02 m/s^2 into a moon system** (Duna 4/6, Ike 0/6, Jool 0/6): the
+1. **Laythe and Vall at 0.04 m/s^2** (2/6, 0/6): LOOP finds the pass, but
+   MATCH deep in Jool's well starts too late (its constant-deceleration
+   timing ignores how fast the speed relative to the moon changes near
+   the loop's periapsis) and enters the SOI too fast; Laythe's flights
+   that arrive spend 9.5 km/s on repeated MATCHes. Tried: MATCH_SHARE
+   0.5-0.6 (no better). Next: decide MATCH's start by flying the MATCH law
+   forward in prediction (as the capture's planning does), or MATCH earlier
+   on the loop's inbound leg.
+
+2. **0.02 m/s^2 into a moon system** (Duna 4/6, Ike 0/6, Jool 0/6): the
    in-SOI long capture starts outside the moons (Duna: 27.5 Mm, Ike at 3.2)
    and burns through their bands; a moon flyby mid-capture drops it into
    the planet. Jool also captures 1.16 Gm loose and FINAL cannot spiral
@@ -125,9 +163,6 @@ Mean dv (m/s) over 6 start dates (UT 0 - 9e6 s), and arrivals where not 6/6
    enough to keep its periapsis out of the atmosphere; reverted). Next:
    steer the capture's moon crossings by timing (as the pump's passes are
    checked), or steer MATCH's slow arrival onto the periapsis.
-2. **10 m/s^2 costs more than 2** at Minmus (1449 v 1239) and Ike (2191 v
-   1933): near-impulsive burns, probably ticks too coarse for the engine;
-   all arrive.
 3. **The Persistent Thrust probe** (`tools/ptprobe.py`, an ion craft and an
    LKO save): throttle persistence into rails warp, which SAS modes hold on
    rails (prograde/retrograde/normal and the maneuver mode -- combined burns

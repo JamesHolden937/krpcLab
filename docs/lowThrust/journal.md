@@ -274,3 +274,30 @@ lowThrust/CLAUDE.md). Method: grid sweeps (9 destinations x 5-8 thrusts x
 Result (432 flights): 0.04 m/s^2 54/54, 0.1-10 m/s^2 all arrive; failures
 only at 0.02 m/s^2 in moon systems (Duna 4/6, Ike 0/6, Jool 0/6). Table in
 lowThrust/CLAUDE.md.
+
+## Session, 2026-10-14: 10 m/s^2, Gilly and Jool's moons
+
+1. **10 m/s^2** (the user asked): all destinations arrived but dearer
+   than 2 m/s^2 (Ike 2191 v 1933): the linear throttle over a 300 m/s
+   tick overshot the waiting orbit into the Mun's band. A thrusting tick
+   now changes the velocity by at most 2% -- Ike 1795, Minmus 1278.
+2. **Gilly and Jool's moons added to the stand-in** -- a 64-flight grid
+   then broke a lot: a TypeError in planning (capture feasibility not
+   monotone in arrival speed), every Laythe pass rejected by a fixed
+   400 m/s push cap (now 2x the push to the moon's orbit), Jool captures
+   predicted at 36 km/s (the path budget in a deep well; a loose capture
+   with a low periapsis instead, chosen by dv), a Jool leg flying 10 km/s
+   of a "feasible" tight capture (now compared by dv), a Tylo flyby putting
+   Jool's periapsis at -284 km unguarded (floor guard), Gilly's 400 m/s
+   arrivals into a 126 km SOI (MATCH for moons), a stale encounter starting
+   MATCH 59 h in the past, years of FINAL at +-8 deg arcs (widening arcs).
+3. **LOOP** for a weak engine at a many-moon planet: the classic route's
+   descent from a loose capture to a deep waiting orbit crossed every
+   other band for years and ended in Laythe or Jool. Loose capture on the
+   moon's orbit, plane only, one apoapsis burn a revolution to time a pass,
+   MATCH in Jool's frame. Laythe 0 -> 2/6; Vall 0/6 (MATCH deep in the well
+   starts too late). Applied also to strong engines (whenever loose was
+   cheaper) it broke Laythe 6/6 -> 3/4: only when loose is forced.
+   MATCH_SHARE 0.5-0.6: no better (refuted).
+
+Grid (180 flights, 15 destinations x 0.04/0.4 m/s^2 x 6 dates): 170 arrive.

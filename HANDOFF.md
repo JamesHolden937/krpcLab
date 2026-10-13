@@ -1,23 +1,22 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-13: `lowThrust/` -- works at the user's TWR 0.004, and at 10 m/s^2
+## 2026-10-14: `lowThrust/` -- TWR 0.004 to 13 of 15 destinations; 10 m/s^2 fine
 
-The user's craft has Kerbin TWR ~0.004 (0.04 m/s^2) and it "really needs to
-work". Grid of 432 stand-in flights (9 destinations x 8 thrusts 0.02-10
-m/s^2 x 6 start dates): **0.04 m/s^2 54/54; 0.1-10 m/s^2 all arrive**;
-failures only at 0.02 m/s^2 into moon systems (Duna 4/6, Ike 0/6, Jool
-0/6) -- lowThrust open item 1. New this session: the energy-path capture
-law (inside the SOI), MATCH (braking about the star for arrivals too fast
-to capture), Minmus waiting below the Mun's band, constant-mass vessel
-(the user: no finite fuel), departure hand-over to CRUISE, and a run of
-bugs the grid found. Config: `CAPTURE_PATH_SHARE`, `CAPTURE_RP_BAND`,
-`MATCH_STANDOFF`, `MATCH_SHARE`, `MATCH_END_S` (all default, no flags).
-Aerobraking: design notes only (the user: think, don't build). No kRPC
-code; farm not used. Suite OK. Details: `lowThrust/CLAUDE.md`,
-`docs/lowThrust/journal.md`, `docs/lowThrust/howItWorks.pdf`.
-Next for lowThrust: open item 1 (0.02 into moon systems), then the PT
-probe and `pilot.py`. Sweep tool pattern: `simmission` per combination
-under `xargs -P 14` (journal).
+The user's craft has Kerbin TWR ~0.004 (0.04 m/s^2); it "really needs to
+work". Latest grid (180 stand-in flights: 15 destinations incl. Gilly and
+Jool's five moons, added this session, x 0.04 / 0.4 m/s^2 x 6 dates): **170
+arrive**. At 0.04: everything 6/6 except **Laythe 2/6 and Vall 0/6** (lowThrust
+open item 1: MATCH deep in Jool's well starts too late). Earlier grid
+(9 destinations x 0.02-10 m/s^2): 0.04 and 0.1-10 all arrive; 0.02 fails
+into moon systems (open item 2). New: energy-path capture law, MATCH (about
+the star, and in a planet's frame for moons), LOOP (weak engine to a moon
+of a many-moon planet), Minmus waiting below the Mun's band, departure
+hand-over to CRUISE, widening arcs, floor guard, 2% thrust ticks,
+constant-mass vessel (the user: no finite fuel). All defaults, no flags.
+Aerobraking: design notes only. No kRPC code; farm not used. Suite OK.
+Details: `lowThrust/CLAUDE.md`, `docs/lowThrust/journal.md`,
+`docs/lowThrust/howItWorks.pdf`. Grid tool: `lowThrust/tools/sweep.sh`.
+Next: open item 1, then the PT probe and `pilot.py`.
 
 ## 2026-10-12 late: `lowThrust/` -- the transfer solver works in its stand-in
 
