@@ -179,3 +179,49 @@ and what fixed it:
 Result: strong engine (TWR 0.04) arrives at Mun and Minmus over 6 start
 dates, Duna/Eve/Ike/Dres over 3, Jool and Eeloo; Moho refused. Numbers in
 lowThrust/CLAUDE.md.
+
+## Session, 2026-10-13: the capture starts when it must
+
+The user: Moho "supposedly is refusing to capture ... don't [start only
+on SOI entry], start it when needed"; later, "just get it in a stable
+orbit then adjust" (it already did: capture to 0.3 SOI, FINAL shapes).
+
+The refusal was the one-pass model (`CAPTURE_ARC_DEG` 60, `CAPTURE_FILL`
+0.8): at 0.4 m/s^2 Moho's v_inf 3497 needs ~2.4 h and ~15 Mm of braking;
+the SOI is 9.6 Mm. Approaches, in order:
+
+1. **Retrograde to the end, started at the latest feasible moment**
+   (searched in prediction). Ran on past periapsis and sat at apoapsis
+   just above the target ellipse (retrograde there lowers only the
+   periapsis) -- fixed by accepting any bound orbit below the moon-clear
+   ceiling once past periapsis. But the feasible starts were a window that
+   shrank to a knife edge as the engine weakened (+-12% of the burn at
+   0.4 m/s^2, one point at 0.04), fragmented, and the "later fails / now
+   works" trigger fired on a hole 41 Mm out; started early, retrograde
+   stopped the vessel dead 12 Mm out and then burned 5 km/s hovering as it
+   fell back. **Abandoned: deciding from a predicted start time.**
+2. **The energy law** (kept): thrust along the velocity removes specific
+   energy at a per metre of path wherever it is flown, so with q = energy
+   to shed / (a x path left to periapsis) it starts at q = 0.8 and throttles
+   at q (holding q, finishing at periapsis, one steady burn instead of 111
+   pulses). Short captures still burn centred on periapsis.
+   - Path budget out to `ra_ok` as well as in: Moho 3580-3910 m/s over
+     0.02-0.8 m/s^2; to periapsis only: 3060-3430, flat in k 0.7-0.9 (the
+     slow outbound tail is the dearest place to shed energy).
+   - The periapsis term drowned under a retrograde vector sized at the whole
+     need (2600 m/s): a capture sank 40 km into Moho. Retrograde sized to one
+     tick's dv; below the floor, lift only; steps <= 5% of the speed (a 370 s
+     step near apoapsis was 150 m/s, past the gradient's reach).
+   - "Captured" with the periapsis at -25 km: now only above the floor.
+   - Acting on the two-body periapsis from 14 SOI out started the capture
+     138 Mm early: before the start, the cruise corrections own the aim.
+3. `orbit.propagate` diverged (to 1e17 m) on a 63 s coast 72 Mm out on a
+   hyperbola: the long-arc starting guess; now the better of two.
+
+Result (default vessel): Moho arrives, 6371 m/s, capture 3053 from 17.8 Mm
+(1.8 SOI). Jool 6311 -> 5922; others within +-17. At 0.04 m/s^2 Dres, Duna,
+Eeloo, Ike newly arrive; at 0.1 Dres and Moho. Moho at 0.04 is refused: its
+capture would start 272 Mm out, past the 249 Mm where the Sun's tide is 10%
+of the engine; with that cap lifted it flew on plan and failed mid-capture
+(0.04, 0.02), never arrived (0.01) -- the cap is where the method ends.
+Very weak engines need a heliocentric rendezvous leg (open item 1).

@@ -1,5 +1,25 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-13: `lowThrust/` -- long captures start when needed; Moho arrives
+
+The user asked why Moho refused and to start the capture when needed.
+New capture law (`transfer.capture_step`, shared with the planning
+prediction `fly_capture`): short captures centred on periapsis; long ones
+start -- from the cruise, outside the SOI if need be -- once the energy to
+shed reaches 0.8 of what full thrust removes on the path left to
+periapsis, then throttle at that ratio to finish there. Capture ends
+merely bound; FINAL shapes the orbit. New config: `CAPTURE_PATH_SHARE`
+0.8, `CAPTURE_TIDAL_FRACTION` 0.1, `CAPTURE_RP_BAND` 1.5 (all default, no
+flags). `orbit.propagate` hyperbolic short-coast divergence fixed. Moho
+arrives (6371 m/s), Jool 6311 -> 5922, weak engines (0.04 m/s^2) now reach
+Dres, Duna, Eeloo, Ike. Very weak engines to Moho still refused -- they
+need a heliocentric spiral-rendezvous leg (lowThrust open item 1); the
+0.1 m/s^2 Duna/Ike failure is a multi-pass departure drifting out of
+Kerbin's SOI during WAIT (open item 3). Stand-in only; farm not used.
+Suite 632 OK. Details: `lowThrust/CLAUDE.md`, `docs/lowThrust/journal.md`.
+**`docs/lowThrust/howItWorks.pdf` still describes the old one-pass
+capture** -- rewrite its capture section from the code at wrap-up.
+
 ## 2026-10-12 late: `lowThrust/` -- the transfer solver works in its stand-in
 
 New autopilot for ion/low-thrust craft: type a target orbit -- same body, a
