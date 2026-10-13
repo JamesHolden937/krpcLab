@@ -92,43 +92,16 @@ def signed_miss(ca, normal):
     return s if vec.dot(vec.cross(ca.d, u), normal) > 0 else -s
 
 
-def _solve3(A, y):
-    """x with A x = y for a 3x3 A (Cramer); None if singular."""
-    def det(m):
-        return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-                - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-                + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
-    d = det(A)
-    if d == 0:
-        return None
-    out = []
-    for k in range(3):
-        m = [list(row) for row in A]
-        for i in range(3):
-            m[i][k] = y[i]
-        out.append(det(m) / d)
-    return out
-
-
-def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
-               vinf_max=None):
+def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01):
     """The impulse (inertial vector, m/s) that zeroes the B-plane miss, from
-    a numerical Jacobian of the miss against the three impulse components:
-    minimum-norm for the two miss components; with ``vinf_max`` and an
-    arrival faster than it, also the arrival speed (a square solve) -- a
-    weak engine has to arrive slowly enough to capture in one pass.
-    Returns (impulse, the closest approach it was computed from)."""
+    a numerical Jacobian of the miss against the three impulse components,
+    minimum-norm.  Returns (impulse, the closest approach it was computed
+    from)."""
     ca = closest_approach(r, v, t, mu, target, horizon)
     err, u = miss(ca, b, normal)
     e1 = vec.unit(vec.cross(u, normal))
     e2 = vec.cross(u, e1)
-    # the speed constraint in metres: an m/s of arrival speed weighed as the
-    # distance it moves in the time left
-    w = max(ca.t - t, 1.0)
-    slow = vinf_max is not None and vec.norm(ca.vrel) > vinf_max
     E = [vec.dot(err, e1), vec.dot(err, e2)]
-    if slow:
-        E.append((vec.norm(ca.vrel) - vinf_max) * w)
     J = []                                    # columns per impulse axis
     for k in range(3):
         dv = [0.0, 0.0, 0.0]
@@ -138,14 +111,8 @@ def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
         err_k, _ = miss(ca_k, b, normal)
         col = [(vec.dot(err_k, e1) - E[0]) / dv_probe,
                (vec.dot(err_k, e2) - E[1]) / dv_probe]
-        if slow:
-            col.append(((vec.norm(ca_k.vrel) - vinf_max) * w - E[2])
-                       / dv_probe)
         J.append(col)
     Jr = [[J[k][i] for k in range(3)] for i in range(len(E))]
-    if slow:
-        x = _solve3(Jr, [-e for e in E])
-        return ((0.0, 0.0, 0.0) if x is None else tuple(x)), ca
     a11 = sum(x * x for x in Jr[0])
     a12 = sum(x * y for x, y in zip(Jr[0], Jr[1]))
     a22 = sum(x * x for x in Jr[1])

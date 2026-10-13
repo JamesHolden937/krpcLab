@@ -134,11 +134,17 @@ class TestMissions(unittest.TestCase):
         res, d = fly("Ike", 50)
         self.check(res, d, 50, 2100)
 
-    def test_to_moho_capturing_from_outside_its_soi(self):
+    def test_to_moho_matching_in_the_cruise(self):
+        """v_inf 3.5 km/s: part shed about the Sun (MATCH), the rest in a
+        long capture inside the SOI."""
         res, d = fly("Moho", 50)
-        self.check(res, d, 50, 7000)
-        start = [e.text for e in res.events if e.text.startswith("CAPTURE")]
-        self.assertTrue(start and "SOI)" in start[0], start)
+        self.check(res, d, 50, 6700)
+        self.assertTrue(any(e.text.startswith("MATCH") for e in res.events))
+
+    def test_weak_engine_to_moho(self):
+        """TWR 0.004: nearly all of v_inf shed about the Sun."""
+        res, d = fly("Moho", 50, thrust=200.0)
+        self.check(res, d, 50, 7500)
 
     def test_weak_engine_to_the_mun(self):
         """TWR 0.004: captures high and loose, then spirals down."""

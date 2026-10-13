@@ -261,64 +261,43 @@ class Mission:
                                      math.radians(cfg.CAPTURE_ARC_DEG),
                                      cfg.CAPTURE_FILL,
                                      max(ra_cap, self._ceiling(dest)))
-        early = far = None
         if cap is None:
-            # a capture too long for one pass round periapsis starts as
-            # early as it must, outside the SOI if need be
+            # Too long for one pass: a capture that starts inside the SOI
+            # (where the destination alone pulls), or failing that MATCH,
+            # which sheds the rest about the star in the cruise.  (Started
+            # outside the SOI on a prediction about the planet alone, a
+            # 0.04 m/s^2 capture 11 SOI from Moho was wrecked by the star's
+            # tide.)
             self.plan.update(rc=rc, ra_cap=ra_cap)
-            ves = self.vessel
-            early = transfer.capture_start(
-                self._cap_spec(), rc, vec.norm(w.vinf_arr), ves.thrust_n,
-                self.craft.m, ves.dry_kg, ves.isp_s)
-            if early is not None and early[2] > self._capture_reach():
-                far, early = early[2], None
-        if early is not None:
-            tau, dv_cap, out = early
-            self.event(f"long capture: ~{dv_cap:.0f} m/s, starting "
-                       f"{tau / 3600:.1f} h before periapsis, "
-                       f"{out / 1e6:.1f} Mm out ({out / dest.soi:.1f} SOI)")
-        elif cap is None:
-            # arrive slower: the cruise spends dv to match the planet
-            # loose, out past the planet's moons if need be (the pass
-            # guards and evasive burns then keep clear of them)
-            arc = math.radians(cfg.CAPTURE_ARC_DEG)
-            loose = max(ra_cap, 0.5 * dest.soi)
-            vmax = cfg.ARRIVE_MARGIN * transfer.capturable_vinf(
-                dest, self._accel(), rc, ra_cap, arc, cfg.CAPTURE_FILL, loose)
-            cap = transfer.capture_orbit(dest, vmax, self._accel(), rc,
-                                         ra_cap, arc, cfg.CAPTURE_FILL, loose)
             v_arr = vec.norm(w.vinf_arr)
-            if vmax <= 0 or cap is None or \
-                    vmax < (1 - cfg.ARRIVE_MAX_CUT) * v_arr:
-                # Cutting the arrival speed by more than a fraction is not a
-                # correction but a different (continuous-thrust) trajectory;
-                # tried as a correction, a Moho cruise spent 7.5 km/s and
-                # ended 31 deg inclined.  Refuse before burning anything.
-                need = self._accel_to_capture(dest, v_arr, rc, ra_cap, loose)
-                why = "a long capture fails in prediction" if far is None else (
-                    f"its capture would start {far / 1e6:.0f} Mm out, past "
-                    f"the {self._capture_reach() / 1e6:.0f} Mm where the "
-                    "star's tide stays small")
-                self.abort = (
-                    f"this engine cannot capture at {dest.name}: arrival "
-                    f"v_inf {v_arr:.0f} m/s, {why}; slowing the arrival "
-                    f"leaves at most {vmax:.0f} capturable in one pass"
-                    + (f" (that needs {need:.2f} m/s^2, TWR "
-                       f"{need / 9.81:.3f})" if need else "")
-                    + " -- or an aerocapture")
-                return
+            vmax = self._long_capturable()
+            if v_arr <= vmax:
+                tau, dv_cap, out = transfer.capture_start(
+                    self._cap_spec(), rc, v_arr, self.vessel.thrust_n,
+                    self.craft.m, self.vessel.dry_kg, self.vessel.isp_s)
+                self.event(f"long capture: ~{dv_cap:.0f} m/s, starting "
+                           f"{tau / 3600:.1f} h before periapsis, "
+                           f"{out / 1e6:.1f} Mm out ({out / dest.soi:.1f} SOI)")
             else:
-                if vmax < vec.norm(w.vinf_arr):
-                    self.plan["vinf_max"] = vmax
-                    self.event(f"arrive slow: the cruise will cut v_inf from "
-                               f"{vec.norm(w.vinf_arr):.0f} to {vmax:.0f} "
-                               "m/s so this engine can capture in one pass")
-                else:
-                    cap = transfer.capture_orbit(
-                        dest, vec.norm(w.vinf_arr), self._accel(), rc,
+                arc = math.radians(cfg.CAPTURE_ARC_DEG)
+                loose = max(ra_cap, 0.5 * dest.soi)
+                v1 = transfer.capturable_vinf(dest, self._accel(), rc, ra_cap,
+                                              arc, cfg.CAPTURE_FILL, loose)
+                if v1 > vmax:
+                    # a weak engine at a small planet: one pass, high and
+                    # loose, beats a long capture into the tight ellipse
+                    rc, ra_cap = transfer.capture_orbit(
+                        dest, cfg.ARRIVE_MARGIN * v1, self._accel(), rc,
                         ra_cap, arc, cfg.CAPTURE_FILL, loose)
-                rc, ra_cap = cap
-                self.event(f"capture high and loose for this engine: "
+                vs = cfg.ARRIVE_MARGIN * max(v1, vmax)
+                if vs <= 0:
+                    self.abort = (f"this engine cannot capture at {dest.name}"
+                                  " even arriving at rest")
+                    return
+                self.plan["match_vs"] = vs
+                self.event(f"match {dest.name} in the cruise: shed "
+                           f"{v_arr - vs:.0f} m/s about the star to arrive at "
+                           f"its SOI at {vs:.0f} m/s, then capture into "
                            f"{self._km(ra_cap, dest)} x {self._km(rc, dest)}")
         elif cap[0] > rc * 1.001:
             rc, ra_cap = cap
@@ -346,22 +325,6 @@ class Mission:
             top = min(top, ch.sma * (1 - ch.ecc)
                       - self.cfg.WAIT_SOI_MARGIN * ch.soi)
         return top
-
-    def _accel_to_capture(self, dest, vinf, rc, ra, loose):
-        """The least acceleration that captures ``vinf`` in one pass."""
-        cfg = self.cfg
-        arc = math.radians(cfg.CAPTURE_ARC_DEG)
-
-        def ok(a):
-            return transfer.capture_orbit(dest, vinf, a, rc, ra, arc,
-                                          cfg.CAPTURE_FILL, loose) is not None
-        lo, hi = self._accel(), 100.0
-        if not ok(hi):
-            return None
-        for _ in range(40):
-            mid = (lo + hi) / 2
-            lo, hi = (lo, mid) if ok(mid) else (mid, hi)
-        return hi
 
     def _park_ceiling(self):
         return self._ceiling(self.craft.body)
@@ -467,7 +430,7 @@ class Mission:
                 and cr.body is not self.dest and cr.body is self._home):
             self._repump(f"after a {body.name if body else ''} flyby")
             return
-        if cr.body is self.dest and self.phase in ("COAST", "CRUISE",
+        if cr.body is self.dest and self.phase in ("COAST", "CRUISE", "MATCH",
                                                    "ESCAPE", "PUSH", "WAIT",
                                                    "PUMP", "TRIM", "PARK"):
             self.set_phase("APPROACH", f"periapsis target "
@@ -799,6 +762,11 @@ class Mission:
         if due:
             return self._start_capture(c)
         tick = min(tick, dt)
+        if "match_vs" in self.plan and cr.body is frame:
+            go, dt = self._match_due(tick)
+            if go:
+                return self._match(c)
+            tick = min(tick, dt)
         if cr.body is not frame:
             return 0.0, None, tick           # an unplanned flyby: just coast
         due = self.plan.get("next_fix", -math.inf)
@@ -819,18 +787,12 @@ class Mission:
             else:
                 horizon = self._horizon(cr.r, cr.v)
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
-                                     horizon, b, dest.normal,
-                                     vinf_max=self.plan.get("vinf_max"))
-        self.plan["vrel"] = ca.vrel
+                                     horizon, b, dest.normal)
+        self.plan["vrel"], self.plan["ca_t"] = ca.vrel, ca.t
         self.plan["horizon"] = max(ca.t - cr.t, 0) * 1.5 + 3600
         mag = vec.norm(dv)
         to_ca = ca.t - cr.t
-        slowing = (self.plan.get("vinf_max") is not None
-                   and vec.norm(ca.vrel) > self.plan["vinf_max"])
-        if self.kind == "planet" and mag > cfg.CORRECT_MAX_DV and not slowing:
-            # (not while cutting the arrival speed: that correction is
-            # meant to be large, and re-targeting -- which ignores the speed
-            # -- undid it every tick)
+        if self.kind == "planet" and mag > cfg.CORRECT_MAX_DV:
             big = self._retarget(c, tick, force=True)
             if big is not None:
                 return big
@@ -943,6 +905,104 @@ class Mission:
         return (min(1.0, vec.norm(want) / (self._accel() * tick)),
                 vec.unit(want), tick)
 
+    # --- match: shed the arrival speed about the star ----------------------
+    def _match_aim(self, u):
+        """MATCH's end state relative to the destination, for an arrival
+        along ``u``: just outside its SOI, moving ``match_vs`` toward it with
+        the impact parameter of the capture periapsis, on the B-plane side
+        the cruise aims for."""
+        d, vs = self.dest, self.plan["match_vs"]
+        w = vec.unit(vec.cross(u, d.normal))
+        b = min(transfer.impact_parameter(self.plan["rc"], max(vs, 1.0), d.mu),
+                0.8 * d.soi)
+        back = math.sqrt(max((self.cfg.MATCH_STANDOFF * d.soi) ** 2 - b * b,
+                             0.0))
+        return (vec.add(vec.scale(u, -back), vec.scale(w, b)),
+                vec.scale(u, vs), back)
+
+    def _match_encounter(self):
+        """The coast's closest approach to the destination, searched round
+        the last one."""
+        cr = self.craft
+        ca = transfer.closest_approach(
+            cr.r, cr.v, cr.t, cr.body.mu, self.dest,
+            self.plan.get("horizon", 1.5 * max(self.plan["ca_t"] - cr.t,
+                                               86400.0)),
+            guess=self.plan["ca_t"])
+        self.plan["ca_t"], self.plan["vrel"] = ca.t, ca.vrel
+        return ca
+
+    def _match_lead(self, v):
+        """Seconds before the coast's closest approach that braking from
+        arrival speed ``v`` to ``match_vs`` at MATCH_SHARE of the engine
+        must start, to end at the aim point a standoff short of it."""
+        vs = self.plan["match_vs"]
+        a = self.cfg.MATCH_SHARE * self._accel()
+        back = self.cfg.MATCH_STANDOFF * self.dest.soi
+        return ((v * v - vs * vs) / (2 * a) + back) / v
+
+    def _match_due(self, tick):
+        """(whether MATCH must start, the longest tick that cannot pass its
+        start), from the predicted encounter -- far out the instantaneous
+        relative velocity means nothing (read as 20 km/s, it started MATCH
+        19000 Mm from Moho)."""
+        cr = self.craft
+        if self.plan.get("match_done") or "ca_t" not in self.plan:
+            return False, tick
+        v = vec.norm(self.plan["vrel"])
+        if v <= self.plan["match_vs"]:
+            return False, tick
+        lead = self._match_lead(v)
+        left = self.plan["ca_t"] - cr.t
+        if left > 1.5 * lead:
+            return False, min(tick, max(60.0, 0.5 * (left - 1.5 * lead)))
+        ca = self._match_encounter()
+        v = vec.norm(ca.vrel)
+        lead, left = self._match_lead(v), ca.t - cr.t
+        if left <= lead:
+            return True, tick
+        return False, min(tick, max(60.0, 0.5 * (left - lead)))
+
+    def _match(self, c):
+        """Zero-effort-miss / zero-effort-velocity guidance about the star
+        onto the aim point: a = 6 ZEM/t^2 - 2 ZEV/t, both predicted by
+        coasting the vessel and the destination ``t`` ahead, with ``t`` the
+        time a constant deceleration from the predicted arrival speed takes
+        to reach the aim point.  A weak engine cannot brake near the planet
+        (0.04 m/s^2 would have to start 270 Mm from Moho, where the star's
+        tide breaks a prediction about the planet alone); about the star
+        the planet's motion is modelled exactly."""
+        cr, cfg, d = self.craft, self.cfg, self.dest
+        tick = self._tick(c)
+        if cr.body is not d.parent:
+            return 0.0, None, tick
+        ca = self._match_encounter()
+        v = vec.norm(ca.vrel)
+        if self.phase != "MATCH":
+            self.set_phase("MATCH", f"{v:.0f} m/s to shed about "
+                                    f"{d.parent.name}, "
+                                    f"{(ca.t - cr.t) / 3600:.0f} h out")
+        u = vec.unit(ca.vrel)
+        P, V, back = self._match_aim(u)
+        vs = self.plan["match_vs"]
+        t_go = 2 * max(v * (ca.t - cr.t) - back, 0.0) / (v + vs)
+        if v <= 1.05 * vs or t_go < cfg.MATCH_END_S:
+            r, vr = self._dest_rel()
+            self.plan["match_done"] = True
+            self.plan.pop("next_fix", None)
+            self.set_phase("CRUISE", f"matched: arriving at {v:.0f} m/s, "
+                                     f"{vec.norm(r) / 1e6:.1f} Mm from "
+                                     f"{d.name}")
+            return 0.0, None, tick
+        tick = min(tick, max(1.0, 0.02 * t_go))
+        mu = cr.body.mu
+        rc_, vc_ = orbit.propagate(cr.r, cr.v, mu, t_go)
+        rd, vd = d.state(cr.t + t_go)
+        zem = vec.sub(vec.add(rd, P), rc_)
+        zev = vec.sub(vec.add(vd, V), vc_)
+        acc = vec.sub(vec.scale(zem, 6 / t_go ** 2), vec.scale(zev, 2 / t_go))
+        return min(1.0, vec.norm(acc) / self._accel()), vec.unit(acc), tick
+
     # --- capture ----------------------------------------------------------
     def _dest_rel(self):
         """(r, v) relative to the destination, from its SOI or its
@@ -965,14 +1025,24 @@ class Mission:
             d.radius + d.atmosphere, math.radians(cfg.CAPTURE_ARC_DEG),
             cfg.CAPTURE_FILL, cfg.CAPTURE_PATH_SHARE)
 
-    def _capture_reach(self):
-        """How far out a capture may start: where the parent's tidal pull
-        is CAPTURE_TIDAL_FRACTION of the engine's acceleration."""
-        d = self.dest
-        if d.parent is None:
-            return math.inf
-        return (self.cfg.CAPTURE_TIDAL_FRACTION * self._accel() * d.sma ** 3
-                / (2 * d.parent.mu))
+    def _long_capturable(self):
+        """The fastest arrival a capture starting inside the SOI handles,
+        with ARRIVE_MARGIN to spare in its start distance."""
+        ves, d = self.vessel, self.dest
+        cap = self._cap_spec()
+
+        def ok(vinf):
+            got = transfer.capture_start(cap, self.plan["rc"], vinf,
+                                         ves.thrust_n, self.craft.m,
+                                         ves.dry_kg, ves.isp_s)
+            return got is not None and got[2] <= self.cfg.ARRIVE_MARGIN * d.soi
+        lo, hi = 0.0, 8000.0
+        if ok(hi):
+            return hi
+        for _ in range(16):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if ok(mid) else (lo, mid)
+        return lo
 
     def _capture_decide(self, tick, started):
         """The capture law's decision now (``transfer.capture_step``):
@@ -986,9 +1056,7 @@ class Mission:
         r, v = rel
         cap = self._cap_spec()
         cc = orbit.conic(r, v, cap.mu)
-        if not started and cr.body is not self.dest and (
-                vec.dot(r, v) >= 0 or cc.rp > cap.ra_ok
-                or vec.norm(r) > self._capture_reach()):
+        if not started and cr.body is not self.dest:
             return "coast", tick
         rho, wait = transfer.capture_step(r, v, cc, cap, self._accel(),
                                           started)

@@ -46,25 +46,25 @@ class Config:
     # ... or, when an engine is too weak to capture into that in one pass,
     # into one this loose (a moon has no moons to keep clear of).
     CAPTURE_LOOSE_FRACTION: float = 0.7
-    # A weak engine's cruise aims to arrive at this fraction of the fastest
-    # v_inf it can capture in one pass.
+    # An engine too weak to capture inside the planet's SOI matches its
+    # motion in the cruise (MATCH), arriving at MATCH_STANDOFF of the SOI
+    # radius at this fraction of the fastest v_inf it can capture there (a
+    # long capture starting within this fraction of the SOI, or one pass).  MATCH
+    # starts once stopping there needs MATCH_SHARE of the engine and ends
+    # MATCH_END_S before the aim point.
     ARRIVE_MARGIN: float = 0.8
-    # ... but never by more than this fraction of the window's arrival speed:
-    # past it the mission is refused at planning time.
-    ARRIVE_MAX_CUT: float = 0.3
+    MATCH_STANDOFF: float = 1.05
+    MATCH_SHARE: float = 0.8
+    MATCH_END_S: float = 600.0
     # A one-pass capture must fit in this fraction of the time within
     # +-CAPTURE_ARC_DEG of periapsis; past that arc, still unbound, it failed.
     CAPTURE_ARC_DEG: float = 60.0
     CAPTURE_FILL: float = 0.8
-    # A capture too long for that starts when it must: thrust along the
-    # velocity removes energy at the acceleration per metre of path, so it
-    # burns once the energy to shed reaches this share of what the path
-    # left (to periapsis and out to the loosest capture apoapsis) can
-    # remove -- outside the SOI if need be, but no farther out than where
-    # the parent's tidal pull reaches CAPTURE_TIDAL_FRACTION of the engine's
-    # acceleration (the capture's prediction ignores it).
+    # A capture too long for that starts when it must, inside the SOI:
+    # thrust along the velocity removes energy at the acceleration per metre
+    # of path, so it burns once the energy to shed reaches this share of
+    # what the path left to periapsis can remove.
     CAPTURE_PATH_SHARE: float = 0.8
-    CAPTURE_TIDAL_FRACTION: float = 0.1
     # The capture burn holds the periapsis between the safe floor and this
     # multiple of the aimed one.
     CAPTURE_RP_BAND: float = 1.5
