@@ -276,13 +276,35 @@ class Mission:
             self.plan.update(rc=rc, ra_cap=ra_cap)
             v_arr = vec.norm(w.vinf_arr)
             vmax = self._long_capturable()
-            if v_arr <= vmax:
-                tau, dv_cap, out = transfer.capture_start(
-                    self._cap_spec(), rc, v_arr, self._accel())
-                self.event(f"long capture: ~{dv_cap:.0f} m/s, starting "
-                           f"{tau / 3600:.1f} h before periapsis, "
+            # (feasibility is not monotone in the arrival speed: below the
+            # bisected limit one can still fail in prediction -- then MATCH)
+            early = transfer.capture_start(self._cap_spec(), rc, v_arr,
+                                           self._accel()) \
+                if v_arr <= vmax else None
+            if early is None and dest.children:
+                # A deep well with moons (Jool): bound below the moons is
+                # ~11 MJ/kg, and the path the law budgets for it begins
+                # hundreds of Mm out, where the vessel is slow and energy is
+                # dear in dv (36 km/s predicted).  Bound loosely instead,
+                # with the periapsis low -- ~170 m/s at Jool -- and let FINAL
+                # lower the apoapsis at periapsis, where the speed is.
+                loose = 0.5 * dest.soi
+                self.plan["ra_cap"] = loose
+                early = transfer.capture_start(self._cap_spec(), rc, v_arr,
+                                               self._accel())
+                if early is not None and early[2] <= cfg.ARRIVE_MARGIN * dest.soi:
+                    ra_cap = loose
+                else:
+                    early = None
+                    self.plan["ra_cap"] = ra_cap
+            if early is not None:
+                tau, dv_cap, out = early
+                self.event(f"long capture: ~{dv_cap:.0f} m/s into "
+                           f"{self._km(ra_cap, dest)} x {self._km(rc, dest)}, "
+                           f"starting {tau / 3600:.1f} h before periapsis, "
                            f"{out / 1e6:.1f} Mm out ({out / dest.soi:.1f} SOI)")
             else:
+                vmax = min(vmax, 0.9 * v_arr)
                 arc = math.radians(cfg.CAPTURE_ARC_DEG)
                 loose = max(ra_cap, 0.5 * dest.soi)
                 v1 = transfer.capturable_vinf(dest, self._accel(), rc, ra_cap,
@@ -357,7 +379,8 @@ class Mission:
             if cr.t > limit:
                 return self._end(False, "time limit")
 
-            step = self._evade(c) or getattr(self, "_" + self.phase.lower())(c)
+            step = (self._evade(c) or self._floor_guard(c)
+                    or getattr(self, "_" + self.phase.lower())(c))
             if step == "done":
                 if cr.body is not self.dest:
                     return self._end(False, f"finished about {cr.body.name}, "
@@ -648,7 +671,7 @@ class Mission:
         t_pe = orbit.time_to_periapsis(c, mu)
         accel = self._accel()
         # one decision per pass, made a little ahead of it
-        lead = min(0.25 * c.period, cfg.PUSH_DV_MAX / accel)
+        lead = min(0.25 * c.period, self._push_max(c) / accel)
         if t_pe > lead:
             return self._hold(c, t_pe - lead)
         key = round(cr.t + t_pe)
@@ -661,7 +684,7 @@ class Mission:
                 self.plan["rc"], max(vinf, 1.0), moon.mu)
             dv = transfer.push_dv(
                 rp_, vp_, cr.t + t_pe, mu, moon, self.plan["b"], moon.normal,
-                cfg.PUSH_DV_MAX, self._horizon)
+                self._push_max(c), self._horizon)
             if dv is not None:
                 # reject a pass whose coast meets another moon first
                 v1 = vec.add(vp_, vec.scale(vec.unit(vp_), dv))
@@ -698,6 +721,17 @@ class Mission:
             return self._push(c)
         return self._hold(c, t_pe - dv / accel / 2)
 
+    def _push_max(self, c):
+        """The largest moon push searched: PUSH_DV_FACTOR times the
+        tangential push at this periapsis that reaches the moon's orbit.  (A
+        fixed 400 m/s, fitted round Kerbin, rejected every pass of a Laythe
+        transfer, whose push from its waiting orbit about Jool is 510.)"""
+        mu = self.craft.body.mu
+        r_m = self.dest.sma * (1 + self.dest.ecc)
+        v0 = math.sqrt(mu * (2 / c.rp - 1 / c.a)) if c.e < 1 else 0.0
+        v1 = math.sqrt(mu * (2 / c.rp - 2 / (c.rp + r_m)))
+        return self.cfg.PUSH_DV_FACTOR * max(v1 - v0, 1.0)
+
     def _push(self, c):
         """Burn prograde until the push is spent.  The ledger is the planned
         dv less what has been delivered; a re-solve from the current state,
@@ -713,7 +747,7 @@ class Mission:
         left = self.plan["push_left"] - self._last_dv
         # stay on the same root: search round the ledger, not from zero
         dv = transfer.push_dv(cr.r, cr.v, cr.t, mu, moon, self.plan["b"],
-                              moon.normal, min(cfg.PUSH_DV_MAX,
+                              moon.normal, min(self._push_max(c),
                                                1.5 * left + 2),
                               self._horizon, n=12, dv_min=max(0.0, 0.5 * left
                                                               - 2))
@@ -947,6 +981,33 @@ class Mission:
         if mag < cfg.CORRECT_DV:
             return 0.0, None, tick
         return min(1.0, mag / (self._accel() * tick)), vec.unit(dv), tick
+
+    def _floor_guard(self, c):
+        """A bound orbit about the body the vessel is in whose periapsis is
+        inside its atmosphere or surface, in a phase that does not hold its
+        own floor: lift the periapsis along its gradient before anything
+        else.  (A moon flyby during a weak engine's descent round Jool left
+        its periapsis in Jool's atmosphere; FINAL went on lowering the
+        apoapsis into it.)"""
+        cr, cfg = self.craft, self.cfg
+        b = cr.body
+        if self.phase in ("CAPTURE", "DEPART") or c.e >= 1:
+            return None
+        crash = b.radius + b.atmosphere
+        if c.rp >= crash or orbit.time_to_periapsis(c, b.mu) < 0:
+            return None
+        g = self._rp_gradient(c)
+        gg = vec.dot(g, g)
+        if gg == 0:
+            return None
+        if self.plan.get("lifting") is not b.name:
+            self.plan["lifting"] = b.name
+            self.event(f"periapsis {self._km(c.rp, b)} inside {b.name}: "
+                       "lifting it")
+        tick = self._tick(c)
+        want = vec.scale(g, (crash + cfg.SAFE_ALT_M - c.rp) / gg)
+        return (min(1.0, vec.norm(want) / (self._accel() * tick)),
+                vec.unit(want), tick)
 
     def _evade(self, c):
         """Inside an unplanned body's SOI with the periapsis below a safe

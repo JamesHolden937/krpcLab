@@ -77,8 +77,9 @@ class Config:
     PARK_AP_FRACTION: float = 0.9
     # The window is searched from the estimated end of the pump plus this.
     WINDOW_LEAD_S: float = 6 * 3600.0
-    # A moon push is never more than this; it searches this far ahead.
-    PUSH_DV_MAX: float = 400.0
+    # A moon push is searched up to this multiple of the tangential push
+    # that reaches the moon's orbit, this far ahead.
+    PUSH_DV_FACTOR: float = 2.0
     PUSH_HORIZON_S: float = 30 * 21600.0
     # ... and only within this fraction of the post-push revolution.
     PUSH_REVOLUTION: float = 0.75
