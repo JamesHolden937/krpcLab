@@ -6,7 +6,7 @@ list the maneuvers it flies -- no KSP.
     ./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "duna: ap=200 pe=200 i=0"
     ./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "ike: ap=50 pe=50"
     ./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "kerbin: ap=500 pe=500 i=6"
-    ./lowThrust/tools/simmission.py ... --thrust 200 --dry 4000 --prop 1000 --isp 4200 --ut 0
+    ./lowThrust/tools/simmission.py ... --thrust 200 --mass 5000 --isp 4200 --ut 0
 
 Orbits: ``body: ap= pe= [i= lan= argpe=]`` (km and degrees; anything left out
 of --to is free).  Bodies: Moho, Eve, Kerbin, Mun, Minmus, Duna, Ike, Dres,
@@ -52,8 +52,8 @@ def main():
     ap.add_argument("--from", dest="start", required=True)
     ap.add_argument("--to", dest="dest", required=True)
     ap.add_argument("--ut", type=float, default=0.0, help="start UT, s")
-    ap.add_argument("--dry", type=float, default=sim.ION_PROBE.dry_kg)
-    ap.add_argument("--prop", type=float, default=sim.ION_PROBE.prop_kg)
+    ap.add_argument("--mass", type=float, default=sim.ION_PROBE.mass_kg,
+                    help="kg, constant (propellant is unlimited)")
     ap.add_argument("--thrust", type=float, default=sim.ION_PROBE.thrust_n)
     ap.add_argument("--isp", type=float, default=sim.ION_PROBE.isp_s)
     ap.add_argument("--set", action="append", default=[])
@@ -75,14 +75,14 @@ def main():
         b1.radius + t["pe"] * 1e3 if "pe" in t else None,
         math.radians(t["i"]) if "i" in t else None,
         math.radians(t["lan"]) if "lan" in t else None)
-    vessel = sim.Vessel(args.dry, args.prop, args.thrust, args.isp)
+    vessel = sim.Vessel(args.mass, args.thrust, args.isp)
 
     print(f"config: {' '.join(config.differences(cfg)) or '(defaults)'} "
           f"defaults_fingerprint={config.defaults_fingerprint()}")
-    print(f"vessel {args.dry + args.prop:.0f} kg, {args.thrust:.0f} N "
-          f"({args.thrust / (args.dry + args.prop):.3f} m/s^2, TWR "
-          f"{args.thrust / (args.dry + args.prop) / 9.81:.4f}), Isp "
-          f"{args.isp:.0f} s, {vessel.isp_s * 9.80665 * math.log((args.dry + args.prop) / args.dry):.0f} m/s")
+    print(f"vessel {args.mass:.0f} kg, {args.thrust:.0f} N "
+          f"({args.thrust / args.mass:.3f} m/s^2, TWR "
+          f"{args.thrust / args.mass / 9.81:.4f}), Isp {args.isp:.0f} s "
+          "(mass constant, propellant unlimited)")
     print(f"route: {b0.name} -> " + " -> ".join(
         x.name for x in mission.route(b0, b1)))
     res = mission.fly(system, vessel, b0, r, v, args.ut, b1, target, cfg)

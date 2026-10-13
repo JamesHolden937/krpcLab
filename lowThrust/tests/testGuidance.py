@@ -78,7 +78,7 @@ class TestTransfers(Checks, unittest.TestCase):
         self.check((800, 300), (600, 200), 0.02)
 
     def test_weak_engine(self):
-        weak = sim.Vessel(4000.0, 1000.0, 200.0, 4200.0)
+        weak = sim.Vessel(5000.0, 200.0, 4200.0)
         self.check((100, 100), (300, 300), 0.02, vessel=weak)
 
     def test_apsides_burns_are_prograde_or_retrograde_only(self):
@@ -116,7 +116,7 @@ class TestPlanner(unittest.TestCase):
     def setUp(self):
         self.r, self.v = sim.state_at_periapsis(BODY, 100e3, 100e3)
         self.tgt = guidance.Target(BODY.radius + 300e3, BODY.radius + 300e3)
-        self.weak = sim.Vessel(4000.0, 1000.0, 200.0, 4200.0)
+        self.weak = sim.Vessel(5000.0, 200.0, 4200.0)
 
     def test_meets_a_deadline_and_trades_dv_for_it(self):
         free = plan.plan(BODY, self.weak, self.r, self.v, self.tgt, CFG)

@@ -55,8 +55,8 @@ def main():
     ap.add_argument("--start", required=True)
     ap.add_argument("--target", required=True)
     ap.add_argument("--within", help="time budget, e.g. 90m, 6h, 2d")
-    ap.add_argument("--dry", type=float, default=sim.ION_PROBE.dry_kg)
-    ap.add_argument("--prop", type=float, default=sim.ION_PROBE.prop_kg)
+    ap.add_argument("--mass", type=float, default=sim.ION_PROBE.mass_kg,
+                    help="kg, constant (propellant is unlimited)")
     ap.add_argument("--thrust", type=float, default=sim.ION_PROBE.thrust_n)
     ap.add_argument("--isp", type=float, default=sim.ION_PROBE.isp_s)
     ap.add_argument("--table", action="store_true",
@@ -67,7 +67,7 @@ def main():
 
     cfg = config.apply_overrides(config.Config(), args.set)
     body = sim.KERBIN
-    vessel = sim.Vessel(args.dry, args.prop, args.thrust, args.isp)
+    vessel = sim.Vessel(args.mass, args.thrust, args.isp)
     start = parse_orbit(args.start, ("ap", "pe", "i", "lan", "argpe"))
     s_ap = start.get("ap", start.get("pe"))
     s_pe = start.get("pe", s_ap)
@@ -92,9 +92,9 @@ def main():
     print(f"config: {' '.join(config.differences(cfg)) or '(defaults)'} "
           f"defaults_fingerprint={config.defaults_fingerprint()}")
     print(f"{body.name}: start {desc(start)}  ->  target {desc(tgt)}")
-    print(f"vessel {vessel.dry_kg + vessel.prop_kg:.0f} kg, "
+    print(f"vessel {vessel.mass_kg:.0f} kg, "
           f"{vessel.thrust_n:.0f} N, accel "
-          f"{vessel.thrust_n / (vessel.dry_kg + vessel.prop_kg):.3f} m/s^2")
+          f"{vessel.thrust_n / (vessel.mass_kg):.3f} m/s^2")
 
     within = parse_duration(args.within) if args.within else None
     p = plan.plan(body, vessel, r, v, target, cfg, within)

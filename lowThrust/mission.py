@@ -40,7 +40,7 @@ from dataclasses import dataclass
 
 from common import vec
 from lowThrust import guidance, orbit, transfer
-from lowThrust.sim import G0, _rk4, tick_for
+from lowThrust.sim import _rk4, tick_for, xenon_kg
 
 Maneuver = namedtuple("Maneuver", "phase body t0 t1 dv prograde normal radial")
 Event = namedtuple("Event", "t text")
@@ -139,12 +139,11 @@ def _safe_until(craft, c):
 
 class Mission:
     def __init__(self, system, vessel, body, r, v, t0, dest, target, cfg,
-                 record=True, m0=None):
+                 record=True):
         self.cfg = cfg
         self.sys = system
         self.vessel = vessel
-        self.craft = Craft(body, r, v, vessel.dry_kg + vessel.prop_kg
-                           if m0 is None else m0, t0)
+        self.craft = Craft(body, r, v, vessel.mass_kg, t0)
         self.t0 = t0
         self.dest = dest
         self._home = body
@@ -273,8 +272,7 @@ class Mission:
             vmax = self._long_capturable()
             if v_arr <= vmax:
                 tau, dv_cap, out = transfer.capture_start(
-                    self._cap_spec(), rc, v_arr, self.vessel.thrust_n,
-                    self.craft.m, self.vessel.dry_kg, self.vessel.isp_s)
+                    self._cap_spec(), rc, v_arr, self._accel())
                 self.event(f"long capture: ~{dv_cap:.0f} m/s, starting "
                            f"{tau / 3600:.1f} h before periapsis, "
                            f"{out / 1e6:.1f} Mm out ({out / dest.soi:.1f} SOI)")
@@ -351,8 +349,6 @@ class Mission:
                 self._repump("periapsis inside the atmosphere")
             if cr.t > limit:
                 return self._end(False, "time limit")
-            if cr.m <= self.vessel.dry_kg + 1e-9:
-                return self._end(False, "out of propellant")
 
             step = self._evade(c) or getattr(self, "_" + self.phase.lower())(c)
             if step == "done":
@@ -375,22 +371,20 @@ class Mission:
         self._close_burn()
         cr = self.craft
         return MissionResult(done, reason, self.t0, cr.t, self.dv,
-                             self.vessel.dry_kg + self.vessel.prop_kg - cr.m,
+                             xenon_kg(self.vessel, self.dv),
                              self.maneuvers, self.events, cr.body,
                              orbit.conic(cr.r, cr.v, cr.body.mu))
 
     def _thrust(self, direction, throttle, tick):
         cr, ves, cfg = self.craft, self.vessel, self.cfg
         force = vec.scale(direction, ves.thrust_n * throttle)
-        mdot = ves.thrust_n * throttle / (ves.isp_s * G0)
+
         R, T, N = orbit.rtn(cr.r, cr.v)
-        m0 = cr.m
         h = tick / cfg.THRUST_SUBSTEPS
         for _ in range(cfg.THRUST_SUBSTEPS):
-            cr.r, cr.v, cr.m = _rk4(cr.r, cr.v, cr.m, cr.body.mu, force, mdot, h)
-        cr.m = max(cr.m, ves.dry_kg)
+            cr.r, cr.v, _ = _rk4(cr.r, cr.v, cr.m, cr.body.mu, force, 0.0, h)
         cr.t += tick
-        dv = ves.isp_s * G0 * math.log(m0 / cr.m)
+        dv = ves.thrust_n * throttle / cr.m * tick
         self.dv += dv
         self._last_dv = dv
         if self._burn is None or self._burn["phase"] != self.phase:
@@ -861,6 +855,8 @@ class Mission:
         cr, cfg = self.craft, self.cfg
         mu = cr.body.mu
         tick = self._tick(c)
+        if cr.body is not self.dest:
+            return 0.0, None, tick           # an unplanned flyby: coast it
         t_pe = orbit.time_to_periapsis(c, mu)
         due, dt = self._capture_due(tick)
         if due or t_pe < 0:
@@ -1028,13 +1024,12 @@ class Mission:
     def _long_capturable(self):
         """The fastest arrival a capture starting inside the SOI handles,
         with ARRIVE_MARGIN to spare in its start distance."""
-        ves, d = self.vessel, self.dest
+        d = self.dest
         cap = self._cap_spec()
 
         def ok(vinf):
             got = transfer.capture_start(cap, self.plan["rc"], vinf,
-                                         ves.thrust_n, self.craft.m,
-                                         ves.dry_kg, ves.isp_s)
+                                         self._accel())
             return got is not None and got[2] <= self.cfg.ARRIVE_MARGIN * d.soi
         lo, hi = 0.0, 8000.0
         if ok(hi):
@@ -1212,26 +1207,25 @@ def fly(system, vessel, body, r, v, t0, dest, target, cfg, record=True):
     legs as ``route`` needs.  A leg to a planet that a moon leg follows ends
     in that moon leg's waiting orbit, captured straight into it."""
     legs = route(body, dest)
-    m0, t, results = None, t0, []
+    t, results = t0, []
     for i, leg in enumerate(legs):
         tgt = target
         if i + 1 < len(legs):
             moon = legs[i + 1]
-            accel = vessel.thrust_n / (m0 or vessel.dry_kg + vessel.prop_kg)
+            accel = vessel.thrust_n / vessel.mass_kg
             rc = max(target.rp or target.ra or 0.0,
                      moon.radius + moon.atmosphere + cfg.SAFE_ALT_M)
             ra_w, rp_w, _, _, _ = waiting_orbit(
                 leg, moon, leg.radius + leg.atmosphere + cfg.SAFE_ALT_M, rc,
                 cfg.CAPTURE_AP_FRACTION * moon.soi, accel, cfg)
             tgt = guidance.Target(ra_w, rp_w, moon.inc, moon.lan)
-        res = Mission(system, vessel, body, r, v, t, leg, tgt, cfg, record,
-                      m0).run()
+        res = Mission(system, vessel, body, r, v, t, leg, tgt, cfg,
+                      record).run()
         results.append(res)
         if not res.done:
             break
         body, t = res.body, res.t
         r, v = res.final.rvec, res.final.vvec
-        m0 = vessel.dry_kg + vessel.prop_kg - sum(x.prop_used for x in results)
     last = results[-1]
     return MissionResult(
         last.done, last.reason, t0, last.t, sum(x.dv for x in results),

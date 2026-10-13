@@ -23,7 +23,7 @@ def fly(dest, alt_km, thrust=2000.0, inc=None):
     k = SYS["Kerbin"]
     d = SYS[dest]
     r, v = orbit.state_from_elements(k.mu, k.radius + 100e3, 0, 0, 0, 0, 0)
-    ves = sim.Vessel(4000.0, 1000.0, thrust, 4200.0)
+    ves = sim.Vessel(5000.0, thrust, 4200.0)
     tgt = guidance.Target(d.radius + alt_km * 1e3, d.radius + alt_km * 1e3,
                           None if inc is None else math.radians(inc))
     return mission.fly(SYS, ves, k, r, v, 0.0, d, tgt, CFG), d
@@ -78,8 +78,8 @@ class TestLongCapture(unittest.TestCase):
         impulsive = transfer.capture_dv(self.MU, rc, 0.3 * self.SOI, 3497.0)
         starts = []
         for thrust in (4000.0, 2000.0, 500.0, 100.0):
-            got = transfer.capture_start(self.cap(), rc, 3497.0, thrust,
-                                         5000.0, 4000.0, 4200.0)
+            got = transfer.capture_start(self.cap(), rc, 3497.0,
+                                         thrust / 5000.0)
             self.assertIsNotNone(got, thrust)
             tau, dv, out = got
             self.assertGreater(dv, impulsive)

@@ -520,6 +520,7 @@ def capture_command(r, v, c, cap, budget):
 CaptureFlight = namedtuple("CaptureFlight", "dv t_start d_start")
 
 
+
 def capture_step_s(v, accel):
     """The longest thrusting step of a capture: 5% of the speed.  Slow
     near apoapsis, a 370 s step was 150 m/s, far past where the periapsis
@@ -527,28 +528,27 @@ def capture_step_s(v, accel):
     return max(1.0, 0.05 * vec.norm(v) / accel)
 
 
-def fly_capture(r, v, m, cap, thrust, isp, dry):
+def fly_capture(r, v, cap, accel):
     """Fly the capture law (``capture_step``, ``capture_command``) from
     (r, v) relative to the destination until captured: its dv, and when
     and how far out (from the start) it first burned -- or None (lost,
-    crashed, out of propellant).  Two-body about the destination, also
+    crashed).  Two-body about the destination, also
     outside its SOI, where the parent's pull is the same on both to within
     its tidal part."""
-    from lowThrust.sim import G0, _rk4
+    from lowThrust.sim import _rk4
     mu = cap.mu
     dv, t, start = 0.0, 0.0, None
     c = orbit.conic(r, v, mu)
     limit = orbit.time_to_periapsis(c, mu) + 20 * max(
         c.vinf if c.e >= 1 else 0.0, capture_need(c, mu, cap.ra_cap),
-        10.0) * m / thrust
+        10.0) / accel
     while True:
         c = orbit.conic(r, v, mu)
         if captured(r, v, c, cap):
             return CaptureFlight(dv, start[0], start[1])
-        if c.r < cap.surface or capture_lost(r, v, c, cap) or m <= dry \
-                or t > limit:
+        if c.r < cap.surface or capture_lost(r, v, c, cap) or t > limit:
             return None
-        a = thrust / m
+        a = accel
         step = 0.02 * c.r / max(vec.norm(v), 1.0)
         rho, wait = capture_step(r, v, c, cap, a, start is not None)
         if rho <= 0:
@@ -563,24 +563,23 @@ def fly_capture(r, v, m, cap, thrust, isp, dry):
         want = capture_command(r, v, c, cap, rho * a * h)
         mag = vec.norm(want)
         throttle = min(1.0, mag / (a * h))
-        mdot = thrust * throttle / (isp * G0)
-        r, v, m1 = _rk4(r, v, m, mu, vec.scale(vec.unit(want),
-                                               thrust * throttle), mdot, h)
-        dv += isp * G0 * math.log(m / m1)
-        m, t = m1, t + h
+        r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(vec.unit(want), a * throttle),
+                       0.0, h)
+        dv += a * throttle * h
+        t += h
 
 
-def capture_start(cap, rc, vinf, thrust, m, dry, isp):
+def capture_start(cap, rc, vinf, accel):
     """An arrival's capture (periapsis ``rc``, excess ``vinf``), flown by
     the law from well before it starts: (seconds before periapsis it starts,
     dv, distance out), or None."""
     mu = cap.mu
     vp = math.sqrt(vinf * vinf + 2 * mu / rc)
     excess = vinf * vinf / 2 + mu / (rc + cap.ra_ok)
-    d0 = 1.5 * excess / (cap.k * thrust / m) + 2 * cap.ra_ok
+    d0 = 1.5 * excess / (cap.k * accel) + 2 * cap.ra_ok
     tau = d0 / max(vinf, 1.0)
     r, v = orbit.propagate((rc, 0.0, 0.0), (0.0, vp, 0.0), mu, -tau)
-    got = fly_capture(r, v, m, cap, thrust, isp, dry)
+    got = fly_capture(r, v, cap, accel)
     if got is None:
         return None
     return tau - got.t_start, got.dv, got.d_start

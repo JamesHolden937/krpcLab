@@ -28,17 +28,23 @@ class Body:
 
 @dataclass
 class Vessel:
-    dry_kg: float
-    prop_kg: float
+    """Constant mass, unlimited propellant: the stand-in plans paths, and
+    running dry is not a path's problem (the live pilot measures the
+    acceleration it has).  Isp only converts dv to xenon for the report."""
+    mass_kg: float
     thrust_n: float
-    isp_s: float
+    isp_s: float = 4200.0
+
+
+def xenon_kg(vessel, dv):
+    """Propellant ``dv`` would take from the vessel's mass (report only)."""
+    return vessel.mass_kg * (1 - math.exp(-dv / (vessel.isp_s * G0)))
 
 
 # Kerbin's numbers, so what works here is what the game will need.
 KERBIN = Body("Kerbin", 3.5316e12, 600e3, 70e3)
-# One IX-6315 "Dawn" (2 kN, Isp 4200 s vacuum) on a 4 t probe with 1 t of
-# xenon: 0.4 m/s^2 full, ~9 km/s.
-ION_PROBE = Vessel(dry_kg=4000.0, prop_kg=1000.0, thrust_n=2000.0, isp_s=4200.0)
+# One IX-6315 "Dawn" (2 kN, Isp 4200 s vacuum) on a 5 t probe: 0.4 m/s^2.
+ION_PROBE = Vessel(mass_kg=5000.0, thrust_n=2000.0, isp_s=4200.0)
 
 Burn = namedtuple("Burn", "t0 t1 dv nu0 nu1")
 Result = namedtuple(
@@ -104,9 +110,7 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
     keeps the burn list.
     """
     mu = body.mu
-    dry = vessel.dry_kg
-    m = dry + vessel.prop_kg
-    mdot_full = vessel.thrust_n / (vessel.isp_s * G0)
+    m = vessel.mass_kg
     t = dv = 0.0
     burns = []
     burn_open = None
@@ -119,7 +123,7 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
         if burn_open is not None and record:
             burns.append(Burn(burn_open[0], t, burn_open[1], burn_open[2],
                               el.nu if el else 0.0))
-        return Result(done, reason, t, dv, dry + vessel.prop_kg - m,
+        return Result(done, reason, t, dv, xenon_kg(vessel, dv),
                       t / period0 if period0 else 0.0, burns, el, r, v, m)
 
     while True:
@@ -136,8 +140,6 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
         cmd = guidance.command(el, target, accel, tick, eta_cut, cfg, mu)
         if cmd.done:
             return finish(True, "arrived")
-        if m - dry <= 0 and cmd.throttle > 0:
-            return finish(False, "out of propellant")
 
         if cmd.throttle <= 0:
             if burn_open is not None:
@@ -153,13 +155,10 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
         force = vec.scale(vec.add(vec.scale(T, cmd.prograde),
                                   vec.scale(N, cmd.normal)),
                           vessel.thrust_n * cmd.throttle)
-        mdot = mdot_full * cmd.throttle
-        m0 = m
         h = tick / cfg.THRUST_SUBSTEPS
         for _ in range(cfg.THRUST_SUBSTEPS):
-            r, v, m = _rk4(r, v, m, mu, force, mdot, h)
-        m = max(m, dry)
-        burn_dv = vessel.isp_s * G0 * math.log(m0 / m)
+            r, v, _ = _rk4(r, v, m, mu, force, 0.0, h)
+        burn_dv = accel * cmd.throttle * tick
         dv += burn_dv
         t += tick
         if burn_open is None:
