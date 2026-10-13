@@ -118,3 +118,64 @@ fixed, and the apse drifts off them over 72 orbits of raising.
 The impulsive reference for case "nodes at +-90 deg" read +133% until it
 was computed at the actual nodes (only the horizontal velocity turns):
 -0.6%.
+
+## Session, 2026-10-12 (late night): transfers between bodies
+
+The user: keep working until the solver generates maneuvers for
+interplanetary, to-moon and within-SOI transfers, then push.
+
+Built `bodies.py` (stock system on rails), universal-variable propagation,
+hyperbolic conics, Lambert, `transfer.py`, `mission.py` (patched-conic phase
+machine), `tools/simmission.py`, `tests/testMission.py`. In order, what broke
+and what fixed it:
+
+1. **Pump stalled past ~4000 km** (the 100 -> 12000 km bug): time-uniform
+   ticks swept 20 deg near periapsis, wider than the +-8 deg arc. Ticks are
+   now uniform in angle.
+2. **Held apse line** for the departure parking ellipse: periapsis pinned to
+   a direction, +-90 deg arcs correct the cross-line eccentricity at the end
+   (within 0.02 deg at 0/60/135/250).
+3. Kerbin -> Mun and -> Duna flew end to end on the first runs; Duna's
+   capture ellipse (14000 km) crossed Ike and FINAL "arrived" about Ike.
+   Capture apoapsis kept under the destination's moons; arrival requires
+   the right body.
+4. **Minmus: COAST spent 1654 m/s.** The push never burned (a failed
+   re-solve read as "done") and the linear correction chased a 46000 km
+   miss. Push ledger; a moon COAST with no real encounter goes back to WAIT.
+5. **Unplanned Mun flybys** on the way to Minmus (every orbit past the Mun
+   crosses it twice a revolution): passes whose coast meets another moon
+   are skipped; flyby recovery re-pumps; pass caps and phasing trims.
+6. **Pushes kept missing**: (a) two-revolution intercepts, hypersensitive,
+   re-solves jumping roots -- direct transfers only (0.75 revolution), local
+   re-solve; (b) a B-plane branch inside the push flickered with the SOI test
+   and oscillated the apoapsis 350 km a tick -- removed; (c) the decisive
+   one: the push solver scored a minimum at the search window's edge by its
+   across-track part (557 km for a pass 10400 km away). Whole distance, edge
+   minima rejected: every first push hit (Mun 1108, Minmus 1188).
+7. Lower waiting orbit (0.6 of the way to the moon): more passes, a wider
+   push, no dv cost (both at periapsis).
+8. **Chained legs**: Kerbin -> Ike via a Duna capture straight into the moon
+   leg's waiting orbit. Periapsis margin 10 -> 30 km (approach error plus a
+   long capture burn put Duna's periapsis in the atmosphere); capture holds
+   the periapsis above the floor only (holding it on the aim cost 100 m/s).
+9. **Weak engine (TWR 0.004)**: capture high and loose (rc up to 0.2-0.5
+   SOI), joint waiting-orbit/capture design, waiting periapsis kept out of
+   other moons' bands (11988 km sat on the Mun's orbit), multi-pass
+   departure, slow-arrival cruise (3x3 Jacobian with the arrival speed),
+   evasive burns in unplanned SOIs, re-binding after a slingshot (to 0.6
+   SOI, not merely bound). Mun arrives; Minmus and Duna remain fragile.
+10. **High-v_inf targets ran out of propellant**: a short departure push
+    left a Moho transfer 4 million km off and the linear correction asked
+    5-17 km/s a tick. Lambert re-target when the miss exceeds min(20 SOI, 1%
+    of the target's distance) -- Jool's SOI let a 40 Gm miss through 20 SOI
+    -- or the correction exceeds 150 m/s; aimed at the B-plane point (aimed
+    at the centre it fought the correction sixty times). Excluding near-180
+    deg arcs changed nothing (not the cause).
+11. **Moho**: the slow-arrival correction (cut v_inf 3497 -> 1379) is a
+    different trajectory class; tried as a correction it spent 7.5 km/s.
+    Captures needing more than a 30% cut are refused at planning, with the
+    acceleration that would capture (Moho: TWR 0.177).
+
+Result: strong engine (TWR 0.04) arrives at Mun and Minmus over 6 start
+dates, Duna/Eve/Ike/Dres over 3, Jool and Eeloo; Moho refused. Numbers in
+lowThrust/CLAUDE.md.

@@ -1,23 +1,19 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-12 late: `lowThrust/` -- apsides and plane changes solved in a stand-in sim
+## 2026-10-12 late: `lowThrust/` -- the transfer solver works in its stand-in
 
-New autopilot for ion/low-thrust craft: type a target orbit (+ optional
-time budget), it plans and flies. Built offline first (the user's request:
-vacuum two-body physics is exact in a small sim): `lowThrust/sim.py`,
-`orbit.py`, `guidance.py`, `plan.py`, `tools/simfly.py`, 20 tests (suite
-616, all pass). The law is the user's idea -- **Hohmann in many small
-burns**: prograde/retrograde arcs at each apsis on an apse line fixed
-through each burn, normal/anti-normal arcs at the nodes for the plane,
-outward-first order, plane changed on the biggest orbit, overlapping burns
-combined. Apsides within +0.0-3.1% of the impulsive Hohmann, plane changes
-+0.1-8.4%; a deadline trades dv for time via arc width. No kRPC code yet;
-the farm was not used. The user's real goal is **interplanetary** (pump the
-parking ellipse early, final push at the window); the final push must fit
-one periapsis pass -- table in `lowThrust/CLAUDE.md`. Next, in order:
-argpe in the target, the 100 -> 12000 km non-arrival bug, a spiral fast
-end, the PT probe, the pilot. State and numbers: `lowThrust/CLAUDE.md`;
-history: `docs/lowThrust/journal.md`.
+New autopilot for ion/low-thrust craft: type a target orbit -- same body, a
+moon, another planet or a planet's moon -- and it plans and flies every
+burn. Built offline in a patched-conic stand-in (stock bodies on rails);
+**no kRPC code yet, the farm was not used**. Default vessel TWR 0.04:
+Mun 1108 m/s, Minmus 1195, Duna 1810, Eve 2952, Ike 1869, Dres 4778, Jool
+6313, Eeloo 4953 (all arrive, over 3-6 start dates for the near ones); Moho
+refused at planning (needs TWR 0.177). Weak engines (TWR 0.004): Mun yes,
+Minmus and Duna fragile (moon-crossing hazards). 37 lowThrust tests in the
+suite (628 total, all pass). State, numbers, open items in order, traps:
+`lowThrust/CLAUDE.md`; history: `docs/lowThrust/journal.md`; what the code
+does: `docs/lowThrust/howItWorks.pdf`. **Next for it**: weak-engine moon
+crossings, longer departure pushes, then the PT probe and `pilot.py`.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
