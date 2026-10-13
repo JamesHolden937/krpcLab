@@ -15,6 +15,11 @@ class Config:
     TOLERANCE_M: float = 100.0
     # ... and the orbit plane within this of the target plane.
     PLANE_TOLERANCE_DEG: float = 0.01
+    # ... and a held periapsis direction within this (eccentric orbits).
+    APSE_TOLERANCE_DEG: float = 0.5
+    # The +-90 deg arcs of a held apse line wake once both apsis radii are
+    # within this fraction of target (an end-game correction).
+    APSE_ARC_GATE: float = 0.01
 
     # --- Guidance (Hohmann in small burns) -----------------------------------
     # The arcs round each apsis have half-width acos(eta): ETA_DEFAULT is
@@ -28,6 +33,54 @@ class Config:
     ETA_MIN: float = 0.2
     # The prograde step (m/s) the radius rates are differenced over.
     RATE_DV: float = 0.01
+
+    # --- Missions (mission.py) ------------------------------------------------
+    # Lowest periapsis above a body's atmosphere (or surface) any phase plans.
+    SAFE_ALT_M: float = 10_000.0
+    # Capture into an ellipse with apoapsis this fraction of the target's SOI
+    # (or the final apoapsis, if higher); FINAL then lowers it -- after any
+    # plane change, which is cheap up there.
+    CAPTURE_AP_FRACTION: float = 0.3
+    # A one-pass capture must fit in this fraction of the time within
+    # +-CAPTURE_ARC_DEG of periapsis; past that arc, still unbound, it failed.
+    CAPTURE_ARC_DEG: float = 60.0
+    CAPTURE_FILL: float = 0.8
+    # Apoapses stay this many of a moon's SOI radii short of its orbit, and
+    # a moon transfer's waiting orbit reaches only this fraction of the way.
+    WAIT_SOI_MARGIN: float = 1.2
+    WAIT_AP_FRACTION: float = 0.6
+    # Departure parking ellipse apoapsis, as a fraction of the highest one
+    # clear of the body's moons and well inside its SOI.
+    PARK_AP_FRACTION: float = 0.9
+    # The window is searched from the estimated end of the pump plus this.
+    WINDOW_LEAD_S: float = 6 * 3600.0
+    # A moon push is never more than this; it searches this far ahead.
+    PUSH_DV_MAX: float = 400.0
+    PUSH_HORIZON_S: float = 30 * 21600.0
+    # ... and only within this fraction of the post-push revolution.
+    PUSH_REVOLUTION: float = 0.75
+    # A departure push stops this far past periapsis (the rest is made up
+    # in the cruise).
+    DEPART_ARC_DEG: float = 60.0
+    # A departure pass is rejected if its escape enters a moon's SOI within
+    # this long.
+    ESCAPE_CHECK_S: float = 3 * 21600.0
+    # Mid-course corrections: made when the B-plane miss needs more than
+    # CORRECT_DV, not within CORRECT_MIN_LEAD_S of the encounter, rechecked
+    # after CORRECT_EVERY of the time remaining.
+    CORRECT_DV: float = 0.5
+    CORRECT_MIN_LEAD_S: float = 3600.0
+    CORRECT_EVERY: float = 0.1
+    # A moon correction bigger than this, or a closest approach beyond
+    # MISS_REPLAN of the moon's SOI, means no encounter is ahead: back to
+    # WAIT for a new push.
+    CORRECT_MAX_DV: float = 150.0
+    MISS_REPLAN: float = 1.5
+    # In the target's SOI the hyperbola's periapsis is nudged until within
+    # this fraction of the capture altitude, no later than this before it.
+    APPROACH_TOL: float = 0.02
+    APPROACH_MIN_LEAD_S: float = 1800.0
+    MISSION_MAX_DAYS: float = 4000.0
 
     # --- Tick ---------------------------------------------------------------
     # Guidance is re-decided once a tick and held (as the live pilot will

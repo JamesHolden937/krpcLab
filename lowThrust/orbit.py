@@ -2,8 +2,8 @@
 fixed directions, the impulsive reference.  Pure functions, no kRPC.
 
 Vectors are plain 3-tuples (``common.vec``) in an inertial frame centred on
-the body.  Everything here is for bound (elliptic) orbits; escape is a later
-stage.
+the body.  ``elements`` is for bound orbits (None otherwise); ``conic``,
+``propagate``, ``time_to_periapsis`` and ``lambert`` take any conic.
 """
 
 import math
@@ -12,6 +12,10 @@ from collections import namedtuple
 from common import vec
 
 Elements = namedtuple("Elements", "a e p h ra rp nu r period rvec vvec evec")
+# Any conic: a < 0 and ra = period = inf for a hyperbola; nu in -pi..pi
+# (negative inbound); vinf the hyperbolic excess speed (0 if bound).
+Conic = namedtuple("Conic", "a e p h rp ra nu r period energy vinf rvec vvec "
+                            "evec")
 
 
 def elements(r, v, mu):
@@ -67,6 +71,189 @@ def time_to(el, nu_to, mu):
         return E - el.e * math.sin(E)
     dM = (mean_anomaly(nu_to) - mean_anomaly(el.nu)) % (2 * math.pi)
     return dM / (2 * math.pi) * el.period
+
+
+def conic(r, v, mu):
+    """The osculating conic of state (r, v), bound or not."""
+    rmag = vec.norm(r)
+    hvec = vec.cross(r, v)
+    h = vec.norm(hvec)
+    energy = vec.dot(v, v) / 2 - mu / rmag
+    evec = vec.sub(vec.scale(vec.cross(v, hvec), 1 / mu), vec.scale(r, 1 / rmag))
+    e = vec.norm(evec)
+    p = h * h / mu
+    if e > 1e-10:
+        nu = math.acos(max(-1.0, min(1.0, vec.dot(evec, r) / (e * rmag))))
+        if vec.dot(r, v) < 0:
+            nu = -nu
+    else:
+        nu = 0.0
+    bound = energy < 0
+    a = -mu / (2 * energy) if energy != 0 else math.inf
+    return Conic(a, e, p, h, p / (1 + e), a * (1 + e) if bound else math.inf,
+                 nu, rmag,
+                 2 * math.pi * math.sqrt(a ** 3 / mu) if bound else math.inf,
+                 energy, 0.0 if bound else math.sqrt(2 * energy), r, v, evec)
+
+
+def time_to_periapsis(c, mu):
+    """Seconds from now to the next periapsis (a hyperbola outbound: the one
+    just passed, negative)."""
+    if c.e < 1:
+        el = Elements(c.a, c.e, c.p, c.h, c.ra, c.rp, c.nu % (2 * math.pi),
+                      c.r, c.period, c.rvec, c.vvec, c.evec)
+        return time_to(el, 0.0, mu)
+    F = 2 * math.atanh(math.sqrt((c.e - 1) / (c.e + 1)) * math.tan(c.nu / 2))
+    M = c.e * math.sinh(F) - F
+    return -M / math.sqrt(mu / (-c.a) ** 3)
+
+
+def _stumpff(z):
+    if z > 1e-8:
+        sz = math.sqrt(z)
+        return (1 - math.cos(sz)) / z, (sz - math.sin(sz)) / sz ** 3
+    if z < -1e-8:
+        sz = math.sqrt(-z)
+        return (math.cosh(sz) - 1) / -z, (math.sinh(sz) - sz) / sz ** 3
+    return 0.5 - z / 24, 1 / 6 - z / 120
+
+
+def propagate(r, v, mu, dt):
+    """Propagate any conic ``dt`` seconds exactly (universal variables)."""
+    if dt == 0:
+        return r, v
+    r0 = vec.norm(r)
+    vr0 = vec.dot(r, v) / r0
+    alpha = 2 / r0 - vec.dot(v, v) / mu
+    sqmu = math.sqrt(mu)
+    if alpha > 1e-12:
+        x = sqmu * alpha * dt
+    elif alpha < -1e-12:
+        a = 1 / alpha
+        sgn = 1 if dt > 0 else -1
+        x = sgn * math.sqrt(-a) * math.log(
+            (-2 * mu * alpha * dt)
+            / (vec.dot(r, v) + sgn * math.sqrt(-mu * a) * (1 - r0 * alpha)))
+    else:
+        x = sqmu * dt / r0
+    for _ in range(200):
+        z = alpha * x * x
+        C, S = _stumpff(z)
+        F = (r0 * vr0 / sqmu * x * x * C + (1 - alpha * r0) * x ** 3 * S
+             + r0 * x - sqmu * dt)
+        dF = (r0 * vr0 / sqmu * x * (1 - z * S) + (1 - alpha * r0) * x * x * C
+              + r0)
+        step = F / dF
+        x -= step
+        if abs(step) < 1e-9 * max(1.0, abs(x)):
+            break
+    z = alpha * x * x
+    C, S = _stumpff(z)
+    f = 1 - x * x / r0 * C
+    g = dt - x ** 3 * S / sqmu
+    r1 = vec.add(vec.scale(r, f), vec.scale(v, g))
+    rm = vec.norm(r1)
+    fd = sqmu / (rm * r0) * (alpha * x ** 3 * S - x)
+    gd = 1 - x * x / rm * C
+    return r1, vec.add(vec.scale(r, fd), vec.scale(v, gd))
+
+
+def lambert(r1, r2, dt, mu, normal=(0.0, 0.0, 1.0)):
+    """Velocities (v1, v2) of the single-revolution conic from r1 to r2 in
+    ``dt`` seconds, moving prograde about ``normal``; None if there is none.
+    Universal variables, bisection on z (Curtis, algorithm 5.2).  Singular at
+    a transfer angle of exactly 180 deg."""
+    m1, m2 = vec.norm(r1), vec.norm(r2)
+    cos_t = max(-1.0, min(1.0, vec.dot(r1, r2) / (m1 * m2)))
+    theta = math.acos(cos_t)
+    if vec.dot(vec.cross(r1, r2), normal) < 0:
+        theta = 2 * math.pi - theta
+    if abs(1 - math.cos(theta)) < 1e-12:
+        return None
+    A = math.sin(theta) * math.sqrt(m1 * m2 / (1 - math.cos(theta)))
+    if abs(A) < 1e-9:
+        return None
+    sqmu = math.sqrt(mu)
+
+    def y(z):
+        C, S = _stumpff(z)
+        return m1 + m2 + A * (z * S - 1) / math.sqrt(C)
+
+    def F(z):
+        C, S = _stumpff(z)
+        yz = y(z)
+        return (yz / C) ** 1.5 * S + A * math.sqrt(yz) - sqmu * dt
+
+    # F rises with z.  Upper end: just under (2 pi)^2, where F -> +inf.
+    # Lower end: where y reaches 0 (F there is -sqrt(mu) dt < 0), or far
+    # enough down for a fast hyperbolic transfer.
+    hi = 4 * math.pi ** 2 - 1e-6
+    if F(hi) < 0:
+        return None                       # slower than one revolution allows
+
+    def y_root(a_, b_):                   # y(a_) < 0 <= y(b_)
+        for _ in range(200):
+            mid = (a_ + b_) / 2
+            if y(mid) < 0:
+                a_ = mid
+            else:
+                b_ = mid
+        return b_
+    lo = -4 * math.pi ** 2
+    while True:
+        if y(lo) < 0:
+            lo = y_root(lo, hi)
+            break
+        if F(lo) < 0:
+            break
+        if lo < -1e6:
+            return None
+        lo *= 2
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if F(mid) > 0:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo < 1e-12:
+            break
+    yz = y((lo + hi) / 2)
+    f = 1 - yz / m1
+    g = A * math.sqrt(yz / mu)
+    gd = 1 - yz / m2
+    v1 = vec.scale(vec.sub(r2, vec.scale(r1, f)), 1 / g)
+    v2 = vec.scale(vec.sub(vec.scale(r2, gd), r1), 1 / g)
+    return v1, v2
+
+
+def state_from_elements(mu, a, e, inc, lan, argpe, nu):
+    """(r, v) on the conic with these elements (rad) at true anomaly nu."""
+    p = a * (1 - e * e)
+    rr = p / (1 + e * math.cos(nu))
+    pos = (rr * math.cos(nu), rr * math.sin(nu), 0.0)
+    k = math.sqrt(mu / p)
+    vel = (-k * math.sin(nu), k * (e + math.cos(nu)), 0.0)
+
+    def rot(x):          # Rz(lan) Rx(inc) Rz(argpe)
+        c, s_ = math.cos(argpe), math.sin(argpe)
+        x = (c * x[0] - s_ * x[1], s_ * x[0] + c * x[1], x[2])
+        c, s_ = math.cos(inc), math.sin(inc)
+        x = (x[0], c * x[1] - s_ * x[2], s_ * x[1] + c * x[2])
+        c, s_ = math.cos(lan), math.sin(lan)
+        return (c * x[0] - s_ * x[1], s_ * x[0] + c * x[1], x[2])
+    return rot(pos), rot(vel)
+
+
+def true_from_mean(M, e):
+    """True anomaly for mean anomaly M on an ellipse."""
+    E = M if e < 0.8 else math.pi
+    for _ in range(50):
+        d = (E - e * math.sin(E) - M) / (1 - e * math.cos(E))
+        E -= d
+        if abs(d) < 1e-14:
+            break
+    return 2 * math.atan2(math.sqrt(1 + e) * math.sin(E / 2),
+                          math.sqrt(1 - e) * math.cos(E / 2))
 
 
 def coast(r, v, mu, dt):

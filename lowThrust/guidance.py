@@ -54,12 +54,16 @@ from lowThrust import orbit
 # ra, rp: radii, m; inc, lan: rad (None = free).  ``apse`` is the in-plane
 # inertial unit vector the periapsis arc is centred on and ``normal`` the
 # target plane's unit normal; ``lock`` sets both.
-Target = namedtuple("Target", "ra rp inc lan apse normal",
-                    defaults=(None, None, None, None))
+# ``hold_apse``: the periapsis must lie along ``apse`` (a departure's
+# parking orbit): never re-locked, and arcs at +-90 deg from it correct the
+# eccentricity across the line once the apsides are nearly there.
+Target = namedtuple("Target", "ra rp inc lan apse normal hold_apse",
+                    defaults=(None, None, None, None, False))
 # ``prograde`` and ``normal`` are the components of the unit thrust
 # direction along the velocity and the orbit normal; ``eta`` this point's
 # effectivity, ``err`` the error (m) of the radius an apsis arc is driving.
-Command = namedtuple("Command", "done throttle prograde normal eta err")
+Command = namedtuple("Command", "done throttle prograde normal eta err need",
+                     defaults=(0.0,))
 COAST = None
 
 
@@ -75,7 +79,7 @@ def lock_apse(target, el, coasting=True):
     circular target ended 628 x 396.  On a circular orbit with no line yet,
     the vessel's position.
     """
-    if not coasting and target.apse is not None:
+    if target.apse is not None and (target.hold_apse or not coasting):
         return target
     if el.e > 1e-6:
         return target._replace(apse=vec.unit(el.evec))
@@ -125,26 +129,67 @@ def plane_error(el, target):
     return math.acos(max(-1.0, min(1.0, vec.dot(n, target.normal))))
 
 
+def _in_plane(el, direction):
+    """``direction`` projected into the orbit plane, unit."""
+    n = vec.unit(vec.cross(el.rvec, el.vvec))
+    return vec.unit(vec.sub(direction, vec.scale(n, vec.dot(direction, n))))
+
+
+def apse_error(el, target):
+    """Angle (rad) between the periapsis and a held apse line; 0 if not held
+    or the orbit is near circular."""
+    if not target.hold_apse or el.e < 0.01:
+        return 0.0
+    return math.acos(max(-1.0, min(1.0, vec.dot(
+        vec.unit(el.evec), _in_plane(el, target.apse)))))
+
+
 def arrived(el, target, cfg):
-    """Every targeted apsis and the plane within tolerance."""
+    """Every targeted apsis, the plane and a held apse within tolerance."""
     return ((target.ra is None or abs(el.ra - target.ra) < cfg.TOLERANCE_M)
             and (target.rp is None
                  or abs(el.rp - target.rp) < cfg.TOLERANCE_M)
             and plane_error(el, target)
-            < math.radians(cfg.PLANE_TOLERANCE_DEG))
+            < math.radians(cfg.PLANE_TOLERANCE_DEG)
+            and apse_error(el, target) < math.radians(cfg.APSE_TOLERANCE_DEG))
 
 
 def _apsis(el, target, accel, tick_s, half, cfg, mu, plane_pending):
     """The apsis arc's burn: (seconds needed at full thrust, sign, eta,
     err, seconds until the apsis), or COAST."""
-    apse = target.apse
+    apse = _in_plane(el, target.apse) if target.hold_apse else target.apse
     theta = orbit.plane_angle(el.rvec, el.vvec, apse)
-    d_ap = math.atan2(math.sin(theta - math.pi), math.cos(theta - math.pi))
+
+    def wrap(x):
+        return math.atan2(math.sin(x), math.cos(x))
+    d_ap = wrap(theta - math.pi)
     at_pe = abs(theta) <= abs(d_ap)          # this arc moves the apoapsis
     if at_pe:
         off, goal, far = theta, target.ra, vec.scale(apse, -1.0)
     else:
         off, goal, far = d_ap, target.rp, apse
+    if target.hold_apse and abs(off) > half and None not in (target.ra,
+                                                             target.rp):
+        # Across the held line: at +-90 deg from it, drive the radius toward
+        # the opposite side to the target's semi-latus rectum -- only once
+        # the apsides are within ``APSE_ARC_GATE`` of target, as an end-game
+        # correction of the eccentricity the apsis arcs cannot reach.
+        side = vec.cross(vec.unit(vec.cross(el.rvec, el.vvec)), apse)
+        r_pe = orbit.radius_toward(el.p, el.evec, apse)
+        r_ap = orbit.radius_toward(el.p, el.evec, vec.scale(apse, -1.0))
+        gate = cfg.APSE_ARC_GATE
+        if (abs(r_pe - target.rp) < gate * target.rp
+                and abs(r_ap - target.ra) < gate * target.ra):
+            d_q = wrap(theta - math.pi / 2)
+            d_mq = wrap(theta + math.pi / 2)
+            if abs(d_q) <= half:
+                off, far = d_q, vec.scale(side, -1.0)
+            elif abs(d_mq) <= half:
+                off, far = d_mq, side
+            else:
+                return COAST
+            goal = 2 * target.ra * target.rp / (target.ra + target.rp)
+            at_pe = None                     # no Hohmann ordering here
     if abs(off) > half or goal is None:
         return COAST
 
@@ -152,10 +197,10 @@ def _apsis(el, target, accel, tick_s, half, cfg, mu, plane_pending):
     # PyPy ``is`` compares floats by value, and a circular target deadlocked)
     # -- and the apoapsis is not lowered while the plane still has to change.
     tol = cfg.TOLERANCE_M
-    if not at_pe and target.ra is not None:
+    if at_pe is False and target.ra is not None:
         if el.rp < goal and el.ra < target.ra - tol:
             return COAST
-    if at_pe and el.ra > goal:
+    if at_pe is True and el.ra > goal:
         if target.rp is not None and el.rp > target.rp + tol:
             return COAST
         if plane_pending:
@@ -252,4 +297,4 @@ def command(el, target, accel, tick_s, eta_cut, cfg, mu):
         return Command(False, 0.0, 0.0, 0.0, 0.0, err)
     eta = max(a[2] if a else 0.0, p[2] if p else 0.0)
     return Command(False, min(1.0, need / tick_s), along / need,
-                   across / need, eta, err)
+                   across / need, eta, err, need)
