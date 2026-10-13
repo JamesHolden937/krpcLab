@@ -248,10 +248,21 @@ def _plane(el, target, accel, tick_s, half, eta_cut, cfg, mu):
     # apoapsis side, where the plane burn shares the periapsis burn: on a
     # circular orbit both nodes are equally good, and half the change went
     # uncombined at the other (3000 -> 100 km with 20 deg: +15%).
-    if target.rp is not None and abs(el.rp - target.rp) > cfg.TOLERANCE_M:
-        theta = orbit.plane_angle(el.rvec, el.vvec, target.apse)
-        if abs(theta) < math.pi / 2:
-            return COAST
+    # The periapsis measured as the apsis arc measures it (toward a held
+    # apse line, not the osculating one), and a node within an arc of the
+    # quadrature allowed: with the two gates measuring differently and the
+    # node at 90 deg from the line, a weak engine's parking orbit waited
+    # 4000 days for a burn neither gate would let start.
+    if target.rp is not None:
+        if target.hold_apse:
+            rp_now = orbit.radius_toward(el.p, el.evec,
+                                         _in_plane(el, target.apse))
+        else:
+            rp_now = el.rp
+        if abs(rp_now - target.rp) > cfg.TOLERANCE_M:
+            theta = orbit.plane_angle(el.rvec, el.vvec, target.apse)
+            if abs(theta) < math.pi / 2 - half:
+                return COAST
     # Normal thrust f tilts the orbit normal along -T * sign(f) (dh = r x f);
     # tilt it toward the target plane.
     tilt = vec.unit(vec.sub(target.normal, vec.scale(n, math.cos(delta))))

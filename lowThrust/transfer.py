@@ -92,12 +92,13 @@ def signed_miss(ca, normal):
     return s if vec.dot(vec.cross(ca.d, u), normal) > 0 else -s
 
 
-def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01):
+def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
+               guess=None):
     """The impulse (inertial vector, m/s) that zeroes the B-plane miss, from
     a numerical Jacobian of the miss against the three impulse components,
-    minimum-norm.  Returns (impulse, the closest approach it was computed
-    from)."""
-    ca = closest_approach(r, v, t, mu, target, horizon)
+    minimum-norm; with ``guess``, the encounter is looked for round that UT.
+    Returns (impulse, the closest approach it was computed from)."""
+    ca = closest_approach(r, v, t, mu, target, horizon, guess=guess)
     err, u = miss(ca, b, normal)
     e1 = vec.unit(vec.cross(u, normal))
     e2 = vec.cross(u, e1)

@@ -230,6 +230,12 @@ class Mission:
                        f"{self._km(ra_cap, moon)} x {self._km(rc, moon)}")
         self.plan.update(rc=rc, ra_cap=ra_cap, rp_wait=rp_wait,
                          ra_wait=ra_wait)
+        loose = cfg.CAPTURE_LOOSE_FRACTION * moon.soi
+        self.plan["vcap"] = max(
+            transfer.capturable_vinf(moon, self._accel(), rc, ra_cap,
+                                     math.radians(cfg.CAPTURE_ARC_DEG),
+                                     cfg.CAPTURE_FILL, loose),
+            self._long_capturable())
         self.target = guidance.Target(ra_wait, rp_wait, moon.inc, moon.lan)
         self.set_phase("PUMP", f"waiting orbit {self._km(ra_wait, here)} x "
                                f"{self._km(rp_wait, here)}, in {moon.name}'s "
@@ -241,6 +247,18 @@ class Mission:
         rp = max(orbit.conic(self.craft.r, self.craft.v, here.mu).rp,
                  here.radius + here.atmosphere + cfg.SAFE_ALT_M)
         ra = cfg.PARK_AP_FRACTION * self._park_ceiling()
+        rp_one = self._one_pass_escape_rp(rp, ra)
+        if rp_one is None:
+            pass
+        elif rp_one > rp * 1.001:
+            # A weak engine leaves in one pass from a parking orbit with its
+            # periapsis raised, crossing each moon's band once; the cruise
+            # builds what v_inf it lacks.  Escaping pass by pass from a low
+            # periapsis, the apoapsis lay across the Mun's and Minmus's
+            # orbits for revolution after revolution and met them.
+            self.event(f"one-pass escape for this engine: parking periapsis "
+                       f"raised to {self._km(rp_one, here)}")
+            rp = rp_one
         # how long the pump takes, to pick a window after it
         from lowThrust import sim as _sim
         est = _sim.fly(_SimBody(here), self.vessel, self.craft.r, self.craft.v,
@@ -323,6 +341,25 @@ class Mission:
             top = min(top, ch.sma * (1 - ch.ecc)
                       - self.cfg.WAIT_SOI_MARGIN * ch.soi)
         return top
+
+    def _one_pass_escape_rp(self, rp, ra):
+        """The lowest parking periapsis (>= rp, <= ra) from which this engine
+        escapes in one pass round periapsis (at least parabolically), or
+        None if none does."""
+        mu = self.craft.body.mu
+        arc = math.radians(self.cfg.DEPART_ARC_DEG)
+        accel = self._accel()
+        x = rp
+        while x <= ra:
+            push = math.sqrt(2 * mu / x) - math.sqrt(mu * (2 / x - 2 / (x + ra)))
+            e = (ra - x) / (ra + x)
+            a = (ra + x) / 2
+            E = 2 * math.atan(math.sqrt((1 - e) / (1 + e)) * math.tan(arc / 2))
+            t = 2 * (E - e * math.sin(E)) / math.sqrt(mu / a ** 3)
+            if push / accel <= self.cfg.CAPTURE_FILL * t:
+                return x
+            x += max(1e3, 0.01 * (ra - rp))
+        return None
 
     def _park_ceiling(self):
         return self._ceiling(self.craft.body)
@@ -429,7 +466,13 @@ class Mission:
                                                    "PUMP", "TRIM", "PARK"):
             self.set_phase("APPROACH", f"periapsis target "
                                        f"{self._km(self.plan['rc'], cr.body)}")
-        elif self.phase == "ESCAPE" and cr.body is self.dest.parent:
+        elif (kind == "exit" and self.kind == "planet"
+              and cr.body is self.dest.parent
+              and self.phase in ("ESCAPE", "WAIT", "DEPART", "PARK", "TRIM")):
+            # A weak engine's last departure pass can end bound with its
+            # apoapsis past the SOI; it leaves anyway, and the cruise's
+            # Lambert re-target flies the rest about the star.  (Left in
+            # WAIT, it went on to "depart" from the Sun's periapsis.)
             self.set_phase("CRUISE", f"to {self.dest.name}")
 
     # --- tick sizes -----------------------------------------------------------
@@ -654,6 +697,21 @@ class Mission:
                 if bad is not None:
                     self.event(f"pass skipped: its coast would meet {bad.name}")
                     dv = None
+                elif vec.norm(ca.vrel) > self.plan["vcap"] * (
+                        1.25 ** self.plan.get("fast_skips", 0)):
+                    # a fast intercept (354 m/s to Minmus where ~100 would
+                    # do) arrived at 787 m/s, past what the capture sheds
+                    # the bar rises 25% a skip, so the wait is bounded --
+                    # the predictor undersells a small moon's own pull, and
+                    # held at 80 m/s a 0.02 m/s^2 Mun transfer skipped
+                    # 300-500 m/s passes for ten years
+                    self.event(f"pass skipped: it arrives at "
+                               f"{vec.norm(ca.vrel):.0f} m/s, faster than "
+                               f"the {self.plan['vcap']:.0f} this engine "
+                               "captures")
+                    self.plan["fast_skips"] = \
+                        self.plan.get("fast_skips", 0) + 1
+                    dv = None
             self.plan["push"] = dv
         dv = self.plan.get("push")
         if dv is None:                       # not this pass
@@ -717,18 +775,24 @@ class Mission:
                            f"{bad.name}")
                 self.plan["t_go"] = cr.t + t_pe + c.period
                 return self._hold(c, t_pe + 1.0)
-        if t_pe <= need / 2:
+        # a pass no longer than the arc round periapsis: a weak engine's
+        # push (61000 s to Jool at 0.02 m/s^2) once started half of that
+        # early, found itself past the arc, and ended every minute
+        span = min(need, transfer.conic_pass_time(
+            c, mu, math.radians(self.cfg.DEPART_ARC_DEG)))
+        if t_pe <= span / 2:
             self.set_phase("DEPART", f"{need * self._accel():.0f} m/s at "
                                      "periapsis")
             return self._depart(c)
-        return self._hold(c, t_pe - need / 2)
+        return self._hold(c, t_pe - span / 2)
 
     def _depart(self, c):
         cr, cfg = self.craft, self.cfg
         mu = cr.body.mu
         tick = self._tick(c)
         rem = math.sqrt(self.plan["vinf"] ** 2 + 2 * mu / c.r) - vec.norm(cr.v)
-        if rem <= cfg.CORRECT_DV or c.nu > math.radians(cfg.DEPART_ARC_DEG):
+        nu = c.nu if c.nu <= math.pi else c.nu - 2 * math.pi
+        if rem <= cfg.CORRECT_DV or nu > math.radians(cfg.DEPART_ARC_DEG):
             if c.e < 1:
                 # A weak engine cannot escape in one pass: every pass raises
                 # the energy until one escapes; the cruise corrections then
@@ -777,11 +841,19 @@ class Mission:
         if horizon is None:
             if self.kind == "planet":
                 w = self.plan["window"]
-                horizon = 1.5 * max(w.t_dep + w.tof - cr.t, 86400.0)
+                horizon = 1.5 * max(self.plan.get("arrive_t", w.t_dep + w.tof)
+                                    - cr.t, 86400.0)
             else:
                 horizon = self._horizon(cr.r, cr.v)
+        # round the last encounter or the re-target's arrival: searched
+        # over the whole multi-year horizon (a sample a week), an Eeloo
+        # cruise found the wrong minimum, read a 2 Gm miss, re-targeted,
+        # and slid its arrival 1500 m/s faster before the capture failed
+        guess = self.plan.get("arrive_t") if self.kind == "planet" else None
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
-                                     horizon, b, dest.normal)
+                                     horizon, b, dest.normal, guess=guess)
+        if guess is not None:
+            self.plan["arrive_t"] = ca.t
         self.plan["vrel"], self.plan["ca_t"] = ca.vrel, ca.t
         self.plan["horizon"] = max(ca.t - cr.t, 0) * 1.5 + 3600
         mag = vec.norm(dv)
@@ -819,7 +891,11 @@ class Mission:
         ta = self.plan.get("lambert_t")
         if ta is None:
             w = self.plan["window"]
-            left = max(w.t_dep + w.tof - cr.t, 10 * 86400.0)
+            # from the arrival now planned, not the window's: an Eeloo
+            # cruise re-targeted to arrive 170 days after its window read a
+            # phantom 2 Gm miss off a horizon that had shrunk to 16 days
+            left = max(self.plan.get("arrive_t", w.t_dep + w.tof) - cr.t,
+                       10 * 86400.0)
             ca = transfer.closest_approach(cr.r, cr.v, cr.t, mu, dest,
                                            1.6 * left)
             limit = min(cfg.RETARGET_MISS * dest.soi,
@@ -831,7 +907,7 @@ class Mission:
                                     rc=self.plan["rc"])
             if got is None:
                 return None
-            self.plan["lambert_t"] = got[1]
+            self.plan["lambert_t"] = self.plan["arrive_t"] = got[1]
             self.plan.pop("horizon", None)
             self.event(f"re-targeted: {vec.norm(got[0]):.0f} m/s onto a "
                        f"Lambert arc arriving {fmt_ut(got[1])} (the miss was "
@@ -1082,7 +1158,10 @@ class Mission:
         cr = self.craft
         rel = self._dest_rel()
         if rel is None:
-            return "capture failed: thrown out of the destination's reach"
+            # inside another body's SOI (a moon crossed mid-capture): coast
+            # it -- the evasive burn guards the periapsis -- and re-decide
+            # on the way out
+            return 0.0, None, self._tick(c)
         r, v = rel
         cap = self._cap_spec()
         cc = orbit.conic(r, v, cap.mu)

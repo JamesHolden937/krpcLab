@@ -215,13 +215,13 @@ def lambert(r1, r2, dt, mu, normal=(0.0, 0.0, 1.0)):
         return b_
     lo = -4 * math.pi ** 2
     while True:
+        if lo < -4e5:                     # cosh overflows past z ~ -5e5
+            return None
         if y(lo) < 0:
             lo = y_root(lo, hi)
             break
         if F(lo) < 0:
             break
-        if lo < -1e6:
-            return None
         lo *= 2
     for _ in range(200):
         mid = (lo + hi) / 2
