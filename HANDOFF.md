@@ -1,5 +1,15 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-12 late: new project `lowThrust/` planned (nothing written)
+
+The user wants an ion-engine autopilot: type in a target orbit, the solver
+works out the steering and flies it under rails warp with Persistent Thrust
+(1.7.5, already in the farm's base GameData). The plan, architecture and
+stages are in `lowThrust/CLAUDE.md`; history in `docs/lowThrust/journal.md`.
+**Next for it: the PT probe** (`lowThrust/tools/ptprobe.py`, an ion craft
+and an LKO save) -- which SAS modes PT holds on rails, throttle persistence,
+dv vs warp rate, EC in shadow. Its answers pick the executor.
+
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
 Defaults unchanged all session (every arm was a flag; all deleted).

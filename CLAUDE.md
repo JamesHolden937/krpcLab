@@ -76,13 +76,14 @@ readers. New autopilots go here and plug into all of it.
 |---|---|
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
+| `lowThrust/` | ion/low-thrust orbit changes under rails warp with Persistent Thrust: type a target orbit, it solves and flies the transfer. **Planned, not written** -- `lowThrust/CLAUDE.md` is the plan |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
 | `common/` | shared by every autopilot: `vec`, `logbook`, `pacing` (loop pacing and the time-scale governor), `rcs` (the RCS valve), `timescale` (the farm plugin's file), `paths`, `launcher` |
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
 | `saves/` | **the reference quicksaves and craft files** -- tracked; the farm copies drift. `saves/README.md` says which save is which vehicle |
 | `testInstances/` | the measurement farm's scripts (the 15 GB of game copies beside them are git-ignored) |
-| `docs/` | `boosterland/`, `spaceplane/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
+| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
 | `logs/` | every flight's `LOG<n>`, numbered across all autopilots; git-ignored, cited by number in the docs |
 
 Every autopilot has the same shape: one phase machine is the only kRPC-aware
@@ -400,6 +401,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [docs/farmSetup.md](docs/farmSetup.md) | building the farm from scratch on a new machine (the game copies are not in git) |
 | [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
+| [lowThrust/CLAUDE.md](lowThrust/CLAUDE.md) | anything in `lowThrust/` |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
 | [saves/README.md](saves/README.md) | which save is which vehicle and state; adding a save |
 
