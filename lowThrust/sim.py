@@ -88,6 +88,16 @@ def _rk4(r, v, m, mu, force, mdot, dt):
             m + (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]) * dt / 6)
 
 
+def tick_for(el, cfg):
+    """How long to hold a command: a fixed step in *angle*, not time
+    (r^2/h per radian), capped at period / TICKS_PER_ORBIT.  Uniform in time,
+    a tick near the periapsis of a 4000 x 100 km orbit swept 20 deg -- wider
+    than the whole +-8 deg arc -- and the pump stalled there for 20000 orbits.
+    The live pilot has the same constraint: lower warp near periapsis."""
+    step = 2 * math.pi / cfg.TICKS_PER_ORBIT
+    return min(el.period / cfg.TICKS_PER_ORBIT, el.r * el.r / el.h * step)
+
+
 def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
     """Fly the transfer to ``target`` (a ``guidance.Target``) from (r, v)
     with effectivity cutoff ``eta_cut``.  Returns a ``Result``; ``record``
@@ -120,7 +130,7 @@ def fly(body, vessel, r, v, target, eta_cut, cfg, record=True):
             return finish(False, "periapsis inside the atmosphere")
         if t > cfg.MAX_ORBITS * period0:
             return finish(False, "orbit limit")
-        tick = el.period / cfg.TICKS_PER_ORBIT
+        tick = tick_for(el, cfg)
         accel = vessel.thrust_n / m
         target = guidance.lock(target, el, cfg, coasting=burn_open is None)
         cmd = guidance.command(el, target, accel, tick, eta_cut, cfg, mu)
