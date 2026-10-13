@@ -85,6 +85,11 @@ energy deficit; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
+- **The shuttle trims at ~22 deg hypersonically** (lowa-1012): commanding
+  16-18 at Mach 4-5 flies ~22 and leaks into yaw (slip > 10 on 22% of
+  ticks v 9%); a 10-20 deg plan went 3/12 v 11/12.  Heat is not what
+  holds alpha up -- the hottest part plateaus at 0.86-0.88 over a 4x range
+  of heating.  To fly lower, move the trim (CoM, glide trim) first.
 - **Roll and yaw are one lateral axis at high alpha** (failure 99): at 35
   deg of alpha a body roll *is* sideslip. Roll flies the derived 4.8 s.
   Tune the lateral axes together and fly any change on the farm first.

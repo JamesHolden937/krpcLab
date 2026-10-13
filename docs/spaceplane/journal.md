@@ -2636,3 +2636,79 @@ coasted half a burn ahead (burn length = max(`DEORBIT_MIN_BURN_S`, dv over
 the engines' full vacuum thrust)), and the node sits at the burn centre.
 On the shuttle: 1.5 s on a 3 s burn.  Sim smoke LOG10019 only (no errors);
 unflown on the farm, the user tests live.  Fingerprint 01de6e69.
+
+## Session, 2026-10-12 evening (the live tumble; low alpha flown and refuted)
+
+Defaults `01de6e69` throughout (every arm a flag).  Farm, six instances.
+
+**The live tumble, LOG10020** (the user's game, `shuttle`, defaults).  From
+Mach 3.7 (q 4.3 kPa, alpha 28-37) sideslip built -3 -> -24 deg with the
+bank at -30 against a +30 command and roll input pinned at -1.00 for ~10 s;
+the roll damper read the swings as a loop gone unstable and slowed roll and
+yaw 5.6 -> 24 s in four swings; then a rolling tumble from Mach 2.5, cone
+entered 5.6 km short, stopped by the user.  Two candidate mechanisms, both
+real in the log: the saturation valve (9c7455b) shut with 10-13 deg of error
+standing and each shut snapped yaw to the wheels-only 24 s (LOG3802's
+failure), and the damper slowing a departure.  Neither reproduced:
+
+- tumble-1012 (LOG10021-10068, rigoff/i90/e500i45, 8 an orbit an arm):
+  defaults 21/24 on the runway, `ATTITUDE_YAW_RCS_ARMED` +
+  `ROLL_DAMPER_SLIP_MAX_DEG=10` 17/24; **no departure in either arm**
+  (glide slip p-p <= 11 everywhere).  The yaw flag moved rigoff arrivals
+  +317 m sd 253 -> +3438 sd 1970 (stiffer yaw changes how the glide spends
+  energy and the prediction does not know it).  Deleted.
+- low70-1012 (LOG10069-10080): `qs_shuttle2_i90low_rigoff`, the live
+  orbit (70.23 km circular; the live craft is the same `shuttle.craft`) --
+  12 flights, slip p-p <= 9, 11/12 stopped.  72 default farm flights, no
+  tumble.
+- The live install differs from the farm's GameData by many mods; the
+  flight-relevant ones are ksp-advanced-flybywire (an SDL controller
+  enabled with pitch/roll/yaw/throttle bound -- its input is summed into
+  what `yrin=` reads), KerbalJointReinforcement, MechJeb2, BetterTimeWarp.
+  The user: "probably a freak accident" -- not pursued.
+
+**The thermal envelope, measured** (LOG9921-10020).  Heating rate
+H = sqrt(rho) v^3 / 1e6 (KSP's high-Mach convective coefficient,
+Physics.cfg `machConvection*Exponent` 0.5/3, less its constant).  The
+hottest part is always the RV-105 RCS block.  At v >= 1600 m/s its skin sat
+on a **plateau of 0.86-0.88 of its limit from H 128 to 512**; peaks by
+orbit: i90/rigoff 0.70-0.80 at H 175-230, e500i45 0.85-0.88 at H 520-611.
+The plateau is *not* the shock-temperature ceiling (21 v^0.75 ~ 7000 K at
+entry speed), so nothing says it holds past H ~610.  A point mass on the
+logged aero table from the live interface state (calibrated: 220 v 243
+flown at 30 deg) gives peak H 220 / 257 / 298 / 364 at 30 / 20 / 15 / 10 deg
+(bank 30) and range 1178 / 1595 / 1733 / 1869 km to 500 m/s; range falls
+monotonically with alpha over the whole 5-40 deg table.
+
+**Low alpha, flown and refuted** (lowa-1012, LOG10081-10104, 4 an orbit an
+arm, i90low/rigoff/e500i45).  The arm: `SOLVE_ALPHA_MIN_DEG=10`, and a
+deorbit window planned on 10-20 deg (`DEORBIT_ALPHA_MAX_DEG=20`), with
+`THERMAL_HEATING_MAX=600` and a live skin guard at 0.92.  **3/12 on the
+runway against 11/12**, misses -165, -80, -38, +44, -13, -12 km.
+
+- **The shuttle trims at ~22 deg hypersonically whatever is commanded.**
+  Mach 4-5: commanded 16-18, flown ~22.  Fighting it coupled into yaw --
+  slip > 10 deg on 22% of Mach-4 ticks against 9% on the defaults --
+  so lowering the *command* made departures more frequent, not fewer
+  (LOG10084: 9 commanded, 34 flown, 28 of slip at Mach 3.8; 165 km short).
+  Below Mach 2 low alpha is held (8-11 flown), as on the defaults.
+- The plan stretched the entry to ~2080 km against ~1500 -- the shallow
+  regime the propagator over-predicts (failure 8).
+- **Heat never bound**: peak skin 0.87 v 0.85; the guard never fired;
+  planned corner peaks 519 at 10 deg, 228 at 20 (LOG10084).
+- Dynamic pressure in the low arm's glide reached 12-30 kPa on flights that
+  survived (the defaults' glide 5-18); see the `load factor` events.
+- **Abandoned is the method, not the idea**: to fly lower, move the trim
+  point (CoM forward by pumping the nose LFO, or a standing glide trim on
+  the canards/elevons like `CANARD_TRIM`), measure the trimmed alpha by
+  Mach with the broadside probe, and only then re-plan the band.  Kept
+  from it: `deorbit heating` in the log.
+
+**Also added (default, logging only)**: `nz=` (load factor, aero force
+across the velocity over weight) on every telemetry line and a `load
+factor` event at each new peak with q, Mach and alpha.  The defaults'
+glides peaked at 1.4-2.4 g.
+
+The gate batch (gate-1012, LOG10105+, low-alpha config +- the damper gate)
+was stopped at wrap-up after one cycle: inconclusive, and the flag deleted
+with the tumble dropped.
