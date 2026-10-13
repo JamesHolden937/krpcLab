@@ -7,18 +7,21 @@ the executor flies it under rails warp with Persistent Thrust so a transfer
 takes wall-minutes. The root `CLAUDE.md` (conventions, farm, cross-cutting
 rules) applies here in full.
 
-**State (2026-10-12): apsides changes solved in the stand-in simulator; no
-kRPC code yet.** History and every refuted approach: `docs/lowThrust/journal.md`.
+**State (2026-10-12): apsides and plane changes solved in the stand-in
+simulator; no kRPC code yet.** History and every refuted approach: `docs/lowThrust/journal.md`.
 
 ```bash
 ./lowThrust/tools/simfly.py --start "ap=100 pe=100" --target "ap=500 pe=500"
 ./lowThrust/tools/simfly.py --start "ap=100 pe=100" --target "ap=500 pe=500" --within 2d --table
 ./lowThrust/tools/simfly.py --start "ap=1000 pe=80" --target "pe=300"      # one apsis, other free
+./lowThrust/tools/simfly.py --start "ap=100 pe=100 i=6 lan=30 argpe=0" --target "ap=500 pe=500 i=0"
 ./lowThrust/tools/simfly.py ... --thrust 200 --dry 4000 --prop 1000 --isp 4200
 .venv-pypy/bin/python -m unittest lowThrust.tests.testOrbit lowThrust.tests.testGuidance
 ```
 
-Altitudes in km; `--within` takes s/m/h/d (d = a 6 h Kerbin day). Output
+Altitudes in km, angles in degrees (start: ap pe i lan argpe; target: ap
+pe i lan; anything left out of the target is free); `--within` takes
+s/m/h/d (d = a 6 h Kerbin day). Output
 gives the dv against the two-burn impulsive (Hohmann) reference, the final
 apsides, and the burn list.
 
@@ -48,7 +51,17 @@ ones by RK4.
   arc ends.
 - **Order**: outward first, inward first (raise pe only once ap is up;
   lower ap only once pe is down).
-- **Prograde / retrograde only** -- so plain SAS modes can fly it.
+- **Plane change**: normal/anti-normal arcs at the nodes with the target
+  plane (fixed once: with `lan` free it keeps the current node line, or on
+  an equatorial start puts the nodes on the apse line when the plane change
+  begins). Changed on the biggest orbit -- after the apoapsis is raised,
+  before it is lowered -- at the high node only (the low one skipped when
+  below eta of it), and while the periapsis still changes only at the
+  apoapsis-side node, where the two burns overlap.
+- **Overlapping burns are one vector** in proportion to what each needs,
+  started half the *combined* duration early.
+- Pure apsis burns are prograde/retrograde and pure plane burns
+  normal/anti-normal -- plain SAS modes; a combined burn points between.
 
 `plan.py` flies the law in the sim over a grid of arc widths (even in
 half-width, `ETA_MIN`..`ETA_MAX`) and takes the narrowest that meets the
@@ -70,32 +83,70 @@ Measured (default cutoff; `testGuidance` pins the first six):
 | 300x800 -> 600x200 | +0.0% | 2 |
 | same, 0.04 m/s^2 engine | +0.2% | 132 |
 
+Plane changes (impulsive reference: at the actual nodes for a pure plane
+change; Hohmann with the plane folded into the larger-radius burn
+otherwise, a lower bound when the nodes are off the apse line):
+
+| transfer | dv vs impulsive |
+|---|---|
+| 500 circ, i 0 -> 10 | +0.6% |
+| 2000x100, i 0 -> 5 (one burn at apoapsis) | +0.1% |
+| 2000x100 i 10, nodes at +-90 deg -> i 0 | -0.6% (at its nodes) |
+| 500 circ i 30, lan 0 -> 40 | +0.8% |
+| 100 -> 500 circ, i 0 -> 5 | +1.2% |
+| 3000 -> 100 circ, i 0 -> 20 | +6.7% |
+| 100 -> 3000 circ, i 6 -> 0 | +8.4% (open: the apse drifts off the fixed nodes) |
+| 100 -> 500 + 5 deg, 0.04 m/s^2 | +1.1% |
+
 The time/dv trade on the 0.04 m/s^2 engine, 100 -> 500: cheapest 41 days
 at +0.0%, 1.1 days at +14%; a 2-day budget picks +6.7%.
 
+## Interplanetary: the plan (the user's goal)
+
+Pump the parking orbit with small periapsis burns well before the window
+(e.g. 100 x 9000 km, under the Mun's SOI), orient it for the departure
+asymptote of the window date (KSP has no precession, so an early setup
+stays put), then give the final push at periapsis. Every burn is at
+periapsis, so the total equals a one-burn chemical departure (Duna: 821
+pump + 240 push = 1061 against 1060) and the arrival date is the same. The
+catch: **the final push must fit one periapsis pass** (~10 min within +-60
+deg on that ellipse):
+
+| target | final push | TWR 0.04 | TWR 0.004 |
+|---|---|---|---|
+| Eve | 204 m/s | 8 min | 85 min |
+| Duna | 240 | 10 | 100 |
+| Dres | 735 | 31 | 306 |
+| Jool | 1111 | 46 | 463 |
+
+Past what one pass allows, push what fits and make up the v_inf with the
+ion engine early in the heliocentric cruise. Capture is the mirror problem
+(Duna can aerocapture).
+
 ## Next
 
-1. **The Persistent Thrust probe** (`tools/ptprobe.py`, an ion craft, an
-   LKO save in `saves/`): does a kRPC throttle persist into rails warp; do
-   SAS prograde / retrograde hold on rails; delivered dv against the rocket
-   equation per warp rate; EC through a shadow pass; does kRPC's orbit read
-   track PT. The law needs only prograde/retrograde, so executor option 2
-   (plain SAS modes) is enough for stage 1.
-2. **The pilot** (`pilot.py`, the only kRPC-aware code): reads the orbit,
-   calls `guidance.command` with the *measured* acceleration, sets SAS mode,
-   throttle and warp rate; panel with target fields, PLAN, START/TERMINATE;
-   `config:` line, fingerprint, `rpccount`, a `PILOTS` line in
-   `common/launcher.py`. Warp rate from the tick the guidance needs (an arc
-   of +-8 deg needs several ticks inside it), and drop out of warp to change
-   SAS mode if PT does not follow it on rails.
-3. **Re-planning**: the live pilot should re-plan against `deadline - ut`
-   every few orbits, so a weak engine or a shadow pass widens the arcs.
-4. **Inclination** (and lan/argpe): the next elements. Normal/anti-normal at
-   the nodes, the same small-burn structure; `argpe` given by the user just
-   sets the apse line. Q-law (in git history, e5f7bea's parent) is the
-   general fallback, with the traps listed in the journal.
-5. Stage 2/3 (escape spirals, heliocentric, arrival) as in the journal's
-   plan.
+1. **Argument of periapsis** in the target (sets the apse line) -- needed
+   to orient the parking ellipse for a departure.
+2. **The 100 -> 12000 km transfer never arrives** (20000-orbit limit) at
+   the default cutoff: a bug in the law for big ratios, found by the spiral
+   test; find it before trusting large transfers.
+3. **A real spiral as the planner's fast end** (continuous tangential,
+   ending circular, a periapsis floor): ideal cost |v1 - v2| (+1.3% for
+   100 -> 500, +16% for 100 -> 3000), 3 h instead of 72 at TWR 0.004. The
+   naive version left e 0.03 and cost +7%.
+4. **The PT probe** (`tools/ptprobe.py`, an ion craft, an LKO save): does a
+   kRPC throttle persist into rails warp; do SAS prograde/retrograde/normal
+   hold on rails; delivered dv per warp rate; EC through a shadow pass. A
+   combined burn needs an arbitrary direction (SAS maneuver mode + a node,
+   or drop out of warp to point), so probe that too.
+5. **The pilot** (`pilot.py`, the only kRPC-aware code), as planned: the
+   measured acceleration into `guidance.command`, SAS mode / throttle /
+   warp, panel with target fields, PLAN, START/TERMINATE, `config:` line,
+   fingerprint, `rpccount`, a `PILOTS` line. Re-plan against
+   `deadline - ut` every few orbits.
+6. Interplanetary: departure planning (window, v_inf, asymptote ->
+   parking-ellipse orientation), the final push, heliocentric correction,
+   capture.
 
 ## Traps known
 

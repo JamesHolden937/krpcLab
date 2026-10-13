@@ -1,22 +1,23 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-12 late: `lowThrust/` -- apsides changes solved in a stand-in sim
+## 2026-10-12 late: `lowThrust/` -- apsides and plane changes solved in a stand-in sim
 
 New autopilot for ion/low-thrust craft: type a target orbit (+ optional
-time budget), it plans and flies. Built offline first, by the user's
-request, because vacuum two-body physics is exact in a small sim:
-`lowThrust/sim.py`, `orbit.py`, `guidance.py`, `plan.py`, `tools/simfly.py`,
-15 tests (in the 611-test suite, all pass). The law is the user's idea --
-**Hohmann in many small burns**: prograde/retrograde arcs round each apsis
-on an apse line fixed through each burn and re-locked between, each arc
-fixing the opposite apsis, outward-first order, burns centred on the apsis.
-Nine transfers within +0.0-3.1% of the impulsive Hohmann, arrivals inside
-100 m; a deadline trades dv for time via arc width. No kRPC code yet; the
-farm was not used. State, numbers and next steps: `lowThrust/CLAUDE.md`;
-the twelve refuted/kept steps: `docs/lowThrust/journal.md`.
-**Next for it: the Persistent Thrust probe** (does SAS prograde/retrograde
-hold on rails warp, throttle persistence, dv vs warp rate, EC in shadow),
-then `pilot.py`.
+time budget), it plans and flies. Built offline first (the user's request:
+vacuum two-body physics is exact in a small sim): `lowThrust/sim.py`,
+`orbit.py`, `guidance.py`, `plan.py`, `tools/simfly.py`, 20 tests (suite
+616, all pass). The law is the user's idea -- **Hohmann in many small
+burns**: prograde/retrograde arcs at each apsis on an apse line fixed
+through each burn, normal/anti-normal arcs at the nodes for the plane,
+outward-first order, plane changed on the biggest orbit, overlapping burns
+combined. Apsides within +0.0-3.1% of the impulsive Hohmann, plane changes
++0.1-8.4%; a deadline trades dv for time via arc width. No kRPC code yet;
+the farm was not used. The user's real goal is **interplanetary** (pump the
+parking ellipse early, final push at the window); the final push must fit
+one periapsis pass -- table in `lowThrust/CLAUDE.md`. Next, in order:
+argpe in the target, the 100 -> 12000 km non-arrival bug, a spiral fast
+end, the PT probe, the pilot. State and numbers: `lowThrust/CLAUDE.md`;
+history: `docs/lowThrust/journal.md`.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 

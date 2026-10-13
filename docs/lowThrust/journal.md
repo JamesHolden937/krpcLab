@@ -77,3 +77,44 @@ SAS modes can fly it in the game.
 
 Also paid: under PyPy `is` compares floats by value -- `goal is target.rp`
 deadlocked every circular target (dv 0, orbit limit).
+
+## Session, 2026-10-12 (night): the spiral question, plane change
+
+**Spiral** (asked: how inefficient would a spiral be?). Ideal cost
+|v1 - v2|: +1.3% on Hohmann for 100 -> 500, +16% for 100 -> 3000, +43% for
+100 -> 12000. Flown naively (continuous prograde until a matches, then the
+law trims): at TWR 0.004, 100 -> 500 took 3.1 h at the ideal cost but left
+e 0.029, and the trim made it +7.1% in 5.9 h (default small burns: +0.2% in
+72 h). At TWR 0.04 it is not a spiral -- the burn ends inside one orbit
+with e 0.28 (+47% after trim). 500 -> 100 at TWR 0.04 put the periapsis in
+the atmosphere. Found on the way: **100 -> 12000 km never arrives** with
+the default law (20000-orbit limit) -- open.
+
+**Interplanetary** (the user: launch early, pump with tiny burns, final
+push at the window -- "get there as soon as anyone else"). Right in
+principle: every burn at periapsis, so the total equals a one-burn
+departure and the arrival date is the same. The final push must fit one
+periapsis pass: from a 100 x 9000 km ellipse, Eve 204 m/s, Duna 240, Jool
+1111 -- 8/10/46 min at TWR 0.04, against ~10 min within +-60 deg of
+periapsis. Table in lowThrust/CLAUDE.md.
+
+**Plane change.** Normal/anti-normal arcs at the nodes with the target
+plane, the arc/centring machinery of the apsides. Steps:
+1. First version: pure plane changes +0.1-0.8% at once; combined raise +
+   5 deg +11.8%, lower 3000 -> 100 + 20 deg +15%.
+2. Overlapping burns were each clipped to full throttle before combining,
+   so an overlap always pointed at 45 deg. In proportion to need: no
+   change -- the arcs were not overlapping.
+3. Started half the *combined* duration early: no change, same reason.
+4. **Why not overlapping**: on an equatorial start the node line was
+   chosen at the start; 15 orbits of apoapsis raising turned the apse line
+   off it. Chosen when the plane change begins, on the apse line: raise +
+   5 deg to +1.2%.
+5. **Lowering**: on a circular orbit both nodes are equally good, and half
+   the change went uncombined at the periapsis-side node. While the
+   periapsis still changes, only the apoapsis-side node: +15% to +6.7%.
+Open: 100 -> 3000 with i 6 -> 0 is +8.4% -- an inclined start's nodes are
+fixed, and the apse drifts off them over 72 orbits of raising.
+The impulsive reference for case "nodes at +-90 deg" read +133% until it
+was computed at the actual nodes (only the horizontal velocity turns):
+-0.6%.
