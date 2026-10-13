@@ -1,14 +1,22 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-12 late: new project `lowThrust/` planned (nothing written)
+## 2026-10-12 late: `lowThrust/` -- apsides changes solved in a stand-in sim
 
-The user wants an ion-engine autopilot: type in a target orbit, the solver
-works out the steering and flies it under rails warp with Persistent Thrust
-(1.7.5, already in the farm's base GameData). The plan, architecture and
-stages are in `lowThrust/CLAUDE.md`; history in `docs/lowThrust/journal.md`.
-**Next for it: the PT probe** (`lowThrust/tools/ptprobe.py`, an ion craft
-and an LKO save) -- which SAS modes PT holds on rails, throttle persistence,
-dv vs warp rate, EC in shadow. Its answers pick the executor.
+New autopilot for ion/low-thrust craft: type a target orbit (+ optional
+time budget), it plans and flies. Built offline first, by the user's
+request, because vacuum two-body physics is exact in a small sim:
+`lowThrust/sim.py`, `orbit.py`, `guidance.py`, `plan.py`, `tools/simfly.py`,
+15 tests (in the 611-test suite, all pass). The law is the user's idea --
+**Hohmann in many small burns**: prograde/retrograde arcs round each apsis
+on an apse line fixed through each burn and re-locked between, each arc
+fixing the opposite apsis, outward-first order, burns centred on the apsis.
+Nine transfers within +0.0-3.1% of the impulsive Hohmann, arrivals inside
+100 m; a deadline trades dv for time via arc width. No kRPC code yet; the
+farm was not used. State, numbers and next steps: `lowThrust/CLAUDE.md`;
+the twelve refuted/kept steps: `docs/lowThrust/journal.md`.
+**Next for it: the Persistent Thrust probe** (does SAS prograde/retrograde
+hold on rails warp, throttle persistence, dv vs warp rate, EC in shadow),
+then `pilot.py`.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
