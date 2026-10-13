@@ -4994,6 +4994,33 @@ class Autopilot:
                            % (snap.skin_fraction * 100.0,
                               snap.skin_hottest or "?"))
 
+    def load_factor(self, snap):
+        """Aerodynamic force across the velocity over weight at standard
+        gravity (g): what loads the wing roots.  ``None`` with no airflow."""
+        v = snap.velocity
+        force = getattr(snap, "aero_force", None)
+        mass = getattr(snap, "mass", None) or 0.0
+        if not force or mass <= 0.0 or vec.norm(v) < 1.0:
+            return None
+        vhat = vec.unit(v)
+        across = vec.sub(force, vec.scale(vhat, vec.dot(force, vhat)))
+        return vec.norm(across) / (mass * 9.81)
+
+    def watch_load(self, snap):
+        """Say each time the flight sets a new peak load factor (by 0.25 g),
+        with the q and Mach it was pulled at: the structural envelope the
+        airframe has survived, read back off the logs."""
+        if snap.dynamic_pressure < 100.0:
+            return
+        n = self.load_factor(snap)
+        if n is None or n < getattr(self, "_load_peak", 1.0) + 0.25:
+            return
+        self._load_peak = n
+        self.logbook.event(snap.ut, "load factor %.2f g at q=%.0f Pa, %s, "
+                                    "alpha %.1f (%s)"
+                           % (n, snap.dynamic_pressure, self._mach_text(snap),
+                              snap.alpha_actual, self.state))
+
     def thermal_guard(self, snap):
         """``THERMAL_GUARD_FRACTION``: the live half of the thermal limit.
         A part past that fraction of its skin limit in GLIDE raises the
@@ -6501,6 +6528,7 @@ class Autopilot:
         self.derive_hac_aim(snap)
         self.measure_hac_ld(snap)
         self.check_thermal(snap)
+        self.watch_load(snap)
         self.watch_breakup(snap)
         self.destroyed_early(snap)
         self.frozen_early(snap)
@@ -7283,6 +7311,8 @@ def compact_line(state, snap, run):
         # seconds after a commanded cutoff.
         "Fn=%5.1f" % (getattr(snap, "thrust", 0.0) / 1000.0),
         "skin=%4.2f" % snap.skin_fraction,
+        # Load factor (g, aero force across the velocity over weight).
+        "nz=%4.2f" % (run.load_factor(snap) or 0.0),
         # Parts still attached.  Every flight of this vehicle so far has ended
         # with the game reporting none, and the log used to say nothing.
         "n=%2d" % snap.parts_now,
