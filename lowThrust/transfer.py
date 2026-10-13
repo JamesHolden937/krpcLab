@@ -92,26 +92,60 @@ def signed_miss(ca, normal):
     return s if vec.dot(vec.cross(ca.d, u), normal) > 0 else -s
 
 
-def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01):
-    """The minimum-norm impulse (inertial vector, m/s) that zeroes the
-    B-plane miss, from a numerical Jacobian of the miss against the three
-    impulse components; and the closest approach it was computed from."""
+def _solve3(A, y):
+    """x with A x = y for a 3x3 A (Cramer); None if singular."""
+    def det(m):
+        return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+    d = det(A)
+    if d == 0:
+        return None
+    out = []
+    for k in range(3):
+        m = [list(row) for row in A]
+        for i in range(3):
+            m[i][k] = y[i]
+        out.append(det(m) / d)
+    return out
+
+
+def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
+               vinf_max=None):
+    """The impulse (inertial vector, m/s) that zeroes the B-plane miss, from
+    a numerical Jacobian of the miss against the three impulse components:
+    minimum-norm for the two miss components; with ``vinf_max`` and an
+    arrival faster than it, also the arrival speed (a square solve) -- a
+    weak engine has to arrive slowly enough to capture in one pass.
+    Returns (impulse, the closest approach it was computed from)."""
     ca = closest_approach(r, v, t, mu, target, horizon)
     err, u = miss(ca, b, normal)
     e1 = vec.unit(vec.cross(u, normal))
     e2 = vec.cross(u, e1)
-    E = (vec.dot(err, e1), vec.dot(err, e2))
-    J = []                                    # 2 x 3, columns per axis
+    # the speed constraint in metres: an m/s of arrival speed weighed as the
+    # distance it moves in the time left
+    w = max(ca.t - t, 1.0)
+    slow = vinf_max is not None and vec.norm(ca.vrel) > vinf_max
+    E = [vec.dot(err, e1), vec.dot(err, e2)]
+    if slow:
+        E.append((vec.norm(ca.vrel) - vinf_max) * w)
+    J = []                                    # columns per impulse axis
     for k in range(3):
         dv = [0.0, 0.0, 0.0]
         dv[k] = dv_probe
         ca_k = closest_approach(r, vec.add(v, tuple(dv)), t, mu, target,
                                 horizon, guess=ca.t)
         err_k, _ = miss(ca_k, b, normal)
-        J.append(((vec.dot(err_k, e1) - E[0]) / dv_probe,
-                  (vec.dot(err_k, e2) - E[1]) / dv_probe))
-    # J as rows: Jr[i][k] = d E_i / d dv_k
-    Jr = [[J[k][i] for k in range(3)] for i in range(2)]
+        col = [(vec.dot(err_k, e1) - E[0]) / dv_probe,
+               (vec.dot(err_k, e2) - E[1]) / dv_probe]
+        if slow:
+            col.append(((vec.norm(ca_k.vrel) - vinf_max) * w - E[2])
+                       / dv_probe)
+        J.append(col)
+    Jr = [[J[k][i] for k in range(3)] for i in range(len(E))]
+    if slow:
+        x = _solve3(Jr, [-e for e in E])
+        return ((0.0, 0.0, 0.0) if x is None else tuple(x)), ca
     a11 = sum(x * x for x in Jr[0])
     a12 = sum(x * y for x, y in zip(Jr[0], Jr[1]))
     a22 = sum(x * x for x in Jr[1])
@@ -123,6 +157,26 @@ def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01):
     l2 = -(-a12 * E[0] + a11 * E[1]) / det
     dv = tuple(Jr[0][k] * l1 + Jr[1][k] * l2 for k in range(3))
     return dv, ca
+
+
+def capturable_vinf(body, accel, rc_min, ra_max, arc, fill, ra_loose=None):
+    """The fastest arrival an engine of ``accel`` can capture in one pass
+    (0 if none)."""
+    if capture_orbit(body, 1.0, accel, rc_min, ra_max, arc, fill,
+                     ra_loose) is None:
+        return 0.0
+    lo, hi = 1.0, 5000.0
+    if capture_orbit(body, hi, accel, rc_min, ra_max, arc, fill,
+                     ra_loose) is not None:
+        return hi
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        if capture_orbit(body, mid, accel, rc_min, ra_max, arc, fill,
+                         ra_loose) is not None:
+            lo = mid
+        else:
+            hi = mid
+    return lo
 
 
 def push_dv(r, v, t, mu, target, b, normal, dv_max, horizon_fn, n=40,
@@ -293,6 +347,37 @@ def moon_arrival_vinf(mu, rp, r_moon, v_moon):
     ``r_moon``, arriving at apoapsis of the ellipse (rp, r_moon)."""
     v_ap = math.sqrt(mu * 2 * rp / (r_moon * (r_moon + rp)))
     return abs(v_moon - v_ap)
+
+
+def capture_orbit(body, vinf, accel, rc_min, ra_max, arc, fill,
+                  ra_loose=None):
+    """The lowest capture periapsis (>= rc_min) at which an engine of
+    ``accel`` can shed ``vinf`` into the loosest ellipse (apoapsis ra_max)
+    in one pass: burn time at most ``fill`` of the time within +-``arc`` of
+    periapsis.  A weak engine captures high and loose and spirals down
+    after -- at 0.04 m/s^2 even a v_inf of 0 cannot be captured at 50 km
+    over the Mun.  When ``ra_loose`` is given and ``ra_max`` admits no
+    capture, the looser ellipse is tried.  Returns (rc, ra), or None."""
+    vinf = max(vinf, 1.0)
+    for ra in (ra_max,) if ra_loose is None else (ra_max, ra_loose):
+        rc = rc_min
+        while rc < 0.5 * ra:
+            need = capture_dv(body.mu, rc, ra, vinf) / accel
+            if need <= fill * pass_time(body.mu, rc, vinf, arc):
+                return rc, ra
+            rc *= 1.1
+    return None
+
+
+def clear_of(r, others, margin):
+    """Whether radius ``r`` is outside every other moon's band of orbits
+    (its periapsis to apoapsis, widened by ``margin`` SOIs)."""
+    for b in others:
+        lo = b.sma * (1 - b.ecc) - margin * b.soi
+        hi = b.sma * (1 + b.ecc) + margin * b.soi
+        if lo < r < hi:
+            return False
+    return True
 
 
 def wait_periapsis(mu, moon, rp_min, rc, ra_cap, accel, arc, fill):

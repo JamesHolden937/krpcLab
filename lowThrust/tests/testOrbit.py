@@ -70,3 +70,35 @@ class TestOrbit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConics(unittest.TestCase):
+    def test_propagate_matches_the_elliptic_coast(self):
+        r, v = sim.state_at_periapsis(sim.KERBIN, 2000e3, 100e3, 0.3, 1.0, 0.5)
+        for dt in (100.0, 3000.0, 20000.0):
+            a, b = orbit.coast(r, v, MU, dt), orbit.propagate(r, v, MU, dt)
+            self.assertLess(vec.norm(vec.sub(a[0], b[0])), 1e-3)
+
+    def test_hyperbola_round_trip_and_periapsis_time(self):
+        r, v = (700e3, 0.0, 0.0), (0.0, 3500.0, 0.0)
+        r2, v2 = orbit.propagate(r, v, MU, 50000.0)
+        r3, _ = orbit.propagate(r2, v2, MU, -50000.0)
+        self.assertLess(vec.norm(vec.sub(r3, r)), 1e-2)
+        c = orbit.conic(r2, v2, MU)
+        self.assertGreater(c.e, 1)
+        self.assertAlmostEqual(orbit.time_to_periapsis(c, MU), -50000.0,
+                               delta=1e-3)
+        r4, v4 = orbit.propagate(r, v, MU, -20000.0)
+        self.assertAlmostEqual(
+            orbit.time_to_periapsis(orbit.conic(r4, v4, MU), MU), 20000.0,
+            delta=1e-3)
+
+    def test_lambert(self):
+        r1 = (7e5, 0.0, 0.0)
+        for r2, tof in (((9e5 * math.cos(2.1), 9e5 * math.sin(2.1), 0.0), 2500),
+                        ((9e5 * math.cos(4.4), 9e5 * math.sin(4.4), 0.0), 4000),
+                        ((0.0, 9e5, 3e5), 3000), ((0.0, 5e7, 0.0), 20000)):
+            v1, v2 = orbit.lambert(r1, r2, tof, MU)
+            rr, vv = orbit.propagate(r1, v1, MU, tof)
+            self.assertLess(vec.norm(vec.sub(rr, r2)), 1e-2)
+            self.assertLess(vec.norm(vec.sub(vv, v2)), 1e-6)

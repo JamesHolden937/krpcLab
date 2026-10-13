@@ -35,12 +35,20 @@ class Config:
     RATE_DV: float = 0.01
 
     # --- Missions (mission.py) ------------------------------------------------
-    # Lowest periapsis above a body's atmosphere (or surface) any phase plans.
-    SAFE_ALT_M: float = 10_000.0
+    # Lowest periapsis above a body's atmosphere (or surface) any phase plans
+    # (10 km let an approach error and a capture burn carry Duna's periapsis
+    # into its atmosphere).
+    SAFE_ALT_M: float = 30_000.0
     # Capture into an ellipse with apoapsis this fraction of the target's SOI
     # (or the final apoapsis, if higher); FINAL then lowers it -- after any
     # plane change, which is cheap up there.
     CAPTURE_AP_FRACTION: float = 0.3
+    # ... or, when an engine is too weak to capture into that in one pass,
+    # into one this loose (a moon has no moons to keep clear of).
+    CAPTURE_LOOSE_FRACTION: float = 0.7
+    # A weak engine's cruise aims to arrive at this fraction of the fastest
+    # v_inf it can capture in one pass.
+    ARRIVE_MARGIN: float = 0.8
     # A one-pass capture must fit in this fraction of the time within
     # +-CAPTURE_ARC_DEG of periapsis; past that arc, still unbound, it failed.
     CAPTURE_ARC_DEG: float = 60.0

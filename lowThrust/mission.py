@@ -134,11 +134,12 @@ def _safe_until(craft, c):
 
 class Mission:
     def __init__(self, system, vessel, body, r, v, t0, dest, target, cfg,
-                 record=True):
+                 record=True, m0=None):
         self.cfg = cfg
         self.sys = system
         self.vessel = vessel
-        self.craft = Craft(body, r, v, vessel.dry_kg + vessel.prop_kg, t0)
+        self.craft = Craft(body, r, v, vessel.dry_kg + vessel.prop_kg
+                           if m0 is None else m0, t0)
         self.t0 = t0
         self.dest = dest
         self._home = body
@@ -198,7 +199,8 @@ class Mission:
     def _capture_ra(self):
         """The capture ellipse's apoapsis: high (a cheap capture and a cheap
         plane change up there), but clear of the destination's moons --
-        captured at 14000 km round Duna, lowering it fell into Ike's SOI."""
+        captured at 14000 km round Duna, lowering it fell into Ike's SOI.
+        A moon has no moons: up to CAPTURE_AP_FRACTION of its SOI."""
         d, tg = self.dest, self.final_target
         ra = min(self.cfg.CAPTURE_AP_FRACTION * d.soi, self._ceiling(d))
         if tg.ra is not None:
@@ -212,21 +214,14 @@ class Mission:
         cfg, here, moon = self.cfg, self.craft.body, self.dest
         c = orbit.conic(self.craft.r, self.craft.v, here.mu)
         rc, ra_cap = self._capture_rp(), self._capture_ra()
-        rp_min = max(c.rp, here.radius + here.atmosphere + cfg.SAFE_ALT_M)
-        rp_wait = transfer.wait_periapsis(
-            here.mu, moon, rp_min, rc, ra_cap, self._accel(),
-            math.radians(cfg.CAPTURE_ARC_DEG), cfg.CAPTURE_FILL)
-        if rp_wait is None:
-            rp_wait = rp_min
+        ra_wait, rp_wait, rc, ra_cap, ok = waiting_orbit(
+            here, moon, c.rp, rc, ra_cap, self._accel(), cfg)
+        if not ok:
             self.event("warning: no waiting orbit lets this engine capture "
                        "in one pass")
-        # Well short of the moon: the push (at periapsis, so no dearer than
-        # pumping further) then reaches it over a wide range of phases, and
-        # the shorter period offers more passes.  Just short of it, a Minmus
-        # transfer waited 224 days for a pass that lined up.
-        peri = moon.sma * (1 - moon.ecc)
-        ra_wait = min(cfg.WAIT_AP_FRACTION * peri,
-                      peri - cfg.WAIT_SOI_MARGIN * moon.soi)
+        elif rc > self._capture_rp() * 1.001:
+            self.event(f"capture high and loose for this engine: "
+                       f"{self._km(ra_cap, moon)} x {self._km(rc, moon)}")
         self.plan.update(rc=rc, ra_cap=ra_cap, rp_wait=rp_wait,
                          ra_wait=ra_wait)
         self.target = guidance.Target(ra_wait, rp_wait, moon.inc, moon.lan)
@@ -253,9 +248,44 @@ class Mission:
         n_now = vec.unit(vec.cross(self.craft.r, self.craft.v))
         normal, apse, plane_dv = transfer.parking_orientation(
             here.mu, rp, ra, w.vinf_dep, n_now)
+        rc, ra_cap = self._capture_rp(), self._capture_ra()
+        cap = transfer.capture_orbit(dest, vec.norm(w.vinf_arr),
+                                     self._accel(), rc, ra_cap,
+                                     math.radians(cfg.CAPTURE_ARC_DEG),
+                                     cfg.CAPTURE_FILL,
+                                     max(ra_cap, self._ceiling(dest)))
+        if cap is None:
+            # arrive slower: the cruise spends dv to match the planet
+            # loose, out past the planet's moons if need be (the pass
+            # guards and evasive burns then keep clear of them)
+            arc = math.radians(cfg.CAPTURE_ARC_DEG)
+            loose = max(ra_cap, 0.5 * dest.soi)
+            vmax = cfg.ARRIVE_MARGIN * transfer.capturable_vinf(
+                dest, self._accel(), rc, ra_cap, arc, cfg.CAPTURE_FILL, loose)
+            cap = transfer.capture_orbit(dest, vmax, self._accel(), rc,
+                                         ra_cap, arc, cfg.CAPTURE_FILL, loose)
+            if vmax <= 0 or cap is None:
+                self.event(f"warning: this engine cannot capture at "
+                           f"{dest.name} in one pass at any arrival speed")
+            else:
+                if vmax < vec.norm(w.vinf_arr):
+                    self.plan["vinf_max"] = vmax
+                    self.event(f"arrive slow: the cruise will cut v_inf from "
+                               f"{vec.norm(w.vinf_arr):.0f} to {vmax:.0f} "
+                               "m/s so this engine can capture in one pass")
+                else:
+                    cap = transfer.capture_orbit(
+                        dest, vec.norm(w.vinf_arr), self._accel(), rc,
+                        ra_cap, arc, cfg.CAPTURE_FILL, loose)
+                rc, ra_cap = cap
+                self.event(f"capture high and loose for this engine: "
+                           f"{self._km(ra_cap, dest)} x {self._km(rc, dest)}")
+        elif cap[0] > rc * 1.001:
+            rc, ra_cap = cap
+            self.event(f"capture high and loose for this engine: "
+                       f"{self._km(ra_cap, dest)} x {self._km(rc, dest)}")
         self.plan.update(window=w, rp_park=rp, ra_park=ra,
-                         vinf=vec.norm(w.vinf_dep), rc=self._capture_rp(),
-                         ra_cap=self._capture_ra())
+                         vinf=vec.norm(w.vinf_dep), rc=rc, ra_cap=ra_cap)
         self.target = guidance.Target(ra, rp, apse=apse, normal=normal,
                                       inc=math.acos(normal[2]),
                                       hold_apse=True)
@@ -301,7 +331,7 @@ class Mission:
             if cr.m <= self.vessel.dry_kg + 1e-9:
                 return self._end(False, "out of propellant")
 
-            step = getattr(self, "_" + self.phase.lower())(c)
+            step = self._evade(c) or getattr(self, "_" + self.phase.lower())(c)
             if step == "done":
                 if cr.body is not self.dest:
                     return self._end(False, f"finished about {cr.body.name}, "
@@ -400,10 +430,28 @@ class Mission:
         cr, cfg = self.craft, self.cfg
         home = self.dest if self.phase == "FINAL" else self._home
         if cr.body is not home:
+            if cr.body is home.parent:
+                return f"thrown out of {home.name}'s SOI by a flyby"
             return 0.0, None, self._tick(c)   # an unplanned flyby: coast it
+        if self._burn is None and c.e < 1:
+            trim = self._trim_check(c)
+            if trim is not None:
+                self.plan["trim_left"] = abs(trim)
+                self.plan["trim_sign"] = 1.0 if trim > 0 else -1.0
+                self.plan["resume"] = self.phase
+                self.set_phase("TRIM", f"{trim:+.1f} m/s at periapsis to miss "
+                                       "a moon")
+                return self._trim(c)
         el = orbit.elements(cr.r, cr.v, cr.body.mu)
         if el is None:
-            return "unbound during an in-SOI phase"
+            # a flyby flung us out: brake until bound again, then carry on
+            if self.plan.get("rebinding") is not True:
+                self.plan["rebinding"] = True
+                self.event(f"unbound from {cr.body.name} after a flyby: "
+                           "braking")
+            tick = self._tick(c)
+            return 1.0, vec.scale(vec.unit(cr.v), -1.0), tick
+        self.plan["rebinding"] = False
         coasting = self._burn is None
         self.target = guidance.lock(self.target, el, cfg, coasting)
         tick = self._tick(c)
@@ -416,7 +464,7 @@ class Mission:
         _, T, N = orbit.rtn(cr.r, cr.v)
         d = vec.unit(vec.add(vec.scale(T, cmd.prograde),
                              vec.scale(N, cmd.normal)))
-        if self._burn is None and self.phase != "FINAL":
+        if self._burn is None:
             self._guard_pass(c, d, el, cmd.need)
         cap = self.plan.get("cap")
         if cap is not None and self._burn is not None \
@@ -428,7 +476,9 @@ class Mission:
 
     def _others(self):
         """The bodies a coast about the current body must stay clear of."""
-        return [b for b in self.craft.body.children if b is not self.dest]
+        return [b for b in self.craft.body.children if b is not self.dest
+                and self.phase != "FINAL" or b is not self.dest
+                and self.phase == "FINAL"]
 
     def _guard_pass(self, c, d, el, need):
         """First tick of an arc burn: cap this pass's dv so the next
@@ -660,6 +710,17 @@ class Mission:
         tick = self._tick(c)
         rem = math.sqrt(self.plan["vinf"] ** 2 + 2 * mu / c.r) - vec.norm(cr.v)
         if rem <= cfg.CORRECT_DV or c.nu > math.radians(cfg.DEPART_ARC_DEG):
+            if c.e < 1:
+                # A weak engine cannot escape in one pass: every pass raises
+                # the energy until one escapes; the cruise corrections then
+                # build what v_inf is missing.  (Ending the push bound once
+                # left a 0.04 m/s^2 craft coasting into the Mun.)
+                self.plan["t_go"] = cr.t
+                self.plan.pop("checked", None)
+                self.set_phase("WAIT", f"still bound after this pass "
+                                       f"(apoapsis {self._km(c.ra, cr.body)}):"
+                                       " another")
+                return 0.0, None, tick
             self.set_phase("ESCAPE", f"v_inf {c.vinf:.0f} m/s "
                                      f"(window {self.plan['vinf']:.0f})")
             return 0.0, None, tick
@@ -688,7 +749,8 @@ class Mission:
             else:
                 horizon = self._horizon(cr.r, cr.v)
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
-                                     horizon, b, dest.normal)
+                                     horizon, b, dest.normal,
+                                     vinf_max=self.plan.get("vinf_max"))
         self.plan["vrel"] = ca.vrel
         self.plan["horizon"] = max(ca.t - cr.t, 0) * 1.5 + 3600
         mag = vec.norm(dv)
@@ -728,12 +790,7 @@ class Mission:
         if abs(err) < cfg.APPROACH_TOL * self.plan["rc"] or \
                 t_pe < cfg.APPROACH_MIN_LEAD_S:
             return 0.0, None, min(tick, max(1.0, t_pe - need / self._accel() / 2))
-        g = []
-        for k in range(3):
-            dv = [0.0, 0.0, 0.0]
-            dv[k] = 0.01
-            ck = orbit.conic(cr.r, vec.add(cr.v, tuple(dv)), mu)
-            g.append((ck.rp - c.rp) / 0.01)
+        g = self._rp_gradient(c)
         gg = sum(x * x for x in g)
         if gg == 0:
             return 0.0, None, tick
@@ -742,6 +799,30 @@ class Mission:
         if mag < cfg.CORRECT_DV:
             return 0.0, None, tick
         return min(1.0, mag / (self._accel() * tick)), vec.unit(dv), tick
+
+    def _evade(self, c):
+        """Inside an unplanned body's SOI with the periapsis below a safe
+        height: burn along the periapsis gradient until it is clear.  (A
+        weak pump that could not dodge the Mun by timing hit it.)"""
+        cr, cfg = self.craft, self.cfg
+        b = cr.body
+        if b is self.dest or b is self._home or b is self.dest.parent:
+            return None
+        floor = b.radius + b.atmosphere + cfg.SAFE_ALT_M
+        if c.rp >= floor or orbit.time_to_periapsis(c, b.mu) < 0:
+            return None
+        g = self._rp_gradient(c)
+        gg = vec.dot(g, g)
+        if gg == 0:
+            return None
+        if self.plan.get("evading") is not b.name:
+            self.plan["evading"] = b.name
+            self.event(f"evasive burn: periapsis {self._km(c.rp, b)} over "
+                       f"{b.name}")
+        tick = self._tick(c)
+        want = vec.scale(g, (floor * 1.3 - c.rp) / gg)
+        return (min(1.0, vec.norm(want) / (self._accel() * tick)),
+                vec.unit(want), tick)
 
     def _capture_need(self, c):
         mu = self.craft.body.mu
@@ -760,9 +841,32 @@ class Mission:
         if c.nu > math.radians(cfg.CAPTURE_ARC_DEG) and c.e >= 1:
             return "capture failed: the engine cannot shed the excess speed " \
                    "in one periapsis pass"
+        # Retrograde, plus whatever keeps the periapsis above the safe floor:
+        # a long retrograde burn started before periapsis drags it down
+        # (Duna: aimed at 80 km, captured at 38, inside the atmosphere).
+        # Only the floor -- holding it on the aim exactly cost Duna's capture
+        # 100 m/s of radial thrust, and FINAL raises a low one cheaply.
         need = self._capture_need(c)
-        return (min(1.0, max(need, 0.1) / (self._accel() * tick)),
-                vec.scale(vec.unit(cr.v), -1.0), tick)
+        want = vec.scale(vec.unit(cr.v), -max(need, 0.1))
+        floor = (cr.body.radius + cr.body.atmosphere + cfg.SAFE_ALT_M)
+        if c.rp < floor:
+            g = self._rp_gradient(c)
+            gg = vec.dot(g, g)
+            if gg > 0:
+                want = vec.add(want, vec.scale(g, (1.05 * floor - c.rp) / gg))
+        mag = vec.norm(want)
+        return min(1.0, mag / (self._accel() * tick)), vec.unit(want), tick
+
+    def _rp_gradient(self, c):
+        """d(periapsis radius)/d(impulse), numerically, inertial vector."""
+        cr = self.craft
+        g = []
+        for k in range(3):
+            dv = [0.0, 0.0, 0.0]
+            dv[k] = 0.01
+            ck = orbit.conic(cr.r, vec.add(cr.v, tuple(dv)), cr.body.mu)
+            g.append((ck.rp - c.rp) / 0.01)
+        return tuple(g)
 
 
 class _SimBody:
@@ -782,7 +886,83 @@ def fmt_ut(t):
     return f"y{int(y) + 1} d{int(d) + 1} {int(h):02d}:{int(rem // 60):02d}"
 
 
+def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg):
+    """A moon transfer's waiting orbit about ``here`` and the capture it
+    allows: (apoapsis, periapsis, capture periapsis, capture apoapsis,
+    whether one-pass capture is possible).
+
+    The apoapsis well short of the moon: the push (at periapsis, so no dearer
+    than pumping further) then reaches it over a wide range of phases, and the
+    shorter period offers more passes -- just short of it, a Minmus transfer
+    waited 224 days for a pass that lined up.  The periapsis as low as the
+    current one allows (cheapest), raised only as far as the engine needs to
+    capture at the moon in one pass -- a higher waiting periapsis arrives
+    slower relative to the moon -- and never inside another moon's band (a
+    weak engine's 11988 km periapsis sat on the Mun's orbit).  The capture
+    periapsis is the lowest that pass allows, at least ``rc_min``."""
+    rp_min = max(rp_now, here.radius + here.atmosphere + cfg.SAFE_ALT_M)
+    peri = moon.sma * (1 - moon.ecc)
+    top = peri - cfg.WAIT_SOI_MARGIN * moon.soi
+    others = [b for b in here.children if b is not moon]
+    arc = math.radians(cfg.CAPTURE_ARC_DEG)
+    v_m = math.sqrt(here.mu / moon.sma)
+    rp = rp_min
+    found = None
+    while rp <= top:
+        if transfer.clear_of(rp, others, cfg.WAIT_SOI_MARGIN):
+            vinf = transfer.moon_arrival_vinf(here.mu, rp, moon.sma, v_m)
+            cap = transfer.capture_orbit(moon, vinf, accel, rc_min, ra_cap,
+                                         arc, cfg.CAPTURE_FILL,
+                                         cfg.CAPTURE_LOOSE_FRACTION * moon.soi)
+            if cap is not None:
+                found = (rp, cap)
+                break
+        rp += max(1e3, 0.01 * (top - rp_min))
+    ok = found is not None
+    rp_wait, (rc, ra_c) = found if ok else (rp_min, (rc_min, ra_cap))
+    ra_wait = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp_wait), top)
+    return ra_wait, min(rp_wait, ra_wait), rc, ra_c, ok
+
+
+def route(here, dest):
+    """The legs from ``here`` to ``dest``: a list of destination bodies,
+    each leg within an SOI, to a moon, or to a sibling planet."""
+    if dest is here or dest.parent is here or (
+            dest.parent is here.parent and here.parent is not None):
+        return [dest]
+    if dest.parent is not None and dest.parent.parent is here.parent:
+        return [dest.parent, dest]           # a sibling's moon
+    raise ValueError(f"no route from {here.name} to {dest.name}")
+
+
 def fly(system, vessel, body, r, v, t0, dest, target, cfg, record=True):
-    """Fly a mission; see ``Mission``."""
-    return Mission(system, vessel, body, r, v, t0, dest, target, cfg,
-                   record).run()
+    """Fly from (body, r, v, t0) to ``target`` about ``dest``, in as many
+    legs as ``route`` needs.  A leg to a planet that a moon leg follows ends
+    in that moon leg's waiting orbit, captured straight into it."""
+    legs = route(body, dest)
+    m0, t, results = None, t0, []
+    for i, leg in enumerate(legs):
+        tgt = target
+        if i + 1 < len(legs):
+            moon = legs[i + 1]
+            accel = vessel.thrust_n / (m0 or vessel.dry_kg + vessel.prop_kg)
+            rc = max(target.rp or target.ra or 0.0,
+                     moon.radius + moon.atmosphere + cfg.SAFE_ALT_M)
+            ra_w, rp_w, _, _, _ = waiting_orbit(
+                leg, moon, leg.radius + leg.atmosphere + cfg.SAFE_ALT_M, rc,
+                cfg.CAPTURE_AP_FRACTION * moon.soi, accel, cfg)
+            tgt = guidance.Target(ra_w, rp_w, moon.inc, moon.lan)
+        res = Mission(system, vessel, body, r, v, t, leg, tgt, cfg, record,
+                      m0).run()
+        results.append(res)
+        if not res.done:
+            break
+        body, t = res.body, res.t
+        r, v = res.final.rvec, res.final.vvec
+        m0 = vessel.dry_kg + vessel.prop_kg - sum(x.prop_used for x in results)
+    last = results[-1]
+    return MissionResult(
+        last.done, last.reason, t0, last.t, sum(x.dv for x in results),
+        sum(x.prop_used for x in results),
+        [m for x in results for m in x.maneuvers],
+        [e for x in results for e in x.events], last.body, last.final)
