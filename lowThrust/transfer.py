@@ -105,14 +105,80 @@ def signed_miss(ca, normal):
     return s if vec.dot(vec.cross(ca.d, u), normal) > 0 else -s
 
 
-def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
+def soi_entry(r, v, t, mu, target, ca):
+    """Where the coast from (r, v, t) enters ``target``'s SOI on the way to
+    its closest approach ``ca``: an Approach at the boundary, or None if it
+    never enters."""
+    R = target.soi
+    if vec.norm(ca.d) >= R:
+        return None
+
+    def state(tt):
+        rv, vv = orbit.propagate(r, v, mu, tt - t)
+        rt, vt = target.state(tt)
+        return vec.sub(rv, rt), vec.sub(vv, vt)
+    step = R / max(vec.norm(ca.vrel), 1.0)
+    lo = ca.t - step
+    for _ in range(60):
+        if lo <= t or vec.norm(state(lo)[0]) >= R:
+            break
+        step *= 1.5
+        lo = ca.t - step
+    lo = max(lo, t)
+    if vec.norm(state(lo)[0]) < R:
+        return None                       # inside from the start
+    hi = ca.t
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if vec.norm(state(mid)[0]) >= R:
+            lo = mid
+        else:
+            hi = mid
+    d, vr = state(hi)
+    return Approach(hi, d, vr)
+
+
+def aim_error(r, v, t, mu, target, ca, rc, normal):
+    """How far the coast from (r, v, t) passes ``target`` from the aim for
+    periapsis ``rc`` on the side prograde about ``normal``: (signed miss,
+    miss vector across the relative velocity, its direction, aimed b).
+
+    Measured at the SOI entry when the coast enters (patched conics: the
+    entry state alone sets the periapsis, from its angular momentum and
+    energy about the target), else at the closest approach against
+    ``aim_parameter``.  For a slow arrival the coast curves through the
+    parent's field: a 75 m/s straight-line aim at Ike gave periapses from 0
+    to 120 km, and at Laythe a 400 m/s one was hundreds of km off."""
+    e = soi_entry(r, v, t, mu, target, ca)
+    if e is None:
+        d, vr = ca.d, ca.vrel
+        b = aim_parameter(rc, vec.norm(vr), target)
+    else:
+        d, vr = e.d, e.vrel
+        w = vec.norm(vr)
+        energy = w * w / 2 - target.mu / target.soi
+        h2 = 2 * energy * rc * rc + 2 * target.mu * rc
+        # capped: a slow entry is bound on arrival and even a grazing one
+        # can fall short of rc (Ike at 72 m/s: 68 km at best); APPROACH
+        # lifts the rest
+        b = min(math.sqrt(max(h2, 0.0)) / max(w, 1e-3), 0.95 * target.soi)
+    u = vec.unit(vr)
+    d_perp = vec.sub(d, vec.scale(u, vec.dot(d, u)))
+    err = vec.sub(d_perp, vec.scale(vec.unit(vec.cross(u, normal)), b))
+    side = 1.0 if vec.dot(vec.cross(d, u), normal) > 0 else -1.0
+    s = side * (vec.norm(d_perp) if e is not None else vec.norm(d)) - b
+    return s, err, u, b
+
+
+def correction(r, v, t, mu, target, horizon, rc, normal, dv_probe=0.01,
                guess=None):
-    """The impulse (inertial vector, m/s) that zeroes the B-plane miss, from
-    a numerical Jacobian of the miss against the three impulse components,
+    """The impulse (inertial vector, m/s) that zeroes the miss against the
+    aim for periapsis ``rc`` (``aim_error``), from a numerical Jacobian of
+    the miss against the three impulse components,
     minimum-norm; with ``guess``, the encounter is looked for round that UT.
     Returns (impulse, the closest approach it was computed from)."""
     ca = closest_approach(r, v, t, mu, target, horizon, guess=guess)
-    err, u = miss(ca, b, normal)
+    _, err, u, _ = aim_error(r, v, t, mu, target, ca, rc, normal)
     e1 = vec.unit(vec.cross(u, normal))
     e2 = vec.cross(u, e1)
     E = [vec.dot(err, e1), vec.dot(err, e2)]
@@ -120,9 +186,9 @@ def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
     for k in range(3):
         dv = [0.0, 0.0, 0.0]
         dv[k] = dv_probe
-        ca_k = closest_approach(r, vec.add(v, tuple(dv)), t, mu, target,
-                                horizon, guess=ca.t)
-        err_k, _ = miss(ca_k, b, normal)
+        v_k = vec.add(v, tuple(dv))
+        ca_k = closest_approach(r, v_k, t, mu, target, horizon, guess=ca.t)
+        _, err_k, _, _ = aim_error(r, v_k, t, mu, target, ca_k, rc, normal)
         col = [(vec.dot(err_k, e1) - E[0]) / dv_probe,
                (vec.dot(err_k, e2) - E[1]) / dv_probe]
         J.append(col)
@@ -217,13 +283,14 @@ def capturable_vinf(body, accel, rc_min, ra_max, arc, fill, ra_loose=None):
     return lo
 
 
-def push_dv(r, v, t, mu, target, b, normal, dv_max, horizon_fn, n=40,
+def push_dv(r, v, t, mu, target, rc, normal, dv_max, horizon_fn, n=40,
             dv_min=0.0):
     """The smallest prograde impulse in (dv_min, dv_max] at (r, v, t) whose
-    coast passes ``target`` on the prograde side at ``b``; None if there is
-    none.  ``horizon_fn(r, v)`` gives how far ahead to search after the
-    impulse."""
+    coast passes ``target`` on the prograde side on the aim for periapsis
+    ``rc`` (``aim_error``); None if there is none.  ``horizon_fn(r, v)``
+    gives how far ahead to search after the impulse."""
     u = vec.unit(v)
+    b = aim_parameter(rc, 1e9, target)       # the scale of the aim
 
     def f(dv):
         v1 = vec.add(v, vec.scale(u, dv))
@@ -231,7 +298,7 @@ def push_dv(r, v, t, mu, target, b, normal, dv_max, horizon_fn, n=40,
         ca = closest_approach(r, v1, t, mu, target, h, 200)
         if ca.t > t + 0.999 * h:             # no encounter inside the window
             return abs(signed_miss(ca, normal)) + b, ca
-        return signed_miss(ca, normal) - b, ca
+        return aim_error(r, v1, t, mu, target, ca, rc, normal)[0], ca
 
     prev_dv, (prev_f, _) = dv_min, f(dv_min)
     for i in range(1, n + 1):

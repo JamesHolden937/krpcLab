@@ -760,12 +760,8 @@ class Mission:
         if self.plan.get("pass") != key:
             self.plan["pass"] = key
             rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
-            vinf = transfer.moon_arrival_vinf(mu, c.rp, moon.sma,
-                                              math.sqrt(mu / moon.sma))
-            self.plan["b"] = transfer.aim_parameter(self.plan["rc"], vinf,
-                                                    moon)
             dv = transfer.push_dv(
-                rp_, vp_, cr.t + t_pe, mu, moon, self.plan["b"], moon.normal,
+                rp_, vp_, cr.t + t_pe, mu, moon, self.plan["rc"], moon.normal,
                 self._push_max(c), self._horizon)
             if dv is not None:
                 # reject a pass whose coast meets another moon first
@@ -876,7 +872,7 @@ class Mission:
         ra_, va_ = orbit.propagate(cr.r, cr.v, mu, t_ap)
         t1 = cr.t + t_ap
         u = vec.unit(va_)
-        b = self._aim_b()
+        rc = self.plan["rc"]
         others = [x for x in cr.body.children if x is not moon]
 
         def f(dv):
@@ -889,7 +885,8 @@ class Mission:
                                            guess=t_pe)
             if abs(ca.t - t_pe) > 0.2 * c1.period:
                 return None
-            return transfer.signed_miss(ca, moon.normal) - b, ca, v1
+            return transfer.aim_error(ra_, v1, t1, mu, moon, ca, rc,
+                                      moon.normal)[0], ca, v1
 
         # scan the burns that shift the pass by about one moon period: at a
         # 1.2 Gm apoapsis +-30 m/s moved it by far more than Vall's 3.6 days
@@ -950,7 +947,7 @@ class Mission:
         tick = self._tick(c)
         left = self.plan["push_left"] - self._last_dv
         # stay on the same root: search round the ledger, not from zero
-        dv = transfer.push_dv(cr.r, cr.v, cr.t, mu, moon, self.plan["b"],
+        dv = transfer.push_dv(cr.r, cr.v, cr.t, mu, moon, self.plan["rc"],
                               moon.normal, min(self._push_max(c),
                                                1.5 * left + 2),
                               self._horizon, n=12, dv_min=max(0.0, 0.5 * left
@@ -1067,8 +1064,6 @@ class Mission:
             big = self._retarget(c, tick)
             if big is not None:
                 return big
-        vinf_guess = vec.norm(self.plan.get("vrel", (1e3, 0, 0)))
-        b = transfer.aim_parameter(self.plan["rc"], vinf_guess, dest)
         horizon = self.plan.get("horizon")
         if horizon is None:
             if self.kind == "planet":
@@ -1084,7 +1079,8 @@ class Mission:
         guess = self.plan.get("arrive_t") if self.kind == "planet" else (
             self.plan.get("ca_t") if self.plan.get("loop") else None)
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
-                                     horizon, b, dest.normal, guess=guess)
+                                     horizon, self.plan["rc"], dest.normal,
+                                     guess=guess)
         if guess is not None:
             self.plan["arrive_t"] = ca.t
         self.plan["vrel"], self.plan["ca_t"] = ca.vrel, ca.t
