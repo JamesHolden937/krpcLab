@@ -56,6 +56,18 @@ class Config:
     # +-CAPTURE_ARC_DEG of periapsis; past that arc, still unbound, it failed.
     CAPTURE_ARC_DEG: float = 60.0
     CAPTURE_FILL: float = 0.8
+    # A capture too long for that starts when it must: thrust along the
+    # velocity removes energy at the acceleration per metre of path, so it
+    # burns once the energy to shed reaches this share of what the path
+    # left (to periapsis and out to the loosest capture apoapsis) can
+    # remove -- outside the SOI if need be, but no farther out than where
+    # the parent's tidal pull reaches CAPTURE_TIDAL_FRACTION of the engine's
+    # acceleration (the capture's prediction ignores it).
+    CAPTURE_PATH_SHARE: float = 0.8
+    CAPTURE_TIDAL_FRACTION: float = 0.1
+    # The capture burn holds the periapsis between the safe floor and this
+    # multiple of the aimed one.
+    CAPTURE_RP_BAND: float = 1.5
     # Apoapses stay this many of a moon's SOI radii short of its orbit, and
     # a moon transfer's waiting orbit reaches only this fraction of the way.
     WAIT_SOI_MARGIN: float = 1.2

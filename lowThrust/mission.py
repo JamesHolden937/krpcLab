@@ -25,8 +25,13 @@ Phases (each re-decided every tick from the current state):
 - COAST / CRUISE correct the B-plane miss at the target
   (``transfer.correction``) whenever it needs more than ``CORRECT_DV``.
 - APPROACH, inside the target's SOI, nudges the hyperbola's periapsis onto
-  the capture altitude; CAPTURE burns retrograde centred on periapsis until
-  the orbit is bound below ``CAPTURE_AP_FRACTION`` of the SOI.
+  the capture altitude.  CAPTURE only has to make the orbit bound (below
+  ``CAPTURE_AP_FRACTION`` of the SOI, or the moon-clear ceiling once past
+  periapsis); FINAL shapes it.  Its law (``transfer.capture_step``) burns a
+  short capture centred on periapsis and starts a long one when it must --
+  from COAST/CRUISE, outside the SOI if need be -- once the energy to shed
+  reaches ``CAPTURE_PATH_SHARE`` of what full thrust removes on the path
+  left to periapsis, then throttles to finish there.
 """
 
 import math
@@ -256,7 +261,23 @@ class Mission:
                                      math.radians(cfg.CAPTURE_ARC_DEG),
                                      cfg.CAPTURE_FILL,
                                      max(ra_cap, self._ceiling(dest)))
+        early = far = None
         if cap is None:
+            # a capture too long for one pass round periapsis starts as
+            # early as it must, outside the SOI if need be
+            self.plan.update(rc=rc, ra_cap=ra_cap)
+            ves = self.vessel
+            early = transfer.capture_start(
+                self._cap_spec(), rc, vec.norm(w.vinf_arr), ves.thrust_n,
+                self.craft.m, ves.dry_kg, ves.isp_s)
+            if early is not None and early[2] > self._capture_reach():
+                far, early = early[2], None
+        if early is not None:
+            tau, dv_cap, out = early
+            self.event(f"long capture: ~{dv_cap:.0f} m/s, starting "
+                       f"{tau / 3600:.1f} h before periapsis, "
+                       f"{out / 1e6:.1f} Mm out ({out / dest.soi:.1f} SOI)")
+        elif cap is None:
             # arrive slower: the cruise spends dv to match the planet
             # loose, out past the planet's moons if need be (the pass
             # guards and evasive burns then keep clear of them)
@@ -274,11 +295,16 @@ class Mission:
                 # tried as a correction, a Moho cruise spent 7.5 km/s and
                 # ended 31 deg inclined.  Refuse before burning anything.
                 need = self._accel_to_capture(dest, v_arr, rc, ra_cap, loose)
+                why = "a long capture fails in prediction" if far is None else (
+                    f"its capture would start {far / 1e6:.0f} Mm out, past "
+                    f"the {self._capture_reach() / 1e6:.0f} Mm where the "
+                    "star's tide stays small")
                 self.abort = (
-                    f"this engine cannot capture at {dest.name} in one pass: "
-                    f"arrival v_inf {v_arr:.0f} m/s, at most {vmax:.0f} "
-                    "capturable" + (f"; it needs {need:.2f} m/s^2 (TWR "
-                                    f"{need / 9.81:.3f})" if need else "")
+                    f"this engine cannot capture at {dest.name}: arrival "
+                    f"v_inf {v_arr:.0f} m/s, {why}; slowing the arrival "
+                    f"leaves at most {vmax:.0f} capturable in one pass"
+                    + (f" (that needs {need:.2f} m/s^2, TWR "
+                       f"{need / 9.81:.3f})" if need else "")
                     + " -- or an aerocapture")
                 return
             else:
@@ -769,6 +795,10 @@ class Mission:
         """B-plane correction toward the destination (COAST and CRUISE)."""
         cr, cfg, dest = self.craft, self.cfg, self.dest
         tick = self._tick(c)
+        due, dt = self._capture_due(tick)
+        if due:
+            return self._start_capture(c)
+        tick = min(tick, dt)
         if cr.body is not frame:
             return 0.0, None, tick           # an unplanned flyby: just coast
         due = self.plan.get("next_fix", -math.inf)
@@ -870,11 +900,11 @@ class Mission:
         mu = cr.body.mu
         tick = self._tick(c)
         t_pe = orbit.time_to_periapsis(c, mu)
-        need = self._capture_need(c)
-        if t_pe <= need / self._accel() / 2 or t_pe < 0:
-            self.set_phase("CAPTURE", f"{need:.0f} m/s retrograde at "
-                                      "periapsis")
-            return self._capture(c)
+        due, dt = self._capture_due(tick)
+        if due or t_pe < 0:
+            return self._start_capture(c)
+        tick = min(tick, dt)
+        need = transfer.capture_need(c, mu, self.plan["ra_cap"])
         err = c.rp - self.plan["rc"]
         if abs(err) < cfg.APPROACH_TOL * self.plan["rc"] or \
                 t_pe < cfg.APPROACH_MIN_LEAD_S:
@@ -913,49 +943,108 @@ class Mission:
         return (min(1.0, vec.norm(want) / (self._accel() * tick)),
                 vec.unit(want), tick)
 
-    def _capture_need(self, c):
-        mu = self.craft.body.mu
-        rp, ra = c.rp, self.plan["ra_cap"]
-        v_pe = math.sqrt(max(0.0, 2 * c.energy + 2 * mu / rp))
-        return max(0.0, v_pe - math.sqrt(mu * (2 / rp - 2 / (rp + ra))))
+    # --- capture ----------------------------------------------------------
+    def _dest_rel(self):
+        """(r, v) relative to the destination, from its SOI or its
+        parent's; None from anywhere else."""
+        cr, d = self.craft, self.dest
+        if cr.body is d:
+            return cr.r, cr.v
+        if cr.body is d.parent:
+            rb, vb = d.state(cr.t)
+            return vec.sub(cr.r, rb), vec.sub(cr.v, vb)
+        return None
+
+    def _cap_spec(self):
+        cfg, d = self.cfg, self.dest
+        ra_cap = self.plan["ra_cap"]
+        floor = d.radius + d.atmosphere + cfg.SAFE_ALT_M
+        return transfer.Capture(
+            d.mu, ra_cap, max(ra_cap, self._ceiling(d)), floor,
+            max(cfg.CAPTURE_RP_BAND * self.plan["rc"], 1.2 * floor),
+            d.radius + d.atmosphere, math.radians(cfg.CAPTURE_ARC_DEG),
+            cfg.CAPTURE_FILL, cfg.CAPTURE_PATH_SHARE)
+
+    def _capture_reach(self):
+        """How far out a capture may start: where the parent's tidal pull
+        is CAPTURE_TIDAL_FRACTION of the engine's acceleration."""
+        d = self.dest
+        if d.parent is None:
+            return math.inf
+        return (self.cfg.CAPTURE_TIDAL_FRACTION * self._accel() * d.sma ** 3
+                / (2 * d.parent.mu))
+
+    def _capture_decide(self, tick, started):
+        """The capture law's decision now (``transfer.capture_step``):
+        ('burn', tick) or ('coast', dt).  Before the capture has started it
+        is looked for only on an inbound pass within reach that aims below
+        the loosest capture apoapsis."""
+        cr = self.craft
+        rel = self._dest_rel()
+        if rel is None:
+            return "coast", tick
+        r, v = rel
+        cap = self._cap_spec()
+        cc = orbit.conic(r, v, cap.mu)
+        if not started and cr.body is not self.dest and (
+                vec.dot(r, v) >= 0 or cc.rp > cap.ra_ok
+                or vec.norm(r) > self._capture_reach()):
+            return "coast", tick
+        rho, wait = transfer.capture_step(r, v, cc, cap, self._accel(),
+                                          started)
+        if rho <= 0:
+            return "coast", min(tick, max(1.0, wait))
+        return "burn", rho
+
+    def _capture_due(self, tick):
+        """(whether the capture must start now, the longest tick that cannot
+        pass its start)."""
+        what, x = self._capture_decide(tick, started=False)
+        return (True, tick) if what == "burn" else (False, x)
+
+    def _start_capture(self, c):
+        rel = self._dest_rel()
+        cap = self._cap_spec()
+        cc = orbit.conic(*rel, cap.mu)
+        out = vec.norm(rel[0])
+        where = "" if self.craft.body is self.dest else \
+            f", {out / 1e6:.1f} Mm out ({out / self.dest.soi:.1f} SOI)"
+        self.set_phase("CAPTURE", f"{transfer.capture_need(cc, cap.mu, cap.ra_cap):.0f}"
+                                  f" m/s at periapsis, starting "
+                                  f"{orbit.time_to_periapsis(cc, cap.mu) / 3600:.1f}"
+                                  f" h before it{where}")
+        return self._capture(c)
 
     def _capture(self, c):
-        cr, cfg = self.craft, self.cfg
-        tick = self._tick(c)
-        if c.e < 1 and c.ra <= self.plan["ra_cap"] * 1.01:
+        cr = self.craft
+        rel = self._dest_rel()
+        if rel is None:
+            return "capture failed: thrown out of the destination's reach"
+        r, v = rel
+        cap = self._cap_spec()
+        cc = orbit.conic(r, v, cap.mu)
+        tick = min(self._tick(c), max(1.0, cc.r / max(vec.norm(v), 1e-3) * 2
+                                      * math.pi / self.cfg.TICKS_PER_ORBIT),
+                   transfer.capture_step_s(v, self._accel()))
+        if cr.body is self.dest and transfer.captured(r, v, cc, cap):
             self.target = self.final_target
-            self.set_phase("FINAL", f"captured, {self._km(c.ra, cr.body)} x "
-                                    f"{self._km(c.rp, cr.body)}")
+            self.set_phase("FINAL", f"captured, {self._km(cc.ra, cr.body)} x "
+                                    f"{self._km(cc.rp, cr.body)}")
             return 0.0, None, tick
-        if c.nu > math.radians(cfg.CAPTURE_ARC_DEG) and c.e >= 1:
+        if transfer.capture_lost(r, v, cc, cap):
             return "capture failed: the engine cannot shed the excess speed " \
                    "in one periapsis pass"
-        # Retrograde, plus whatever keeps the periapsis above the safe floor:
-        # a long retrograde burn started before periapsis drags it down
-        # (Duna: aimed at 80 km, captured at 38, inside the atmosphere).
-        # Only the floor -- holding it on the aim exactly cost Duna's capture
-        # 100 m/s of radial thrust, and FINAL raises a low one cheaply.
-        need = self._capture_need(c)
-        want = vec.scale(vec.unit(cr.v), -max(need, 0.1))
-        floor = (cr.body.radius + cr.body.atmosphere + cfg.SAFE_ALT_M)
-        if c.rp < floor:
-            g = self._rp_gradient(c)
-            gg = vec.dot(g, g)
-            if gg > 0:
-                want = vec.add(want, vec.scale(g, (1.05 * floor - c.rp) / gg))
-        mag = vec.norm(want)
-        return min(1.0, mag / (self._accel() * tick)), vec.unit(want), tick
+        what, x = self._capture_decide(tick, started=True)
+        if what == "coast":
+            return 0.0, None, x
+        full = self._accel() * tick
+        want = transfer.capture_command(r, v, cc, cap, x * full)
+        return min(1.0, vec.norm(want) / full), vec.unit(want), tick
 
     def _rp_gradient(self, c):
         """d(periapsis radius)/d(impulse), numerically, inertial vector."""
         cr = self.craft
-        g = []
-        for k in range(3):
-            dv = [0.0, 0.0, 0.0]
-            dv[k] = 0.01
-            ck = orbit.conic(cr.r, vec.add(cr.v, tuple(dv)), cr.body.mu)
-            g.append((ck.rp - c.rp) / 0.01)
-        return tuple(g)
+        return transfer.rp_gradient(cr.r, cr.v, cr.body.mu)[1]
 
 
 class _SimBody:

@@ -426,6 +426,199 @@ def capture_orbit(body, vinf, accel, rc_min, ra_max, arc, fill,
     return None
 
 
+def rp_gradient(r, v, mu):
+    """d(periapsis radius)/d(impulse), numerically: (conic, gradient)."""
+    c = orbit.conic(r, v, mu)
+    g = []
+    for k in range(3):
+        dv = [0.0, 0.0, 0.0]
+        dv[k] = 0.01
+        ck = orbit.conic(r, vec.add(v, tuple(dv)), mu)
+        g.append((ck.rp - c.rp) / 0.01)
+    return c, tuple(g)
+
+
+# A capture at one destination: its gravity, the ellipse aimed for
+# (apoapsis ra_cap), the loosest accepted once past periapsis (ra_ok, clear
+# of moons), the periapsis band the burn holds (floor .. rp_max), the
+# surface (or atmosphere top), the one-pass test (burn time at most
+# ``fill`` of the time within +-``arc`` rad of periapsis), and the share
+# of the path to periapsis a long capture plans to burn over (``k``).
+Capture = namedtuple("Capture",
+                     "mu ra_cap ra_ok floor rp_max surface arc fill k")
+
+
+def capture_need(c, mu, ra):
+    """Speed to shed at the conic's periapsis to be bound below ``ra``."""
+    rp = c.rp
+    v_pe = math.sqrt(max(0.0, 2 * c.energy + 2 * mu / rp))
+    return max(0.0, v_pe - math.sqrt(mu * (2 / rp - 2 / (rp + ra))))
+
+
+def conic_pass_time(c, mu, arc):
+    """Seconds any conic spends within +-``arc`` rad of periapsis."""
+    if c.e >= 1:
+        return pass_time(mu, c.rp, max(c.vinf, 1e-3), arc)
+    E = 2 * math.atan(math.sqrt((1 - c.e) / (1 + c.e)) * math.tan(arc / 2))
+    return 2 * (E - c.e * math.sin(E)) / math.sqrt(mu / c.a ** 3)
+
+
+def captured(r, v, c, cap):
+    """Bound below ``ra_cap`` -- or, once past periapsis, below ``ra_ok``
+    (FINAL lowers it).  Strictly ``ra_cap``, a long burn ended just past
+    periapsis 50 km above it and then sat at apoapsis, where retrograde
+    lowers only the periapsis.  And never with the periapsis below the
+    floor: one ended 4436 x -25 km over Moho."""
+    return c.e < 1 and c.rp >= cap.floor and (
+        c.ra <= cap.ra_cap * 1.01 or vec.dot(r, v) > 0 and c.ra <= cap.ra_ok)
+
+
+def capture_lost(r, v, c, cap):
+    """Outbound, unbound and past ``ra_ok``: this pass is gone."""
+    return c.e >= 1 and vec.dot(r, v) > 0 and c.r > cap.ra_ok
+
+
+def capture_step(r, v, c, cap, accel, started=True):
+    """The capture law's timing: (throttle, 0) to burn now, or (0, seconds
+    it can still coast).  The capture only has to end bound (below
+    ``ra_cap``, or ``ra_ok`` once past periapsis); FINAL shapes the orbit.
+
+    A capture that fits the one-pass test on the coming periapsis (with
+    the periapsis in the band) burns centred on it, at full throttle.  A
+    longer one starts when it must: thrust along the velocity removes
+    specific energy at exactly ``accel`` per metre of path flown, wherever
+    it is flown.  With q the energy above a bound orbit below ``ra_ok``
+    over what full thrust removes on the path left to periapsis, it starts
+    when q reaches ``k`` and then throttles at q, which holds q constant
+    and sheds the last of it at periapsis -- a steady throttle near ``k``
+    with the rest in reserve, not pulses.  (Budgeting the path out again to
+    ``ra_ok`` put the end of the burn in the slow outbound tail, where
+    shedding energy costs the most dv and holding the periapsis more: Moho
+    3580-3910 m/s over 0.02-0.8 m/s^2, against 3060-3430 to periapsis.
+    Started early and held to the end, retrograde stopped the vessel dead
+    12 Mm from Moho, then burned 5 km/s hovering as it fell back; started
+    at the predicted latest moment, the feasible starts were a knife edge
+    for a weak engine.)  Outbound, or once started with the periapsis
+    below the floor: full throttle.  (Before the start the periapsis is the
+    cruise corrections' -- from 14 SOI out the two-body one is not to be
+    trusted, and acting on it started Moho's capture 138 Mm out.)"""
+    if vec.dot(r, v) >= 0 or started and c.rp < cap.floor:
+        return 1.0, 0.0
+    if cap.floor <= c.rp <= cap.rp_max:
+        need = capture_need(c, cap.mu, cap.ra_cap) / accel
+        if need <= cap.fill * conic_pass_time(c, cap.mu, cap.arc):
+            wait = orbit.time_to_periapsis(c, cap.mu) - need / 2
+            return (1.0, 0.0) if wait <= 0 else (0.0, wait)
+    excess = c.energy + cap.mu / (c.rp + cap.ra_ok)
+    path = max(c.r - c.rp, 1.0)
+    q = excess / (accel * path)
+    if q >= cap.k or started and q > 0:
+        return min(1.0, max(q, 0.05)), 0.0
+    if excess <= 0:
+        return 0.0, max(1.0, orbit.time_to_periapsis(c, cap.mu))
+    spare = path - excess / (cap.k * accel)
+    vr = -vec.dot(r, v) / max(c.r, 1.0)
+    return 0.0, max(1.0, spare / max(vr, 1e-3))
+
+
+def capture_command(r, v, c, cap, budget):
+    """The capture law's thrust, relative to the destination: the impulse
+    it wants now.  Retrograde, plus whatever keeps the periapsis in the
+    band: above the floor -- a long retrograde burn started before
+    periapsis drags it down (Duna: aimed at 80 km, captured at 38, inside
+    the atmosphere), and holding it on the aim exactly cost Duna's capture
+    100 m/s of radial thrust -- and below ``rp_max``: started far out,
+    retrograde alone swung it out to the vessel's own radius and stopped
+    the vessel dead 12 Mm from Moho.  The retrograde part is at most
+    ``budget`` (what the engine delivers this tick): sized at the whole
+    need, it drowned the periapsis term and a long capture sank 40 km into
+    Moho.  The flight and ``fly_capture``'s prediction both fly this."""
+    mu = cap.mu
+    want = vec.scale(vec.unit(v), -min(max(capture_need(c, mu, cap.ra_cap),
+                                           0.1), budget))
+    goal = 1.05 * cap.floor if c.rp < cap.floor else \
+        0.95 * cap.rp_max if c.rp > cap.rp_max else None
+    if c.rp < cap.floor:
+        # below the floor, lift it first: retrograde would only sink it
+        # further (ending near apoapsis, a capture sank 60 km into Moho)
+        want = (0.0, 0.0, 0.0)
+    if goal is not None:
+        _, g = rp_gradient(r, v, mu)
+        gg = vec.dot(g, g)
+        if gg > 0:
+            want = vec.add(want, vec.scale(g, (goal - c.rp) / gg))
+    return want
+
+
+CaptureFlight = namedtuple("CaptureFlight", "dv t_start d_start")
+
+
+def capture_step_s(v, accel):
+    """The longest thrusting step of a capture: 5% of the speed.  Slow
+    near apoapsis, a 370 s step was 150 m/s, far past where the periapsis
+    term's gradient holds."""
+    return max(1.0, 0.05 * vec.norm(v) / accel)
+
+
+def fly_capture(r, v, m, cap, thrust, isp, dry):
+    """Fly the capture law (``capture_step``, ``capture_command``) from
+    (r, v) relative to the destination until captured: its dv, and when
+    and how far out (from the start) it first burned -- or None (lost,
+    crashed, out of propellant).  Two-body about the destination, also
+    outside its SOI, where the parent's pull is the same on both to within
+    its tidal part."""
+    from lowThrust.sim import G0, _rk4
+    mu = cap.mu
+    dv, t, start = 0.0, 0.0, None
+    c = orbit.conic(r, v, mu)
+    limit = orbit.time_to_periapsis(c, mu) + 20 * max(
+        c.vinf if c.e >= 1 else 0.0, capture_need(c, mu, cap.ra_cap),
+        10.0) * m / thrust
+    while True:
+        c = orbit.conic(r, v, mu)
+        if captured(r, v, c, cap):
+            return CaptureFlight(dv, start[0], start[1])
+        if c.r < cap.surface or capture_lost(r, v, c, cap) or m <= dry \
+                or t > limit:
+            return None
+        a = thrust / m
+        step = 0.02 * c.r / max(vec.norm(v), 1.0)
+        rho, wait = capture_step(r, v, c, cap, a, start is not None)
+        if rho <= 0:
+            dt = min(wait, max(1.0, step))
+            r, v = orbit.propagate(r, v, mu, dt)
+            t += dt
+            continue
+        if start is None:
+            start = (t, c.r)
+        h = max(0.5, min(0.5 * step, 600.0, capture_step_s(v, a),
+                         capture_need(c, mu, cap.ra_cap) / a))
+        want = capture_command(r, v, c, cap, rho * a * h)
+        mag = vec.norm(want)
+        throttle = min(1.0, mag / (a * h))
+        mdot = thrust * throttle / (isp * G0)
+        r, v, m1 = _rk4(r, v, m, mu, vec.scale(vec.unit(want),
+                                               thrust * throttle), mdot, h)
+        dv += isp * G0 * math.log(m / m1)
+        m, t = m1, t + h
+
+
+def capture_start(cap, rc, vinf, thrust, m, dry, isp):
+    """An arrival's capture (periapsis ``rc``, excess ``vinf``), flown by
+    the law from well before it starts: (seconds before periapsis it starts,
+    dv, distance out), or None."""
+    mu = cap.mu
+    vp = math.sqrt(vinf * vinf + 2 * mu / rc)
+    excess = vinf * vinf / 2 + mu / (rc + cap.ra_ok)
+    d0 = 1.5 * excess / (cap.k * thrust / m) + 2 * cap.ra_ok
+    tau = d0 / max(vinf, 1.0)
+    r, v = orbit.propagate((rc, 0.0, 0.0), (0.0, vp, 0.0), mu, -tau)
+    got = fly_capture(r, v, m, cap, thrust, isp, dry)
+    if got is None:
+        return None
+    return tau - got.t_start, got.dv, got.d_start
+
+
 def clear_of(r, others, margin):
     """Whether radius ``r`` is outside every other moon's band of orbits
     (its periapsis to apoapsis, widened by ``margin`` SOIs)."""

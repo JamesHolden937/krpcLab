@@ -93,6 +93,17 @@ class TestConics(unittest.TestCase):
             orbit.time_to_periapsis(orbit.conic(r4, v4, MU), MU), 20000.0,
             delta=1e-3)
 
+    def test_short_coast_far_out_on_a_hyperbola(self):
+        """72 Mm out on a 3.5 km/s hyperbola, the long-arc starting guess
+        ran a 63 s coast off to 1e17 m."""
+        mu, rc = 1.686e11, 280e3
+        vp = math.sqrt(3497.0 ** 2 + 2 * mu / rc)
+        r, v = orbit.propagate((rc, 0.0, 0.0), (0.0, vp, 0.0), mu, -20000.0)
+        for dt in (1.0, 63.0, 600.0, -63.0):
+            r2, v2 = orbit.propagate(r, v, mu, dt)
+            self.assertLess(abs(vec.norm(vec.sub(r2, r)) - 3497 * abs(dt)),
+                            0.02 * 3497 * abs(dt))
+
     def test_lambert(self):
         r1 = (7e5, 0.0, 0.0)
         for r2, tof in (((9e5 * math.cos(2.1), 9e5 * math.sin(2.1), 0.0), 2500),

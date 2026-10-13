@@ -63,6 +63,48 @@ class TestGeometry(unittest.TestCase):
             mission.route(SYS["Mun"], SYS["Ike"])
 
 
+class TestLongCapture(unittest.TestCase):
+    """A capture too long for one pass round periapsis starts when it must,
+    outside the SOI if need be (Moho: v_inf 3.5 km/s, SOI 9.6 Mm)."""
+    MU, R, SOI = 1.686e11, 250e3, 9646663.0
+
+    def cap(self):
+        return transfer.Capture(self.MU, 0.3 * self.SOI, 0.5 * self.SOI,
+                                self.R + 30e3, 1.5 * (self.R + 50e3), self.R,
+                                math.radians(60), 0.8, 0.8)
+
+    def test_every_engine_captures(self):
+        rc = self.R + 50e3
+        impulsive = transfer.capture_dv(self.MU, rc, 0.3 * self.SOI, 3497.0)
+        starts = []
+        for thrust in (4000.0, 2000.0, 500.0, 100.0):
+            got = transfer.capture_start(self.cap(), rc, 3497.0, thrust,
+                                         5000.0, 4000.0, 4200.0)
+            self.assertIsNotNone(got, thrust)
+            tau, dv, out = got
+            self.assertGreater(dv, impulsive)
+            self.assertLess(dv, 3497.0)
+            starts.append(out)
+        self.assertGreater(starts[1], self.SOI)        # outside the SOI
+        self.assertEqual(starts, sorted(starts))       # weaker: earlier
+
+    def test_coasts_until_needed_then_throttles_steadily(self):
+        cap = self.cap()
+        rc = self.R + 50e3
+        vp = math.sqrt(3497.0 ** 2 + 2 * self.MU / rc)
+        far = orbit.propagate((rc, 0.0, 0.0), (0.0, vp, 0.0), self.MU,
+                              -30000.0)
+        c = orbit.conic(*far, self.MU)
+        rho, wait = transfer.capture_step(*far, c, cap, 0.4, started=False)
+        self.assertEqual(rho, 0.0)
+        self.assertGreater(wait, 1000.0)
+        near = orbit.propagate((rc, 0.0, 0.0), (0.0, vp, 0.0), self.MU,
+                               -3000.0)
+        c = orbit.conic(*near, self.MU)
+        rho, _ = transfer.capture_step(*near, c, cap, 0.4, started=True)
+        self.assertGreater(rho, 0.5)
+
+
 class TestMissions(unittest.TestCase):
     def check(self, res, dest, alt_km, dv_max):
         self.assertTrue(res.done, res.reason)
@@ -91,6 +133,12 @@ class TestMissions(unittest.TestCase):
     def test_to_ike_through_duna(self):
         res, d = fly("Ike", 50)
         self.check(res, d, 50, 2100)
+
+    def test_to_moho_capturing_from_outside_its_soi(self):
+        res, d = fly("Moho", 50)
+        self.check(res, d, 50, 7000)
+        start = [e.text for e in res.events if e.text.startswith("CAPTURE")]
+        self.assertTrue(start and "SOI)" in start[0], start)
 
     def test_weak_engine_to_the_mun(self):
         """TWR 0.004: captures high and loose, then spirals down."""

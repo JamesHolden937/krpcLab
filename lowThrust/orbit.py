@@ -126,16 +126,30 @@ def propagate(r, v, mu, dt):
     vr0 = vec.dot(r, v) / r0
     alpha = 2 / r0 - vec.dot(v, v) / mu
     sqmu = math.sqrt(mu)
+    def residual(x):
+        try:
+            z = alpha * x * x
+            C, S = _stumpff(z)
+            return abs(r0 * vr0 / sqmu * x * x * C
+                       + (1 - alpha * r0) * x ** 3 * S + r0 * x - sqmu * dt)
+        except OverflowError:
+            return math.inf
+
+    x = sqmu * dt / r0
     if alpha > 1e-12:
         x = sqmu * alpha * dt
     elif alpha < -1e-12:
+        # The long-arc guess, unless the short-arc one is closer: from a
+        # hyperbola 72 Mm out, a 63 s coast from the long-arc guess ran
+        # Newton off along cosh to 1e17 m.
         a = 1 / alpha
         sgn = 1 if dt > 0 else -1
-        x = sgn * math.sqrt(-a) * math.log(
-            (-2 * mu * alpha * dt)
-            / (vec.dot(r, v) + sgn * math.sqrt(-mu * a) * (1 - r0 * alpha)))
-    else:
-        x = sqmu * dt / r0
+        arg = ((-2 * mu * alpha * dt)
+               / (vec.dot(r, v) + sgn * math.sqrt(-mu * a) * (1 - r0 * alpha)))
+        if arg > 0:
+            x_long = sgn * math.sqrt(-a) * math.log(arg)
+            if residual(x_long) < residual(x):
+                x = x_long
     for _ in range(200):
         z = alpha * x * x
         C, S = _stumpff(z)
