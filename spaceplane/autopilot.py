@@ -1032,23 +1032,11 @@ class Autopilot:
     def rcs_yaw_now(self, ut=0.0):
         """The thrusters-counted yaw figure while it applies, else ``None``:
         ``ATTITUDE_YAW_WITH_RCS``, in GLIDE or HAC, with the valve open."""
-        is_open = bool(getattr(self.rcs, "on", False))
-        armed = bool(getattr(self.cfg, "ATTITUDE_YAW_RCS_ARMED", False))
-        # Under ``ATTITUDE_YAW_RCS_ARMED`` the figure is measured on the
-        # first open valve of any phase (the deorbit's turn), so the glide
-        # has it before its own valve ever opens.
-        if self.state not in (GLIDE, HAC) and not (armed and is_open):
+        if (self.state not in (GLIDE, HAC)
+                or not getattr(self.rcs, "on", False)):
             return None
         peak = getattr(self, "_rcs_yaw_peak", None)
         reads = getattr(self, "_rcs_yaw_reads", 0)
-        if not is_open:
-            # **Armed is not open** (``ATTITUDE_YAW_RCS_ARMED``).  In air
-            # the valve opens on saturation, so yaw keeps the figure the
-            # thrusters will back; a shut valve must not snap yaw to the
-            # wheels' 24 s mid-turn (LOG3802, LOG10020).
-            if armed and getattr(self.rcs, "permitted", False):
-                return peak
-            return None
         if peak is None and reads < 10:
             # **Only an open valve reports its torque.**  Read at engage the
             # shuttle's 290 kN m came back as nothing -- the valve had just
@@ -1069,8 +1057,6 @@ class Autopilot:
                 % ("none -- no RCS yaw reported" if peak is None
                    else "%.1f s" % peak,
                    "%.1f" % static[2] if static else "?"))
-        if self.state not in (GLIDE, HAC):
-            return None
         return peak
 
     def reversal_under_way(self, snap):
@@ -2638,10 +2624,6 @@ class Autopilot:
                         saturation=(self.input_saturation(snap) if air
                                     else None))
         self.rcs_on = self.rcs.on
-        if (self.rcs_on and snap is not None
-                and getattr(self.cfg, "ATTITUDE_YAW_RCS_ARMED", False)
-                and getattr(self, "_rcs_yaw_peak", None) is None):
-            self.rcs_yaw_now(snap.ut)
 
     def _apply_rcs(self, wanted):
         try:

@@ -2796,12 +2796,6 @@ class Config:
     # (live) slowed roll and yaw 5.6 -> 24 s in four swings at 15-24 deg of
     # slip and tumbled.  0 = off.
     ROLL_DAMPER_SLIP_MAX_DEG: float = 0.0
-    # **Yaw keeps the thrusters' figure while RCS is armed, not only while
-    # the valve is open.**  Since RCS fires on saturation (``RCS_SAT_*``) the
-    # valve shuts with 10-13 deg of error still standing, and every shut
-    # snapped yaw to the wheels-only 24 s mid-turn (LOG10020: six times in
-    # the glide, then 24 deg of slip and a tumble; LOG3802 the same).
-    ATTITUDE_YAW_RCS_ARMED: bool = False
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
