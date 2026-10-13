@@ -247,18 +247,6 @@ class Mission:
         rp = max(orbit.conic(self.craft.r, self.craft.v, here.mu).rp,
                  here.radius + here.atmosphere + cfg.SAFE_ALT_M)
         ra = cfg.PARK_AP_FRACTION * self._park_ceiling()
-        rp_one = self._one_pass_escape_rp(rp, ra)
-        if rp_one is None:
-            pass
-        elif rp_one > rp * 1.001:
-            # A weak engine leaves in one pass from a parking orbit with its
-            # periapsis raised, crossing each moon's band once; the cruise
-            # builds what v_inf it lacks.  Escaping pass by pass from a low
-            # periapsis, the apoapsis lay across the Mun's and Minmus's
-            # orbits for revolution after revolution and met them.
-            self.event(f"one-pass escape for this engine: parking periapsis "
-                       f"raised to {self._km(rp_one, here)}")
-            rp = rp_one
         # how long the pump takes, to pick a window after it
         from lowThrust import sim as _sim
         est = _sim.fly(_SimBody(here), self.vessel, self.craft.r, self.craft.v,
@@ -342,25 +330,6 @@ class Mission:
                       - self.cfg.WAIT_SOI_MARGIN * ch.soi)
         return top
 
-    def _one_pass_escape_rp(self, rp, ra):
-        """The lowest parking periapsis (>= rp, <= ra) from which this engine
-        escapes in one pass round periapsis (at least parabolically), or
-        None if none does."""
-        mu = self.craft.body.mu
-        arc = math.radians(self.cfg.DEPART_ARC_DEG)
-        accel = self._accel()
-        x = rp
-        while x <= ra:
-            push = math.sqrt(2 * mu / x) - math.sqrt(mu * (2 / x - 2 / (x + ra)))
-            e = (ra - x) / (ra + x)
-            a = (ra + x) / 2
-            E = 2 * math.atan(math.sqrt((1 - e) / (1 + e)) * math.tan(arc / 2))
-            t = 2 * (E - e * math.sin(E)) / math.sqrt(mu / a ** 3)
-            if push / accel <= self.cfg.CAPTURE_FILL * t:
-                return x
-            x += max(1e3, 0.01 * (ra - rp))
-        return None
-
     def _park_ceiling(self):
         return self._ceiling(self.craft.body)
 
@@ -381,7 +350,8 @@ class Mission:
             if c.r < floor:
                 return self._end(False, f"hit {cr.body.name}'s "
                                         "atmosphere/surface")
-            if (c.e < 1 and c.rp < floor and self.phase in ("WAIT", "COAST")
+            if (c.e < 1 and c.rp < floor
+                    and self.phase in ("WAIT", "COAST", "ESCAPE")
                     and cr.body is not self.dest):
                 self._repump("periapsis inside the atmosphere")
             if cr.t > limit:
@@ -765,32 +735,51 @@ class Mission:
         key = round(cr.t + t_pe)
         if self.plan.get("checked") != key:
             self.plan["checked"] = key
-            rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
-            v1 = vec.add(vp_, vec.scale(vec.unit(vp_), need * self._accel()))
-            bad = transfer.first_hazard(rp_, v1, cr.t + t_pe, mu,
-                                        cr.body.children,
-                                        cr.t + t_pe + self.cfg.ESCAPE_CHECK_S)
+            # the pass as DEPART will fly it, not an impulse at periapsis:
+            # checked at the window's v_inf, a weak escape that reached only
+            # 229 m/s met the Mun and fell back into Kerbin
+            r1, v1, t1 = self._predict_depart(max(0.0, t_pe - need / 2))
+            bad = transfer.first_hazard(r1, v1, t1, mu, cr.body.children,
+                                        t1 + self.cfg.ESCAPE_CHECK_S)
             if bad is not None:
                 self.event(f"departure pass skipped: its escape would meet "
                            f"{bad.name}")
                 self.plan["t_go"] = cr.t + t_pe + c.period
                 return self._hold(c, t_pe + 1.0)
-        # a pass no longer than the arc round periapsis: a weak engine's
-        # push (61000 s to Jool at 0.02 m/s^2) once started half of that
-        # early, found itself past the arc, and ended every minute
-        span = min(need, transfer.conic_pass_time(
-            c, mu, math.radians(self.cfg.DEPART_ARC_DEG)))
-        if t_pe <= span / 2:
+        if t_pe <= need / 2:
             self.set_phase("DEPART", f"{need * self._accel():.0f} m/s at "
                                      "periapsis")
             return self._depart(c)
-        return self._hold(c, t_pe - span / 2)
+        return self._hold(c, t_pe - need / 2)
+
+    def _predict_depart(self, wait):
+        """(r, v, t) where a DEPART burn starting ``wait`` s from now ends
+        -- the same law, flown on RK4 about the current body."""
+        cr, cfg = self.craft, self.cfg
+        mu = cr.body.mu
+        r, v = orbit.propagate(cr.r, cr.v, mu, wait)
+        t = cr.t + wait
+        accel = self._accel()
+        arc = math.radians(cfg.DEPART_ARC_DEG)
+        for _ in range(100000):
+            c = orbit.conic(r, v, mu)
+            rem = math.sqrt(self.plan["vinf"] ** 2 + 2 * mu / c.r) - vec.norm(v)
+            nu = c.nu if c.nu <= math.pi else c.nu - 2 * math.pi
+            if rem <= cfg.CORRECT_DV or nu > arc:
+                break
+            h = max(1.0, min(rem / accel,
+                             0.005 * c.r / max(vec.norm(v), 1.0)))
+            r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(vec.unit(v), accel), 0.0, h)
+            t += h
+        return r, v, t
 
     def _depart(self, c):
         cr, cfg = self.craft, self.cfg
         mu = cr.body.mu
         tick = self._tick(c)
         rem = math.sqrt(self.plan["vinf"] ** 2 + 2 * mu / c.r) - vec.norm(cr.v)
+        # signed: started long before periapsis (a weak push to Jool, 61000
+        # s), an unsigned anomaly read ~300 deg and ended it every minute
         nu = c.nu if c.nu <= math.pi else c.nu - 2 * math.pi
         if rem <= cfg.CORRECT_DV or nu > math.radians(cfg.DEPART_ARC_DEG):
             if c.e < 1:
