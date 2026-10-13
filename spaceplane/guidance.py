@@ -196,20 +196,6 @@ def max_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, floor, top,
     return steer, prediction
 
 
-
-def plan_alpha_max(cfg):
-    """The top of the band the deorbit *plans* the glide in:
-    ``DEORBIT_ALPHA_MAX_DEG``, else ``ALPHA_MAX_DEG``.  Separate because
-    ``ALPHA_MAX_DEG`` is also the landing's alpha ceiling."""
-    top = float(getattr(cfg, "DEORBIT_ALPHA_MAX_DEG", 0.0) or 0.0)
-    return top if top > 0.0 else cfg.ALPHA_MAX_DEG
-
-
-def thermal_floor(env):
-    """The alpha floor the heating imposes (``THERMAL_*``), 0 for none."""
-    return max(float(getattr(env, "plan_thermal_floor", 0.0) or 0.0),
-               float(getattr(env, "live_thermal_floor", 0.0) or 0.0))
-
 def alpha_floor(env, cfg, speed, altitude, mass=None, gravity=None):
     """The lowest angle of attack the solve may ask for, against Mach.
 
@@ -226,7 +212,7 @@ def alpha_floor(env, cfg, speed, altitude, mass=None, gravity=None):
     except Exception:                                   # noqa: BLE001
         return cfg.SOLVE_ALPHA_MIN_DEG
     if mach >= cfg.SOLVE_ALPHA_SUB_MACH:
-        return max(cfg.SOLVE_ALPHA_MIN_DEG, thermal_floor(env))
+        return cfg.SOLVE_ALPHA_MIN_DEG
     # Subsonically the Mach floor relaxes to best glide -- and the speed
     # floor, when it is on, takes over from there.  The solve has to see the
     # same floor the propagator enforces, or it spends its probes below it
@@ -2560,37 +2546,19 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
     # solve range on this airframe, so the shortest entry is the one flown at
     # *both* stops (max alpha, max bank) and the longest at neither.  The old
     # pairing crossed them and spanned a sliver.
-    top = plan_alpha_max(cfg)
-    env.plan_thermal_floor = 0.0
-    floor = max(cfg.SOLVE_ALPHA_MIN_DEG, thermal_floor(env))
-    box = ((min(floor, top), cfg.BANK_MAX_DEG),
-           (top, cfg.SOLVE_BANK_MIN_DEG))
-    limit = float(getattr(cfg, "THERMAL_HEATING_MAX", 0.0) or 0.0)
+    box = ((cfg.SOLVE_ALPHA_MIN_DEG, cfg.BANK_MAX_DEG),
+           (cfg.ALPHA_MAX_DEG, cfg.SOLVE_BANK_MIN_DEG))
     heats = []
-    for corner, (alpha, bank) in enumerate(box):
-        # **A corner the airframe cannot survive is not a corner.**  Under
-        # ``THERMAL_HEATING_MAX`` a corner whose peak heating rate
-        # (``trajectory.peak_heating``) is past the measured envelope is
-        # raised ``THERMAL_ALPHA_STEP_DEG`` at a time -- more drag up high,
-        # a cooler entry -- and the glide's solve floor is held there too
-        # (``env.plan_thermal_floor``), so the window is the span the glide may
-        # actually fly.
-        while True:
-            steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
-                          tracked=True)
-            prediction = trajectory.predict(env, r, v, mass, cfg,
-                                            steer=steer,
-                                            target_radius=vec.norm(gate))
-            if not prediction.reached or prediction.skipped:
-                return None
-            heat = trajectory.peak_heating(env, prediction.profile)
-            if (limit <= 0.0 or heat is None or heat <= limit
-                    or alpha >= top):
-                break
-            alpha = min(top, alpha + float(cfg.THERMAL_ALPHA_STEP_DEG))
-            if corner == 0:
-                env.plan_thermal_floor = alpha
-        heats.append((alpha, heat))
+    for alpha, bank in box:
+        steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                      tracked=True)
+        prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
+                                        target_radius=vec.norm(gate))
+        if not prediction.reached or prediction.skipped:
+            return None
+        # Each corner's peak heating rate, for the log: what the entry being
+        # planned asks of the skin (``trajectory.peak_heating``).
+        heats.append((alpha, trajectory.peak_heating(env, prediction.profile)))
         # **Both corners, and the long one is load-bearing for a reason it
         # does not state.**  Read literally, ``DEORBIT_MAX_TIME_TO_GO_S``
         # rejects an arrival a revolution away, and the long corner is by
@@ -3117,7 +3085,7 @@ def deorbit_reach(env, r, v, mass, cfg, end, dv):
         return None
     v2 = vec.add(v, vec.scale(v, -dv / speed))
     gate = env.runway.gate(end)
-    alpha = 0.5 * (cfg.SOLVE_ALPHA_MIN_DEG + plan_alpha_max(cfg))
+    alpha = 0.5 * (cfg.SOLVE_ALPHA_MIN_DEG + cfg.ALPHA_MAX_DEG)
     bank = 0.5 * (cfg.BANK_MAX_DEG + cfg.SOLVE_BANK_MIN_DEG)
     mean = trajectory.predict(
         env, r, v2, mass, cfg,

@@ -132,22 +132,9 @@ class RollDamper:
         self._prev_peak = None      # ... and of the one before, if chained
         self._last_ut = None
 
-    def update(self, ut, commanded, flown, departed=False):
+    def update(self, ut, commanded, flown):
         """One tick.  Returns ``(previous peak, this peak)`` on a counted
-        swing, else ``None``; ``tp`` holds the roll ``time_to_peak``.
-
-        ``departed``: the sideslip is past ``ROLL_DAMPER_SLIP_MAX_DEG``.
-        Swings then are a departure, not a loop gone unstable, and slowing
-        the lateral axes is the opposite of the cure (LOG10020: 5.6 -> 24 s
-        in four swings at 15-24 deg of slip, then a rolling tumble).  The
-        chain breaks and the tune relaxes as if nothing were counted."""
-        if departed:
-            self._side, self._prev_peak = 0, None
-            last, self._last_ut = self._last_ut, ut
-            if last is not None and ut > last:
-                self.tp = max(self.floor, self.tp * math.exp(
-                    -(ut - last) / float(self.cfg.ROLL_DAMPER_RECOVER_S)))
-            return None
+        swing, else ``None``; ``tp`` holds the roll ``time_to_peak``."""
         if any(x is None or math.isnan(x) for x in (commanded, flown)):
             self._side, self._prev_peak, self._last_ut = 0, None, None
             return None

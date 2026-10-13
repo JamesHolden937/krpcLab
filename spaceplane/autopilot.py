@@ -978,13 +978,7 @@ class Autopilot:
         rd = getattr(self, "roll_damper", None)
         swung = None
         if rd is not None:
-            slip_max = float(getattr(self.cfg, "ROLL_DAMPER_SLIP_MAX_DEG",
-                                     0.0))
-            slip = getattr(snap, "sideslip", None)
-            departed = (slip_max > 0.0 and slip is not None
-                        and abs(slip) > slip_max)
-            swung = rd.update(snap.ut, bank_deg, flown_bank(snap),
-                              departed=departed)
+            swung = rd.update(snap.ut, bank_deg, flown_bank(snap))
             roll = rd.tp
         else:
             roll = static[1]
@@ -1363,17 +1357,14 @@ class Autopilot:
             % (shortest, longest, longest - shortest, needed, want, bias))
         heats = getattr(self.env, "window_heating", None)
         if heats:
-            # **Can the airframe take the entry it is planning?**  Peak
-            # heating rate (sqrt(rho) v^3 / 1e6) at each corner, against
-            # ``THERMAL_HEATING_MAX``, the most this airframe has flown.
+            # **What the planned entry asks of the skin**: peak convective
+            # heating rate (sqrt(rho) v^3 / 1e6) at each window corner.  The
+            # shuttle has flown up to ~610 with its hottest part at 0.88 of
+            # its limit (docs/spaceplane/journal.md, 2026-10-12).
             self.logbook.event(
-                snap.ut, "deorbit heating: %s (flown envelope %.0f); glide "
-                         "alpha floor %.1f"
-                % (", ".join("alpha %.1f peak %s" % (
-                    a, "?" if h is None else "%.0f" % h) for a, h in heats),
-                   float(self.cfg.THERMAL_HEATING_MAX),
-                   max(self.cfg.SOLVE_ALPHA_MIN_DEG,
-                       guidance.thermal_floor(self.env))))
+                snap.ut, "deorbit heating: %s"
+                % ", ".join("alpha %.1f peak %s" % (
+                    a, "?" if h is None else "%.0f" % h) for a, h in heats))
 
     def ensure_thrust(self, snap):
         """An engine nobody activated makes a burn that never happens.
@@ -4984,7 +4975,6 @@ class Autopilot:
         no measurement here yet to size that trade with, and this project's
         rule is that a number gets measured before it gets acted on.
         """
-        self.thermal_guard(snap)
         if snap.skin_fraction < float(self.cfg.THERMAL_WARN_FRACTION):
             return
         if snap.skin_fraction <= self.thermal_peak + 0.05:
@@ -5020,32 +5010,6 @@ class Autopilot:
                                     "alpha %.1f (%s)"
                            % (n, snap.dynamic_pressure, self._mach_text(snap),
                               snap.alpha_actual, self.state))
-
-    def thermal_guard(self, snap):
-        """``THERMAL_GUARD_FRACTION``: the live half of the thermal limit.
-        A part past that fraction of its skin limit in GLIDE raises the
-        glide's alpha floor to ``THERMAL_GUARD_ALPHA_DEG`` (more drag up
-        high is a cooler entry); it releases ``THERMAL_GUARD_RELEASE`` under.
-        The prediction's envelope (``THERMAL_HEATING_MAX``) is a fit to what
-        has flown, so this is what holds when a plan leaves it."""
-        guard = float(getattr(self.cfg, "THERMAL_GUARD_FRACTION", 0.0))
-        if guard <= 0.0:
-            return
-        held = float(getattr(self.env, "live_thermal_floor", 0.0) or 0.0)
-        frac = snap.skin_fraction
-        if self.state == GLIDE and frac >= guard and held <= 0.0:
-            self.env.live_thermal_floor = float(
-                self.cfg.THERMAL_GUARD_ALPHA_DEG)
-            self.logbook.event(
-                snap.ut, "thermal guard: skin at %.0f%% on %s -> glide alpha "
-                         "floor %.0f deg" % (frac * 100.0,
-                                             snap.skin_hottest or "?",
-                                             self.env.live_thermal_floor))
-        elif held > 0.0 and (self.state != GLIDE or frac < guard - float(
-                self.cfg.THERMAL_GUARD_RELEASE)):
-            self.env.live_thermal_floor = 0.0
-            self.logbook.event(snap.ut, "thermal guard released: skin at "
-                                        "%.0f%%" % (frac * 100.0))
 
     def _mach_text(self, snap):
         """Mach, or an honest dash.  A breakup line that invents a speed is

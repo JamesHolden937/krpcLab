@@ -872,15 +872,6 @@ class TestTheRollDamperLearnsFromOscillation(unittest.TestCase):
         self.assertGreater(rd.tp, 3.0)
         self.assertLessEqual(rd.tp, 22.6)
 
-    def test_swings_at_large_sideslip_are_a_departure(self):
-        """LOG10020: the same divergence with the slip past
-        ``ROLL_DAMPER_SLIP_MAX_DEG`` counts nothing and does not slow."""
-        rd = rollrate_mod.RollDamper(Config(), 1.0, 22.6)
-        for i, (cmd, flown) in enumerate(self.LOG3692):
-            rd.update(2.4 * i, cmd, flown, departed=True)
-        self.assertEqual(rd.swings, 0)
-        self.assertEqual(rd.tp, 1.0)
-
     def test_a_steady_wobble_is_not_a_divergence(self):
         """LOG3710: +-7 about -30 at q 2300-3300, unchanged by the tune."""
         rd = rollrate_mod.RollDamper(Config(), 4.8, 22.4)

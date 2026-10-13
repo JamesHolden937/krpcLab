@@ -1883,25 +1883,6 @@ class Config:
     # It is a *warning*, not a control input: the guidance does not yet trade
     # range against heat, and it should not start doing so on no data.
     THERMAL_WARN_FRACTION: float = 0.75
-    # **The thermal limit, planned and live.**  ``THERMAL_HEATING_MAX`` is
-    # the most convective heating (``sqrt(rho) v^3 / 1e6``, KSP's high-Mach
-    # coefficient) the shuttle has flown: up to 611 on e500i45 entries, where
-    # the hottest part (RV-105 RCS block) plateaued at 0.86-0.88 of its skin
-    # limit over a 4x range of the rate (LOG9921-10020).  The deorbit window
-    # raises a corner's alpha by ``THERMAL_ALPHA_STEP_DEG`` until its peak
-    # is inside it.  0 = no planning limit.
-    THERMAL_HEATING_MAX: float = 0.0
-    THERMAL_ALPHA_STEP_DEG: float = 2.0
-    # Live: past this skin fraction in GLIDE the alpha floor rises to
-    # ``THERMAL_GUARD_ALPHA_DEG``; released this much under.  0 = off.
-    THERMAL_GUARD_FRACTION: float = 0.0
-    THERMAL_GUARD_ALPHA_DEG: float = 30.0
-    THERMAL_GUARD_RELEASE: float = 0.05
-    # **The top of the band the deorbit plans the glide in** (0 =
-    # ``ALPHA_MAX_DEG``, which is also the landing's ceiling).  With
-    # ``SOLVE_ALPHA_MIN_DEG`` it sets the alpha the glide nominally flies:
-    # the window is centred between the two corners.
-    DEORBIT_ALPHA_MAX_DEG: float = 0.0
 
     # Kilogrammes per unit of LiquidFuel and Oxidizer -- 5 for both in stock
     # KSP.  It is here so the deorbit can predict at the mass the entry will
@@ -2791,11 +2772,6 @@ class Config:
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
-    # **A swing at large sideslip is a departure, not a loop gain**: above
-    # this |slip| the damper counts nothing (``RollDamper.update``).  LOG10020
-    # (live) slowed roll and yaw 5.6 -> 24 s in four swings at 15-24 deg of
-    # slip and tumbled.  0 = off.
-    ROLL_DAMPER_SLIP_MAX_DEG: float = 0.0
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
