@@ -1145,28 +1145,54 @@ def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg):
     capture at the moon in one pass -- a higher waiting periapsis arrives
     slower relative to the moon -- and never inside another moon's band (a
     weak engine's 11988 km periapsis sat on the Mun's orbit).  The capture
-    periapsis is the lowest that pass allows, at least ``rc_min``."""
+    periapsis is the lowest that pass allows, at least ``rc_min``.
+
+    With another moon orbiting inside the target's, the whole waiting orbit
+    stays below that moon's band, its periapsis raised until the push across
+    the band fits in one pass: a weak pump out past the Mun crossed its
+    orbit twice a revolution for dozens of revolutions, met it, and was
+    flung into Kerbin.  Where no such orbit exists, the band is crossed.
+    (Applied only when the default orbit's push did not fit one pass, it
+    saved a strong engine ~40 m/s to Minmus but lost 3 of 12 dates over
+    0.04-0.4 m/s^2, against 8 of 8 applied always.)"""
     rp_min = max(rp_now, here.radius + here.atmosphere + cfg.SAFE_ALT_M)
     peri = moon.sma * (1 - moon.ecc)
     top = peri - cfg.WAIT_SOI_MARGIN * moon.soi
     others = [b for b in here.children if b is not moon]
+    inner = [b for b in others if b.sma < moon.sma]
     arc = math.radians(cfg.CAPTURE_ARC_DEG)
     v_m = math.sqrt(here.mu / moon.sma)
-    rp = rp_min
+
+    def search(ceiling, one_pass_push):
+        rp = rp_min
+        while rp <= ceiling:
+            if transfer.clear_of(rp, others, cfg.WAIT_SOI_MARGIN):
+                vinf = transfer.moon_arrival_vinf(here.mu, rp, moon.sma, v_m)
+                cap = transfer.capture_orbit(
+                    moon, vinf, accel, rc_min, ra_cap, arc, cfg.CAPTURE_FILL,
+                    cfg.CAPTURE_LOOSE_FRACTION * moon.soi)
+                ra = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp), ceiling)
+                if cap is not None and (not one_pass_push or transfer.push_fits(
+                        here.mu, rp, ra, moon.sma, accel, arc,
+                        cfg.CAPTURE_FILL)):
+                    return rp, ra, cap
+            rp += max(1e3, 0.01 * (ceiling - rp_min))
+        return None
+
     found = None
-    while rp <= top:
-        if transfer.clear_of(rp, others, cfg.WAIT_SOI_MARGIN):
-            vinf = transfer.moon_arrival_vinf(here.mu, rp, moon.sma, v_m)
-            cap = transfer.capture_orbit(moon, vinf, accel, rc_min, ra_cap,
-                                         arc, cfg.CAPTURE_FILL,
-                                         cfg.CAPTURE_LOOSE_FRACTION * moon.soi)
-            if cap is not None:
-                found = (rp, cap)
-                break
-        rp += max(1e3, 0.01 * (top - rp_min))
+    if inner:
+        wall = min(b.sma * (1 - b.ecc) - cfg.WAIT_SOI_MARGIN * b.soi
+                   for b in inner)
+        if wall > rp_min:
+            found = search(min(top, wall), True)
+    if found is None:
+        found = search(top, False)
     ok = found is not None
-    rp_wait, (rc, ra_c) = found if ok else (rp_min, (rc_min, ra_cap))
-    ra_wait = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp_wait), top)
+    if ok:
+        rp_wait, ra_wait, (rc, ra_c) = found
+    else:
+        rp_wait, rc, ra_c = rp_min, rc_min, ra_cap
+        ra_wait = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp_wait), top)
     return ra_wait, min(rp_wait, ra_wait), rc, ra_c, ok
 
 

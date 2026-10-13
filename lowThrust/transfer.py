@@ -586,6 +586,19 @@ def capture_start(cap, rc, vinf, thrust, m, dry, isp):
     return tau - got.t_start, got.dv, got.d_start
 
 
+def push_fits(mu, rp, ra, r_target, accel, arc, fill):
+    """Whether the push at periapsis ``rp`` from the ellipse (rp, ra) to one
+    reaching ``r_target`` fits one pass: burn time at most ``fill`` of the
+    time within +-``arc`` of periapsis."""
+    v0 = math.sqrt(mu * (2 / rp - 2 / (rp + ra)))
+    v1 = math.sqrt(mu * (2 / rp - 2 / (rp + r_target)))
+    e = (ra - rp) / (ra + rp)
+    a = (ra + rp) / 2
+    E = 2 * math.atan(math.sqrt((1 - e) / (1 + e)) * math.tan(arc / 2))
+    t = 2 * (E - e * math.sin(E)) / math.sqrt(mu / a ** 3)
+    return (v1 - v0) / accel <= fill * t
+
+
 def clear_of(r, others, margin):
     """Whether radius ``r`` is outside every other moon's band of orbits
     (its periapsis to apoapsis, widened by ``margin`` SOIs)."""
