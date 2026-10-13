@@ -49,6 +49,9 @@ class Config:
     # A weak engine's cruise aims to arrive at this fraction of the fastest
     # v_inf it can capture in one pass.
     ARRIVE_MARGIN: float = 0.8
+    # ... but never by more than this fraction of the window's arrival speed:
+    # past it the mission is refused at planning time.
+    ARRIVE_MAX_CUT: float = 0.3
     # A one-pass capture must fit in this fraction of the time within
     # +-CAPTURE_ARC_DEG of periapsis; past that arc, still unbound, it failed.
     CAPTURE_ARC_DEG: float = 60.0
@@ -83,12 +86,21 @@ class Config:
     # MISS_REPLAN of the moon's SOI, means no encounter is ahead: back to
     # WAIT for a new push.
     CORRECT_MAX_DV: float = 150.0
+    # A cruise miss beyond this many of the target's SOI radii, or this
+    # fraction of its distance from the star (whichever is less), or a
+    # linear correction above CORRECT_MAX_DV, is re-planned as a fresh
+    # Lambert transfer, not corrected.
+    RETARGET_MISS: float = 20.0
+    RETARGET_FRACTION: float = 0.01
     MISS_REPLAN: float = 1.5
     # In the target's SOI the hyperbola's periapsis is nudged until within
     # this fraction of the capture altitude, no later than this before it.
     APPROACH_TOL: float = 0.02
     APPROACH_MIN_LEAD_S: float = 1800.0
     MISSION_MAX_DAYS: float = 4000.0
+    # After a slingshot, brake until the apoapsis is inside this fraction of
+    # the SOI.
+    REBIND_SOI_FRACTION: float = 0.6
 
     # --- Tick ---------------------------------------------------------------
     # Guidance is re-decided once a tick and held (as the live pilot will

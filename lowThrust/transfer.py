@@ -159,6 +159,63 @@ def correction(r, v, t, mu, target, horizon, b, normal, dv_probe=0.01,
     return dv, ca
 
 
+def _aimed(r, t, mu, target, ta, normal, rc):
+    """Lambert to the B-plane aim point at UT ta: the target's centre plus
+    the impact parameter for periapsis ``rc`` on the prograde side (two
+    passes: the offset depends on the arrival velocity).  Aimed at the
+    centre, the arc and the B-plane correction disagreed, and a Moho cruise
+    re-targeted itself sixty times."""
+    rt, vt = target.state(ta)
+    sol = orbit.lambert(r, rt, ta - t, mu, normal)
+    if sol is None or rc is None:
+        return sol, vt
+    for _ in range(2):
+        vrel = vec.sub(sol[1], vt)
+        u = vec.unit(vrel)
+        b = impact_parameter(rc, max(vec.norm(vrel), 1.0), target.mu)
+        aim = vec.add(rt, vec.scale(vec.unit(vec.cross(u, target.normal)), b))
+        s2 = orbit.lambert(r, aim, ta - t, mu, normal)
+        if s2 is None:
+            break
+        sol = s2
+    return sol, vt
+
+
+def retarget(r, v, t, mu, target, t_lo, t_hi, normal, n=24, rc=None):
+    """A new transfer from (r, v, t) to ``target``'s centre: Lambert over
+    arrival times in [t_lo, t_hi], the cheapest in impulse plus arrival
+    speed.  Returns (impulse vector, arrival UT), or None.  For a miss far
+    too big for a linear correction (a short departure left a Moho transfer
+    4 million km wide, and the correction asked for 5-17 km/s a tick)."""
+    best = None
+    for i in range(n + 1):
+        ta = t_lo + (t_hi - t_lo) * i / n
+        if ta <= t + 60:
+            continue
+        rt, vt = target.state(ta)
+        # not near a 180 deg transfer: the arc's plane is ill-conditioned
+        # there, and a finite burn onto one landed a Moho transfer farther
+        # off than it started
+        ang = math.acos(max(-1.0, min(1.0, vec.dot(r, rt)
+                                      / (vec.norm(r) * vec.norm(rt)))))
+        if abs(ang - math.pi) < math.radians(15):
+            continue
+        sol, vt = _aimed(r, t, mu, target, ta, normal, rc)
+        if sol is None:
+            continue
+        dv = vec.sub(sol[0], v)
+        cost = vec.norm(dv) + vec.norm(vec.sub(sol[1], vt))
+        if best is None or cost < best[0]:
+            best = (cost, dv, ta)
+    return None if best is None else (best[1], best[2])
+
+
+def lambert_dv(r, v, t, mu, target, ta, normal, rc=None):
+    """The impulse onto the Lambert arc to ``target``'s aim point at UT ta."""
+    sol, _ = _aimed(r, t, mu, target, ta, normal, rc)
+    return None if sol is None else vec.sub(sol[0], v)
+
+
 def capturable_vinf(body, accel, rc_min, ra_max, arc, fill, ra_loose=None):
     """The fastest arrival an engine of ``accel`` can capture in one pass
     (0 if none)."""

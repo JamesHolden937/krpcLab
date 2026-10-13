@@ -153,6 +153,7 @@ class Mission:
         self.phase = None
         self.target = None          # the in-SOI target of PUMP/PARK/FINAL
         self.plan = {}
+        self.abort = None
         self._route()
 
     # --- bookkeeping ------------------------------------------------------
@@ -161,7 +162,8 @@ class Mission:
 
     def set_phase(self, phase, text=""):
         self._close_burn()
-        self.phase = phase
+        self._last_dv = 0.0         # a ledger starts clean (a stale value
+        self.phase = phase          # once ended trims before they burned)
         self.event(f"{phase}" + (f": {text}" if text else ""))
 
     def _close_burn(self):
@@ -264,9 +266,21 @@ class Mission:
                 dest, self._accel(), rc, ra_cap, arc, cfg.CAPTURE_FILL, loose)
             cap = transfer.capture_orbit(dest, vmax, self._accel(), rc,
                                          ra_cap, arc, cfg.CAPTURE_FILL, loose)
-            if vmax <= 0 or cap is None:
-                self.event(f"warning: this engine cannot capture at "
-                           f"{dest.name} in one pass at any arrival speed")
+            v_arr = vec.norm(w.vinf_arr)
+            if vmax <= 0 or cap is None or \
+                    vmax < (1 - cfg.ARRIVE_MAX_CUT) * v_arr:
+                # Cutting the arrival speed by more than a fraction is not a
+                # correction but a different (continuous-thrust) trajectory;
+                # tried as a correction, a Moho cruise spent 7.5 km/s and
+                # ended 31 deg inclined.  Refuse before burning anything.
+                need = self._accel_to_capture(dest, v_arr, rc, ra_cap, loose)
+                self.abort = (
+                    f"this engine cannot capture at {dest.name} in one pass: "
+                    f"arrival v_inf {v_arr:.0f} m/s, at most {vmax:.0f} "
+                    "capturable" + (f"; it needs {need:.2f} m/s^2 (TWR "
+                                    f"{need / 9.81:.3f})" if need else "")
+                    + " -- or an aerocapture")
+                return
             else:
                 if vmax < vec.norm(w.vinf_arr):
                     self.plan["vinf_max"] = vmax
@@ -286,6 +300,8 @@ class Mission:
                        f"{self._km(ra_cap, dest)} x {self._km(rc, dest)}")
         self.plan.update(window=w, rp_park=rp, ra_park=ra,
                          vinf=vec.norm(w.vinf_dep), rc=rc, ra_cap=ra_cap)
+        if self.abort:
+            return
         self.target = guidance.Target(ra, rp, apse=apse, normal=normal,
                                       inc=math.acos(normal[2]),
                                       hold_apse=True)
@@ -305,6 +321,22 @@ class Mission:
                       - self.cfg.WAIT_SOI_MARGIN * ch.soi)
         return top
 
+    def _accel_to_capture(self, dest, vinf, rc, ra, loose):
+        """The least acceleration that captures ``vinf`` in one pass."""
+        cfg = self.cfg
+        arc = math.radians(cfg.CAPTURE_ARC_DEG)
+
+        def ok(a):
+            return transfer.capture_orbit(dest, vinf, a, rc, ra, arc,
+                                          cfg.CAPTURE_FILL, loose) is not None
+        lo, hi = self._accel(), 100.0
+        if not ok(hi):
+            return None
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            lo, hi = (lo, mid) if ok(mid) else (mid, hi)
+        return hi
+
     def _park_ceiling(self):
         return self._ceiling(self.craft.body)
 
@@ -315,6 +347,8 @@ class Mission:
     # --- the loop -----------------------------------------------------------
     def run(self):
         cfg = self.cfg
+        if self.abort:
+            return self._end(False, self.abort)
         limit = self.t0 + cfg.MISSION_MAX_DAYS * 21600
         while True:
             cr = self.craft
@@ -443,8 +477,10 @@ class Mission:
                                        "a moon")
                 return self._trim(c)
         el = orbit.elements(cr.r, cr.v, cr.body.mu)
-        if el is None:
-            # a flyby flung us out: brake until bound again, then carry on
+        if el is None or el.ra > cfg.REBIND_SOI_FRACTION * cr.body.soi:
+            # a flyby flung us out: brake until bound well inside the SOI
+            # (bound alone is not enough -- an apoapsis past the SOI leaves
+            # it all the same), then carry on
             if self.plan.get("rebinding") is not True:
                 self.plan["rebinding"] = True
                 self.event(f"unbound from {cr.body.name} after a flyby: "
@@ -738,6 +774,10 @@ class Mission:
         due = self.plan.get("next_fix", -math.inf)
         if self._burn is None and cr.t < due:
             return 0.0, None, min(tick, due - cr.t)
+        if self.kind == "planet":
+            big = self._retarget(c, tick)
+            if big is not None:
+                return big
         vinf_guess = vec.norm(self.plan.get("vrel", (1e3, 0, 0)))
         b = transfer.impact_parameter(self.plan["rc"], max(vinf_guess, 1.0),
                                       dest.mu)
@@ -755,6 +795,15 @@ class Mission:
         self.plan["horizon"] = max(ca.t - cr.t, 0) * 1.5 + 3600
         mag = vec.norm(dv)
         to_ca = ca.t - cr.t
+        slowing = (self.plan.get("vinf_max") is not None
+                   and vec.norm(ca.vrel) > self.plan["vinf_max"])
+        if self.kind == "planet" and mag > cfg.CORRECT_MAX_DV and not slowing:
+            # (not while cutting the arrival speed: that correction is
+            # meant to be large, and re-targeting -- which ignores the speed
+            # -- undid it every tick)
+            big = self._retarget(c, tick, force=True)
+            if big is not None:
+                return big
         if self.kind == "moon" and (vec.norm(ca.d) > cfg.MISS_REPLAN * dest.soi
                                     or mag > cfg.CORRECT_MAX_DV):
             # no real encounter ahead: a linear correction means nothing
@@ -769,6 +818,46 @@ class Mission:
             self.plan["next_fix"] = cr.t + max(to_ca * cfg.CORRECT_EVERY, 600)
             return 0.0, None, tick
         return min(1.0, mag / (self._accel() * tick)), vec.unit(dv), tick
+
+    def _retarget(self, c, tick, force=False):
+        """A miss far too big for a linear correction: fly a fresh Lambert
+        transfer instead, its arrival time chosen once (the cheapest over
+        0.6-1.6 of the planned time left) and held while burning.  "Too big"
+        is RETARGET_MISS of the target's SOI or RETARGET_FRACTION of its
+        distance from the star, whichever is less -- Jool's SOI is so large
+        that 20 of them let a 40 Gm miss through to the linear correction,
+        which then asked thousands of m/s."""
+        cr, cfg, dest = self.craft, self.cfg, self.dest
+        mu = cr.body.mu
+        n = vec.unit(vec.cross(cr.r, cr.v))
+        ta = self.plan.get("lambert_t")
+        if ta is None:
+            w = self.plan["window"]
+            left = max(w.t_dep + w.tof - cr.t, 10 * 86400.0)
+            ca = transfer.closest_approach(cr.r, cr.v, cr.t, mu, dest,
+                                           1.6 * left)
+            limit = min(cfg.RETARGET_MISS * dest.soi,
+                        cfg.RETARGET_FRACTION * dest.sma)
+            if not force and vec.norm(ca.d) < limit:
+                return None
+            got = transfer.retarget(cr.r, cr.v, cr.t, mu, dest,
+                                    cr.t + 0.6 * left, cr.t + 1.6 * left, n,
+                                    rc=self.plan["rc"])
+            if got is None:
+                return None
+            self.plan["lambert_t"] = got[1]
+            self.plan.pop("horizon", None)
+            self.event(f"re-targeted: {vec.norm(got[0]):.0f} m/s onto a "
+                       f"Lambert arc arriving {fmt_ut(got[1])} (the miss was "
+                       f"{vec.norm(ca.d) / 1e9:.1f} Gm)")
+            ta = got[1]
+        dv = transfer.lambert_dv(cr.r, cr.v, cr.t, mu, dest, ta, n,
+                                 rc=self.plan["rc"])
+        if dv is None or vec.norm(dv) < cfg.CORRECT_DV:
+            self.plan.pop("lambert_t", None)
+            self.plan["next_fix"] = cr.t + 600
+            return None
+        return min(1.0, vec.norm(dv) / (self._accel() * tick)), vec.unit(dv), tick
 
     def _coast(self, c):
         return self._correct(c, self.dest.parent)
