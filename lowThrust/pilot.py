@@ -112,6 +112,7 @@ class Terminated(Exception):
 class Pilot:
     def __init__(self, conn, cfg, log, target_text, autostart):
         self.conn, self.cfg, self.log = conn, cfg, log
+        self.orf = None
         self.sc = conn.space_center
         self.v = self.sc.active_vessel
         self.lt = conn.low_thrust
@@ -192,7 +193,22 @@ class Pilot:
             self.throttle = x
 
     def point(self, d):
+        """Hold the inertial direction ``d`` (a coast's aim)."""
         self.lt.set_attitude(live.to_krpc(d), self.nrf)
+
+    def track(self, d, r, v):
+        """Point along ``d`` and hold it fixed against the orbit (radial,
+        along-track, normal), as the thrust laws are: an inertial command
+        held through a tick is several degrees behind prograde by the next
+        one near the periapsis of a high orbit (6 deg in 26 s), and a tick
+        that starts beyond ALIGN_DEG is not fired -- a Mun pump skipped most
+        of its arcs.  kRPC's orbital frame is (-radial, along-track,
+        normal)."""
+        R, T, N = orbit.rtn(r, v)
+        if self.orf is None:
+            self.orf = self.v.orbital_reference_frame
+        self.lt.set_attitude((-vec.dot(d, R), vec.dot(d, T), vec.dot(d, N)),
+                             self.orf)
 
     def warp(self, tick):
         """The fastest rails rate whose frames and loop latency still fit
@@ -364,7 +380,7 @@ class Pilot:
             R, T, N = orbit.rtn(r, v)
             if thr > 0:
                 self.coast_rtn = (vec.dot(d, R), vec.dot(d, T), vec.dot(d, N))
-                self.point(d)
+                self.track(d, r, v)
                 err = self.lt.attitude_error()
                 fire = thr if 0 <= err <= self.cfg.ALIGN_DEG else 0.0
                 self.set_throttle(fire)
