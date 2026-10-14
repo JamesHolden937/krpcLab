@@ -371,3 +371,63 @@ points (a stand-in for the late start, fixed at the root).
 
 Result: 270-flight grid 217 -> 269/270; the 630-flight sweep over
 0.02-10 m/s^2: 630/630 arrive (table in lowThrust/CLAUDE.md).
+
+## Session, 2026-10-13 night -- 14 morning: the pilot in game
+
+The user: "implement the low thrust autopilot into the game", on their
+craft (`qs_lowthrust`: 29.9 t, one Dawn 2 kN, Isp 4200, 12 RTGs, 1 kEC
+battery, two inline wheels, heat-resistant nose cone). Plugin allowed,
+"just don't make it cheaty in any way".
+
+Built: `live.py` (bodies from kRPC state vectors, frame swap), `pilot.py`
+(`Mission.run` split into `step`/`account`, the 270-flight grid
+identical), `tools/ltfly.py`, `testLive`, a PILOTS line, and the plugin
+`LowThrustWarp` (kRPC service `LowThrust`).
+
+What the game forced, in order:
+
+1. **PT did nothing** on the first save: made before PT was installed, no
+   `PersistentEngine` (PT finds engines only in OnLoad). The user rebuilt
+   the craft.
+2. **kRPC warp zeroes the throttle and refuses warp while it is open**:
+   the plugin sets PT's throttle and the rails warp itself.
+3. **PT steers only to SAS modes** on rails: the plugin turns the vessel
+   with its wheels (torque, MOI, EC measured unpacked). A bang-bang law
+   chattered at 1.7 EC/s holding still; the proportional zone (angle/4 s,
+   0.5 s response) holds at 0.
+4. **Warp rates learned from the easing `warp_rate` were wrong** (10x where
+   50x was allowed): read from the game (`RailsWarpRates`). Easing between
+   rates every tick ran a 50x warp at 33x: set at once. A Mun flight
+   crashed when kRPC's MaximumRailsWarpFactor read 0: `SetRailsWarp`.
+5. **The pace**: rails frames run at RAILS_PACE x KSP's (Unity timeScale)
+   with exact holds. The game froze at timeScale 0 (kRPC serves from
+   FixedUpdate): the plugin pumps it from Update. Holds overshot 40-160 s
+   (sized from the last frame; frames swing 2-3x; `maximumDeltaTime` had
+   no effect) and cut burn arcs: sized from the longest recent frame
+   x 1.5, half the steps left at most -- 0-3 s. The 150 km raise: 724 s
+   wall -> 90 s (373x). RAILS_PACE 50 gave 447x v 411x at 10: per-tick
+   overhead (~0.1 s) is the limit, not the CPU.
+6. **The ledger read 6% low** (throttle x time): dv from the xenon used,
+   after the hold has settled.
+7. **A Mun flight hung** (LOG10129): a coast hold over 30 s wall tripped
+   the orphan release and the pilot waited for a hold nobody would set.
+   `Held` (streamed) now keeps a hold alive; a dropped hold is re-issued.
+8. **The pump flew at 50x all the way round a 5000 km orbit** (rate set at
+   periapsis's limit, KSP only lowers it): the plugin climbs back to the
+   rate asked for. The old code timed out at 2 h still pumping
+   (LOG10120); the new arrived in 15.6 min (LOG10131).
+9. **Burn ticks skipped near a high periapsis**: an inertial command
+   fell ~6 deg behind prograde in a 26 s tick, past ALIGN_DEG 2. Burns now
+   point fixed against the orbit (kRPC orbital frame). FINAL 26 -> 12-19
+   days; PUMP unchanged (~54 d), so that gap is something else.
+
+Results (Mun 50 x 50 from LKO 87 km; stand-in for this craft: 1319 m/s,
+44 days -- PUMP 808 m/s in 35 days, FINAL 230 in 7):
+LOG10131 1392 m/s 77 d; LOG10133 1372 m/s 69 d; LOG10132 1388 m/s 83 d;
+all 15 min wall, PUMP at 1400-1640x. In all three MATCH dropped the Kerbin
+periapsis to 66 km ("lifting it") before the Mun SOI took over.
+
+Retracted: "the craft cannot power the Dawn". PT draws its EC on rails
+(9.2 EC/s with the wheels, xenon at the right 0.049 kg/s) and the battery
+stayed full because the craft has **twelve** RTGs (9.0 EC/s); a set of
+part titles had shown one. The user caught it.

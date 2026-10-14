@@ -3,13 +3,18 @@
 Flies a low-thrust (ion) vessel from its current orbit to a **target orbit
 the user types in** -- about the same body, one of its moons, or another
 planet (or that planet's moon) -- optionally within a time budget. The
-solver works out every burn; the executor (not written yet) will fly them
-under rails warp with Persistent Thrust. The root `CLAUDE.md` applies here.
+solver works out every burn; the pilot (`pilot.py`) flies them in the game
+under rails warp with Persistent Thrust and this package's plugin
+(`plugin/`, the kRPC service `LowThrust`). The root `CLAUDE.md` applies here.
 
-**State (2026-10-13 evening): the solver works end to end in a stand-in
-solar system (patched conics, stock bodies on rails) -- every one of 15
-destinations at every thrust from 0.02 to 10 m/s^2 arrives (630/630); no
-kRPC code yet.**
+**State (2026-10-14): the solver arrives at all 15 destinations at every
+thrust 0.02-10 m/s^2 in the stand-in (630/630). In the game, on the user's
+craft (`qs_lowthrust`, 29.9 t, one Dawn, 0.067 m/s^2): LKO 87 -> 150 km
+arrives 150.1 x 150.0 km, 97.9 m/s, 1.6 days, 90-140 s wall (stand-in 97.9,
+1.55 d); LKO -> Mun 50 x 50 km arrives every time (three flights,
+1372-1392 m/s against the stand-in's 1319, 69-83 days against 44, 15 min
+wall). Open: the in-game PUMP takes ~54 days where the stand-in takes 35
+for the same dv.**
 History, every refuted approach and why: `docs/lowThrust/journal.md`.
 What the code does and what triggers what: `docs/lowThrust/howItWorks.pdf`.
 
@@ -20,8 +25,18 @@ What the code does and what triggers what: `docs/lowThrust/howItWorks.pdf`.
 ./lowThrust/tools/simmission.py ... --thrust 200 --mass 5000 --isp 4200 --ut 3000000
 ./lowThrust/tools/simfly.py --start "ap=100 pe=100" --target "ap=500 pe=500 i=5" --within 2d   # one SOI, with a deadline
 lowThrust/tools/sweep.sh /tmp/sw "100 200 500 2000" "0 3000000 6000000 9000000"   # the grid: every destination x thrust x date
-.venv-pypy/bin/python -m unittest lowThrust.tests.testOrbit lowThrust.tests.testGuidance lowThrust.tests.testMission
+.venv-pypy/bin/python -m unittest lowThrust.tests.testOrbit lowThrust.tests.testGuidance lowThrust.tests.testMission lowThrust.tests.testLive
+
+./run.sh --pilot lowthrust                     # in game: panel with target, PLAN, START, TERMINATE
+lowThrust/tools/ltfly.py --instance 0 --target "mun: ap=50 pe=50" --timeout 3600   # farm: load qs_lowthrust, fly, report
+lowThrust/plugin/build.sh                      # build the plugin into base/ and every farm instance (restart them)
 ```
+
+**Live install**: Persistent Thrust 1.7.5 and
+`GameData/LowThrustWarp/LowThrustWarp.dll` (built by `plugin/build.sh`;
+copy it from `testInstances/base/GameData/LowThrustWarp/`). A save made
+before PT was installed has no `PersistentEngine` on its engines (PT finds
+them only in OnLoad): rebuild or relaunch the craft.
 
 Orbits: `body: ap= pe= [i= lan= argpe=]`, km and degrees; anything left out
 of the target is free. `simmission` prints the phase timeline (Kerbin dates),
@@ -42,6 +57,43 @@ dv by phase and the totals. Default vessel: 5 t, one 2 kN Dawn, Isp 4200
 | `mission.py` | the phase machine for a whole transfer (patched conics), routing and leg chaining |
 | `sim.py` | the single-body stand-in (`fly`) and the shared RK4 / tick |
 | `tools/simfly.py`, `tools/simmission.py`, `tools/sweep.sh` | command lines; `sweep.sh` flies the grid in parallel |
+| `live.py` | the game as the planner sees it: bodies rebuilt from kRPC state vectors (rails checked against `Orbit.position_at`), frame swap (kRPC non-rotating is left-handed, y north: `to_ours` swaps y and z) |
+| `pilot.py` | the only kRPC-aware code: panel, `Mission.step` flown against the game, holds, ledger from propellant used |
+| `plugin/LowThrustWarp.cs` | kRPC service `LowThrust`: PT throttle on rails, instant altitude-capped rails warp, the pace (Unity timeScale) and exact holds, reaction-wheel attitude on rails |
+| `tools/ltfly.py` | farm harness: loads a save, runs the pilot as a reaped child, prints the result |
+
+## The pilot (in game)
+
+- Each tick: read the state (SOI change -> `Mission._soi_change`), `step()`
+  gives (throttle, direction, tick) or the result.
+- **Thrust tick**: the direction is held fixed against the orbit (kRPC's
+  orbital frame = (-radial, along-track, normal)), so the plugin tracks it
+  through the tick; fired only if the thrust axis is within `ALIGN_DEG`
+  (2) at the tick's start; throttle set through PT; warp = the largest
+  rate <= `WARP_PER_TICK` (5) x tick; held to exactly t + tick; dv booked
+  from the xenon used (Isp g0 ln(m0/m1); KSP freezes mass on rails, so
+  mass = load mass less resources used).
+- **Coast**: the mission is run ahead on the exact two-body coast until it
+  next wants thrust, an SOI boundary, or `COAST_AHEAD` (0.5) of a period;
+  the vessel turns to the pending direction and the game warps there in
+  one hold.
+- **Holds** (plugin `RunUntil`): rails warp runs at `RAILS_PACE` (20) x
+  KSP's pace (Unity timeScale sized from the longest recent frame x 1.5,
+  at most half the steps left, under one step a frame at the end: 0-3 s
+  late); the rate climbs to the one asked for as the altitude allows and
+  steps down near the end, not below `WARP_FLOOR_S`'s (10 s tick) rate;
+  at the end the game is held (timeScale 0, kRPC served from the
+  plugin's Update). A hold nobody watches for 30 s (`Held` is streamed)
+  is released; a hold found dropped is re-issued after `HOLD_LOST_S`.
+- **Attitude on rails** (plugin `Attitude`): the wheels' torque (x
+  authority) and MOI measured unpacked; integrated in 0.02 s substeps;
+  rate limited to sqrt(2 a angle) and angle/4 s, rate error closed over
+  0.5 s; EC drawn per |input| (a wheel short of EC loses torque); the
+  angular rate handed back to the rigidbodies on unpack. **RCS torque
+  and gimbal misalignment are not modelled** (the user asked for both;
+  the user's craft has neither RCS nor a gimballed engine).
+- PT draws the Dawn's EC on rails (9.2 EC/s at full thrust with the
+  wheels); the craft's 12 RTGs make 9.0, so its battery stays full.
 
 ## The phases
 
@@ -154,18 +206,18 @@ pol tylo laythe vall bop`.
 
 ## Open, in order
 
-1. **The Persistent Thrust probe** (`tools/ptprobe.py`, an ion craft and an
-   LKO save): throttle persistence into rails warp, which SAS modes hold on
-   rails (prograde/retrograde/normal and the maneuver mode -- combined burns
-   and corrections need arbitrary directions), dv per warp rate, EC in
-   shadow, kRPC orbit reads during warp.
-2. **The pilot** (`pilot.py`, the only kRPC-aware code): run `Mission`'s
-   phase machine against kRPC (live bodies and orbits, measured
-   acceleration), panel with target fields, PLAN (the stand-in flight as
-   the preview), START/TERMINATE, `config:` line, fingerprint, `rpccount`,
-   a `PILOTS` line. Warp from the tick each phase needs (lower near
-   periapsis: ticks are uniform in angle).
-3. **Aerobraking** (below).
+1. **In-game PUMP 54 days v the stand-in's 35** for the same dv (820 v
+   808 m/s): less thrust per revolution in game. LOG10134 (Mun,
+   `LOG_INTERVAL_UT=1`) logs every tick: compare its arcs (start, length,
+   fired or not, err) with `simmission`'s burn list for the same craft
+   (`--thrust 2000 --mass 29875 --isp 4200 --ut 213522`). MATCH in game
+   took the periapsis to 66 km before the Mun SOI rescued it (all three
+   flights) -- check the floor guard during MATCH.
+2. **RCS and gimbal on rails** in the plugin (the user asked): RCS torque
+   when the RCS group is on, burning its propellant; gimbal torque only
+   while thrusting, with the thrust deflected by the gimbal angle.
+3. **A planet transfer in game** (Duna), then **aerobraking** (below; the
+   craft has a heat-resistant nose cone for it).
 4. Routes not yet supported: from a moon (Mun -> Kerbin, Mun -> Minmus,
    moon -> planet).
 5. **Cheaper moon dodges**: APPROACH dodges a moon on the inbound leg late
@@ -230,7 +282,21 @@ What it needs:
   re-target with Lambert instead.
 - **Every orbit past a moon crosses it twice a revolution**: SOI hazards
   are the norm, in the game as in the stand-in.
-- **Live install differs from the farm**; the live install needs PT 1.7.5.
+- **Live install differs from the farm**; the live install needs PT 1.7.5
+  and the plugin dll; it has BetterTimeWarp (rates read from the game).
+- **kRPC's warp and throttle fight PT**: `RailsWarpFactor` zeroes the
+  FlightInputHandler throttle and `MaximumRailsWarpFactor` is 0 while it is
+  open, so the plugin sets PT's throttle (`SetThrottleAfterKey`) and the
+  warp itself. PT's throttle set while unpacked does not survive going on
+  rails: set it after the warp.
+- **kRPC serves RPCs from FixedUpdate**, which stops at timeScale 0: the
+  plugin pumps kRPC from Update while a hold has the game stopped.
+- **An inertial command is not a law's direction for a whole tick**: near
+  a high periapsis prograde moves 6 deg in a 26 s tick, past ALIGN_DEG.
+- **A warp set at periapsis's limit stays there** unless something raises
+  it (KSP only lowers): the pump flew its 5000 km orbits at 50x.
+- **Count parts, not titles**: a set of part titles read one RTG where the
+  craft has twelve, and a power shortage was reported that does not exist.
 - **Energy per metre of path is the same wherever a burn is flown**; dv
   is not -- it is energy over speed, so the slow outbound tail after
   periapsis is the dearest place to finish a capture.
