@@ -607,7 +607,8 @@ class Mission:
 
     def _guard_pass(self, c, d, el, need):
         """First tick of an arc burn: cap this pass's dv so the next
-        revolution stays out of every other moon's SOI.  A pump out past a
+        revolution stays out of every other moon's SOI, each cap's burn
+        flown as the arc will fly it (``_fly_arc``).  A pump out past a
         moon crosses its orbit twice a revolution for dozens of revolutions,
         and an encounter was all but certain without this."""
         cr, cfg = self.craft, self.cfg
@@ -619,13 +620,16 @@ class Mission:
         self.plan["arc_end"] = cr.t + arc_s
         if not others:
             return
-        full = self._accel() * min(arc_s, need)
-        for f in (1.0, 0.75, 0.5, 0.25, 0.1, 0.0, 1.5, 2.0):
-            v1 = vec.add(cr.v, vec.scale(d, f * full))
-            c1 = orbit.conic(cr.r, v1, mu)
+        accel = self._accel()
+        full = accel * min(arc_s, need)
+        R0, T0, N0 = orbit.rtn(cr.r, cr.v)
+        law = (vec.dot(d, R0), vec.dot(d, T0), vec.dot(d, N0))
+        for f in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
+            r1, v1, t1 = self._fly_arc(law, f * full / accel)
+            c1 = orbit.conic(r1, v1, mu)
             if c1.e >= 1:
                 continue
-            if transfer.first_hazard(cr.r, v1, cr.t, mu, others,
+            if transfer.first_hazard(r1, v1, t1, mu, others,
                                      cr.t + 1.05 * c1.period) is None:
                 if f != 1.0:
                     self.plan["cap"] = f * full
@@ -633,6 +637,27 @@ class Mission:
                                "full pass would meet a moon next revolution")
                 return
         self.event("warning: no burn this pass avoids a moon next revolution")
+
+    def _fly_arc(self, law, dur):
+        """(r, v, t) where a full-throttle burn from now, ``dur`` seconds
+        long, along fixed radial/along-track/normal shares ``law``, ends --
+        the burn as the arc flies it.  (As an impulse at the arc's start,
+        60 deg short of periapsis on a 1.2 Gm Jool orbit, the guard's
+        prediction was days off on the next pass, and it let a weak descent
+        meet Laythe a revolution later, past any fix.)"""
+        cr = self.craft
+        mu, accel = cr.body.mu, self._accel()
+        r, v, t = cr.r, cr.v, cr.t
+        n = max(1, min(40, int(dur / 60.0) + 1))
+        h = dur / n
+        for _ in range(n if dur > 0 else 0):
+            R, T, N = orbit.rtn(r, v)
+            a = vec.add(vec.add(vec.scale(R, law[0]), vec.scale(T, law[1])),
+                        vec.scale(N, law[2]))
+            r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(vec.unit(a), accel),
+                           0.0, h)
+            t += h
+        return r, v, t
 
     def _trim_check(self, c):
         """Once a revolution while waiting: if the coming revolution meets
