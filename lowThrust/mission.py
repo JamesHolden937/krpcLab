@@ -757,16 +757,21 @@ class Mission:
                 if bad is not None:
                     self.event(f"pass skipped: its coast would meet {bad.name}")
                     dv = None
-                elif vec.norm(ca.vrel) > self.plan["vcap"] * 1.25 ** (
-                        (cr.t - self.plan.setdefault("skip_t0", cr.t))
-                        // self._synodic(c)):
+                elif vec.norm(ca.vrel) > self.plan["vcap"] * 1.25 ** \
+                        self.plan.get("skips", 0):
                     # a fast intercept (354 m/s to Minmus where ~100 would
                     # do) arrived at 787 m/s, past what the capture sheds.
-                    # The bar rises 25% a synodic period, so the wait is
-                    # bounded: held at 80 m/s a 0.02 m/s^2 Mun transfer
-                    # skipped 300-500 m/s passes for ten years.  (Raised a
-                    # skip, a waiting orbit beside Vall, a pass every 2.8
-                    # days and a good one every 12.6, took a 244 m/s one.)
+                    # The bar rises 25% a skip, so the wait is bounded:
+                    # held at 80 m/s a 0.02 m/s^2 Mun transfer skipped
+                    # 300-500 m/s passes for ten years.  At most once a
+                    # synodic period: a waiting orbit beside Vall, a pass
+                    # every 2.8 days and a good one every 12.6, took a
+                    # 244 m/s one; risen with the time itself, a Mun
+                    # transfer took a 395 m/s one.
+                    if cr.t - self.plan.get("skip_t", -math.inf) \
+                            >= self._synodic(c):
+                        self.plan["skips"] = self.plan.get("skips", 0) + 1
+                        self.plan["skip_t"] = cr.t
                     self.event(f"pass skipped: it arrives at "
                                f"{vec.norm(ca.vrel):.0f} m/s, faster than "
                                f"the {self.plan['vcap']:.0f} this engine "
@@ -781,7 +786,8 @@ class Mission:
             self.plan["push_left"] = dv
             # a new trajectory: the last coast's encounter is stale (MATCH
             # once started off one 59 h in the past)
-            for k in ("ca_t", "vrel", "match_done", "horizon", "skip_t0"):
+            for k in ("ca_t", "vrel", "match_done", "horizon", "skips",
+                      "skip_t"):
                 self.plan.pop(k, None)
             return self._push(c)
         return self._hold(c, t_pe - dv / accel / 2)
