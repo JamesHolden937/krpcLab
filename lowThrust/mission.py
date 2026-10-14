@@ -1151,6 +1151,9 @@ class Mission:
         if due or t_pe < 0:
             return self._start_capture(c)
         tick = min(tick, dt)
+        dodge = self._dodge(c, t_pe)
+        if dodge is not None:
+            return dodge
         need = transfer.capture_need(c, mu, self.plan["ra_cap"])
         err = c.rp - self.plan["rc"]
         if abs(err) < cfg.APPROACH_TOL * self.plan["rc"] or \
@@ -1165,6 +1168,74 @@ class Mission:
         if mag < cfg.CORRECT_DV:
             return 0.0, None, tick
         return min(1.0, mag / (self._accel() * tick)), vec.unit(dv), tick
+
+    def _dodge(self, c, t_pe):
+        """Inbound to the destination, a coast that meets one of its moons
+        before periapsis: the smallest burn across the velocity that keeps
+        the periapsis in the capture's band and clears them, flown as a
+        ledger; checked every tenth of the time left.  (Not looked for, a
+        Duna arrival's hyperbola ran through Ike's SOI and Ike flung it into
+        Duna.)"""
+        cr = self.craft
+        mu, moons = cr.body.mu, cr.body.children
+        left = self.plan.get("dodge")
+        if left is not None:
+            left = vec.sub(left, vec.scale(self.plan["dodge_dir"],
+                                           self._last_dv))
+            self._last_dv = 0.0
+            if vec.dot(left, self.plan["dodge_dir"]) <= 0.01:
+                self.plan.pop("dodge")
+            else:
+                self.plan["dodge"] = left
+                tick = self._tick(c)
+                return (min(1.0, vec.norm(left) / (self._accel() * tick)),
+                        self.plan["dodge_dir"], tick)
+        if not moons or cr.t < self.plan.get("dodge_next", -math.inf):
+            return None
+        self.plan["dodge_next"] = cr.t + 0.1 * t_pe
+        if transfer.first_hazard(cr.r, cr.v, cr.t, mu, moons,
+                                 cr.t + t_pe) is None:
+            return None
+        cap = self._cap_spec()
+        g = self._rp_gradient(c)
+        u = vec.unit(cr.v)
+        e1 = vec.sub(g, vec.scale(u, vec.dot(g, u)))
+        e1 = vec.unit(e1) if vec.norm(e1) > 0 else orbit.rtn(cr.r, cr.v)[0]
+        e2 = vec.cross(u, e1)
+        reach = 0.5 * self._accel() * t_pe
+        best, m = None, 0.5
+        while m <= reach and (best is None or m < vec.norm(best)):
+            for k in range(8):
+                a = k * math.pi / 4
+                dv = vec.scale(vec.add(vec.scale(e1, math.cos(a)),
+                                       vec.scale(e2, math.sin(a))), m)
+                # with the periapsis put back on the aim (two Newton steps
+                # along its gradient): a near-radial arrival moved sideways
+                # far enough to miss Ike swung its periapsis by Mm
+                for _ in range(2):
+                    v1 = vec.add(cr.v, dv)
+                    c1, g1 = transfer.rp_gradient(cr.r, v1, mu)
+                    gg1 = vec.dot(g1, g1)
+                    if gg1 > 0:
+                        dv = vec.add(dv, vec.scale(
+                            g1, (self.plan["rc"] - c1.rp) / gg1))
+                v1 = vec.add(cr.v, dv)
+                c1 = orbit.conic(cr.r, v1, mu)
+                if not cap.floor <= c1.rp <= cap.rp_max \
+                        or vec.norm(dv) > reach:
+                    continue
+                t1 = orbit.time_to_periapsis(c1, mu)
+                if (best is None or vec.norm(dv) < vec.norm(best)) and \
+                        t1 > 0 and transfer.first_hazard(
+                            cr.r, v1, cr.t, mu, moons, cr.t + t1) is None:
+                    best = dv
+            m *= 2
+        if best is None:
+            return None
+        self.plan["dodge"], self.plan["dodge_dir"] = best, vec.unit(best)
+        self._last_dv = 0.0
+        self.event(f"dodging a moon on the way in: {vec.norm(best):.1f} m/s")
+        return self._dodge(c, t_pe)
 
     def _floor_guard(self, c):
         """A bound orbit about the body the vessel is in whose periapsis is

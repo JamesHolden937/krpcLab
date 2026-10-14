@@ -45,11 +45,10 @@ dv by phase and the totals. Default vessel: 5 t, one 2 kN Dawn, Isp 4200
 
 ```
 within SOI:   FINAL
-to a moon:    PUMP -> WAIT -> PUSH -> COAST -> APPROACH -> CAPTURE -> FINAL
+to a moon:    PUMP -> WAIT -> PUSH -> COAST [-> MATCH -> COAST] -> APPROACH -> CAPTURE -> FINAL
 to a planet:  PARK -> WAIT -> DEPART -> ESCAPE -> CRUISE [-> MATCH -> CRUISE] -> APPROACH -> CAPTURE -> FINAL
-a planet's moon: the planet leg ends in the moon leg's waiting orbit, then the moon leg;
-              a weak engine at a many-moon planet: loose capture on the moon's orbit -> LOOP -> COAST [-> MATCH] -> CAPTURE
-anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
+a planet's moon: the planet leg ends in the moon leg's waiting orbit, then the moon leg
+anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), evasive burns in an unplanned SOI
 ```
 
 - **Within SOI** (`guidance`): prograde/retrograde arcs centred on a fixed
@@ -57,15 +56,28 @@ anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
   outward-first order; plane change at the nodes on the biggest orbit;
   overlapping burns one vector. Within +0.0-3.1% of the impulsive Hohmann
   on apsides changes, +0.1-8.4% with plane changes.
-- **Moon**: pump to a waiting orbit in the moon's plane (apoapsis 0.6 of the
-  way; periapsis raised only as far as a weak engine needs to capture; with
-  another moon inside the target's, the whole waiting orbit stays below
-  that moon's band, periapsis raised until the push across it fits one
-  pass), wait for the pass whose prograde push puts a *direct* encounter
-  on the B-plane aim point (passes whose coast meets another moon, or that
-  arrive faster than the capture takes -- a bar rising 25% a skip -- are
-  skipped), push on a ledger, correct mid-course, nudge the hyperbola's
-  periapsis, capture (below), then FINAL.
+- **Moon**: pump to a waiting orbit in the moon's plane, wait for the point
+  whose prograde push puts a *direct* encounter on the aim, push, correct
+  mid-course, nudge the periapsis, capture (below), FINAL.
+  - **Waiting orbit** (`waiting_orbit`): apoapsis 0.6 of the way, periapsis
+    as low as possible but high enough that the engine captures the
+    arrival -- in one pass, or by the long capture inside the SOI up to its
+    limit (`moon_vcap_long`). Arriving from above (a planet leg first), the
+    whole orbit sits in the highest gap between other moons' bands under
+    the moon (Vall at 0.04 m/s^2: 39 x 37 Mm, between Laythe and Vall);
+    from below with a moon inside the target's (Minmus), it stays under that
+    moon. Nothing capturable: the slowest arrival, the highest clear one.
+  - **Push points**: the periapsis, and every 30 deg if the push there costs
+    no more than `PUSH_OFF_PERIAPSIS` (1.1) of the periapsis Hohmann; each
+    decided far enough ahead to start the burn half its duration early, the
+    point locked once decided. The push is planned and re-solved as the
+    finite burn it is (`transfer.prograde_burn`). Points whose coast meets
+    another moon, or that arrive faster than the capture takes (a bar
+    rising 25% a skip, at most once a synodic period), are skipped.
+- **Aim** (`transfer.aim_error`): measured at the SOI entry when the coast
+  enters (patched conics: the entry state sets the periapsis), at most 0.95
+  of the SOI; at the closest approach (straight-line) when it does not.
+  Push, mid-course correction and MATCH share it.
 - **Planet**: porkchop window after the pump's estimated end; a parking
   ellipse whose periapsis push leaves on the departure asymptote (plane
   chosen so its change is cheapest); push at the periapsis nearest the
@@ -75,6 +87,9 @@ anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
   corrections in the cruise, or a Lambert re-target (aimed at the B-plane
   point) when the miss is too big to linearise, the encounter looked for
   round the planned arrival.
+- **Polar capture**: at a planet with moons and a target plane left free,
+  the aim point is over a pole (correction, re-target and MATCH alike), so
+  the descent crosses each moon's orbit far out of its plane.
 - **Capture** (`transfer.capture_step`, shared by flight and planning's
   prediction `fly_capture`): it only has to end *bound* (below 0.3 SOI, or
   below the moon-clear ceiling once past periapsis, periapsis above the
@@ -83,34 +98,27 @@ anywhere:     TRIM (phasing, to miss a moon), evasive burns in an unplanned SOI
   velocity removes energy at `a` per metre of path, so with q = energy to
   shed / (a x path left to periapsis) it starts at q =
   `CAPTURE_PATH_SHARE` (0.8) and throttles at q, finishing at periapsis
-  with a steady throttle; the periapsis is held in a band (floor .. 1.5x
-  aim).
+  with a steady throttle. Direction: retrograde, less its part along the
+  periapsis gradient once at or below the aimed periapsis (it sheds energy
+  without lowering it); a gradient term holds the band (floor .. 1.5x aim).
 - **MATCH** (planned when the arrival is faster than a capture starting
-  inside 0.8 of the SOI handles): sheds the excess about the star in the
-  cruise -- zero-effort-miss/zero-effort-velocity guidance onto an aim
-  point just outside the SOI with the capture periapsis's impact
-  parameter, arriving at 0.8 of the fastest speed the capture takes;
-  started when braking at 0.8 of the engine must start (from the predicted
-  encounter, plus the standoff), ended 600 s before the aim point. About
-  the star the planet's motion is exact; a prediction about the planet
-  alone breaks where the star's tide matters (0.04 m/s^2 at Moho would
-  start 270 Mm out).
-- **MATCH for moons too**: a moon arrival faster than the capture takes is
-  matched in the planet's frame (Gilly: 126 km SOI). A moon's capture
-  speed is floored at a quarter of its SOI-edge escape speed (slower is
-  falling in from rest; Laythe out-pulls 0.04 m/s^2 across its SOI).
+  inside 0.8 of the SOI handles): sheds the excess about the star (or, for
+  a moon, the planet) -- zero-effort-miss/zero-effort-velocity guidance onto
+  an aim point just outside the SOI, arriving at 0.8 of the fastest speed
+  the capture takes; started when braking at 0.8 of the engine must start,
+  ended 600 s before the aim point, or given up once it has spent twice the
+  speed it set out to shed.
 - **Deep wells with moons** (Jool): planning compares a tight capture with a
-  loose one (0.5 SOI, low periapsis) plus the impulsive lowering after,
-  by predicted dv.
-- **LOOP** (a planet's moon, many moons, and no tight capture for this
-  engine): the planet leg captures loosely with its periapsis on the
-  moon's orbit and matches only the moon's plane; then once a revolution,
-  near apoapsis, the tangential burn that puts the next periapsis pass on
-  the moon's aim point (scan sized to shift the pass by ~one moon period;
-  passes meeting other moons skipped); then COAST and MATCH in the
-  planet's frame.
-- **Arcs widen** in orbit-shaping phases (down to cutoff 0.5, +-60 deg)
-  until the apsis changes left fit 30 passes (`ARC_PASSES_MAX`).
+  loose one (0.5 SOI) plus the impulsive lowering after, by predicted dv.
+- **Moon hazards in orbit shaping**: while the orbit crosses another moon's
+  band the arcs are the widest (cutoff 0.5, +-60 deg: fewest revolutions
+  there); else they widen until the apsis changes left fit 30 passes. Each
+  arc burn's first tick flies the burn in prediction by the guidance law
+  itself (`_fly_arc`, closed loop) and caps it at the largest tenth whose
+  next revolution meets no moon (none: the latest encounter), the cap
+  delivered exactly. Once a revolution a phasing trim -- now if the rest of
+  this revolution meets one, else at the next periapsis -- the smallest of
+  +-0.5..8 m/s or of the burn that slips the pass past a moon's SOI.
 - **Floor guard**: outside CAPTURE/DEPART, a bound periapsis inside the
   atmosphere or surface is lifted along its gradient first.
 - **Thrust ticks** change the velocity by at most 2% (`THRUST_DV_SHARE`).
