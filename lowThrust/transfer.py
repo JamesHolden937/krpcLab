@@ -105,6 +105,14 @@ def signed_miss(ca, normal):
     return s if vec.dot(vec.cross(ca.d, u), normal) > 0 else -s
 
 
+def aim_normal(u, normal, polar=False):
+    """The plane the aim lies in, for an arrival along ``u``: prograde about
+    ``normal``, or with ``polar`` the plane through the poles (the aim point
+    over a pole) -- a free-plane capture at a planet with moons, whose
+    descent then crosses each moon's orbit far out of its plane."""
+    return vec.unit(vec.cross(u, normal)) if polar else normal
+
+
 def soi_entry(r, v, t, mu, target, ca):
     """Where the coast from (r, v, t) enters ``target``'s SOI on the way to
     its closest approach ``ca``: an Approach at the boundary, or None if it
@@ -138,7 +146,7 @@ def soi_entry(r, v, t, mu, target, ca):
     return Approach(hi, d, vr)
 
 
-def aim_error(r, v, t, mu, target, ca, rc, normal):
+def aim_error(r, v, t, mu, target, ca, rc, normal, polar=False):
     """How far the coast from (r, v, t) passes ``target`` from the aim for
     periapsis ``rc`` on the side prograde about ``normal``: (signed miss,
     miss vector across the relative velocity, its direction, aimed b).
@@ -163,6 +171,7 @@ def aim_error(r, v, t, mu, target, ca, rc, normal):
         # lifts the rest
         b = min(math.sqrt(max(h2, 0.0)) / max(w, 1e-3), 0.95 * target.soi)
     u = vec.unit(vr)
+    normal = aim_normal(u, normal, polar)
     d_perp = vec.sub(d, vec.scale(u, vec.dot(d, u)))
     err = vec.sub(d_perp, vec.scale(vec.unit(vec.cross(u, normal)), b))
     side = 1.0 if vec.dot(vec.cross(d, u), normal) > 0 else -1.0
@@ -171,15 +180,15 @@ def aim_error(r, v, t, mu, target, ca, rc, normal):
 
 
 def correction(r, v, t, mu, target, horizon, rc, normal, dv_probe=0.01,
-               guess=None):
+               guess=None, polar=False):
     """The impulse (inertial vector, m/s) that zeroes the miss against the
     aim for periapsis ``rc`` (``aim_error``), from a numerical Jacobian of
     the miss against the three impulse components,
     minimum-norm; with ``guess``, the encounter is looked for round that UT.
     Returns (impulse, the closest approach it was computed from)."""
     ca = closest_approach(r, v, t, mu, target, horizon, guess=guess)
-    _, err, u, _ = aim_error(r, v, t, mu, target, ca, rc, normal)
-    e1 = vec.unit(vec.cross(u, normal))
+    _, err, u, _ = aim_error(r, v, t, mu, target, ca, rc, normal, polar)
+    e1 = vec.unit(vec.cross(u, aim_normal(u, normal, polar)))
     e2 = vec.cross(u, e1)
     E = [vec.dot(err, e1), vec.dot(err, e2)]
     J = []                                    # columns per impulse axis
@@ -188,7 +197,8 @@ def correction(r, v, t, mu, target, horizon, rc, normal, dv_probe=0.01,
         dv[k] = dv_probe
         v_k = vec.add(v, tuple(dv))
         ca_k = closest_approach(r, v_k, t, mu, target, horizon, guess=ca.t)
-        _, err_k, _, _ = aim_error(r, v_k, t, mu, target, ca_k, rc, normal)
+        _, err_k, _, _ = aim_error(r, v_k, t, mu, target, ca_k, rc, normal,
+                                   polar)
         col = [(vec.dot(err_k, e1) - E[0]) / dv_probe,
                (vec.dot(err_k, e2) - E[1]) / dv_probe]
         J.append(col)
@@ -206,7 +216,7 @@ def correction(r, v, t, mu, target, horizon, rc, normal, dv_probe=0.01,
     return dv, ca
 
 
-def _aimed(r, t, mu, target, ta, normal, rc):
+def _aimed(r, t, mu, target, ta, normal, rc, polar=False):
     """Lambert to the B-plane aim point at UT ta: the target's centre plus
     the impact parameter for periapsis ``rc`` on the prograde side (two
     passes: the offset depends on the arrival velocity).  Aimed at the
@@ -220,7 +230,8 @@ def _aimed(r, t, mu, target, ta, normal, rc):
         vrel = vec.sub(sol[1], vt)
         u = vec.unit(vrel)
         b = aim_parameter(rc, vec.norm(vrel), target)
-        aim = vec.add(rt, vec.scale(vec.unit(vec.cross(u, target.normal)), b))
+        side = vec.unit(vec.cross(u, aim_normal(u, target.normal, polar)))
+        aim = vec.add(rt, vec.scale(side, b))
         s2 = orbit.lambert(r, aim, ta - t, mu, normal)
         if s2 is None:
             break
@@ -228,7 +239,8 @@ def _aimed(r, t, mu, target, ta, normal, rc):
     return sol, vt
 
 
-def retarget(r, v, t, mu, target, t_lo, t_hi, normal, n=24, rc=None):
+def retarget(r, v, t, mu, target, t_lo, t_hi, normal, n=24, rc=None,
+             polar=False):
     """A new transfer from (r, v, t) to ``target``'s centre: Lambert over
     arrival times in [t_lo, t_hi], the cheapest in impulse plus arrival
     speed.  Returns (impulse vector, arrival UT), or None.  For a miss far
@@ -247,7 +259,7 @@ def retarget(r, v, t, mu, target, t_lo, t_hi, normal, n=24, rc=None):
                                       / (vec.norm(r) * vec.norm(rt)))))
         if abs(ang - math.pi) < math.radians(15):
             continue
-        sol, vt = _aimed(r, t, mu, target, ta, normal, rc)
+        sol, vt = _aimed(r, t, mu, target, ta, normal, rc, polar)
         if sol is None:
             continue
         dv = vec.sub(sol[0], v)
@@ -257,9 +269,9 @@ def retarget(r, v, t, mu, target, t_lo, t_hi, normal, n=24, rc=None):
     return None if best is None else (best[1], best[2])
 
 
-def lambert_dv(r, v, t, mu, target, ta, normal, rc=None):
+def lambert_dv(r, v, t, mu, target, ta, normal, rc=None, polar=False):
     """The impulse onto the Lambert arc to ``target``'s aim point at UT ta."""
-    sol, _ = _aimed(r, t, mu, target, ta, normal, rc)
+    sol, _ = _aimed(r, t, mu, target, ta, normal, rc, polar)
     return None if sol is None else vec.sub(sol[0], v)
 
 

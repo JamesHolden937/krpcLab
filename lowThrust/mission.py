@@ -948,7 +948,7 @@ class Mission:
         guess = self.plan.get("arrive_t") if self.kind == "planet" else None
         dv, ca = transfer.correction(cr.r, cr.v, cr.t, cr.body.mu, dest,
                                      horizon, self.plan["rc"], dest.normal,
-                                     guess=guess)
+                                     guess=guess, polar=self._polar())
         if guess is not None:
             self.plan["arrive_t"] = ca.t
         self.plan["vrel"], self.plan["ca_t"] = ca.vrel, ca.t
@@ -1001,7 +1001,7 @@ class Mission:
                 return None
             got = transfer.retarget(cr.r, cr.v, cr.t, mu, dest,
                                     cr.t + 0.6 * left, cr.t + 1.6 * left, n,
-                                    rc=self.plan["rc"])
+                                    rc=self.plan["rc"], polar=self._polar())
             if got is None:
                 return None
             self.plan["lambert_t"] = self.plan["arrive_t"] = got[1]
@@ -1011,7 +1011,7 @@ class Mission:
                        f"{vec.norm(ca.d) / 1e9:.1f} Gm)")
             ta = got[1]
         dv = transfer.lambert_dv(cr.r, cr.v, cr.t, mu, dest, ta, n,
-                                 rc=self.plan["rc"])
+                                 rc=self.plan["rc"], polar=self._polar())
         if dv is None or vec.norm(dv) < cfg.CORRECT_DV:
             self.plan.pop("lambert_t", None)
             self.plan["next_fix"] = cr.t + 600
@@ -1108,12 +1108,22 @@ class Mission:
         the impact parameter of the capture periapsis, on the B-plane side
         the cruise aims for."""
         d, vs = self.dest, self.plan["match_vs"]
-        w = vec.unit(vec.cross(u, d.normal))
+        w = vec.unit(vec.cross(u, transfer.aim_normal(u, d.normal,
+                                                      self._polar())))
         b = self._aim_b()
         back = math.sqrt(max((self.cfg.MATCH_STANDOFF * d.soi) ** 2 - b * b,
                              0.0))
         return (vec.add(vec.scale(u, -back), vec.scale(w, b)),
                 vec.scale(u, vs), back)
+
+    def _polar(self):
+        """Whether the capture aims over a pole: a planet with moons and a
+        target plane left free.  Its descent from a loose capture crosses
+        every moon's orbit twice a revolution for dozens of revolutions;
+        in the moons' plane a 0.02 m/s^2 descent round Jool met one on 4
+        of 6 dates.  Over a pole the crossings are far out of it."""
+        return (self.kind == "planet" and bool(self.dest.children)
+                and self.final_target.inc is None)
 
     def _aim_b(self):
         """The miss distance MATCH aims for: the capture
