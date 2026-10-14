@@ -12,10 +12,10 @@ namespace LowThrust
 {
     /// <summary>Constant mass, unlimited propellant: the stand-in plans
     /// paths.  Isp only converts dv to propellant for the report.</summary>
-    public class Vessel
+    public class Ship
     {
         public double massKg, thrustN, ispS;
-        public Vessel(double massKg, double thrustN, double ispS = 4200.0)
+        public Ship(double massKg, double thrustN, double ispS = 4200.0)
         {
             this.massKg = massKg; this.thrustN = thrustN; this.ispS = ispS;
         }
@@ -49,10 +49,10 @@ namespace LowThrust
         public const double G0 = 9.80665;
 
         public static readonly SimBody KERBIN = new SimBody("Kerbin", 3.5316e12, 600e3, 70e3);
-        public static Vessel IonProbe() { return new Vessel(5000.0, 2000.0, 4200.0); }
+        public static Ship IonProbe() { return new Ship(5000.0, 2000.0, 4200.0); }
 
         /// <summary>Propellant dv would take from the vessel's mass.</summary>
-        public static double XenonKg(Vessel vessel, double dv)
+        public static double XenonKg(Ship vessel, double dv)
         {
             return vessel.massKg * (1 - Math.Exp(-dv / (vessel.ispS * G0)));
         }
@@ -100,7 +100,7 @@ namespace LowThrust
 
         /// <summary>Fly the transfer to target from (r, v) with cutoff
         /// etaCut, within one SOI.</summary>
-        public static SimResult Fly(SimBody body, Vessel vessel, V3 r, V3 v, Target target, double etaCut,
+        public static SimResult Fly(SimBody body, Ship vessel, V3 r, V3 v, Target target, double etaCut,
                                     Config cfg, bool record = true)
         {
             double mu = body.mu, m = vessel.massKg, t = 0.0, dv = 0.0;
@@ -178,7 +178,7 @@ namespace LowThrust
             public List<double[]> table;    // (eta, done 1/0, time, dv)
         }
 
-        public static Plan Make(SimBody body, Vessel vessel, V3 r, V3 v, Target target, Config cfg,
+        public static Plan Make(SimBody body, Ship vessel, V3 r, V3 v, Target target, Config cfg,
                                 double withinS = double.NaN)
         {
             Func<double, bool, SimResult> fly = (eta, rec) => Sim.Fly(body, vessel, r, v, target, eta, cfg, rec);

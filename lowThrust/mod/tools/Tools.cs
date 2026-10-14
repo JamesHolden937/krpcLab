@@ -99,11 +99,11 @@ namespace LowThrust
             Orbit.StateFromElements(b0.mu, (ra + rp) / 2, (ra - rp) / (ra + rp), Py.Radians(get("i", 0)),
                                     Py.Radians(get("lan", 0)), Py.Radians(get("argpe", 0)), 0.0, out r, out v);
             Target target = Mission.TargetFrom(b1, t);
-            Vessel probe = Sim.IonProbe();
+            Ship probe = Sim.IonProbe();
             double mass = a.Num("mass", probe.massKg), thrust = a.Num("thrust", probe.thrustN);
             double isp = a.Num("isp", probe.ispS), ut = a.Num("ut", 0.0);
             int nBurns = (int)a.Num("burns", 40);
-            var vessel = new Vessel(mass, thrust, isp);
+            var vessel = new Ship(mass, thrust, isp);
 
             Console.WriteLine(cfg.Line());
             Console.WriteLine("vessel " + F(mass, 0) + " kg, " + F(thrust, 0) + " N (" + F(thrust / mass, 3)
@@ -173,8 +173,8 @@ namespace LowThrust
         {
             Config cfg = new Config().Apply(a.sets);
             SimBody body = Sim.KERBIN;
-            Vessel probe = Sim.IonProbe();
-            var vessel = new Vessel(a.Num("mass", probe.massKg), a.Num("thrust", probe.thrustN), a.Num("isp", probe.ispS));
+            Ship probe = Sim.IonProbe();
+            var vessel = new Ship(a.Num("mass", probe.massKg), a.Num("thrust", probe.thrustN), a.Num("isp", probe.ispS));
             int nBurns = (int)a.Num("burns", 8);
             var start = ParseFields(a.Get("start") ?? "");
             var tg = ParseFields(a.Get("target") ?? "");

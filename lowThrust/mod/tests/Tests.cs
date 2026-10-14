@@ -229,7 +229,7 @@ namespace LowThrust.Tests
 
         /// <summary>Fly start (ap, pe km [, inc, lan, argpe deg]) to target
         /// (ap, pe km [, inc, lan deg]; NaN free).</summary>
-        static SimResult Check(double[] start, double[] target, double worst, Vessel vessel = null)
+        static SimResult Check(double[] start, double[] target, double worst, Ship vessel = null)
         {
             vessel = vessel ?? Sim.IonProbe();
             Func<int, double> sa = i => i < start.Length ? Py.Radians(start[i]) : 0.0;
@@ -274,7 +274,7 @@ namespace LowThrust.Tests
         [Test] public static void CrossOver() { Check(new[] { 800.0, 300 }, new[] { 600.0, 200 }, 0.02); }
         [Test] public static void WeakEngine()
         {
-            Check(new[] { 100.0, 100 }, new[] { 300.0, 300 }, 0.02, new Vessel(5000.0, 200.0, 4200.0));
+            Check(new[] { 100.0, 100 }, new[] { 300.0, 300 }, 0.02, new Ship(5000.0, 200.0, 4200.0));
         }
         [Test] public static void ApsidesBurnsAreProgradeOrRetrogradeOnly()
         {
@@ -297,7 +297,7 @@ namespace LowThrust.Tests
             V3 r, v;
             Sim.StateAtPeriapsis(BODY, 100e3, 100e3, 0, 0, 0, out r, out v);
             var tgt = new Target(BODY.radius + 300e3, BODY.radius + 300e3);
-            var weak = new Vessel(5000.0, 200.0, 4200.0);
+            var weak = new Ship(5000.0, 200.0, 4200.0);
             Planner.Plan free = Planner.Make(BODY, weak, r, v, tgt, CFG);
             double budget = free.result.time / 3;
             Planner.Plan p = Planner.Make(BODY, weak, r, v, tgt, CFG, budget);
@@ -311,7 +311,7 @@ namespace LowThrust.Tests
             V3 r, v;
             Sim.StateAtPeriapsis(BODY, 100e3, 100e3, 0, 0, 0, out r, out v);
             var tgt = new Target(BODY.radius + 300e3, BODY.radius + 300e3);
-            Planner.Plan p = Planner.Make(BODY, new Vessel(5000.0, 200.0, 4200.0), r, v, tgt, CFG, 600.0);
+            Planner.Plan p = Planner.Make(BODY, new Ship(5000.0, 200.0, 4200.0), r, v, tgt, CFG, 600.0);
             A.True(!p.feasible);
             A.True(p.result.done);
             A.True(p.result.time > 600.0);
@@ -331,7 +331,7 @@ namespace LowThrust.Tests
             Orbit.StateFromElements(k.mu, k.radius + 100e3, 0, 0, 0, 0, 0, out r, out v);
             var tgt = new Target(d.radius + altKm * 1e3, d.radius + altKm * 1e3,
                                  inc.HasValue ? Py.Radians(inc.Value) : (double?)null);
-            return Mission.Fly(SYS, new Vessel(5000.0, thrust, 4200.0), k, r, v, 0.0, d, tgt, CFG);
+            return Mission.Fly(SYS, new Ship(5000.0, thrust, 4200.0), k, r, v, 0.0, d, tgt, CFG);
         }
 
         static void Check(MissionResult res, string dest, double altKm, double dvMax)
@@ -353,7 +353,7 @@ namespace LowThrust.Tests
 
         [Test] public static void FirstDunaWindow()
         {
-            Window w = Transfer.FindWindow(SYS["Kerbin"], SYS["Duna"], 0.0, SYS["Sun"].mu, 300 * DAY);
+            LaunchWindow w = Transfer.FindWindow(SYS["Kerbin"], SYS["Duna"], 0.0, SYS["Sun"].mu, 300 * DAY);
             A.Near(w.tDep / DAY, 230, 10);
             A.Near(w.vinfDep.Norm, 860, 60);
         }

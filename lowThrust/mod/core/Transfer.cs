@@ -7,7 +7,7 @@
 //   the aim for the capture periapsis (at the SOI entry when it enters).
 // - Correction: the smallest impulse that zeroes that miss.
 // - PushDv: the prograde push that puts a moon encounter on the aim.
-// - Window: the heliocentric departure (Lambert over dates and times).
+// - LaunchWindow: the heliocentric departure (Lambert over dates and times).
 // - ParkingOrientation: the parking ellipse whose push leaves on the
 //   departure asymptote.
 // - the capture: its design and its law (CaptureStep, CaptureCommand).
@@ -24,7 +24,7 @@ namespace LowThrust
         public Approach(double t, V3 d, V3 vrel) { this.t = t; this.d = d; this.vrel = vrel; }
     }
 
-    public class Window
+    public class LaunchWindow
     {
         public double tDep, tof;
         public V3 vinfDep, vinfArr;
@@ -391,7 +391,7 @@ namespace LowThrust
         /// <summary>The cheapest Lambert departure from origin to dest
         /// leaving within span seconds of tFrom: least |v_inf out| + weight
         /// |v_inf in|, over flight times 0.5-1.5 of the Hohmann's.</summary>
-        public static Window FindWindow(Body origin, Body dest, double tFrom, double muSun, double span,
+        public static LaunchWindow FindWindow(Body origin, Body dest, double tFrom, double muSun, double span,
                                         int nd = 90, int nt = 30, double arrivalWeight = 1.0)
         {
             double aT = (origin.sma + dest.sma) / 2;
@@ -433,7 +433,7 @@ namespace LowThrust
                 dtd = dtd / 5; dtof = dtof / 5;
             }
             if (!bestVd.HasValue) return null;
-            return new Window { tDep = bestTd, tof = bestTof, vinfDep = bestVd.Value, vinfArr = bestVa.Value };
+            return new LaunchWindow { tDep = bestTd, tof = bestTof, vinfDep = bestVd.Value, vinfArr = bestVa.Value };
         }
 
         /// <summary>(eccentricity, true anomaly of the outgoing asymptote) of

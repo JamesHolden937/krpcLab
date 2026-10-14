@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Fly the low-thrust pilot on a farm instance from a save, and report.
+"""Fly the lowThrust mod on a farm instance from a save, and report.
 
     ./lowThrust/tools/ltfly.py --instance 0 --save qs_lowthrust --target "kerbin: ap=150 pe=150"
     ./lowThrust/tools/ltfly.py --instance 0 --target "mun: ap=50 pe=50" --timeout 7200 --set ALIGN_DEG=1
 
-Loads the save, runs ``lowThrust.pilot`` as a child (its own process group,
-reaped on any exit: an orphaned pilot keeps flying the vessel), waits for it
-to end or the timeout, and prints the log's name and its last lines.
+Loads the save, starts a flight through the mod's farm bridge (the kRPC
+service LowThrustBridge, LowThrustKRPC.dll, installed on the farm by
+lowThrust/mod/build.sh), waits for it to end or the timeout (then
+terminates it), copies the mod's flight log to logs/LOG<n> and prints its
+name and last lines.  The flight itself runs inside the game; nothing in it
+goes over kRPC.
 """
 import argparse
+import ntpath
 import os
-import re
-import signal
-import subprocess
+import shutil
 import sys
 import time
 
@@ -21,50 +23,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, ROOT)
 
 from common import paths                                # noqa: E402
+from common.logbook import _open_next_log               # noqa: E402
 
 paths.use_venv()
 import krpc                                             # noqa: E402
-
-_LIVE = []
-
-
-def _reap(p):
-    if p.poll() is not None:
-        return
-    for sig, wait in ((signal.SIGTERM, 20.0), (signal.SIGKILL, 5.0)):
-        try:
-            os.killpg(os.getpgid(p.pid), sig)
-        except Exception:                               # noqa: BLE001
-            pass
-        try:
-            p.wait(timeout=wait)
-            return
-        except Exception:                               # noqa: BLE001
-            continue
-
-
-def _handler(signum, frame):                            # noqa: ARG001
-    for p in list(_LIVE):
-        _reap(p)
-    raise SystemExit(128 + signum)
-
-
-def logs():
-    return {int(m.group(1)) for n in os.listdir(paths.LOGS)
-            for m in [re.fullmatch(r"LOG(\d+)", n)] if m}
-
-
-def pilot_log(pid):
-    """The LOG<n> the process ``pid`` has open, or None."""
-    try:
-        for fd in os.listdir("/proc/%d/fd" % pid):
-            target = os.readlink("/proc/%d/fd/%s" % (pid, fd))
-            m = re.fullmatch(r"LOG(\d+)", os.path.basename(target))
-            if m and os.path.dirname(target) == os.path.realpath(paths.LOGS):
-                return m.group(0)
-    except OSError:
-        pass
-    return None
 
 
 def main():
@@ -75,11 +37,9 @@ def main():
     ap.add_argument("--timeout", type=float, default=3600.0, help="wall s")
     ap.add_argument("--set", action="append", default=[])
     args = ap.parse_args()
-    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(s, _handler)
 
     rpc, stream = paths.ports(args.instance)
-    conn = krpc.connect("ltfly-loader", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect("ltfly", rpc_port=rpc, stream_port=stream)
     conn.space_center.load(args.save)
     time.sleep(2.0)
     t0 = conn.space_center.ut
@@ -87,47 +47,46 @@ def main():
     if conn.space_center.ut <= t0:
         raise SystemExit("ksp%s: the save loaded but game time is not "
                          "advancing" % args.instance)
-    conn.close()
-
-    before = logs()
-    cmd = [paths.VENV_PYTHON, "-m", "lowThrust.pilot", "--rpc-port", str(rpc),
-           "--stream-port", str(stream), "--autostart", "--target",
-           args.target]
-    for s in args.set:
-        cmd += ["--set", s]
+    br = getattr(conn, "low_thrust_bridge", None)
+    if br is None:
+        raise SystemExit("ksp%s has no LowThrustBridge service: run "
+                         "lowThrust/mod/build.sh and restart it" % args.instance)
+    before = int(br.status()[3])
     started = time.time()
-    p = subprocess.Popen(cmd, cwd=ROOT, start_new_session=True,
-                         stdout=subprocess.DEVNULL,
-                         stderr=open(os.path.join(paths.LOGS, "stderr.log"),
-                                     "a"))
-    _LIVE.append(p)
-    name = None
-    try:
-        # the log is the one the pilot has open: two flights started together
-        # on two instances both see each other's as new
-        while name is None and p.poll() is None \
-                and time.time() - started < 120:
-            name = pilot_log(p.pid)
-            time.sleep(0.5)
-        p.wait(timeout=max(1.0, args.timeout - (time.time() - started)))
-        how = "exit %d" % p.returncode
-    except subprocess.TimeoutExpired:
-        how = "TIMEOUT after %.0f s" % args.timeout
-    finally:
-        _reap(p)
-    if name is None:
-        new = sorted(logs() - before)
-        name = "LOG%d" % new[0] if len(new) == 1 else None
-    name = name or "(no log)"
-    print("ksp%s %s %s: %s, %.0f s wall" % (args.instance, args.save,
-                                           args.target, how,
-                                           time.time() - started))
+    br.start(args.target, args.set)
+    how = None
+    while how is None:
+        time.sleep(2.0)
+        st = br.status()
+        if int(st[3]) > before:
+            how = "ended"
+        elif time.time() - started > args.timeout:
+            br.terminate()
+            time.sleep(2.0)
+            st = br.status()
+            how = "TIMEOUT after %.0f s" % args.timeout
+    wall = time.time() - started
+    src = os.path.join(paths.instance_dir(args.instance), "GameData",
+                       "LowThrust", "PluginData", "logs",
+                       ntpath.basename(st[2].replace("/", "\\")))
+    name = "(no log)"
+    if os.path.exists(src):
+        dest, f = _open_next_log(paths.LOGS)
+        f.close()
+        shutil.copyfile(src, dest)
+        name = os.path.basename(dest)
+    print("ksp%s %s %s: %s, %.0f s wall: %s" % (args.instance, args.save,
+                                               args.target, how, wall,
+                                               st[1]))
+    print(name)
     if name != "(no log)":
         lines = open(os.path.join(paths.LOGS, name)).read().splitlines()
-        print(name)
         for line in [x for x in lines if "ARRIVED" in x or "FAILED" in x
-                     or "FATAL" in x or "shutdown" in x][-6:]:
-            print("  " + line[:300])
+                     or "FATAL" in x or "shutdown" in x
+                     or "per phase" in x or "per physics" in x
+                     or "thrust commands" in x][-8:]:
+            print("  " + line[:400])
+    conn.close()
 
 
 if __name__ == "__main__":

@@ -86,7 +86,7 @@ namespace LowThrust
     public class PlanState
     {
         public double? rc, ra_cap, rp_wait, ra_wait, vcap, match_vs, rp_park, ra_park, vinf;
-        public Window window;
+        public LaunchWindow window;
         public long? pass_, trim_checked, checked_;
         public double? horizon, next_fix, push, push_t, trim_left, trim_sign, trim_t, eta, blocked_until,
                        cap, arc_end, skip_t, push_left, ca_t, t_go, arrive_t, lambert_t, dodge_next,
@@ -103,7 +103,7 @@ namespace LowThrust
         static readonly CultureInfo IC = CultureInfo.InvariantCulture;
         public Config cfg;
         public Dictionary<string, Body> sys;
-        public Vessel vessel;
+        public Ship vessel;
         public Craft craft;
         public double t0;
         public Body dest, home;
@@ -120,7 +120,7 @@ namespace LowThrust
         public string abort;
         public string kind;
 
-        public Mission(Dictionary<string, Body> system, Vessel vessel, Body body, V3 r, V3 v, double t0,
+        public Mission(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v, double t0,
                        Body dest, Target target, Config cfg, bool record = true)
         {
             this.cfg = cfg;
@@ -232,7 +232,7 @@ namespace LowThrust
                                     cfg.ETA_DEFAULT, cfg, false);
             double ready = craft.t + 1.3 * est.time + cfg.WINDOW_LEAD_S;
             double syn = 1 / Math.Abs(1 / here.Period - 1 / dest.Period);
-            Window w = Transfer.FindWindow(here, dest, ready, star.mu, syn);
+            LaunchWindow w = Transfer.FindWindow(here, dest, ready, star.mu, syn);
             if (w == null) throw new ArgumentException("no Lambert window found");
             V3 nNow = V3.Cross(craft.r, craft.v).Unit;
             var park = Transfer.ParkingOrientation(here.mu, rp, ra, w.vinfDep, nNow);
@@ -984,7 +984,7 @@ namespace LowThrust
         {
             Craft cr = craft;
             double mu = cr.body.mu;
-            Window w = plan.window;
+            LaunchWindow w = plan.window;
             double tPe = Orbit.TimeToPeriapsis(c, mu);
             double vinf = plan.vinf.Value;
             double need = (Math.Sqrt(Math.Pow(vinf, 2) + 2 * mu / c.rp) - Math.Sqrt(mu * (2 / c.rp - 1 / c.a)))
@@ -1083,7 +1083,7 @@ namespace LowThrust
             if (plan.horizon.HasValue) horizon = plan.horizon.Value;
             else if (kind == "planet")
             {
-                Window w = plan.window;
+                LaunchWindow w = plan.window;
                 horizon = 1.5 * Math.Max((plan.arrive_t ?? w.tDep + w.tof) - cr.t, 86400.0);
             }
             else horizon = Horizon(cr.r, cr.v);
@@ -1129,7 +1129,7 @@ namespace LowThrust
             double ta;
             if (!taN.HasValue)
             {
-                Window w = plan.window;
+                LaunchWindow w = plan.window;
                 double left = Math.Max((plan.arrive_t ?? w.tDep + w.tof) - cr.t, 10 * 86400.0);
                 Approach ca = Transfer.ClosestApproach(cr.r, cr.v, cr.t, mu, d, 1.6 * left);
                 double limit = Math.Min(cfg.RETARGET_MISS * d.Soi, cfg.RETARGET_FRACTION * d.sma);
@@ -1710,7 +1710,7 @@ namespace LowThrust
 
         /// <summary>Fly from (body, r, v, t0) to target about dest in the
         /// stand-in, in as many legs as RouteTo needs.</summary>
-        public static MissionResult Fly(Dictionary<string, Body> system, Vessel vessel, Body body, V3 r, V3 v,
+        public static MissionResult Fly(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v,
                                         double t0, Body dest, Target target, Config cfg, bool record = true)
         {
             var legs = RouteTo(body, dest);

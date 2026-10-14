@@ -1,94 +1,44 @@
 // The low-thrust autopilot's window: a stock KSP window (the game's own
-// skin, as MechJeb's are) opened from the toolbar.  It holds the target the
-// pilot reads -- body from a dropdown, periapsis, apoapsis, inclination,
-// LAN and argument of periapsis -- the PLAN / START / TERMINATE buttons, and
-// the lines the pilot writes back.  The flying is all the pilot's (Python,
-// over kRPC); the window only keeps the fields, counts the clicks and shows
-// the status.
+// skin) opened from the toolbar.  The target -- body from a dropdown,
+// periapsis, apoapsis, inclination, LAN and argument of periapsis -- the
+// highest warp the autopilot may use, PLAN / START / TERMINATE, and the
+// controller's status lines.
 
 using System;
 using System.Collections.Generic;
-using KRPC.Service.Attributes;
 using KSP.UI.Screens;
 using UnityEngine;
 
-namespace LowThrustWarp
+namespace LowThrust
 {
-    /// <summary>The window's state, shared between the window and the
-    /// kRPC procedures (statics outlive a scene change, so the target is
-    /// still there next flight).</summary>
-    internal static class PanelState
+    /// <summary>The window's state (statics outlive a scene change, so the
+    /// target is still there next flight).</summary>
+    public static class PanelState
     {
-        internal static string body = "";
+        public static string body = "";
         // periapsis, apoapsis (km), inclination, LAN, argument of periapsis (deg)
-        internal static string[] fields = { "", "", "", "", "" };
-        internal static int plan, start, stop;
-        internal static List<string> status = new List<string>();
-        internal static bool flying;
-        internal static bool open;
-        internal static float lastPoll = -100f;
+        public static string[] fields = { "", "", "", "", "" };
+        public static bool open;
+        // highest rails warp index the autopilot may use (0: the game's highest)
+        public static int maxWarp;
         internal static Rect rect = new Rect(Screen.width - 380, 120, 330, 10);
 
-        internal static bool PilotConnected()
+        /// <summary>Fill the target from "body: ap= pe= [i= lan= argpe=]".</summary>
+        public static void SetTarget(string text)
         {
-            return Time.realtimeSinceStartup - lastPoll < 3f;
-        }
-    }
-
-    public static partial class LowThrust
-    {
-        // ---- the window ------------------------------------------------------
-
-        /// <summary>Open or close the window.</summary>
-        [KRPCProcedure]
-        public static void PanelOpen(bool open)
-        {
-            PanelState.open = open;
-        }
-
-        /// <summary>Clicks on [PLAN, START, TERMINATE] since load (read on
-        /// a stream: the window shows the pilot as connected while it
-        /// is).</summary>
-        [KRPCProcedure]
-        public static IList<int> PanelClicks()
-        {
-            PanelState.lastPoll = Time.realtimeSinceStartup;
-            return new List<int> { PanelState.plan, PanelState.start, PanelState.stop };
-        }
-
-        /// <summary>The target as typed: [body, periapsis km, apoapsis km,
-        /// inclination, LAN, argument of periapsis (deg)]; "" = left
-        /// blank.</summary>
-        [KRPCProcedure]
-        public static IList<string> PanelTarget()
-        {
-            var r = new List<string> { PanelState.body };
-            foreach (string f in PanelState.fields) r.Add(f.Trim());
-            return r;
-        }
-
-        /// <summary>Fill the target fields (the pilot's --target).</summary>
-        [KRPCProcedure]
-        public static void PanelSetTarget(IList<string> target)
-        {
-            if (target.Count > 0) PanelState.body = target[0];
-            for (int i = 0; i < PanelState.fields.Length && i + 1 < target.Count; i++)
-                PanelState.fields[i] = target[i + 1];
-        }
-
-        /// <summary>The status lines under the buttons; a tab splits a
-        /// line into a label and a value.</summary>
-        [KRPCProcedure]
-        public static void PanelStatus(IList<string> lines)
-        {
-            PanelState.status = new List<string>(lines);
-        }
-
-        /// <summary>Flying: TERMINATE only; not: PLAN and START.</summary>
-        [KRPCProcedure]
-        public static void PanelFlying(bool flying)
-        {
-            PanelState.flying = flying;
+            int colon = text.IndexOf(':');
+            string name = (colon < 0 ? text : text.Substring(0, colon)).Trim();
+            body = name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1).ToLowerInvariant();
+            string[] keys = { "pe", "ap", "i", "lan", "argpe" };
+            for (int i = 0; i < fields.Length; i++) fields[i] = "";
+            if (colon < 0) return;
+            foreach (string item in text.Substring(colon + 1).Replace(",", " ")
+                         .Split((char[])null, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = item.IndexOf('=');
+                int k = eq < 0 ? -1 : Array.IndexOf(keys, item.Substring(0, eq));
+                if (k >= 0) fields[k] = item.Substring(eq + 1);
+            }
         }
     }
 
@@ -96,7 +46,7 @@ namespace LowThrustWarp
     public class Window : MonoBehaviour
     {
         const int ID = 0x4c54574e;              // "LTWN"
-        const string LOCK = "LowThrustWarp_typing";
+        const string LOCK = "LowThrust_typing";
         static readonly string[] LABELS = {
             "Periapsis (km)", "Apoapsis (km)", "Inclination (°)", "LAN (°)",
             "Arg. of periapsis (°)" };
@@ -142,7 +92,7 @@ namespace LowThrustWarp
 
         void Update()
         {
-            // the toolbar button follows the window (the pilot opens it)
+            // the toolbar button follows the window
             if (button != null)
             {
                 bool on = button.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True;
@@ -186,7 +136,7 @@ namespace LowThrustWarp
             // keys typed into a field are not the ship's (or the map's, or
             // staging's): lock them while one of ours has the focus, and a
             // click outside the window gives the focus back
-            Event e = Event.current;
+            UnityEngine.Event e = UnityEngine.Event.current;
             if (e.type == EventType.MouseDown && !PanelState.rect.Contains(e.mousePosition))
             {
                 GUI.FocusControl(null);
@@ -211,13 +161,13 @@ namespace LowThrustWarp
 
         void Draw(int id)
         {
-            bool pilot = PanelState.PilotConnected();
-            bool edit = !PanelState.flying;
+            Controller c = Controller.Instance;
+            bool edit = Controller.mode == Controller.Mode.Idle;
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Body", GUILayout.Width(140));
             GUI.enabled = edit;
-            if (GUILayout.Button((PanelState.body == "" ? "(choose)" : PanelState.body) + "  ▼"))
+            if (GUILayout.Button((PanelState.body == "" ? "(choose)" : PanelState.body) + "  \u25bc"))
                 listOpen = !listOpen;
             GUI.enabled = true;
             GUILayout.EndHorizontal();
@@ -250,26 +200,35 @@ namespace LowThrustWarp
                 GUILayout.EndHorizontal();
             }
             GUILayout.Label("Blank is free.  Apoapsis blank: circular.  LAN and "
-                            + "argument of periapsis as KSP shows them.",
-                            Small());
+                            + "argument of periapsis as KSP shows them.", Small());
+
+            // the highest warp the autopilot may use (it may go slower: the
+            // frame budget, a turn, the propellant one step may draw)
+            float[] rates = TimeWarp.fetch != null ? TimeWarp.fetch.warpRates : new float[0];
+            if (rates.Length > 1)
+            {
+                int top = PanelState.maxWarp < 1 || PanelState.maxWarp >= rates.Length ? rates.Length - 1 : PanelState.maxWarp;
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Max warp", GUILayout.Width(140));
+                if (GUILayout.Button("-", GUILayout.Width(24)) && top > 1) PanelState.maxWarp = top - 1;
+                GUILayout.Label(rates[top].ToString("F0") + "x", GUILayout.Width(70));
+                if (GUILayout.Button("+", GUILayout.Width(24)) && top < rates.Length - 1) PanelState.maxWarp = top + 1;
+                GUILayout.EndHorizontal();
+            }
 
             GUILayout.Space(4);
             GUILayout.BeginHorizontal();
-            if (!PanelState.flying)
+            if (edit)
             {
-                GUI.enabled = pilot;
-                if (GUILayout.Button("PLAN")) PanelState.plan++;
-                if (GUILayout.Button("START")) PanelState.start++;
+                GUI.enabled = c != null;
+                if (GUILayout.Button("PLAN")) c.Plan();
+                if (GUILayout.Button("START")) c.Begin();
                 GUI.enabled = true;
             }
-            else if (GUILayout.Button("TERMINATE")) PanelState.stop++;
+            else if (GUILayout.Button("TERMINATE") && c != null) c.Terminate();
             GUILayout.EndHorizontal();
 
-            if (!pilot)
-                GUILayout.Label("Pilot not running: start LOW THRUST TRANSFER from "
-                                + "the krpcLab launcher (or ./run.sh --pilot lowthrust).",
-                                Small());
-            foreach (string line in PanelState.status)
+            foreach (string line in Controller.status)
             {
                 int tab = line.IndexOf('\t');
                 if (tab < 0) { GUILayout.Label(line, Small()); continue; }
