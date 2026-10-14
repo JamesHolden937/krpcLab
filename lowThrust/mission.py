@@ -533,8 +533,8 @@ class Mission:
             # it all the same), then carry on
             if self.plan.get("rebinding") is not True:
                 self.plan["rebinding"] = True
-                self.event(f"unbound from {cr.body.name} after a flyby: "
-                           "braking")
+                self.event(f"{'unbound from' if el is None else 'apoapsis high in'}"
+                           f" {cr.body.name}'s SOI: braking")
             tick = self._tick(c)
             return 1.0, vec.scale(vec.unit(cr.v), -1.0), tick
         self.plan["rebinding"] = False
@@ -730,22 +730,41 @@ class Mission:
             dt = min(dt, self._tick(c))
         return 0.0, None, max(1.0, dt)
 
+    def _push_point(self, c, el):
+        """(seconds to the next push point, whether it is the periapsis):
+        the periapsis, and on an orbit where a push elsewhere costs no more
+        than PUSH_OFF_PERIAPSIS of the periapsis Hohmann, every 30 deg.
+        (From periapsis alone, a near-circular waiting orbit met the Mun's
+        Hohmann phase once a Mun revolution, up to 6 deg off, and every
+        push arrived at 120-320 m/s where 80 would do.)"""
+        mu = self.craft.body.mu
+        best = (orbit.time_to(el, 0.0, mu), True)
+        for k in range(1, 12):
+            t = orbit.time_to(el, k * math.pi / 6, mu)
+            if t < best[0]:
+                best = (t, False)
+        return best
+
     def _wait_moon(self, c):
         cr, cfg, moon = self.craft, self.cfg, self.dest
         mu = cr.body.mu
-        t_pe = orbit.time_to_periapsis(c, mu)
+        el = orbit.elements(cr.r, cr.v, mu)
         accel = self._accel()
-        # one decision per pass, made a little ahead of it
+        # one decision per push point, made a little ahead of it
         lead = min(0.25 * c.period, self._push_max(c) / accel)
+        t_pe, at_pe = self._push_point(c, el) if el else \
+            (orbit.time_to_periapsis(c, mu), True)
         if t_pe > lead:
             return self._hold(c, t_pe - lead)
         key = round(cr.t + t_pe)
         if self.plan.get("pass") != key:
             self.plan["pass"] = key
             rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
+            ref = self._push_max(c) / cfg.PUSH_DV_FACTOR
             dv = transfer.push_dv(
                 rp_, vp_, cr.t + t_pe, mu, moon, self.plan["rc"], moon.normal,
-                self._push_max(c), self._horizon)
+                self._push_max(c) if at_pe else
+                cfg.PUSH_OFF_PERIAPSIS * ref, self._horizon)
             if dv is not None:
                 # reject a pass whose coast meets another moon first
                 v1 = vec.add(vp_, vec.scale(vec.unit(vp_), dv))
@@ -779,10 +798,10 @@ class Mission:
                     dv = None
             self.plan["push"] = dv
         dv = self.plan.get("push")
-        if dv is None:                       # not this pass
-            return self._hold(c, t_pe + 0.05 * c.period)
+        if dv is None:                       # not this point
+            return self._hold(c, t_pe + 0.01 * c.period)
         if t_pe <= dv / accel / 2:
-            self.set_phase("PUSH", f"{dv:.1f} m/s prograde at periapsis")
+            self.set_phase("PUSH", f"{dv:.1f} m/s prograde")
             self.plan["push_left"] = dv
             # a new trajectory: the last coast's encounter is stale (MATCH
             # once started off one 59 h in the past)

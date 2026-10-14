@@ -84,6 +84,10 @@ class Config:
     # A moon push is searched up to this multiple of the tangential push
     # that reaches the moon's orbit, this far ahead.
     PUSH_DV_FACTOR: float = 2.0
+    # ... or, away from periapsis (every 30 deg), up to this multiple of
+    # the periapsis Hohmann: a near-circular waiting orbit pushes from
+    # wherever the phase is right, an eccentric one only at periapsis.
+    PUSH_OFF_PERIAPSIS: float = 1.1
     PUSH_HORIZON_S: float = 30 * 21600.0
     # ... and only within this fraction of the post-push revolution.
     PUSH_REVOLUTION: float = 0.75
