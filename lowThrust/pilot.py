@@ -30,9 +30,6 @@ from common import paths, rpccount, vec
 from common.logbook import Logbook
 from lowThrust import config, live, mission, orbit, sim
 
-# Stock rails warp rates by index; replaced by what the game reports once a
-# rate has settled (BetterTimeWarp and friends change them).
-STOCK_RATES = [1, 5, 10, 50, 100, 1000, 10000, 100000]
 
 
 class Panel:
@@ -134,13 +131,14 @@ class Pilot:
         self.thrust_s = conn.add_stream(getattr, self.v, "available_thrust")
         self.system = live.system(conn)
         self.game_bodies = self.sc.bodies
-        self.rates = dict(enumerate(STOCK_RATES))
+        # this game's rails rates (BetterTimeWarp changes them; learned
+        # from the eased warp_rate they came out wrong)
+        self.rates = dict(enumerate(self.lt.rails_warp_rates()))
         self.warp_index = None
         self.throttle = None
         self.frame_body = None
         self.coast_rtn = (0.0, 1.0, 0.0)       # prograde until a burn says
         self._shown = 0.0
-        self._last_rate = None
         log.event(self.ut(), "config: %s defaults_fingerprint=%s" % (
             " ".join(config.differences(cfg)) or "(defaults)",
             config.defaults_fingerprint()))
@@ -204,12 +202,11 @@ class Pilot:
         want = self.cfg.WARP_PER_TICK * tick
         idx = 1
         for i in range(1, top + 1):
-            if self.rates.get(i, STOCK_RATES[-1]) <= want:
+            if self.rates.get(i, math.inf) <= want:
                 idx = i
         if idx != self.warp_index:
             self.sc.rails_warp_factor = idx
             self.warp_index = idx
-            self._last_rate = None
         return self.rates.get(idx, 1)
 
     def hold(self, until):
@@ -223,11 +220,6 @@ class Pilot:
                 return now
             rate = max(self.sc.warp_rate, 1.0)
             idx = self.warp_index
-            # learn this game's rate for the index once it has settled (the
-            # game eases between rates; BetterTimeWarp changes the table)
-            if idx is not None and rate == self._last_rate and rate > 1.0:
-                self.rates[idx] = rate
-            self._last_rate = rate
             if idx is not None and idx > 1 and \
                     self.rates.get(idx, 1) > self.cfg.WARP_PER_TICK * left:
                 self.warp(left)

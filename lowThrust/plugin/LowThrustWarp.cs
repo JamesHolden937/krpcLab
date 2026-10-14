@@ -104,6 +104,14 @@ namespace LowThrustWarp
             return sum * 1000.0;
         }
 
+        /// <summary>This game's rails warp rates by index (mods such as
+        /// BetterTimeWarp change them).</summary>
+        [KRPCProcedure]
+        public static IList<float> RailsWarpRates()
+        {
+            return new List<float>(TimeWarp.fetch.warpRates);
+        }
+
         // ---- attitude -----------------------------------------------------
 
         /// <summary>Turn the thrust axis toward <paramref name="direction"/>
