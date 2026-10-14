@@ -54,6 +54,19 @@ def logs():
             for m in [re.fullmatch(r"LOG(\d+)", n)] if m}
 
 
+def pilot_log(pid):
+    """The LOG<n> the process ``pid`` has open, or None."""
+    try:
+        for fd in os.listdir("/proc/%d/fd" % pid):
+            target = os.readlink("/proc/%d/fd/%s" % (pid, fd))
+            m = re.fullmatch(r"LOG(\d+)", os.path.basename(target))
+            if m and os.path.dirname(target) == os.path.realpath(paths.LOGS):
+                return m.group(0)
+    except OSError:
+        pass
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--instance", default="0")
@@ -88,19 +101,28 @@ def main():
                          stderr=open(os.path.join(paths.LOGS, "stderr.log"),
                                      "a"))
     _LIVE.append(p)
+    name = None
     try:
-        p.wait(timeout=args.timeout)
+        # the log is the one the pilot has open: two flights started together
+        # on two instances both see each other's as new
+        while name is None and p.poll() is None \
+                and time.time() - started < 120:
+            name = pilot_log(p.pid)
+            time.sleep(0.5)
+        p.wait(timeout=max(1.0, args.timeout - (time.time() - started)))
         how = "exit %d" % p.returncode
     except subprocess.TimeoutExpired:
         how = "TIMEOUT after %.0f s" % args.timeout
     finally:
         _reap(p)
-    new = sorted(logs() - before)
-    name = "LOG%d" % new[0] if new else "(no log)"
+    if name is None:
+        new = sorted(logs() - before)
+        name = "LOG%d" % new[0] if len(new) == 1 else None
+    name = name or "(no log)"
     print("ksp%s %s %s: %s, %.0f s wall" % (args.instance, args.save,
                                            args.target, how,
                                            time.time() - started))
-    if new:
+    if name != "(no log)":
         lines = open(os.path.join(paths.LOGS, name)).read().splitlines()
         print(name)
         for line in [x for x in lines if "ARRIVED" in x or "FAILED" in x
