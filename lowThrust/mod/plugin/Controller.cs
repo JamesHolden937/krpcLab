@@ -685,7 +685,14 @@ namespace LowThrust
         int holds;
         double holdStart, holdWall, holdMax;
 
-        bool ThinkAside() { return slowPhases.Contains(mis.phase ?? ""); }
+        // decision cost by phase, ms (running average)
+        readonly Dictionary<string, double> thinkMs = new Dictionary<string, double>();
+
+        bool ThinkAside()
+        {
+            double ms;
+            return thinkMs.TryGetValue(mis.phase ?? "", out ms) && ms > cfg.FRAME_BUDGET_MS / 2;
+        }
         double holdUt;
 
         void StartThinking()
@@ -724,6 +731,9 @@ namespace LowThrust
                 Act(vessel, thought);
                 // on to the game's clock; another slow decision holds it again
                 if (mode == Mode.Flying && !Advance(vessel, holdUt)) return;
+                Release();
+                if (mode == Mode.Flying) Govern(vessel, 0.0);
+                return;
             }
             catch (Exception e)
             {
@@ -835,12 +845,16 @@ namespace LowThrust
             int top = rates.Length - 1;
             if (cfg.MAX_WARP_INDEX >= 0) top = Math.Min(top, cfg.MAX_WARP_INDEX);
             if (PanelState.maxWarp >= 1) top = Math.Min(top, PanelState.maxWarp);
-            emaMs = emaMs == 0 ? ms : 0.8 * emaMs + 0.2 * ms;
+            if (ms > 0) emaMs = emaMs == 0 ? ms : 0.8 * emaMs + 0.2 * ms;
             int now = TimeWarp.CurrentRateIndex;
             if (emaMs > cfg.FRAME_BUDGET_MS) cpuIndex = Math.Max(1, Math.Min(cpuIndex, now) - 1);
             else if (emaMs < cfg.FRAME_BUDGET_MS / 2) cpuIndex = Math.Min(top, Math.Max(cpuIndex, now) + 1);
             double span = double.PositiveInfinity;
             if (!Attitude.settled) span = 5.0;
+            // decisions made aside: one a step at most, so the generators and
+            // the wheels run between them (chained in one hold over a long
+            // step, a burn drained the battery and fired unaligned)
+            if (cur != null && ThinkAside()) span = Math.Min(span, Math.Max(cur.tEnd - tSim, 0.0));
             if (cur != null)
             {
                 double fuel = engines.SpanFor(cfg.STEP_RESOURCE_SHARE);
@@ -892,6 +906,7 @@ namespace LowThrust
             pending = null;
             if (thinker != null) { thinker = null; Time.timeScale = 1f; }
             slowPhases.Clear();
+            thinkMs.Clear();
             mode = Mode.Idle;
             result = reason;
             flights++;
@@ -911,7 +926,10 @@ namespace LowThrust
             PhaseStat p = Stat(mis.phase ?? "-");
             p.steps++;
             p.maxStepMs = Math.Max(p.maxStepMs, ms);
-            if (ms > cfg.FRAME_BUDGET_MS / 2) slowPhases.Add(mis.phase ?? "");
+            string ph = mis.phase ?? "";
+            double was;
+            thinkMs[ph] = thinkMs.TryGetValue(ph, out was) ? 0.7 * was + 0.3 * ms : ms;
+            if (thinkMs[ph] > cfg.FRAME_BUDGET_MS / 2) slowPhases.Add(ph);
         }
 
         PhaseStat Stat(string phase)
