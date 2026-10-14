@@ -54,3 +54,4 @@ saves/qs_shuttle2_ecc_rigoff.sfs
 # Output of a farm verification run.
 testInstances/verify*.txt
 .kspPath
+lowThrust/plugin/*.dll
