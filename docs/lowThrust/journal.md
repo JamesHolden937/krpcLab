@@ -431,3 +431,11 @@ Retracted: "the craft cannot power the Dawn". PT draws its EC on rails
 (9.2 EC/s with the wheels, xenon at the right 0.049 kg/s) and the battery
 stayed full because the craft has **twelve** RTGs (9.0 EC/s); a set of
 part titles had shown one. The user caught it.
+
+EC audit (the user: "are you sure the plugin isn't cheaty?"), battery set
+to 500 in a scratch save: RTGs +8.97 EC/s in physics and on rails coasting;
+at full throttle on rails EC rose +3.1-3.6 EC/s while PT gave only
+1231-1364 N (0.62-0.68 of full) with xenon in proportion -- PT ramps the
+thrust after the throttle is set. Energy balances both ways: PT draws EC
+with the xenon, generators credit on rails. The flat 996.3 seen before was
+the battery full less one 1 s frame of draw at 50x.

@@ -27,6 +27,15 @@ Measured in game, `qs_lowthrust` (29.9 t, Dawn, 0.067 m/s^2, 12 RTGs):
   at wrap-up mid-PUMP (ap 2448 km, UT 213k-424k): the pump's arcs for the
   PUMP gap below.
 
+EC is honest (measured 2026-10-14, battery at 500 in a scratch save): the
+12 RTGs make 8.97 EC/s in physics and on rails; PT draws the Dawn's 8.74
+EC/s per unit throttle on rails and the battery refills -- it reads full
+less one frame's draw (996.3 at 50x), which is why it looked frozen.
+**Lead for the PUMP gap**: right after the throttle is set on rails, PT
+delivered 1231 -> 1364 N of 2000 over the first ~6 s of real time at 5x
+(xenon and EC in proportion: a ramp, not a cheat). If every arc starts
+with that ramp, arcs deliver less than the stand-in's full thrust.
+
 Open, in order:
 1. **In-game PUMP ~54 days v the stand-in's 35** for the same dv; tracking
    the orbit frame fixed FINAL (26 -> 12-19 d) but not this. Read LOG10134's
