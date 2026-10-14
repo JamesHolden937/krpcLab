@@ -12,7 +12,7 @@ GAME
 	scene = 7
 	editor = None
 	flag = Squad/Flags/default
-	launchID = 34
+	launchID = 35
 	defaultVABLaunchSite = LaunchPad
 	defaultSPHLaunchSite = Runway
 	modded = True
@@ -222,6 +222,19 @@ GAME
 			PartUpgradesInMission = False
 			EnableFullSASInSandbox = False
 			EnableFullSASInMissions = False
+		}
+		PTDevSettings
+		{
+			queueLength = 2
+		}
+		PTSettings
+		{
+			returnToRealtimeAfterKeyPressed = False
+			defaultHasPersistentThrust = True
+			defaultHasPersistentHeadingEnabled = True
+			defaultMaximizePersistentIsp = True
+			defaultMaximizePersistentPower = False
+			maneuverToleranceInDegree = 90
 		}
 		MissionParamsGeneral
 		{
@@ -861,15 +874,15 @@ GAME
 	FLIGHTSTATE
 	{
 		version = 1.12.5
-		UT = 213395.3313688958
+		UT = 213516.60443137112
 		activeVessel = 0
 		mapViewFiltering = 32767
 		commNetUIModeTracking = Network
 		commNetUIModeFlight = Path
 		VESSEL
 		{
-			pid = 5c9466a6e7864e9bb977c8e8e175c9d0
-			persistentId = 3488306305
+			pid = 8deb1aed90254458842fa1b9359882f2
+			persistentId = 2202821318
 			name = lower thrust test
 			type = Probe
 			sit = ORBITING
@@ -881,21 +894,21 @@ GAME
 			landedAt = 
 			displaylandedAt = 
 			splashed = False
-			met = 27.739999379962683
-			lct = 213367.59136951584
-			lastUT = 213395.3313688958
-			distanceTraveled = 37681.502467524893
+			met = 18.3530647753214
+			lct = 213498.2513665958
+			lastUT = 213516.60443137112
+			distanceTraveled = 22900.119052421669
 			root = 0
-			lat = -0.00023900566106134245
-			lon = -58.029604403789435
-			alt = 86746.056942495401
-			hgt = 86746.0547
-			nrm = 0.302454084,0.786999702,-0.537729621
-			rot = 0.45635131,0.102857351,0.0729410872,-0.880819798
-			CoM = -1.80006027E-05,5.00080109,3.48091125E-05
-			stg = 0
+			lat = 0.00011977616956437712
+			lon = -61.83615293438114
+			alt = 86754.666132309823
+			hgt = 86754.6641
+			nrm = 0.225642383,-0.93343848,0.2788876
+			rot = -0.794986665,0.0786203146,-0.105523951,-0.592182219
+			CoM = -1.23977661E-05,5.01484442,8.58306885E-06
+			stg = 1
 			prst = False
-			ref = 340518961
+			ref = 84094102
 			ctrl = True
 			PQSMin = 2
 			PQSMax = 10
@@ -905,18 +918,18 @@ GAME
 			OverrideAxisControl = 0,0,0,0
 			OverrideGroupNames = ,,,
 			altDispState = ASL
-			cPch = 0.6917503
-			cHdg = 0.229673
-			cMod = 1
+			cPch = -1.240878
+			cHdg = -4.033519
+			cMod = 0
 			ORBIT
 			{
-				SMA = 686749.99762719858
-				ECC = 7.4399646148147165E-09
-				INC = 2.4855950934430913E-09
-				LPE = 358.34211023889327
-				LAN = 0.058223014299130682
-				MNA = 0.11950354124368635
-				EPH = 213395.3313688958
+				SMA = 686749.99480762461
+				ECC = 1.4166244739556822E-08
+				INC = 1.7071661732815054E-08
+				LPE = 358.98378578343016
+				LAN = 2.227030453820646
+				MNA = 0.039460232215470327
+				EPH = 213516.60443137112
 				REF = 1
 				IDENT = Squad/Kerbin
 			}
@@ -924,10 +937,10 @@ GAME
 			{
 				name = probeCoreOcto2.v2
 				cid = 4294425502
-				uid = 340518961
-				mid = 301572837
-				persistentId = 1530227269
-				launchID = 33
+				uid = 84094102
+				mid = 4285949540
+				persistentId = 2487979650
+				launchID = 34
 				parent = 0
 				position = 0,0,0
 				rotation = 0,0,0,1
@@ -942,12 +955,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = bottom, 10
+				attN = bottom, 11
 				attN = top, 1
 				mass = 0.0399999991
 				shielded = False
-				temp = 305.73927836855978
-				tempExt = 305.15766376187526
+				temp = 305.98075466216108
+				tempExt = 305.16657577559425
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0
@@ -1808,17 +1821,17 @@ GAME
 						}
 						MechJebModuleFlightRecorder
 						{
-							MarkUT = 213367.59136951584
+							MarkUT = 213498.27136659535
 							DeltaVExpended = 0
-							DragLosses = 3.0895292968762919E-07
-							GravityLosses = 6.375658320890755E-08
+							DragLosses = 3.5189940286708489E-07
+							GravityLosses = 3.1886935051087034E-08
 							SteeringLosses = 0
-							MarkLAN = 80.759121534860213
-							MarkLatitude = -0.097204853798120647
-							MarkLongitude = -74.557681330351585
-							MarkAltitude = 81.205111474450675
+							MarkLAN = 73.186968949365522
+							MarkLatitude = -0.087488192806945059
+							MarkLongitude = -73.601615313960181
+							MarkAltitude = 8748.0957638940308
 							MarkBodyIndex = 1
-							MaxDragGees = 1.4362486428982325E-08
+							MaxDragGees = 1.618187836763897E-08
 							unlockParts = 
 							unlockTechs = 
 						}
@@ -1915,10 +1928,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294362428
-				uid = 4108925072
-				mid = 301572837
-				persistentId = 1077924423
-				launchID = 33
+				uid = 315079584
+				mid = 4285949540
+				persistentId = 3666085430
+				launchID = 34
 				parent = 0
 				position = 0,0.96106147766113281,0
 				rotation = 0,0,0,1
@@ -1937,8 +1950,8 @@ GAME
 				attN = bottom, 0
 				mass = 0.5
 				shielded = False
-				temp = 305.74714003416335
-				tempExt = 305.42698681556124
+				temp = 305.76734544384868
+				tempExt = 305.14715955735375
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2091,10 +2104,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294360960
-				uid = 1518661505
-				mid = 301572837
-				persistentId = 4128495832
-				launchID = 33
+				uid = 63520776
+				mid = 4285949540
+				persistentId = 3766044629
+				launchID = 34
 				parent = 1
 				position = 0,2.7610607147216797,0
 				rotation = 0,0,0,1
@@ -2113,8 +2126,8 @@ GAME
 				attN = bottom, 1
 				mass = 0.5
 				shielded = False
-				temp = 305.74808963591397
-				tempExt = 305.45023845374965
+				temp = 305.76661281822561
+				tempExt = 305.21095869761524
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2267,10 +2280,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294360496
-				uid = 3263631667
-				mid = 301572837
-				persistentId = 2843232653
-				launchID = 33
+				uid = 1940294594
+				mid = 4285949540
+				persistentId = 498517349
+				launchID = 34
 				parent = 2
 				position = 0,4.5610599517822266,0
 				rotation = 0,0,0,1
@@ -2289,8 +2302,8 @@ GAME
 				attN = bottom, 2
 				mass = 0.5
 				shielded = False
-				temp = 305.74805771990589
-				tempExt = 305.45912892925668
+				temp = 305.76702830538397
+				tempExt = 305.1826197186096
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2443,10 +2456,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294360444
-				uid = 1946281555
-				mid = 301572837
-				persistentId = 4084875807
-				launchID = 33
+				uid = 3390761586
+				mid = 4285949540
+				persistentId = 1519261263
+				launchID = 34
 				parent = 3
 				position = 0,6.3610591888427734,0
 				rotation = 0,0,0,1
@@ -2465,8 +2478,8 @@ GAME
 				attN = bottom, 3
 				mass = 0.5
 				shielded = False
-				temp = 305.74792382336591
-				tempExt = 305.46210437938311
+				temp = 305.76613927652267
+				tempExt = 305.15372236969489
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2619,10 +2632,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294359124
-				uid = 3569194236
-				mid = 301572837
-				persistentId = 1393252872
-				launchID = 33
+				uid = 2278770106
+				mid = 4285949540
+				persistentId = 2681052611
+				launchID = 34
 				parent = 4
 				position = 0,8.1610584259033203,0
 				rotation = 0,0,0,1
@@ -2641,8 +2654,8 @@ GAME
 				attN = bottom, 4
 				mass = 0.5
 				shielded = False
-				temp = 305.74811625833371
-				tempExt = 305.46178667006018
+				temp = 305.76671536306367
+				tempExt = 305.15461631166022
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2795,10 +2808,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294358200
-				uid = 134302413
-				mid = 301572837
-				persistentId = 780536730
-				launchID = 33
+				uid = 4244277605
+				mid = 4285949540
+				persistentId = 2567594470
+				launchID = 34
 				parent = 5
 				position = 0,9.9610576629638672,0
 				rotation = 0,0,0,1
@@ -2817,8 +2830,8 @@ GAME
 				attN = bottom, 5
 				mass = 0.5
 				shielded = False
-				temp = 305.74820982101966
-				tempExt = 305.45348818460371
+				temp = 305.76883933714527
+				tempExt = 305.1642607280013
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -2971,10 +2984,10 @@ GAME
 			{
 				name = SmallTank
 				cid = 4294358128
-				uid = 2026159423
-				mid = 301572837
-				persistentId = 3232849614
-				launchID = 33
+				uid = 2855850466
+				mid = 4285949540
+				persistentId = 2802338191
+				launchID = 34
 				parent = 6
 				position = 0,11.761056900024414,0
 				rotation = 0,0,0,1
@@ -2993,8 +3006,8 @@ GAME
 				attN = bottom, 6
 				mass = 0.5
 				shielded = False
-				temp = 305.74826255551659
-				tempExt = 305.41187140317248
+				temp = 305.78167559300465
+				tempExt = 305.15103275211811
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -3145,14 +3158,14 @@ GAME
 			}
 			PART
 			{
-				name = advSasModule
-				cid = 4294328540
-				uid = 1344971423
-				mid = 301572837
-				persistentId = 2450894214
-				launchID = 33
+				name = batteryBank
+				cid = 4294391726
+				uid = 1944937434
+				mid = 4285949540
+				persistentId = 631152867
+				launchID = 34
 				parent = 7
-				position = 0,12.860082626342773,0
+				position = 0,12.77191162109375,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
 				symMethod = Radial
@@ -3167,10 +3180,185 @@ GAME
 				srfN = , -1
 				attN = top, 9
 				attN = bottom, 7
+				mass = 0.0500000007
+				shielded = False
+				temp = 305.83528816306301
+				tempExt = 305.28622660526958
+				tempExtUnexp = 4
+				staticPressureAtm = 0
+				expt = 0.5
+				state = 0
+				PreFailState = 0
+				attached = True
+				autostrutMode = Grandparent
+				rigidAttachment = False
+				flag = Squad/Flags/default
+				rTrf = batteryBank
+				modCost = 0
+				modMass = 0
+				moduleVariantName = 
+				moduleCargoStackableQuantity = 1
+				EVENTS
+				{
+				}
+				ACTIONS
+				{
+					ToggleSameVesselInteraction
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					SetSameVesselInteraction
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					RemoveSameVesselInteraction
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					AutostrutOff
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					AutostrutRoot
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					AutostrutHeaviest
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					AutostrutGrandparent
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					ResourcesEnableFlow
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+					ResourcesDisableFlow
+					{
+						actionGroup = None
+						wasActiveBeforePartWasAdjusted = False
+					}
+				}
+				PARTDATA
+				{
+				}
+				MODULE
+				{
+					name = ModuleCargoPart
+					isEnabled = True
+					packedVolume = 360
+					beingAttached = False
+					beingSettled = False
+					reinitResourcesOnStoreInVessel = False
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = KOSNameTag
+					isEnabled = True
+					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				RESOURCE
+				{
+					name = ElectricCharge
+					amount = 1000
+					maxAmount = 1000
+					flowState = True
+					isTweakable = True
+					hideFlow = False
+					isVisible = True
+					flowMode = Both
+				}
+			}
+			PART
+			{
+				name = advSasModule
+				cid = 4294328540
+				uid = 1771184727
+				mid = 4285949540
+				persistentId = 571399135
+				launchID = 34
+				parent = 8
+				position = 0,13.081792831420898,0
+				rotation = 0,0,0,1
+				mirror = 1,1,1
+				symMethod = Radial
+				istg = -1
+				resPri = 0
+				dstg = 0
+				sqor = -1
+				sepI = -1
+				sidx = -1
+				attm = 0
+				sameVesselCollision = False
+				srfN = , -1
+				attN = top, 10
+				attN = bottom, 8
 				mass = 0.100000001
 				shielded = False
-				temp = 305.74350531693415
-				tempExt = 305.35116845440501
+				temp = 305.89775682015915
+				tempExt = 305.57655968789607
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -3352,12 +3540,12 @@ GAME
 			{
 				name = pointyNoseConeA
 				cid = 4294348466
-				uid = 1796172772
-				mid = 301572837
-				persistentId = 548007825
-				launchID = 33
-				parent = 8
-				position = 0,13.684108734130859,0
+				uid = 3347869740
+				mid = 4285949540
+				persistentId = 3108205905
+				launchID = 34
+				parent = 9
+				position = 0,13.905818939208984,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
 				symMethod = Radial
@@ -3370,11 +3558,11 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = srfAttach, -1
-				attN = bottom01, 8
+				attN = bottom01, 9
 				mass = 0.075000003
 				shielded = False
-				temp = 305.75050185276223
-				tempExt = 305.4498332075371
+				temp = 305.95490864217373
+				tempExt = 305.85383519815946
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -3533,10 +3721,10 @@ GAME
 			{
 				name = advSasModule
 				cid = 4294327478
-				uid = 1764219707
-				mid = 301572837
-				persistentId = 4218978655
-				launchID = 33
+				uid = 39989645
+				mid = 4285949540
+				persistentId = 2507337337
+				launchID = 34
 				parent = 0
 				position = 0,-0.26008892059326172,0
 				rotation = 0,0,0,1
@@ -3552,11 +3740,11 @@ GAME
 				sameVesselCollision = False
 				srfN = , -1
 				attN = top, 0
-				attN = bottom, 11
+				attN = bottom, 12
 				mass = 0.100000001
 				shielded = False
-				temp = 305.67081582258618
-				tempExt = 305.0314341785741
+				temp = 305.93799108924355
+				tempExt = 305.14861125135434
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -3738,11 +3926,11 @@ GAME
 			{
 				name = xenonTankLarge
 				cid = 4294396902
-				uid = 3472821783
-				mid = 301572837
-				persistentId = 2681028281
-				launchID = 33
-				parent = 10
+				uid = 1522772743
+				mid = 4285949540
+				persistentId = 1734019702
+				launchID = 34
+				parent = 11
 				position = 0,-0.75411605834960938,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -3756,12 +3944,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 10
-				attN = bottom, 24
+				attN = top, 11
+				attN = bottom, 25
 				mass = 0.189999998
 				shielded = False
-				temp = 305.69541842782422
-				tempExt = 304.96092780032905
+				temp = 305.82456558334536
+				tempExt = 305.10644137814518
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -3913,11 +4101,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294390006
-				uid = 462322761
-				mid = 301572837
-				persistentId = 1214826449
-				launchID = 33
-				parent = 11
+				uid = 2725012570
+				mid = 4285949540
+				persistentId = 4053360726
+				launchID = 34
+				parent = 12
 				position = -0.80623245239257813,-0.74089431762695313,0.46547842025756836
 				rotation = 0.612372458,-0.353553474,0.353553504,0.612372398
 				mirror = 1,1,1
@@ -3930,18 +4118,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 13
 				sym = 14
 				sym = 15
 				sym = 16
 				sym = 17
-				srfN = srfAttach, 11,COLLIDER
+				sym = 18
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70102795906041
-				tempExt = 304.99655979028046
+				temp = 305.82828293635214
+				tempExt = 305.08257935508084
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -4052,9 +4240,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -4137,11 +4325,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294371038
-				uid = 3304909317
-				mid = 301572837
-				persistentId = 2066243228
-				launchID = 33
-				parent = 11
+				uid = 2928225183
+				mid = 4285949540
+				persistentId = 2554533792
+				launchID = 34
+				parent = 12
 				position = -9.6575007546562119E-08,-0.74089431762695313,0.93095695972442627
 				rotation = 0.707106829,-8.53527098E-08,8.1359957E-08,0.707106769
 				mirror = 1,1,1
@@ -4154,18 +4342,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 12
-				sym = 14
+				sym = 13
 				sym = 15
 				sym = 16
 				sym = 17
-				srfN = srfAttach, 11,COLLIDER
+				sym = 18
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70911806408094
-				tempExt = 305.03975310779384
+				temp = 305.84278922794954
+				tempExt = 305.37291197470773
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -4276,9 +4464,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -4361,11 +4549,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370988
-				uid = 3008320487
-				mid = 301572837
-				persistentId = 1009701682
-				launchID = 33
-				parent = 11
+				uid = 2862115704
+				mid = 4285949540
+				persistentId = 4277943416
+				launchID = 34
+				parent = 12
 				position = 0.80623245239257813,-0.74089431762695313,0.46547850966453552
 				rotation = 0.612372518,0.353553355,-0.353553385,0.612372458
 				mirror = 1,1,1
@@ -4378,18 +4566,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 12
 				sym = 13
-				sym = 15
+				sym = 14
 				sym = 16
 				sym = 17
-				srfN = srfAttach, 11,COLLIDER
+				sym = 18
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.72470429603351
-				tempExt = 305.01859279608453
+				temp = 305.87809269756008
+				tempExt = 305.31457928583058
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -4500,9 +4688,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -4585,11 +4773,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370938
-				uid = 2394857435
-				mid = 301572837
-				persistentId = 2377840947
-				launchID = 33
-				parent = 11
+				uid = 574210225
+				mid = 4285949540
+				persistentId = 1985967081
+				launchID = 34
+				parent = 12
 				position = 0.80623239278793335,-0.74089431762695313,-0.46547847986221313
 				rotation = 0.353553474,0.612372398,-0.612372458,0.353553444
 				mirror = 1,1,1
@@ -4602,18 +4790,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 12
 				sym = 13
 				sym = 14
-				sym = 16
+				sym = 15
 				sym = 17
-				srfN = srfAttach, 11,COLLIDER
+				sym = 18
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.71695094327418
-				tempExt = 305.14434015492913
+				temp = 305.86840679629302
+				tempExt = 305.32097096096965
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -4724,9 +4912,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -4809,11 +4997,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370888
-				uid = 232503112
-				mid = 301572837
-				persistentId = 1327177446
-				launchID = 33
-				parent = 11
+				uid = 2613369208
+				mid = 4285949540
+				persistentId = 1267548043
+				launchID = 34
+				parent = 12
 				position = 4.1085655766437412E-08,-0.74089431762695313,-0.93095707893371582
 				rotation = 4.48597106E-08,0.707106769,-0.707106829,4.8852467E-08
 				mirror = 1,1,1
@@ -4826,18 +5014,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 12
 				sym = 13
 				sym = 14
 				sym = 15
-				sym = 17
-				srfN = srfAttach, 11,COLLIDER
+				sym = 16
+				sym = 18
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.71166405228644
-				tempExt = 305.12535040630735
+				temp = 305.85824891418531
+				tempExt = 305.14950329954286
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -4948,9 +5136,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -5033,11 +5221,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370838
-				uid = 2613949444
-				mid = 301572837
-				persistentId = 2711709740
-				launchID = 33
-				parent = 11
+				uid = 1115985453
+				mid = 4285949540
+				persistentId = 2293627509
+				launchID = 34
+				parent = 12
 				position = -0.80623233318328857,-0.74089431762695313,-0.46547871828079224
 				rotation = -0.353553295,0.612372518,-0.612372518,-0.353553295
 				mirror = 1,1,1
@@ -5050,18 +5238,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 12
 				sym = 13
 				sym = 14
 				sym = 15
 				sym = 16
-				srfN = srfAttach, 11,COLLIDER
+				sym = 17
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70244760108142
-				tempExt = 304.95810772297085
+				temp = 305.82863372565049
+				tempExt = 305.19373541874
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -5172,9 +5360,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928983757152
+					CoreThermalEnergy = 15827.907392968978
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -5257,11 +5445,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294388700
-				uid = 437730610
-				mid = 301572837
-				persistentId = 1546753065
-				launchID = 33
-				parent = 11
+				uid = 2394846201
+				mid = 4285949540
+				persistentId = 1584321434
+				launchID = 34
+				parent = 12
 				position = -0.4655306339263916,-0.79231548309326172,0.80632281303405762
 				rotation = 0.683012784,-0.183012664,0.183012694,0.683012664
 				mirror = 1,1,1
@@ -5274,18 +5462,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 19
 				sym = 20
 				sym = 21
 				sym = 22
 				sym = 23
-				srfN = srfAttach, 11,COLLIDER
+				sym = 24
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70819954989929
-				tempExt = 305.02399613469265
+				temp = 305.83312967692916
+				tempExt = 305.23208691347401
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -5396,9 +5584,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928981392048
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -5481,11 +5669,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370492
-				uid = 3172995060
-				mid = 301572837
-				persistentId = 4238796180
-				launchID = 33
-				parent = 11
+				uid = 1980938402
+				mid = 4285949540
+				persistentId = 2038288980
+				launchID = 34
+				parent = 12
 				position = 0.46553072333335876,-0.79231548309326172,0.80632275342941284
 				rotation = 0.683012784,0.183012724,-0.183012754,0.683012664
 				mirror = 1,1,1
@@ -5498,18 +5686,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 18
-				sym = 20
+				sym = 19
 				sym = 21
 				sym = 22
 				sym = 23
-				srfN = srfAttach, 11,COLLIDER
+				sym = 24
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.71522358847841
-				tempExt = 305.04577823171019
+				temp = 305.86063812672279
+				tempExt = 305.42131561345622
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -5620,9 +5808,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928990623594
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -5705,11 +5893,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370438
-				uid = 4282114793
-				mid = 301572837
-				persistentId = 4208220208
-				launchID = 33
-				parent = 11
+				uid = 1055156968
+				mid = 4285949540
+				persistentId = 1310838006
+				launchID = 34
+				parent = 12
 				position = 0.93106138706207275,-0.79231548309326172,-1.5465410285742109E-07
 				rotation = 0.5,0.5,-0.500000119,0.49999994
 				mirror = 1,1,1
@@ -5722,18 +5910,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 18
 				sym = 19
-				sym = 21
+				sym = 20
 				sym = 22
 				sym = 23
-				srfN = srfAttach, 11,COLLIDER
+				sym = 24
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.71435051364944
-				tempExt = 305.05510796248842
+				temp = 305.847817913028
+				tempExt = 305.23762340116315
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -5844,9 +6032,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928990623594
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -5929,11 +6117,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370384
-				uid = 4189803739
-				mid = 301572837
-				persistentId = 3452060324
-				launchID = 33
-				parent = 11
+				uid = 1549250966
+				mid = 4285949540
+				persistentId = 1908221543
+				launchID = 34
+				parent = 12
 				position = 0.46553057432174683,-0.79231548309326172,-0.80632287263870239
 				rotation = 0.183012664,0.683012664,-0.683012784,0.183012635
 				mirror = 1,1,1
@@ -5946,18 +6134,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 18
 				sym = 19
 				sym = 20
-				sym = 22
+				sym = 21
 				sym = 23
-				srfN = srfAttach, 11,COLLIDER
+				sym = 24
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.71039209032222
-				tempExt = 305.12761475376419
+				temp = 305.85436642254689
+				tempExt = 305.23540545424771
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -6068,9 +6256,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928990623594
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -6153,11 +6341,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370330
-				uid = 2146561024
-				mid = 301572837
-				persistentId = 1285184523
-				launchID = 33
-				parent = 11
+				uid = 2102622139
+				mid = 4285949540
+				persistentId = 816646756
+				launchID = 34
+				parent = 12
 				position = -0.46553081274032593,-0.79231548309326172,-0.80632281303405762
 				rotation = -0.183012798,0.683012664,-0.683012784,-0.183012754
 				mirror = 1,1,1
@@ -6170,18 +6358,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 18
 				sym = 19
 				sym = 20
 				sym = 21
-				sym = 23
-				srfN = srfAttach, 11,COLLIDER
+				sym = 22
+				sym = 24
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70454855900186
-				tempExt = 305.07804431609594
+				temp = 305.83023725891115
+				tempExt = 305.12595865195243
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -6292,9 +6480,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928981392048
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -6377,11 +6565,11 @@ GAME
 			{
 				name = rtg
 				cid = 4294370276
-				uid = 2819383496
-				mid = 301572837
-				persistentId = 191182623
-				launchID = 33
-				parent = 11
+				uid = 3443496110
+				mid = 4285949540
+				persistentId = 3270157088
+				launchID = 34
+				parent = 12
 				position = -0.93106138706207275,-0.79231548309326172,-9.3083812657823728E-08
 				rotation = -0.50000006,0.5,-0.50000006,-0.49999997
 				mirror = 1,1,1
@@ -6394,18 +6582,18 @@ GAME
 				sidx = -1
 				attm = 1
 				sameVesselCollision = False
-				sym = 18
 				sym = 19
 				sym = 20
 				sym = 21
 				sym = 22
-				srfN = srfAttach, 11,COLLIDER
+				sym = 23
+				srfN = srfAttach, 12,COLLIDER
 				attN = top, -1
 				attN = bottom, -1
 				mass = 0.0799999982
 				shielded = False
-				temp = 305.70096100045555
-				tempExt = 304.96555908738748
+				temp = 305.82942903291473
+				tempExt = 305.15427661870109
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -6516,9 +6704,9 @@ GAME
 					name = ModuleCoreHeat
 					isEnabled = True
 					CoreTempGoalAdjustment = 0
-					CoreThermalEnergy = 15827.928981392048
+					CoreThermalEnergy = 15827.907393284508
 					stagingEnabled = True
-					lastUpdateTime = 213395.3313688958
+					lastUpdateTime = 213516.60443137112
 					EVENTS
 					{
 					}
@@ -6601,11 +6789,11 @@ GAME
 			{
 				name = xenonTankLarge
 				cid = 4294355948
-				uid = 864240551
-				mid = 301572837
-				persistentId = 50073866
-				launchID = 33
-				parent = 11
+				uid = 899169903
+				mid = 4285949540
+				persistentId = 3091776470
+				launchID = 34
+				parent = 12
 				position = 0,-1.3441162109375,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -6619,12 +6807,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 11
-				attN = bottom, 25
+				attN = top, 12
+				attN = bottom, 26
 				mass = 0.189999998
 				shielded = False
-				temp = 305.70778016451601
-				tempExt = 305.05176224980721
+				temp = 305.8206084402521
+				tempExt = 305.06628122315004
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -6776,11 +6964,11 @@ GAME
 			{
 				name = xenonTankLarge
 				cid = 4294353666
-				uid = 1821456939
-				mid = 301572837
-				persistentId = 2874656670
-				launchID = 33
-				parent = 24
+				uid = 3062168061
+				mid = 4285949540
+				persistentId = 3866490810
+				launchID = 34
+				parent = 25
 				position = 0,-1.9341163635253906,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -6794,12 +6982,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 24
-				attN = bottom, 26
+				attN = top, 25
+				attN = bottom, 27
 				mass = 0.189999998
 				shielded = False
-				temp = 305.71160829678553
-				tempExt = 305.145297664932
+				temp = 305.81785243780661
+				tempExt = 305.10820904644891
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -6951,11 +7139,11 @@ GAME
 			{
 				name = xenonTankLarge
 				cid = 4294326110
-				uid = 3463487760
-				mid = 301572837
-				persistentId = 120227884
-				launchID = 33
-				parent = 25
+				uid = 2374736876
+				mid = 4285949540
+				persistentId = 1051658514
+				launchID = 34
+				parent = 26
 				position = 0,-2.5241165161132813,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -6969,12 +7157,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 25
-				attN = bottom, 27
+				attN = top, 26
+				attN = bottom, 28
 				mass = 0.189999998
 				shielded = False
-				temp = 305.71578148453023
-				tempExt = 305.24070320449562
+				temp = 305.81593062931859
+				tempExt = 305.18229251527708
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -7126,11 +7314,11 @@ GAME
 			{
 				name = xenonTankLarge
 				cid = 4294326048
-				uid = 2474860377
-				mid = 301572837
-				persistentId = 864764675
-				launchID = 33
-				parent = 26
+				uid = 3130745215
+				mid = 4285949540
+				persistentId = 1416191193
+				launchID = 34
+				parent = 27
 				position = 0,-3.1141166687011719,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -7144,12 +7332,12 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 26
-				attN = bottom, 28
+				attN = top, 27
+				attN = bottom, 29
 				mass = 0.189999998
 				shielded = False
-				temp = 305.72126242038371
-				tempExt = 305.33366111117402
+				temp = 305.81312649224282
+				tempExt = 305.39681149915413
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
@@ -7301,11 +7489,11 @@ GAME
 			{
 				name = ionEngine
 				cid = 4294364612
-				uid = 3473329636
-				mid = 301572837
-				persistentId = 480751139
-				launchID = 33
-				parent = 27
+				uid = 2447023188
+				mid = 4285949540
+				persistentId = 3613720324
+				launchID = 34
+				parent = 28
 				position = 0,-3.6226730346679688,0
 				rotation = 0,0,0,1
 				mirror = 1,1,1
@@ -7319,16 +7507,16 @@ GAME
 				attm = 0
 				sameVesselCollision = False
 				srfN = , -1
-				attN = top, 27
+				attN = top, 28
 				attN = bottom, -1
 				mass = 0.25
 				shielded = False
-				temp = 305.73175395541136
-				tempExt = 305.26025044704659
+				temp = 305.80694763719862
+				tempExt = 305.53074267957089
 				tempExtUnexp = 4
 				staticPressureAtm = 0
 				expt = 0.5
-				state = 1
+				state = 0
 				PreFailState = 0
 				attached = True
 				autostrutMode = Grandparent
@@ -7401,9 +7589,9 @@ GAME
 					isEnabled = True
 					independentThrottle = False
 					independentThrottlePercentage = 0
-					staged = True
+					staged = False
 					flameout = False
-					EngineIgnited = True
+					EngineIgnited = False
 					engineShutdown = False
 					currentThrottle = 0
 					thrustPercentage = 100
@@ -7501,6 +7689,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = PersistentEngine
 					isEnabled = True
 					HasPersistentThrust = True
@@ -7515,7 +7720,7 @@ GAME
 					persistentAverageDensity = 0
 					vesselAlignmentWithAutopilotMode = 0
 					persistentResourceChange = 
-					vesselDryMass = 5.97499895
+					vesselDryMass = 6.02499914
 					persistentVesselTargetId = 00000000-0000-0000-0000-000000000000
 					persistentVesselTargetBodyName = 
 					persistentManeuverPatch = 
@@ -7523,23 +7728,6 @@ GAME
 					persistentManeuverUT = 0
 					defaultsLoaded = True
 					stagingEnabled = True
-					EVENTS
-					{
-					}
-					ACTIONS
-					{
-					}
-					UPGRADESAPPLIED
-					{
-					}
-				}
-				MODULE
-				{
-					name = FMRS_PM
-					isEnabled = True
-					stagingEnabled = True
-					MM_DYNAMIC = true
-					parent_vessel = 00000000-0000-0000-0000-000000000000
 					EVENTS
 					{
 					}
@@ -7637,7 +7825,7 @@ GAME
 			}
 			ACTIONGROUPS
 			{
-				Stage = True, 213370.911369442
+				Stage = False, 0
 				Gear = False, 0
 				Light = False, 0
 				RCS = False, 0
@@ -7735,7 +7923,7 @@ GAME
 		SharpDX v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
 		SharpDX.DXGI v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
 		SharpDX.Direct3D11 v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
-		KSPTextureLoader v1.0.36.0 / v1.0.36+cda0e0fea05c372369b8464c01035616501d8d28 = True
+		KSPTextureLoader v1.0.36.0 / v1.0.36+cda0e0fea05c372369b8464c01035616501d8d28 = False
 		BurstPQS v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = False
 		Kopernicus.Parser v1.0.0.0 / v1.0.0.0+2398a50e208a22315a68553b89918c791ea0f073 = False
 		ModularFlightIntegrator v1.0.0.0 / v1.2.10.0 = True
@@ -7793,7 +7981,7 @@ GAME
 		MechJebLib v1.0.0.0 = True
 		MechJebLibBindings v1.0.0.0 = True
 		NFPropUtils v1.0.0.0 = True
-		PersistentThrust v1.7.5.0 = False
+		PersistentThrust v1.7.5.0 = True
 		SolarSailNavigator v1.0.0.0 = False
 		RecoveryController v0.0.4.3 = True
 		ReforgedRedux v0.0.0.0 = False
@@ -7852,7 +8040,7 @@ GAME
 		Parallax_StockPlanetTextures = True
 		Parallax_StockScatterTextures = True
 		Parallax_StockTerrainTextures = True
-		PersistentThrust = False
+		PersistentThrust = True
 		PersistentThrustNavigator = False
 		PoodsSkyboxes = True
 		RecoveryController = True
@@ -7912,15 +8100,19 @@ GAME
 		VesselModuleSave v1.0.2.0 / v1.0.2 = True
 		PreciseEditor = True
 		SpaceTuxLibrary = True
-		Kopernicus.Parser v1.0.0.0 / v1.0.0.0+2eed1174cfcc818cd2edf68a3ec63aabd434db29 = True
-		Kopernicus v1.0.250.0 / v1.0.250+2eed1174cfcc818cd2edf68a3ec63aabd434db29 / v1.12.250.0 = True
+		Kopernicus.Parser v1.0.0.0 / v1.0.0.0+2eed1174cfcc818cd2edf68a3ec63aabd434db29 = False
+		Kopernicus v1.0.250.0 / v1.0.250+2eed1174cfcc818cd2edf68a3ec63aabd434db29 / v1.12.250.0 = False
 		KerbalJointReinforcement v3.8.7.0 = True
-		Kopernicus.BurstPQS.KSCScatterMask v1.0.0.0 / v1.0.0.0+2eed1174cfcc818cd2edf68a3ec63aabd434db29 = True
+		Kopernicus.BurstPQS.KSCScatterMask v1.0.0.0 / v1.0.0.0+2eed1174cfcc818cd2edf68a3ec63aabd434db29 = False
 		MechJeb2 v2.15.0.0 / v / v2.15.3.1 = True
 		KerbalJointReinforcement = True
 		BeamedPowerPropulsionRW v1.0.0.0 = True
 		BeamedPowerStandaloneRW v0.1.0.0 = True
 		BeamedPowerStandalone = True
+		Kopernicus.Parser v1.0.0.0 / v1.0.0.0+bab156c666d6ea96801dfdac29b7326368fc9bd9 = True
+		KSPTextureLoader v1.0.38.0 / v1.0.38+299e4bb238bc82fc3b609a88db32d8513f21168a = True
+		Kopernicus v1.0.251.0 / v1.0.251+bab156c666d6ea96801dfdac29b7326368fc9bd9 / v1.12.251.0 = True
+		Kopernicus.BurstPQS.KSCScatterMask v1.0.0.0 / v1.0.0.0+bab156c666d6ea96801dfdac29b7326368fc9bd9 = True
 	}
 	ROSTER
 	{
@@ -8018,10 +8210,10 @@ GAME
 						PART
 						{
 							name = evaChute
-							cid = 4294825672
+							cid = 4294823482
 							uid = 0
 							mid = 0
-							persistentId = 574308765
+							persistentId = 953530751
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -8190,10 +8382,10 @@ GAME
 						PART
 						{
 							name = evaJetpack
-							cid = 4294825746
+							cid = 4294823558
 							uid = 0
 							mid = 0
-							persistentId = 1491325644
+							persistentId = 4065220849
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -8468,10 +8660,10 @@ GAME
 						PART
 						{
 							name = evaChute
-							cid = 4294825672
+							cid = 4294823482
 							uid = 0
 							mid = 0
-							persistentId = 2982413618
+							persistentId = 112756465
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -8640,10 +8832,10 @@ GAME
 						PART
 						{
 							name = evaJetpack
-							cid = 4294825746
+							cid = 4294823558
 							uid = 0
 							mid = 0
-							persistentId = 3308561134
+							persistentId = 1976445137
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -8910,10 +9102,10 @@ GAME
 						PART
 						{
 							name = evaChute
-							cid = 4294825672
+							cid = 4294823482
 							uid = 0
 							mid = 0
-							persistentId = 3363013861
+							persistentId = 2521343724
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -9082,10 +9274,10 @@ GAME
 						PART
 						{
 							name = evaJetpack
-							cid = 4294825746
+							cid = 4294823558
 							uid = 0
 							mid = 0
-							persistentId = 1177087570
+							persistentId = 770163802
 							launchID = 0
 							parent = 0
 							position = 0,0,0
@@ -9311,12 +9503,12 @@ GAME
 			badS = True
 			veteran = True
 			tour = False
-			state = Assigned
+			state = Missing
 			inactive = False
 			inactiveTimeEnd = 0
 			gExperienced = 0
 			outDueToG = False
-			ToD = 87755.520903281649
+			ToD = 217078.15136704507
 			idx = 0
 			extraXP = 0
 			hasHelmetOn = False
@@ -13263,10 +13455,10 @@ GAME
 			1cb99715-ccf3-4e45-b8c6-b23f68b11eb1
 			{
 			}
-			facd6f6e-1092-4edd-bac3-e487b0f5b66c
+			8deb1aed-9025-4458-842f-a1b9359882f2
 			{
 			}
-			5c9466a6-e786-4e9b-b977-c8e8e175c9d0
+			82439506-332d-435a-b3be-edc3303f181f
 			{
 			}
 		}
