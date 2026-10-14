@@ -9,6 +9,7 @@ M="$B/KSP_x64_Data/Managed"
 mcs -target:library -out:"$HERE/LowThrustWarp.dll" \
     -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.CoreModule.dll" \
     -r:"$M/UnityEngine.dll" -r:"$M/UnityEngine.UI.dll" -r:"$M/UnityEngine.PhysicsModule.dll" \
+    -r:"$M/UnityEngine.IMGUIModule.dll" -r:"$M/UnityEngine.InputLegacyModule.dll" -r:"$M/UnityEngine.TextRenderingModule.dll" -r:"$M/UnityEngine.AnimationModule.dll" \
     -r:"$B/GameData/kRPC/KRPC.Core.dll" -r:"$B/GameData/kRPC/KRPC.SpaceCenter.dll" \
     "$HERE"/*.cs
 for d in "$B" "$HERE"/../../testInstances/ksp[0-9]*; do

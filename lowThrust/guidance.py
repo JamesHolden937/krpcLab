@@ -57,8 +57,11 @@ from lowThrust import orbit
 # ``hold_apse``: the periapsis must lie along ``apse`` (a departure's
 # parking orbit): never re-locked, and arcs at +-90 deg from it correct the
 # eccentricity across the line once the apsides are nearly there.
-Target = namedtuple("Target", "ra rp inc lan apse normal hold_apse",
-                    defaults=(None, None, None, None, False))
+# ``argpe`` (rad): the periapsis this far past the ascending node of the
+# target plane (from ``lan`` on an equatorial one); ``lock`` turns it into a
+# held apse line once the plane is known.
+Target = namedtuple("Target", "ra rp inc lan apse normal hold_apse argpe",
+                    defaults=(None, None, None, None, False, None))
 # ``prograde`` and ``normal`` are the components of the unit thrust
 # direction along the velocity and the orbit normal; ``eta`` this point's
 # effectivity, ``err`` the error (m) of the radius an apsis arc is driving.
@@ -99,17 +102,48 @@ def lock(target, el, cfg, coasting=True):
     15 orbits of apoapsis raising had turned the apse line off the nodes.)
     """
     target = lock_apse(target, el, coasting)
-    if target.inc is None or target.normal is not None:
+    if target.inc is not None and target.normal is None:
+        lan = target.lan
+        if lan is None:
+            inc0, lan = orbit.inclination_lan(el.rvec, el.vvec)
+            if math.sin(inc0) < 1e-6:
+                ref = target.apse
+                if target.argpe is not None:
+                    # an argument of periapsis: the node where the apse
+                    # line, held from now, lies that far past it
+                    w = target.argpe
+                    lan = math.atan2(ref[1], ref[0]) - math.atan2(
+                        math.cos(target.inc) * math.sin(w), math.cos(w))
+                elif not (coasting and _plane_may_start(el, target, cfg)):
+                    return target
+                else:
+                    lan = math.atan2(ref[1], ref[0])
+        target = target._replace(normal=orbit.plane_normal(target.inc, lan))
+    if target.argpe is not None and not target.hold_apse:
+        target = _lock_argpe(target, el)
+    return target
+
+
+def _lock_argpe(target, el):
+    """The held apse line of a target argument of periapsis: ``argpe`` past
+    the ascending node, in the target plane (the orbit's own when the
+    inclination is free); on an equatorial plane the node is the ``lan``
+    direction (0 if free).  Not yet if the plane is still to be chosen."""
+    if target.normal is not None:
+        n = target.normal
+    elif target.inc is None:
+        n = vec.unit(vec.cross(el.rvec, el.vvec))
+    else:
         return target
-    lan = target.lan
-    if lan is None:
-        inc0, lan = orbit.inclination_lan(el.rvec, el.vvec)
-        if math.sin(inc0) < 1e-6:
-            if not (coasting and _plane_may_start(el, target, cfg)):
-                return target
-            ref = target.apse
-            lan = math.atan2(ref[1], ref[0])
-    return target._replace(normal=orbit.plane_normal(target.inc, lan))
+    node = vec.cross((0.0, 0.0, 1.0), n)
+    if vec.norm(node) < 1e-6:
+        lan = target.lan or 0.0
+        node = (math.cos(lan), math.sin(lan), 0.0)
+    node = vec.unit(node)
+    w = target.argpe
+    apse = vec.add(vec.scale(node, math.cos(w)),
+                   vec.scale(vec.cross(n, node), math.sin(w)))
+    return target._replace(apse=vec.unit(apse), hold_apse=True)
 
 
 def _plane_may_start(el, target, cfg):

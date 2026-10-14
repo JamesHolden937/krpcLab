@@ -74,11 +74,11 @@ def main():
     r, v = sim.state_at_periapsis(body, s_ap, s_pe, start.get("i", 0.0),
                                   start.get("lan", 0.0),
                                   start.get("argpe", 0.0))
-    tgt = parse_orbit(args.target, ("ap", "pe", "i", "lan"))
+    tgt = parse_orbit(args.target, ("ap", "pe", "i", "lan", "argpe"))
     target = guidance.Target(
         body.radius + tgt["ap"] if "ap" in tgt else None,
         body.radius + tgt["pe"] if "pe" in tgt else None,
-        tgt.get("i"), tgt.get("lan"))
+        tgt.get("i"), tgt.get("lan"), argpe=tgt.get("argpe"))
     el0 = orbit.elements(r, v, body.mu)
     locked = guidance.lock(target, el0, cfg)
 

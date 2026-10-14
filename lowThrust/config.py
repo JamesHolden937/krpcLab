@@ -155,6 +155,13 @@ class Config:
     # second, held exactly at each tick's end (the plugin's Pace).  As fast
     # as the CPU allows; 1 is KSP's own pace.
     RAILS_PACE: float = 20.0
+    # The pilot queues each command while the one before it flies, and the
+    # plugin switches on the physics step that reaches it, so the game runs
+    # on; a command lasts at least this many rendered frames (the pace is
+    # held down to it) so the pilot has time to queue the next and the
+    # speed stays even.  Held once a tick for the next command, the game
+    # ran and stopped several times a second (the stutter seen live).
+    RAILS_FRAMES_PER_COMMAND: float = 4.0
     # A coast is run ahead in prediction (exact two-body) and warped
     # through in one go, at most this fraction of a revolution at a time.
     COAST_AHEAD: float = 0.5

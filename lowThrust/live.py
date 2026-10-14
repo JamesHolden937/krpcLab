@@ -102,6 +102,27 @@ def system(conn):
     return out
 
 
+def lan_offset(conn, system_):
+    """(offset, spread), rad: the planner's longitude of the ascending node
+    less KSP's (the one the map and every mod show).  kRPC's non-rotating
+    frame puts x in an arbitrary direction, so the planner's longitudes
+    start somewhere else; the offset is read off every inclined body's
+    orbit (the median, and the largest disagreement with it)."""
+    game = conn.space_center.bodies
+    d = []
+    for name, b in system_.items():
+        if b.parent is None or b.inc < math.radians(0.5):
+            continue
+        x = b.lan - game[name].orbit.longitude_of_ascending_node
+        d.append(math.atan2(math.sin(x), math.cos(x)))
+    if not d:
+        return 0.0, math.inf
+    d.sort()
+    mid = d[len(d) // 2]
+    return mid, max(abs(math.atan2(math.sin(x - mid), math.cos(x - mid)))
+                    for x in d)
+
+
 def check_system(conn, system_, horizon_s=1e6):
     """The largest error, per body, between the rails built here and the
     game's ``Orbit.position_at`` ``horizon_s`` ahead, and in the SOI radius

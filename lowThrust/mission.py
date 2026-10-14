@@ -487,6 +487,23 @@ class Mission:
         b["nor"] += dv * vec.dot(direction, N)
         b["rad"] += dv * vec.dot(direction, R)
 
+    def adjust(self, direction, ddv, r0, v0):
+        """Correct a tick already booked by ``account`` by ``ddv`` m/s (the
+        live pilot books a tick's dv as predicted before it has flown and
+        corrects it from the propellant it took): the total, the ledger the
+        next step reads, and the burn if it is still open."""
+        if abs(ddv) < 1e-9:
+            return
+        self.dv += ddv
+        self._last_dv += ddv
+        b = self._burn
+        if b is not None:
+            R, T, N = orbit.rtn(r0, v0)
+            b["dv"] += ddv
+            b["pro"] += ddv * vec.dot(direction, T)
+            b["nor"] += ddv * vec.dot(direction, N)
+            b["rad"] += ddv * vec.dot(direction, R)
+
     def _repump(self, why):
         """Back to the orbit-shaping phase after an unplanned flyby or a
         periapsis that dropped too low: the in-SOI law repairs the orbit."""
@@ -1740,13 +1757,12 @@ def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg,
 
 def parse_orbit(text, system, start=False):
     """``"body: ap= pe= [i= lan= argpe=]"`` (km and degrees) as (body, {field:
-    value}); a target (``start`` False) takes no argpe.  Raises ValueError."""
+    value}).  Raises ValueError."""
     name, _, rest = text.partition(":")
     body = system.get(name.strip().capitalize())
     if body is None:
         raise ValueError(f"unknown body {name.strip()!r}")
-    allowed = ("ap", "pe", "i", "lan", "argpe") if start else \
-        ("ap", "pe", "i", "lan")
+    allowed = ("ap", "pe", "i", "lan", "argpe")
     f = {}
     for item in rest.replace(",", " ").split():
         k, _, val = item.partition("=")
@@ -1758,12 +1774,16 @@ def parse_orbit(text, system, start=False):
 
 def target_from(body, f):
     """The ``guidance.Target`` about ``body`` for parsed fields ``f``:
-    anything left out is free."""
+    anything left out is free.  An argument of periapsis on a circular
+    target means nothing and is dropped."""
+    circular = "ap" not in f or "pe" not in f or abs(f["ap"] - f["pe"]) < 1.0
     return guidance.Target(
         body.radius + f["ap"] * 1e3 if "ap" in f else None,
         body.radius + f["pe"] * 1e3 if "pe" in f else None,
         math.radians(f["i"]) if "i" in f else None,
-        math.radians(f["lan"]) if "lan" in f else None)
+        math.radians(f["lan"]) if "lan" in f else None,
+        argpe=(math.radians(f["argpe"]) if "argpe" in f and not circular
+               else None))
 
 
 def route(here, dest):

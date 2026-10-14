@@ -43,7 +43,7 @@ using ReferenceFrame = KRPC.SpaceCenter.Services.ReferenceFrame;
 namespace LowThrustWarp
 {
     [KRPCService(Name = "LowThrust", GameScene = KRPC.Service.GameScene.Flight)]
-    public static class LowThrust
+    public static partial class LowThrust
     {
         const BindingFlags ALL = BindingFlags.Instance | BindingFlags.Public
                                  | BindingFlags.NonPublic;
@@ -173,11 +173,117 @@ namespace LowThrustWarp
             Pace.lastCommand = Time.realtimeSinceStartup;
         }
 
-        /// <summary>Release any hold (the game then runs freely).</summary>
+        /// <summary>Release any hold and drop a queued command (the game
+        /// then runs freely).</summary>
         [KRPCProcedure]
         public static void ReleaseHold()
         {
             Pace.holdUT = double.PositiveInfinity;
+            Pace.queued = null;
+            Pace.commanded = -1f;
+        }
+
+        /// <summary>The next command, flown from the moment the one in
+        /// flight ends -- or at once, if none is: throttle (fired only if
+        /// the thrust axis is within <paramref name="alignDeg"/> of
+        /// <paramref name="direction"/> at the switch), the attitude to
+        /// hold (in <paramref name="frame"/>), the rails warp index and the
+        /// hold's floor index (see RunUntil), for
+        /// <paramref name="duration"/> game seconds.  The game runs on
+        /// through the switch, which happens on the physics step that
+        /// reaches it; only if nothing is queued when a command ends is the
+        /// game held.  Returns the command's number; Record() says when it
+        /// started and the state then (positions in
+        /// <paramref name="recordFrame"/>).</summary>
+        [KRPCProcedure]
+        public static int Queue(float throttle, Tuple<double, double, double> direction,
+                                ReferenceFrame frame, double alignDeg, int warpIndex,
+                                int floorIndex, double duration, ReferenceFrame recordFrame)
+        {
+            var c = new Pace.Command
+            {
+                seq = ++Pace.lastSeq, throttle = Mathf.Clamp01(throttle),
+                direction = direction.ToVector().normalized, frame = frame,
+                alignDeg = alignDeg, warpIndex = warpIndex,
+                floorIndex = floorIndex, duration = duration,
+                recordFrame = recordFrame
+            };
+            Pace.queued = c;
+            Pace.lastCommand = Time.realtimeSinceStartup;
+            if (double.IsInfinity(Pace.holdUT)
+                || Planetarium.GetUniversalTime() >= Pace.holdUT)
+                Pace.Apply();
+            return c.seq;
+        }
+
+        /// <summary>The last switch, and the queue now: [number of the
+        /// command flying, UT it started, propellant mass then (kg, every
+        /// resource with a density), fired (1/0), attitude error then (deg),
+        /// rails warp index set, body index (FlightGlobals), position x y z,
+        /// velocity x y z (its recordFrame), held now (1/0), propellant mass
+        /// now (kg), number of the command queued (0: none), UT now].
+        /// Read on a stream: it keeps the pilot's commands alive.</summary>
+        [KRPCProcedure]
+        public static IList<double> Record()
+        {
+            Pace.lastCommand = Time.realtimeSinceStartup;
+            var r = new List<double>(Pace.record);
+            r.Add(Pace.held ? 1 : 0);
+            r.Add(PropellantMass(FlightGlobals.ActiveVessel));
+            r.Add(Pace.queued == null ? 0 : Pace.queued.seq);
+            r.Add(Planetarium.GetUniversalTime());
+            return r;
+        }
+
+        /// <summary>Since load: [commands switched, commands that found
+        /// nothing queued (the game held for the pilot), real seconds the
+        /// game was held].</summary>
+        [KRPCProcedure]
+        public static IList<double> PipelineStats()
+        {
+            return new List<double> { Pace.switches, Pace.stalls, Pace.heldReal };
+        }
+
+        /// <summary>Body names by FlightGlobals index (Record's body).</summary>
+        [KRPCProcedure]
+        public static IList<string> BodyNames()
+        {
+            int n = 0;
+            foreach (CelestialBody b in FlightGlobals.Bodies)
+                n = Math.Max(n, b.flightGlobalsIndex + 1);
+            var r = new List<string>(new string[n]);
+            foreach (CelestialBody b in FlightGlobals.Bodies)
+                r[b.flightGlobalsIndex] = b.bodyName;
+            return r;
+        }
+
+        /// <summary>Every resource with a density on the active vessel, kg
+        /// (KSP does not update a vessel's mass on rails; its parts'
+        /// resources it does).</summary>
+        [KRPCProcedure]
+        public static double PropellantMass()
+        {
+            return PropellantMass(FlightGlobals.ActiveVessel);
+        }
+
+        internal static double PropellantMass(Vessel v)
+        {
+            double kg = 0;
+            if (v == null) return 0;
+            foreach (Part p in v.parts)
+                foreach (PartResource r in p.Resources)
+                    kg += r.amount * r.info.density * 1000.0;
+            return kg;
+        }
+
+        /// <summary>A command in flight lasts at least this many rendered
+        /// frames (the time scale is limited to it): the pilot gets a
+        /// frame or two to queue the next one, and the speed stays even.
+        /// 0: no limit.</summary>
+        [KRPCProcedure]
+        public static void SetFramesPerCommand(float frames)
+        {
+            Pace.minFrames = Mathf.Max(0f, frames);
         }
 
         /// <summary>Whether the game is held at RunUntil's time.</summary>
@@ -297,6 +403,64 @@ namespace LowThrustWarp
         internal static int floorIndex = 1;
         internal static int wantIndex = -1;       // SetRailsWarp's, -1 none
 
+        internal class Command
+        {
+            public int seq;
+            public float throttle;
+            public Vector3d direction;
+            public ReferenceFrame frame, recordFrame;
+            public double alignDeg, duration;
+            public int warpIndex, floorIndex;
+        }
+        internal static Command queued;
+        internal static int lastSeq;
+        internal static double[] record = new double[13];
+        internal static float minFrames;
+        internal static double duration;          // the command in flight's
+        internal static float commanded = -1f;    // PT throttle the pilot set, -1 none
+        internal static int switches, stalls;
+        internal static double heldReal;
+
+        /// <summary>Start the queued command now: its attitude, the throttle
+        /// (if the thrust axis is aligned), the warp, the hold at its end,
+        /// and the record of the state at the switch.</summary>
+        internal static void Apply()
+        {
+            Command c = queued;
+            queued = null;
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (c == null || v == null) return;
+            double ut = Planetarium.GetUniversalTime();
+            Attitude.target = c.direction;
+            Attitude.frame = c.frame;
+            double err = Attitude.ErrorNow(v);
+            Attitude.lastError = err;
+            bool fire = c.throttle > 0 && err >= 0 && err <= c.alignDeg;
+            commanded = fire ? c.throttle : 0f;
+            LowThrust.SetThrottle(commanded);
+            floorIndex = c.floorIndex;
+            int got = LowThrust.SetRailsWarp(c.warpIndex);
+            holdUT = ut + c.duration;
+            duration = c.duration;
+            held = false;
+            switches++;
+            var kv = new KRPC.SpaceCenter.Services.Vessel(v);
+            var p = kv.Position(c.recordFrame);
+            var w = kv.Velocity(c.recordFrame);
+            record = new double[] {
+                c.seq, ut, LowThrust.PropellantMass(v), fire ? 1 : 0, err, got,
+                v.mainBody.flightGlobalsIndex, p.Item1, p.Item2, p.Item3,
+                w.Item1, w.Item2, w.Item3 };
+        }
+
+        void FixedUpdate()
+        {
+            // the switch, on the physics step that reaches the end of the
+            // command in flight
+            if (queued != null && Planetarium.GetUniversalTime() >= holdUT)
+                Apply();
+        }
+
         /// <summary>The highest index up to <paramref name="index"/> the
         /// game allows at the vessel's altitude.</summary>
         internal static int AltitudeCap(Vessel v, int index)
@@ -388,7 +552,15 @@ namespace LowThrustWarp
                 holdUT = double.PositiveInfinity;
                 scale = 1f;
                 wantIndex = -1;
+                queued = null;
+                if (commanded > 0) LowThrust.SetThrottle(0f);
+                commanded = -1f;
+                Attitude.frame = null;
             }
+            // PT's throttle as the pilot set it: one set while the vessel
+            // was going on rails does not survive the packing
+            if (commanded >= 0 && Math.Abs(LowThrust.Throttle() - commanded) > 1e-3)
+                LowThrust.SetThrottle(commanded);
             double left = holdUT - ut;
             // the rate: the one asked for, as far as the altitude allows,
             // stepped down near the end of a hold to no lower than the floor
@@ -402,7 +574,10 @@ namespace LowThrustWarp
                     want--;
             if (want >= 1 && want != idx)
                 TimeWarp.SetRate(want, true, true);
-            held = left <= 0;
+            bool wasHeld = held;
+            held = left <= 0 && queued == null;
+            if (held && !wasHeld) stalls++;
+            if (held) heldReal += Time.unscaledDeltaTime;
             // The time scale for the next frame.  Unity simulates the real
             // frame time (capped at KSP's 0.04 s) x timeScale, and frame times
             // swing 2-3x, so the next frame is sized from the longest of the
@@ -419,8 +594,18 @@ namespace LowThrustWarp
             if (!held && !double.IsInfinity(left))
             {
                 double step = 0.02 * TimeWarp.CurrentRate;
-                double steps = Math.Max(0.4, 0.5 * left / step);
-                ts = Math.Min(ts, steps * 0.02 / fmax);
+                // an even speed: a command lasts at least minFrames frames
+                if (minFrames > 0)
+                    ts = Math.Min(ts, Math.Max(1.0, duration / step / minFrames)
+                                      * 0.02 / fmax);
+                // with nothing queued, slow into the end so the game stops
+                // on it; with the next command queued it switches on the
+                // step that reaches it and runs on
+                if (queued == null)
+                {
+                    double steps = Math.Max(0.4, 0.5 * left / step);
+                    ts = Math.Min(ts, steps * 0.02 / fmax);
+                }
             }
             Time.timeScale = (float)ts;
             active = true;
@@ -524,12 +709,22 @@ namespace LowThrustWarp
 
         /// <summary>The thrust axis in ReferenceTransform coordinates: the
         /// first engine part's up, where PT applies its thrust.</summary>
-        static Vector3d ThrustAxis(Vessel v)
+        internal static Vector3d ThrustAxis(Vessel v)
         {
             Transform rt = v.ReferenceTransform;
             foreach (PartModule m in LowThrust.PtModules())
                 return rt.InverseTransformDirection(m.part.transform.up);
             return Vector3d.up;
+        }
+
+        /// <summary>Angle between the thrust axis and the commanded
+        /// direction now, degrees (-1: no command).</summary>
+        internal static double ErrorNow(Vessel v)
+        {
+            if (frame == null || v == null) return -1;
+            Vector3d world = frame.DirectionToWorldSpace(target);
+            Vector3d axis = v.ReferenceTransform.TransformDirection(ThrustAxis(v));
+            return Vector3d.Angle(axis, world);
         }
 
         void Coast(Vessel v, double dt)
