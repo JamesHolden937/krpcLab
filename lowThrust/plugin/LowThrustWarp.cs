@@ -112,6 +112,37 @@ namespace LowThrustWarp
             return new List<float>(TimeWarp.fetch.warpRates);
         }
 
+        /// <summary>Set the rails warp rate index at once, within the
+        /// game's altitude limits (as KSP's own SetRate checks them): the
+        /// index actually set.  KSP eases between rates over seconds, and a
+        /// pilot changing rate every few ticks spent a third of its time
+        /// easing (33x of a 50x warp); the instant change is KSP's own
+        /// option.  Unlike kRPC's RailsWarpFactor it does not cut the
+        /// throttle.</summary>
+        [KRPCProcedure]
+        public static int SetRailsWarp(int index)
+        {
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return 0;
+            if (index < 0) index = 0;
+            if (index >= TimeWarp.fetch.warpRates.Length)
+                index = TimeWarp.fetch.warpRates.Length - 1;
+            if (!v.LandedOrSplashed)
+            {
+                double alt = v.mainBody.GetAltitude(v.CoM);
+                while (index > 0 && alt < TimeWarp.fetch.GetAltitudeLimit(index, v.mainBody))
+                    index--;
+            }
+            if (TimeWarp.WarpMode != TimeWarp.Modes.HIGH)
+            {
+                TimeWarp.fetch.Mode = TimeWarp.Modes.HIGH;
+                TimeWarp.SetRate(0, true, true);
+            }
+            if (TimeWarp.CurrentRateIndex != index)
+                TimeWarp.SetRate(index, true, true);
+            return index;
+        }
+
         // ---- attitude -----------------------------------------------------
 
         /// <summary>Turn the thrust axis toward <paramref name="direction"/>

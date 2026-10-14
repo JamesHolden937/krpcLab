@@ -194,19 +194,18 @@ class Pilot:
     def warp(self, tick):
         """The fastest rails rate whose frames and loop latency still fit
         ``tick`` (WARP_PER_TICK), within what the game allows here."""
-        top = self.sc.maximum_rails_warp_factor
-        if top < 1:
-            raise RuntimeError("the game will not rails-warp here (an "
-                               "atmosphere, or too low): this pilot flies "
-                               "on rails only")
         want = self.cfg.WARP_PER_TICK * tick
         idx = 1
-        for i in range(1, top + 1):
-            if self.rates.get(i, math.inf) <= want:
+        for i, rate in self.rates.items():
+            if i > idx and rate <= want:
                 idx = i
         if idx != self.warp_index:
-            self.sc.rails_warp_factor = idx
-            self.warp_index = idx
+            got = self.lt.set_rails_warp(idx)
+            if got < 1:
+                raise RuntimeError("the game will not rails-warp here (an "
+                                   "atmosphere, or too low): this pilot "
+                                   "flies on rails only")
+            self.warp_index = got      # capped by altitude: asked again
         return self.rates.get(idx, 1)
 
     def hold(self, until):
@@ -220,9 +219,12 @@ class Pilot:
                 return now
             rate = max(self.sc.warp_rate, 1.0)
             idx = self.warp_index
+            # (no lower than a burn tick's rate: stepping down to the last
+            # second of every tick and back up again was most of the cost)
             if idx is not None and idx > 1 and \
-                    self.rates.get(idx, 1) > self.cfg.WARP_PER_TICK * left:
-                self.warp(left)
+                    self.rates.get(idx, 1) > self.cfg.WARP_PER_TICK * max(
+                        left, self.cfg.WARP_FLOOR_S):
+                self.warp(max(left, self.cfg.WARP_FLOOR_S))
             time.sleep(min(0.5, max(0.005, 0.7 * left / rate)))
             if self.gui.terminate_pressed():
                 raise Terminated()
@@ -419,7 +421,7 @@ class Pilot:
             ut = self.ut()
             self.lt.set_throttle(0.0)
             self.lt.clear_attitude()
-            self.sc.rails_warp_factor = 0
+            self.lt.set_rails_warp(0)
             self.v.control.sas = True
         except Exception as exc:                            # noqa: BLE001
             self.log.event(ut, "shutdown control error: %r" % exc)
