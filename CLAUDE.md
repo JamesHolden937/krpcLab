@@ -76,7 +76,7 @@ readers. New autopilots go here and plug into all of it.
 |---|---|
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
-| `lowThrust/` | ion/low-thrust transfers under rails warp with Persistent Thrust: type a target orbit -- same body, a moon, another planet -- and it solves every burn. Flies in game through its own kRPC plugin (`lowThrust/plugin/`); LKO -> Mun arrives. Read `lowThrust/CLAUDE.md` |
+| `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
 | `common/` | shared by every autopilot: `vec`, `logbook`, `pacing` (loop pacing and the time-scale governor), `rcs` (the RCS valve), `timescale` (the farm plugin's file), `paths`, `launcher` |
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |

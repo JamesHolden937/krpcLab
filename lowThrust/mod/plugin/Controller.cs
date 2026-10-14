@@ -437,7 +437,6 @@ namespace LowThrust
             double ut = Planetarium.GetUniversalTime();
             Craft cr = mis.craft;
             CelestialBody kb = v.orbit.referenceBody;
-            bool write = false;
             V3[] vel = new V3[1];
             if (kb.bodyName != cr.body.name)
             {
@@ -461,6 +460,17 @@ namespace LowThrust
             cr.v = vel[0];
             cr.t = tSim;
             cr.m = Engines.Mass(v);
+            Advance(v, ut);
+        }
+
+        /// <summary>From tSim to ut: commands decided as they fall due,
+        /// flown, the orbit written.  False if a decision was sent aside (game
+        /// time is then held, and Update calls this again once it is made, until
+        /// the autopilot has caught up with the game's clock).</summary>
+        bool Advance(Vessel v, double ut)
+        {
+            Craft cr = mis.craft;
+            bool write = false;
             int guard = 0;
             while (tSim < ut - 1e-9 && mode == Mode.Flying)
             {
@@ -472,11 +482,12 @@ namespace LowThrust
                         // made aside while time stands still; the step goes
                         // on from tSim once it is
                         if (write) WriteOrbit(v);
+                        holdUt = ut;
                         StartThinking();
-                        return;
+                        return false;
                     }
                     Decide(v);
-                    if (mode != Mode.Flying || cur == null) return;
+                    if (mode != Mode.Flying || cur == null) return true;
                     continue;
                 }
                 double end = Math.Min(cur.tEnd, ut);
@@ -514,6 +525,7 @@ namespace LowThrust
             if (write) WriteOrbit(v);
             Point(v);
             Shown(v, ut);
+            return true;
         }
 
         void WriteOrbit(Vessel v)
@@ -674,6 +686,7 @@ namespace LowThrust
         double holdStart, holdWall, holdMax;
 
         bool ThinkAside() { return slowPhases.Contains(mis.phase ?? ""); }
+        double holdUt;
 
         void StartThinking()
         {
@@ -686,28 +699,48 @@ namespace LowThrust
                 catch (Exception e) { thinkError = e; }
             }) { IsBackground = true };
             thinker.Start();
-            holdStart = wall.Elapsed.TotalSeconds;
-            holds++;
-            if (!FlightDriver.Pause) Time.timeScale = 0f;
+            if (Time.timeScale != 0f)
+            {
+                holdStart = wall.Elapsed.TotalSeconds;
+                holds++;
+                if (!FlightDriver.Pause) Time.timeScale = 0f;
+            }
         }
 
         void Update()
         {
             if (thinker == null || thinker.IsAlive) return;
             thinker = null;
-            if (!FlightDriver.Pause) Time.timeScale = 1f;
-            double held = wall.Elapsed.TotalSeconds - holdStart;
-            holdWall += held;
-            holdMax = Math.Max(holdMax, held);
-            if (mode != Mode.Flying) return;
+            if (mode != Mode.Flying) { Release(); return; }
             if (thinkError != null)
             {
+                Release();
                 log.Event(Planetarium.GetUniversalTime(), "FATAL " + thinkError);
                 Stop("error: " + thinkError.Message, false);
                 return;
             }
-            Act(vessel, thought);
-            Point(vessel);
+            try
+            {
+                Act(vessel, thought);
+                // on to the game's clock; another slow decision holds it again
+                if (mode == Mode.Flying && !Advance(vessel, holdUt)) return;
+            }
+            catch (Exception e)
+            {
+                Release();
+                log.Event(Planetarium.GetUniversalTime(), "FATAL " + e);
+                Stop("error: " + e.Message, false);
+                return;
+            }
+            Release();
+        }
+
+        void Release()
+        {
+            if (Time.timeScale == 0f && !FlightDriver.Pause) Time.timeScale = 1f;
+            double held = wall.Elapsed.TotalSeconds - holdStart;
+            holdWall += held;
+            holdMax = Math.Max(holdMax, held);
         }
 
         /// <summary>The mission run ahead along the exact coast from the tick
