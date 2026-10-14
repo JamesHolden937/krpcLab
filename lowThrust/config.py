@@ -143,6 +143,9 @@ class Config:
     # a few hundredths of a second, so a tick then overruns by a few percent
     # at most.  (10 s ticks in low orbit: 50x.)
     WARP_PER_TICK: float = 5.0
+    # A coast is run ahead in prediction (exact two-body) and warped
+    # through in one go, at most this fraction of a revolution at a time.
+    COAST_AHEAD: float = 0.5
     # Telemetry at most once per this many game seconds (events always).
     LOG_INTERVAL_UT: float = 600.0
 

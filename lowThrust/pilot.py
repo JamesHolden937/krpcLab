@@ -123,7 +123,14 @@ class Pilot:
         self.autostart = autostart
         self.ut = conn.add_stream(getattr, self.sc, "ut")
         self.body_s = conn.add_stream(getattr, self.v.orbit, "body")
-        self.mass = conn.add_stream(getattr, self.v, "mass")
+        self._mass_s = conn.add_stream(getattr, self.v, "mass")
+        # KSP does not recompute a vessel's mass on rails (it read 29875 kg
+        # all through a burn that used 22 kg of xenon): the mass is the
+        # mass at load less every resource with a density used since
+        res = self.v.resources
+        self._m0 = self._mass_s()
+        self._res = [(conn.add_stream(res.amount, n), res.amount(n),
+                      res.density(n)) for n in res.names if res.density(n) > 0]
         self.thrust_s = conn.add_stream(getattr, self.v, "available_thrust")
         self.system = live.system(conn)
         self.game_bodies = self.sc.bodies
@@ -133,6 +140,7 @@ class Pilot:
         self.frame_body = None
         self.coast_rtn = (0.0, 1.0, 0.0)       # prograde until a burn says
         self._shown = 0.0
+        self._last_rate = None
         log.event(self.ut(), "config: %s defaults_fingerprint=%s" % (
             " ".join(config.differences(cfg)) or "(defaults)",
             config.defaults_fingerprint()))
@@ -144,6 +152,10 @@ class Pilot:
                                                                  worst[2]))
 
     # --- reading the game ---------------------------------------------------
+    def mass(self):
+        """kg: the load mass less the propellant used since (see __init__)."""
+        return self._m0 - sum((a0 - amt()) * rho for amt, a0, rho in self._res)
+
     def body(self):
         return self.system[self.body_s().name]
 
@@ -197,18 +209,28 @@ class Pilot:
         if idx != self.warp_index:
             self.sc.rails_warp_factor = idx
             self.warp_index = idx
+            self._last_rate = None
         return self.rates.get(idx, 1)
 
     def hold(self, until):
-        """Let the game run to UT ``until`` (rails warp, already set)."""
+        """Let the game run to UT ``until`` on rails, the warp stepping down
+        as it nears (never faster than WARP_PER_TICK x the time left), so a
+        long coast arrives on time."""
         while True:
             now = self.ut()
             left = until - now
             if left <= 0:
                 return now
             rate = max(self.sc.warp_rate, 1.0)
-            if self.warp_index is not None and rate > 1.0:
-                self.rates[self.warp_index] = rate
+            idx = self.warp_index
+            # learn this game's rate for the index once it has settled (the
+            # game eases between rates; BetterTimeWarp changes the table)
+            if idx is not None and rate == self._last_rate and rate > 1.0:
+                self.rates[idx] = rate
+            self._last_rate = rate
+            if idx is not None and idx > 1 and \
+                    self.rates.get(idx, 1) > self.cfg.WARP_PER_TICK * left:
+                self.warp(left)
             time.sleep(min(0.5, max(0.005, 0.7 * left / rate)))
             if self.gui.terminate_pressed():
                 raise Terminated()
@@ -292,47 +314,88 @@ class Pilot:
         b, r, v, t, m = self.state()
         mis = mission.Mission(self.system, self.vessel_model(), b, r, v, t,
                               leg, target, self.cfg)
-        seen = 0
+        self.seen = 0
+        pending = None                  # a command decided on a predicted coast
         while True:
-            for e in mis.events[seen:]:
-                self.log.event(e.t, e.text)
-            seen = len(mis.events)
+            self.drain(mis)
             b, r, v, t, m = self.state()
             cr = mis.craft
             if b is not cr.body:
                 kind = "exit" if b is cr.body.parent else "enter"
                 cr.body, cr.r, cr.v, cr.t, cr.m = b, r, v, t, m
                 mis._soi_change(kind, b)
+                pending = None
                 continue
             cr.r, cr.v, cr.t, cr.m = r, v, t, m
             mis.vessel.mass_kg = m
             mis.vessel.thrust_n = self.thrust_s()
             self.counter.tick(mis.phase, t)
-            s = mis.step()
+            s = pending if pending is not None else mis.step()
+            pending = None
             if isinstance(s, mission.MissionResult):
-                for e in mis.events[seen:]:
-                    self.log.event(e.t, e.text)
+                self.drain(mis)
                 return s
             thr, d, tick = s
+            R, T, N = orbit.rtn(r, v)
             if thr > 0:
-                R, T, N = orbit.rtn(r, v)
                 self.coast_rtn = (vec.dot(d, R), vec.dot(d, T), vec.dot(d, N))
-            else:
-                R, T, N = orbit.rtn(r, v)
+                self.point(d)
+                err = self.lt.attitude_error()
+                fire = thr if 0 <= err <= self.cfg.ALIGN_DEG else 0.0
+                self.set_throttle(fire)
+                self.warp(tick)
+                now = self.hold(t + tick)
+                dt = now - t
+                mis.account(d, mis.vessel.thrust_n * fire / m * dt
+                            if fire > 0 else 0.0, dt, r, v)
+                self.telemetry(mis, b, r, v, now, thr, fire, err, tick)
+                continue
+            # Coasting: the coast is exact two-body motion, so the mission
+            # is run ahead on it until it next wants thrust, and the game
+            # warps there in one go (ticked at 11 s, a low orbit's coast
+            # between arcs ran at 23x of a 50x warp).
+            mis.account(None, 0.0, tick, r, v)
+            span, pending, aim = self.coast_ahead(mis, tick)
+            if aim is None:
                 cR, cT, cN = self.coast_rtn
-                d = vec.unit(vec.add(vec.add(vec.scale(R, cR),
-                                             vec.scale(T, cT)),
-                                     vec.scale(N, cN)))
-            self.point(d)
-            err = self.lt.attitude_error()
-            fire = thr if thr > 0 and 0 <= err <= self.cfg.ALIGN_DEG else 0.0
-            self.set_throttle(fire)
-            self.warp(tick)
-            now = self.hold(t + tick)
-            dt = now - t
-            dv = mis.vessel.thrust_n * fire / m * dt if fire > 0 else 0.0
-            mis.account(d, dv, dt, r, v)
-            self.telemetry(mis, b, r, v, now, thr, fire, err, tick)
+                aim = vec.add(vec.add(vec.scale(R, cR), vec.scale(T, cT)),
+                              vec.scale(N, cN))
+            self.point(vec.unit(aim))       # turned while coasting
+            self.set_throttle(0.0)
+            self.warp(span)
+            now = self.hold(t + span)
+            self.telemetry(mis, b, r, v, now, 0.0, 0.0,
+                           self.lt.attitude_error(), span)
+
+    def coast_ahead(self, mis, tick):
+        """Run the mission ahead along the predicted coast (``mission.coast``,
+        exact) from the tick it just decided to coast, until it decides to
+        thrust or ends, an SOI boundary is near, or COAST_AHEAD of a
+        revolution has gone.  Returns (seconds to coast in the game, the
+        command decided at its end or None, the direction to turn to)."""
+        cr = mis.craft
+        c = orbit.conic(cr.r, cr.v, cr.body.mu)
+        limit = self.cfg.COAST_AHEAD * (c.period if c.e < 1 else 100 * tick)
+        span = 0.0
+        while True:
+            saved = (cr.body, cr.r, cr.v, cr.t)
+            if mission.coast(cr, tick) is not None:
+                # stop short of the boundary: the game crosses it
+                cr.body, cr.r, cr.v, cr.t = saved
+                return max(span, 1.0), None, None
+            span += tick
+            if span >= limit:
+                return span, None, None
+            s = mis.step()
+            if isinstance(s, mission.MissionResult) or s[0] > 0:
+                return span, s, (None if isinstance(s, mission.MissionResult)
+                                 else s[1])
+            tick = s[2]
+
+    def drain(self, mis):
+        for e in mis.events[self.seen:]:
+            self.log.event(e.t, e.text)
+        self.seen = len(mis.events)
 
     def telemetry(self, mis, b, r, v, ut, thr, fire, err, tick):
         c = orbit.conic(r, v, b.mu)
