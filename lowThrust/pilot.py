@@ -115,7 +115,13 @@ class Pilot:
         self.orf = None
         self.sc = conn.space_center
         self.v = self.sc.active_vessel
-        self.lt = conn.low_thrust
+        self.lt = getattr(conn, "low_thrust", None)
+        if self.lt is None:
+            raise RuntimeError(
+                "this kRPC server has no LowThrust service: install "
+                "GameData/LowThrustWarp/LowThrustWarp.dll (from "
+                "testInstances/base/GameData/LowThrustWarp/, built by "
+                "lowThrust/plugin/build.sh) and restart KSP")
         self.counter = rpccount.RpcCounter().install(conn)
         self.gui = Panel(conn, target_text)
         self.autostart = autostart
