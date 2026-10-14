@@ -732,15 +732,23 @@ class Mission:
 
     def _push_point(self, c, el):
         """(seconds to the next push point, whether it is the periapsis):
-        the periapsis, and on an orbit where a push elsewhere costs no more
-        than PUSH_OFF_PERIAPSIS of the periapsis Hohmann, every 30 deg.
+        the periapsis, and every 30 deg where the vessel is as fast as there
+        (a near-circular orbit), if a push costs no more than
+        PUSH_OFF_PERIAPSIS of the periapsis Hohmann.
         (From periapsis alone, a near-circular waiting orbit met the Mun's
         Hohmann phase once a Mun revolution, up to 6 deg off, and every
         push arrived at 120-320 m/s where 80 would do.)"""
         mu = self.craft.body.mu
         best = (orbit.time_to(el, 0.0, mu), True)
         for k in range(1, 12):
-            t = orbit.time_to(el, k * math.pi / 6, mu)
+            nu = k * math.pi / 6
+            # only where the vessel is as fast as at periapsis (2%): a long
+            # push from 30 deg short of periapsis on an e 0.52 orbit spanned
+            # -50..+54 deg, lost its re-solve, and missed Minmus by 18 Mm
+            if math.sqrt(1 + el.e ** 2 + 2 * el.e * math.cos(nu)) \
+                    < 0.98 * (1 + el.e):
+                continue
+            t = orbit.time_to(el, nu, mu)
             if t < best[0]:
                 best = (t, False)
         return best
@@ -846,6 +854,12 @@ class Mission:
                                                1.5 * left + 2),
                               self._horizon, n=12, dv_min=max(0.0, 0.5 * left
                                                               - 2))
+        if dv is None:
+            # off the ledger's root: look again over the whole range before
+            # burning the ledger blind
+            dv = transfer.push_dv(cr.r, cr.v, cr.t, mu, moon, self.plan["rc"],
+                                  moon.normal, self._push_max(c),
+                                  self._horizon, n=24)
         if dv is not None:
             left = dv
         self.plan["push_left"] = left
