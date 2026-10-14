@@ -6,8 +6,10 @@ planet (or that planet's moon) -- optionally within a time budget. The
 solver works out every burn; the executor (not written yet) will fly them
 under rails warp with Persistent Thrust. The root `CLAUDE.md` applies here.
 
-**State (2026-10-13): the solver works end to end in a stand-in solar
-system (patched conics, stock bodies on rails); no kRPC code yet.**
+**State (2026-10-13 evening): the solver works end to end in a stand-in
+solar system (patched conics, stock bodies on rails) -- every one of 15
+destinations at every thrust from 0.02 to 10 m/s^2 arrives (630/630); no
+kRPC code yet.**
 History, every refuted approach and why: `docs/lowThrust/journal.md`.
 What the code does and what triggers what: `docs/lowThrust/howItWorks.pdf`.
 
@@ -108,6 +110,11 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
   the capture takes; started when braking at 0.8 of the engine must start,
   ended 600 s before the aim point, or given up once it has spent twice the
   speed it set out to shed.
+- **Approach dodge**: inbound to a planet with moons, if the coast to
+  periapsis, flown through the moon's SOI in patched conics, would hit
+  it, leave the system, or leave the periapsis under the floor, APPROACH
+  burns the cheapest dodge across the velocity (periapsis put back on the
+  aim; costed with the plane change it adds).
 - **Deep wells with moons** (Jool): planning compares a tight capture with a
   loose one (0.5 SOI) plus the impulsive lowering after, by predicted dv.
 - **Moon hazards in orbit shaping**: while the orbit crosses another moon's
@@ -127,28 +134,23 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
 
 ## Measured (stand-in, from LKO 100 km, 5 t vessel)
 
-Mean dv (m/s) over 6 start dates (UT 0 - 9e6 s), and arrivals where not 6/6
-(sweep of 2026-10-13, 432 flights):
+Sweep of 2026-10-13 evening (`sweep.sh`, 630 flights: 15 destinations x 7
+thrusts x 6 start dates UT 0-9e6 s): **all 630 arrive**. Mean dv (m/s):
 
-| thrust (accel) | Mun | Minmus | Duna | Eve | Ike | Dres | Jool | Eeloo | Moho |
-|---|---|---|---|---|---|---|---|---|---|
-| 100 N (0.02) | 1700 | 1540 | 3698 (4/6) | 4157 | **0/6** | 6321 | **0/6** | 7177 | 9063 |
-| 200 N (0.04, TWR 0.004) | 1328 | 1450 | 2902 | 3951 | 3434 | 5482 | 7151 | 6209 | 7397 |
-| 500 N (0.1) | 1222 | 1330 | 2798 | 3807 | 2788 | 5035 | 6483 | 5690 | 7090 |
-| 1 kN (0.2) | 1178 | 1248 | 2332 | 3319 | 2377 | 4939 | 6183 | 5293 | 6791 |
-| 2 kN (0.4, default) | 1167 | 1250 | 1805 | 2944 | 1862 | 4720 | 5944 | 4981 | 6527 |
-| 10 kN (2) | 1155 | 1239 | 1905 | 2904 | 1933 | 4153 | 5510 | 4228 | 5854 |
-| 25 kN (5) | 1133 | 1255 | 1882 | 2900 | 1898 | 3945 | 5479 | 4141 | 5881 |
-| 50 kN (10) | 1154 | 1449 | 1894 | 2914 | 2191 | 3923 | 5463 | 4115 | 5652 |
+| m/s^2 | Mun | Minmus | Duna | Ike | Eve | Gilly | Dres | Moho | Jool | Laythe | Vall | Tylo | Bop | Pol | Eeloo |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.02 | 1654 | 1698 | 3068 | 3176 | 4291 | 3521 | 6186 | 8874 | 8328 | 8562 | 7038 | 7870 | 6825 | 6734 | 7676 |
+| 0.04 | 1377 | 1517 | 2450 | 2537 | 3840 | 3123 | 5413 | 7551 | 7334 | 7541 | 6544 | 7231 | 5913 | 5943 | 6208 |
+| 0.1 | 1232 | 1299 | 2502 | 2542 | 4187 | 3245 | 5026 | 7197 | 6613 | 7479 | 6177 | 6364 | 5333 | 5438 | 5615 |
+| 0.2 | 1113 | 1245 | 2120 | 2384 | 3585 | 2926 | 4937 | 6615 | 6341 | 6908 | 5762 | 5875 | 5207 | 5211 | 5289 |
+| 0.4 | 1126 | 1234 | 1829 | 1853 | 3068 | 2774 | 4705 | 6326 | 6127 | 6497 | 5300 | 5613 | 4810 | 4899 | 4973 |
+| 2 | 1135 | 1231 | 1838 | 1814 | 2863 | 2733 | 4085 | 5807 | 5495 | 6240 | 4802 | 5068 | 4372 | 4495 | 4282 |
+| 10 | 1135 | 1324 | 1844 | 1861 | 2860 | 2738 | 3811 | 5507 | 5451 | 6017 | 4859 | 5025 | 4235 | 4408 | 4153 |
 
-### Second grid (2026-10-14): 15 destinations x 0.04 / 0.4 m/s^2 x 6 dates
-
-180 flights, 170 arrive. Mean dv (m/s), 0.04 / 0.4: Mun 1412 / 1167,
-Minmus 1494 / 1248, Duna 2812 / 1801, Ike 3652 / 1859, Eve 3880 / 3047,
-Gilly 4033 / 2782, Dres 5531 / 4705, Eeloo 6303 / 4972, Moho 7453 / 6522,
-Jool 8146 / 6001, Pol 5923 / 5228, Bop 5838 / 6753, Tylo 7455 / 7996,
-Laythe 9547 (**2/6**) / 6779, Vall **0/6** / 6333. (Gilly and Jool's moons
-were added to the stand-in this session.)
+0.04 m/s^2 is the user's craft (TWR ~0.004). Grid for quick checks (270
+flights, ~4-5 min): `sweep.sh OUT "100 200 2000" "0 1800000 3600000
+5400000 7200000 9000000" moho mun minmus duna eve ike dres jool eeloo gilly
+pol tylo laythe vall bop`.
 
 ## Open, in order
 
@@ -170,7 +172,9 @@ were added to the stand-in this session.)
    and dear (a 10 m/s^2 Duna arrival through Ike: 238 m/s). Choosing the
    aim point round the B-plane circle in the cruise, where it is cheap,
    would avoid it.
-6. **Weak-engine departures**: a 0.04 m/s^2 escape leaves with ~760 m/s of
+6. **Eve at 0.1 m/s^2 dearer than at 0.04** (4187 v 3840), Minmus at 10
+   m/s^2 than at 2 (1324 v 1231): not failures, unexplained.
+7. **Weak-engine departures**: a 0.04 m/s^2 escape leaves with ~760 m/s of
    a 2.9 km/s window v_inf, and the cruise re-target builds the rest
    (Jool: CRUISE 2.3-2.6 km/s of the total). Limiting DEPART to its
    +-60 deg arc was flown and lost (v_inf 765 even at 0.4 m/s^2, a Mun

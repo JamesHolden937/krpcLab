@@ -1,37 +1,29 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-14: `lowThrust/` -- TWR 0.004 to 13 of 15 destinations; 10 m/s^2 fine
+## 2026-10-13 evening: `lowThrust/` -- 630/630 arrive, 0.02 to 10 m/s^2
 
-The user's craft has Kerbin TWR ~0.004 (0.04 m/s^2); it "really needs to
-work". Latest grid (180 stand-in flights: 15 destinations incl. Gilly and
-Jool's five moons, added this session, x 0.04 / 0.4 m/s^2 x 6 dates): **170
-arrive**. At 0.04: everything 6/6 except **Laythe 2/6 and Vall 0/6** (lowThrust
-open item 1: MATCH deep in Jool's well starts too late). Earlier grid
-(9 destinations x 0.02-10 m/s^2): 0.04 and 0.1-10 all arrive; 0.02 fails
-into moon systems (open item 2). New: energy-path capture law, MATCH (about
-the star, and in a planet's frame for moons), LOOP (weak engine to a moon
-of a many-moon planet), Minmus waiting below the Mun's band, departure
-hand-over to CRUISE, widening arcs, floor guard, 2% thrust ticks,
-constant-mass vessel (the user: no finite fuel). All defaults, no flags.
-Aerobraking: design notes only. No kRPC code; farm not used. Suite OK.
-Details: `lowThrust/CLAUDE.md`, `docs/lowThrust/journal.md`,
-`docs/lowThrust/howItWorks.pdf`. Grid tool: `lowThrust/tools/sweep.sh`.
-Next: open item 1, then the PT probe and `pilot.py`.
+The user: "make sure all issues are fixed ... if it's a control issue, fix
+it". Every failure was control. Sweep (`lowThrust/tools/sweep.sh`, 15
+destinations incl. Gilly and Jool's five moons x 7 thrusts 0.02-10 m/s^2 x
+6 dates): **630/630 arrive** (baseline at the start: 217/270 on the 3-thrust
+grid). The user's craft is 0.04 m/s^2. Table: `lowThrust/CLAUDE.md`.
 
-## 2026-10-12 late: `lowThrust/` -- the transfer solver works in its stand-in
+Kept (all defaults, no flags; LOOP deleted): aim measured at the SOI entry;
+waiting orbits judged by the capture actually flown and placed in the gap
+between other moons' bands; push points every 30 deg, finite-burn pushes
+locked to their point; the pass guard flies each arc burn by the law
+(closed loop); exact caps; widest arcs while crossing a band; phasing trims
+now or at periapsis, sized to slip past a moon's SOI; polar capture for a
+free plane at a planet with moons; capture holds its periapsis; MATCH gives
+up at 2x; APPROACH dodges a harmful flyby. Refuted: the hazard sampler,
+a whole-range push re-solve, limiting DEPART to its arc, the 2%-speed
+rule. History: `docs/lowThrust/journal.md`; what the code does:
+`docs/lowThrust/howItWorks.pdf`. Suite: lowThrust tests pass (16 in
+testMission, 3 new). No kRPC code; farm not used.
 
-New autopilot for ion/low-thrust craft: type a target orbit -- same body, a
-moon, another planet or a planet's moon -- and it plans and flies every
-burn. Built offline in a patched-conic stand-in (stock bodies on rails);
-**no kRPC code yet, the farm was not used**. Default vessel TWR 0.04:
-Mun 1108 m/s, Minmus 1195, Duna 1810, Eve 2952, Ike 1869, Dres 4778, Jool
-6313, Eeloo 4953 (all arrive, over 3-6 start dates for the near ones); Moho
-refused at planning (needs TWR 0.177). Weak engines (TWR 0.004): Mun yes,
-Minmus and Duna fragile (moon-crossing hazards). 37 lowThrust tests in the
-suite (628 total, all pass). State, numbers, open items in order, traps:
-`lowThrust/CLAUDE.md`; history: `docs/lowThrust/journal.md`; what the code
-does: `docs/lowThrust/howItWorks.pdf`. **Next for it**: weak-engine moon
-crossings, longer departure pushes, then the PT probe and `pilot.py`.
+Next for it, in order: the Persistent Thrust probe, `pilot.py`,
+aerobraking, routes from a moon, cheaper dodges (B-plane side in the
+cruise), weak-engine departures (CRUISE builds 2.3 km/s of Jool's v_inf).
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 

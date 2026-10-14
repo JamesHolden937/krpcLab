@@ -301,3 +301,73 @@ lowThrust/CLAUDE.md.
    MATCH_SHARE 0.5-0.6: no better (refuted).
 
 Grid (180 flights, 15 destinations x 0.04/0.4 m/s^2 x 6 dates): 170 arrive.
+
+## Session, 2026-10-13 (evening): every destination at every thrust
+
+The user: "keep working on the solver ... make sure all issues are fixed.
+if some manoeuvres truly cannot be executed with really low thrust
+reasonably, then that's fine. but if it's a control issue, fix it."
+Method: the 270-flight grid (15 destinations x 0.02/0.04/0.4 m/s^2 x 6
+dates, ~4-5 min on 14 jobs) after every change, the failures read whole;
+a 630-flight sweep (0.02-10 m/s^2) at the end. Baseline (new dates):
+217/270. Every failure turned out to be control, not physics.
+
+Kept, in the order found:
+
+1. **A capped pass delivers its cap exactly**: the cap was not applied on
+   the burn's first tick (5.3 m/s flown as 6.1; high up 1 m/s moves the
+   next pass by days -- straight back onto Ike).
+2. **Widest arcs while the orbit crosses another moon's band**: a Duna
+   descent at +-8 deg spent 300 days crossing Ike's orbit.
+3. **Aim at the SOI entry** (`aim_error`): the B-plane aim was an arrival
+   from infinity; a 75 m/s arrival at Ike aimed 1565 km out, outside the
+   1050 km SOI, and the correction steered away (ten pushes undone, ~450
+   m/s). A straight-line test (`bt.py`) showed neither formula predicts the
+   periapsis of a slow arrival -- the coast curves through the planet's
+   field. Now the patched-conic entry state is aimed for rc. Mun 0.04
+   1630 -> 1355 on one date (no MATCH, no APPROACH).
+4. **Capture sheds energy without lowering the periapsis** once at or
+   below the aim (retrograde less its periapsis-gradient part): Duna 612
+   -> 566 m/s, periapsis held at 266 km instead of the 80 km floor.
+   ("89% radial" was a misreading: far out, retrograde *is* radial.)
+5. **Waiting orbits judged by the capture actually flown**: one-pass only,
+   Laythe and Vall at 0.04 had no waiting orbit at any height and fell back
+   to 230 km over Jool -- the fastest arrival, under every other moon.
+   Now one pass or the long capture; from above, the highest gap between
+   other moons' bands under the moon; nothing capturable: the slowest.
+6. **LOOP deleted**: without it Laythe 0.04 arrived 4/4 (7467 m/s mean)
+   against 2/4 with it (one at 15.7 km/s).
+7. **MATCH gives up** at twice the speed it set out to shed (co-orbital
+   with Vall it chased a receding encounter for 3807 days, 37 km/s).
+8. **Polar capture** for a free plane at a planet with moons: Jool 0.04
+   5/6 -> 6/6 (8008 -> 7353 m/s), 0.02 2/6 -> 5/6.
+9. **Push points every 30 deg**, finite pushes, the point locked and far
+   enough ahead to start half the burn early: from periapsis alone a
+   near-circular waiting orbit met the Hohmann phase once a moon
+   revolution and arrived 120-320 m/s where 80 would do (Mun 0.02 1828 ->
+   1662 m/s, 136 -> 43 days); a 2.4 h push to Laythe 6 h away, planned as
+   an impulse, chased a growing remainder into the moon.
+10. **The pass guard flies the arc by the guidance law, closed loop**:
+    the impulse at the arc's start was days off on the next pass; the
+    law's first-tick estimate said 42 m/s where 121 burned.
+11. **Phasing trims**: also for the rest of the current revolution
+    (trimmed now); sized by the shift that slips past a moon's SOI (8 m/s
+    moved a pass 5 min where 25 were needed); at least 0.1 m/s and at most
+    once per half revolution (keyed by the periapsis time, each trim moved
+    the key: +-0.01 m/s for years).
+12. **APPROACH dodge**, only for a harmful flyby (patched-conic
+    prediction), costed with the plane change it adds (a 10 m/s^2 Duna
+    arrival ran through Ike into Duna; dodging every flyby cost Ike
+    arrivals 900 m/s turning back into Ike's plane).
+13. The too-fast pass bar rises 25% a skip, at most once a synodic period.
+
+Refuted: the hazard predictor (time-uniform sampling of an eccentric
+orbit, suspected of jumping periapsis passes) -- 600 random Jool orbits,
+identical detections; a fallback push re-solve over the whole range
+(re-rooted the push into a chase); limiting a weak departure to its
++-60 deg arc (v_inf 765 even at 0.4 m/s^2, a Mun hit -- the long burn is
+what builds the escape energy); the 2%-speed rule for off-periapsis push
+points (a stand-in for the late start, fixed at the root).
+
+Result: 270-flight grid 217 -> 269/270; the 630-flight sweep over
+0.02-10 m/s^2: 630/630 arrive (table in lowThrust/CLAUDE.md).
