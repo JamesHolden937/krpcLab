@@ -55,3 +55,8 @@ saves/qs_shuttle2_ecc_rigoff.sfs
 testInstances/verify*.txt
 .kspPath
 lowThrust/plugin/*.dll
+
+# lowThrust's builds (lowThrust/mod/build.sh rebuilds them from the sources
+# and a KSP install's managed assemblies).
+lowThrust/mod/bin/
+lowThrust/mod/**/*.dll

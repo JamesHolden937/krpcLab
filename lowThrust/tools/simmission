@@ -1,0 +1,8 @@
+#!/bin/bash
+# Plan a low-thrust transfer between bodies in the stand-in solar system and
+# list the maneuvers it flies -- no KSP.  (lowThrust/mod/bin/lowthrust.exe,
+# built by lowThrust/mod/build.sh.)
+#
+#   lowThrust/tools/simmission --from "kerbin: ap=100 pe=100" --to "mun: ap=50 pe=50"
+#   lowThrust/tools/simmission ... --thrust 200 --mass 5000 --isp 4200 --ut 0 --set NAME=VALUE
+exec mono "$(dirname "$0")/../mod/bin/lowthrust.exe" mission "$@"

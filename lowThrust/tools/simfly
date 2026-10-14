@@ -1,0 +1,5 @@
+#!/bin/bash
+# Plan and fly an apsides change about Kerbin in the stand-in -- no KSP.
+#
+#   lowThrust/tools/simfly --start "ap=100 pe=100" --target "ap=500 pe=500 i=5" --within 2d [--table]
+exec mono "$(dirname "$0")/../mod/bin/lowthrust.exe" fly "$@"
