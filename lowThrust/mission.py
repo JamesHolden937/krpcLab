@@ -1194,7 +1194,8 @@ class Mission:
             return None
         self.plan["dodge_next"] = cr.t + 0.1 * t_pe
         if transfer.first_hazard(cr.r, cr.v, cr.t, mu, moons,
-                                 cr.t + t_pe) is None:
+                                 cr.t + t_pe) is None \
+                or not self._flyby_harms(cr.t + t_pe):
             return None
         cap = self._cap_spec()
         g = self._rp_gradient(c)
@@ -1203,8 +1204,24 @@ class Mission:
         e1 = vec.unit(e1) if vec.norm(e1) > 0 else orbit.rtn(cr.r, cr.v)[0]
         e2 = vec.cross(u, e1)
         reach = 0.5 * self._accel() * t_pe
-        best, m = None, 0.5
-        while m <= reach and (best is None or m < vec.norm(best)):
+        tg = self.final_target
+        n_t = None if tg.inc is None else orbit.plane_normal(
+            tg.inc, tg.lan if tg.lan is not None
+            else orbit.inclination_lan(cr.r, cr.v)[1])
+        v_c = math.sqrt(mu / self.plan["rc"])
+
+        def cost(dv, v1):
+            # the burn, plus the plane change it adds, at the capture
+            # orbit's speed: a dodge out of Ike's plane cost Duna's FINAL
+            # 800 m/s to turn back
+            if n_t is None:
+                return vec.norm(dv)
+            tilt = lambda v_: math.acos(max(-1.0, min(1.0, vec.dot(
+                vec.unit(vec.cross(cr.r, v_)), n_t))))
+            extra = max(0.0, tilt(v1) - tilt(cr.v))
+            return vec.norm(dv) + 2 * v_c * math.sin(extra / 2)
+        best, best_c, m = None, math.inf, 0.5
+        while m <= reach and m < best_c:
             for k in range(8):
                 a = k * math.pi / 4
                 dv = vec.scale(vec.add(vec.scale(e1, math.cos(a)),
@@ -1225,10 +1242,10 @@ class Mission:
                         or vec.norm(dv) > reach:
                     continue
                 t1 = orbit.time_to_periapsis(c1, mu)
-                if (best is None or vec.norm(dv) < vec.norm(best)) and \
-                        t1 > 0 and transfer.first_hazard(
-                            cr.r, v1, cr.t, mu, moons, cr.t + t1) is None:
-                    best = dv
+                cv = cost(dv, v1)
+                if cv < best_c and t1 > 0 and transfer.first_hazard(
+                        cr.r, v1, cr.t, mu, moons, cr.t + t1) is None:
+                    best, best_c = dv, cv
             m *= 2
         if best is None:
             return None
@@ -1236,6 +1253,30 @@ class Mission:
         self._last_dv = 0.0
         self.event(f"dodging a moon on the way in: {vec.norm(best):.1f} m/s")
         return self._dodge(c, t_pe)
+
+    def _flyby_harms(self, t_end):
+        """Whether the coast to UT ``t_end``, flown through any moon's SOI
+        in patched conics, hits the moon or leaves the destination's
+        periapsis under the capture floor.  (Dodging every flyby, Duna
+        arrivals that crossed Ike's SOI harmlessly paid 77 m/s each.)"""
+        cr, d = self.craft, self.dest
+        cp = Craft(cr.body, cr.r, cr.v, cr.m, cr.t)
+        floor = d.radius + d.atmosphere + self.cfg.SAFE_ALT_M
+        flew = False
+        while cp.t < t_end:
+            b = cp.body
+            c = orbit.conic(cp.r, cp.v, b.mu)
+            if b is not d and c.rp < b.radius + b.atmosphere \
+                    and orbit.time_to_periapsis(c, b.mu) > 0:
+                return True                     # into the moon
+            if b is d and flew:
+                return c.rp < floor
+            hit = coast(cp, max(1.0, min(t_end - cp.t, _boundary_tick(cp))))
+            if hit and hit[0] == "exit" and cp.body is d:
+                flew = True
+            if hit and hit[0] == "exit" and cp.body is not d:
+                return True                     # flung out of the system
+        return False
 
     def _floor_guard(self, c):
         """A bound orbit about the body the vessel is in whose periapsis is
