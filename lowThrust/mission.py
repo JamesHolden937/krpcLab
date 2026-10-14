@@ -1413,26 +1413,50 @@ def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg,
     v_m = math.sqrt(here.mu / moon.sma)
     v_long = moon_vcap_long(moon, accel, rc_min, ra_cap, cfg)
 
+    def candidate(rp, ceiling, one_pass_push, span):
+        """(rp, ra, capture) if this waiting periapsis works, else None;
+        "clear" when its orbit is clear of the other moons."""
+        ra = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp), ceiling)
+        clear = transfer.clear_of(rp, others, cfg.WAIT_SOI_MARGIN) and (
+            not span or all(transfer.clear_of(x, others, cfg.WAIT_SOI_MARGIN)
+                            for x in (rp, ra, (rp + ra) / 2)))
+        if not clear:
+            return None, False
+        vinf = transfer.moon_arrival_vinf(here.mu, rp, moon.sma, v_m)
+        cap = transfer.capture_orbit(
+            moon, vinf, accel, rc_min, ra_cap, arc, cfg.CAPTURE_FILL,
+            cfg.CAPTURE_LOOSE_FRACTION * moon.soi)
+        if cap is None and vinf <= v_long:
+            cap = (rc_min, ra_cap)
+        if cap is not None and (not one_pass_push or transfer.push_fits(
+                here.mu, rp, ra, moon.sma, accel, arc, cfg.CAPTURE_FILL)):
+            return (rp, ra, cap), True
+        return None, True
+
     def search(ceiling, one_pass_push, span):
         rp = rp_min
         while rp <= ceiling:
-            ra = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp), ceiling)
-            if transfer.clear_of(rp, others, cfg.WAIT_SOI_MARGIN) and (
-                    not span or all(transfer.clear_of(x, others,
-                                                      cfg.WAIT_SOI_MARGIN)
-                                    for x in (rp, ra, (rp + ra) / 2))):
-                vinf = transfer.moon_arrival_vinf(here.mu, rp, moon.sma, v_m)
-                cap = transfer.capture_orbit(
-                    moon, vinf, accel, rc_min, ra_cap, arc, cfg.CAPTURE_FILL,
-                    cfg.CAPTURE_LOOSE_FRACTION * moon.soi)
-                if cap is None and vinf <= v_long:
-                    cap = (rc_min, ra_cap)
-                if cap is not None and (not one_pass_push or transfer.push_fits(
-                        here.mu, rp, ra, moon.sma, accel, arc,
-                        cfg.CAPTURE_FILL)):
-                    return rp, ra, cap
+            got, _ = candidate(rp, ceiling, one_pass_push, span)
+            if got:
+                return got
             rp += max(1e3, 0.01 * (ceiling - rp_min))
         return None
+
+    def search_gap(ceiling):
+        """The highest gap between other moons' bands, under the moon, that
+        holds a waiting orbit, and the lowest periapsis in it that works.
+        (Searched from the bottom, Pol's waiting orbit at 0.4 m/s^2 was the
+        gap under Laythe, and its push 1200 m/s.)"""
+        step = max(1e3, 0.01 * (ceiling - rp_min))
+        rp, best = ceiling, None
+        while rp >= rp_min:
+            got, clear = candidate(rp, ceiling, False, True)
+            if got:
+                best = got
+            elif best is not None and not clear:
+                break                       # the bottom of the gap
+            rp -= step
+        return best
 
     found = None
     if inner and not from_above:
@@ -1441,7 +1465,7 @@ def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg,
         if wall > rp_min:
             found = search(min(top, wall), True, False)
     if found is None and from_above:
-        found = search(top, False, True)
+        found = search_gap(top)
     if found is None:
         found = search(top, False, False)
     ok = found is not None
