@@ -167,19 +167,51 @@ namespace LowThrust
                     double mdot = f / (isp * Sim.G0);                         // t/s
                     thrustN += f * 1000.0;
                     flowT += mdot;
+                    // the propellants as the part defines them: another mod may
+                    // take one off the module at run time (Persistent Thrust
+                    // takes ElectricCharge, to draw it itself), and an engine
+                    // flown here must still pay for it
+                    var defs = Defined(p, e);
                     double mix = 0;
-                    foreach (Propellant pr in e.propellants)
-                        mix += pr.ratio * (pr.resourceDef != null ? pr.resourceDef.density : 0);
+                    foreach (var d in defs) mix += d.Value * d.Key.density;
                     if (mix <= 0) continue;
-                    foreach (Propellant pr in e.propellants)
+                    foreach (var d in defs)
                         props.Add(new Prop
                         {
-                            id = pr.id, name = pr.name, unitsPerSecond = pr.ratio * mdot / mix,
-                            mode = pr.GetFlowMode(), part = p
+                            id = d.Key.id, name = d.Key.name, unitsPerSecond = d.Value * mdot / mix,
+                            mode = d.Key.resourceFlowMode, part = p
                         });
                 }
             massFlowKg = flowT * 1000.0;
             ispS = flowT > 0 ? thrustN / 1000.0 / (flowT * Sim.G0) : 0;
+        }
+
+        /// <summary>(resource, ratio) of each PROPELLANT in the engine module's
+        /// part config (matched by engineID), else the module's own list.</summary>
+        static List<KeyValuePair<PartResourceDefinition, double>> Defined(Part p, ModuleEngines e)
+        {
+            var r = new List<KeyValuePair<PartResourceDefinition, double>>();
+            ConfigNode cfg = p.partInfo != null ? p.partInfo.partConfig : null;
+            if (cfg != null)
+                foreach (ConfigNode m in cfg.GetNodes("MODULE"))
+                {
+                    string name = m.GetValue("name") ?? "";
+                    if (!name.StartsWith("ModuleEngines")) continue;
+                    string id = m.GetValue("engineID");
+                    if (id != null && id != e.engineID) continue;
+                    foreach (ConfigNode pn in m.GetNodes("PROPELLANT"))
+                    {
+                        PartResourceDefinition def = PartResourceLibrary.Instance.GetDefinition(pn.GetValue("name"));
+                        double ratio;
+                        if (def != null && double.TryParse(pn.GetValue("ratio"), System.Globalization.NumberStyles.Float,
+                                                           System.Globalization.CultureInfo.InvariantCulture, out ratio))
+                            r.Add(new KeyValuePair<PartResourceDefinition, double>(def, ratio));
+                    }
+                    if (r.Count > 0) return r;
+                }
+            foreach (Propellant pr in e.propellants)
+                if (pr.resourceDef != null) r.Add(new KeyValuePair<PartResourceDefinition, double>(pr.resourceDef, pr.ratio));
+            return r;
         }
 
         /// <summary>Draw the propellants for throttle x dt seconds at full
@@ -191,15 +223,42 @@ namespace LowThrust
             foreach (Prop p in props)
             {
                 double want = p.unitsPerSecond * throttle * dt;
-                if (want <= 0) continue;
-                double got = p.part.RequestResource(p.id, want, p.mode, true);
-                share = Math.Min(share, got / want);
+                if (want > 0) share = Math.Min(share, Have(p) / want);
             }
-            share = Math.Max(0, share);
+            share = Math.Max(0, Math.Min(1, share));
             if (share <= 0) return 0;
+            // drawn through the engine part's own flow rules; what it got is
+            // the share delivered
+            double got = share;
             foreach (Prop p in props)
-                p.part.RequestResource(p.id, p.unitsPerSecond * throttle * dt * share, p.mode, false);
-            return share;
+            {
+                double want = p.unitsPerSecond * throttle * dt * share;
+                if (want <= 0) continue;
+                double g = p.part.RequestResource(p.id, want, p.mode, false);
+                got = Math.Min(got, share * g / want);
+            }
+            return got;
+        }
+
+        /// <summary>What the vessel holds of a propellant, units.</summary>
+        public double Have(Prop p)
+        {
+            double amount, max;
+            vessel.GetConnectedResourceTotals(p.id, out amount, out max);
+            return amount;
+        }
+
+        /// <summary>Each propellant: rate at full thrust, flow mode, what the
+        /// vessel holds and what a simulated request offers (the log's check
+        /// that the draw sees the tanks).</summary>
+        public string Describe()
+        {
+            var parts = new List<string>();
+            foreach (Prop p in props)
+                parts.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                        "{0} {1:G4}/s {2} holds {3:G6} offers {4:G6}", p.name, p.unitsPerSecond, p.mode,
+                                        Have(p), p.part.RequestResource(p.id, 1e9, p.mode, true)));
+            return "propellants: " + string.Join("; ", parts.ToArray());
         }
 
         /// <summary>The longest thrusting span (s at full throttle) that draws
@@ -208,11 +267,7 @@ namespace LowThrust
         {
             double span = double.PositiveInfinity;
             foreach (Prop p in props)
-            {
-                if (p.unitsPerSecond <= 0) continue;
-                double have = p.part.RequestResource(p.id, 1e30, p.mode, true);
-                span = Math.Min(span, share * have / p.unitsPerSecond);
-            }
+                if (p.unitsPerSecond > 0) span = Math.Min(span, share * Have(p) / p.unitsPerSecond);
             return span;
         }
 

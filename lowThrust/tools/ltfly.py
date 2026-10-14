@@ -90,7 +90,7 @@ def main():
         for line in [x for x in lines if "ARRIVED" in x or "FAILED" in x
                      or "FATAL" in x or "shutdown" in x
                      or "per phase" in x or "per physics" in x
-                     or "thrust commands" in x or "plan:" in x
+                     or "thrust commands" in x or "plan:" in x or "aside" in x
                      or "budget" in x][-10:]:
             print("  " + line[:400])
     conn.close()

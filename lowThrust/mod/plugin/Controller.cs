@@ -82,6 +82,7 @@ namespace LowThrust
         class PhaseStat { public double wall, game, maxStepMs, frames, frameMs, maxFrameMs; public int steps; }
         readonly Dictionary<string, PhaseStat> stats = new Dictionary<string, PhaseStat>();
         int starved, unfired, fired;
+        double shareSum, shareN;
         double lastShown;
         string lastPhase = "";
 
@@ -260,12 +261,16 @@ namespace LowThrust
                                             engines.thrustN / Engines.Mass(vessel), Py.Degrees(Attitude.alpha.x),
                                             Py.Degrees(Attitude.alpha.y), Py.Degrees(Attitude.alpha.z)));
                 log.Event(ut, FrameCheck(vessel));
+                log.Event(ut, engines.Describe());
                 if (engines.thrustN <= 0) throw new ArgumentException("no engine lit on this vessel");
                 legs = Mission.RouteTo(here, dest);
                 leg = 0;
                 t0 = ut;
                 stats.Clear();
                 starved = unfired = fired = 0;
+                shareSum = shareN = 0;
+                holds = 0;
+                holdWall = holdMax = 0;
                 overBudget = false;
                 plan = null;
                 wall.Reset(); wall.Start();
@@ -400,7 +405,7 @@ namespace LowThrust
             if (mode == Mode.Idle || v == null) return;
             if (v != vessel) { Stop("the active vessel changed", false); return; }
             if (mode == Mode.Planning) { Planned(); if (mode != Mode.Flying) return; }
-            if (FlightDriver.Pause) return;
+            if (FlightDriver.Pause || thinker != null) return;
             QuietPT(v);
             if (!Warp.OnRails(v))
             {
@@ -462,6 +467,14 @@ namespace LowThrust
                 if (++guard > 100000) throw new InvalidOperationException("no progress in one step");
                 if (cur == null)
                 {
+                    if (ThinkAside())
+                    {
+                        // made aside while time stands still; the step goes
+                        // on from tSim once it is
+                        if (write) WriteOrbit(v);
+                        StartThinking();
+                        return;
+                    }
                     Decide(v);
                     if (mode != Mode.Flying || cur == null) return;
                     continue;
@@ -498,14 +511,16 @@ namespace LowThrust
                     cur = null;
                 }
             }
-            if (write)
-            {
-                CelestialBody body = GameSystem.Find(cr.body.name);
-                GameSystem.SetOrbit(v.orbit, body, cr.r, cr.v, cr.t);
-                v.orbitDriver.updateFromParameters();
-            }
+            if (write) WriteOrbit(v);
             Point(v);
             Shown(v, ut);
+        }
+
+        void WriteOrbit(Vessel v)
+        {
+            Craft cr = mis.craft;
+            GameSystem.SetOrbit(v.orbit, GameSystem.Find(cr.body.name), cr.r, cr.v, cr.t);
+            v.orbitDriver.updateFromParameters();
         }
 
         /// <summary>A thrusting command flown for seg seconds from the craft's
@@ -522,6 +537,7 @@ namespace LowThrust
             {
                 double share = engines.Draw(c.thr, h);
                 if (share < 0.999) starved++;
+                shareSum += share; shareN++;
                 double f = engines.thrustN * c.thr * share;
                 V3 R, T, N;
                 LowThrust.Orbit.Rtn(cr.r, cr.v, out R, out T, out N);
@@ -557,17 +573,56 @@ namespace LowThrust
         /// <summary>The next command from the craft's state now.</summary>
         void Decide(Vessel v)
         {
-            Craft cr = mis.craft;
+            Prime();
+            Act(v, Think());
+        }
+
+        /// <summary>The engines and the mass the mission plans with (main
+        /// thread: they read the game).</summary>
+        void Prime()
+        {
             engines.Refresh();
-            mis.vessel.massKg = cr.m;
+            mis.vessel.massKg = mis.craft.m;
             mis.vessel.thrustN = engines.thrustN;
+        }
+
+        class Thought
+        {
+            public Step s;
+            public double span, ms;
+            public V3? aimRtn;
+        }
+
+        /// <summary>The mission's decision from the craft's state: planner
+        /// objects only, so it may run on a worker thread.</summary>
+        Thought Think()
+        {
+            Craft cr = mis.craft;
             var watch = Stopwatch.StartNew();
-            Step s = pending ?? mis.DoStep();
+            var th = new Thought { s = pending ?? mis.DoStep() };
             pending = null;
+            if (th.s.result == null && th.s.throttle <= 0)
+            {
+                mis.Account(V3.Zero, 0.0, th.s.tick, cr.r, cr.v);
+                Body b0 = cr.body;
+                V3 r0 = cr.r, v0 = cr.v;
+                double t0c = cr.t;
+                th.span = CoastAhead(th.s.tick, out pending, out th.aimRtn);
+                cr.body = b0; cr.r = r0; cr.v = v0; cr.t = t0c;
+            }
+            th.ms = watch.Elapsed.TotalMilliseconds;
+            return th;
+        }
+
+        /// <summary>The decision made a command (main thread).</summary>
+        void Act(Vessel v, Thought th)
+        {
+            Craft cr = mis.craft;
+            Step s = th.s;
             Drain();
+            Note(th.ms);
             if (s.result != null)
             {
-                Note(watch);
                 LegEnded(s.result);
                 return;
             }
@@ -589,18 +644,10 @@ namespace LowThrust
             else
             {
                 c.coast = true;
-                mis.Account(V3.Zero, 0.0, s.tick, cr.r, cr.v);
-                Body b0 = cr.body;
-                V3 r0 = cr.r, v0 = cr.v;
-                double t0c = cr.t;
-                V3? aimRtn;
-                double span = CoastAhead(s.tick, out pending, out aimRtn);
-                cr.body = b0; cr.r = r0; cr.v = v0; cr.t = t0c;
-                c.tick = span;
-                c.tEnd = tSim + span;
-                HoldRtn(aimRtn ?? coastRtn);
+                c.tick = th.span;
+                c.tEnd = tSim + th.span;
+                HoldRtn(th.aimRtn ?? coastRtn);
             }
-            Note(watch);
             cur = c;
             if (dvMax.HasValue && mis.dv > dvMax.Value && !overBudget)
             {
@@ -609,6 +656,58 @@ namespace LowThrust
                                               mis.dv, dvMax.Value, plan != null ? plan.dv : 0));
             }
             Telemetry(cr, c);
+        }
+
+        // --- decisions too slow for one physics step ---------------------------------
+        // A decision that searches (the moon push, a mid-course correction, the
+        // phasing checks) can take a few hundred ms.  Made inside the physics
+        // step, the frame would freeze that long; instead it is made on a
+        // worker thread while game time stands still (Unity's time scale 0),
+        // the game drawing at its full frame rate meanwhile, and the step goes
+        // on from there once it is made.  A phase is thought slow once any of
+        // its decisions has taken more than half the frame budget.
+        Thread thinker;
+        Thought thought;
+        Exception thinkError;
+        readonly HashSet<string> slowPhases = new HashSet<string>();
+        int holds;
+        double holdStart, holdWall, holdMax;
+
+        bool ThinkAside() { return slowPhases.Contains(mis.phase ?? ""); }
+
+        void StartThinking()
+        {
+            Prime();
+            thought = null;
+            thinkError = null;
+            thinker = new Thread(() =>
+            {
+                try { thought = Think(); }
+                catch (Exception e) { thinkError = e; }
+            }) { IsBackground = true };
+            thinker.Start();
+            holdStart = wall.Elapsed.TotalSeconds;
+            holds++;
+            if (!FlightDriver.Pause) Time.timeScale = 0f;
+        }
+
+        void Update()
+        {
+            if (thinker == null || thinker.IsAlive) return;
+            thinker = null;
+            if (!FlightDriver.Pause) Time.timeScale = 1f;
+            double held = wall.Elapsed.TotalSeconds - holdStart;
+            holdWall += held;
+            holdMax = Math.Max(holdMax, held);
+            if (mode != Mode.Flying) return;
+            if (thinkError != null)
+            {
+                log.Event(Planetarium.GetUniversalTime(), "FATAL " + thinkError);
+                Stop("error: " + thinkError.Message, false);
+                return;
+            }
+            Act(vessel, thought);
+            Point(vessel);
         }
 
         /// <summary>The mission run ahead along the exact coast from the tick
@@ -758,6 +857,8 @@ namespace LowThrust
             holding = false;
             cur = null;
             pending = null;
+            if (thinker != null) { thinker = null; Time.timeScale = 1f; }
+            slowPhases.Clear();
             mode = Mode.Idle;
             result = reason;
             flights++;
@@ -772,11 +873,12 @@ namespace LowThrust
         }
 
         // --- measures and display ---------------------------------------------------------
-        void Note(Stopwatch w)
+        void Note(double ms)
         {
             PhaseStat p = Stat(mis.phase ?? "-");
             p.steps++;
-            p.maxStepMs = Math.Max(p.maxStepMs, w.Elapsed.TotalMilliseconds);
+            p.maxStepMs = Math.Max(p.maxStepMs, ms);
+            if (ms > cfg.FRAME_BUDGET_MS / 2) slowPhases.Add(mis.phase ?? "");
         }
 
         PhaseStat Stat(string phase)
@@ -810,8 +912,12 @@ namespace LowThrust
                 stats.Where(kv => kv.Value.frames > 0).Select(kv => string.Format(IC, "{0} {1:F2}/{2:F1} {3:F0}; {4:F1}",
                     kv.Key, kv.Value.frameMs / kv.Value.frames, kv.Value.maxFrameMs, kv.Value.frames,
                     kv.Value.maxStepMs)).ToArray()));
-            r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant; "
-                                    + "wheels drew {3:F1} EC", fired, unfired, starved, Attitude.ecUsed));
+            r.Add(string.Format(IC, "decisions made aside (game time held, frames drawn): {0}, {1:F1} s in all, "
+                                    + "longest {2:F2} s; slow phases: {3}", holds, holdWall, holdMax,
+                                string.Join(" ", slowPhases.ToArray())));
+            r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant "
+                                    + "(mean thrust share {3:F3}); wheels drew {4:F1} EC", fired, unfired, starved,
+                                shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed));
             return r;
         }
 
