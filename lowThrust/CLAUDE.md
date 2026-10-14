@@ -152,39 +152,29 @@ were added to the stand-in this session.)
 
 ## Open, in order
 
-1. **Laythe and Vall at 0.04 m/s^2** (2/6, 0/6): LOOP finds the pass, but
-   MATCH deep in Jool's well starts too late (its constant-deceleration
-   timing ignores how fast the speed relative to the moon changes near
-   the loop's periapsis) and enters the SOI too fast; Laythe's flights
-   that arrive spend 9.5 km/s on repeated MATCHes. Tried: MATCH_SHARE
-   0.5-0.6 (no better). Next: decide MATCH's start by flying the MATCH law
-   forward in prediction (as the capture's planning does), or MATCH earlier
-   on the loop's inbound leg.
-
-2. **0.02 m/s^2 into a moon system** (Duna 4/6, Ike 0/6, Jool 0/6): the
-   in-SOI long capture starts outside the moons (Duna: 27.5 Mm, Ike at 3.2)
-   and burns through their bands; a moon flyby mid-capture drops it into
-   the planet. Jool also captures 1.16 Gm loose and FINAL cannot spiral
-   down past five moons in the time limit. Tried: limiting the in-SOI
-   capture to start inside the moons (MATCH taking the rest) -- worse (Ike
-   at 0.04 fell to 2/6: a slow MATCH arrival into Duna is not steered well
-   enough to keep its periapsis out of the atmosphere; reverted). Next:
-   steer the capture's moon crossings by timing (as the pump's passes are
-   checked), or steer MATCH's slow arrival onto the periapsis.
-3. **The Persistent Thrust probe** (`tools/ptprobe.py`, an ion craft and an
+1. **The Persistent Thrust probe** (`tools/ptprobe.py`, an ion craft and an
    LKO save): throttle persistence into rails warp, which SAS modes hold on
    rails (prograde/retrograde/normal and the maneuver mode -- combined burns
    and corrections need arbitrary directions), dv per warp rate, EC in
    shadow, kRPC orbit reads during warp.
-4. **The pilot** (`pilot.py`, the only kRPC-aware code): run `Mission`'s
+2. **The pilot** (`pilot.py`, the only kRPC-aware code): run `Mission`'s
    phase machine against kRPC (live bodies and orbits, measured
    acceleration), panel with target fields, PLAN (the stand-in flight as
    the preview), START/TERMINATE, `config:` line, fingerprint, `rpccount`,
    a `PILOTS` line. Warp from the tick each phase needs (lower near
    periapsis: ticks are uniform in angle).
-5. **Aerobraking** (below).
-6. Routes not yet supported: from a moon (Mun -> Kerbin, Mun -> Minmus,
+3. **Aerobraking** (below).
+4. Routes not yet supported: from a moon (Mun -> Kerbin, Mun -> Minmus,
    moon -> planet).
+5. **Cheaper moon dodges**: APPROACH dodges a moon on the inbound leg late
+   and dear (a 10 m/s^2 Duna arrival through Ike: 238 m/s). Choosing the
+   aim point round the B-plane circle in the cruise, where it is cheap,
+   would avoid it.
+6. **Weak-engine departures**: a 0.04 m/s^2 escape leaves with ~760 m/s of
+   a 2.9 km/s window v_inf, and the cruise re-target builds the rest
+   (Jool: CRUISE 2.3-2.6 km/s of the total). Limiting DEPART to its
+   +-60 deg arc was flown and lost (v_inf 765 even at 0.4 m/s^2, a Mun
+   hit); spiralling out and leaving on the asymptote might not.
 
 ## Aerobraking (planned, not built -- the user, 2026-10-13: "think about it")
 
@@ -258,6 +248,19 @@ What it needs:
 - **Two gates measuring the same quantity differently deadlock**: the
   plane burn waited on the osculating periapsis, the apsis arc on the
   radius toward the held apse line; PARK coasted 4000 days.
+- **A prediction must fly what the flight flies**: three of this
+  session's failures were predictions of a different burn -- the pass
+  guard's impulse at the arc start (days off on the next pass), its
+  first-tick dv estimate (42 m/s predicted, 121 burned), and a push
+  planned as an impulse that took 2.4 h. Predict with the law itself,
+  closed loop, from when it will actually start.
+- **Aim where the conic is decided**: the patched-conic periapsis is set by
+  the SOI-entry state. A straight-line closest approach is right only
+  for fast arrivals; at 75 m/s the aim fell outside Ike's SOI and the
+  correction steered away.
+- **A check keyed by something its own action moves re-fires at once**:
+  phasing trims keyed by the periapsis time moved the key with every
+  trim (+-0.01 m/s for years).
 - **Sweep thrusts and dates, not one flight**: every fix here was found by
   a 270-432 flight grid (`simmission` takes 1-20 s), and two "fixes" that
   looked right on one case lost 10-20% dv or robustness on the grid.
