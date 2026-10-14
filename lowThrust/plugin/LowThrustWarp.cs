@@ -118,7 +118,10 @@ namespace LowThrustWarp
         /// pilot changing rate every few ticks spent a third of its time
         /// easing (33x of a 50x warp); the instant change is KSP's own
         /// option.  Unlike kRPC's RailsWarpFactor it does not cut the
-        /// throttle.</summary>
+        /// throttle.  The index asked for stands: while it is held the rate
+        /// climbs back to it whenever the altitude allows (KSP only ever
+        /// lowers it), so a coast set at periapsis is not flown at its
+        /// limit all the way round.</summary>
         [KRPCProcedure]
         public static int SetRailsWarp(int index)
         {
@@ -127,12 +130,8 @@ namespace LowThrustWarp
             if (index < 0) index = 0;
             if (index >= TimeWarp.fetch.warpRates.Length)
                 index = TimeWarp.fetch.warpRates.Length - 1;
-            if (!v.LandedOrSplashed)
-            {
-                double alt = v.mainBody.GetAltitude(v.CoM);
-                while (index > 0 && alt < TimeWarp.fetch.GetAltitudeLimit(index, v.mainBody))
-                    index--;
-            }
+            Pace.wantIndex = index;
+            index = Pace.AltitudeCap(v, index);
             if (TimeWarp.WarpMode != TimeWarp.Modes.HIGH)
             {
                 TimeWarp.fetch.Mode = TimeWarp.Modes.HIGH;
@@ -185,6 +184,9 @@ namespace LowThrustWarp
         [KRPCProcedure]
         public static bool Held()
         {
+            // read on a stream, every frame while the pilot is connected: a
+            // hold is only an orphan once nobody is watching it
+            Pace.lastCommand = Time.realtimeSinceStartup;
             return Pace.held;
         }
 
@@ -293,6 +295,18 @@ namespace LowThrustWarp
         internal static double achieved;
         internal static float lastCommand;
         internal static int floorIndex = 1;
+        internal static int wantIndex = -1;       // SetRailsWarp's, -1 none
+
+        /// <summary>The highest index up to <paramref name="index"/> the
+        /// game allows at the vessel's altitude.</summary>
+        internal static int AltitudeCap(Vessel v, int index)
+        {
+            if (v.LandedOrSplashed) return index;
+            double alt = v.mainBody.GetAltitude(v.CoM);
+            while (index > 0 && alt < TimeWarp.fetch.GetAltitudeLimit(index, v.mainBody))
+                index--;
+            return index;
+        }
         // The next frame may be this much longer than the longest recent.
         const double FRAME_MARGIN = 1.5;
         float[] frames = new float[8];
@@ -313,6 +327,7 @@ namespace LowThrustWarp
             scale = 1f;
             holdUT = double.PositiveInfinity;
             held = false;
+            wantIndex = -1;
             winReal = Time.realtimeSinceStartup;
             winUT = Planetarium.GetUniversalTime();
         }
@@ -357,6 +372,9 @@ namespace LowThrustWarp
             if (FlightDriver.Pause || !rails)
             {
                 held = false;
+                // a warp the pilot did not set (the player's, or none) is
+                // not overridden
+                if (!FlightDriver.Pause) wantIndex = -1;
                 if (active)
                 {
                     Time.timeScale = FlightDriver.Pause ? 0f : 1f;
@@ -369,12 +387,21 @@ namespace LowThrustWarp
             {
                 holdUT = double.PositiveInfinity;
                 scale = 1f;
+                wantIndex = -1;
             }
             double left = holdUT - ut;
+            // the rate: the one asked for, as far as the altitude allows,
+            // stepped down near the end of a hold to no lower than the floor
             int idx = TimeWarp.CurrentRateIndex;
-            if (left > 0 && idx > Math.Max(1, floorIndex)
-                && 0.02 * TimeWarp.fetch.warpRates[idx] * FRAMES_LEFT > left)
-                TimeWarp.SetRate(idx - 1, true, true);
+            int want = wantIndex >= 0 ? wantIndex : idx;
+            Vessel av = FlightGlobals.ActiveVessel;
+            if (av != null) want = AltitudeCap(av, want);
+            if (left > 0)
+                while (want > Math.Max(1, floorIndex)
+                       && 0.02 * TimeWarp.fetch.warpRates[want] * FRAMES_LEFT > left)
+                    want--;
+            if (want >= 1 && want != idx)
+                TimeWarp.SetRate(want, true, true);
             held = left <= 0;
             // The time scale for the next frame.  Unity simulates the real
             // frame time (capped at KSP's 0.04 s) x timeScale, and frame times

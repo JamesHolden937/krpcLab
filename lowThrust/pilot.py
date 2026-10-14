@@ -208,7 +208,9 @@ class Pilot:
                 raise RuntimeError("the game will not rails-warp here (an "
                                    "atmosphere, or too low): this pilot "
                                    "flies on rails only")
-            self.warp_index = got      # capped by altitude: asked again
+            # the plugin holds the index asked for, climbing back to it as
+            # the altitude allows
+            self.warp_index = idx
         return self.rates.get(idx, 1)
 
     def hold(self, until):
@@ -222,7 +224,7 @@ class Pilot:
                     self.cfg.WARP_FLOOR_S:
                 floor = i
         self.lt.run_until(until, floor)
-        self.warp_index = None          # the plugin may step it down
+        past = None
         while True:
             # held as well as past ``until``: the frame that crosses it runs
             # its remaining steps after the stream has said so, and their
@@ -231,6 +233,17 @@ class Pilot:
             now = self.ut()
             if now >= until and self.held_s():
                 return self.ut()
+            if now >= until:
+                # past it and not held: the hold was dropped (a pause, the
+                # plugin's orphan release) -- ask again, which holds at once,
+                # rather than wait for a hold nobody will set
+                if past is None:
+                    past = time.time()
+                elif time.time() - past > self.cfg.HOLD_LOST_S:
+                    self.log.event(now, "hold at %.1f lost (ut %.1f): re-issued"
+                                   % (until, now))
+                    self.lt.run_until(until, floor)
+                    past = None
             time.sleep(0.01)
             if self.gui.terminate_pressed():
                 raise Terminated()

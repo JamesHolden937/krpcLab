@@ -146,6 +146,10 @@ class Config:
     # ... and a hold steps the warp down as it nears its end, but no lower
     # than the rate for a tick this long.
     WARP_FLOOR_S: float = 10.0
+    # Wall seconds past a hold's time without the game held before the hold
+    # is asked for again (it was dropped: a pause, or the plugin taking the
+    # pilot for dead).
+    HOLD_LOST_S: float = 2.0
     # Rails warp runs this many times faster than KSP runs it: the same
     # frames (0.02 s x the warp rate of game time each), more per real
     # second, held exactly at each tick's end (the plugin's Pace).  As fast
