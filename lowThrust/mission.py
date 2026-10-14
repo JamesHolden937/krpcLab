@@ -465,9 +465,8 @@ class Mission:
     def _repump(self, why):
         """Back to the orbit-shaping phase after an unplanned flyby or a
         periapsis that dropped too low: the in-SOI law repairs the orbit."""
-        self.plan.pop("pass", None)
-        self.plan.pop("horizon", None)
-        self.plan.pop("next_fix", None)
+        for k in ("pass", "horizon", "next_fix", "push", "push_t"):
+            self.plan.pop(k, None)
         if self.kind == "moon":
             self.target = guidance.Target(self.plan["ra_wait"],
                                           self.plan["rp_wait"], self.dest.inc,
@@ -720,6 +719,7 @@ class Mission:
     def _wait(self, c):
         trim = self._trim_check(c) if c.e < 1 else None
         if trim is not None:
+            self.plan.pop("push", None)          # the trim moves the pass
             self.plan["trim_left"] = abs(trim)
             self.plan["trim_sign"] = 1.0 if trim > 0 else -1.0
             self.plan["resume"] = "WAIT"
@@ -761,7 +761,7 @@ class Mission:
             dt = min(dt, self._tick(c))
         return 0.0, None, max(1.0, dt)
 
-    def _push_point(self, c, el):
+    def _push_point(self, c, el, lead):
         """(seconds to the next push point, whether it is the periapsis):
         the periapsis, and every 30 deg where the vessel is as fast as there
         (a near-circular orbit), if a push costs no more than
@@ -780,6 +780,11 @@ class Mission:
                     < 0.98 * (1 + el.e):
                 continue
             t = orbit.time_to(el, nu, mu)
+            # far enough ahead to start a push there half its burn early
+            # (the nearest point, 47 min ahead, started a 2.4 h push late
+            # and its every re-solve failed)
+            if t < 0.3 * lead:
+                continue
             if t < best[0]:
                 best = (t, False)
         return best
@@ -791,7 +796,13 @@ class Mission:
         accel = self._accel()
         # one decision per push point, made a little ahead of it
         lead = min(0.25 * c.period, self._push_max(c) / accel)
-        t_pe, at_pe = self._push_point(c, el) if el else \
+        if self.plan.get("push") is not None:
+            # decided: burn centred on that point
+            dv, t_pe = self.plan["push"], self.plan["push_t"] - cr.t
+            if t_pe <= dv / accel / 2:
+                return self._start_push(c, dv)
+            return self._hold(c, t_pe - dv / accel / 2)
+        t_pe, at_pe = self._push_point(c, el, lead) if el else \
             (orbit.time_to_periapsis(c, mu), True)
         if t_pe > lead:
             return self._hold(c, t_pe - lead)
@@ -835,20 +846,20 @@ class Mission:
                                f"the {self.plan['vcap']:.0f} this engine "
                                "captures")
                     dv = None
-            self.plan["push"] = dv
-        dv = self.plan.get("push")
-        if dv is None:                       # not this point
-            return self._hold(c, t_pe + 0.01 * c.period)
-        if t_pe <= dv / accel / 2:
-            self.set_phase("PUSH", f"{dv:.1f} m/s prograde")
-            self.plan["push_left"] = dv
-            # a new trajectory: the last coast's encounter is stale (MATCH
-            # once started off one 59 h in the past)
-            for k in ("ca_t", "vrel", "match_done", "horizon", "skips",
-                      "skip_t"):
-                self.plan.pop(k, None)
-            return self._push(c)
-        return self._hold(c, t_pe - dv / accel / 2)
+            self.plan["push"], self.plan["push_t"] = dv, cr.t + t_pe
+            if dv is not None:
+                return self._wait_moon(c)
+        return self._hold(c, t_pe + 0.01 * c.period)   # not this point
+
+    def _start_push(self, c, dv):
+        self.set_phase("PUSH", f"{dv:.1f} m/s prograde")
+        self.plan["push_left"] = dv
+        # a new trajectory: the last coast's encounter is stale (MATCH once
+        # started off one 59 h in the past)
+        for k in ("ca_t", "vrel", "match_done", "horizon", "skips", "skip_t",
+                  "push", "push_t"):
+            self.plan.pop(k, None)
+        return self._push(c)
 
     def _synodic(self, c):
         """The waiting orbit's synodic period with the moon: how often the
@@ -886,12 +897,6 @@ class Mission:
                               self._horizon, n=12, dv_min=max(0.0, 0.5 * left
                                                               - 2),
                               accel=self._accel(), centered=False)
-        if dv is None:
-            # off the ledger's root: look again over the whole range before
-            # burning the ledger blind
-            dv = transfer.push_dv(cr.r, cr.v, cr.t, mu, moon, self.plan["rc"],
-                                  moon.normal, self._push_max(c),
-                                  self._horizon, n=24)
         if dv is not None:
             left = dv
         self.plan["push_left"] = left
