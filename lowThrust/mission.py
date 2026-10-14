@@ -522,8 +522,9 @@ class Mission:
                 self.plan["trim_left"] = abs(trim)
                 self.plan["trim_sign"] = 1.0 if trim > 0 else -1.0
                 self.plan["resume"] = self.phase
-                self.set_phase("TRIM", f"{trim:+.1f} m/s at periapsis to miss "
-                                       "a moon")
+                self.set_phase("TRIM", f"{trim:+.2f} m/s "
+                               + ("now" if self.plan["trim_now"] else
+                                  "at periapsis") + " to miss a moon")
                 return self._trim(c)
         el = orbit.elements(cr.r, cr.v, cr.body.mu)
         if el is None or el.ra > cfg.REBIND_SOI_FRACTION * cr.body.soi:
@@ -620,19 +621,28 @@ class Mission:
         if not others:
             return
         full = self._fly_arc(math.inf)[3]
+        latest = None
         for f in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
             r1, v1, t1, _ = self._fly_arc(f * full)
             c1 = orbit.conic(r1, v1, mu)
             if c1.e >= 1:
                 continue
-            if transfer.first_hazard(r1, v1, t1, mu, others,
-                                     cr.t + 1.05 * c1.period) is None:
+            hit = transfer.first_hazard(r1, v1, t1, mu, others,
+                                        cr.t + 1.05 * c1.period, when=True)
+            if hit is None:
                 if f != 1.0:
                     self.plan["cap"] = f * full
                     self.event(f"burn capped at {f * full:.1f} m/s: the "
                                "full pass would meet a moon next revolution")
                 return
-        self.event("warning: no burn this pass avoids a moon next revolution")
+            if latest is None or hit[0] > latest[0]:
+                latest = (hit[0], f)
+        # none avoids it: the one that meets it latest, the most time for a
+        # trim (burned in full, a weak descent met Laythe days later)
+        if latest is not None and latest[1] != 1.0:
+            self.plan["cap"] = latest[1] * full
+        self.event("warning: no burn this pass avoids a moon next "
+                   "revolution; the latest encounter kept")
 
     def _fly_arc(self, cap):
         """(r, v, t, dv) where this arc's burn ends, flown in prediction by
@@ -679,33 +689,51 @@ class Mission:
         if self.plan.get("trim_checked") == key:
             return None
         self.plan["trim_checked"] = key
-        rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
         t1 = cr.t + t_pe
+        self.plan["trim_now"] = False
+        if transfer.first_hazard(cr.r, cr.v, cr.t, mu, others, t1) \
+                is not None:
+            # the rest of this revolution meets one: phase it now (a weak
+            # descent round Jool coasted 136 days into Laythe on the inbound
+            # leg, which no trim at the next periapsis can reach)
+            dv = self._phasing(cr.r, cr.v, cr.t, c, others, t1 + 1.05 * c.period)
+            if dv is not None:
+                self.plan["trim_now"] = True
+                return dv
+        rp_, vp_ = orbit.propagate(cr.r, cr.v, mu, t_pe)
         if transfer.first_hazard(rp_, vp_, t1, mu, others,
                                  t1 + 1.05 * c.period) is None:
             return None
-        u = vec.unit(vp_)
-        # sized also by the shift in time that slips past a moon's SOI:
-        # dP/dv = 3 a v P / mu.  (Fixed at 0.5-8 m/s, near the end of a
-        # descent round Jool 8 m/s moved the pass 5 min where slipping past
-        # Laythe takes 25.)
-        vp = vec.norm(vp_)
-        dpdv = 3 * c.a * vp * c.period / mu
+        dv = self._phasing(rp_, vp_, t1, c, others, None)
+        if dv is None:
+            self.event("warning: no phasing trim clears the moons")
+        return dv
+
+    def _phasing(self, r, v, t, c, others, t_end):
+        """The smallest along-track burn at (r, v, t) whose coast clears
+        ``others`` until ``t_end`` (None: two revolutions), or None: of
+        +-0.5..8 m/s, and of a quarter to twice the burn that shifts the
+        next pass past a moon's SOI, dP/dv = 3 a v P / mu.  (Fixed at
+        0.5-8 m/s, near the end of a descent round Jool 8 m/s moved the
+        pass 5 min where slipping past Laythe takes 25.)"""
+        cfg, mu = self.cfg, self.craft.body.mu
+        u = vec.unit(v)
+        speed = vec.norm(v)
+        dpdv = 3 * c.a * speed * c.period / mu
         slip = max(2 * cfg.WAIT_SOI_MARGIN * b.soi / math.sqrt(mu / b.sma)
                    for b in others)
         unit = slip / max(dpdv, 1e-9)
         steps = sorted({0.5, 1.0, 2.0, 4.0, 8.0}
                        | {x * unit for x in (0.25, 0.5, 1.0, 2.0)
-                          if x * unit <= 0.02 * vp})
+                          if x * unit <= 0.02 * speed})
         for dv in (s * x for x in steps for s in (1.0, -1.0)):
-            v1 = vec.add(vp_, vec.scale(u, dv))
-            c1 = orbit.conic(rp_, v1, mu)
+            v1 = vec.add(v, vec.scale(u, dv))
+            c1 = orbit.conic(r, v1, mu)
             if c1.e >= 1:
                 continue
-            if transfer.first_hazard(rp_, v1, t1, mu, others,
-                                     t1 + 2.05 * c1.period) is None:
+            end = t_end if t_end is not None else t + 2.05 * c1.period
+            if transfer.first_hazard(r, v1, t, mu, others, end) is None:
                 return dv
-        self.event("warning: no phasing trim clears the moons")
         return None
 
     def _final(self, c=None):
@@ -736,13 +764,15 @@ class Mission:
             self.plan["trim_left"] = abs(trim)
             self.plan["trim_sign"] = 1.0 if trim > 0 else -1.0
             self.plan["resume"] = "WAIT"
-            self.set_phase("TRIM", f"{trim:+.1f} m/s at periapsis to miss a "
-                                   "moon")
+            self.set_phase("TRIM", f"{trim:+.2f} m/s "
+                           + ("now" if self.plan["trim_now"] else
+                              "at periapsis") + " to miss a moon")
             return self._trim(c)
         return self._wait_moon(c) if self.kind == "moon" else self._wait_planet(c)
 
     def _trim(self, c):
-        """A small prograde/retrograde burn centred on the next periapsis."""
+        """A small prograde/retrograde burn centred on the next periapsis,
+        or now (``trim_now``)."""
         cr, cfg = self.craft, self.cfg
         tick = self._tick(c)
         left = self.plan["trim_left"] - self._last_dv
@@ -752,7 +782,8 @@ class Mission:
             self.set_phase(self.plan["resume"], "trim done")
             return 0.0, None, tick
         t_pe = orbit.time_to_periapsis(c, cr.body.mu)
-        if self._burn is None and t_pe > left / self._accel() / 2 \
+        if self._burn is None and not self.plan.get("trim_now") \
+                and t_pe > left / self._accel() / 2 \
                 and t_pe < 0.9 * c.period:
             return self._hold(c, t_pe - left / self._accel() / 2)
         return (min(1.0, left / (self._accel() * tick)),

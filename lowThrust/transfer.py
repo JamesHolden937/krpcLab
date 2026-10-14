@@ -358,9 +358,10 @@ def band(b, margin):
             b.sma * (1 + b.ecc) + margin * b.soi)
 
 
-def first_hazard(r, v, t, mu, others, t_end, margin=1.2):
+def first_hazard(r, v, t, mu, others, t_end, margin=1.2, when=False):
     """The first of ``others`` (bodies about the same centre) whose SOI the
-    coast from (r, v, t) enters before UT ``t_end``; None if none."""
+    coast from (r, v, t) enters before UT ``t_end``; None if none.  With
+    ``when``, (UT of the closest approach, body)."""
     hit = None
     for b in others:
         if t_end <= t:
@@ -368,6 +369,8 @@ def first_hazard(r, v, t, mu, others, t_end, margin=1.2):
         ca = closest_approach(r, v, t, mu, b, t_end - t, 300)
         if vec.norm(ca.d) < margin * b.soi and (hit is None or ca.t < hit[0]):
             hit = (ca.t, b)
+    if when:
+        return hit
     return hit[1] if hit else None
 
 

@@ -63,6 +63,48 @@ class TestGeometry(unittest.TestCase):
             mission.route(SYS["Mun"], SYS["Ike"])
 
 
+class TestMoonSystems(unittest.TestCase):
+    """Weak engines in a moon system: where to wait, where to aim."""
+
+    def test_waiting_orbit_in_the_gap_below_the_moon(self):
+        """0.04 m/s^2 to Vall: no one-pass capture exists, so the waiting
+        orbit is where the long capture takes the arrival -- in the gap
+        between Laythe's band and Vall's, crossing neither."""
+        j, vall = SYS["Jool"], SYS["Vall"]
+        rc = vall.radius + CFG.SAFE_ALT_M
+        ra, rp, _, _, ok = mission.waiting_orbit(
+            j, vall, j.radius + j.atmosphere + CFG.SAFE_ALT_M, rc,
+            CFG.CAPTURE_AP_FRACTION * vall.soi, 0.04, CFG, from_above=True)
+        self.assertTrue(ok)
+        self.assertGreater(rp, transfer.band(SYS["Laythe"], 1.2)[1])
+        self.assertLess(ra, transfer.band(vall, 1.2)[0])
+
+    def test_aim_is_measured_at_the_soi_entry(self):
+        """A coast aimed by ``aim_error`` enters the Mun's SOI on a conic
+        whose periapsis is the one aimed for, slow arrival or fast."""
+        k, mun = SYS["Kerbin"], SYS["Mun"]
+        rc = mun.radius + 300e3
+        for v in (150.0, 600.0):
+            rm, vm = mun.state(0.0)
+            u = vec.unit(vm)
+            side = vec.unit(vec.cross(u, mun.normal))
+            # bisect the offset whose entry passes on the aim
+            lo, hi = 0.0, 0.9 * mun.soi
+            for _ in range(50):
+                b = (lo + hi) / 2
+                r0 = vec.add(vec.sub(rm, vec.scale(u, 3 * mun.soi)),
+                             vec.scale(side, b))
+                v0 = vec.add(vm, vec.scale(u, v))
+                ca = transfer.closest_approach(r0, v0, 0.0, k.mu, mun,
+                                               6 * mun.soi / v)
+                s = transfer.aim_error(r0, v0, 0.0, k.mu, mun, ca, rc,
+                                       mun.normal)[0]
+                lo, hi = (lo, b) if s > 0 else (b, hi)
+            e = transfer.soi_entry(r0, v0, 0.0, k.mu, mun, ca)
+            c = orbit.conic(e.d, e.vrel, mun.mu)
+            self.assertAlmostEqual(c.rp / rc, 1.0, delta=0.02)
+
+
 class TestLongCapture(unittest.TestCase):
     """A capture too long for one pass round periapsis starts when it must,
     outside the SOI if need be (Moho: v_inf 3.5 km/s, SOI 9.6 Mm)."""
@@ -150,6 +192,12 @@ class TestMissions(unittest.TestCase):
         """TWR 0.004: captures high and loose, then spirals down."""
         res, d = fly("Mun", 50, thrust=200.0)
         self.check(res, d, 50, 1700)
+
+    def test_weak_engine_to_vall(self):
+        """TWR 0.004 to a moon of a many-moon planet: in the gap under
+        Vall, a short push, the long capture."""
+        res, d = fly("Vall", 50, thrust=200.0)
+        self.check(res, d, 50, 7500)
 
 
 if __name__ == "__main__":
