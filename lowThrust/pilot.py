@@ -129,6 +129,9 @@ class Pilot:
         self._res = [(conn.add_stream(res.amount, n), res.amount(n),
                       res.density(n)) for n in res.names if res.density(n) > 0]
         self.thrust_s = conn.add_stream(getattr, self.v, "available_thrust")
+        self.rate_s = conn.add_stream(getattr, self.sc, "warp_rate")
+        self.isp = 4200.0
+        self.held_s = conn.add_stream(self.lt.held)
         self.system = live.system(conn)
         self.game_bodies = self.sc.bodies
         # this game's rails rates (BetterTimeWarp changes them; learned
@@ -176,11 +179,11 @@ class Pilot:
         """The planner's vessel: the live mass and thrust (Isp for the
         report only)."""
         thrust = self.thrust_s()
-        isp = 4200.0
-        for e in self.v.parts.engines:
-            if e.active and e.vacuum_specific_impulse > 0:
-                isp = e.vacuum_specific_impulse
-        return sim.Vessel(self.mass(), thrust, isp)
+        if thrust <= 0:
+            # engines not yet on (a PLAN before START): their full thrust
+            thrust = sum(e.max_vacuum_thrust * e.thrust_limit
+                         for e in self.v.parts.engines)
+        return sim.Vessel(self.mass(), thrust, self.isp)
 
     # --- commanding it ------------------------------------------------------
     def set_throttle(self, x):
@@ -209,23 +212,26 @@ class Pilot:
         return self.rates.get(idx, 1)
 
     def hold(self, until):
-        """Let the game run to UT ``until`` on rails, the warp stepping down
-        as it nears (never faster than WARP_PER_TICK x the time left), so a
-        long coast arrives on time."""
+        """Let the game run to UT ``until`` and stop there: the plugin runs
+        rails warp at RAILS_PACE, steps the warp down near the end (no
+        lower than WARP_FLOOR_S's rate) and holds the game at ``until``
+        until the next command."""
+        floor = 1
+        for i, rate in self.rates.items():
+            if i > floor and rate <= self.cfg.WARP_PER_TICK * \
+                    self.cfg.WARP_FLOOR_S:
+                floor = i
+        self.lt.run_until(until, floor)
+        self.warp_index = None          # the plugin may step it down
         while True:
+            # held as well as past ``until``: the frame that crosses it runs
+            # its remaining steps after the stream has said so, and their
+            # xenon was booked to the next tick (a 150 km raise counted 93
+            # m/s of its 99)
             now = self.ut()
-            left = until - now
-            if left <= 0:
-                return now
-            rate = max(self.sc.warp_rate, 1.0)
-            idx = self.warp_index
-            # (no lower than a burn tick's rate: stepping down to the last
-            # second of every tick and back up again was most of the cost)
-            if idx is not None and idx > 1 and \
-                    self.rates.get(idx, 1) > self.cfg.WARP_PER_TICK * max(
-                        left, self.cfg.WARP_FLOOR_S):
-                self.warp(max(left, self.cfg.WARP_FLOOR_S))
-            time.sleep(min(0.5, max(0.005, 0.7 * left / rate)))
+            if now >= until and self.held_s():
+                return self.ut()
+            time.sleep(0.01)
             if self.gui.terminate_pressed():
                 raise Terminated()
 
@@ -266,13 +272,25 @@ class Pilot:
         self.gui.show(lines)
         self.log.event(t, "plan: " + " | ".join(x.strip() for x in lines))
 
+    def engine_isp(self):
+        """Vacuum Isp of the active engines (thrust-weighted), s."""
+        f = w = 0.0
+        for e in self.v.parts.engines:
+            if e.active and e.vacuum_specific_impulse > 0:
+                f += e.max_vacuum_thrust
+                w += e.max_vacuum_thrust / e.vacuum_specific_impulse
+        return f / w if w > 0 else 4200.0
+
     def prepare(self):
-        """Engines on, SAS off (the plugin steers on rails), throttle shut."""
+        """Engines on, SAS off (the plugin steers on rails), throttle shut,
+        rails warp at RAILS_PACE."""
+        self.lt.set_pace(self.cfg.RAILS_PACE)
         for e in self.v.parts.engines:
             if not e.active:
                 e.active = True
         self.v.control.sas = False
         self.set_throttle(0.0)
+        self.isp = self.engine_isp()
         if self.lt.engine_count() == 0:
             raise RuntimeError("no Persistent Thrust engine on this vessel "
                                "(PT not installed, or a craft from before it "
@@ -340,8 +358,13 @@ class Pilot:
                 self.warp(tick)
                 now = self.hold(t + tick)
                 dt = now - t
-                mis.account(d, mis.vessel.thrust_n * fire / m * dt
-                            if fire > 0 else 0.0, dt, r, v)
+                # what was delivered, from the propellant it took (counted
+                # as throttle x time, a raise to 150 km read 93.4 m/s where
+                # its xenon says 99.2 -- under the impulsive 96.4)
+                m1 = self.mass()
+                dv = self.isp * sim.G0 * math.log(m / m1) if fire > 0 \
+                    and m1 < m else 0.0
+                mis.account(d, dv, dt, r, v)
                 self.telemetry(mis, b, r, v, now, thr, fire, err, tick)
                 continue
             # Coasting: the coast is exact two-body motion, so the mission
@@ -396,11 +419,17 @@ class Pilot:
         alt = lambda x: (x - b.radius) / 1e3
         ap = "%.0f" % alt(c.ra) if c.e < 1 else "hyp"
         inc = math.degrees(orbit.inclination_lan(r, v)[0])
-        line = ("%-8s %-7s ap=%sk pe=%.0fk i=%.2f thr=%.2f/%.2f err=%.1f "
-                "tick=%.0fs warp=%sx m=%.0fkg dv=%.0f"
-                % (mis.phase, b.name, ap, alt(c.rp), inc, fire, thr, err,
-                   tick, self.rates.get(self.warp_index, "?"), self.mass(),
-                   mis.dv))
+        # where the vessel is: from the osculating periapsis, and from the
+        # apse line the in-SOI law holds (the arcs are centred on it)
+        apse = getattr(mis.target, "apse", None) if mis.target else None
+        from_apse = (math.degrees(math.atan2(
+            vec.dot(vec.cross(apse, vec.unit(r)), vec.unit(vec.cross(r, v))),
+            vec.dot(apse, vec.unit(r)))) if apse is not None else float("nan"))
+        line = ("%-8s %-7s ap=%sk pe=%.0fk i=%.2f nu=%.0f apse=%+.0f "
+                "thr=%.2f/%.2f err=%.1f tick=%.0fs warp=%.0fx m=%.0fkg dv=%.1f"
+                % (mis.phase, b.name, ap, alt(c.rp), inc,
+                   math.degrees(c.nu), from_apse, fire, thr, err,
+                   tick, self.rate_s(), self.mass(), mis.dv))
         self.log.telemetry(ut, line)
         if time.monotonic() - self._shown < 1.0:
             return
@@ -411,7 +440,8 @@ class Pilot:
                        "incl    : %.2f deg" % inc,
                        "throttle: %.2f (wants %.2f)" % (fire, thr),
                        "pointing: %.1f deg off" % err,
-                       "warp    : %sx" % self.rates.get(self.warp_index, "?"),
+                       "warp    : %.0fx x pace %.1f" % (self.rate_s(),
+                                                  self.cfg.RAILS_PACE),
                        "dv used : %.0f m/s" % mis.dv,
                        "UT      : %s" % mission.fmt_ut(ut)])
 
@@ -421,6 +451,8 @@ class Pilot:
             ut = self.ut()
             self.lt.set_throttle(0.0)
             self.lt.clear_attitude()
+            self.lt.release_hold()
+            self.lt.set_pace(1.0)
             self.lt.set_rails_warp(0)
             self.v.control.sas = True
         except Exception as exc:                            # noqa: BLE001

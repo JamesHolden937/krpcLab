@@ -146,6 +146,11 @@ class Config:
     # ... and a hold steps the warp down as it nears its end, but no lower
     # than the rate for a tick this long.
     WARP_FLOOR_S: float = 10.0
+    # Rails warp runs this many times faster than KSP runs it: the same
+    # frames (0.02 s x the warp rate of game time each), more per real
+    # second, held exactly at each tick's end (the plugin's Pace).  As fast
+    # as the CPU allows; 1 is KSP's own pace.
+    RAILS_PACE: float = 20.0
     # A coast is run ahead in prediction (exact two-body) and warped
     # through in one go, at most this fraction of a revolution at a time.
     COAST_AHEAD: float = 0.5

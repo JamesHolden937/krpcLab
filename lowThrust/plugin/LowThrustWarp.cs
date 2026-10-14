@@ -143,6 +143,59 @@ namespace LowThrustWarp
             return index;
         }
 
+        // ---- pace -----------------------------------------------------------
+
+        /// <summary>Run rails warp <paramref name="scale"/> times faster
+        /// than the game would (1: as KSP does).  On rails each physics step
+        /// still advances UT by 0.02 s x the warp rate; this only runs more of
+        /// them per real second (Unity's Time.timeScale, which KSP leaves at
+        /// 1 on rails), so the flight is the same flight, sooner -- as far as
+        /// the CPU allows.  Off rails it does nothing.</summary>
+        [KRPCProcedure]
+        public static void SetPace(float scale)
+        {
+            Pace.scale = Mathf.Max(1f, scale);
+        }
+
+        /// <summary>Run on rails until UT <paramref name="ut"/>, then hold the
+        /// game there (no physics frames) until the next call: each command
+        /// is held for exactly its tick however fast the game runs.  The game
+        /// slows to its normal pace for the last frames, so it stops within
+        /// one frame (0.02 s x the warp rate).</summary>
+        /// <remarks>As the end nears the warp rate steps down (to no lower
+        /// than index <paramref name="floorIndex"/>) so the last frames are
+        /// short: a coast warped at 10000x would otherwise end up to 200 s
+        /// late.</remarks>
+        [KRPCProcedure]
+        public static void RunUntil(double ut, int floorIndex)
+        {
+            Pace.holdUT = ut;
+            Pace.floorIndex = floorIndex;
+            Pace.lastCommand = Time.realtimeSinceStartup;
+        }
+
+        /// <summary>Release any hold (the game then runs freely).</summary>
+        [KRPCProcedure]
+        public static void ReleaseHold()
+        {
+            Pace.holdUT = double.PositiveInfinity;
+        }
+
+        /// <summary>Whether the game is held at RunUntil's time.</summary>
+        [KRPCProcedure]
+        public static bool Held()
+        {
+            return Pace.held;
+        }
+
+        /// <summary>Real seconds per game second actually achieved under
+        /// rails warp, over the last second (0: not measured).</summary>
+        [KRPCProcedure]
+        public static double AchievedRate()
+        {
+            return Pace.achieved;
+        }
+
         // ---- attitude -----------------------------------------------------
 
         /// <summary>Turn the thrust axis toward <paramref name="direction"/>
@@ -226,6 +279,124 @@ namespace LowThrustWarp
                 foreach (PartModule m in p.Modules)
                     if (m.GetType().Name == "PersistentEngine")
                         yield return m;
+        }
+    }
+
+    /// <summary>The pace of rails warp: more physics frames per real second
+    /// (Unity's timeScale), and a hold at the end of each tick.</summary>
+    [KSPAddon(KSPAddon.Startup.Flight, false)]
+    public class Pace : MonoBehaviour
+    {
+        internal static float scale = 1f;
+        internal static double holdUT = double.PositiveInfinity;
+        internal static bool held;
+        internal static double achieved;
+        internal static float lastCommand;
+        internal static int floorIndex = 1;
+        // The next frame may be this much longer than the longest recent.
+        const double FRAME_MARGIN = 1.5;
+        float[] frames = new float[8];
+        int frameIdx;
+        // Steps down so at least this many frames are left at the rate.
+        const double FRAMES_LEFT = 20;
+        // A hold no command has followed for this long (the pilot died) is
+        // released, and the pace returned to normal.
+        const float ORPHAN_S = 30f;
+        float stockMax;
+        bool active;
+        double winUT;
+        float winReal;
+
+        void Start()
+        {
+            stockMax = Time.maximumDeltaTime;
+            scale = 1f;
+            holdUT = double.PositiveInfinity;
+            held = false;
+            winReal = Time.realtimeSinceStartup;
+            winUT = Planetarium.GetUniversalTime();
+        }
+
+        // kRPC serves its clients from FixedUpdate, which does not run while
+        // the game is held (timeScale 0), and from Update only when the game
+        // is paused: held, the server is updated from here instead, as kRPC
+        // does itself when paused.
+        MonoBehaviour krpc;
+        MethodInfo krpcUpdate;
+
+        void Update()
+        {
+            if (!held) return;
+            if (krpc == null)
+            {
+                Type t = Type.GetType("KRPC.Addon, KRPC");
+                if (t == null) return;
+                krpc = FindObjectOfType(t) as MonoBehaviour;
+                krpcUpdate = t.GetMethod("FixedUpdate");
+                if (krpc == null) return;
+            }
+            krpcUpdate.Invoke(krpc, null);
+        }
+
+        void OnDestroy()
+        {
+            if (active) { Time.timeScale = 1f; Time.maximumDeltaTime = stockMax; }
+        }
+
+        void LateUpdate()
+        {
+            double ut = Planetarium.GetUniversalTime();
+            float now = Time.realtimeSinceStartup;
+            if (now - winReal >= 1f)
+            {
+                achieved = (ut - winUT) / (now - winReal);
+                winUT = ut; winReal = now;
+            }
+            bool rails = TimeWarp.WarpMode == TimeWarp.Modes.HIGH
+                         && TimeWarp.CurrentRateIndex > 0;
+            if (FlightDriver.Pause || !rails)
+            {
+                held = false;
+                if (active)
+                {
+                    Time.timeScale = FlightDriver.Pause ? 0f : 1f;
+                    Time.maximumDeltaTime = stockMax;
+                    active = false;
+                }
+                return;
+            }
+            if (!double.IsInfinity(holdUT) && now - lastCommand > ORPHAN_S)
+            {
+                holdUT = double.PositiveInfinity;
+                scale = 1f;
+            }
+            double left = holdUT - ut;
+            int idx = TimeWarp.CurrentRateIndex;
+            if (left > 0 && idx > Math.Max(1, floorIndex)
+                && 0.02 * TimeWarp.fetch.warpRates[idx] * FRAMES_LEFT > left)
+                TimeWarp.SetRate(idx - 1, true, true);
+            held = left <= 0;
+            // The time scale for the next frame.  Unity simulates the real
+            // frame time (capped at KSP's 0.04 s) x timeScale, and frame times
+            // swing 2-3x, so the next frame is sized from the longest of the
+            // recent ones x FRAME_MARGIN: at most half the steps left to the
+            // hold, and under one step a frame at the end -- it stops within
+            // one step.  (Sized from the last frame alone, a frame twice as
+            // long ran 77 steps where 39 were meant, holds 40-56 s late.)
+            frames[frameIdx] = Time.unscaledDeltaTime;
+            frameIdx = (frameIdx + 1) % frames.Length;
+            double fmax = 0.005;
+            foreach (float f in frames) fmax = Math.Max(fmax, f);
+            fmax = Math.Min(fmax * FRAME_MARGIN, 0.04);
+            double ts = held ? 0.0 : scale;
+            if (!held && !double.IsInfinity(left))
+            {
+                double step = 0.02 * TimeWarp.CurrentRate;
+                double steps = Math.Max(0.4, 0.5 * left / step);
+                ts = Math.Min(ts, steps * 0.02 / fmax);
+            }
+            Time.timeScale = (float)ts;
+            active = true;
         }
     }
 
