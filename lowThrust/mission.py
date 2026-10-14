@@ -667,7 +667,8 @@ class Mission:
     def _trim_check(self, c):
         """Once a revolution while waiting: if the coming revolution meets
         another moon, a small phasing burn at periapsis (the smallest of
-        +-0.5..8 m/s that clears the next two revolutions)."""
+        +-0.5..8 m/s, or of a quarter to twice the burn that shifts the pass
+        past a moon's SOI, that clears the next two revolutions)."""
         cr, cfg = self.craft, self.cfg
         mu = cr.body.mu
         others = self._others()
@@ -684,7 +685,19 @@ class Mission:
                                  t1 + 1.05 * c.period) is None:
             return None
         u = vec.unit(vp_)
-        for dv in (0.5, -0.5, 1.0, -1.0, 2.0, -2.0, 4.0, -4.0, 8.0, -8.0):
+        # sized also by the shift in time that slips past a moon's SOI:
+        # dP/dv = 3 a v P / mu.  (Fixed at 0.5-8 m/s, near the end of a
+        # descent round Jool 8 m/s moved the pass 5 min where slipping past
+        # Laythe takes 25.)
+        vp = vec.norm(vp_)
+        dpdv = 3 * c.a * vp * c.period / mu
+        slip = max(2 * cfg.WAIT_SOI_MARGIN * b.soi / math.sqrt(mu / b.sma)
+                   for b in others)
+        unit = slip / max(dpdv, 1e-9)
+        steps = sorted({0.5, 1.0, 2.0, 4.0, 8.0}
+                       | {x * unit for x in (0.25, 0.5, 1.0, 2.0)
+                          if x * unit <= 0.02 * vp})
+        for dv in (s * x for x in steps for s in (1.0, -1.0)):
             v1 = vec.add(vp_, vec.scale(u, dv))
             c1 = orbit.conic(rp_, v1, mu)
             if c1.e >= 1:
