@@ -686,9 +686,13 @@ class Mission:
             return None
         t_pe = orbit.time_to_periapsis(c, mu)
         key = round(cr.t + t_pe)
-        if self.plan.get("trim_checked") == key:
+        # once a revolution: keyed by the periapsis time alone, every trim
+        # moved the key and a strong engine at Jool traded +-0.01 m/s trims
+        # for years
+        if self.plan.get("trim_checked") == key or \
+                cr.t - self.plan.get("trim_t", -math.inf) < 0.5 * c.period:
             return None
-        self.plan["trim_checked"] = key
+        self.plan["trim_checked"], self.plan["trim_t"] = key, cr.t
         t1 = cr.t + t_pe
         self.plan["trim_now"] = False
         if transfer.first_hazard(cr.r, cr.v, cr.t, mu, others, t1) \
@@ -725,7 +729,7 @@ class Mission:
         unit = slip / max(dpdv, 1e-9)
         steps = sorted({0.5, 1.0, 2.0, 4.0, 8.0}
                        | {x * unit for x in (0.25, 0.5, 1.0, 2.0)
-                          if x * unit <= 0.02 * speed})
+                          if 0.1 <= x * unit <= 0.02 * speed})
         for dv in (s * x for x in steps for s in (1.0, -1.0)):
             v1 = vec.add(v, vec.scale(u, dv))
             c1 = orbit.conic(r, v1, mu)
