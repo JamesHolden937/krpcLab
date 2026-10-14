@@ -34,6 +34,7 @@ Read off each save's active vessel (part count, situation, altitude):
 | `qs_shuttle_cone` | Mk3 shuttle | flying at 11971 m, 221 m/s, already at -8 deg alpha in a 33 deg dive (taken from LOG3028's cone): an upset-recovery state, not a cone arrival |
 | `qs_shuttle_final` | Mk3 shuttle | flying at 2972 m, 63 m/s -- near the stall; taken from LOG3029's cone |
 | `qs_shuttle_low` | Mk3 shuttle | flying at 14913 m, 231 m/s, 150 m/s down, Mach 0.8, 23 km from the runway in late GLIDE: the landing chain (cone, approach, flare) from one repeatable state. Taken 2026-09-29 from defaults LOG3765 (`e1a9838c`), which landed 742 m from the midpoint with 23 parts |
+| `qs_lowthrust` | ion probe "lower thrust test", 29.8 t (21 t Ore ballast), one Dawn 2 kN (0.067 m/s^2), 12 RTGs, 5 EC storage, nosecone | orbit, 86.75 km circular equatorial. The user's live "low thrust" save, other vessels removed, and a `PersistentEngine` MODULE node added to the ion engine by hand: the live install has no Persistent Thrust, and PT finds its engine only in `OnLoad`, so without the node it silently does nothing (2026-10-13) |
 
 **The old spaceplane exists in two variants that share a name and a part
 list** (found 2026-09-24 by kspSim, whose tables for one were being used for
