@@ -620,12 +620,9 @@ class Mission:
         self.plan["arc_end"] = cr.t + arc_s
         if not others:
             return
-        accel = self._accel()
-        full = accel * min(arc_s, need)
-        R0, T0, N0 = orbit.rtn(cr.r, cr.v)
-        law = (vec.dot(d, R0), vec.dot(d, T0), vec.dot(d, N0))
+        full = self._fly_arc(math.inf)[3]
         for f in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
-            r1, v1, t1 = self._fly_arc(law, f * full / accel)
+            r1, v1, t1, _ = self._fly_arc(f * full)
             c1 = orbit.conic(r1, v1, mu)
             if c1.e >= 1:
                 continue
@@ -638,26 +635,35 @@ class Mission:
                 return
         self.event("warning: no burn this pass avoids a moon next revolution")
 
-    def _fly_arc(self, law, dur):
-        """(r, v, t) where a full-throttle burn from now, ``dur`` seconds
-        long, along fixed radial/along-track/normal shares ``law``, ends --
-        the burn as the arc flies it.  (As an impulse at the arc's start,
-        60 deg short of periapsis on a 1.2 Gm Jool orbit, the guard's
-        prediction was days off on the next pass, and it let a weak descent
-        meet Laythe a revolution later, past any fix.)"""
-        cr = self.craft
+    def _fly_arc(self, cap):
+        """(r, v, t, dv) where this arc's burn ends, flown in prediction by
+        the guidance law itself (closed loop, as the flight flies it) until
+        it stops or it has delivered ``cap``.  (Sized from the law's
+        first-tick estimate, a weak descent round Jool predicted 42 m/s and
+        burned 121 -- the estimate grows as the orbit shrinks -- and the
+        guard cleared a revolution that met Laythe.)"""
+        cr, cfg = self.craft, self.cfg
         mu, accel = cr.body.mu, self._accel()
-        r, v, t = cr.r, cr.v, cr.t
-        n = max(1, min(40, int(dur / 60.0) + 1))
-        h = dur / n
-        for _ in range(n if dur > 0 else 0):
-            R, T, N = orbit.rtn(r, v)
-            a = vec.add(vec.add(vec.scale(R, law[0]), vec.scale(T, law[1])),
-                        vec.scale(N, law[2]))
-            r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(vec.unit(a), accel),
-                           0.0, h)
+        r, v, t, dv = cr.r, cr.v, cr.t, 0.0
+        # the law ends its own arc; half a revolution bounds the search
+        end = t + 0.5 * orbit.conic(r, v, mu).period
+        eta = self.plan.get("eta", cfg.ETA_DEFAULT)
+        while t < end and dv < cap:
+            el = orbit.elements(r, v, mu)
+            if el is None:
+                break
+            h = max(1.0, min(tick_for(el, cfg), end - t))
+            cmd = guidance.command(el, self.target, accel, h, eta, cfg, mu)
+            if cmd.done or cmd.throttle <= 0:
+                break
+            _, T, N = orbit.rtn(r, v)
+            d = vec.unit(vec.add(vec.scale(T, cmd.prograde),
+                                 vec.scale(N, cmd.normal)))
+            thr = min(cmd.throttle, (cap - dv) / (accel * h))
+            r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(d, accel * thr), 0.0, h)
             t += h
-        return r, v, t
+            dv += accel * thr * h
+        return r, v, t, dv
 
     def _trim_check(self, c):
         """Once a revolution while waiting: if the coming revolution meets
@@ -797,15 +803,15 @@ class Mission:
             dv = transfer.push_dv(
                 rp_, vp_, cr.t + t_pe, mu, moon, self.plan["rc"], moon.normal,
                 self._push_max(c) if at_pe else
-                cfg.PUSH_OFF_PERIAPSIS * ref, self._horizon)
+                cfg.PUSH_OFF_PERIAPSIS * ref, self._horizon, accel=accel)
             if dv is not None:
                 # reject a pass whose coast meets another moon first
-                v1 = vec.add(vp_, vec.scale(vec.unit(vp_), dv))
-                ca = transfer.closest_approach(rp_, v1, cr.t + t_pe, mu, moon,
-                                               self._horizon(rp_, v1))
+                r1, v1, t1 = transfer.prograde_burn(rp_, vp_, cr.t + t_pe,
+                                                    mu, dv, accel, True)
+                ca = transfer.closest_approach(r1, v1, t1, mu, moon,
+                                               self._horizon(r1, v1))
                 others = [b for b in cr.body.children if b is not moon]
-                bad = transfer.first_hazard(rp_, v1, cr.t + t_pe, mu, others,
-                                            ca.t)
+                bad = transfer.first_hazard(r1, v1, t1, mu, others, ca.t)
                 if bad is not None:
                     self.event(f"pass skipped: its coast would meet {bad.name}")
                     dv = None
@@ -878,7 +884,8 @@ class Mission:
                               moon.normal, min(self._push_max(c),
                                                1.5 * left + 2),
                               self._horizon, n=12, dv_min=max(0.0, 0.5 * left
-                                                              - 2))
+                                                              - 2),
+                              accel=self._accel(), centered=False)
         if dv is None:
             # off the ledger's root: look again over the whole range before
             # burning the ledger blind

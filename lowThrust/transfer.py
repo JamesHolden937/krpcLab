@@ -295,22 +295,41 @@ def capturable_vinf(body, accel, rc_min, ra_max, arc, fill, ra_loose=None):
     return lo
 
 
+def prograde_burn(r, v, t, mu, dv, accel, centered):
+    """(r, v, t) after ``dv`` of prograde thrust at ``accel``: from (r, v,
+    t), or centred on it when ``centered``.  With no ``accel``, an impulse."""
+    if not accel:
+        return r, vec.add(v, vec.scale(vec.unit(v), dv)), t
+    from lowThrust.sim import _rk4
+    dur = dv / accel
+    if centered:
+        r, v = orbit.propagate(r, v, mu, -dur / 2)
+        t -= dur / 2
+    n = max(4, min(60, int(dur / 60.0)))
+    h = dur / n
+    for _ in range(n):
+        r, v, _ = _rk4(r, v, 1.0, mu, vec.scale(vec.unit(v), accel), 0.0, h)
+    return r, v, t + dur
+
+
 def push_dv(r, v, t, mu, target, rc, normal, dv_max, horizon_fn, n=40,
-            dv_min=0.0):
-    """The smallest prograde impulse in (dv_min, dv_max] at (r, v, t) whose
+            dv_min=0.0, accel=None, centered=True):
+    """The smallest prograde push in (dv_min, dv_max] at (r, v, t) whose
     coast passes ``target`` on the prograde side on the aim for periapsis
     ``rc`` (``aim_error``); None if there is none.  ``horizon_fn(r, v)``
-    gives how far ahead to search after the impulse."""
-    u = vec.unit(v)
+    gives how far ahead to search after it.  With ``accel`` the push is the
+    finite burn the flight flies (``prograde_burn``): flown at 0.02 m/s^2,
+    a 2.4 h push to Laythe 6 h away was nothing like an impulse, and its
+    re-solve chased a growing remainder (107 -> 186 m/s) into the moon."""
     b = aim_parameter(rc, 1e9, target)       # the scale of the aim
 
     def f(dv):
-        v1 = vec.add(v, vec.scale(u, dv))
-        h = horizon_fn(r, v1)
-        ca = closest_approach(r, v1, t, mu, target, h, 200)
-        if ca.t > t + 0.999 * h:             # no encounter inside the window
+        r1, v1, t1 = prograde_burn(r, v, t, mu, dv, accel, centered)
+        h = horizon_fn(r1, v1)
+        ca = closest_approach(r1, v1, t1, mu, target, h, 200)
+        if ca.t > t1 + 0.999 * h:            # no encounter inside the window
             return abs(signed_miss(ca, normal)) + b, ca
-        return aim_error(r, v1, t, mu, target, ca, rc, normal)[0], ca
+        return aim_error(r1, v1, t1, mu, target, ca, rc, normal)[0], ca
 
     prev_dv, (prev_f, _) = dv_min, f(dv_min)
     for i in range(1, n + 1):
