@@ -775,24 +775,23 @@ class Mission:
         return 0.0, None, max(1.0, dt)
 
     def _push_point(self, c, el, lead):
-        """(seconds to the next push point, whether it is the periapsis):
-        the periapsis, and every 30 deg, where a push costing no more than
-        PUSH_OFF_PERIAPSIS of the periapsis Hohmann is taken.
+        """(seconds to the next push point, whether it is the periapsis,
+        how far ahead it is decided): the periapsis (decided ``lead``
+        ahead), and every 30 deg, where a push costing no more than
+        PUSH_OFF_PERIAPSIS of the periapsis Hohmann is taken -- a point far
+        enough ahead to start the longest such push half its burn early.
         (From periapsis alone, a near-circular waiting orbit met the Mun's
         Hohmann phase once a Mun revolution, up to 6 deg off, and every
-        push arrived at 120-320 m/s where 80 would do.)"""
+        push arrived at 120-320 m/s where 80 would do.  The nearest point,
+        47 min ahead, started a 2.4 h push late and its re-solve failed.)"""
         mu = self.craft.body.mu
-        best = (orbit.time_to(el, 0.0, mu), True)
+        best = (orbit.time_to(el, 0.0, mu), True, lead)
+        early = 0.5 * self.cfg.PUSH_OFF_PERIAPSIS * self._push_max(c) \
+            / self.cfg.PUSH_DV_FACTOR / self._accel()
         for k in range(1, 12):
-            nu = k * math.pi / 6
-            t = orbit.time_to(el, nu, mu)
-            # far enough ahead to start a push there half its burn early
-            # (the nearest point, 47 min ahead, started a 2.4 h push late
-            # and its every re-solve failed)
-            if t < 0.3 * lead:
-                continue
-            if t < best[0]:
-                best = (t, False)
+            t = orbit.time_to(el, k * math.pi / 6, mu)
+            if early <= t < best[0]:
+                best = (t, False, early + el.period / 12)
         return best
 
     def _wait_moon(self, c):
@@ -808,10 +807,10 @@ class Mission:
             if t_pe <= dv / accel / 2:
                 return self._start_push(c, dv)
             return self._hold(c, t_pe - dv / accel / 2)
-        t_pe, at_pe = self._push_point(c, el, lead) if el else \
-            (orbit.time_to_periapsis(c, mu), True)
-        if t_pe > lead:
-            return self._hold(c, t_pe - lead)
+        t_pe, at_pe, ahead = self._push_point(c, el, lead) if el else \
+            (orbit.time_to_periapsis(c, mu), True, lead)
+        if t_pe > ahead:
+            return self._hold(c, t_pe - ahead)
         key = round(cr.t + t_pe)
         if self.plan.get("pass") != key:
             self.plan["pass"] = key
