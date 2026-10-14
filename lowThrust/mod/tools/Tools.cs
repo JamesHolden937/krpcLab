@@ -59,7 +59,7 @@ namespace LowThrust
             {
                 for (int i = 0; i < a.Length; i++)
                 {
-                    if (a[i] == "--table") { flags.Add("table"); continue; }
+                    if (a[i] == "--table" || a[i] == "--frontier") { flags.Add(a[i].Substring(2)); continue; }
                     if (!a[i].StartsWith("--") || i + 1 >= a.Length)
                         throw new ArgumentException("bad argument " + a[i]);
                     if (a[i] == "--set") sets.Add(a[++i]);
@@ -110,7 +110,39 @@ namespace LowThrust
                               + " m/s^2, TWR " + F(thrust / mass / 9.81, 4) + "), Isp " + F(isp, 0)
                               + " s (mass constant, propellant unlimited)");
             Console.WriteLine("route: " + b0.name + " -> " + string.Join(" -> ", Mission.RouteTo(b0, b1).Select(x => x.name)));
-            MissionResult res = Mission.Fly(system, vessel, b0, r, v, ut, b1, target, cfg);
+            MissionResult res;
+            string maxDv = a.Get("max-dv"), maxDays = a.Get("max-days");
+            if (maxDv != null || maxDays != null || a.flags.Contains("frontier"))
+            {
+                // the dv/time trade: every cutoff flown, the budget picks one
+                double? dvMax = maxDv != null ? double.Parse(maxDv, IC) : (double?)null;
+                double? daysMax = maxDays != null ? double.Parse(maxDays, IC) : (double?)null;
+                double floorDv = Tradeoff.Impulsive(b0, r, v, b1, target, cfg);
+                Console.WriteLine("\nimpulsive estimate " + F(floorDv, 0) + " m/s");
+                if (dvMax.HasValue && dvMax.Value < cfg.IMPULSIVE_MARGIN * floorDv)
+                {
+                    Console.WriteLine("impossible: " + F(dvMax.Value, 0) + " m/s is far below what even ideal impulsive "
+                                      + "burns need (~" + F(floorDv, 0) + " m/s)");
+                    return 1;
+                }
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var scanned = Tradeoff.Scan(system, vessel, b0, r, v, ut, b1, target, cfg,
+                                            dvMax.HasValue ? dvMax.Value * cfg.BUDGET_SCAN_FACTOR : Py.Inf,
+                                            daysMax.HasValue ? daysMax.Value * Tradeoff.DAY * cfg.BUDGET_SCAN_FACTOR : Py.Inf);
+                string why;
+                TradeOption pick = Tradeoff.Choose(scanned, dvMax, daysMax, cfg, out why);
+                Console.WriteLine("\ntrade-off (" + scanned.Count + " plans in " + F(watch.Elapsed.TotalSeconds, 1)
+                                  + " s; the frontier, fastest first):");
+                foreach (string line in Tradeoff.Table(scanned, pick)) Console.WriteLine("  " + line);
+                if (pick == null)
+                {
+                    Console.WriteLine("\n" + why);
+                    return 1;
+                }
+                Console.WriteLine("chosen: arcs " + F(pick.eta, 3));
+                res = pick.result;
+            }
+            else res = Mission.Fly(system, vessel, b0, r, v, ut, b1, target, cfg);
 
             Console.WriteLine("\ntimeline");
             foreach (Event e in res.events) Console.WriteLine("  " + R(Mission.FmtUt(e.t), 16) + "  " + e.text);

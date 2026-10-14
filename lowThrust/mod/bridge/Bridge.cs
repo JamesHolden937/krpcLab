@@ -12,12 +12,23 @@ namespace LowThrust.Bridge
     public static class LowThrustBridge
     {
         /// <summary>Fly to target ("body: ap= pe= [i= lan= argpe=]") with
-        /// these NAME=VALUE config overrides.</summary>
+        /// these NAME=VALUE config overrides; MAX_DV=m/s and MAX_DAYS=days set
+        /// the window's budget instead.</summary>
         [KRPCProcedure]
         public static void Start(string target, IList<string> settings)
         {
             PanelState.SetTarget(target);
-            Controller.overrides = new List<string>(settings);
+            PanelState.maxDv = PanelState.maxDays = "";
+            PanelState.picked = null;
+            PanelState.options = new List<TradeOption>();
+            var rest = new List<string>();
+            foreach (string s in settings)
+            {
+                if (s.StartsWith("MAX_DV=")) PanelState.maxDv = s.Substring(7);
+                else if (s.StartsWith("MAX_DAYS=")) PanelState.maxDays = s.Substring(9);
+                else rest.Add(s);
+            }
+            Controller.overrides = rest;
             Controller.Instance.Begin();
         }
 

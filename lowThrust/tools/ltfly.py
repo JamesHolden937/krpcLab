@@ -36,7 +36,13 @@ def main():
     ap.add_argument("--target", required=True)
     ap.add_argument("--timeout", type=float, default=3600.0, help="wall s")
     ap.add_argument("--set", action="append", default=[])
+    ap.add_argument("--max-dv", type=float, help="the dv budget, m/s")
+    ap.add_argument("--max-days", type=float, help="the time budget, days")
     args = ap.parse_args()
+    if args.max_dv:
+        args.set.append("MAX_DV=%g" % args.max_dv)
+    if args.max_days:
+        args.set.append("MAX_DAYS=%g" % args.max_days)
 
     rpc, stream = paths.ports(args.instance)
     conn = krpc.connect("ltfly", rpc_port=rpc, stream_port=stream)
@@ -84,7 +90,8 @@ def main():
         for line in [x for x in lines if "ARRIVED" in x or "FAILED" in x
                      or "FATAL" in x or "shutdown" in x
                      or "per phase" in x or "per physics" in x
-                     or "thrust commands" in x][-8:]:
+                     or "thrust commands" in x or "plan:" in x
+                     or "budget" in x][-10:]:
             print("  " + line[:400])
     conn.close()
 

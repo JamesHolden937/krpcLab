@@ -119,6 +119,10 @@ namespace LowThrust
         public PlanState plan = new PlanState();
         public string abort;
         public string kind;
+        // A stand-in flight (Run) stops once it has spent this much dv or
+        // time: a plan over a budget is known to be over it without flying
+        // the rest.
+        public double dvLimit = Py.Inf, timeLimit = Py.Inf;
 
         public Mission(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v, double t0,
                        Body dest, Target target, Config cfg, bool record = true)
@@ -387,6 +391,8 @@ namespace LowThrust
         {
             while (true)
             {
+                if (dv > dvLimit) return Ended(false, "over the dv budget").result;
+                if (craft.t - t0 > timeLimit) return Ended(false, "over the time budget").result;
                 Step s = DoStep();
                 if (s.result != null) return s.result;
                 if (s.throttle > 0) Thrust(s.direction, s.throttle, s.tick);
@@ -1711,7 +1717,9 @@ namespace LowThrust
         /// <summary>Fly from (body, r, v, t0) to target about dest in the
         /// stand-in, in as many legs as RouteTo needs.</summary>
         public static MissionResult Fly(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v,
-                                        double t0, Body dest, Target target, Config cfg, bool record = true)
+                                        double t0, Body dest, Target target, Config cfg, bool record = true,
+                                        double dvLimit = double.PositiveInfinity,
+                                        double timeLimit = double.PositiveInfinity)
         {
             var legs = RouteTo(body, dest);
             double t = t0;
@@ -1719,7 +1727,10 @@ namespace LowThrust
             for (int i = 0; i < legs.Count; i++)
             {
                 Target tgt = LegTarget(legs, i, target, vessel.thrustN / vessel.massKg, cfg);
-                MissionResult res = new Mission(system, vessel, body, r, v, t, legs[i], tgt, cfg, record).Run();
+                var m = new Mission(system, vessel, body, r, v, t, legs[i], tgt, cfg, record);
+                m.dvLimit = dvLimit - results.Sum(x => x.dv);
+                m.timeLimit = timeLimit - (t - t0);
+                MissionResult res = m.Run();
                 results.Add(res);
                 if (!res.done) break;
                 body = res.body; t = res.t;

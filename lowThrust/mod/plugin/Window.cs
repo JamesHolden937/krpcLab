@@ -21,6 +21,12 @@ namespace LowThrust
         public static bool open;
         // highest rails warp index the autopilot may use (0: the game's highest)
         public static int maxWarp;
+        // the budget: most dv (m/s) and most time (days) to spend; blank: none
+        public static string maxDv = "", maxDays = "";
+        // the dv/time options PLAN found (fastest first) and the one picked
+        // (by clicking; null: the budget picks)
+        public static List<TradeOption> options = new List<TradeOption>();
+        public static TradeOption picked;
         internal static Rect rect = new Rect(Screen.width - 380, 120, 330, 10);
 
         /// <summary>Fill the target from "body: ap= pe= [i= lan= argpe=]".</summary>
@@ -201,6 +207,41 @@ namespace LowThrust
             }
             GUILayout.Label("Blank is free.  Apoapsis blank: circular.  LAN and "
                             + "argument of periapsis as KSP shows them.", Small());
+
+            // the budget: the trade-off between dv and time
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Max \u0394v (m/s)", GUILayout.Width(140));
+            GUI.enabled = edit;
+            GUI.SetNextControlName("LTW_dv");
+            string dvs = GUILayout.TextField(PanelState.maxDv, 8);
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Max time (days)", GUILayout.Width(140));
+            GUI.enabled = edit;
+            GUI.SetNextControlName("LTW_days");
+            string ds = GUILayout.TextField(PanelState.maxDays, 8);
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            if (edit && (dvs != PanelState.maxDv || ds != PanelState.maxDays))
+            {
+                PanelState.maxDv = dvs;
+                PanelState.maxDays = ds;
+                PanelState.picked = null;
+            }
+            if (PanelState.options.Count > 0)
+            {
+                GUILayout.Label("Options (PLAN): click one to fly it", Small());
+                foreach (TradeOption o in PanelState.options)
+                {
+                    bool on = o == PanelState.picked;
+                    string label = (on ? "\u25b6 " : "") + o.days.ToString("F1") + " days, " + o.dv.ToString("F0")
+                                   + " m/s";
+                    GUI.enabled = edit;
+                    if (GUILayout.Button(label)) PanelState.picked = on ? null : o;
+                    GUI.enabled = true;
+                }
+            }
 
             // the highest warp the autopilot may use (it may go slower: the
             // frame budget, a turn, the propellant one step may draw)

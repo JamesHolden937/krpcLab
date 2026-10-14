@@ -144,33 +144,85 @@ namespace LowThrust
                 double thrust = eng.thrustN > 0 ? eng.thrustN : Engines.FullThrust(v);
                 var ship = new Ship(Engines.Mass(v), thrust, eng.ispS > 0 ? eng.ispS : 4200.0);
                 Config c = cfg;
-                Show("planning...");
+                double? dvMax, daysMax;
+                string why = Budget(c, here, r, vel[0], dest, target, out dvMax, out daysMax);
+                PanelState.options = new List<TradeOption>();
+                PanelState.picked = null;
+                if (why != null) { Show(why); return; }
+                Show("planning: the mission flown at " + c.PLAN_GRID + " arc widths...");
                 new Thread(() =>
                 {
                     try
                     {
-                        MissionResult res = Mission.Fly(system, ship, here, r, vel[0], ut, dest, target, c);
-                        var lines = new List<string>
+                        var watch = Stopwatch.StartNew();
+                        TradeOption pick = Pick(system, ship, here, r, vel[0], ut, dest, target, c, dvMax, daysMax, out why,
+                                                out PanelState.options);
+                        var lines = new List<string>();
+                        if (pick == null) lines.Add(why);
+                        else
                         {
-                            "PLAN " + (res.done ? "arrives" : "FAILS") + ": " + res.reason,
-                            "dv\t" + res.dv.ToString("F0", IC) + " m/s, " + res.propUsed.ToString("F0", IC) + " kg propellant",
-                            "time\t" + ((res.t - res.t0) / 21600).ToString("F1", IC) + " days, to " + Mission.FmtUt(res.t)
-                        };
-                        var by = new List<KeyValuePair<string, double>>();
-                        foreach (Maneuver m in res.maneuvers)
-                        {
-                            string k = m.body + " " + m.phase;
-                            int i = by.FindIndex(x => x.Key == k);
-                            if (i < 0) by.Add(new KeyValuePair<string, double>(k, m.dv));
-                            else by[i] = new KeyValuePair<string, double>(k, by[i].Value + m.dv);
+                            MissionResult res = pick.result;
+                            lines.Add("PLAN: " + pick.days.ToString("F1", IC) + " days, " + pick.dv.ToString("F0", IC)
+                                      + " m/s, " + res.propUsed.ToString("F0", IC) + " kg propellant (arcs "
+                                      + pick.eta.ToString("F3", IC) + ")");
+                            var by = new List<KeyValuePair<string, double>>();
+                            foreach (Maneuver m in res.maneuvers)
+                            {
+                                string k = m.body + " " + m.phase;
+                                int i = by.FindIndex(x => x.Key == k);
+                                if (i < 0) by.Add(new KeyValuePair<string, double>(k, m.dv));
+                                else by[i] = new KeyValuePair<string, double>(k, by[i].Value + m.dv);
+                            }
+                            foreach (var kv in by.Take(10)) lines.Add("  " + kv.Key + "\t" + kv.Value.ToString("F0", IC) + " m/s");
                         }
-                        foreach (var kv in by.Take(12)) lines.Add("  " + kv.Key + "\t" + kv.Value.ToString("F0", IC) + " m/s");
+                        lines.Add("(" + watch.Elapsed.TotalSeconds.ToString("F1", IC) + " s to plan)");
+                        PanelState.picked = pick;
                         status = lines;
                     }
                     catch (Exception e) { status = new List<string> { "PLAN failed:", e.Message }; }
                 }) { IsBackground = true }.Start();
             }
             catch (Exception e) { Show("PLAN failed:", e.Message); }
+        }
+
+        /// <summary>The budget from the window (null: none); a refusal at
+        /// once if the dv asked for is far below even impulsive burns, or a
+        /// field is not a number.</summary>
+        static string Budget(Config c, Body here, V3 r, V3 v, Body dest, Target target, out double? dvMax,
+                             out double? daysMax)
+        {
+            dvMax = daysMax = null;
+            double x;
+            if (PanelState.maxDv.Trim() != "")
+            {
+                if (!double.TryParse(PanelState.maxDv.Trim(), NumberStyles.Float, IC, out x) || x <= 0)
+                    return "max \u0394v: not a positive number";
+                dvMax = x;
+            }
+            if (PanelState.maxDays.Trim() != "")
+            {
+                if (!double.TryParse(PanelState.maxDays.Trim(), NumberStyles.Float, IC, out x) || x <= 0)
+                    return "max time: not a positive number";
+                daysMax = x;
+            }
+            double imp = Tradeoff.Impulsive(here, r, v, dest, target, c);
+            if (dvMax.HasValue && dvMax.Value < c.IMPULSIVE_MARGIN * imp)
+                return "impossible: " + dvMax.Value.ToString("F0", IC) + " m/s is far below what even ideal "
+                       + "impulsive burns need (~" + imp.ToString("F0", IC) + " m/s)";
+            return null;
+        }
+
+        /// <summary>The mission flown at every arc width, the frontier, and the
+        /// option the budget picks (null and why if none).</summary>
+        static TradeOption Pick(Dictionary<string, Body> system, Ship ship, Body here, V3 r, V3 v, double ut, Body dest,
+                                Target target, Config c, double? dvMax, double? daysMax, out string why,
+                                out List<TradeOption> front)
+        {
+            var scanned = Tradeoff.Scan(system, ship, here, r, v, ut, dest, target, c,
+                                        dvMax.HasValue ? dvMax.Value * c.BUDGET_SCAN_FACTOR : Py.Inf,
+                                        daysMax.HasValue ? daysMax.Value * Tradeoff.DAY * c.BUDGET_SCAN_FACTOR : Py.Inf);
+            front = Tradeoff.Frontier(scanned);
+            return Tradeoff.Choose(scanned, dvMax, daysMax, c, out why);
         }
 
         /// <summary>Start flying to the window's target.</summary>
@@ -193,8 +245,14 @@ namespace LowThrust
                 string text = TargetText();
                 Body dest = Mission.ParseOrbit(text, sys, out f);
                 finalTarget = Mission.TargetFrom(dest, f);
-                Prepare();
                 Body here = sys[vessel.orbit.referenceBody.bodyName];
+                {
+                    V3[] vv = new V3[1];
+                    V3 rr = GameSystem.StateOf(vessel.orbit, ut, vv);
+                    string why = Budget(cfg, here, rr, vv[0], dest, finalTarget, out dvMax, out daysMax);
+                    if (why != null) throw new ArgumentException(why);
+                }
+                Prepare();
                 log.Event(ut, "target: " + here.name + " -> " + dest.name + " " + text);
                 log.Event(ut, string.Format(IC, "vessel: {0:F0} kg, {1:F0} N from {2} engine(s), Isp {3:F0} s, {4:F4} m/s^2; "
                                                 + "wheels {5:F2} {6:F2} {7:F2} deg/s^2",
@@ -208,6 +266,8 @@ namespace LowThrust
                 t0 = ut;
                 stats.Clear();
                 starved = unfired = fired = 0;
+                overBudget = false;
+                plan = null;
                 wall.Reset(); wall.Start();
                 StartLeg();
             }
@@ -216,6 +276,10 @@ namespace LowThrust
                 Stop("error: " + e.Message, false);
             }
         }
+
+        double? dvMax, daysMax;
+        bool overBudget;
+        TradeOption plan;
 
         public void Terminate() { if (mode != Mode.Idle) Stop("terminated from the window", false); }
 
@@ -274,9 +338,28 @@ namespace LowThrust
             planError = null;
             mode = Mode.Planning;
             Show("planning the " + (legs.Count > 1 ? "leg to " : "transfer to ") + dest.name + "...");
+            bool first = leg == 0;
+            TradeOption chosen = PanelState.picked;
+            List<Body> route = legs;
+            Target whole = finalTarget;
             planner = new Thread(() =>
             {
-                try { planned = new Mission(s, ship, here, r, vel[0], ut, dest, tgt, c); }
+                try
+                {
+                    if (first)
+                    {
+                        // the dv/time trade: a clicked option, else the budget's
+                        string why = null;
+                        List<TradeOption> front;
+                        if (chosen == null)
+                            chosen = Pick(s, ship, here, r, vel[0], ut, route[route.Count - 1], whole, c, dvMax, daysMax,
+                                          out why, out front);
+                        if (chosen == null) throw new ArgumentException(why);
+                        plan = chosen;
+                        c.ETA_DEFAULT = chosen.eta;
+                    }
+                    planned = new Mission(s, ship, here, r, vel[0], ut, dest, tgt, c);
+                }
                 catch (Exception e) { planError = e; }
             }) { IsBackground = true };
             planner.Start();
@@ -288,6 +371,11 @@ namespace LowThrust
             if (planError != null) { Stop("error: " + planError.Message, false); return; }
             mis = planned;
             seen = 0;
+            if (leg == 0 && plan != null)
+                log.Event(Planetarium.GetUniversalTime(), string.Format(IC,
+                    "plan: arcs {0:F3}, {1:F0} m/s in {2:F1} days (budget: {3} m/s, {4} days)", plan.eta, plan.dv,
+                    plan.days, dvMax.HasValue ? dvMax.Value.ToString("F0", IC) : "none",
+                    daysMax.HasValue ? daysMax.Value.ToString("F1", IC) : "none"));
             Drain();
             cur = null;
             pending = null;
@@ -514,6 +602,12 @@ namespace LowThrust
             }
             Note(watch);
             cur = c;
+            if (dvMax.HasValue && mis.dv > dvMax.Value && !overBudget)
+            {
+                overBudget = true;
+                log.Event(cr.t, string.Format(IC, "over the dv budget: {0:F0} m/s spent of {1:F0} (plan {2:F0})",
+                                              mis.dv, dvMax.Value, plan != null ? plan.dv : 0));
+            }
             Telemetry(cr, c);
         }
 
@@ -753,7 +847,11 @@ namespace LowThrust
                  "pointing\t" + (Attitude.lastError < 0 ? "-" : Attitude.lastError.ToString("F1", IC) + " deg off"),
                  "warp\t" + TimeWarp.CurrentRate.ToString("F0", IC) + "x, " + speed.ToString("F0", IC) + "x this phase",
                  "autopilot\t" + emaMs.ToString("F1", IC) + " ms a step",
-                 "dv used\t" + mis.dv.ToString("F0", IC) + " m/s",
+                 "dv used\t" + mis.dv.ToString("F0", IC) + " m/s" + (plan != null ? " (plan "
+                     + plan.dv.ToString("F0", IC) + (dvMax.HasValue ? ", budget " + dvMax.Value.ToString("F0", IC) : "")
+                     + ")" : "") + (dvMax.HasValue && mis.dv > dvMax.Value ? "  OVER BUDGET" : ""),
+                 "days\t" + ((ut - t0) / 21600).ToString("F1", IC) + (plan != null ? " (plan " + plan.days.ToString("F1", IC)
+                     + (daysMax.HasValue ? ", budget " + daysMax.Value.ToString("F1", IC) : "") + ")" : ""),
                  "UT\t" + Mission.FmtUt(ut));
         }
 

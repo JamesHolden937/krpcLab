@@ -152,10 +152,24 @@ namespace LowThrust
         public double LOG_INTERVAL_UT = 600.0;
 
         // --- Planner ---------------------------------------------------------------
-        // Cutoffs flown between ETA_MIN and ETA_MAX to meet a deadline.
+        // The dv/time trade (Tradeoff): the mission is flown in the stand-in at
+        // this many arc cutoffs between ETA_MAX and ETA_MIN ...
         public int PLAN_GRID = 13;
+        // ... and with no budget given, the fastest option within this share
+        // of the cheapest one's dv is flown (the cheapest alone was 3x slower
+        // for 0.7% less dv to the Mun).
+        public double BALANCE_DV_SHARE = 0.02;
+        // A budget's stand-in flights stop at this multiple of it (so an
+        // impossible budget is known quickly, and still says what is possible).
+        public double BUDGET_SCAN_FACTOR = 1.5;
+        // A dv budget below this share of the impulsive estimate is refused
+        // without flying anything (the estimate is patched conics, not a
+        // strict bound, hence the margin).
+        public double IMPULSIVE_MARGIN = 0.8;
         // A transfer still running after this many orbits is reported unfinished.
         public int MAX_ORBITS = 20000;
+
+        public Config Clone() { return (Config)MemberwiseClone(); }
 
         static IEnumerable<FieldInfo> Fields()
         {
