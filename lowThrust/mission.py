@@ -385,42 +385,55 @@ class Mission:
         return f"{(r - body.radius) / 1e3:.0f} km"
 
     # --- the loop -----------------------------------------------------------
-    def run(self):
-        cfg = self.cfg
+    def step(self):
+        """One decision from the current state (``self.craft``): a
+        ``MissionResult`` when the mission has ended, else (throttle,
+        direction, tick) -- the command to hold for ``tick`` seconds.  The
+        stand-in (``run``) and the live pilot (``pilot.py``) both fly it;
+        each then reports what was flown (``account``) and any SOI change
+        (``_soi_change``)."""
+        cfg, cr = self.cfg, self.craft
         if self.abort:
             return self._end(False, self.abort)
-        limit = self.t0 + cfg.MISSION_MAX_DAYS * 21600
-        while True:
-            cr = self.craft
-            c = orbit.conic(cr.r, cr.v, cr.body.mu)
-            floor = cr.body.radius + cr.body.atmosphere
-            if c.r < floor:
-                return self._end(False, f"hit {cr.body.name}'s "
-                                        "atmosphere/surface")
-            if (c.e < 1 and c.rp < floor
-                    and self.phase in ("WAIT", "COAST", "ESCAPE")
-                    and cr.body is not self.dest):
-                self._repump("periapsis inside the atmosphere")
-            if cr.t > limit:
-                return self._end(False, "time limit")
+        c = orbit.conic(cr.r, cr.v, cr.body.mu)
+        floor = cr.body.radius + cr.body.atmosphere
+        if c.r < floor:
+            return self._end(False, f"hit {cr.body.name}'s "
+                                    "atmosphere/surface")
+        if (c.e < 1 and c.rp < floor
+                and self.phase in ("WAIT", "COAST", "ESCAPE")
+                and cr.body is not self.dest):
+            self._repump("periapsis inside the atmosphere")
+        if cr.t > self.t0 + cfg.MISSION_MAX_DAYS * 21600:
+            return self._end(False, "time limit")
 
-            step = (self._evade(c) or self._floor_guard(c)
-                    or getattr(self, "_" + self.phase.lower())(c))
-            if step == "done":
-                if cr.body is not self.dest:
-                    return self._end(False, f"finished about {cr.body.name}, "
-                                            f"not {self.dest.name}")
-                return self._end(True, "arrived")
-            if isinstance(step, str):
-                return self._end(False, step)
-            throttle, direction, tick = step
+        step = (self._evade(c) or self._floor_guard(c)
+                or getattr(self, "_" + self.phase.lower())(c))
+        if step == "done":
+            if cr.body is not self.dest:
+                return self._end(False, f"finished about {cr.body.name}, "
+                                        f"not {self.dest.name}")
+            return self._end(True, "arrived")
+        if isinstance(step, str):
+            return self._end(False, step)
+        throttle, direction, tick = step
+        if throttle > 0:
+            # no tick changes the velocity by more than THRUST_DV_SHARE:
+            # a 10 m/s^2 engine's tick at LKO was 300 m/s, the linear
+            # throttle overshot the waiting orbit into the Mun's band
+            tick = min(tick, max(0.1, cfg.THRUST_DV_SHARE * vec.norm(cr.v)
+                                 / (self._accel() * throttle)))
+        return throttle, direction, tick
+
+    def run(self):
+        """Fly the mission in the stand-in, to its end."""
+        cr = self.craft
+        while True:
+            s = self.step()
+            if isinstance(s, MissionResult):
+                return s
+            throttle, direction, tick = s
             if throttle > 0:
-                # no tick changes the velocity by more than THRUST_DV_SHARE:
-                # a 10 m/s^2 engine's tick at LKO was 300 m/s, the linear
-                # throttle overshot the waiting orbit into the Mun's band
-                tick = min(tick, max(0.1, cfg.THRUST_DV_SHARE
-                                     * vec.norm(cr.v)
-                                     / (self._accel() * throttle)))
                 self._thrust(direction, throttle, tick)
             else:
                 self._close_burn()
@@ -437,30 +450,42 @@ class Mission:
                              orbit.conic(cr.r, cr.v, cr.body.mu))
 
     def _thrust(self, direction, throttle, tick):
+        """The stand-in's thrusting tick: RK4 about the current body."""
         cr, ves, cfg = self.craft, self.vessel, self.cfg
         force = vec.scale(direction, ves.thrust_n * throttle)
-
-        R, T, N = orbit.rtn(cr.r, cr.v)
+        r0, v0 = cr.r, cr.v
         h = tick / cfg.THRUST_SUBSTEPS
         for _ in range(cfg.THRUST_SUBSTEPS):
             cr.r, cr.v, _ = _rk4(cr.r, cr.v, cr.m, cr.body.mu, force, 0.0, h)
         cr.t += tick
-        dv = ves.thrust_n * throttle / cr.m * tick
+        self.account(direction, ves.thrust_n * throttle / cr.m * tick,
+                     tick, r0, v0)
+        hit = _crossing(cr, cr.r, cr.t)
+        if hit:
+            _switch(cr, *hit)
+            self._soi_change(hit[0], hit[1] or cr.body)
+
+    def account(self, direction, dv, tick, r0, v0):
+        """Book ``dv`` m/s thrust along ``direction`` over the ``tick``
+        just flown from (r0, v0): the mission's dv, the ledger phases read
+        (``_last_dv``), and the burn list.  ``dv`` 0 closes the burn."""
+        if dv <= 0:
+            self._close_burn()
+            return
+        cr = self.craft
         self.dv += dv
         self._last_dv = dv
+        R, T, N = orbit.rtn(r0, v0)
         if self._burn is None or self._burn["phase"] != self.phase:
             self._close_burn()
-            self._burn = dict(phase=self.phase, body=cr.body.name, t0=cr.t - tick,
-                              dv=0.0, pro=0.0, nor=0.0, rad=0.0)
+            self._burn = dict(phase=self.phase, body=cr.body.name,
+                              t0=cr.t - tick, dv=0.0, pro=0.0, nor=0.0,
+                              rad=0.0)
         b = self._burn
         b["dv"] += dv
         b["pro"] += dv * vec.dot(direction, T)
         b["nor"] += dv * vec.dot(direction, N)
         b["rad"] += dv * vec.dot(direction, R)
-        hit = _crossing(cr, cr.r, cr.t)
-        if hit:
-            _switch(cr, *hit)
-            self._soi_change(hit[0], hit[1] or cr.body)
 
     def _repump(self, why):
         """Back to the orbit-shaping phase after an unplanned flyby or a
@@ -1711,6 +1736,34 @@ def waiting_orbit(here, moon, rp_now, rc_min, ra_cap, accel, cfg,
             rp -= max(1e3, 0.01 * (top - rp_min))
         ra_wait = min(max(cfg.WAIT_AP_FRACTION * peri, 1.05 * rp_wait), top)
     return ra_wait, min(rp_wait, ra_wait), rc, ra_c, ok
+
+
+def parse_orbit(text, system, start=False):
+    """``"body: ap= pe= [i= lan= argpe=]"`` (km and degrees) as (body, {field:
+    value}); a target (``start`` False) takes no argpe.  Raises ValueError."""
+    name, _, rest = text.partition(":")
+    body = system.get(name.strip().capitalize())
+    if body is None:
+        raise ValueError(f"unknown body {name.strip()!r}")
+    allowed = ("ap", "pe", "i", "lan", "argpe") if start else \
+        ("ap", "pe", "i", "lan")
+    f = {}
+    for item in rest.replace(",", " ").split():
+        k, _, val = item.partition("=")
+        if k not in allowed:
+            raise ValueError(f"unknown field {k!r} ({', '.join(allowed)})")
+        f[k] = float(val)
+    return body, f
+
+
+def target_from(body, f):
+    """The ``guidance.Target`` about ``body`` for parsed fields ``f``:
+    anything left out is free."""
+    return guidance.Target(
+        body.radius + f["ap"] * 1e3 if "ap" in f else None,
+        body.radius + f["pe"] * 1e3 if "pe" in f else None,
+        math.radians(f["i"]) if "i" in f else None,
+        math.radians(f["lan"]) if "lan" in f else None)
 
 
 def route(here, dest):

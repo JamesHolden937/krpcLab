@@ -25,19 +25,10 @@ from lowThrust import bodies, config, guidance, mission, orbit, sim  # noqa: E40
 
 
 def parse(text, system, start):
-    name, _, rest = text.partition(":")
-    body = system.get(name.strip().capitalize())
-    if body is None:
-        raise SystemExit(f"unknown body {name!r}")
-    f = {}
-    for item in rest.replace(",", " ").split():
-        k, _, val = item.partition("=")
-        allowed = ("ap", "pe", "i", "lan", "argpe") if start else \
-            ("ap", "pe", "i", "lan")
-        if k not in allowed:
-            raise SystemExit(f"unknown field {k!r} ({', '.join(allowed)})")
-        f[k] = float(val)
-    return body, f
+    try:
+        return mission.parse_orbit(text, system, start)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
 
 def dur(s):
@@ -70,11 +61,7 @@ def main():
     r, v = orbit.state_from_elements(
         b0.mu, (ra + rp) / 2, (ra - rp) / (ra + rp), math.radians(s.get("i", 0)),
         math.radians(s.get("lan", 0)), math.radians(s.get("argpe", 0)), 0.0)
-    target = guidance.Target(
-        b1.radius + t["ap"] * 1e3 if "ap" in t else None,
-        b1.radius + t["pe"] * 1e3 if "pe" in t else None,
-        math.radians(t["i"]) if "i" in t else None,
-        math.radians(t["lan"]) if "lan" in t else None)
+    target = mission.target_from(b1, t)
     vessel = sim.Vessel(args.mass, args.thrust, args.isp)
 
     print(f"config: {' '.join(config.differences(cfg)) or '(defaults)'} "

@@ -60,8 +60,7 @@ namespace LowThrustWarp
             return n;
         }
 
-        /// <summary>Set the throttle 0..1 as PT's throttle keys do, plus the
-        /// stock throttle so it carries out of warp.</summary>
+        /// <summary>Set the throttle 0..1 as PT's throttle keys do.</summary>
         [KRPCProcedure]
         public static void SetThrottle(float throttle)
         {
@@ -74,8 +73,10 @@ namespace LowThrustWarp
                 if (set != null)
                     set.Invoke(m, new object[] { throttle, false });
             }
+            // Not FlightInputHandler: kRPC refuses rails warp while that
+            // throttle is open, and PT restores its own throttle when the
+            // vessel comes off rails.
             v.ctrlState.mainThrottle = throttle;
-            FlightInputHandler.state.mainThrottle = throttle;
         }
 
         /// <summary>PT's throttle (-1: no PT engine).</summary>

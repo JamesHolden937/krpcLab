@@ -133,6 +133,19 @@ class Config:
     # (only a strong engine is ever limited by it).
     THRUST_DV_SHARE: float = 0.02
 
+    # --- The live pilot (pilot.py) ---------------------------------------------
+    # Thrust only while the thrust axis is within this of the command (the
+    # plugin turns the vessel at its wheels' rate; the planner assumes it
+    # points at once).
+    ALIGN_DEG: float = 2.0
+    # The warp rate is at most this many times a tick's length in seconds:
+    # rails time advances in frames of 0.02 x rate and the loop's latency is
+    # a few hundredths of a second, so a tick then overruns by a few percent
+    # at most.  (10 s ticks in low orbit: 50x.)
+    WARP_PER_TICK: float = 5.0
+    # Telemetry at most once per this many game seconds (events always).
+    LOG_INTERVAL_UT: float = 600.0
+
     # --- Planner ---------------------------------------------------------------
     # Cutoffs flown between ETA_MIN and ETA_MAX to meet a deadline, evenly
     # spaced in arc half-width.
