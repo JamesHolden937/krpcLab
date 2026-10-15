@@ -107,7 +107,7 @@ namespace LowThrust
         public string resume, lifting, evading;
         public bool trim_now;
         public bool? rebinding, match_done;
-        public double? aero_rp, cap_drag_e, aero_skip_t;
+        public double? aero_rp, cap_drag_e, aero_skip_t, push_ca_t;
         public bool aero_exit, aero_done, aero_capture;
         public V3? vrel, dodge, dodge_dir;
     }
@@ -1020,7 +1020,9 @@ namespace LowThrust
                         Event("pass skipped: its coast would meet " + bad.name);
                         dvp = null;
                     }
-                    else if (ca.vrel.Norm > plan.vcap.Value * Math.Pow(1.25, plan.skips ?? 0))
+                    else
+                        plan.push_ca_t = ca.t;
+                    if (dvp.HasValue && ca.vrel.Norm > plan.vcap.Value * Math.Pow(1.25, plan.skips ?? 0))
                     {
                         if (cr.t - (plan.skip_t ?? -Py.Inf) >= Synodic(c))
                         {
@@ -1068,8 +1070,12 @@ namespace LowThrust
             double mu = cr.body.mu;
             double tick = Tick(c);
             double left = plan.push_left.Value - lastDv;
+            // looking at least as far as the encounter the push was planned
+            // for: the post-push revolution's 0.75 can end just short of it
+            double planned = plan.push_ca_t.HasValue ? 1.2 * (plan.push_ca_t.Value - cr.t) : 0.0;
+            Func<V3, V3, double> horizon = (r1, v1) => Math.Max(Horizon(r1, v1), planned);
             double? dvp = Transfer.PushDv(cr.r, cr.v, cr.t, mu, moon, plan.rc.Value, moon.Normal,
-                                          Math.Min(PushMax(c), 1.5 * left + 2), Horizon, 12,
+                                          Math.Min(PushMax(c), 1.5 * left + 2), horizon, 12,
                                           Math.Max(0.0, 0.5 * left - 2), Accel(), false);
             if (dvp.HasValue) left = dvp.Value;
             plan.push_left = left;
