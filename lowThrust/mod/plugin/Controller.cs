@@ -87,7 +87,7 @@ namespace LowThrust
             public V3 r0, v0;
             public double t0, e0, hPeak, load, qPeak, accPeak, cdA, minAlt = double.PositiveInfinity, top;
             public double? exitT;
-            public double lastRise;
+            public double lastRise, lastLog = double.NegativeInfinity;
             public bool started;
             // per part: start and peak of max(skin / skin max, interior / max)
             public readonly Dictionary<uint, double[]> heat = new Dictionary<uint, double[]>();
@@ -964,12 +964,23 @@ namespace LowThrust
                 if (h > hp[1] + 1e-4) { hp[1] = h; pd.lastRise = ut; }
             }
             bool up = v.verticalSpeed > 0;
-            if (alt > pd.top && up && pd.minAlt < pd.top)
+            if (ut - pd.lastLog >= 30.0)
             {
+                pd.lastLog = ut;
+                log.Event(ut, string.Format(IC, "  in the air: {0:F1} km, {1:F0} m/s {2}, q {3:F0} Pa, heating {4:F1}, "
+                                                + "warp {5} x{6:F0}", alt / 1e3, spd, up ? "up" : "down", q,
+                                            rho > 0 ? Math.Sqrt(rho) * spd * spd * spd / 1e6 : 0.0, TimeWarp.WarpMode,
+                                            TimeWarp.CurrentRate));
+            }
+            if (alt > pd.top && up)
+            {
+                // out (or never in: the warp carried it past on rails)
+                if (pd.minAlt >= pd.top) { EndPass(v); return; }
                 if (!pd.exitT.HasValue) pd.exitT = ut;
                 double since = ut - pd.exitT.Value;
                 if (since >= cfg.AERO_SOAK_S || since >= 10.0 && ut - pd.lastRise >= 20.0) EndPass(v);
             }
+            else if (ut - pd.t0 > 20000.0) EndPass(v);
         }
 
         void EndPass(Vessel v)
@@ -996,7 +1007,10 @@ namespace LowThrust
                                          pd.minAlt / 1e3, pd.hPeak, pd.load, pd.qPeak, pd.accPeak, pd.cdA, dragArea,
                                          hottest, hotStart, hotPeak);
             cr.m = Engines.Mass(v);
-            mis.PassFlown(r1, vel[0], ut, new PassMeasure { dE = pd.e0 - e1, heatScale = scale, note = note });
+            bool flown = pd.minAlt < pd.top;
+            if (!flown) log.Event(ut, "warning: the pass was not flown in the air (unpacked at " + (pd.minAlt / 1e3).ToString("F1", IC)
+                                      + " km): nothing learned from it");
+            mis.PassFlown(r1, vel[0], ut, flown ? new PassMeasure { dE = pd.e0 - e1, heatScale = scale, note = note } : null);
             Drain();
             tSim = ut;
             cur = null;
