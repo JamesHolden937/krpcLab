@@ -119,6 +119,43 @@ namespace LowThrust
         // of the SOI.
         public double REBIND_SOI_FRACTION = 0.6;
 
+        // --- Aerobraking -----------------------------------------------------
+        // At a body with an atmosphere (and a vessel with a drag area), the
+        // capture's periapsis is put in the air (its pass sheds energy the
+        // capture burn then need not) and the apoapsis is lowered by passes
+        // (AEROBRAKE) instead of burns; FINAL lifts the periapsis out after.
+        public bool AEROBRAKE = true;
+        // Every limit is checked on the pass flown with this much more drag
+        // and density than the model and the drag scale learned: the density
+        // varies with latitude and the sun, the drag with the attitude.
+        public double AERO_DRAG_MARGIN = 1.5;
+        // A pass's heating index (sqrt(rho) v^3 / 1e6, KSP's high-Mach
+        // convective coefficient less its constant) peaks at most at the
+        // limit learned: the first pass AERO_HEAT_FIRST; after each, the
+        // measured temperature rise of every part (skin and interior, over
+        // its maximum) extrapolated linearly to AERO_HEAT_TARGET of the
+        // maximum, at most AERO_HEAT_GROWTH times the pass flown; its
+        // integral over the pass likewise.  The stand-in plans with
+        // AERO_HEAT_PLAN and learns nothing.
+        public double AERO_HEAT_FIRST = 30.0;
+        public double AERO_HEAT_TARGET = 0.6;
+        public double AERO_HEAT_GROWTH = 3.0;
+        public double AERO_HEAT_PLAN = 100.0;
+        // No pass below the highest terrain plus this, nor below this share
+        // of the atmosphere's depth; deceleration at most this (m/s^2).
+        public double AERO_TERRAIN_MARGIN_M = 3000.0;
+        public double AERO_MIN_ALT_SHARE = 0.2;
+        public double AERO_ACCEL_MAX = 20.0;
+        // Aerobraking ends once a pass would lower the apoapsis by less than
+        // this share of what is left above the final one.
+        public double AERO_MIN_GAIN = 0.02;
+        // In the game: the physics warp index (0..3: 1x..4x) a pass is
+        // flown at, the SAS mode held through it, and the game seconds the
+        // temperatures are still watched after it (the interior peaks late).
+        public int AERO_PHYSICS_WARP = 3;
+        public string AERO_HOLD = "Prograde";
+        public double AERO_SOAK_S = 300.0;
+
         // --- Tick --------------------------------------------------------------
         // Guidance is re-decided once a tick and held; a tick is this fraction
         // of a period.
@@ -213,6 +250,8 @@ namespace LowThrust
                 else if (f.FieldType == typeof(double[]))
                     f.SetValue(this, value.Split(new[] { ',' }).Select(x => double.Parse(x.Trim(), CultureInfo.InvariantCulture))
                                           .ToArray());
+                else if (f.FieldType == typeof(string))
+                    f.SetValue(this, value);
                 else if (f.FieldType == typeof(int))
                     f.SetValue(this, int.Parse(value, CultureInfo.InvariantCulture));
                 else

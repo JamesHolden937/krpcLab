@@ -78,6 +78,23 @@ namespace LowThrust
         V3 holdVec;
         bool holding;
 
+        // --- a pass through the air (flown by the game, in physics) ---------------
+        AeroState aeroState;
+        double dragArea;
+        bool passing;
+        class PassData
+        {
+            public V3 r0, v0;
+            public double t0, e0, hPeak, load, qPeak, accPeak, cdA, minAlt = double.PositiveInfinity, top;
+            public double? exitT;
+            public double lastRise;
+            public bool started;
+            // per part: start and peak of max(skin / skin max, interior / max)
+            public readonly Dictionary<uint, double[]> heat = new Dictionary<uint, double[]>();
+            public readonly Dictionary<uint, string> names = new Dictionary<uint, string>();
+        }
+        PassData pd;
+
         // --- measures --------------------------------------------------------------
         readonly Stopwatch frameWatch = new Stopwatch();
         readonly Stopwatch wall = new Stopwatch();
@@ -152,7 +169,10 @@ namespace LowThrust
                 V3 r = GameSystem.StateOf(v.orbit, ut, vel);
                 var eng = new Engines(v);
                 double thrust = eng.thrustN > 0 ? eng.thrustN : Engines.FullThrust(v);
-                var ship = new Ship(Engines.Mass(v), thrust, eng.ispS > 0 ? eng.ispS : 4200.0);
+                var ship = new Ship(Engines.Mass(v), thrust, eng.ispS > 0 ? eng.ispS : 4200.0)
+                {
+                    cdA = cfg.AEROBRAKE ? GameSystem.DragArea(v, cfg.AERO_HOLD != "Retrograde") : 0.0
+                };
                 Config c = cfg;
                 double? dvMax, daysMax;
                 string why = Budget(c, here, r, vel[0], dest, target, out dvMax, out daysMax);
@@ -283,6 +303,12 @@ namespace LowThrust
                 shareSum = shareN = 0;
                 overBudget = false;
                 plan = null;
+                passing = false;
+                aeroState = new AeroState { hAllow = cfg.AERO_HEAT_FIRST, learn = true };
+                dragArea = cfg.AEROBRAKE ? GameSystem.DragArea(vessel, cfg.AERO_HOLD != "Retrograde") : 0.0;
+                if (dragArea > 0)
+                    log.Event(ut, string.Format(IC, "drag area {0:F2} m^2 (drag cubes, held {1}): passes through an "
+                                                    + "atmosphere are flown", dragArea, cfg.AERO_HOLD));
                 wall.Reset(); wall.Start();
                 StartLeg();
             }
@@ -344,7 +370,7 @@ namespace LowThrust
             V3[] vel = new V3[1];
             V3 r = GameSystem.StateOf(vessel.orbit, ut, vel);
             engines.Refresh();
-            var ship = new Ship(Engines.Mass(vessel), engines.thrustN, engines.ispS);
+            var ship = new Ship(Engines.Mass(vessel), engines.thrustN, engines.ispS) { cdA = dragArea };
             Target tgt = Mission.LegTarget(legs, leg, finalTarget, ship.thrustN / ship.massKg, cfg);
             Body dest = legs[leg];
             Dictionary<string, Body> s = sys;
@@ -386,6 +412,7 @@ namespace LowThrust
             if (planner.IsAlive) return;
             if (planError != null) { Stop("error: " + planError.Message, false); return; }
             mis = planned;
+            mis.aero = aeroState;
             seen = 0;
             if (leg == 0 && plan != null)
                 log.Event(Planetarium.GetUniversalTime(), string.Format(IC,
@@ -418,6 +445,16 @@ namespace LowThrust
             if (mode == Mode.Planning) { Planned(); if (mode != Mode.Flying) return; }
             if (FlightDriver.Pause) return;
             QuietPT(v);
+            if (passing)
+            {
+                try { PassStep(v); }
+                catch (Exception e)
+                {
+                    log.Event(Planetarium.GetUniversalTime(), "FATAL " + e);
+                    Stop("error: " + e.Message, false);
+                }
+                return;
+            }
             if (!Warp.OnRails(v))
             {
                 if (v.packed && TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRateIndex == 0
@@ -623,7 +660,7 @@ namespace LowThrust
             var watch = Stopwatch.StartNew();
             var th = new Thought { s = pending ?? mis.DoStep() };
             pending = null;
-            if (th.s.result == null && th.s.throttle <= 0)
+            if (th.s.result == null && th.s.throttle <= 0 && !th.s.pass)
             {
                 mis.Account(V3.Zero, 0.0, th.s.tick, cr.r, cr.v);
                 Body b0 = cr.body;
@@ -646,6 +683,11 @@ namespace LowThrust
             if (s.result != null)
             {
                 LegEnded(s.result);
+                return;
+            }
+            if (s.pass)
+            {
+                BeginPass(v);
                 return;
             }
             V3 R, T, N;
@@ -704,10 +746,10 @@ namespace LowThrust
                 span += tick;
                 if (span >= limit) return span;
                 Step s = mis.DoStep();
-                if (s.result != null || s.throttle > 0)
+                if (s.result != null || s.throttle > 0 || s.pass)
                 {
                     next = s;
-                    if (s.result == null)
+                    if (s.result == null && !s.pass)
                     {
                         // the burn's direction against the orbit where it starts
                         V3 R, T, N;
@@ -797,10 +839,145 @@ namespace LowThrust
                 if (cur.coast) span = Math.Min(span, Math.Max(0, cur.tEnd - tSim) + fuel);
                 else span = Math.Min(span, fuel / Math.Max(cur.thr, 1e-3));
             }
+            // the air ahead: steps shrink geometrically to its edge
+            double tAir = mis.TimeToAir();
+            if (tAir < double.PositiveInfinity) span = Math.Min(span, Math.Max(0.02, 0.25 * tAir));
             int idx = Math.Min(cpuIndex, top);
             while (idx > 1 && Time.fixedDeltaTime * rates[idx] > span) idx--;
             idx = Warp.Cap(v, idx);
             if (idx >= 1) Warp.Set(idx);
+        }
+
+        // --- a pass through the air ------------------------------------------------------------
+        // The mission stops at the top of the atmosphere, inbound.  The game
+        // flies the pass: off rails, physics warp, SAS holding AERO_HOLD;
+        // every step the heating index, the dynamic pressure, the drag and
+        // every part's temperatures are measured.  Once out of the air the
+        // temperatures are watched until they stop rising (the interior
+        // peaks after the skin, at most AERO_SOAK_S), then the orbit is read
+        // back and the mission told what the pass shed and how hot it ran.
+
+        void BeginPass(Vessel v)
+        {
+            Craft cr = mis.craft;
+            CelestialBody kb = v.mainBody;
+            pd = new PassData
+            {
+                r0 = cr.r, v0 = cr.v, t0 = cr.t, e0 = Aero.Energy(cr.r, cr.v, cr.body.mu), top = kb.atmosphereDepth
+            };
+            passing = true;
+            holding = false;
+            Attitude.target = null;
+            LowThrust.Conic c = LowThrust.Orbit.Conic(cr.r, cr.v, cr.body.mu);
+            log.Event(cr.t, string.Format(IC, "into {0}'s air: periapsis {1:F1} km, {2:F0} m/s; physics warp, SAS {3}",
+                                          cr.body.name, (c.rp - cr.body.radius) / 1e3, cr.v.Norm, cfg.AERO_HOLD));
+            if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true, false);
+        }
+
+        static double Heat(Part p)
+        {
+            double s = p.skinMaxTemp > 0 ? p.skinTemperature / p.skinMaxTemp : 0.0;
+            double i = p.maxTemp > 0 ? p.temperature / p.maxTemp : 0.0;
+            return Math.Max(s, i);
+        }
+
+        void PassStep(Vessel v)
+        {
+            double ut = Planetarium.GetUniversalTime();
+            if (v.packed)
+            {
+                if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true, false);
+                return;
+            }
+            if (!pd.started)
+            {
+                pd.started = true;
+                pd.lastRise = ut;
+                foreach (Part p in v.parts)
+                {
+                    double h = Heat(p);
+                    pd.heat[p.flightID] = new[] { h, h };
+                    pd.names[p.flightID] = p.partInfo != null ? p.partInfo.name : p.name;
+                }
+                if (cfg.AERO_HOLD != "" && cfg.AERO_HOLD != "None")
+                {
+                    v.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
+                    try { v.Autopilot.SetMode((VesselAutopilot.AutopilotMode)Enum.Parse(typeof(VesselAutopilot.AutopilotMode), cfg.AERO_HOLD)); }
+                    catch (Exception e) { log.Event(ut, "SAS mode " + cfg.AERO_HOLD + " refused: " + e.Message); }
+                }
+            }
+            int want = Math.Max(0, Math.Min(cfg.AERO_PHYSICS_WARP, 3));
+            if (TimeWarp.WarpMode != TimeWarp.Modes.LOW)
+            {
+                TimeWarp.fetch.Mode = TimeWarp.Modes.LOW;
+                TimeWarp.SetRate(0, true, false);
+            }
+            if (TimeWarp.CurrentRateIndex != want) TimeWarp.SetRate(want, true, false);
+
+            double dt = TimeWarp.fixedDeltaTime;
+            double alt = v.altitude, rho = v.atmDensity, spd = v.srfSpeed;
+            double q = v.dynamicPressurekPa * 1000.0;
+            if (rho > 0)
+            {
+                double H = Math.Sqrt(rho) * spd * spd * spd / 1e6;
+                pd.hPeak = Math.Max(pd.hPeak, H);
+                pd.load += H * dt;
+                double drag = 0.0;
+                foreach (Part p in v.parts) drag += p.dragScalar;    // kN
+                if (q > pd.qPeak)
+                {
+                    pd.qPeak = q;
+                    if (q > 1.0) pd.cdA = drag * 1000.0 / q;
+                }
+                pd.accPeak = Math.Max(pd.accPeak, drag * 1000.0 / Math.Max(Engines.Mass(v), 1.0));
+            }
+            pd.minAlt = Math.Min(pd.minAlt, alt);
+            foreach (Part p in v.parts)
+            {
+                double[] hp;
+                double h = Heat(p);
+                if (!pd.heat.TryGetValue(p.flightID, out hp)) { pd.heat[p.flightID] = new[] { h, h }; continue; }
+                if (h > hp[1] + 1e-4) { hp[1] = h; pd.lastRise = ut; }
+            }
+            bool up = v.verticalSpeed > 0;
+            if (alt > pd.top && up && pd.minAlt < pd.top)
+            {
+                if (!pd.exitT.HasValue) pd.exitT = ut;
+                double since = ut - pd.exitT.Value;
+                if (since >= cfg.AERO_SOAK_S || since >= 10.0 && ut - pd.lastRise >= 20.0) EndPass(v);
+            }
+        }
+
+        void EndPass(Vessel v)
+        {
+            double ut = Planetarium.GetUniversalTime();
+            v.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+            passing = false;
+            Craft cr = mis.craft;
+            V3[] vel = new V3[1];
+            V3 r1 = GameSystem.StateOf(v.orbit, ut, vel);
+            double e1 = Aero.Energy(r1, vel[0], cr.body.mu);
+            double target = cfg.AERO_HEAT_TARGET, scale = double.PositiveInfinity;
+            string hottest = "";
+            double hotPeak = 0, hotStart = 0;
+            foreach (var kv in pd.heat)
+            {
+                double rise = kv.Value[1] - kv.Value[0];
+                if (kv.Value[1] > hotPeak) { hotPeak = kv.Value[1]; hotStart = kv.Value[0]; hottest = pd.names.ContainsKey(kv.Key) ? pd.names[kv.Key] : "?"; }
+                if (rise > 0.002) scale = Math.Min(scale, (target - kv.Value[0]) / rise);
+            }
+            string note = string.Format(IC, "measured: {0:F0} s in the air, down to {1:F1} km, heating {2:F0} load {3:F0}, "
+                                             + "q {4:F0} Pa, {5:F2} m/s^2, drag area {6:F2} m^2 (prior {7:F2}); hottest {8} "
+                                             + "{9:F3} -> {10:F3} of its limit", pd.exitT.HasValue ? pd.exitT.Value - pd.t0 : 0,
+                                         pd.minAlt / 1e3, pd.hPeak, pd.load, pd.qPeak, pd.accPeak, pd.cdA, dragArea,
+                                         hottest, hotStart, hotPeak);
+            cr.m = Engines.Mass(v);
+            mis.PassFlown(r1, vel[0], ut, new PassMeasure { dE = pd.e0 - e1, heatScale = scale, note = note });
+            Drain();
+            tSim = ut;
+            cur = null;
+            pending = null;
+            holding = false;
         }
 
         // --- the end -------------------------------------------------------------------------
@@ -840,6 +1017,9 @@ namespace LowThrust
             holding = false;
             cur = null;
             pending = null;
+            if (passing && FlightGlobals.ActiveVessel != null)
+                FlightGlobals.ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+            passing = false;
             mode = Mode.Idle;
             result = reason;
             flights++;

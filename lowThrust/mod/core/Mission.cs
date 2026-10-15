@@ -80,6 +80,18 @@ namespace LowThrust
         public MissionResult result;
         public double throttle, tick;
         public V3 direction;
+        // at the top of the atmosphere, inbound: the pass is flown next (no
+        // thrust in it), then reported with PassFlown
+        public bool pass;
+    }
+
+    /// <summary>A pass as the game measured it: the energy it shed, and the
+    /// heating allowed next as a multiple of this pass's (every part's
+    /// temperature rise extrapolated to AERO_HEAT_TARGET).</summary>
+    public class PassMeasure
+    {
+        public double dE, heatScale;
+        public string note = "";
     }
 
     /// <summary>The mission's working state between ticks (null: not set).</summary>
@@ -95,6 +107,8 @@ namespace LowThrust
         public string resume, lifting, evading;
         public bool trim_now;
         public bool? rebinding, match_done;
+        public double? aero_rp, cap_drag_e, aero_skip_t;
+        public bool aero_exit, aero_done, aero_capture;
         public V3? vrel, dodge, dodge_dir;
     }
 
@@ -123,6 +137,7 @@ namespace LowThrust
         // time: a plan over a budget is known to be over it without flying
         // the rest.
         public double dvLimit = Py.Inf, timeLimit = Py.Inf;
+        public AeroState aero;
 
         public Mission(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v, double t0,
                        Body dest, Target target, Config cfg, bool record = true)
@@ -136,6 +151,7 @@ namespace LowThrust
             home = body;
             finalTarget = target;
             this.record = record;
+            aero = new AeroState { hAllow = cfg.AERO_HEAT_PLAN };
             Route();
         }
 
@@ -325,6 +341,14 @@ namespace LowThrust
                 Event("capture high and loose for this engine: " + Km(raCap, dest) + " x " + Km(rc, dest));
             }
             plan.window = w; plan.rp_park = rp; plan.ra_park = ra; plan.vinf = w.vinfDep.Norm;
+            if (AeroAt(dest) && abort == null)
+            {
+                // planned as arriving prograde in the equator (the game's
+                // geometry is taken at the SOI entry)
+                double? rA = AeroCaptureRp(w.vinfArr.Norm * w.vinfArr.Norm / 2, new V3(1.0, 0.0, 0.0),
+                                           new V3(0.0, 0.0, 1.0), raCap);
+                if (rA.HasValue) { rc = rA.Value; plan.aero_capture = true; }
+            }
             plan.rc = rc; plan.ra_cap = raCap;
             if (abort != null) return;
             target = new Target(ra, rp, Math.Acos(normal.z), null, apse, normal, true);
@@ -357,7 +381,13 @@ namespace LowThrust
             if (abort != null) return Ended(false, abort);
             Conic c = Orbit.Conic(cr.r, cr.v, cr.body.mu);
             double floor = cr.body.radius + cr.body.atmosphere;
-            if (c.r < floor) return Ended(false, "hit " + cr.body.name + "'s atmosphere/surface");
+            bool air = AeroAt(cr.body);
+            if (air)
+            {
+                if (c.r < cr.body.radius) return Ended(false, "hit " + cr.body.name);
+                if (Aero.TimeToRadius(c, cr.body.mu, floor) <= 0.5) return new Step { pass = true };
+            }
+            else if (c.r < floor) return Ended(false, "hit " + cr.body.name + "'s atmosphere/surface");
             if (c.e < 1 && c.rp < floor && (phase == "WAIT" || phase == "COAST" || phase == "ESCAPE")
                 && cr.body != dest)
                 Repump("periapsis inside the atmosphere");
@@ -373,6 +403,12 @@ namespace LowThrust
             double throttle = step.thr, tick = step.tick;
             if (throttle > 0)
                 tick = Math.Min(tick, Math.Max(0.1, cfg.THRUST_DV_SHARE * cr.v.Norm / (Accel() * throttle)));
+            if (air)
+            {
+                // the tick ends where the atmosphere begins
+                double tE = Aero.TimeToRadius(c, cr.body.mu, floor);
+                if (tE < tick) tick = Math.Max(tE, 0.1);
+            }
             return new Step { throttle = throttle, direction = step.dir ?? V3.Zero, tick = tick };
         }
 
@@ -380,7 +416,14 @@ namespace LowThrust
         {
             switch (phase)
             {
-                case "FINAL": return SoiLaw(c, () => Cmd.End("done"));
+                case "FINAL":
+                    if (AeroWanted(c))
+                    {
+                        SetPhase("AEROBRAKE", "lowering the apoapsis from " + Km(c.ra, craft.body) + " by passes through "
+                                              + craft.body.name + "'s atmosphere");
+                        return Aerobrake(c);
+                    }
+                    return SoiLaw(c, () => Cmd.End("done"));
                 case "PUMP": return Pump(c);
                 case "PARK": return Park(c);
                 case "WAIT": return Wait(c);
@@ -393,6 +436,7 @@ namespace LowThrust
                 case "MATCH": return Match(c);
                 case "APPROACH": return ApproachStep(c);
                 case "CAPTURE": return CaptureStep(c);
+                case "AEROBRAKE": return Aerobrake(c);
             }
             throw new InvalidOperationException("unknown phase " + phase);
         }
@@ -406,6 +450,12 @@ namespace LowThrust
                 if (craft.t - t0 > timeLimit) return Ended(false, "over the time budget").result;
                 Step s = DoStep();
                 if (s.result != null) return s.result;
+                if (s.pass)
+                {
+                    string lost = FlyPass();
+                    if (lost != null) return Ended(false, lost).result;
+                    continue;
+                }
                 if (s.throttle > 0) Thrust(s.direction, s.throttle, s.tick);
                 else
                 {
@@ -501,7 +551,21 @@ namespace LowThrust
             string[] approachFrom = { "COAST", "CRUISE", "MATCH", "ESCAPE", "PUSH", "WAIT", "PUMP", "TRIM", "PARK" };
             string[] cruiseFrom = { "ESCAPE", "WAIT", "DEPART", "PARK", "TRIM" };
             if (cr.body == dest && approachFrom.Contains(phase))
+            {
+                if (AeroAt(dest))
+                {
+                    Conic c = Orbit.Conic(cr.r, cr.v, dest.mu);
+                    double? rA = AeroCaptureRp(c.energy, c.evec.Unit, V3.Cross(cr.r, cr.v).Unit, plan.ra_cap.Value);
+                    if (rA.HasValue)
+                    {
+                        plan.rc = rA.Value;
+                        plan.aero_capture = true;
+                        Event("aerocapture: periapsis in " + dest.name + "'s air at " + Km(rA.Value, dest)
+                              + " (heating limit " + F(aero.hAllow, 0) + ")");
+                    }
+                }
                 SetPhase("APPROACH", "periapsis target " + Km(plan.rc.Value, cr.body));
+            }
             else if (how == "exit" && kind == "planet" && cr.body == dest.parent && cruiseFrom.Contains(phase))
                 SetPhase("CRUISE", "to " + dest.name);
         }
@@ -606,7 +670,7 @@ namespace LowThrust
         Cmd SoiLaw(Conic c, Func<Cmd> nextPhase)
         {
             Craft cr = craft;
-            Body h = phase == "FINAL" ? dest : home;
+            Body h = phase == "FINAL" || phase == "AEROBRAKE" ? dest : home;
             if (cr.body != h)
             {
                 if (cr.body == h.parent) return Cmd.End("thrown out of " + h.name + "'s SOI by a flyby");
@@ -760,7 +824,7 @@ namespace LowThrust
             Craft cr = craft;
             double mu = cr.body.mu;
             var others = Others();
-            if (others.Count == 0) return null;
+            if (others.Count == 0 || phase == "AEROBRAKE") return null;
             double tPe = Orbit.TimeToPeriapsis(c, mu);
             long key = Py.Round(cr.t + tPe);
             if (plan.trim_checked == key || cr.t - (plan.trim_t ?? -Py.Inf) < 0.5 * c.period) return null;
@@ -1303,7 +1367,8 @@ namespace LowThrust
         {
             Craft cr = craft;
             Body b = cr.body;
-            if (phase == "CAPTURE" || phase == "DEPART" || c.e >= 1) return null;
+            if (phase == "CAPTURE" || phase == "DEPART" || phase == "AEROBRAKE" || c.e >= 1) return null;
+            if (phase == "FINAL" && AeroWanted(c)) return null;
             double crash = b.radius + b.atmosphere;
             if (c.rp >= crash || Orbit.TimeToPeriapsis(c, b.mu) < 0) return null;
             V3 g = RpGradientHere();
@@ -1434,6 +1499,240 @@ namespace LowThrust
             return Cmd.Of(Math.Min(1.0, acc.Norm / Accel()), acc.Unit, tick);
         }
 
+        // --- aerobraking ---------------------------------------------------------------
+        /// <summary>Whether passes through body's air are flown: it has one,
+        /// the vessel a drag area, and AEROBRAKE is on.</summary>
+        public bool AeroAt(Body b) { return cfg.AEROBRAKE && b.air != null && vessel.cdA > 0; }
+
+        double DragPerMass() { return vessel.cdA / craft.m; }
+
+        public double AeroAltMin(Body b)
+        {
+            return Math.Max(b.terrain + cfg.AERO_TERRAIN_MARGIN_M, cfg.AERO_MIN_ALT_SHARE * b.atmosphere);
+        }
+
+        /// <summary>The lowest apoapsis a pass may leave: the final one, and
+        /// never under the safe altitude.</summary>
+        double AeroRaMin(Body b)
+        {
+            double ra = finalTarget.ra ?? finalTarget.rp ?? 0.0;
+            return Math.Max(ra, b.radius + b.atmosphere + cfg.SAFE_ALT_M);
+        }
+
+        PassLimits Limits(Body b, double raMin)
+        {
+            return new PassLimits
+            {
+                altMin = AeroAltMin(b), hMax = aero.hAllow, loadMax = aero.loadAllow, accMax = cfg.AERO_ACCEL_MAX,
+                raMin = raMin, margin = cfg.AERO_DRAG_MARGIN
+            };
+        }
+
+        /// <summary>Seconds until the craft enters the air (infinity: it
+        /// will not on this conic, or no passes are flown here).</summary>
+        public double TimeToAir()
+        {
+            Craft cr = craft;
+            if (!AeroAt(cr.body)) return Py.Inf;
+            return Aero.TimeToRadius(Orbit.Conic(cr.r, cr.v, cr.body.mu), cr.body.mu,
+                                     cr.body.radius + cr.body.atmosphere);
+        }
+
+        /// <summary>The capture's periapsis in the air: the deepest whose pass
+        /// keeps the limits both on the arrival (energy E) and on the orbit
+        /// the capture burn leaves (apoapsis raCap); null if none.</summary>
+        double? AeroCaptureRp(double E, V3 peDir, V3 n, double raCap)
+        {
+            Body d = dest;
+            PassLimits lim = Limits(d, AeroRaMin(d));
+            double dpm = DragPerMass() * aero.k;
+            double? a = Aero.Deepest(d, rp => E, peDir, n, craft.t, dpm, lim);
+            double? b = Aero.Deepest(d, rp => -d.mu / (rp + raCap), peDir, n, craft.t, dpm, lim);
+            if (!a.HasValue || !b.HasValue) return null;
+            return Math.Max(a.Value, b.Value);
+        }
+
+        bool AeroWanted(Conic c)
+        {
+            Body b = craft.body;
+            if (!AeroAt(b) || b != dest || plan.aero_done || c.e >= 1 || burn != null) return false;
+            if ((finalTarget.rp ?? finalTarget.ra ?? Py.Inf) < b.radius + b.atmosphere) return false;
+            double raMin = AeroRaMin(b);
+            return c.ra > raMin * (1 + cfg.AERO_MIN_GAIN) + 1000.0;
+        }
+
+        /// <summary>AEROBRAKE: after each pass (and at the start) the next
+        /// pass's periapsis is chosen -- the deepest whose pass, flown at the
+        /// margin, keeps every limit -- and set by the guidance's arc at
+        /// apoapsis; the pass lowers the apoapsis.  Once a pass would gain
+        /// too little, the periapsis is lifted out of the air at apoapsis
+        /// and FINAL takes over.</summary>
+        Cmd Aerobrake(Conic c)
+        {
+            Craft cr = craft;
+            Body b = cr.body;
+            double mu = b.mu;
+            if (plan.aero_skip_t.HasValue && cr.t > plan.aero_skip_t.Value + 60.0 && burn == null)
+            {
+                plan.aero_skip_t = null;
+                plan.aero_rp = null;
+            }
+            if (b == dest && !plan.aero_exit && !plan.aero_rp.HasValue && burn == null && c.e < 1)
+            {
+                double raMin = AeroRaMin(b);
+                double? rp = null;
+                string why = "apoapsis " + Km(c.ra, b);
+                if (c.ra > raMin * (1 + cfg.AERO_MIN_GAIN))
+                {
+                    V3 peDir = c.evec.Unit, n = V3.Cross(cr.r, cr.v).Unit;
+                    double ra = c.ra, tPe = cr.t + Orbit.TimeToPeriapsis(c, mu);
+                    rp = Aero.Deepest(b, x => -mu / (ra + x), peDir, n, tPe, DragPerMass() * aero.k,
+                                      Limits(b, raMin));
+                    if (rp.HasValue)
+                    {
+                        PassResult nom = null;
+                        double raAfter = Py.Inf;
+                        // the deepest pass whose next revolution meets no moon
+                        // (shallower in tenths of the way to the top)
+                        var others = Others();
+                        double top = b.radius + b.atmosphere - 10.0, deepest = rp.Value;
+                        bool clear = others.Count == 0;
+                        foreach (double f in new[] { 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 })
+                        {
+                            double x = deepest + f * (top - deepest);
+                            PassResult p = Aero.PassAt(b, x, -mu / (ra + x), peDir, n, tPe, DragPerMass() * aero.k, 1.0);
+                            Conic after = Orbit.Conic(p.r, p.v, mu);
+                            double rAfter = after.e < 1 ? after.ra : Py.Inf;
+                            if (nom == null) { nom = p; raAfter = rAfter; rp = x; }
+                            if (ra - rAfter < cfg.AERO_MIN_GAIN * (ra - raMin) || others.Count == 0 || after.e >= 1) break;
+                            if (PassClear(x, ra, peDir, n, tPe, others))
+                            {
+                                if (f > 0) Event("pass kept shallower (" + Km(x, b) + ", not " + Km(deepest, b)
+                                                 + "): the deeper ones' next revolution meets a moon");
+                                nom = p; raAfter = rAfter; rp = x;
+                                clear = true;
+                                break;
+                            }
+                        }
+                        if (!clear && Transfer.FirstHazardWhen(cr.r, cr.v, cr.t, mu, others,
+                                                               tPe + 1.05 * c.period) == null)
+                        {
+                            // no pass is clear, but the orbit as it is stays
+                            // clear a revolution more: skip this periapsis
+                            plan.aero_rp = top + 2000.0;
+                            plan.aero_skip_t = tPe;
+                            target = new Target(null, plan.aero_rp.Value, finalTarget.inc, finalTarget.lan);
+                            Event("no pass this revolution: every depth's next revolution meets a moon; the periapsis "
+                                  + "kept out of the air for one");
+                            return SoiLaw(c, () => Cmd.Of(0.0, null, Tick(c)));
+                        }
+                        if (!clear && others.Count > 0)
+                            Event("warning: every pass's next revolution meets a moon");
+                        if (ra - raAfter < cfg.AERO_MIN_GAIN * (ra - raMin))
+                        {
+                            why = "a pass would lower the apoapsis only " + F((ra - raAfter) / 1e3, 0) + " km";
+                            rp = null;
+                        }
+                        else
+                            Event("pass " + (aero.passes + 1) + " planned at " + Km(rp.Value, b) + ": apoapsis "
+                                  + Km(ra, b) + " -> " + Km(raAfter, b) + ", " + F(nom.dv, 1) + " m/s of drag, heating "
+                                  + F(nom.peakH, 0) + " (limit " + F(aero.hAllow, 0) + " at the margin), load "
+                                  + F(nom.load, 0) + ", " + F(nom.peakAcc, 2) + " m/s^2, down to "
+                                  + F(nom.minAlt / 1e3, 1) + " km");
+                    }
+                    else why = "no pass keeps the limits";
+                }
+                if (rp.HasValue)
+                {
+                    plan.aero_rp = rp;
+                    target = new Target(null, rp.Value, finalTarget.inc, finalTarget.lan);
+                }
+                else
+                {
+                    plan.aero_exit = true;
+                    double rOut = Math.Max(finalTarget.rp ?? raMin, b.radius + b.atmosphere + cfg.SAFE_ALT_M);
+                    target = new Target(null, Math.Min(rOut, c.ra), finalTarget.inc, finalTarget.lan);
+                    Event("aerobraking done (" + why + "): lifting the periapsis out of the air");
+                }
+            }
+            if (plan.aero_exit && c.rp >= b.radius + b.atmosphere)
+            {
+                plan.aero_done = true;
+                target = finalTarget;
+                SetPhase("FINAL", "out of the air after " + aero.passes + " passes: " + Km(c.ra, b) + " x " + Km(c.rp, b));
+                return SoiLaw(c, () => Cmd.End("done"));
+            }
+            return SoiLaw(c, () => Cmd.Of(0.0, null, Tick(c)));
+        }
+
+        /// <summary>Whether the orbit a pass at periapsis rp leaves meets no
+        /// moon for a revolution -- at the modelled drag, and at the margin
+        /// above and below it.</summary>
+        bool PassClear(double rp, double ra, V3 peDir, V3 n, double tPe, List<Body> others)
+        {
+            Craft cr = craft;
+            Body b = cr.body;
+            double m = cfg.AERO_DRAG_MARGIN;
+            foreach (double sc in new[] { 1.0, m, 1 / m })
+            {
+                PassResult p = Aero.PassAt(b, rp, -b.mu / (ra + rp), peDir, n, tPe, DragPerMass() * aero.k * sc, sc);
+                Conic after = Orbit.Conic(p.r, p.v, b.mu);
+                if (!p.exited || after.e >= 1) return false;
+                if (Transfer.FirstHazardWhen(p.r, p.v, p.t, b.mu, others, p.t + 1.05 * after.period) != null) return false;
+            }
+            return true;
+        }
+
+        /// <summary>The stand-in's pass: flown by the model; null, or why the
+        /// vessel was lost.</summary>
+        string FlyPass()
+        {
+            CloseBurn();
+            Craft cr = craft;
+            PassResult p = Aero.Pass(cr.body, cr.r, cr.v, cr.t, DragPerMass() * aero.k);
+            if (!p.exited)
+                return "lost in " + cr.body.name + "'s air (" + (p.crashed ? "hit the ground" : "never left it") + ")";
+            PassFlown(p.r, p.v, p.t, null);
+            return null;
+        }
+
+        /// <summary>A pass has been flown from the craft's state (at the top,
+        /// inbound) to (r1, v1) at t1, out of the air: the craft moved there,
+        /// and with a measurement from the game, the drag scale and the
+        /// heating allowed learned.</summary>
+        public void PassFlown(V3 r1, V3 v1, double t1, PassMeasure m)
+        {
+            CloseBurn();
+            Craft cr = craft;
+            Body b = cr.body;
+            double dpm = DragPerMass();
+            PassResult pred = Aero.Pass(b, cr.r, cr.v, cr.t, dpm * aero.k);
+            Conic c0 = Orbit.Conic(cr.r, cr.v, b.mu), c1 = Orbit.Conic(r1, v1, b.mu);
+            double dE = c0.energy - c1.energy;
+            aero.passes++;
+            string learnt = "";
+            if (m != null && aero.learn)
+            {
+                double k1 = Aero.Pass(b, cr.r, cr.v, cr.t, dpm).dE;
+                double kOld = aero.k;
+                if (k1 > 1e-6 && m.dE > 0) aero.k = m.dE / k1;
+                double s = Py.Clamp(m.heatScale, 0.2, cfg.AERO_HEAT_GROWTH);
+                double h = pred.peakH * s, l = pred.load * s;
+                aero.hAllow = s < 1 ? Math.Min(aero.hAllow, h) : Math.Max(aero.hAllow, h);
+                if (double.IsInfinity(aero.loadAllow)) aero.loadAllow = l;
+                else aero.loadAllow = s < 1 ? Math.Min(aero.loadAllow, l) : Math.Max(aero.loadAllow, l);
+                learnt = "; drag scale " + F(kOld, 2) + " -> " + F(aero.k, 2) + " (shed " + F(m.dE / 1e3, 1)
+                         + " kJ/kg, modelled " + F(pred.dE / 1e3, 1) + "); heating " + F(pred.peakH, 0) + " load "
+                         + F(pred.load, 0) + " flown, x" + F(s, 2) + " allowed: limits " + F(aero.hAllow, 0) + " / "
+                         + F(aero.loadAllow, 0) + (m.note != "" ? "; " + m.note : "");
+            }
+            cr.r = r1; cr.v = v1; cr.t = t1;
+            plan.aero_rp = null;
+            Event("pass " + aero.passes + " through " + b.name + "'s air: down to " + F(pred.minAlt / 1e3, 1)
+                  + " km, " + (c1.e < 1 ? "apoapsis " + Km(c0.e < 1 ? c0.ra : Py.Inf, b) + " -> " + Km(c1.ra, b)
+                                        : "still unbound") + ", shed " + F(dE / 1e3, 1) + " kJ/kg" + learnt);
+        }
+
         // --- capture -----------------------------------------------------------------
         /// <summary>(r, v) relative to the destination, from its SOI or its
         /// parent's; false from anywhere else.</summary>
@@ -1453,7 +1752,33 @@ namespace LowThrust
             return false;
         }
 
-        Capture CapSpecHere() { return CapSpec(dest, plan.rc.Value, plan.ra_cap.Value, Ceiling(dest), cfg); }
+        Capture CapSpecHere()
+        {
+            Capture cap = CapSpec(dest, plan.rc.Value, plan.ra_cap.Value, Ceiling(dest), cfg);
+            if (plan.aero_capture && AeroAt(dest))
+            {
+                cap.floor = dest.radius + AeroAltMin(dest);
+                cap.rpMax = Math.Max(cfg.CAPTURE_RP_BAND * plan.rc.Value, 1.2 * cap.floor);
+                cap.dragE = plan.cap_drag_e ?? 0.0;
+            }
+            return cap;
+        }
+
+        /// <summary>The energy the coming pass sheds at the low end (the
+        /// drag and density over AERO_DRAG_MARGIN): what the capture burn
+        /// may leave to it.</summary>
+        void CaptureDrag(V3 r, V3 v)
+        {
+            plan.cap_drag_e = 0.0;
+            if (!plan.aero_capture || !AeroAt(dest)) return;
+            Conic c = Orbit.Conic(r, v, dest.mu);
+            if (c.rp >= dest.radius + dest.atmosphere || c.rp < dest.radius + AeroAltMin(dest)
+                || V3.Dot(r, v) >= 0 && c.r < dest.radius + dest.atmosphere + 1.0) return;
+            double m = cfg.AERO_DRAG_MARGIN;
+            PassResult p = Aero.PassAt(dest, c.rp, c.energy, c.evec.Unit, V3.Cross(r, v).Unit, craft.t,
+                                       DragPerMass() * aero.k / m, 1.0 / m);
+            if (p.exited) plan.cap_drag_e = Math.Max(p.dE, 0.0);
+        }
 
         double LongCapturableHere() { return LongCapturable(CapSpecHere(), dest, Accel(), cfg); }
 
@@ -1468,6 +1793,8 @@ namespace LowThrust
             Capture cap = CapSpecHere();
             Conic cc = Orbit.Conic(r, v, cap.mu);
             if (!started && cr.body != dest) return false;
+            CaptureDrag(r, v);
+            cap = CapSpecHere();
             double wait;
             double rho = Transfer.CaptureStep(r, v, cc, cap, Accel(), started, out wait);
             if (rho <= 0) { x = Math.Min(tick, Math.Max(1.0, wait)); return false; }
@@ -1510,6 +1837,9 @@ namespace LowThrust
             {
                 target = finalTarget;
                 SetPhase("FINAL", "captured, " + Km(cc.ra, cr.body) + " x " + Km(cc.rp, cr.body));
+                if (AeroWanted(cc))
+                    SetPhase("AEROBRAKE", "lowering the apoapsis from " + Km(cc.ra, cr.body) + " by passes through "
+                                          + cr.body.name + "'s atmosphere");
                 return Cmd.Of(0.0, null, tick);
             }
             if (Transfer.CaptureLost(r, v, cc, cap))
@@ -1517,7 +1847,7 @@ namespace LowThrust
             double x;
             if (!CaptureDecide(tick, true, out x)) return Cmd.Of(0.0, null, x);
             double full = Accel() * tick;
-            V3 want = Transfer.CaptureCommand(r, v, cc, cap, x * full);
+            V3 want = Transfer.CaptureCommand(r, v, cc, cap, x * full, tick);
             return Cmd.Of(Math.Min(1.0, want.Norm / full), want.Unit, tick);
         }
 

@@ -52,8 +52,40 @@ namespace LowThrust
                 parent.children.Add(b);
                 b.gameSoi = cb.sphereOfInfluence;
             }
+            if (cb.atmosphere)
+            {
+                // density every Atmosphere.STEP m, as the game computes it at the
+                // body's base temperature (no latitude or sun terms)
+                int n = (int)Math.Ceiling(cb.atmosphereDepth / Atmosphere.STEP) + 1;
+                var rho = new double[n];
+                for (int i = 0; i < n; i++)
+                {
+                    double alt = i * Atmosphere.STEP;
+                    rho[i] = alt >= cb.atmosphereDepth ? 0.0 : cb.GetDensity(cb.GetPressure(alt), cb.GetTemperature(alt));
+                }
+                b.air = new Atmosphere(cb.atmosphereDepth, rho);
+            }
+            b.spin = cb.rotates && cb.rotationPeriod > 0 ? 2 * Math.PI / cb.rotationPeriod : 0.0;
+            b.terrain = cb.pqsController != null ? cb.pqsController.mapMaxHeight : 0.0;
             outB[cb.bodyName] = b;
             return b;
+        }
+
+        /// <summary>The vessel's drag area (m^2: drag = dynamic pressure x
+        /// this) with the air on its nose (nose: the control axis forward; or
+        /// on its tail), from the parts' drag cubes as the game would set them
+        /// at Mach 6: a prior, until a pass measures it.</summary>
+        public static double DragArea(Vessel v, bool nose)
+        {
+            Vector3 flow = (nose ? 1f : -1f) * v.ReferenceTransform.up;
+            double area = 0.0;
+            foreach (Part p in v.parts)
+            {
+                if (p.DragCubes == null || p.DragCubes.None) continue;
+                p.DragCubes.SetDrag(-p.partTransform.InverseTransformDirection(flow), 6f);
+                area += p.DragCubes.AreaDrag;
+            }
+            return area * PhysicsGlobals.DragCubeMultiplier * PhysicsGlobals.DragMultiplier;
         }
 
         /// <summary>The largest error between the rails built here and the

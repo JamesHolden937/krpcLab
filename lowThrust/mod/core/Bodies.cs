@@ -19,6 +19,10 @@ namespace LowThrust
         public List<Body> children = new List<Body>();
         /// <summary>The game's own SOI radius (the rails check), or inf.</summary>
         public double gameSoi = Py.Inf;
+        /// <summary>The atmosphere (null: none), the rotation rate about +z
+        /// (rad/s; the air turns with it) and the highest terrain (m).</summary>
+        public Atmosphere air;
+        public double spin, terrain;
 
         public Body(string name, double mu, double radius, double atmosphere = 0.0, Body parent = null,
                     double sma = 0.0, double ecc = 0.0, double inc = 0.0, double lan = 0.0,
@@ -91,6 +95,20 @@ namespace LowThrust
             add("Bop", "Jool", 2.4868349e9, 65e3, 0, 128500000, 0.235, 15.0, 10.0, 25.0, 0.9);
             add("Pol", "Jool", 7.2170208e8, 44e3, 0, 179890000, 0.171, 4.25, 2.0, 15.0, 0.9);
             add("Eeloo", "Sun", 7.4410815e10, 210e3, 0, 90118820000, 0.26, 6.15, 50.0, 260.0, 3.14);
+            // rotation periods (s) and highest terrain (m), from the game
+            var spinTerrain = new Dictionary<string, double[]>
+            {
+                { "Kerbin", new[] { 21549.425, 6764.0 } }, { "Eve", new[] { 80500.0, 7526.0 } },
+                { "Duna", new[] { 65517.859, 8264.0 } }, { "Laythe", new[] { 52980.879, 6079.0 } },
+                { "Jool", new[] { 36000.0, 0.0 } }
+            };
+            foreach (var kv in spinTerrain)
+            {
+                Body x = b[kv.Key];
+                x.spin = 2 * Math.PI / kv.Value[0];
+                x.terrain = kv.Value[1];
+                x.air = new Atmosphere(x.atmosphere, Aero.Air[kv.Key]);
+            }
             return b;
         }
 

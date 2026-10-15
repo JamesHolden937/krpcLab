@@ -15,6 +15,8 @@ namespace LowThrust
     public class Ship
     {
         public double massKg, thrustN, ispS;
+        // drag area (m^2): drag = dynamic pressure x cdA; 0 flies no passes
+        public double cdA;
         public Ship(double massKg, double thrustN, double ispS = 4200.0)
         {
             this.massKg = massKg; this.thrustN = thrustN; this.ispS = ispS;

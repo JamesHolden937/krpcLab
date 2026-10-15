@@ -40,6 +40,9 @@ namespace LowThrust
     {
         public double mu, raCap, raOk, floor, rpMax, surface, arc, fill, k;
         public double? rc;
+        // energy (J/kg) the coming pass through the air will shed, at its
+        // low end: the burn leaves it to the pass
+        public double dragE;
     }
 
     public class CaptureFlight { public double dv, tStart, dStart; }
@@ -593,7 +596,8 @@ namespace LowThrust
             if (V3.Dot(r, v) >= 0 || started && c.rp < cap.floor) return 1.0;
             if (cap.floor <= c.rp && c.rp <= cap.rpMax)
             {
-                double need = CaptureNeed(c, cap.mu, cap.raCap) / accel;
+                double vPe = Math.Sqrt(Math.Max(0.0, 2 * c.energy + 2 * cap.mu / c.rp));
+                double need = Math.Max(0.0, CaptureNeed(c, cap.mu, cap.raCap) - cap.dragE / Math.Max(vPe, 1.0)) / accel;
                 if (need <= cap.fill * ConicPassTime(c, cap.mu, cap.arc))
                 {
                     double w = Orbit.TimeToPeriapsis(c, cap.mu) - need / 2;
@@ -602,7 +606,7 @@ namespace LowThrust
                     return 0.0;
                 }
             }
-            double excess = c.energy + cap.mu / (c.rp + cap.raOk);
+            double excess = c.energy + cap.mu / (c.rp + cap.raOk) - cap.dragE;
             double path = Math.Max(c.r - c.rp, 1.0);
             double q = excess / (accel * path);
             if (q >= cap.k || started && q > 0) return Math.Min(1.0, Math.Max(q, 0.05));
@@ -618,26 +622,47 @@ namespace LowThrust
         }
 
         /// <summary>The capture law's thrust, relative to the destination:
-        /// the impulse it wants now.  Retrograde (at most budget), less its
-        /// part along the periapsis gradient at or below the aimed periapsis,
-        /// plus whatever keeps the periapsis in the band.</summary>
-        public static V3 CaptureCommand(V3 r, V3 v, Conic c, Capture cap, double budget)
+        /// the impulse it wants over the next tick (at most budget).  Above
+        /// the band's middle it is retrograde (which also lowers the
+        /// periapsis); toward the aimed periapsis its part along the
+        /// periapsis gradient is taken out, smoothly, until at the aim it
+        /// sheds energy without moving the periapsis; below the aim a term
+        /// along the gradient lifts it back over the time left to periapsis
+        /// (at most half the budget); below the floor that term alone.  The
+        /// direction varies smoothly with the state, so it never jumps
+        /// between ticks: a jump costs a vessel turning on its wheels a whole
+        /// tick unaligned.</summary>
+        public static V3 CaptureCommand(V3 r, V3 v, Conic c, Capture cap, double budget, double tick)
         {
             double mu = cap.mu;
             Conic c0;
             V3 g = RpGradient(r, v, mu, out c0);
-            double gg = V3.Dot(g, g);
+            double gn = g.Norm;
             V3 back = v.Unit * -1.0;
-            if (cap.rc.HasValue && c.rp <= cap.rc.Value && gg > 0 && V3.Dot(back, g) < 0)
+            double mag = Math.Min(Math.Max(CaptureNeed(c, mu, cap.raCap), 0.1), budget);
+            if (gn == 0) return back * mag;
+            V3 gu = g * (1 / gn);
+            if (c.rp < cap.floor)
+                return gu * Math.Min(budget, (1.05 * cap.floor - c.rp) / gn);
+            double aim = Math.Min(Math.Max(cap.rc ?? c.rp, 1.05 * cap.floor), 0.95 * cap.rpMax);
+            double dot = V3.Dot(back, gu);
+            V3 side = back - gu * dot;
+            if (side.Norm < 0.2) return back * mag;
+            side = side.Unit;
+            // retrograde's pull on the periapsis, kept in full from the
+            // band's middle up and faded out toward the aim
+            double mid = 0.5 * (aim + cap.rpMax);
+            double w = dot < 0 ? Py.Clamp((c.rp - aim) / Math.Max(mid - aim, 1.0), 0.0, 1.0) : 0.0;
+            w = w * w * (3 - 2 * w);
+            V3 dir = (side * Math.Sqrt(1 - dot * dot) + gu * (dot * w)).Unit;
+            double along = 0.0;
+            if (c.rp < aim)
             {
-                V3 side = back - g * (V3.Dot(back, g) / gg);
-                if (side.Norm > 0.2) back = side.Unit;
+                double tPe = V3.Dot(r, v) < 0 ? Orbit.TimeToPeriapsis(c, mu) : 0.0;
+                double share = tPe > tick ? tick / tPe : 1.0;
+                along = Math.Min((aim - c.rp) * share / gn, 0.5 * mag);
             }
-            V3 want = back * Math.Min(Math.Max(CaptureNeed(c, mu, cap.raCap), 0.1), budget);
-            double? goal = c.rp < cap.floor ? 1.05 * cap.floor : (c.rp > cap.rpMax ? 0.95 * cap.rpMax : (double?)null);
-            if (c.rp < cap.floor) want = V3.Zero;
-            if (goal.HasValue && gg > 0) want = want + g * ((goal.Value - c.rp) / gg);
-            return want;
+            return dir * Math.Sqrt(Math.Max(mag * mag - along * along, 0.0)) + gu * along;
         }
 
         /// <summary>The longest thrusting step of a capture: 5% of the speed.</summary>
@@ -678,7 +703,7 @@ namespace LowThrust
                 if (start == null) start = new[] { t, c.r };
                 double h = Math.Max(0.5, Math.Min(Math.Min(Math.Min(0.5 * step, 600.0), CaptureStepS(v, a)),
                                                   CaptureNeed(c, mu, cap.raCap) / a));
-                V3 want = CaptureCommand(r, v, c, cap, rho * a * h);
+                V3 want = CaptureCommand(r, v, c, cap, rho * a * h, h);
                 double mag = want.Norm;
                 double throttle = Math.Min(1.0, mag / (a * h));
                 Sim.Rk4(ref r, ref v, 1.0, mu, want.Unit * (a * throttle), h);

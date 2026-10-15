@@ -2,6 +2,7 @@
 //
 //   mono lowThrust/mod/bin/lowthrust.exe mission --from "kerbin: ap=100 pe=100" --to "mun: ap=50 pe=50"
 //   mono lowThrust/mod/bin/lowthrust.exe mission ... --thrust 200 --mass 5000 --isp 4200 --ut 0
+//   ... --cda 2.0     the vessel's drag area (m^2): passes through the air are flown
 //   mono lowThrust/mod/bin/lowthrust.exe fly --start "ap=100 pe=100" --target "ap=500 pe=500 i=5" --within 2d
 //
 // (lowThrust/tools/simmission and simfly run these.)  mission: every leg of a
@@ -103,7 +104,7 @@ namespace LowThrust
             double mass = a.Num("mass", probe.massKg), thrust = a.Num("thrust", probe.thrustN);
             double isp = a.Num("isp", probe.ispS), ut = a.Num("ut", 0.0);
             int nBurns = (int)a.Num("burns", 40);
-            var vessel = new Ship(mass, thrust, isp);
+            var vessel = new Ship(mass, thrust, isp) { cdA = a.Num("cda", 0.0) };
 
             Console.WriteLine(cfg.Line());
             Console.WriteLine("vessel " + F(mass, 0) + " kg, " + F(thrust, 0) + " N (" + F(thrust / mass, 3)

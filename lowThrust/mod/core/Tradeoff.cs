@@ -76,7 +76,7 @@ namespace LowThrust
                     var o = new TradeOption { eta = grid[i].Item1, share = grid[i].Item2 };
                     try
                     {
-                        MissionResult res = Mission.Fly(system, new Ship(ship.massKg, ship.thrustN, ship.ispS), body,
+                        MissionResult res = Mission.Fly(system, new Ship(ship.massKg, ship.thrustN, ship.ispS) { cdA = ship.cdA }, body,
                                                         r, v, t0, dest, target.Copy(), c, true, dvLimit, timeLimit);
                         o.done = res.done;
                         o.reason = res.reason;
