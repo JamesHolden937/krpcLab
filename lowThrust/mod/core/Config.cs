@@ -211,7 +211,7 @@ namespace LowThrust
                 if (f.FieldType == typeof(bool))
                     f.SetValue(this, Array.IndexOf(new[] { "1", "true", "yes", "on" }, value.ToLowerInvariant()) >= 0);
                 else if (f.FieldType == typeof(double[]))
-                    f.SetValue(this, value.Split(',').Select(x => double.Parse(x.Trim(), CultureInfo.InvariantCulture))
+                    f.SetValue(this, value.Split(new[] { ',' }).Select(x => double.Parse(x.Trim(), CultureInfo.InvariantCulture))
                                           .ToArray());
                 else if (f.FieldType == typeof(int))
                     f.SetValue(this, int.Parse(value, CultureInfo.InvariantCulture));
