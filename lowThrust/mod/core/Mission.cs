@@ -1669,7 +1669,12 @@ namespace LowThrust
                         }
                         if (!clear && others.Count > 0)
                             Event("warning: every pass's next revolution meets a moon");
-                        if (ra - raAfter < cfg.AERO_MIN_GAIN * (ra - raMin))
+                        // a pass that gains little still teaches the heating
+                        // limit while it is still growing: only end on it once
+                        // the limit is learnt (the last pass bound by the
+                        // temperatures, not by the growth cap)
+                        bool learning = aero.learn && aero.growing;
+                        if (!learning && ra - raAfter < cfg.AERO_MIN_GAIN * (ra - raMin))
                         {
                             why = "a pass would lower the apoapsis only " + F((ra - raAfter) / 1e3, 0) + " km";
                             rp = null;
@@ -1758,6 +1763,7 @@ namespace LowThrust
                 double kOld = aero.k;
                 if (k1 > 1e-6 && m.dE > 0) aero.k = m.dE / k1;
                 double s = Py.Clamp(m.heatScale, 0.2, cfg.AERO_HEAT_GROWTH);
+                aero.growing = s >= cfg.AERO_HEAT_GROWTH;
                 double h = pred.peakH * s, l = pred.load * s;
                 aero.hAllow = s < 1 ? Math.Min(aero.hAllow, h) : Math.Max(aero.hAllow, h);
                 if (double.IsInfinity(aero.loadAllow)) aero.loadAllow = l;

@@ -74,6 +74,8 @@ namespace LowThrust
         public double hAllow, loadAllow = double.PositiveInfinity;
         public int passes;
         public bool learn;
+        // the last pass's temperatures allowed more than the growth cap
+        public bool growing = true;
     }
 
     public static class Aero

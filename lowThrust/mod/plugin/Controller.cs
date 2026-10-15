@@ -94,6 +94,7 @@ namespace LowThrust
             public readonly Dictionary<uint, string> names = new Dictionary<uint, string>();
         }
         PassData pd;
+        readonly List<string> govTrace = new List<string>();
 
         // --- measures --------------------------------------------------------------
         readonly Stopwatch frameWatch = new Stopwatch();
@@ -866,6 +867,11 @@ namespace LowThrust
             // the air ahead: steps shrink geometrically to its edge
             double tAir = mis.TimeToAir();
             if (tAir < double.PositiveInfinity) span = Math.Min(span, Math.Max(0.02, 0.25 * tAir));
+            if (tAir < 3600)
+            {
+                govTrace.Add(string.Format(IC, "{0:F0}s:{1:F0}x", tAir, rates[Math.Min(cpuIndex, top)]));
+                if (govTrace.Count > 8) govTrace.RemoveAt(0);
+            }
             int idx = Math.Min(cpuIndex, top);
             while (idx > 1 && Time.fixedDeltaTime * rates[idx] > span) idx--;
             idx = Warp.Cap(v, idx);
@@ -893,8 +899,12 @@ namespace LowThrust
             holding = false;
             Attitude.target = null;
             LowThrust.Conic c = LowThrust.Orbit.Conic(cr.r, cr.v, cr.body.mu);
-            log.Event(cr.t, string.Format(IC, "into {0}'s air: periapsis {1:F1} km, {2:F0} m/s; physics warp, SAS {3}",
-                                          cr.body.name, (c.rp - cr.body.radius) / 1e3, cr.v.Norm, cfg.AERO_HOLD));
+            log.Event(cr.t, string.Format(IC, "into {0}'s air: periapsis {1:F1} km, {2:F0} m/s; physics warp, SAS {3} "
+                                              + "(game {4:F1} s ahead, at {5:F1} km {6}, {7}, warp {8} x{9:F0}; last rates: {10})",
+                                          cr.body.name, (c.rp - cr.body.radius) / 1e3, cr.v.Norm, cfg.AERO_HOLD,
+                                          Planetarium.GetUniversalTime() - cr.t, v.altitude / 1e3,
+                                          v.verticalSpeed > 0 ? "up" : "down", v.packed ? "packed" : "unpacked",
+                                          TimeWarp.WarpMode, TimeWarp.CurrentRate, string.Join(" ", govTrace.ToArray())));
             if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true, false);
         }
 
