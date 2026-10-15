@@ -786,6 +786,7 @@ namespace LowThrust
             if (PanelState.maxWarp >= 1) top = Math.Min(top, PanelState.maxWarp);
             if (ms > 0) emaMs = emaMs == 0 ? ms : 0.8 * emaMs + 0.2 * ms;
             int now = TimeWarp.CurrentRateIndex;
+            Warp.NoteDrop(v);
             if (emaMs > cfg.FRAME_BUDGET_MS) cpuIndex = Math.Max(1, Math.Min(cpuIndex, now) - 1);
             else if (emaMs < cfg.FRAME_BUDGET_MS / 2) cpuIndex = Math.Min(top, Math.Max(cpuIndex, now) + 1);
             double span = double.PositiveInfinity;

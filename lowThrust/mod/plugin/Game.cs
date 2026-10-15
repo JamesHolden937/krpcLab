@@ -339,6 +339,9 @@ namespace LowThrust
         {
             foreach (var kv in saved) kv.Key.timeWarpAltitudeLimits = kv.Value;
             saved.Clear();
+            lastSet = -1;
+            dropped = int.MaxValue;
+            droppedEnd = double.NaN;
         }
 
         /// <summary>The highest index up to want the game allows at the
@@ -357,10 +360,31 @@ namespace LowThrust
             float[] rates = Rates;
             if (o != null && o.patchEndTransition != global::Orbit.PatchTransitionType.FINAL && rates.Length > 3)
             {
+                // the game measures from the rate it is at, which lags a set
                 double left = o.EndUT - Planetarium.GetUniversalTime();
-                while (want > 3 && left < (rates[want] + rates[3]) / 2.0 + 60.0) want--;
+                double from = Math.Max(Planetarium.TimeScale, 0);
+                while (want > 3 && left < (Math.Max(rates[want], from) + rates[3]) / 2.0 + 60.0) want--;
+                // and once it has dropped the rate itself, hold under that
+                // until this patch ends
+                if (droppedEnd == o.EndUT && want > dropped) want = Math.Max(dropped, 1);
             }
             return want;
+        }
+
+        static int lastSet = -1, dropped = int.MaxValue;
+        static double droppedEnd = double.NaN;
+
+        /// <summary>Whether the game lowered the rate since the last Set
+        /// (its clamp ahead of an SOI change): remembered for this patch.</summary>
+        public static void NoteDrop(Vessel v)
+        {
+            int now = TimeWarp.CurrentRateIndex;
+            if (lastSet > 0 && now < lastSet && v.orbit != null
+                && v.orbit.patchEndTransition != global::Orbit.PatchTransitionType.FINAL)
+            {
+                dropped = now;
+                droppedEnd = v.orbit.EndUT;
+            }
         }
 
         /// <summary>Set the rails rate index at once (KSP eases between rates
@@ -373,6 +397,7 @@ namespace LowThrust
                 TimeWarp.SetRate(0, true, false);
             }
             if (TimeWarp.CurrentRateIndex != index) TimeWarp.SetRate(index, true, false);
+            lastSet = index;
         }
     }
 }
