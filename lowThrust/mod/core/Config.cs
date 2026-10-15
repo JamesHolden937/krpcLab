@@ -128,6 +128,9 @@ namespace LowThrust
         // vessel turns at its reaction wheels' rate; the planner assumes it
         // points at once).
         public double ALIGN_DEG = 2.0;
+        // Logging only: the steering line reports the thrust dv flown with the
+        // axis more than this off its command.
+        public double STEER_OFF_DEG = 0.5;
         // A coast is run ahead in prediction (exact two-body) and flown in one
         // go, at most this fraction of a revolution at a time, so the vessel
         // turns to the next burn while it coasts.

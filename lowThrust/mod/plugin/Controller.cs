@@ -15,7 +15,11 @@
 // A coast is run ahead in prediction (exact two-body) until the mission next
 // wants thrust, so the vessel turns to that burn while it coasts.  A thrust
 // command fires only if the thrust axis is within ALIGN_DEG of it when it
-// starts; its dv is booked from what was integrated.
+// starts; it then thrusts along the axis as the attitude leaves it each step
+// (on the command once the wheels hold it there, behind it while they still
+// turn), and its dv is booked from what was integrated.  What the axis is off
+// the command costs is logged: the thrust dv spent, and the part of it lost
+// to the angle (dv x (1 - cos)).
 
 using System;
 using System.Collections.Generic;
@@ -63,7 +67,7 @@ namespace LowThrust
         {
             public double thr, tick, t0, tEnd, dvDone, elapsed;
             public bool coast, fired;
-            public V3 d, rtnCmd, rtnThrust, r0, v0;
+            public V3 d, rtnCmd, r0, v0;
             public double err;
         }
         Command cur;
@@ -82,6 +86,11 @@ namespace LowThrust
         class PhaseStat { public double wall, game, maxStepMs, frames, frameMs, maxFrameMs; public int steps; }
         readonly Dictionary<string, PhaseStat> stats = new Dictionary<string, PhaseStat>();
         int starved, unfired, fired;
+        // the thrust axis this step, against the orbit (R, T, N)
+        V3 axisRtn;
+        // steering: thrust dv flown, its part lost to the axis being off the
+        // command, and the dv flown more than STEER_OFF_DEG off it
+        double steerDv, steerLoss, steerOffDv, steerMaxDeg;
         double shareSum, shareN;
         double lastShown;
         string lastPhase = "";
@@ -268,6 +277,7 @@ namespace LowThrust
                 t0 = ut;
                 stats.Clear();
                 starved = unfired = fired = 0;
+                steerDv = steerLoss = steerOffDv = steerMaxDeg = 0;
                 shareSum = shareN = 0;
                 overBudget = false;
                 plan = null;
@@ -470,6 +480,7 @@ namespace LowThrust
             Craft cr = mis.craft;
             bool write = false;
             int guard = 0;
+            axisRtn = AxisNow(v);
             while (tSim < ut - 1e-9 && mode == Mode.Flying)
             {
                 if (++guard > 100000) throw new InvalidOperationException("no progress in one step");
@@ -542,10 +553,17 @@ namespace LowThrust
                 double f = engines.thrustN * c.thr * share;
                 V3 R, T, N;
                 LowThrust.Orbit.Rtn(cr.r, cr.v, out R, out T, out N);
-                V3 d = R * c.rtnThrust.x + T * c.rtnThrust.y + N * c.rtnThrust.z;
+                V3 d = R * axisRtn.x + T * axisRtn.y + N * axisRtn.z;
                 V3 r = cr.r, v = cr.v;
                 Sim.Rk4(ref r, ref v, cr.m, cr.body.mu, d * f, h);
-                c.dvDone += f / cr.m * h;
+                double dv = f / cr.m * h;
+                c.dvDone += dv;
+                double cos = Py.Clamp(V3.Dot(axisRtn, c.rtnCmd.Unit), -1, 1);
+                steerDv += dv;
+                steerLoss += dv * (1 - cos);
+                double off = Py.Degrees(Math.Acos(cos));
+                if (off > cfg.STEER_OFF_DEG) steerOffDv += dv;
+                if (dv > 0) steerMaxDeg = Math.Max(steerMaxDeg, off);
                 cr.m -= engines.massFlowKg * c.thr * share * h;
                 cr.r = r; cr.v = v;
                 cr.t += h;
@@ -638,7 +656,7 @@ namespace LowThrust
                 V3 axis = AxisPlanner(v, R, T, N);
                 c.err = Py.Degrees(Math.Acos(Py.Clamp(V3.Dot(axis.Unit, c.d.Unit), -1, 1)));
                 c.fired = c.err <= cfg.ALIGN_DEG && engines.thrustN > 0;
-                if (c.fired) { fired++; c.rtnThrust = new V3(V3.Dot(axis, R), V3.Dot(axis, T), V3.Dot(axis, N)).Unit; }
+                if (c.fired) fired++;
                 else unfired++;
                 HoldRtn(c.rtnCmd);
             }
@@ -716,6 +734,18 @@ namespace LowThrust
             GameSystem.WorldRtn(v, out wR, out wT, out wN);
             Vector3d a = engines.AxisWorld();
             return R * Vector3d.Dot(a, wR) + T * Vector3d.Dot(a, wT) + N * Vector3d.Dot(a, wN);
+        }
+
+        /// <summary>The thrust axis as this step's attitude leaves it, against
+        /// the orbit: the held target exactly while the wheels hold it, else
+        /// where the vessel points.</summary>
+        V3 AxisNow(Vessel v)
+        {
+            if (holding && Attitude.settled) return holdVec;
+            Vector3d wR, wT, wN;
+            GameSystem.WorldRtn(v, out wR, out wT, out wN);
+            Vector3d a = engines.AxisWorld();
+            return new V3(Vector3d.Dot(a, wR), Vector3d.Dot(a, wT), Vector3d.Dot(a, wN)).Unit;
         }
 
         void HoldRtn(V3 rtn)
@@ -860,8 +890,14 @@ namespace LowThrust
                     kv.Key, kv.Value.frameMs / kv.Value.frames, kv.Value.maxFrameMs, kv.Value.frames,
                     kv.Value.maxStepMs)).ToArray()));
             r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant "
-                                    + "(mean thrust share {3:F3}); wheels drew {4:F1} EC", fired, unfired, starved,
-                                shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed));
+                                    + "(mean thrust share {3:F3}); wheels drew {4:F1} EC ({5:F1} holding; {6} holds "
+                                    + "the wheels could not give)", fired, unfired, starved,
+                                shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed, Attitude.ecHold,
+                                Attitude.holdsLost));
+            r.Add(string.Format(IC, "steering: {0:F1} m/s thrust, {1:F2} m/s of it lost to the axis off the command "
+                                    + "({2:F3}%); {3:F1} m/s flown more than {4:F1} deg off; worst {5:F2} deg",
+                                steerDv, steerLoss, steerDv > 0 ? 100 * steerLoss / steerDv : 0.0, steerOffDv,
+                                cfg.STEER_OFF_DEG, steerMaxDeg));
             return r;
         }
 

@@ -11,7 +11,11 @@
 //
 // Once the axis is on a slowly turning target (within SETTLED_DEG, the rate
 // matched) it is held there exactly, as wheels tracking a target turning at
-// orbital rate do, and the frame costs nothing to integrate.
+// orbital rate do, and the frame costs nothing to integrate -- but it is
+// charged: the wheels give the torque that turns the vessel's rate with the
+// target's (I dw/dt) and holds it against its own gyroscopic torque
+// (w x Iw), drawing ElectricCharge for that input.  A hold the wheels cannot
+// give (torque or charge short) is let go and the vessel steered again.
 //
 // Not modelled, so not available: RCS torque and engine gimbal.
 //
@@ -36,6 +40,8 @@ namespace LowThrust
         internal static Vector3d alpha;          // rad/s^2 the wheels can give
         internal static double ecRate;           // EC/s at full input on one axis, all wheels
         internal static double ecUsed;
+        internal static double ecHold;           // of ecUsed, holding a settled target
+        internal static int holdsLost;           // holds the wheels could not give
         internal static double lastError = -1;
         internal static bool settled;
         static Vessel vessel;
@@ -60,6 +66,8 @@ namespace LowThrust
         {
             omega = Vector3d.zero;
             ecUsed = 0;
+            ecHold = 0;
+            holdsLost = 0;
             target = null;
             settled = false;
             vessel = null;
@@ -153,8 +161,13 @@ namespace LowThrust
             double err = Vector3d.Angle(ab, tb);
             if (settled || (err < SETTLED_DEG && (omega - targetRate).magnitude < SETTLED_RATE))
             {
-                Hold(v, ab, tb, targetRate);
-                return;
+                if (Charge(v, targetRate, dt))
+                {
+                    Hold(v, ab, tb, targetRate);
+                    return;
+                }
+                settled = false;
+                holdsLost++;
             }
 
             double need = ecRate * 3 * dt;
@@ -199,6 +212,33 @@ namespace LowThrust
                 omega = targetRate;
                 Hold(v, ab, tb, targetRate);
             }
+        }
+
+        /// <summary>What holding the target over dt takes from the wheels:
+        /// the torque that brings the rate to the target's, spread over the
+        /// step, and the gyroscopic torque at that rate, as input on each
+        /// axis; drawn as ElectricCharge.  False (nothing drawn) if an axis
+        /// needs more than the wheels' torque or the charge is short.</summary>
+        static bool Charge(Vessel v, Vector3d targetRate, double dt)
+        {
+            if (dt <= 0) return true;
+            Vector3d dw = targetRate - omega;
+            Vector3d w = targetRate;
+            Vector3d iw = new Vector3d(moi.x * w.x, moi.y * w.y, moi.z * w.z);
+            Vector3d gyro = Vector3d.Cross(w, iw);
+            // angular acceleration asked of each axis, rad/s^2
+            Vector3d need = new Vector3d(dw.x / dt + Div(gyro.x, moi.x), dw.y / dt + Div(gyro.y, moi.y),
+                                         dw.z / dt + Div(gyro.z, moi.z));
+            double ux = Math.Abs(Div(need.x, alpha.x)), uy = Math.Abs(Div(need.y, alpha.y)),
+                   uz = Math.Abs(Div(need.z, alpha.z));
+            if (ux > 1 || uy > 1 || uz > 1) return false;
+            double ec = ecRate * (ux + uy + uz) * dt;
+            if (ec <= 0) return true;
+            if (Available(v, "ElectricCharge") < ec) return false;
+            double got = Draw(v, "ElectricCharge", ec);
+            ecUsed += got;
+            ecHold += got;
+            return true;
         }
 
         /// <summary>The axis put on the target, turning with it.</summary>

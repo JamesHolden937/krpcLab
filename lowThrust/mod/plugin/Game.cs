@@ -342,12 +342,24 @@ namespace LowThrust
         }
 
         /// <summary>The highest index up to want the game allows at the
-        /// vessel's altitude.</summary>
+        /// vessel's altitude and before its next SOI change.</summary>
         public static int Cap(Vessel v, int want)
         {
             if (v.LandedOrSplashed) return 0;
             double alt = v.mainBody.GetAltitude(v.CoM);
             while (want > 0 && alt < TimeWarp.fetch.GetAltitudeLimit(want, v.mainBody)) want--;
+            // The game's own clamp (TimeWarp.ClampRateToOrbitTransitions):
+            // above index 3 it drops to 3 once the SOI change is closer than
+            // the travel of slowing to rate 3 in one second plus 50 s.  Asked
+            // for more each step, it drops again each step (50 times a second,
+            // a log line each, 1132 of them in one live Minmus flight).
+            global::Orbit o = v.orbit;
+            float[] rates = Rates;
+            if (o != null && o.patchEndTransition != global::Orbit.PatchTransitionType.FINAL && rates.Length > 3)
+            {
+                double left = o.EndUT - Planetarium.GetUniversalTime();
+                while (want > 3 && left < (rates[want] + rates[3]) / 2.0 + 60.0) want--;
+            }
             return want;
         }
 
