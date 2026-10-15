@@ -60,6 +60,9 @@ namespace LowThrust
     public class PassLimits
     {
         public double altMin, hMax, loadMax, accMax, raMin, margin;
+        // the periapsis must be liftable to liftTo by an engine of liftAccel
+        // in an arc of +-LIFT_ARC around the next apoapsis (0: unchecked)
+        public double liftAccel, liftTo;
     }
 
     /// <summary>What the passes flown have taught: the drag scale (measured
@@ -278,7 +281,32 @@ namespace LowThrust
             if (hi.crashed || !hi.exited || hi.minAlt < lim.altMin) return false;
             if (hi.peakH > lim.hMax || hi.load > lim.loadMax || hi.peakAcc > lim.accMax) return false;
             Conic c = Orbit.Conic(hi.r, hi.v, b.mu);
-            return c.e >= 1 || c.ra >= lim.raMin;
+            if (c.e >= 1) return true;
+            return c.ra >= lim.raMin && (lim.liftAccel <= 0 || LiftSeconds(b.mu, c.ra, c.rp, lim.liftTo, lim.liftAccel)
+                                                               <= ArcSeconds(b.mu, c.ra, c.rp, LIFT_ARC));
+        }
+
+        /// <summary>The widest arc round apoapsis a lift out of the air may
+        /// take (rad).</summary>
+        public const double LIFT_ARC = Math.PI / 3;
+
+        /// <summary>Seconds at full thrust to raise the periapsis from rp to
+        /// rTo at apoapsis ra.</summary>
+        public static double LiftSeconds(double mu, double ra, double rp, double rTo, double accel)
+        {
+            if (rTo <= rp) return 0.0;
+            double v0 = Math.Sqrt(mu * (2 / ra - 2 / (ra + rp))), v1 = Math.Sqrt(mu * (2 / ra - 2 / (ra + rTo)));
+            return (v1 - v0) / accel;
+        }
+
+        /// <summary>Seconds the ellipse (ra, rp) spends within +-half rad of
+        /// its apoapsis.</summary>
+        public static double ArcSeconds(double mu, double ra, double rp, double half)
+        {
+            double a = (ra + rp) / 2, e = (ra - rp) / (ra + rp);
+            double E = 2 * Math.Atan(Math.Sqrt((1 - e) / (1 + e)) * Math.Tan((Math.PI - half) / 2));
+            double M = E - e * Math.Sin(E);
+            return 2 * (Math.PI - M) / Math.Sqrt(mu / (a * a * a));
         }
 
         /// <summary>The deepest periapsis radius whose pass, flown at the

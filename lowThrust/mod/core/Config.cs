@@ -148,7 +148,11 @@ namespace LowThrust
         public double AERO_ACCEL_MAX = 20.0;
         // Aerobraking ends once a pass would lower the apoapsis by less than
         // this share of what is left above the final one.
-        public double AERO_MIN_GAIN = 0.02;
+        public double AERO_MIN_GAIN = 0.005;
+        // No pass may leave an orbit whose periapsis the engine cannot lift
+        // to this far above the air within +-60 deg of the next apoapsis (at
+        // the margin's drag); the exit's arc is widened to fit the lift.
+        public double AERO_LIFT_MARGIN_M = 5000.0;
         // In the game: the physics warp index (0..3: 1x..4x) a pass is
         // flown at, the SAS mode held through it, and the game seconds the
         // temperatures are still watched after it (the interior peaks late).

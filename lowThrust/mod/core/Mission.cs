@@ -739,6 +739,15 @@ namespace LowThrust
 
         double ArcEta(Elements el)
         {
+            if (phase == "AEROBRAKE" && plan.aero_exit && target.rp.HasValue)
+            {
+                // the lift out of the air in one apoapsis arc, if it takes it
+                double tl = Aero.LiftSeconds(craft.body.mu, el.ra, el.rp, target.rp.Value, Accel());
+                double halfL = Aero.LIFT_ARC;
+                for (double h = Math.Acos(cfg.ETA_DEFAULT); h < Aero.LIFT_ARC; h += 0.01)
+                    if (Aero.ArcSeconds(craft.body.mu, el.ra, el.rp, h) >= 1.2 * tl) { halfL = h; break; }
+                return Math.Min(cfg.ETA_DEFAULT, Math.Cos(halfL));
+            }
             double mu = craft.body.mu;
             Target tg = target;
             double dvl = 0.0;
@@ -1551,7 +1560,8 @@ namespace LowThrust
             return new PassLimits
             {
                 altMin = AeroAltMin(b), hMax = aero.hAllow, loadMax = aero.loadAllow, accMax = cfg.AERO_ACCEL_MAX,
-                raMin = raMin, margin = cfg.AERO_DRAG_MARGIN
+                raMin = raMin, margin = cfg.AERO_DRAG_MARGIN,
+                liftAccel = Accel(), liftTo = b.radius + b.atmosphere + cfg.AERO_LIFT_MARGIN_M
             };
         }
 
@@ -1631,7 +1641,11 @@ namespace LowThrust
                             Conic after = Orbit.Conic(p.r, p.v, mu);
                             double rAfter = after.e < 1 ? after.ra : Py.Inf;
                             if (nom == null) { nom = p; raAfter = rAfter; rp = x; }
-                            if (ra - rAfter < cfg.AERO_MIN_GAIN * (ra - raMin) || others.Count == 0 || after.e >= 1) break;
+                            if (ra - rAfter < cfg.AERO_MIN_GAIN * (ra - raMin) || others.Count == 0 || after.e >= 1)
+                            {
+                                clear = true;
+                                break;
+                            }
                             if (PassClear(x, ra, peDir, n, tPe, others))
                             {
                                 if (f > 0) Event("pass kept shallower (" + Km(x, b) + ", not " + Km(deepest, b)
