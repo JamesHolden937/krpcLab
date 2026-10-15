@@ -461,10 +461,37 @@ namespace LowThrust
             }
             if (!Warp.OnRails(v))
             {
+                // off rails close above the air and coming down (the game
+                // dropped the warp at its own limit): the pass starts here,
+                // from the game's state
+                CelestialBody kb = v.mainBody;
+                if (kb.atmosphere && mis.AeroAt(mis.craft.body) && kb.bodyName == mis.craft.body.name
+                    && v.altitude < kb.atmosphereDepth + 5000 && v.verticalSpeed < 0)
+                {
+                    double ut = Planetarium.GetUniversalTime();
+                    V3[] vel = new V3[1];
+                    mis.craft.r = GameSystem.StateOf(v.orbit, ut, vel);
+                    mis.craft.v = vel[0];
+                    mis.craft.t = ut;
+                    tSim = ut;
+                    if (cur != null && !cur.coast) EndThrust(cur, cur.elapsed);
+                    cur = null;
+                    pending = null;
+                    log.Event(ut, string.Format(IC, "off rails {0:F1} km above the air, coming down: the pass starts here",
+                                                (v.altitude - kb.atmosphereDepth) / 1e3));
+                    BeginPass(v);
+                    return;
+                }
                 if (v.packed && TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRateIndex == 0
                     || !v.packed)
                 {
-                    int idx = Warp.Cap(v, Math.Max(1, cpuIndex));
+                    // back onto rails, no faster than the air ahead allows
+                    int want = Math.Max(1, cpuIndex);
+                    double tAir = mis.TimeToAir();
+                    float[] rates = Warp.Rates;
+                    while (want > 1 && tAir < double.PositiveInfinity
+                           && Time.fixedDeltaTime * rates[want] > Math.Max(0.02, 0.25 * tAir)) want--;
+                    int idx = Warp.Cap(v, want);
                     if (idx < 1) { Stop("the game will not rails-warp here (an atmosphere, or too low)", false); return; }
                     Warp.Set(idx);
                 }
