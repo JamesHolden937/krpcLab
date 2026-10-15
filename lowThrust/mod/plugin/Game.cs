@@ -342,6 +342,7 @@ namespace LowThrust
             lastSet = -1;
             dropped = int.MaxValue;
             droppedEnd = double.NaN;
+            droppedBody = null;
         }
 
         /// <summary>The highest index up to want the game allows at the
@@ -363,16 +364,22 @@ namespace LowThrust
                 // the game measures from the rate it is at, which lags a set
                 double left = o.EndUT - Planetarium.GetUniversalTime();
                 double from = Math.Max(Planetarium.TimeScale, 0);
-                while (want > 3 && left < (Math.Max(rates[want], from) + rates[3]) / 2.0 + 60.0) want--;
+                // ... and checks again a step later, when a step of the rate
+                // asked for has gone by
+                while (want > 3 && left < (Math.Max(rates[want], from) + rates[3]) / 2.0 + 60.0
+                                          + 2 * rates[want] * TimeWarp.fixedDeltaTime) want--;
                 // and once it has dropped the rate itself, hold under that
-                // until this patch ends
-                if (droppedEnd == o.EndUT && want > dropped) want = Math.Max(dropped, 1);
+                // until the SOI change it dropped for has passed (its time
+                // shifts a little whenever thrust rewrites the orbit)
+                if (droppedBody == v.mainBody && Planetarium.GetUniversalTime() < droppedEnd + 60 && want > dropped)
+                    want = Math.Max(dropped, 1);
             }
             return want;
         }
 
         static int lastSet = -1, dropped = int.MaxValue;
         static double droppedEnd = double.NaN;
+        static CelestialBody droppedBody;
 
         /// <summary>Whether the game lowered the rate since the last Set
         /// (its clamp ahead of an SOI change): remembered for this patch.</summary>
@@ -384,6 +391,7 @@ namespace LowThrust
             {
                 dropped = now;
                 droppedEnd = v.orbit.EndUT;
+                droppedBody = v.mainBody;
             }
         }
 
