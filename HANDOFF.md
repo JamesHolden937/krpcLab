@@ -1,54 +1,38 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-14 evening: `lowThrust/` is a standalone C# mod; the lag is gone; a dv/time budget
+## 2026-10-14 night: lowThrust steering costs, fast planet transfers, the warp fight fixed
 
-Defaults fingerprint `d4db5b79` (lowThrust, C# `Config`). Committed and
+Defaults fingerprint `bf944a77` (lowThrust, C# `Config`). Committed and
 pushed to origin/main; farm stopped, sleep inhibitor released. How-it-works
-PDF rewritten for the mod. History: `docs/lowThrust/journal.md`, "Session,
-2026-10-14 afternoon -- evening". Read `lowThrust/CLAUDE.md` before touching it.
+PDF rewritten. History: `docs/lowThrust/journal.md`, "Session, 2026-10-14
+night". Read `lowThrust/CLAUDE.md` before touching it. `build.sh` installed
+the current dll in the farm and the **live game** (restart KSP to load it).
 
-What changed (the user asked for all three):
-- **Standalone mod** (`lowThrust/mod/`): solver ported to C# (parity on the
-  270-flight grid: 270/270, mean dv 4914.3 v 4914.7, 176 byte-identical);
-  the autopilot runs in the game's physics step -- thrust integrated on
-  rails with the engines' own propellants (ElectricCharge from the part
-  config), orbit written through KSP's elements. No kRPC/Python/Persistent
-  Thrust in flight. Python implementation deleted; launcher button removed
-  (the mod has its own toolbar window). Farm-only kRPC bridge
-  `LowThrustKRPC.dll` for `ltfly.py`.
-- **Lag**: no Unity time-scale games; warp up to 100000x governed by frame
-  budget, propellant per step, turning, altitude (limits relaxed to the
-  atmosphere top while flying). Mun 125-137 s wall (was 545-557), 87 ->
-  150 km 6 s (120). Left: a search in WAIT freezes one frame up to ~0.4 s a
-  few times a flight.
-- **Dv/time budget**: Max dv / Max days fields, PLAN shows the frontier
-  (13 arc widths flown in parallel, ~7 s), clickable; impossible budgets
-  refused (instantly below 0.8x the impulsive estimate, else after the scan,
-  with the achievable range). `simmission --frontier/--max-dv/--max-days`.
-
-`build.sh` installed the mod into the **live game** too and removed the old
-`GameData/LowThrustWarp` there. Persistent Thrust can stay installed.
-
-Measured in game (`qs_lowthrust`): Mun 9/9 inline arrive, 35.1 d where
-planned 35.0 and 20.8-20.9 d where planned 26.9, 1332-1381 m/s (plan
-1297-1311); budget 1350 -> 1351 m/s; max 10 d refused in 14 s; Duna arrived
-586 d / 2695 m/s (plan 528 / 2256); 400x150 i3 argpe90 arrived 16 s wall.
-Flag measured and deleted: decisions on a worker thread with game time held
-(THINK_ASIDE): 5/5 captures failed in its first form, then worse alignment
-and later arrivals than inline (LOG10170-74 v LOG10176-81).
+What changed (the user asked for the first two):
+- **Steering costs after alignment**: thrust along the axis the attitude
+  leaves each step; the hold charged as wheel input/EC (I dw/dt + w x Iw),
+  let go if the wheels cannot give it; `steering:` line in every log.
+  Measured (LOG10182-87): 0.01-0.02 m/s lost a flight, 9-21 EC holding --
+  negligible on `qs_lowthrust`.
+- **High dv budget buys fast planet transfers**: `TRANSFER_TIME_SHARE`
+  (window arriving within a share of the cheapest's wait+flight), scanned at
+  `TRANSFER_SHARES` on planet routes. In game: Duna max-dv 4000 404.8 d /
+  3896 m/s (plan 406.7 / 3906); defaults 511.9 d / 2165 (plan 511.6 / 2151).
+- **The "lag"**: not BetterTimeWarp (EC toggle off in all its presets);
+  the governor and KSP's SOI-transition warp clamp fought every frame (1132
+  drops in the user's live Minmus flight). Mirrored with margin + the game's
+  drop held: 1-13 drops a flight (was 243-2096).
 
 Open, in order:
-1. Re-fly Minmus inline (both Minmus flights used the deleted aside path:
-   1533 and 2786 m/s v plan ~1380); then dv over plan (Mun +3-6%, Duna +19%).
-2. The WAIT frame freeze: make the push search incremental across steps.
-3. RCS, gimbal and steering losses -- the user: "another time" (design in
-   `lowThrust/CLAUDE.md` Open 3).
+1. Minmus dv over plan on 3 of 7 inline flights (1496-1742 v ~1380; WAITs
+   of 3-5.6 Ms, TRIMs): compare a bad log with `simmission` from its start.
+2. The WAIT frame freeze (search incremental across steps).
+3. RCS and gimbal (steering after alignment is done).
 4. More planets in game, routes from a moon, aerobraking.
 
-Traps paid: PT strips EC from the engine module at run time; simulated
-`RequestResource` on rails offers ~nothing (use connected totals); the farm
-loads the dll at boot (restart after build); never use world-space or
-inertial world vectors below the inverse-rotation altitude.
+Traps paid: mcs binds newest overloads (`Split(char, options)` broke every
+START -- check `monodis --memberref`); `TimeWarp.fixedDeltaTime` is the
+scaled step; the farm loads the dll at boot (restart after build).
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 

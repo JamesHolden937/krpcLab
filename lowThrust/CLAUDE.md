@@ -8,13 +8,19 @@ the autopilot and its window run inside the game; no kRPC, Python or
 Persistent Thrust in flight. A farm-only kRPC bridge (`LowThrustKRPC.dll`)
 lets the harness start flights. The root `CLAUDE.md` applies here.
 
-**State (2026-10-14 evening):** the C# solver matches the retired Python one
+**State (2026-10-14 night):** steering costs after alignment are modelled
+(thrust along the axis the attitude leaves, the hold charged): 0.01-0.02
+m/s a flight on this craft. A dv budget buys faster planet transfers
+(transfer share on the frontier): Duna max 4000 m/s flew 404.8 d / 3896 m/s
+(plan 406.7 / 3906), defaults 511.9 d / 2165 (plan 511.6 / 2151). The warp no
+longer fights the game's SOI-transition clamp (1-13 drops a flight, was
+243-2096). Earlier: the C# solver matches the retired Python one
 on the 270-flight grid (270/270 arrive, mean dv 4914.3 v 4914.7, 176
 byte-identical, 2.4x faster). In game on `qs_lowthrust` (29.9 t, one Dawn,
 0.067 m/s^2, 12 RTGs): 87 -> 150 km in 6 s wall (Python pilot 120 s),
 0.4 days as planned; LKO -> Mun 35 days as planned in ~2.3 min wall
-(Python pilot 9 min, 73-80 days); Duna arrived (586 d, 2695 m/s v plan
-2256). Open: dv 4-6% over plan to the Mun, Minmus far over (see Open).
+(Python pilot 9 min, 73-80 days). Open: Minmus over plan on 3 of 7 (see
+Open).
 History: `docs/lowThrust/journal.md`. What the code does:
 `docs/lowThrust/howItWorks.pdf`.
 
@@ -81,20 +87,33 @@ logs: `GameData/LowThrust/PluginData/logs/` (ltfly copies them to
   N components): a burn's direction, or during a coast the next burn's
   direction where the coast ends (coast run ahead in prediction,
   `COAST_AHEAD`). A tick fires only if the axis is within `ALIGN_DEG` (2).
-  The attitude model runs first in the controller's step; once on target it
-  holds exactly (no EC charged: a small freebie, see Open).
+  The attitude model runs first in the controller's step; a thrust tick
+  thrusts along the axis as that step leaves it (behind the command while
+  the wheels still turn). Once on target it holds exactly, **charged**: the
+  wheels' input for I dw/dt + w x Iw, drawn as EC; a hold the wheels cannot
+  give is let go. The `steering:` line logs thrust dv, the cosine loss, dv
+  flown > `STEER_OFF_DEG` off, the worst angle (LOG10182-87: 0.01-0.02 m/s
+  lost, 48-90 m/s > 0.5 deg, worst 2.0; holding 9-21 EC).
 - **Warp governor**: the highest rails rate within: the frame budget
   (`FRAME_BUDGET_MS`, running average), one step drawing at most
   `STEP_RESOURCE_SHARE` (0.5) of any propellant held (EC buffers the
   generators), 5 s steps while the vessel turns, the altitude limits (relaxed to the atmosphere top or terrain +
-  `TERRAIN_MARGIN_M` while flying, `WARP_BELOW_LIMITS`), the window's max warp.
+  `TERRAIN_MARGIN_M` while flying, `WARP_BELOW_LIMITS`), the game's own
+  SOI-transition clamp (`TimeWarp.ClampRateToOrbitTransitions`: above index
+  3 only if the change is beyond (rate + rate3)/2 + 50 s from the rate it is
+  at; mirrored with margin, and a drop by the game held on that body until
+  the change has passed), the window's max warp.
 - **Decisions are made inside the physics step**, as they fall due. A
   search (the moon push in WAIT, up to ~0.4 s; PUSH ~0.13 s) freezes that one
   frame: a few times a flight. (Made on a worker thread with game time held
   instead, flown 2026-10-14: more unaligned ticks, later arrivals; deleted.)
 - **Budget** (`Tradeoff`): PLAN and START fly the mission in the stand-in at
   `PLAN_GRID` (13) arc cutoffs in parallel (~7 s to the Mun) and keep the
-  frontier (no option both faster and cheaper). Max dv -> the fastest within
+  frontier (no option both faster and cheaper). On a route to another
+  planet every cutoff is also flown at each `TRANSFER_SHARES` (1, .85, .7,
+  .55, .4): the window is the cheapest Lambert arriving within that share of
+  the cheapest window's wait + flight (65 plans, ~6 s to Duna; Duna's
+  frontier 314 d / 7813 m/s .. 512 d / 2138). The window lists at most 10. Max dv -> the fastest within
   it; max days -> the cheapest within it; none -> the fastest within
   `BALANCE_DV_SHARE` (2%) of the cheapest; a clicked option -> that one.
   Refused at once below `IMPULSIVE_MARGIN` (0.8) of the impulsive estimate,
@@ -197,11 +216,14 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
 |---|---|---|---|---|
 | Kerbin 150 x 150 | LOG10151 | 6 s | 0.4 (0.4) | 99.6 (99) |
 | Kerbin 400 x 150 i3 lan40 argpe90 | LOG10153 | 16 s | 1.2 (1.2) | 361.5 (361) |
-| Mun 50 x 50 | LOG10155-57, LOG10176-81 | 125-137 s | 35.0-35.1 (35.0); 20.7-20.9 (26.9) | 1332-1381 (1297-1311) |
+| Mun 50 x 50 | LOG10155-57, LOG10176-81, LOG10183-85, 10188-89, 10195-96 | 125-137 s | 35.0-35.1 (35.0); 20.7-20.9 (26.9) | 1332-1381 (1297-1311) |
 | Mun, budget 1350 m/s | LOG10154 | 123 s | 14.2 (13.8) | 1351 (1349) |
 | Mun, max 10 days | LOG10152 | 14 s | refused: fastest 13.8 d | |
-| Minmus 30 x 30 | LOG10168, LOG10175 (both with the deleted aside mechanism: re-fly) | 174-460 s | 113-215 (154) | 1533-2786 (1371-1383) |
-| Duna 200 x 200 (polar) | LOG10163 | 417 s | 586 (528) | 2695 (2256) |
+| Minmus 30 x 30 (aside, deleted) | LOG10168, LOG10175 | 174-460 s | 113-215 (154) | 1533-2786 (1371-1383) |
+| Duna 200 x 200 (polar) | LOG10163 (before transfer shares) | 417 s | 586 (528) | 2695 (2256) |
+| Duna 200 x 200 | LOG10192, LOG10198 | 280 s | 505.8-511.9 (509.5-511.6) | 2165-2239 (2151-2173) |
+| Duna, max dv 4000 | LOG10193, LOG10199 | 286-294 s | 404.8-433.0 (406.7-433.3) | 3833-3896 (3842-3906) |
+| Minmus 30 x 30 inline | LOG10182, 10186-87, 10190-91, 10194, 10197 | 115-254 s | 59.7-310 | 1358-1742 (1362-1384) |
 
 ## Measured (stand-in)
 
@@ -226,22 +248,20 @@ pol tylo laythe vall bop`.
 
 ## Open, in order
 
-1. **dv over plan in game**: Mun +4-6%, Duna +19%, Minmus up to 2x (one
-   flight 2786 v 1383, TRIM ran 7 days; another 1533 v 1371 -- both flown
-   with the deleted aside decisions: re-fly inline first). Compare a
-   game log's burns with `simmission`'s for the same start (the stand-in
-   has constant mass; the game's unaligned ticks, 30-350 a flight, are
-   burns the plan assumed).
+1. **Minmus dv over plan** (inline, 7 flights): 1358-1433 on four, 1496,
+   1714, 1742 on three (plan ~1370-1384), days 60-310 where planned 57-155:
+   the long WAITs (3-5.6 Ms) and TRIMs. Not steering (0.02 m/s). Compare a
+   bad log's WAIT/PUSH/TRIM with `simmission` from the same start. Mun is
+   +0.6-1% on the 35-day plan (6 flights), +5.5% on the one 26.9-day plan
+   (LOG10183); Duna +0.6-3%.
 2. **The frame frozen by a search** (WAIT's push, up to 0.4 s, a few times a
    flight): make the search incremental across steps (it is a scan of 40 dv
    values: spread over steps while the coast still has time), not threaded
    with a time hold (refuted, journal).
-3. **RCS, gimbal and steering losses** (the user, 2026-10-14: "another
-   time"): RCS torque with its monoprop and net force, gimbal torque only
-   while thrusting with the off-axis loss, attitude integrated inside the
-   thrust substeps (thrust along the instantaneous axis), the holding EC
-   charged; a test craft with RCS and a gimballed engine; a measured
-   steering-loss share in the stand-in so the frontier stays honest.
+3. **RCS and gimbal** (steering after alignment is done): RCS torque with
+   its monoprop and net force, gimbal torque only while thrusting with the
+   off-axis loss; a test craft with RCS and a gimballed engine. A
+   steering-loss share in the stand-in is not needed at 0.001%.
 4. Planet transfers in game beyond Duna; routes from a moon; aerobraking
    (below); cheaper moon dodges; weak-engine departures.
 
@@ -278,6 +298,16 @@ What it needs:
    during a pass).
 
 ## Traps known
+
+- **mcs binds to the system Mono's newest overloads**: `s.Split(',')`
+  compiled to `Split(char, StringSplitOptions)`, which KSP's Mono lacks;
+  every START failed with a MissingMethodException from the bridge. Use
+  `Split(new[] { ',' })`; check `monodis --memberref bin/LowThrust.dll`.
+- **The game clamps warp before an SOI change** from the rate it is at;
+  asking for more each step makes it drop each step (a log line 50x a
+  second, the "lag" -- not BetterTimeWarp, whose EC toggle is off).
+- **`TimeWarp.fixedDeltaTime` is the step's game time** (scaled by the
+  rate); `Time.fixedDeltaTime` is the real 0.02 s.
 
 - **Ticks must be uniform in angle**, not time: near the periapsis of a long
   ellipse a time-uniform tick skipped the whole arc and every pump past

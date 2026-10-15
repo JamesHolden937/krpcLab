@@ -514,3 +514,48 @@ at once below 0.8 of an impulsive estimate (1139 m/s to the Mun; the stand-in
 flies 1115, so the estimate is not a strict bound), else after the scan with
 the achievable range. In game: budget 1350 m/s flew 1351 (plan 1349); max 10
 days refused in 14 s ("fastest 13.8 days").
+
+## Session, 2026-10-14 night: steering costs, fast planet transfers, the warp fight
+
+The user asked for steering costs after alignment, and for a high dv limit
+to buy high-energy transfers; and suspected BetterTimeWarp's EC toggling of
+the lag.
+
+**The lag was the warp governor fighting the game.** The live KSP.log of the
+17:50 Minmus flight had no BetterTimeWarp EC messages (its
+`DisableECAtHighWarp` is False in every preset) but 1132 "Orbit event
+imminent. Dropping TimeWarp to max limit" lines, 50 a second for ~23 s:
+KSP's `ClampRateToOrbitTransitions` (decompiled) drops above index 3 once
+the patch's SOI change is closer than (TimeScale + rate3)/2 + 50 s, and the
+governor raised it back every step. Mirroring the rule cut the farm's drops
+from 685/684/706/2096/243/1 (rot-steer-1014) to 288-805 (rot-fast-1014,
+still 25/s): the game re-checks a step later (a step's game time gone) and
+the hold keyed on an exact EndUT that thrust moves. With a two-step margin
+and the drop held by body and time: 4/4/4/1/13/9 (rot-fast2-1014). Mun
+wall 127-129 s (was 135-141).
+
+**Steering after alignment** (c72301c): thrust along the axis the attitude
+leaves each step (was frozen at the decision), the hold charged as wheel
+input for I dw/dt + w x Iw. LOG10182-87: cosine loss 0.01-0.02 m/s a flight
+(0.001%), 48-90 m/s flown > 0.5 deg off, worst 2.0 deg (the align gate),
+holding 9-21 EC, 0-3 holds lost. Not the cause of dv over plan.
+
+**Fast planet transfers** (5d71966): `TRANSFER_TIME_SHARE` -- the cheapest
+Lambert window arriving within a share of the cheapest window's wait +
+flight (tof from 0.15 of the Hohmann's); the scan flies each arc width at
+`TRANSFER_SHARES` 1/.85/.7/.55/.4 on planet routes (65 plans, ~6 s Duna,
+~15 s Ike). Stand-in Duna frontier 314 d / 7813 m/s .. 512 d / 2138 (was
+527-542 d, all at the one window). In game: Duna max-dv 4000 433.0 d / 3833
+(plan 433.3 / 3842, LOG10193) and 404.8 / 3896 (plan 406.7 / 3906,
+LOG10199); defaults 505.8 / 2239 (plan 509.5 / 2173, LOG10192) and 511.9 /
+2165 (511.6 / 2151, LOG10198) -- last session's default Duna was 586 d /
+2695.
+
+**Minmus inline** (open item 1's re-fly): 1404, 1362, 1742, 1496, 1714,
+1433, 1358 m/s (plans 1362-1384) -- three of seven far over, with WAITs of
+3-5.6 Ms.
+
+**Paid**: mcs bound `value.Split(',')` to `Split(char, StringSplitOptions)`,
+absent from KSP's Mono: every START failed (the first fast-1014 batch flew
+nothing, and the live game had that dll for ~10 min). `TimeWarp.fixedDeltaTime`
+is scaled by the rate; `Time.fixedDeltaTime` is not.
