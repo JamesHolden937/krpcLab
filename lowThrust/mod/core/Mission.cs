@@ -108,6 +108,9 @@ namespace LowThrust
         public bool trim_now;
         public bool? rebinding, match_done;
         public double? aero_rp, cap_drag_e, aero_skip_t, push_ca_t;
+        // aerobraking's ledger: m/s burned since the last pass, and the
+        // drag that pass gave
+        public double aero_spent, aero_gained = Py.Inf;
         public bool aero_exit, aero_done, aero_capture, escape_coast;
         public V3? vrel, dodge, dodge_dir;
     }
@@ -517,6 +520,7 @@ namespace LowThrust
             Craft cr = craft;
             dv += dvTick;
             lastDv = dvTick;
+            if (Aerobraking) plan.aero_spent += dvTick;
             V3 R, T, N;
             Orbit.Rtn(r0, v0, out R, out T, out N);
             if (burn == null || burn.phase != phase)
@@ -574,6 +578,12 @@ namespace LowThrust
                     }
                 }
                 SetPhase("APPROACH", "periapsis target " + Km(plan.rc.Value, cr.body));
+            }
+            else if (how == "exit" && cr.body == dest && phase == "AEROBRAKE" && burn == null)
+            {
+                // a moon's flyby moved the orbit: the next pass is planned afresh
+                plan.aero_rp = null;
+                plan.aero_skip_t = null;
             }
             else if (how == "exit" && kind == "planet" && cr.body == dest.parent && cruiseFrom.Contains(phase))
                 SetPhase("CRUISE", "to " + dest.name);
@@ -785,7 +795,10 @@ namespace LowThrust
             plan.cap = null;
             double arcS = 2 * Math.Acos(plan.eta ?? cfg.ETA_DEFAULT) * el.r * el.r / el.h;
             plan.arc_end = cr.t + arcS;
-            if (others.Count == 0) return;
+            // aerobraking: the next revolution has a pass in it, which this
+            // drag-free check cannot see; the pass's planner (PassClear) has
+            // already checked it with the drag
+            if (others.Count == 0 || phase == "AEROBRAKE") return;
             double full = FlyArc(Py.Inf).dv;
             Tuple<double, double> latest = null;
             foreach (double f in new[] { 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0 })
@@ -842,7 +855,7 @@ namespace LowThrust
             Craft cr = craft;
             double mu = cr.body.mu;
             var others = Others();
-            if (others.Count == 0 || phase == "AEROBRAKE") return null;
+            if (others.Count == 0) return null;
             double tPe = Orbit.TimeToPeriapsis(c, mu);
             long key = Py.Round(cr.t + tPe);
             if (plan.trim_checked == key || cr.t - (plan.trim_t ?? -Py.Inf) < 0.5 * c.period) return null;
@@ -851,9 +864,13 @@ namespace LowThrust
             plan.trim_now = false;
             if (Transfer.FirstHazard(cr.r, cr.v, cr.t, mu, others, t1) != null)
             {
-                double? dvNow = Phasing(cr.r, cr.v, cr.t, c, others, t1 + 1.05 * c.period);
+                // aerobraking: clear only to the pass; the revolution after
+                // it is the pass planner's (with the drag)
+                double? dvNow = Phasing(cr.r, cr.v, cr.t, c, others,
+                                        phase == "AEROBRAKE" ? t1 : t1 + 1.05 * c.period);
                 if (dvNow.HasValue) { plan.trim_now = true; return dvNow; }
             }
+            if (phase == "AEROBRAKE") return null;
             V3 rp_, vp_;
             Orbit.Propagate(cr.r, cr.v, mu, tPe, out rp_, out vp_);
             if (Transfer.FirstHazard(rp_, vp_, t1, mu, others, t1 + 1.05 * c.period) == null) return null;
@@ -1481,13 +1498,26 @@ namespace LowThrust
             return false;
         }
 
+        /// <summary>Aerobraking, or trimming the phase to miss a moon in it.</summary>
+        bool Aerobraking { get { return phase == "AEROBRAKE" || (phase == "TRIM" && plan.resume == "AEROBRAKE"); } }
+
         Cmd FloorGuard(Conic c)
         {
             Craft cr = craft;
             Body b = cr.body;
-            if (phase == "CAPTURE" || phase == "DEPART" || phase == "AEROBRAKE" || c.e >= 1) return null;
+            if (phase == "CAPTURE" || phase == "DEPART" || c.e >= 1) return null;
             if (phase == "FINAL" && AeroWanted(c)) return null;
             double crash = b.radius + b.atmosphere;
+            double lift = crash + cfg.SAFE_ALT_M;
+            if (Aerobraking)
+            {
+                // the periapsis belongs in the air, but never under the
+                // deepest pass allowed (a moon's flyby can put it there):
+                // back to the pass planned, else out of the air
+                crash = b.radius + AeroAltMin(b);
+                lift = plan.aero_rp.HasValue && plan.aero_rp.Value > crash ? plan.aero_rp.Value
+                                                                            : b.radius + b.atmosphere + 2000.0;
+            }
             if (c.rp >= crash || Orbit.TimeToPeriapsis(c, b.mu) < 0) return null;
             V3 g = RpGradientHere();
             double gg = V3.Dot(g, g);
@@ -1498,7 +1528,7 @@ namespace LowThrust
                 Event("periapsis " + Km(c.rp, b) + " inside " + b.name + ": lifting it");
             }
             double tick = Tick(c);
-            V3 want = g * ((crash + cfg.SAFE_ALT_M - c.rp) / gg);
+            V3 want = g * ((lift - c.rp) / gg);
             return Cmd.Of(Math.Min(1.0, want.Norm / (Accel() * tick)), want.Unit, tick);
         }
 
@@ -1643,6 +1673,7 @@ namespace LowThrust
             {
                 altMin = AeroAltMin(b), hMax = aero.hAllow, loadMax = aero.loadAllow, accMax = cfg.AERO_ACCEL_MAX,
                 raMin = raMin, margin = cfg.AERO_DRAG_MARGIN,
+                raMargin = Math.Min(cfg.AERO_DRAG_MARGIN * cfg.AERO_DRAG_MARGIN, Math.Max(cfg.AERO_RA_MARGIN, aero.miss)),
                 liftAccel = Accel(), liftTo = b.radius + b.atmosphere + cfg.AERO_LIFT_MARGIN_M
             };
         }
@@ -1756,9 +1787,20 @@ namespace LowThrust
                         // the limit is learnt (the last pass bound by the
                         // temperatures, not by the growth cap)
                         bool learning = aero.learn && aero.growing;
-                        if (!learning && ra - raAfter < cfg.AERO_MIN_GAIN * (ra - raMin))
+                        // what a burn at periapsis would cost to finish the
+                        // apoapsis from here
+                        double rest = Math.Sqrt(mu * (2 / c.rp - 2 / (c.rp + ra)))
+                                      - Math.Sqrt(mu * (2 / c.rp - 2 / (c.rp + raMin)));
+                        if (plan.aero_spent > plan.aero_gained)
                         {
-                            why = "a pass would lower the apoapsis only " + F((ra - raAfter) / 1e3, 0) + " km";
+                            why = "the burns since the last pass (" + F(plan.aero_spent, 1) + " m/s, dodging moons) cost "
+                                  + "more than it shed (" + F(plan.aero_gained, 1) + " m/s)";
+                            rp = null;
+                        }
+                        else if (!learning && (ra - raAfter < cfg.AERO_MIN_GAIN * (ra - raMin) || rest < cfg.AERO_MIN_PASS_DV))
+                        {
+                            why = "a pass would lower the apoapsis only " + F((ra - raAfter) / 1e3, 0) + " km; "
+                                  + F(rest, 1) + " m/s burns the rest";
                             rp = null;
                         }
                         else
@@ -1843,6 +1885,8 @@ namespace LowThrust
             {
                 double k1 = Aero.Pass(b, cr.r, cr.v, cr.t, dpm).dE;
                 double kOld = aero.k;
+                if (aero.passes > 1 && pred.dE > 1e-6 && m.dE > 0)
+                    aero.miss = Math.Max(aero.miss, Math.Max(m.dE / pred.dE, pred.dE / m.dE));
                 if (k1 > 1e-6 && m.dE > 0) aero.k = m.dE / k1;
                 double s = Py.Clamp(m.heatScale, 0.2, cfg.AERO_HEAT_GROWTH);
                 aero.growing = s >= cfg.AERO_HEAT_GROWTH;
@@ -1857,6 +1901,10 @@ namespace LowThrust
             }
             cr.r = r1; cr.v = v1; cr.t = t1;
             plan.aero_rp = null;
+            // the pass's drag as the burn at periapsis it saved
+            double vp = Math.Sqrt(2 * (c0.energy + b.mu / Math.Max(c0.rp, b.radius)));
+            plan.aero_gained = aero.passes > 1 ? dE / Math.Max(vp, 1.0) : Py.Inf;
+            plan.aero_spent = 0.0;
             Event("pass " + aero.passes + " through " + b.name + "'s air: down to " + F(pred.minAlt / 1e3, 1)
                   + " km, " + (c1.e < 1 ? "apoapsis " + Km(c0.e < 1 ? c0.ra : Py.Inf, b) + " -> " + Km(c1.ra, b)
                                         : "still unbound") + ", shed " + F(dE / 1e3, 1) + " kJ/kg" + learnt);

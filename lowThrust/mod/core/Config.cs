@@ -129,6 +129,15 @@ namespace LowThrust
         // and density than the model and the drag scale learned: the density
         // varies with latitude and the sun, the drag with the attitude.
         public double AERO_DRAG_MARGIN = 1.5;
+        // ...except the apoapsis a pass leaves, which is only a target, not
+        // a safety limit: it is kept above the final apoapsis with this much
+        // more drag than modelled (or the worst a pass of this mission has
+        // missed by, if more).  What disagrees with it: each pass's "drag
+        // scale a -> b" in the log (b / a is that pass's miss; 0.90-1.21 on
+        // LOG10207 after the first).  At the safety margin (2.25x drag with
+        // the density) each pass could take ~half of what was left, and the
+        // apoapsis crept down to the target over 9 shrinking passes.
+        public double AERO_RA_MARGIN = 1.25;
         // A pass's heating index (sqrt(rho) v^3 / 1e6, KSP's high-Mach
         // convective coefficient less its constant) peaks at most at the
         // limit learned: the first pass AERO_HEAT_FIRST; after each, the
@@ -149,6 +158,10 @@ namespace LowThrust
         // Aerobraking ends once a pass would lower the apoapsis by less than
         // this share of what is left above the final one.
         public double AERO_MIN_GAIN = 0.005;
+        // ...or once a burn at periapsis would finish the apoapsis for less
+        // than this (m/s): another skim would save less than its revolution
+        // costs
+        public double AERO_MIN_PASS_DV = 2.0;
         // No pass may leave an orbit whose periapsis the engine cannot lift
         // to this far above the air within +-60 deg of the next apoapsis (at
         // the margin's drag); the exit's arc is widened to fit the lift.

@@ -671,3 +671,40 @@ Not caused here but exposed: equatorial Duna (70 x 70 i0) with this craft
 is lost in Duna's air on 8/12 start dates before the change and 11/12 after
 (Duna 200: 0/12 -> 1/12), every one "lost in Duna's air" while aerobraking
 across Ike's encounters (handoff item 3); the arrival dates moved.
+
+### Aerobraking: the tail, and Ike (2026-10-15)
+
+The user asked for multi-pass aerobraking: deep first, a little higher each
+pass, the last a skim, then the periapsis out. It already flew deep-to-shallow
+(LOG10207: 25 -> 27 -> ... -> 46 km), but passes 7-15 crept 452 -> 80 km at
+~x0.55 a pass: the apoapsis floor was checked on the safety pass, drag x1.5
+*and* density x1.5 = 2.25x, while the passes' predictions missed by only
+0.90-1.21 (each pass's drag scale a -> b). Now the floor is checked at
+`AERO_RA_MARGIN` 1.25 x drag (or the worst miss seen), the safety limits
+unchanged; the end also comes once a periapsis burn finishes the rest for
+under `AERO_MIN_PASS_DV` 2 m/s. An absolute "pass sheds < 2 m/s" rule was
+tried first and deleted: it also ended the heat-limited productive passes of
+a low-drag craft (+150-230 m/s).
+
+The stand-in sweep (30 t, 2000 N; Duna 80 i0 and Duna 200; cdA 12 -- the
+game measures ~10-13 m^2 -- and 0.58, the drag cubes; 10 start dates) lost
+16/40 before. Causes, each fixed:
+- the depth-setting burn was capped by the orbit-shaping moon check, which
+  propagates without drag: pass 2 planned at 27 km (apoapsis to 1882 km,
+  inside Ike's orbit) was flown at 35 km and left Ike-crossing. Skipped in
+  AEROBRAKE (PassClear already checks with the drag).
+- after an Ike flyby put the periapsis underground nothing reacted: the
+  floor guard was off in AEROBRAKE. Now it lifts a periapsis under the
+  deepest allowed pass, and an SOI exit replans the pass.
+- the coast *to* a pass was never checked for moons (only the revolution
+  after it): the phasing trim now runs in AEROBRAKE, clear to the pass.
+- a trim resuming AEROBRAKE was not "aerobraking" to the floor guard, which
+  lifted the periapsis to 100 km mid-trim (530 m/s, then an Ike slingshot).
+- low drag across Ike's orbit: trims per revolution outran the ~3 m/s
+  passes (up to 10,800 m/s, 300 passes): a ledger ends aerobraking when the
+  burns since the last pass cost more than it shed.
+After: 40/40 arrive. cdA 12: Duna 200 in 6-7 passes (12-13 before), dv
+equal or -75..-103; Duna 80 i0 in 8-9 passes, 10/10 (4/10 before), dv
++6/+14/0 where the old survived, else -249/-592. cdA 0.58: Duna 200 within
++-10 or better; Duna 80 i0 survives, 1907-3746 m/s. Other routes unchanged;
+Kerbin from 3000 km still ~250 heat-limited passes.

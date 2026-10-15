@@ -286,7 +286,10 @@ drag area, on by default (`AEROBRAKE`).
   `AERO_DRAG_MARGIN` (1.5) x drag and density keeps every limit: above the
   highest terrain + 3 km and 0.2 of the air's depth; H and load under the
   learned limits; deceleration under `AERO_ACCEL_MAX`; the apoapsis it leaves
-  above the final one; **and a periapsis the engine can lift out of the air
+  above the final one -- this one checked at `AERO_RA_MARGIN` (1.25) x drag
+  only, or the worst miss a pass of this mission has shown, since it is a
+  target and not a safety limit (so deep heat-limited passes first, then
+  each takes ~80% of what is left, the last a skim); **and a periapsis the engine can lift out of the air
   (+5 km) within +-60 deg of the next apoapsis** (a weak engine must not be
   left plunging back in).
 - **Capture**: on SOI entry the arrival periapsis is aimed at the deepest
@@ -300,10 +303,18 @@ drag area, on by default (`AEROBRAKE`).
   from the deepest up in tenths, the first whose next revolution -- at the
   modelled drag and at the margin either way -- meets no moon; none: if the
   orbit as it is stays clear a revolution more, the periapsis is kept out of
-  the air for one ("no pass this revolution"). Ends when a pass would lower
-  the apoapsis by less than `AERO_MIN_GAIN` (0.005) of what is left -- but
-  not while the heating limit is still growing -- then the periapsis is lifted
-  out (the arc at apoapsis widened to fit the lift) and FINAL finishes.
+  the air for one ("no pass this revolution"). The burn setting the depth is
+  not capped by the drag-free moon check (it cannot see the pass). Before a
+  pass, if the coast down to it meets a moon, a phasing trim now slips it
+  (TRIM, resuming AEROBRAKE). After a moon's flyby the next pass is planned
+  afresh, and a periapsis under the deepest allowed pass is lifted back to
+  the planned one (else out of the air). Ends -- then the periapsis is lifted
+  out (the arc at apoapsis widened to fit the lift) and FINAL finishes -- when
+  a pass would lower the apoapsis by less than `AERO_MIN_GAIN` (0.005) of
+  what is left, or a periapsis burn would finish the apoapsis for under
+  `AERO_MIN_PASS_DV` (2 m/s) -- neither while the heating limit is still
+  growing -- or when the burns since the last pass (trims, depths) cost more
+  than that pass shed.
 - **Learning** (in game): pass 1 at `AERO_HEAT_FIRST` (30); after each pass,
   every part's rise of max(skin / skin max, interior / max) is extrapolated
   linearly to `AERO_HEAT_TARGET` (0.6) of its maximum, the H and load allowed

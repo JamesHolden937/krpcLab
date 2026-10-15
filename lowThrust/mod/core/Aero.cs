@@ -60,6 +60,8 @@ namespace LowThrust
     public class PassLimits
     {
         public double altMin, hMax, loadMax, accMax, raMin, margin;
+        // the drag factor the apoapsis floor raMin is checked at
+        public double raMargin = 1.0;
         // the periapsis must be liftable to liftTo by an engine of liftAccel
         // in an arc of +-LIFT_ARC around the next apoapsis (0: unchecked)
         public double liftAccel, liftTo;
@@ -74,6 +76,9 @@ namespace LowThrust
         public double hAllow, loadAllow = double.PositiveInfinity;
         public int passes;
         public bool learn;
+        // the worst factor a pass's predicted energy loss has missed by
+        // (after the first, which measures the drag scale)
+        public double miss = 1.0;
         // the last pass's temperatures allowed more than the growth cap
         public bool growing = true;
     }
@@ -287,8 +292,8 @@ namespace LowThrust
             if (hi.peakH > lim.hMax || hi.load > lim.loadMax || hi.peakAcc > lim.accMax) return false;
             Conic c = Orbit.Conic(hi.r, hi.v, b.mu);
             if (c.e >= 1) return true;
-            return c.ra >= lim.raMin && (lim.liftAccel <= 0 || LiftSeconds(b.mu, c.ra, c.rp, lim.liftTo, lim.liftAccel)
-                                                               <= ArcSeconds(b.mu, c.ra, c.rp, LIFT_ARC));
+            return lim.liftAccel <= 0 || LiftSeconds(b.mu, c.ra, c.rp, lim.liftTo, lim.liftAccel)
+                                         <= ArcSeconds(b.mu, c.ra, c.rp, LIFT_ARC);
         }
 
         /// <summary>The widest arc round apoapsis a lift out of the air may
@@ -321,8 +326,16 @@ namespace LowThrust
                                       double dragPerMass, PassLimits lim)
         {
             double top = b.radius + b.air.top;
-            Func<double, bool> ok = rp => Within(b, PassAt(b, rp, energy(rp), peDir, n, tPe,
-                                                           dragPerMass * lim.margin, lim.margin), lim);
+            // the safety limits at the margin; the apoapsis left at raMargin
+            Func<double, bool> ok = rp =>
+            {
+                if (!Within(b, PassAt(b, rp, energy(rp), peDir, n, tPe, dragPerMass * lim.margin, lim.margin), lim))
+                    return false;
+                PassResult p = PassAt(b, rp, energy(rp), peDir, n, tPe, dragPerMass * lim.raMargin, 1.0);
+                if (!p.exited) return false;
+                Conic c = Orbit.Conic(p.r, p.v, b.mu);
+                return c.e >= 1 || c.ra >= lim.raMin;
+            };
             double lo = b.radius + lim.altMin, hi = top - 10.0;
             if (hi <= lo || !ok(hi)) return null;
             if (ok(lo)) return lo;
