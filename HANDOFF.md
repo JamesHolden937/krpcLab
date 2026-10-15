@@ -1,63 +1,52 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-14 late: lowThrust aerobraking; capture flip-flop; Minmus push
+## 2026-10-15: lowThrust escape inside the SOI; multi-pass aerobraking
 
-Defaults fingerprint `5822bb01` (lowThrust, C# `Config`). Committed and pushed
-to origin/main; farm stopped, sleep inhibitor released. How-it-works PDF
-rewritten. History: `docs/lowThrust/journal.md`, "Session, 2026-10-14
-late". Read `lowThrust/CLAUDE.md` before touching it. `build.sh` installed
-the current dll in the farm and the **live game** (restart KSP to load it).
+Defaults fingerprint `feec62da` (lowThrust, C# `Config`). Committed and
+pushed to origin/main; farm not started this session (everything was
+measured in the stand-in, `lowthrust.exe mission`); sleep inhibitor
+released. How-it-works PDF rewritten. History: `docs/lowThrust/journal.md`,
+"Session, 2026-10-15" and "Aerobraking: the tail, and Ike". `build.sh`
+installed the dll in the farm and the **live game** (restart KSP to load it).
 
-The user asked (about their live Duna flight, flight-20261014-183836.log):
-- **Why braking started late**: the capture law flip-flopped between
-  retrograde and a periapsis-gradient burn ~100 deg away (the planned
-  periapsis sat exactly on the safety floor), losing every second 250 s tick
-  to turning; half the capture was burned after periapsis. Fixed (smooth law,
-  aim 5% above the floor, unaligned ticks coast only while turning).
-- **Burns away from periapsis in FINAL**: by design -- +-60 deg arcs while
-  crossing Ike's band, a capped burn, apoapsis touch-ups of the periapsis.
-- **Aerobraking, aggressive with a safe margin**: built and flown. Duna
-  200 x 200: 14 passes, 1944 m/s, 546 d (LOG10206); Duna 80 x 80 i0: 15
-  passes, 1946 m/s, 536 d (LOG10207; live flight without it 2462 / 561).
-  Hottest part 0.57 of its limit (target 0.6, every limit checked at 1.5x
-  drag and density). Kerbin from 3000 km: heat-limited by the RTGs at
-  3 km/s -- passes at ~65 km, hundreds of them (one reached 0.638).
-- **Exit lift with this TWR**: was a real risk (Kerbin lift ~300 s vs an
-  85 s arc); now no pass may leave a periapsis the engine cannot lift
-  within +-60 deg of apoapsis, and the exit arc is widened to fit.
-- **Handoff items**: Minmus over plan fixed (the push's re-solve horizon cut
-  off its own encounter; open-loop pushes missed by 29,000 km); WAIT's
-  search spread over steps.
+The user asked:
+- **Why the departure raised the periapsis / didn't finish the transfer
+  inside Kerbin's SOI**: the raise was the DEPART law; the correction was left
+  to the cruise. Now ESCAPE, when the exit would need the cruise's Lambert
+  re-target, aims it from the exit and burns it inside the SOI (Oberth).
+  Live Duna state in the stand-in: 1963 -> 1796 m/s; default craft Jool -89,
+  Dres -109, Duna/Ike unchanged (gated: a small miss is left to the B-plane).
+- **Aerobraking at 32x**: physics warp was an index; BetterTimeWarp's index 3
+  is 32x. Now a rate (`AERO_PHYSICS_WARP` 4.0).
+- **Multi-pass aerobraking (deep, shallower, skim, lift out)**: the tail crept
+  (12-13 passes, ~45% of the remaining apoapsis each) because the floor check
+  used 2.25x drag. Now `AERO_RA_MARGIN` 1.25 or the worst observed miss;
+  ends when a periapsis burn finishes it under `AERO_MIN_PASS_DV` 2 m/s.
+  Plus five Ike fixes and a cost ledger. Stand-in sweep (Duna 200 and 80 i0,
+  cdA 12 and 0.58, 10 dates): 40/40 arrive (24/40 before); Duna 200 cdA 12
+  6-7 passes, dv equal or -75..-103.
+- **"13 arc widths"**: `PLAN_GRID` -- explained (planner frontier).
 
-New config (all default): `AEROBRAKE`, `AERO_DRAG_MARGIN` 1.5,
-`AERO_HEAT_FIRST` 30 / `_TARGET` 0.6 / `_GROWTH` 3 / `_PLAN` 100,
-`AERO_TERRAIN_MARGIN_M`, `AERO_MIN_ALT_SHARE`, `AERO_ACCEL_MAX`,
-`AERO_MIN_GAIN` 0.005, `AERO_LIFT_MARGIN_M`, `AERO_PHYSICS_WARP` 3,
-`AERO_HOLD` Prograde, `AERO_SOAK_S`. New save `qs_lowthrust_kell`.
-
-Kerbin 3000 x 100 -> 100 (qs_lowthrust_kell, last flight on ksp0): 19
-passes (63-68 km, RTG to 0.638 once) took the apoapsis to 2550 km, then a
-pass gained < 0.5% and FINAL burned the rest: 675 m/s v 683 without -- for
-this craft Kerbin aerobraking from high orbit does not pay (heat-bound).
+New/changed config (all default): `AERO_RA_MARGIN` 1.25, `AERO_MIN_PASS_DV`
+2.0, `AERO_PHYSICS_WARP` 4.0 (a rate, was index 3). No flags.
 
 Open, in order:
-1. **A pass still flown on rails** (Kerbin pass 5): the governor trace
-   wanted 5x for the last frames before the air, but the game was at
-   100000x and 2098 s ahead at entry (after unaligned AEROBRAKE ticks at
-   100000x, err 120 deg). 1 of 48 passes; it teaches nothing and costs a
-   revolution. Find who sets the rate (log TimeWarp.CurrentRateIndex after
-   Warp.Set each frame near the air).
-2. Kerbin aerobraking heat-bound for this craft: a higher
-   `AERO_HEAT_TARGET`, `AERO_HOLD` Retrograde (RTGs shielded?), less soak.
-3. Ike vs equatorial aerobraking: 0 encounters in game so far; watch.
-4. Weak-engine departure caught by the Mun on a fast transfer (LOG10202).
-5. RCS/gimbal, planets beyond Duna, routes from a moon.
+1. **Fly multi-pass aerobraking on the farm** (Duna 200, Duna 80 i0 saves) --
+   nothing of this session has flown in the game. Watch: observed miss vs
+   1.25, the last skim's exit lift, Ike trims before passes.
+2. ESCAPE's Lambert burn in game (a live Duna departure).
+3. A pass still flown on rails (Kerbin pass 5, 2026-10-14): find who sets the
+   rate (log TimeWarp.CurrentRateIndex after Warp.Set near the air).
+4. Kerbin aerobraking heat-bound by RTGs (~250 passes from 3000 km): higher
+   `AERO_HEAT_TARGET`, `AERO_HOLD` Retrograde, less soak.
+5. Laythe hits the stand-in time limit (both builds). Weak-engine departure
+   caught by the Mun (LOG10202). RCS/gimbal, routes from a moon.
 
-Traps paid: `pkill -f ltfly.py` kills its own shell; a farm watch loop must
-pick the log newer than the launch (`ls -t` picked a stale one); a time
-"a hair negative" from an anomaly difference must not wrap a revolution;
-the stand-in cannot show what a law's direction jumps cost (instant
-pointing) -- the game can.
+Traps paid: an ungated ESCAPE Lambert cost Duna +45 / Ike +100 m/s (a small
+miss is cheaper fixed over the cruise); trims inside AEROBRAKE without a
+ledger blew low-drag runs to 10,837 m/s / 300 passes; the floor guard must
+count a TRIM resuming AEROBRAKE as aerobraking; mono's "Write fault" is
+only `| head` closing the pipe.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
