@@ -485,4 +485,113 @@ namespace LowThrust.Tests
         [Test] public static void WeakEngineToTheMun() { Check(Fly("Mun", 50, 200.0), "Mun", 50, 1700); }
         [Test] public static void WeakEngineToVall() { Check(Fly("Vall", 50, 200.0), "Vall", 50, 7500); }
     }
+
+    public static class AeroTests
+    {
+        static readonly Dictionary<string, Body> SYS = Bodies.Stock();
+        static readonly Config CFG = new Config();
+
+        [Test] public static void DensityInterpolatesAndEndsAtTheTop()
+        {
+            Atmosphere a = SYS["Duna"].air;
+            A.Near(a.Density(0), 0.1333, 1e-4);
+            A.True(a.Density(30500) < a.Density(30000) && a.Density(30500) > a.Density(31000), "monotone");
+            A.True(a.Density(50000) == 0 && a.Density(49999) > 0, "top");
+        }
+
+        [Test] public static void PassAboveTheAirShedsNothing()
+        {
+            Body d = SYS["Duna"];
+            double rp = d.radius + 60e3, ra = d.radius + 5000e3;
+            PassResult p = Aero.PassAt(d, rp, -d.mu / (ra + rp), new V3(1, 0, 0), new V3(0, 0, 1), 0.0, 1e-4, 1.0);
+            A.True(p.exited, "exited");
+            A.Less(Math.Abs(p.dE), 1.0, "dE");
+        }
+
+        [Test] public static void DeeperSheddsMoreAndHeatsMore()
+        {
+            Body d = SYS["Duna"];
+            double ra = d.radius + 5000e3;
+            Func<double, PassResult> at = alt => Aero.PassAt(d, d.radius + alt, -d.mu / (ra + d.radius + alt),
+                                                             new V3(1, 0, 0), new V3(0, 0, 1), 0.0, 2.0 / 30000, 1.0);
+            PassResult a = at(35e3), b = at(25e3);
+            A.True(a.exited && b.exited);
+            A.True(b.dE > a.dE && b.peakH > a.peakH && b.load > a.load, "monotone in depth");
+            A.True(a.minAlt < 35e3 + 100 && a.minAlt > 34e3, "periapsis where planned: " + a.minAlt);
+        }
+
+        [Test] public static void TimeToRadiusMatchesThePropagation()
+        {
+            Body d = SYS["Duna"];
+            V3 r, v;
+            Orbit.StateFromElements(d.mu, 2820e3, 0.88, 0.2, 0, 0, 2.5, out r, out v);
+            Conic c = Orbit.Conic(r, v, d.mu);
+            double R = d.radius + 50e3;
+            double t = Aero.TimeToRadius(c, d.mu, R);
+            V3 r1, v1;
+            Orbit.Propagate(r, v, d.mu, t, out r1, out v1);
+            A.Near(r1.Norm, R, 1.0, "radius");
+            A.True(V3.Dot(r1, v1) < 0, "inbound");
+        }
+
+        [Test] public static void DeepestKeepsTheLimits()
+        {
+            Body d = SYS["Duna"];
+            double ra = d.radius + 3000e3, dpm = 2.0 / 30000;
+            var lim = new PassLimits { altMin = 10e3, hMax = 60, loadMax = double.PositiveInfinity, accMax = 20,
+                                       raMin = d.radius + 80e3, margin = 1.5 };
+            Func<double, double> E = rp => -d.mu / (ra + rp);
+            double? rp0 = Aero.Deepest(d, E, new V3(1, 0, 0), new V3(0, 0, 1), 0.0, dpm, lim);
+            A.True(rp0.HasValue, "a pass");
+            PassResult hi = Aero.PassAt(d, rp0.Value, E(rp0.Value), new V3(1, 0, 0), new V3(0, 0, 1), 0.0, dpm * 1.5, 1.5);
+            A.Less(hi.peakH, 60.0001, "heating at the margin");
+            A.Near(hi.peakH, 60, 2, "the heating limit binds");
+        }
+
+        [Test] public static void CaptureDirectionNeverJumps()
+        {
+            // the capture law's direction between consecutive ticks of a
+            // long capture at Duna (weak engine)
+            Body d = SYS["Duna"];
+            Capture cap = Mission.CapSpec(d, d.radius + 80e3, 0.3 * d.Soi, 0.3 * d.Soi, CFG);
+            double accel = 0.067, vinf = 890;
+            double rc = d.radius + 80e3, vp = Math.Sqrt(vinf * vinf + 2 * d.mu / rc);
+            V3 r, v;
+            Orbit.Propagate(new V3(rc, 0, 0), new V3(0, vp, 0), d.mu, -3 * 3600, out r, out v);
+            double? last = null;
+            double worst = 0;
+            for (int i = 0; i < 4000; i++)
+            {
+                Conic c = Orbit.Conic(r, v, d.mu);
+                if (Transfer.Captured(r, v, c, cap) || V3.Dot(r, v) > 0) break;
+                double wait;
+                double rho = Transfer.CaptureStep(r, v, c, cap, accel, last.HasValue, out wait);
+                if (rho <= 0) { V3 r1, v1; Orbit.Propagate(r, v, d.mu, Math.Min(wait, 60), out r1, out v1); r = r1; v = v1; continue; }
+                double h = 60;
+                V3 want = Transfer.CaptureCommand(r, v, c, cap, rho * accel * h, h);
+                // the law's own turn: its angle off retrograde, tick to tick
+                // (retrograde itself turns fast near periapsis)
+                double off = Py.Degrees(Math.Acos(Py.Clamp(V3.Dot(want.Unit, v.Unit * -1.0), -1, 1)));
+                if (last.HasValue) worst = Math.Max(worst, Math.Abs(off - last.Value));
+                last = off;
+                Sim.Rk4(ref r, ref v, 1.0, d.mu, want.Unit * Math.Min(accel, want.Norm / h), h);
+            }
+            A.True(last.HasValue, "burned");
+            A.Less(worst, 10.0, "direction step (deg off retrograde, tick to tick)");
+        }
+
+        [Test] public static void DunaWithAerobrakingIsCheaper()
+        {
+            Body k = SYS["Kerbin"], d = SYS["Duna"];
+            V3 r, v;
+            Orbit.StateFromElements(k.mu, k.radius + 100e3, 0, 0, 0, 0, 0, out r, out v);
+            var tgt = new Target(d.radius + 200e3, d.radius + 200e3);
+            MissionResult dry = Mission.Fly(SYS, new Ship(5000.0, 2000.0), k, r, v, 0.0, d, tgt, CFG);
+            MissionResult air = Mission.Fly(SYS, new Ship(5000.0, 2000.0) { cdA = 1.0 }, k, r, v, 0.0, d, tgt, CFG);
+            A.True(dry.done && air.done, dry.reason + " / " + air.reason);
+            A.True(air.events.Any(e => e.text.StartsWith("AEROBRAKE")), "no AEROBRAKE");
+            A.Less(air.dv, dry.dv - 50, "dv " + air.dv.ToString("F0") + " v " + dry.dv.ToString("F0"));
+            A.Near(air.final.rp - d.radius, 200e3, CFG.TOLERANCE_M, "rp");
+        }
+    }
 }

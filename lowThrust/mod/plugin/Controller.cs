@@ -702,7 +702,14 @@ namespace LowThrust
                 c.err = Py.Degrees(Math.Acos(Py.Clamp(V3.Dot(axis.Unit, c.d.Unit), -1, 1)));
                 c.fired = c.err <= cfg.ALIGN_DEG && engines.thrustN > 0;
                 if (c.fired) fired++;
-                else unfired++;
+                else
+                {
+                    unfired++;
+                    // not aligned: coast only while the wheels turn it, not
+                    // the whole tick, then decide again
+                    double turn = TurnSeconds(c.err);
+                    if (turn < c.tick) { c.tick = turn; c.tEnd = tSim + turn; }
+                }
                 HoldRtn(c.rtnCmd);
             }
             else
@@ -800,6 +807,16 @@ namespace LowThrust
                 Attitude.Unsettle();
             holdVec = rtn;
             holding = true;
+        }
+
+        /// <summary>Game seconds the wheels need to turn the axis through deg
+        /// and settle: a bang-bang turn at 0.8 of the weaker of pitch and yaw,
+        /// plus the attitude model's settling.</summary>
+        static double TurnSeconds(double deg)
+        {
+            double a = Math.Min(Attitude.alpha.x, Attitude.alpha.z);
+            if (!(a > 0)) return double.PositiveInfinity;
+            return Math.Max(1.0, 2 * Math.Sqrt(Py.Radians(deg) / (0.8 * a)) + 5.0);
         }
 
         /// <summary>The attitude target for the coming steps, in world space.</summary>

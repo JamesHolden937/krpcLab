@@ -628,7 +628,8 @@ namespace LowThrust
         /// periapsis gradient is taken out, smoothly, until at the aim it
         /// sheds energy without moving the periapsis; below the aim a term
         /// along the gradient lifts it back over the time left to periapsis
-        /// (at most half the budget); below the floor that term alone.  The
+        /// (at most half the budget), and under the floor -- ramped in over
+        /// 5% of it -- at once and with the whole budget.  The
         /// direction varies smoothly with the state, so it never jumps
         /// between ticks: a jump costs a vessel turning on its wheels a whole
         /// tick unaligned.</summary>
@@ -642,9 +643,7 @@ namespace LowThrust
             double mag = Math.Min(Math.Max(CaptureNeed(c, mu, cap.raCap), 0.1), budget);
             if (gn == 0) return back * mag;
             V3 gu = g * (1 / gn);
-            if (c.rp < cap.floor)
-                return gu * Math.Min(budget, (1.05 * cap.floor - c.rp) / gn);
-            double aim = Math.Min(Math.Max(cap.rc ?? c.rp, 1.05 * cap.floor), 0.95 * cap.rpMax);
+            double aim = Math.Min(Math.Max(cap.rc ?? c.rp, cap.floor), 0.95 * cap.rpMax);
             double dot = V3.Dot(back, gu);
             V3 side = back - gu * dot;
             if (side.Norm < 0.2) return back * mag;
@@ -658,9 +657,14 @@ namespace LowThrust
             double along = 0.0;
             if (c.rp < aim)
             {
+                // under the floor the lift may take the whole budget, ramped
+                // in over 5% of the floor's radius
+                double under = Py.Clamp((cap.floor - c.rp) / (0.05 * cap.floor), 0.0, 1.0);
                 double tPe = V3.Dot(r, v) < 0 ? Orbit.TimeToPeriapsis(c, mu) : 0.0;
                 double share = tPe > tick ? tick / tPe : 1.0;
-                along = Math.Min((aim - c.rp) * share / gn, 0.5 * mag);
+                share += (1 - share) * under;
+                along = Math.Min((aim - c.rp) * share / gn, (0.5 + 0.5 * under) * Math.Max(mag, under * budget));
+                mag = Math.Max(mag, along);
             }
             return dir * Math.Sqrt(Math.Max(mag * mag - along * along, 0.0)) + gu * along;
         }
