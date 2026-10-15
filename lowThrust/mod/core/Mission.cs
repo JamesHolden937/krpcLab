@@ -138,6 +138,15 @@ namespace LowThrust
         // the rest.
         public double dvLimit = Py.Inf, timeLimit = Py.Inf;
         public AeroState aero;
+        // A long search goes on while this says so (the game: until the
+        // step's time budget is spent; the stand-in: always).
+        public Func<bool> searchMore = () => true;
+        Transfer.PushSearch search;
+        long searchKey;
+        V3 searchR, searchV;
+        double searchT;
+        /// <summary>UT a pending search is for (null: none).</summary>
+        public double? SearchFor { get { return search != null && !search.done ? searchT : (double?)null; } }
 
         public Mission(Dictionary<string, Body> system, Ship vessel, Body body, V3 r, V3 v, double t0,
                        Body dest, Target target, Config cfg, bool record = true)
@@ -979,13 +988,25 @@ namespace LowThrust
             long key = Py.Round(cr.t + tPe);
             if (plan.pass_ != key)
             {
+                if (search == null || searchKey != key)
+                {
+                    V3 rs, vs;
+                    Orbit.Propagate(cr.r, cr.v, mu, tPe, out rs, out vs);
+                    double reference = PushMax(c) / cfg.PUSH_DV_FACTOR;
+                    search = new Transfer.PushSearch(rs, vs, cr.t + tPe, mu, moon, plan.rc.Value, moon.Normal,
+                                                     atPe ? PushMax(c) : cfg.PUSH_OFF_PERIAPSIS * reference, Horizon,
+                                                     accel: accel);
+                    searchKey = key;
+                    searchR = rs; searchV = vs;
+                    searchT = cr.t + tPe;
+                }
+                // spread over physics steps in the game (searchMore), at once
+                // in the stand-in; the coast goes on meanwhile
+                if (!search.Run(searchMore)) return Hold(c, Math.Max(1.0, Math.Min(0.02 * tPe, tPe - 1.0)));
                 plan.pass_ = key;
-                V3 rp_, vp_;
-                Orbit.Propagate(cr.r, cr.v, mu, tPe, out rp_, out vp_);
-                double reference = PushMax(c) / cfg.PUSH_DV_FACTOR;
-                double? dvp = Transfer.PushDv(rp_, vp_, cr.t + tPe, mu, moon, plan.rc.Value, moon.Normal,
-                                              atPe ? PushMax(c) : cfg.PUSH_OFF_PERIAPSIS * reference, Horizon,
-                                              accel: accel);
+                double? dvp = search.result;
+                V3 rp_ = searchR, vp_ = searchV;
+                search = null;
                 if (dvp.HasValue)
                 {
                     V3 r1 = rp_, v1 = vp_;

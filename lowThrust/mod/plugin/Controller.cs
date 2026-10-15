@@ -413,6 +413,9 @@ namespace LowThrust
             if (planError != null) { Stop("error: " + planError.Message, false); return; }
             mis = planned;
             mis.aero = aeroState;
+            // a long search (the moon push) runs while this step has time
+            // left, and goes on in the next one
+            mis.searchMore = () => frameWatch.Elapsed.TotalMilliseconds < 0.5 * cfg.FRAME_BUDGET_MS;
             seen = 0;
             if (leg == 0 && plan != null)
                 log.Event(Planetarium.GetUniversalTime(), string.Format(IC,
@@ -856,6 +859,10 @@ namespace LowThrust
                 if (cur.coast) span = Math.Min(span, Math.Max(0, cur.tEnd - tSim) + fuel);
                 else span = Math.Min(span, fuel / Math.Max(cur.thr, 1e-3));
             }
+            // a search spread over steps: slow enough that it ends well
+            // before the point it is for
+            double? sf = mis.SearchFor;
+            if (sf.HasValue) span = Math.Min(span, Math.Max(1.0, 0.05 * (sf.Value - tSim)));
             // the air ahead: steps shrink geometrically to its edge
             double tAir = mis.TimeToAir();
             if (tAir < double.PositiveInfinity) span = Math.Min(span, Math.Max(0.02, 0.25 * tAir));

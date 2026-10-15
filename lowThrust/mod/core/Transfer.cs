@@ -328,6 +328,38 @@ namespace LowThrust
                                      double dvMax, Func<V3, V3, double> horizonFn, int n = 40,
                                      double dvMin = 0.0, double accel = 0.0, bool centered = true)
         {
+            var s = new PushSearch(r, v, t, mu, target, rc, normal, dvMax, horizonFn, n, dvMin, accel, centered);
+            s.Run(() => true);
+            return s.result;
+        }
+
+        /// <summary>PushDv one evaluation at a time: Run(more) goes on while
+        /// more() says so, and says whether it has finished (result then
+        /// set).  The same evaluations in the same order as PushDv, so the
+        /// answer does not depend on how the work was spread.</summary>
+        public class PushSearch
+        {
+            readonly IEnumerator<int> it;
+            public double? result;
+            public bool done;
+            public PushSearch(V3 r, V3 v, double t, double mu, Body target, double rc, V3 normal,
+                                     double dvMax, Func<V3, V3, double> horizonFn, int n = 40,
+                                     double dvMin = 0.0, double accel = 0.0, bool centered = true)
+            {
+                it = Steps(this, r, v, t, mu, target, rc, normal, dvMax, horizonFn, n, dvMin, accel, centered);
+            }
+            public bool Run(Func<bool> more)
+            {
+                while (!done && more())
+                    if (!it.MoveNext()) done = true;
+                return done;
+            }
+        }
+
+        static IEnumerator<int> Steps(PushSearch search, V3 r, V3 v, double t, double mu, Body target, double rc, V3 normal,
+                                     double dvMax, Func<V3, V3, double> horizonFn, int n,
+                                     double dvMin, double accel, bool centered)
+        {
             double b = AimParameter(rc, 1e9, target);
             Func<double, double> f = dv =>
             {
@@ -340,10 +372,12 @@ namespace LowThrust
                 return AimError(r1, v1, t1, mu, target, ca, rc, normal).s;
             };
             double prevDv = dvMin, prevF = f(dvMin);
+            yield return 0;
             for (int i = 1; i <= n; i++)
             {
                 double dv = dvMin + (dvMax - dvMin) * i / n;
                 double fv = f(dv);
+                yield return 0;
                 if ((prevF < 0) != (fv < 0) && Math.Abs(fv) < 20 * b + Math.Abs(prevF))
                 {
                     double lo = prevDv, hi = dv, flo = prevF;
@@ -351,14 +385,15 @@ namespace LowThrust
                     {
                         double mid = (lo + hi) / 2;
                         double fm2 = f(mid);
+                        yield return 0;
                         if ((fm2 < 0) == (flo < 0)) { lo = mid; flo = fm2; } else hi = mid;
                     }
                     double fm = f((lo + hi) / 2);
-                    if (Math.Abs(fm) < Math.Max(0.2 * b, 1e3)) return (lo + hi) / 2;
+                    if (Math.Abs(fm) < Math.Max(0.2 * b, 1e3)) { search.result = (lo + hi) / 2; yield break; }
                 }
                 prevDv = dv; prevF = fv;
             }
-            return null;
+            search.result = null;
         }
 
         /// <summary>The radii of b's orbit widened by margin of its SOI.</summary>
