@@ -869,7 +869,9 @@ namespace LowThrust
             if (tAir < double.PositiveInfinity) span = Math.Min(span, Math.Max(0.02, 0.25 * tAir));
             if (tAir < 3600)
             {
-                govTrace.Add(string.Format(IC, "{0:F0}s:{1:F0}x", tAir, rates[Math.Min(cpuIndex, top)]));
+                int shown = Math.Min(cpuIndex, top);
+                while (shown > 1 && Time.fixedDeltaTime * rates[shown] > span) shown--;
+                govTrace.Add(string.Format(IC, "{0:F1}s:{1:F0}x", tAir, rates[shown]));
                 if (govTrace.Count > 8) govTrace.RemoveAt(0);
             }
             int idx = Math.Min(cpuIndex, top);

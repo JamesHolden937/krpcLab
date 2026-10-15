@@ -246,6 +246,9 @@ namespace LowThrust
             if (c.e >= 1 && tPe < 0) return double.PositiveInfinity;
             double back = FromRadiusToPeriapsis(c.e, c.a, c.p, mu, R);
             double t = tPe - back;
+            // a coast that stopped a hair short of the top (inbound) reads a
+            // tiny negative time here: that is now, not a revolution later
+            if (t < 0 && (t > -1.0 || V3.Dot(c.rvec, c.vvec) < 0)) return 0.0;
             if (t < 0 && c.e < 1) t += c.period;
             return Math.Max(t, 0.0);
         }
