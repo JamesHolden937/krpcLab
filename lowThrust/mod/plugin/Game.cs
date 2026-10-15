@@ -367,7 +367,7 @@ namespace LowThrust
                 // ... and checks again a step later, when a step of the rate
                 // asked for has gone by
                 while (want > 3 && left < (Math.Max(rates[want], from) + rates[3]) / 2.0 + 60.0
-                                          + 2 * rates[want] * TimeWarp.fixedDeltaTime) want--;
+                                          + 2 * rates[want] * Time.fixedDeltaTime) want--;
                 // and once it has dropped the rate itself, hold under that
                 // until the SOI change it dropped for has passed (its time
                 // shifts a little whenever thrust rewrites the orbit)
