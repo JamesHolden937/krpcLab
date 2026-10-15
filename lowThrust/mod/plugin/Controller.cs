@@ -969,7 +969,10 @@ namespace LowThrust
                     catch (Exception e) { log.Event(ut, "SAS mode " + cfg.AERO_HOLD + " refused: " + e.Message); }
                 }
             }
-            int want = Math.Max(0, Math.Min(cfg.AERO_PHYSICS_WARP, 3));
+            int want = 0;
+            float[] prates = TimeWarp.fetch.physicsWarpRates;
+            for (int i = 0; i < prates.Length; i++)
+                if (prates[i] <= cfg.AERO_PHYSICS_WARP + 1e-3) want = i;
             if (TimeWarp.WarpMode != TimeWarp.Modes.LOW)
             {
                 TimeWarp.fetch.Mode = TimeWarp.Modes.LOW;

@@ -153,10 +153,11 @@ namespace LowThrust
         // to this far above the air within +-60 deg of the next apoapsis (at
         // the margin's drag); the exit's arc is widened to fit the lift.
         public double AERO_LIFT_MARGIN_M = 5000.0;
-        // In the game: the physics warp index (0..3: 1x..4x) a pass is
-        // flown at, the SAS mode held through it, and the game seconds the
+        // In the game: the fastest physics warp rate (x) a pass is flown at
+        // -- chosen by rate, not index: BetterTimeWarp's index 3 is 32x --,
+        // the SAS mode held through it, and the game seconds the
         // temperatures are still watched after it (the interior peaks late).
-        public int AERO_PHYSICS_WARP = 3;
+        public double AERO_PHYSICS_WARP = 4.0;
         public string AERO_HOLD = "Prograde";
         public double AERO_SOAK_S = 300.0;
 

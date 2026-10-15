@@ -312,7 +312,7 @@ drag area, on by default (`AEROBRAKE`).
   `AERO_HEAT_PLAN` (100) and learns nothing.
 - **In the game**: the mission stops at the top, inbound (the warp's steps
   shrink to a quarter of the time left to the air); the game flies the pass
-  off rails at physics warp `AERO_PHYSICS_WARP` (4x), SAS holding
+  off rails at the fastest physics warp rate up to `AERO_PHYSICS_WARP` (4x, chosen by rate: mods renumber the indices), SAS holding
   `AERO_HOLD` (Prograde); every step H, q, the parts' drag (sum of
   `dragScalar`) and temperatures are measured; out of the air the
   temperatures are watched until they stop rising (`AERO_SOAK_S` at most),
