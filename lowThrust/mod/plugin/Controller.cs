@@ -269,8 +269,6 @@ namespace LowThrust
                 stats.Clear();
                 starved = unfired = fired = 0;
                 shareSum = shareN = 0;
-                holds = 0;
-                holdWall = holdMax = 0;
                 overBudget = false;
                 plan = null;
                 wall.Reset(); wall.Start();
@@ -405,7 +403,7 @@ namespace LowThrust
             if (mode == Mode.Idle || v == null) return;
             if (v != vessel) { Stop("the active vessel changed", false); return; }
             if (mode == Mode.Planning) { Planned(); if (mode != Mode.Flying) return; }
-            if (FlightDriver.Pause || thinker != null) return;
+            if (FlightDriver.Pause) return;
             QuietPT(v);
             if (!Warp.OnRails(v))
             {
@@ -477,15 +475,6 @@ namespace LowThrust
                 if (++guard > 100000) throw new InvalidOperationException("no progress in one step");
                 if (cur == null)
                 {
-                    if (ThinkAside())
-                    {
-                        // made aside while time stands still; the step goes
-                        // on from tSim once it is
-                        if (write) WriteOrbit(v);
-                        holdUt = ut;
-                        StartThinking();
-                        return false;
-                    }
                     Decide(v);
                     if (mode != Mode.Flying || cur == null) return true;
                     continue;
@@ -670,89 +659,6 @@ namespace LowThrust
             Telemetry(cr, c);
         }
 
-        // --- decisions too slow for one physics step ---------------------------------
-        // A decision that searches (the moon push, a mid-course correction, the
-        // phasing checks) can take a few hundred ms.  Made inside the physics
-        // step, the frame would freeze that long; instead it is made on a
-        // worker thread while game time stands still (Unity's time scale 0),
-        // the game drawing at its full frame rate meanwhile, and the step goes
-        // on from there once it is made.  A phase is thought slow once any of
-        // its decisions has taken more than half the frame budget.
-        Thread thinker;
-        Thought thought;
-        Exception thinkError;
-        readonly HashSet<string> slowPhases = new HashSet<string>();
-        int holds;
-        double holdStart, holdWall, holdMax;
-
-        // decision cost by phase, ms (running average)
-        readonly Dictionary<string, double> thinkMs = new Dictionary<string, double>();
-
-        bool ThinkAside()
-        {
-            double ms;
-            return cfg.THINK_ASIDE && thinkMs.TryGetValue(mis.phase ?? "", out ms) && ms > cfg.FRAME_BUDGET_MS / 2;
-        }
-        double holdUt;
-
-        void StartThinking()
-        {
-            Prime();
-            thought = null;
-            thinkError = null;
-            thinker = new Thread(() =>
-            {
-                try { thought = Think(); }
-                catch (Exception e) { thinkError = e; }
-            }) { IsBackground = true };
-            thinker.Start();
-            if (Time.timeScale != 0f)
-            {
-                holdStart = wall.Elapsed.TotalSeconds;
-                holds++;
-                if (!FlightDriver.Pause) Time.timeScale = 0f;
-            }
-        }
-
-        void Update()
-        {
-            if (thinker == null || thinker.IsAlive) return;
-            thinker = null;
-            if (mode != Mode.Flying) { Release(); return; }
-            if (thinkError != null)
-            {
-                Release();
-                log.Event(Planetarium.GetUniversalTime(), "FATAL " + thinkError);
-                Stop("error: " + thinkError.Message, false);
-                return;
-            }
-            try
-            {
-                Act(vessel, thought);
-                // on to the game's clock; another slow decision holds it again
-                if (mode == Mode.Flying && !Advance(vessel, holdUt)) return;
-                Release();
-                if (mode == Mode.Flying) Govern(vessel, 0.0);
-                return;
-            }
-            catch (Exception e)
-            {
-                Release();
-                log.Event(Planetarium.GetUniversalTime(), "FATAL " + e);
-                Stop("error: " + e.Message, false);
-                return;
-            }
-            Release();
-        }
-
-        void Release()
-        {
-            if (Time.timeScale == 0f && !FlightDriver.Pause) Time.timeScale = 1f;
-            double held = wall.Elapsed.TotalSeconds - holdStart;
-            holdWall += held;
-            holdMax = Math.Max(holdMax, held);
-        }
-
         /// <summary>The mission run ahead along the exact coast from the tick
         /// it just decided to coast: until it decides to thrust or ends, an
         /// SOI boundary is near, or COAST_AHEAD of a revolution has gone.</summary>
@@ -851,10 +757,6 @@ namespace LowThrust
             else if (emaMs < cfg.FRAME_BUDGET_MS / 2) cpuIndex = Math.Min(top, Math.Max(cpuIndex, now) + 1);
             double span = double.PositiveInfinity;
             if (!Attitude.settled) span = 5.0;
-            // decisions made aside: one a step at most, so the generators and
-            // the wheels run between them (chained in one hold over a long
-            // step, a burn drained the battery and fired unaligned)
-            if (cur != null && ThinkAside()) span = Math.Min(span, Math.Max(cur.tEnd - tSim, 0.0));
             if (cur != null)
             {
                 double fuel = engines.SpanFor(cfg.STEP_RESOURCE_SHARE);
@@ -904,9 +806,6 @@ namespace LowThrust
             holding = false;
             cur = null;
             pending = null;
-            if (thinker != null) { thinker = null; Time.timeScale = 1f; }
-            slowPhases.Clear();
-            thinkMs.Clear();
             mode = Mode.Idle;
             result = reason;
             flights++;
@@ -926,10 +825,7 @@ namespace LowThrust
             PhaseStat p = Stat(mis.phase ?? "-");
             p.steps++;
             p.maxStepMs = Math.Max(p.maxStepMs, ms);
-            string ph = mis.phase ?? "";
-            double was;
-            thinkMs[ph] = thinkMs.TryGetValue(ph, out was) ? 0.7 * was + 0.3 * ms : ms;
-            if (thinkMs[ph] > cfg.FRAME_BUDGET_MS / 2) slowPhases.Add(ph);
+
         }
 
         PhaseStat Stat(string phase)
@@ -963,9 +859,6 @@ namespace LowThrust
                 stats.Where(kv => kv.Value.frames > 0).Select(kv => string.Format(IC, "{0} {1:F2}/{2:F1} {3:F0}; {4:F1}",
                     kv.Key, kv.Value.frameMs / kv.Value.frames, kv.Value.maxFrameMs, kv.Value.frames,
                     kv.Value.maxStepMs)).ToArray()));
-            r.Add(string.Format(IC, "decisions made aside (game time held, frames drawn): {0}, {1:F1} s in all, "
-                                    + "longest {2:F2} s; slow phases: {3}", holds, holdWall, holdMax,
-                                string.Join(" ", slowPhases.ToArray())));
             r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant "
                                     + "(mean thrust share {3:F3}); wheels drew {4:F1} EC", fired, unfired, starved,
                                 shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed));

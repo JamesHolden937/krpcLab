@@ -1,56 +1,54 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-14 morning: `lowThrust/` flies in game -- LKO -> Mun arrives
+## 2026-10-14 evening: `lowThrust/` is a standalone C# mod; the lag is gone; a dv/time budget
 
-Defaults fingerprint `42882c64` (lowThrust). All committed and pushed to
-origin/main; farm stopped, sleep inhibitor released. How-it-works PDF
-rewritten (solver + pilot + plugin). History: `docs/lowThrust/journal.md`,
-"Session, 2026-10-13 night".
+Defaults fingerprint `d4db5b79` (lowThrust, C# `Config`). Committed and
+pushed to origin/main; farm stopped, sleep inhibitor released. How-it-works
+PDF rewritten for the mod. History: `docs/lowThrust/journal.md`, "Session,
+2026-10-14 afternoon -- evening". Read `lowThrust/CLAUDE.md` before touching it.
 
-The user: "implement the low thrust autopilot into the game", plugin
-allowed, "just don't make it cheaty in any way". Built `lowThrust/pilot.py`
-(panel: target, PLAN, START, TERMINATE; launcher button LOW THRUST
-TRANSFER), `live.py`, `tools/ltfly.py`, and the plugin
-`lowThrust/plugin/` (kRPC service `LowThrust`: PT throttle on rails,
-instant altitude-capped rails warp that climbs back as altitude allows,
-RAILS_PACE 20 with exact holds, reaction-wheel attitude on rails with EC).
+What changed (the user asked for all three):
+- **Standalone mod** (`lowThrust/mod/`): solver ported to C# (parity on the
+  270-flight grid: 270/270, mean dv 4914.3 v 4914.7, 176 byte-identical);
+  the autopilot runs in the game's physics step -- thrust integrated on
+  rails with the engines' own propellants (ElectricCharge from the part
+  config), orbit written through KSP's elements. No kRPC/Python/Persistent
+  Thrust in flight. Python implementation deleted; launcher button removed
+  (the mod has its own toolbar window). Farm-only kRPC bridge
+  `LowThrustKRPC.dll` for `ltfly.py`.
+- **Lag**: no Unity time-scale games; warp up to 100000x governed by frame
+  budget, propellant per step, turning, altitude (limits relaxed to the
+  atmosphere top while flying). Mun 125-137 s wall (was 545-557), 87 ->
+  150 km 6 s (120). Left: a search in WAIT freezes one frame up to ~0.4 s a
+  few times a flight.
+- **Dv/time budget**: Max dv / Max days fields, PLAN shows the frontier
+  (13 arc widths flown in parallel, ~7 s), clickable; impossible budgets
+  refused (instantly below 0.8x the impulsive estimate, else after the scan,
+  with the achievable range). `simmission --frontier/--max-dv/--max-days`.
 
-**The user must copy `testInstances/base/GameData/LowThrustWarp/` into the
-live install's GameData** (outside krpcLab: not done by Claude).
+`build.sh` installed the mod into the **live game** too and removed the old
+`GameData/LowThrustWarp` there. Persistent Thrust can stay installed.
 
-Measured in game, `qs_lowthrust` (29.9 t, Dawn, 0.067 m/s^2, 12 RTGs):
-- 87 -> 150 km: 150.1 x 150.0, 97.9 m/s, 1.6 d (stand-in 97.9, 1.55 d),
-  90-140 s wall (LOG10130).
-- Mun 50 x 50: arrived 3/3 -- 1392/1372/1388 m/s, 77/69/83 days, 15 min
-  wall (LOG10131-10133; stand-in 1319 m/s, 44 d).
-- LOG10134: the Mun flight logged every tick (`LOG_INTERVAL_UT=1`), stopped
-  at wrap-up mid-PUMP (ap 2448 km, UT 213k-424k): the pump's arcs for the
-  PUMP gap below.
-
-EC is honest (measured 2026-10-14, battery at 500 in a scratch save): the
-12 RTGs make 8.97 EC/s in physics and on rails; PT draws the Dawn's 8.74
-EC/s per unit throttle on rails and the battery refills -- it reads full
-less one frame's draw (996.3 at 50x), which is why it looked frozen.
-**Lead for the PUMP gap**: right after the throttle is set on rails, PT
-delivered 1231 -> 1364 N of 2000 over the first ~6 s of real time at 5x
-(xenon and EC in proportion: a ramp, not a cheat). If every arc starts
-with that ramp, arcs deliver less than the stand-in's full thrust.
+Measured in game (`qs_lowthrust`): Mun 9/9 inline arrive, 35.1 d where
+planned 35.0 and 20.8-20.9 d where planned 26.9, 1332-1381 m/s (plan
+1297-1311); budget 1350 -> 1351 m/s; max 10 d refused in 14 s; Duna arrived
+586 d / 2695 m/s (plan 528 / 2256); 400x150 i3 argpe90 arrived 16 s wall.
+Flag measured and deleted: decisions on a worker thread with game time held
+(THINK_ASIDE): 5/5 captures failed in its first form, then worse alignment
+and later arrivals than inline (LOG10170-74 v LOG10176-81).
 
 Open, in order:
-1. **In-game PUMP ~54 days v the stand-in's 35** for the same dv; tracking
-   the orbit frame fixed FINAL (26 -> 12-19 d) but not this. Read LOG10134's
-   arcs against `simmission --thrust 2000 --mass 29875 --isp 4200 --ut
-   213522`'s burn list.
-2. MATCH drops Kerbin's periapsis to 66 km in every Mun flight before the
-   SOI entry rescues it: check the floor guard during MATCH.
-3. RCS torque and gimbal misalignment on rails (the user asked; not built;
-   the craft has neither).
-4. Duna in game, then aerobraking (the craft has a heat-resistant cone).
+1. Re-fly Minmus inline (both Minmus flights used the deleted aside path:
+   1533 and 2786 m/s v plan ~1380); then dv over plan (Mun +3-6%, Duna +19%).
+2. The WAIT frame freeze: make the push search incremental across steps.
+3. RCS, gimbal and steering losses -- the user: "another time" (design in
+   `lowThrust/CLAUDE.md` Open 3).
+4. More planets in game, routes from a moon, aerobraking.
 
-Traps paid for: `pkill -f` matching its own shell; a test burn with no
-attitude held burned the ksp2 copy into the atmosphere; **count parts, not
-titles** (a set of titles showed one RTG of twelve and a false power
-shortage was reported to the user).
+Traps paid: PT strips EC from the engine module at run time; simulated
+`RequestResource` on rails offers ~nothing (use connected totals); the farm
+loads the dll at boot (restart after build); never use world-space or
+inertial world vectors below the inverse-rotation altitude.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 

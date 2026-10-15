@@ -439,3 +439,78 @@ at full throttle on rails EC rose +3.1-3.6 EC/s while PT gave only
 thrust after the throttle is set. Energy balances both ways: PT draws EC
 with the xenon, generators credit on rails. The flat 996.3 seen before was
 the battery full less one 1 s frame of draw at 50x.
+
+## Session, 2026-10-14 afternoon -- evening: a standalone mod
+
+The user: the pilot "is still kind of laggy ... do we even need kRPC or
+should we just turn it into a standalone mod?" -- then "make sure low thrust
+becomes standalone, and do the lag fix", and later "make sure I can adjust
+how much total amount of delta v is expended ... quickly realizes if I ask
+for an impossible number ... or maybe there's a better way".
+
+(Earlier the same afternoon, commit 72a8062, unjournalled: the Python pilot
+queued each command with the plugin while the one before flew, so the game
+no longer stopped every tick, and the plugin got a stock KSP window.)
+
+**Where the lag was.** The pipelined pilot was almost never late (2 stalls in
+2122 commands, LOG10147). The lag was `RAILS_PACE` 20: Unity's time scale at
+~20, so each rendered frame ran up to ~40 physics steps (kRPC server,
+attitude substeps, Persistent Thrust each step). Speed was bought with frame
+rate because the burn advanced one physics frame at a time.
+
+**The port.** The solver (orbit, guidance, planner, transfer, mission; 3900
+lines) went to C# operation for operation (`common/vec`'s order, Python's
+modulo and round). Against the Python on the 270-flight grid (15
+destinations x 100/200/2000 N x 6 dates): 270/270 arrive in both, mean dv
+4914.3 v 4914.7 m/s, 176 outputs byte-identical, the rest diverging late from
+rounding (median dv difference 0.00%, worst 2.4%: a Gilly pass 3 min later),
+2.4x faster than PyPy. The 42 Python tests ported and pass. Python retired.
+
+**The mod.** The controller runs in the game's physics step and brings the
+vessel to the game's time every step: commands decided as they fall due,
+thrust integrated on rails (RK4, the engines' real thrust, Isp and
+propellants), the orbit written through its elements. No time-scale change,
+no holds, no other process. Results on `qs_lowthrust`:
+- 87 -> 150 km: 6 s wall (Python pilot 120 s), 0.4 d as planned (1.6 d).
+- Mun: 125-137 s wall (545-557 s), 35.0-35.1 d where planned 35.0, and 20.8
+  d where planned 26.9 (73-80 d before): the old "in-game PUMP 54 d v 35"
+  gap is gone. Dv 1332-1381 v plan 1297-1311 (+3-6%).
+- Duna (first planet transfer in game): arrived, 586 d, 2695 m/s v 2256.
+
+**Traps paid for.**
+- Persistent Thrust removes ElectricCharge from the Dawn's `ModuleEngines`
+  propellants at run time: the first flights drew no EC. The mod reads the
+  propellants from the part config (`propellants:` line in every log).
+- `RequestResource(..., simulate=true)` on rails offered next to nothing:
+  10% thrust, warp held at 5x. Availability is the vessel's connected
+  totals; draws are real requests.
+- The farm loads the dll at boot: a rebuilt mod flies only after a restart.
+- World space turns with the body below its inverse-rotation altitude: every
+  state goes through KSP's orbital elements (frame check 0.000 deg, rails
+  check 0 m) and every attitude target is held against the orbit (R, T, N),
+  never as a world or inertial vector.
+- Frames of 2000 s at 100000x: the attitude model holds a settled target
+  exactly instead of integrating 100000 substeps; the governor limits a
+  thrusting step to half of any propellant held (the RTGs refill the battery
+  between steps) and a turning one to 5 s.
+
+**Refuted: slow decisions on a worker thread with game time held.** The
+moon-push search freezes a frame up to ~0.4 s a few times a flight. Made
+aside instead: one decision per step let the autopilot's clock fall behind
+the game's -- 5/5 Mun captures failed (LOG10158-62); holding time until it
+caught up, chained decisions over a long step drained the battery and fired
+unaligned (thrust share 0.53-0.95, Mun 40-260 d, LOG10164-68); one decision
+per step: 5/5 arrive but 150-344 unaligned ticks and arcs-0.827 plans 53-92
+d (LOG10170-74) against inline's 36-41 and 20.8-20.9 d (6/6, LOG10176-81).
+Deleted. The next approach to the freeze: make the search incremental.
+
+**The dv/time trade.** The arc cutoff (ETA_DEFAULT) is the lever, and it is
+lumpy: to the Mun for this craft 0.9 gives 1295 m/s in 20 d where the
+default 0.99 gave 1319 in 44 -- the old default was not on the frontier.
+So the mission is flown at 13 cutoffs in parallel (~7 s to the Mun) and the
+frontier kept; a budget picks from it (max dv: fastest within; max days:
+cheapest within; none: fastest within 2% of the cheapest), or is refused --
+at once below 0.8 of an impulsive estimate (1139 m/s to the Mun; the stand-in
+flies 1115, so the estimate is not a strict bound), else after the scan with
+the achievable range. In game: budget 1350 m/s flew 1351 (plan 1349); max 10
+days refused in 14 s ("fastest 13.8 days").

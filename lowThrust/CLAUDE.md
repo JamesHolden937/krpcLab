@@ -2,98 +2,105 @@
 
 Flies a low-thrust (ion) vessel from its current orbit to a **target orbit
 the user types in** -- about the same body, one of its moons, or another
-planet (or that planet's moon) -- optionally within a time budget. The
-solver works out every burn; the pilot (`pilot.py`) flies them in the game
-under rails warp with Persistent Thrust and this package's plugin
-(`plugin/`, the kRPC service `LowThrust`). The root `CLAUDE.md` applies here.
+planet (or that planet's moon) -- within a **dv / time budget** the user
+sets. It is a **standalone KSP mod in C#** (`lowThrust/mod/`): the solver,
+the autopilot and its window run inside the game; no kRPC, Python or
+Persistent Thrust in flight. A farm-only kRPC bridge (`LowThrustKRPC.dll`)
+lets the harness start flights. The root `CLAUDE.md` applies here.
 
-**State (2026-10-14): the solver arrives at all 15 destinations at every
-thrust 0.02-10 m/s^2 in the stand-in (630/630). In the game, on the user's
-craft (`qs_lowthrust`, 29.9 t, one Dawn, 0.067 m/s^2): LKO 87 -> 150 km
-arrives 150.1 x 150.0 km, 97.9 m/s, 1.6 days, 90-140 s wall (stand-in 97.9,
-1.55 d); LKO -> Mun 50 x 50 km arrives every time (three flights,
-1372-1392 m/s against the stand-in's 1319, 69-83 days against 44, 15 min
-wall). Open: the in-game PUMP takes ~54 days where the stand-in takes 35
-for the same dv.**
-History, every refuted approach and why: `docs/lowThrust/journal.md`.
-What the code does and what triggers what: `docs/lowThrust/howItWorks.pdf`.
+**State (2026-10-14 evening):** the C# solver matches the retired Python one
+on the 270-flight grid (270/270 arrive, mean dv 4914.3 v 4914.7, 176
+byte-identical, 2.4x faster). In game on `qs_lowthrust` (29.9 t, one Dawn,
+0.067 m/s^2, 12 RTGs): 87 -> 150 km in 6 s wall (Python pilot 120 s),
+0.4 days as planned; LKO -> Mun 35 days as planned in ~2.3 min wall
+(Python pilot 9 min, 73-80 days); Duna arrived (586 d, 2695 m/s v plan
+2256). Open: dv 4-6% over plan to the Mun, Minmus far over (see Open).
+History: `docs/lowThrust/journal.md`. What the code does:
+`docs/lowThrust/howItWorks.pdf`.
 
 ```bash
-./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "mun: ap=50 pe=50"
-./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "duna: ap=200 pe=200 i=10"
-./lowThrust/tools/simmission.py --from "kerbin: ap=100 pe=100" --to "ike: ap=50 pe=50"
-./lowThrust/tools/simmission.py ... --thrust 200 --mass 5000 --isp 4200 --ut 3000000
-./lowThrust/tools/simfly.py --start "ap=100 pe=100" --target "ap=500 pe=500 i=5" --within 2d   # one SOI, with a deadline
-lowThrust/tools/sweep.sh /tmp/sw "100 200 500 2000" "0 3000000 6000000 9000000"   # the grid: every destination x thrust x date
-.venv-pypy/bin/python -m unittest lowThrust.tests.testOrbit lowThrust.tests.testGuidance lowThrust.tests.testMission lowThrust.tests.testLive
-
-./run.sh --pilot lowthrust                     # in game: panel with target, PLAN, START, TERMINATE
-lowThrust/tools/ltfly.py --instance 0 --target "mun: ap=50 pe=50" --timeout 3600   # farm: load qs_lowthrust, fly, report
-lowThrust/plugin/build.sh                      # build the plugin into base/ and every farm instance (restart them)
+lowThrust/mod/build.sh                 # build all; install the mod in the farm (base/, clones) and the live game
+lowThrust/mod/build.sh test            # ... and run the solver's tests (42, ~10 s)
+lowThrust/tools/simmission --from "kerbin: ap=100 pe=100" --to "mun: ap=50 pe=50"
+lowThrust/tools/simmission ... --thrust 2000 --mass 29875 --ut 213522 --set NAME=VALUE
+lowThrust/tools/simmission ... --frontier                 # the dv/time options
+lowThrust/tools/simmission ... --max-dv 1350 --max-days 20  # a budget: the option it picks, or why impossible
+lowThrust/tools/simfly --start "ap=100 pe=100" --target "ap=500 pe=500 i=5" --within 2d
+lowThrust/tools/sweep.sh OUT "100 200 2000" "0 1800000 3600000 5400000 7200000 9000000" mun duna ...
+lowThrust/tools/ltfly.py --instance 0 --target "mun: ap=50 pe=50" [--max-dv 1350] [--max-days 20] [--set K=V]
 ```
 
-**Live install**: Persistent Thrust 1.7.5 and
-`GameData/LowThrustWarp/LowThrustWarp.dll` (built by `plugin/build.sh`;
-copy it from `testInstances/base/GameData/LowThrustWarp/`). A save made
-before PT was installed has no `PersistentEngine` on its engines (PT finds
-them only in OnLoad): rebuild or relaunch the craft.
+The farm instances load the mod at boot: **restart them after a build**
+(`testInstances/stop.sh; start.sh`) or they fly the old dll.
 
-Orbits: `body: ap= pe= [i= lan= argpe=]`, km and degrees; anything left out
-of the target is free. `simmission` prints the phase timeline (Kerbin dates),
-every burn (phase, body, start, duration, dv, prograde/normal/radial share),
-dv by phase and the totals. Default vessel: 5 t, one 2 kN Dawn, Isp 4200
-(0.4 m/s^2, TWR 0.04); `--mass`, `--thrust`. The user's craft: TWR ~0.004
-(0.04 m/s^2) -- the case that has to work.
+**Live install**: `build.sh` copies `LowThrust.dll` to
+`~/Kerbal Space Program/GameData/LowThrust/Plugins/` (and removes the old
+`LowThrustWarp`). Persistent Thrust may stay installed: the mod holds its
+throttle at 0 and draws every propellant itself. Settings overrides:
+`GameData/LowThrust/PluginData/settings.cfg` (`NAME=VALUE` lines); flight
+logs: `GameData/LowThrust/PluginData/logs/` (ltfly copies them to
+`logs/LOG<n>`).
 
-## Files
+## Files (`mod/`)
 
 | file | what |
 |---|---|
-| `orbit.py` | two-body maths: elements, any conic, universal-variable propagation, time to periapsis, Lambert, radius toward a direction, impulsive references |
-| `guidance.py` | the within-SOI law: Hohmann in many small burns + plane change at the nodes (+ a held apse line) |
-| `plan.py` | within-SOI deadline planner: the narrowest arcs that meet a time budget |
-| `bodies.py` | the stand-in system: stock bodies on Keplerian rails, SOIs |
-| `transfer.py` | targeting: closest approach / B-plane miss, mid-course correction, moon push, porkchop window, parking orientation, capture design and the capture law, Lambert re-target, SOI hazards |
-| `mission.py` | the phase machine for a whole transfer (patched conics), routing and leg chaining |
-| `sim.py` | the single-body stand-in (`fly`) and the shared RK4 / tick |
-| `tools/simfly.py`, `tools/simmission.py`, `tools/sweep.sh` | command lines; `sweep.sh` flies the grid in parallel |
-| `live.py` | the game as the planner sees it: bodies rebuilt from kRPC state vectors (rails checked against `Orbit.position_at`), frame swap (kRPC non-rotating is left-handed, y north: `to_ours` swaps y and z) |
-| `pilot.py` | the only kRPC-aware code: panel, `Mission.step` flown against the game, holds, ledger from propellant used |
-| `plugin/LowThrustWarp.cs` | kRPC service `LowThrust`: PT throttle on rails, instant altitude-capped rails warp, the pace (Unity timeScale) and exact holds, reaction-wheel attitude on rails |
-| `tools/ltfly.py` | farm harness: loads a save, runs the pilot as a reaped child, prints the result |
+| `core/V3.cs`, `Orbit.cs`, `Bodies.cs` | vectors (Python's op order), two-body maths, Lambert, the stand-in system |
+| `core/Guidance.cs`, `Sim.cs` | the within-SOI law; the stand-in, RK4, tick, the within-SOI deadline planner |
+| `core/Transfer.cs`, `Mission.cs` | targeting and capture; the phase machine, routing, waiting orbit |
+| `core/Tradeoff.cs` | the dv/time frontier, budgets, the impulsive estimate |
+| `core/Config.cs` | every tunable; `config:` line and fingerprint |
+| `plugin/Controller.cs` | the autopilot: decisions, thrust integrated on rails, the warp governor, PLAN/START/TERMINATE, the log |
+| `plugin/Game.cs` | the system and states through KSP's orbital elements; the engines (thrust, Isp, propellants from the part config, draws); warp limits |
+| `plugin/Attitude.cs` | rotation on rails from the wheels' torque and MOI |
+| `plugin/Window.cs` | the toolbar window: target, budget, options, max warp, status |
+| `plugin/FlightLog.cs` | the flight log |
+| `bridge/Bridge.cs` | farm-only kRPC service `LowThrustBridge` (Start/Status/Lines/Terminate) |
+| `tools/Tools.cs`, `tests/Tests.cs` | `lowthrust.exe mission|fly`, the tests (mono) |
 
-## The pilot (in game)
+## In the game
 
-- Each tick: read the state (SOI change -> `Mission._soi_change`), `step()`
-  gives (throttle, direction, tick) or the result.
-- **Thrust tick**: the direction is held fixed against the orbit (kRPC's
-  orbital frame = (-radial, along-track, normal)), so the plugin tracks it
-  through the tick; fired only if the thrust axis is within `ALIGN_DEG`
-  (2) at the tick's start; throttle set through PT; warp = the largest
-  rate <= `WARP_PER_TICK` (5) x tick; held to exactly t + tick; dv booked
-  from the xenon used (Isp g0 ln(m0/m1); KSP freezes mass on rails, so
-  mass = load mass less resources used).
-- **Coast**: the mission is run ahead on the exact two-body coast until it
-  next wants thrust, an SOI boundary, or `COAST_AHEAD` (0.5) of a period;
-  the vessel turns to the pending direction and the game warps there in
-  one hold.
-- **Holds** (plugin `RunUntil`): rails warp runs at `RAILS_PACE` (20) x
-  KSP's pace (Unity timeScale sized from the longest recent frame x 1.5,
-  at most half the steps left, under one step a frame at the end: 0-3 s
-  late); the rate climbs to the one asked for as the altitude allows and
-  steps down near the end, not below `WARP_FLOOR_S`'s (10 s tick) rate;
-  at the end the game is held (timeScale 0, kRPC served from the
-  plugin's Update). A hold nobody watches for 30 s (`Held` is streamed)
-  is released; a hold found dropped is re-issued after `HOLD_LOST_S`.
-- **Attitude on rails** (plugin `Attitude`): the wheels' torque (x
-  authority) and MOI measured unpacked; integrated in 0.02 s substeps;
-  rate limited to sqrt(2 a angle) and angle/4 s, rate error closed over
-  0.5 s; EC drawn per |input| (a wheel short of EC loses torque); the
-  angular rate handed back to the rigidbodies on unpack. **RCS torque
-  and gimbal misalignment are not modelled** (the user asked for both;
-  the user's craft has neither RCS nor a gimballed engine).
-- PT draws the Dawn's EC on rails (9.2 EC/s at full thrust with the
-  wheels); the craft's 12 RTGs make 9.0, so its battery stays full.
+- **Every physics step on rails** the controller brings the vessel from
+  where it left it (`tSim`) to the game's time: commands are decided as they
+  fall due (several per step at high warp), a thrust command is integrated
+  (RK4 substeps of tick/THRUST_SUBSTEPS, gravity plus thrust along the axis
+  as the vessel points it, held against the orbit), propellant drawn, mass
+  reduced, and the orbit written back **through its elements**
+  (`Orbit.SetOrbit`); a coast is left to the game. Nothing changes Unity's
+  time scale except a decision made aside (below).
+- **Frames**: states are read from and written to KSP's orbital elements,
+  which are inertial; world space turns with the body below its
+  inverse-rotation altitude. The planner's LAN is KSP's (no offset). Each log
+  opens with a `frame check` (inclination from elements v world) and a
+  `rails check` (bodies 1e6 s ahead: 0 m).
+- **Engines**: lit `ModuleEngines`, vacuum thrust x limiter, Isp at 0 atm;
+  propellants and ratios **from the part config** (Persistent Thrust removes
+  ElectricCharge from the module at run time); each substep draws them via
+  the part's flow rules; thrust cut to the scarcest (`propellants:` line).
+- **Pointing**: the attitude target is always held against the orbit (R, T,
+  N components): a burn's direction, or during a coast the next burn's
+  direction where the coast ends (coast run ahead in prediction,
+  `COAST_AHEAD`). A tick fires only if the axis is within `ALIGN_DEG` (2).
+  The attitude model runs first in the controller's step; once on target it
+  holds exactly (no EC charged: a small freebie, see Open).
+- **Warp governor**: the highest rails rate within: the frame budget
+  (`FRAME_BUDGET_MS`, running average), one step drawing at most
+  `STEP_RESOURCE_SHARE` (0.5) of any propellant held (EC buffers the
+  generators), 5 s steps while the vessel turns, the altitude limits (relaxed to the atmosphere top or terrain +
+  `TERRAIN_MARGIN_M` while flying, `WARP_BELOW_LIMITS`), the window's max warp.
+- **Decisions are made inside the physics step**, as they fall due. A
+  search (the moon push in WAIT, up to ~0.4 s; PUSH ~0.13 s) freezes that one
+  frame: a few times a flight. (Made on a worker thread with game time held
+  instead, flown 2026-10-14: more unaligned ticks, later arrivals; deleted.)
+- **Budget** (`Tradeoff`): PLAN and START fly the mission in the stand-in at
+  `PLAN_GRID` (13) arc cutoffs in parallel (~7 s to the Mun) and keep the
+  frontier (no option both faster and cheaper). Max dv -> the fastest within
+  it; max days -> the cheapest within it; none -> the fastest within
+  `BALANCE_DV_SHARE` (2%) of the cheapest; a clicked option -> that one.
+  Refused at once below `IMPULSIVE_MARGIN` (0.8) of the impulsive estimate,
+  else after the scan (flights stop at `BUDGET_SCAN_FACTOR` x the budget),
+  saying what is possible. In flight the window shows dv used against plan
+  and budget; going over is logged (not enforced).
 
 ## The phases
 
@@ -184,7 +191,20 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
 - **The stand-in vessel** has constant mass and unlimited propellant
   (`Vessel(mass, thrust, isp)`): it plans paths; xenon is reported from dv.
 
-## Measured (stand-in, from LKO 100 km, 5 t vessel)
+## Measured in game (2026-10-14, `qs_lowthrust`)
+
+| target | flights | wall | days (plan) | dv (plan) |
+|---|---|---|---|---|
+| Kerbin 150 x 150 | LOG10151 | 6 s | 0.4 (0.4) | 99.6 (99) |
+| Kerbin 400 x 150 i3 lan40 argpe90 | LOG10153 | 16 s | 1.2 (1.2) | 361.5 (361) |
+| Mun 50 x 50 | LOG10155-57, LOG10176-81 | 125-137 s | 35.0-35.1 (35.0); 20.7-20.9 (26.9) | 1332-1381 (1297-1311) |
+| Mun, budget 1350 m/s | LOG10154 | 123 s | 14.2 (13.8) | 1351 (1349) |
+| Mun, max 10 days | LOG10152 | 14 s | refused: fastest 13.8 d | |
+| Minmus 30 x 30 | LOG10168, LOG10175 (both with the deleted aside mechanism: re-fly) | 174-460 s | 113-215 (154) | 1533-2786 (1371-1383) |
+| Duna 200 x 200 (polar) | LOG10163 | 417 s | 586 (528) | 2695 (2256) |
+
+## Measured (stand-in)
+
 
 Sweep of 2026-10-13 evening (`sweep.sh`, 630 flights: 15 destinations x 7
 thrusts x 6 start dates UT 0-9e6 s): **all 630 arrive**. Mean dv (m/s):
@@ -206,31 +226,24 @@ pol tylo laythe vall bop`.
 
 ## Open, in order
 
-1. **In-game PUMP 54 days v the stand-in's 35** for the same dv (820 v
-   808 m/s): less thrust per revolution in game. LOG10134 (Mun,
-   `LOG_INTERVAL_UT=1`) logs every tick: compare its arcs (start, length,
-   fired or not, err) with `simmission`'s burn list for the same craft
-   (`--thrust 2000 --mass 29875 --isp 4200 --ut 213522`). MATCH in game
-   took the periapsis to 66 km before the Mun SOI rescued it (all three
-   flights) -- check the floor guard during MATCH.
-2. **RCS and gimbal on rails** in the plugin (the user asked): RCS torque
-   when the RCS group is on, burning its propellant; gimbal torque only
-   while thrusting, with the thrust deflected by the gimbal angle.
-3. **A planet transfer in game** (Duna), then **aerobraking** (below; the
-   craft has a heat-resistant nose cone for it).
-4. Routes not yet supported: from a moon (Mun -> Kerbin, Mun -> Minmus,
-   moon -> planet).
-5. **Cheaper moon dodges**: APPROACH dodges a moon on the inbound leg late
-   and dear (a 10 m/s^2 Duna arrival through Ike: 238 m/s). Choosing the
-   aim point round the B-plane circle in the cruise, where it is cheap,
-   would avoid it.
-6. **Eve at 0.1 m/s^2 dearer than at 0.04** (4187 v 3840), Minmus at 10
-   m/s^2 than at 2 (1324 v 1231): not failures, unexplained.
-7. **Weak-engine departures**: a 0.04 m/s^2 escape leaves with ~760 m/s of
-   a 2.9 km/s window v_inf, and the cruise re-target builds the rest
-   (Jool: CRUISE 2.3-2.6 km/s of the total). Limiting DEPART to its
-   +-60 deg arc was flown and lost (v_inf 765 even at 0.4 m/s^2, a Mun
-   hit); spiralling out and leaving on the asymptote might not.
+1. **dv over plan in game**: Mun +4-6%, Duna +19%, Minmus up to 2x (one
+   flight 2786 v 1383, TRIM ran 7 days; another 1533 v 1371 -- both flown
+   with the deleted aside decisions: re-fly inline first). Compare a
+   game log's burns with `simmission`'s for the same start (the stand-in
+   has constant mass; the game's unaligned ticks, 30-350 a flight, are
+   burns the plan assumed).
+2. **The frame frozen by a search** (WAIT's push, up to 0.4 s, a few times a
+   flight): make the search incremental across steps (it is a scan of 40 dv
+   values: spread over steps while the coast still has time), not threaded
+   with a time hold (refuted, journal).
+3. **RCS, gimbal and steering losses** (the user, 2026-10-14: "another
+   time"): RCS torque with its monoprop and net force, gimbal torque only
+   while thrusting with the off-axis loss, attitude integrated inside the
+   thrust substeps (thrust along the instantaneous axis), the holding EC
+   charged; a test craft with RCS and a gimballed engine; a measured
+   steering-loss share in the stand-in so the frontier stays honest.
+4. Planet transfers in game beyond Duna; routes from a moon; aerobraking
+   (below); cheaper moon dodges; weak-engine departures.
 
 ## Aerobraking (planned, not built -- the user, 2026-10-13: "think about it")
 
@@ -266,8 +279,6 @@ What it needs:
 
 ## Traps known
 
-- **Under PyPy, `is` compares floats by value** (`goal is target.rp`
-  deadlocked every circular target).
 - **Ticks must be uniform in angle**, not time: near the periapsis of a long
   ellipse a time-uniform tick skipped the whole arc and every pump past
   ~4000 km stalled.
