@@ -160,7 +160,10 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
   chosen so its change is cheapest); push at the periapsis nearest the
   window, each pass checked for moon hazards along the burn DEPART will
   actually fly (multi-pass if the engine is too weak to escape in one);
-  any SOI exit during a departure phase hands over to CRUISE. B-plane
+  any SOI exit during a departure phase hands over to CRUISE. ESCAPE (the
+  hyperbola out): if the exit would miss by as much as CRUISE re-targets
+  for, it burns the Lambert re-target inside the SOI instead (impulse
+  through the exit velocity's Jacobian, every tick); else it coasts. B-plane
   corrections in the cruise, or a Lambert re-target (aimed at the B-plane
   point) when the miss is too big to linearise, the encounter looked for
   round the planned arrival.

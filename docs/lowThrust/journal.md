@@ -638,3 +638,36 @@ encounter: 57 d / 1411 m/s.
 run while the step has half its frame budget left, the coast going on and the
 warp slowed meanwhile; same evaluations, same answer (stand-in outputs
 byte-identical on Mun, Minmus, Ike).
+
+## Session, 2026-10-15: the escape's shortfall is made up inside Kerbin's SOI
+
+The user asked (live flight-20261015-073215.log, 30 t, 0.067 m/s^2, Kerbin ->
+Duna) why the periapsis rose and why the transfer was not finished before
+leaving Kerbin's SOI. Periapsis: PARK lifts any periapsis under atmosphere +
+`SAFE_ALT_M` (87 -> 100 km); then DEPART's two passes lifted it 100 -> 177
+km, because each pass starts half its burn time before periapsis by the
+impulsive estimate (3600 s for 241 m/s on a 31,000 s ellipse: from nu -129,
+far out, where prograde thrust mostly raises the periapsis). The second pass
+went hyperbolic and stopped at the +60 deg arc with v_inf 494 of 855 m/s;
+ESCAPE coasted, and CRUISE re-targeted with 340 m/s about the Sun.
+
+The arc bounds a pass only so the next pass can do better; once hyperbolic
+there is no next pass. Two laws tried in the stand-in:
+- keep burning prograde to the window's v_inf: worse everywhere (default
+  craft Duna 2048 v 1827 m/s, Jool 6567 v 6154) -- the magnitude without the
+  direction, and the window's v_inf no longer the right one after a late
+  departure. Deleted.
+- ESCAPE flies CRUISE's Lambert re-target from the predicted exit state,
+  solved through the exit velocity's Jacobian every tick, gated on CRUISE's
+  own re-target test (smaller misses are left to the cruise's B-plane
+  correction, which has the whole cruise as a lever -- ungated it cost Duna
+  +45 and Ike +100 on the default craft). Kept, default.
+Stand-in, live craft from the live state: 1963 -> 1796 m/s (ESCAPE 124 in
+place of CRUISE 292). Sweep, live craft, 12 start dates: Duna 200 -110 to
+-250 (one -13), Eve -66 to -82, equatorial Duna -177 to -949 (two +3/+209).
+Default craft: Duna/Ike unchanged, Eve -7, Jool -89, Dres -109.
+
+Not caused here but exposed: equatorial Duna (70 x 70 i0) with this craft
+is lost in Duna's air on 8/12 start dates before the change and 11/12 after
+(Duna 200: 0/12 -> 1/12), every one "lost in Duna's air" while aerobraking
+across Ike's encounters (handoff item 3); the arrival dates moved.

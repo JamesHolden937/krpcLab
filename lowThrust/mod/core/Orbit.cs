@@ -147,6 +147,19 @@ namespace LowThrust
             return -M / Math.Sqrt(mu / Math.Pow(-c.a, 3));
         }
 
+        /// <summary>Seconds from now until a hyperbola reaches radius R on
+        /// its way out (0 if already past it outbound; inf if bound).</summary>
+        public static double TimeToRadiusOut(Conic c, double mu, double R)
+        {
+            if (c.e <= 1) return Py.Inf;
+            if (c.r >= R && c.nu >= 0) return 0.0;
+            double n = Math.Sqrt(mu / Math.Pow(-c.a, 3));
+            double F0 = 2 * Py.Atanh(Math.Sqrt((c.e - 1) / (c.e + 1)) * Math.Tan(c.nu / 2));
+            double ch = (1 + R / -c.a) / c.e;
+            double F1 = Math.Log(ch + Math.Sqrt(ch * ch - 1));
+            return ((c.e * Math.Sinh(F1) - F1) - (c.e * Math.Sinh(F0) - F0)) / n;
+        }
+
         static void Stumpff(double z, out double C, out double S)
         {
             if (z > 1e-8)

@@ -108,7 +108,7 @@ namespace LowThrust
         public bool trim_now;
         public bool? rebinding, match_done;
         public double? aero_rp, cap_drag_e, aero_skip_t, push_ca_t;
-        public bool aero_exit, aero_done, aero_capture;
+        public bool aero_exit, aero_done, aero_capture, escape_coast;
         public V3? vrel, dodge, dodge_dir;
     }
 
@@ -439,7 +439,7 @@ namespace LowThrust
                 case "TRIM": return Trim(c);
                 case "PUSH": return Push(c);
                 case "DEPART": return Depart(c);
-                case "ESCAPE": return Cmd.Of(0.0, null, Tick(c));
+                case "ESCAPE": return Escape(c);
                 case "COAST": return Correct(c, dest.parent);
                 case "CRUISE": return Correct(c, dest.parent);
                 case "MATCH": return Match(c);
@@ -1172,6 +1172,88 @@ namespace LowThrust
                 return Cmd.Of(0.0, null, tick);
             }
             return Cmd.Of(Math.Min(1.0, rem / (Accel() * tick)), cr.v.Unit, tick);
+        }
+
+        /// <summary>ESCAPE: when the exit would miss by as much as the
+        /// cruise re-targets for, burn the impulse that puts the SOI exit on
+        /// the Lambert arc to dest's aim point while still deep in the well
+        /// -- there a change to the excess costs v_inf / v of what it costs
+        /// after the exit.  The
+        /// impulse is solved through the exit velocity's Jacobian (by
+        /// differences) every tick; it coasts once that is under
+        /// CORRECT_DV.</summary>
+        Cmd Escape(Conic c)
+        {
+            double tick = Tick(c);
+            V3? dvn = kind == "planet" && c.e > 1 && craft.body == home ? EscapeDv() : null;
+            if (!dvn.HasValue || dvn.Value.Norm < cfg.CORRECT_DV) return Cmd.Of(0.0, null, tick);
+            return Cmd.Of(Math.Min(1.0, dvn.Value.Norm / (Accel() * tick)), dvn.Value.Unit, tick);
+        }
+
+        bool ExitState(V3 r, V3 v, out V3 r1, out V3 v1, out double t1)
+        {
+            Craft cr = craft;
+            r1 = v1 = V3.Zero;
+            t1 = cr.t;
+            Conic c = Orbit.Conic(r, v, cr.body.mu);
+            double dt = Orbit.TimeToRadiusOut(c, cr.body.mu, cr.body.Soi);
+            if (double.IsInfinity(dt)) return false;
+            Orbit.Propagate(r, v, cr.body.mu, dt, out r1, out v1);
+            t1 = cr.t + dt;
+            return true;
+        }
+
+        V3? EscapeDv()
+        {
+            Craft cr = craft;
+            Body here = cr.body, star = here.parent;
+            V3 rx, vx, rk, vk;
+            double tx;
+            if (!ExitState(cr.r, cr.v, out rx, out vx, out tx)) return null;
+            here.State(tx, out rk, out vk);
+            V3 rH = rk + rx, vH = vk + vx;
+            V3 n = V3.Cross(rH, vH).Unit;
+            if (plan.escape_coast) return null;
+            if (!plan.lambert_t.HasValue)
+            {
+                // only the miss the cruise would re-target (its own test,
+                // from the exit): a smaller one its B-plane correction
+                // fixes cheaper, with the whole cruise as a lever
+                LaunchWindow w = plan.window;
+                double left = Math.Max((plan.arrive_t ?? w.tDep + w.tof) - tx, 10 * 86400.0);
+                Approach ca = Transfer.ClosestApproach(rH, vH, tx, star.mu, dest, 1.6 * left);
+                if (ca.d.Norm < Math.Min(cfg.RETARGET_MISS * dest.Soi, cfg.RETARGET_FRACTION * dest.sma))
+                {
+                    plan.escape_coast = true;
+                    return null;
+                }
+                V3 gdv;
+                double gta;
+                if (!Transfer.Retarget(rH, vH, tx, star.mu, dest, tx + 0.6 * left, tx + 1.6 * left, n,
+                                       out gdv, out gta, 24, plan.rc, Polar()))
+                    return null;
+                plan.lambert_t = gta; plan.arrive_t = gta;
+                Event("escape aimed at a Lambert arc arriving " + FmtUt(gta) + ": " + F(gdv.Norm, 0)
+                      + " m/s at the SOI exit, flown inside it");
+            }
+            V3? need = Transfer.LambertDv(rH, vH, tx, star.mu, dest, plan.lambert_t.Value, n, plan.rc, Polar());
+            if (!need.HasValue) return null;
+            // columns: the exit velocity's change per m/s along each axis now
+            V3[] col = new V3[3];
+            V3[] axes = { new V3(1.0, 0.0, 0.0), new V3(0.0, 1.0, 0.0), new V3(0.0, 0.0, 1.0) };
+            for (int i = 0; i < 3; i++)
+            {
+                V3 r2, v2;
+                double t2;
+                if (!ExitState(cr.r, cr.v + axes[i], out r2, out v2, out t2)) return null;
+                col[i] = v2 - vx;
+            }
+            V3 b = need.Value;
+            double det = V3.Dot(col[0], V3.Cross(col[1], col[2]));
+            if (Math.Abs(det) < 1e-9) return null;
+            return new V3(V3.Dot(b, V3.Cross(col[1], col[2])) / det,
+                          V3.Dot(col[0], V3.Cross(b, col[2])) / det,
+                          V3.Dot(col[0], V3.Cross(col[1], b)) / det);
         }
 
         Cmd Correct(Conic c, Body frame)
