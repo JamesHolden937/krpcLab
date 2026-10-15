@@ -691,7 +691,7 @@ namespace LowThrust
         bool ThinkAside()
         {
             double ms;
-            return thinkMs.TryGetValue(mis.phase ?? "", out ms) && ms > cfg.FRAME_BUDGET_MS / 2;
+            return cfg.THINK_ASIDE && thinkMs.TryGetValue(mis.phase ?? "", out ms) && ms > cfg.FRAME_BUDGET_MS / 2;
         }
         double holdUt;
 

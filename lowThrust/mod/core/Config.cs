@@ -136,6 +136,10 @@ namespace LowThrust
         // warp rate rises while it spends less than half of this and falls
         // when it spends more.
         public double FRAME_BUDGET_MS = 8.0;
+        // Decisions whose running cost passes half the frame budget are made
+        // on a worker thread while game time is held (frames keep drawing),
+        // not inside the physics step (a frozen frame).  Being measured.
+        public bool THINK_ASIDE = true;
         // A thrusting frame draws at most this share of what each propellant
         // (and ElectricCharge) the vessel holds: the warp rate is held down to
         // it, so the vessel's own generators keep up step by step.
