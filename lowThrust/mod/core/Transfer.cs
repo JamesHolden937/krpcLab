@@ -678,7 +678,7 @@ namespace LowThrust
             double mag = Math.Min(Math.Max(CaptureNeed(c, mu, cap.raCap), 0.1), budget);
             if (gn == 0) return back * mag;
             V3 gu = g * (1 / gn);
-            double aim = Math.Min(Math.Max(cap.rc ?? c.rp, cap.floor), 0.95 * cap.rpMax);
+            double aim = Math.Min(Math.Max(cap.rc ?? c.rp, 1.05 * cap.floor), 0.95 * cap.rpMax);
             double dot = V3.Dot(back, gu);
             V3 side = back - gu * dot;
             if (side.Norm < 0.2) return back * mag;
