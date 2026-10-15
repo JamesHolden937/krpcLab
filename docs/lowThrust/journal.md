@@ -559,3 +559,82 @@ LOG10199); defaults 505.8 / 2239 (plan 509.5 / 2173, LOG10192) and 511.9 /
 absent from KSP's Mono: every START failed (the first fast-1014 batch flew
 nothing, and the live game had that dll for ~10 min). `TimeWarp.fixedDeltaTime`
 is scaled by the rate; `Time.fixedDeltaTime` is not.
+
+## Session, 2026-10-14 late: aerobraking, the capture's flip-flop, the Minmus push
+
+The user asked: why, in their live Duna flight
+(`flight-20261014-183836.log`), braking did not start until after
+periapsis, and why the circularisation burned away from periapsis; then
+aerobraking "as aggressively as possible while keeping a safe margin so
+nothing burns up"; and the handoff's open items.
+
+**Late braking at Duna: the capture law flip-flopped.** CAPTURE ran 2.2 h
+before periapsis but every second tick was unaligned (`thr=0.00/0.23
+err=94-107`): the planned periapsis sat exactly on the safety floor
+(80 km = atmosphere + 30 km), the retrograde burn lowered it under, the law
+then commanded a pure periapsis-gradient burn ~100 deg away (whole 250 s tick
+lost turning), lifted it to 100 km, went back to retrograde... Only 382 of
+678 m/s were burned before periapsis; 296 m/s after, where dv is dearest.
+Fix: the direction now varies smoothly -- retrograde with its pull on the
+periapsis faded out toward the aim, a lift term closing the error over the
+time left to periapsis, the floor term ramped in over 5% of it, the aim kept
+5% above the floor (at the floor exactly, Gilly captures burned forever:
+737,000 m/s in the grid); and an unaligned thrust tick now coasts only while
+the wheels turn (bang-bang at 0.8 of pitch/yaw + 5 s), not the whole tick.
+Stand-in Duna capture 601 -> 542 m/s; grid (270 flights) 268/270 arrive
+(the two Laythe flights fail by chaotic Tylo/Vall flybys), mean dv +0.2% --
+in the stand-in pointing is instant, so the old law's jumps cost nothing
+there; they cost ticks only in the game.
+
+**Burns away from periapsis in FINAL** were by design: arcs widen to +-60 deg
+while the orbit crosses Ike's band (fewest revolutions there), a pass's burn
+was capped for an Ike encounter, and small apoapsis burns put back the
+periapsis a finite periapsis arc lowered (71-78 km -> 80). Aerobraking
+removes most of that phase.
+
+**Aerobraking** (`core/Aero.cs`, AEROBRAKE, the Controller's passes): see
+lowThrust/CLAUDE.md for the design. What it took to work in the game:
+- the first in-game passes were all flown **on rails through the air** (no
+  drag, "unpacked at 1168 km"): `TimeToRadius` a hair short of the top
+  read a tiny negative time and added a revolution, so the mission never
+  stopped at the air; and when the game dropped off rails at its own
+  altitude limit, the off-rails branch put the full warp back. Fixed both;
+  a pass started off rails close above the air starts there.
+- aerobraking ended at once at Kerbin (first-pass heat limit 30 grazes at
+  3 km/s): it now keeps passing while the heating limit is still growing.
+- a pass must leave a periapsis the engine can lift out within +-60 deg of
+  apoapsis (the user's question: with 0.067 m/s^2 a Kerbin exit lift of
+  ~20 m/s is 300 s, the default +-8 deg arc 85 s); the exit arc is widened.
+- the moon check placed the planned pass at the decision time, not the next
+  periapsis; skipping a revolution when no depth is clear of Ike.
+
+Measured (qs_lowthrust): drag area 12.9 m^2 at Duna, 18.6-23.7 at Kerbin,
+against 4.74 from the drag cubes; the drag scale settles 1.7-3.6 (higher on
+shallow passes). Temperatures: the RTGs and the probe core run hottest.
+- Duna 200 x 200 (LOG10206): 14 passes, 1944 m/s, 545.8 d (plan 1909 /
+  521); capture 524, AEROBRAKE 14, FINAL 55; hottest 0.44.
+- Duna 80 x 80 i0 (LOG10207): 15 passes, 1946 m/s, 536.0 d (the live flight
+  without it: 2462 / 561); hottest probe core 0.57.
+- Kerbin 3000 x 100 -> 100 (qs_lowthrust_kell): heat-limited near H 100 at
+  3 km/s (passes at 63-66 km, ~1-3 m/s each); one pass reached 0.638 of an
+  RTG's limit against the 0.6 target (limit cut x0.89). ~45 s wall a pass;
+  19 passes took 3000 -> 2550 km, then a pass gained < 0.5% of what was
+  left and FINAL burned the rest: 675 m/s against 683 without aerobraking.
+  For this craft (RTGs, 1200 K) aerobraking at Kerbin from high orbit does
+  not pay. Pass 5 was still flown on rails: the game at 100000x and 2098 s
+  past the entry while the governor asked 5x -- unexplained (1 of 48).
+- Duna 200 with the fast-transfer plan, earlier (LOG10202): stuck at Kerbin
+  after the Mun captured the weak escape -- a departure problem, not this.
+
+**Minmus over plan (handoff item 1): the push's re-solve could not see the
+encounter.** On 3 of 7 flights the push ended ~90 s early and COAST found no
+encounter (29,000-31,000 km): every re-solve during PUSH returned nothing,
+because the horizon (0.75 of the post-push revolution) cut the encounter WAIT
+had planned off, so the push flew open loop. The stand-in did the same at arcs
+0.988 (155 d planned). The re-solve now looks at least 1.2x as far as WAIT's
+encounter: 57 d / 1411 m/s.
+
+**The frame freeze (handoff item 2)**: WAIT's moon-push search is an iterator
+run while the step has half its frame budget left, the coast going on and the
+warp slowed meanwhile; same evaluations, same answer (stand-in outputs
+byte-identical on Mun, Minmus, Ike).

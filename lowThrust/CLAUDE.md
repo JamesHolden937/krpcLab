@@ -8,19 +8,16 @@ the autopilot and its window run inside the game; no kRPC, Python or
 Persistent Thrust in flight. A farm-only kRPC bridge (`LowThrustKRPC.dll`)
 lets the harness start flights. The root `CLAUDE.md` applies here.
 
-**State (2026-10-14 night):** steering costs after alignment are modelled
-(thrust along the axis the attitude leaves, the hold charged): 0.01-0.02
-m/s a flight on this craft. A dv budget buys faster planet transfers
-(transfer share on the frontier): Duna max 4000 m/s flew 404.8 d / 3896 m/s
-(plan 406.7 / 3906), defaults 511.9 d / 2165 (plan 511.6 / 2151). The warp no
-longer fights the game's SOI-transition clamp (1-13 drops a flight, was
-243-2096). Earlier: the C# solver matches the retired Python one
-on the 270-flight grid (270/270 arrive, mean dv 4914.3 v 4914.7, 176
-byte-identical, 2.4x faster). In game on `qs_lowthrust` (29.9 t, one Dawn,
-0.067 m/s^2, 12 RTGs): 87 -> 150 km in 6 s wall (Python pilot 120 s),
-0.4 days as planned; LKO -> Mun 35 days as planned in ~2.3 min wall
-(Python pilot 9 min, 73-80 days). Open: Minmus over plan on 3 of 7 (see
-Open).
+**State (2026-10-14 late):** **aerobraking** works in game: Duna 200 x 200
+in 14 passes for 1944 m/s, 546 d (LOG10206); Duna 80 x 80 equatorial in 15
+for 1946 m/s, 536 d (LOG10207; the live flight without it 2462 / 561); the
+Duna part ~580-610 m/s where it was ~1050. Heat-limited at Kerbin (3 km/s:
+passes at ~65 km, many of them). The capture law no longer flip-flops
+(the live flight lost every second tick turning); the Minmus push's re-solve
+sees its encounter (3 of 7 flights missed by 29,000 km); WAIT's push search
+is spread over steps. Earlier: steering costs (0.01-0.02 m/s a flight), the
+dv/time frontier with fast planet transfers, the warp clamp. In game on
+`qs_lowthrust` (29.9 t, one Dawn, 0.067 m/s^2, 12 RTGs).
 History: `docs/lowThrust/journal.md`. What the code does:
 `docs/lowThrust/howItWorks.pdf`.
 
@@ -210,7 +207,7 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
 - **The stand-in vessel** has constant mass and unlimited propellant
   (`Vessel(mass, thrust, isp)`): it plans paths; xenon is reported from dv.
 
-## Measured in game (2026-10-14, `qs_lowthrust`)
+## Measured in game (2026-10-14, `qs_lowthrust`; Minmus rows before the push fix)
 
 | target | flights | wall | days (plan) | dv (plan) |
 |---|---|---|---|---|
@@ -224,6 +221,8 @@ anywhere:     TRIM (phasing, to miss a moon: at the next periapsis, or now), eva
 | Duna 200 x 200 | LOG10192, LOG10198 | 280 s | 505.8-511.9 (509.5-511.6) | 2165-2239 (2151-2173) |
 | Duna, max dv 4000 | LOG10193, LOG10199 | 286-294 s | 404.8-433.0 (406.7-433.3) | 3833-3896 (3842-3906) |
 | Minmus 30 x 30 inline | LOG10182, 10186-87, 10190-91, 10194, 10197 | 115-254 s | 59.7-310 | 1358-1742 (1362-1384) |
+| Duna 200 x 200, aerobraking (14 passes) | LOG10206 | 1649 s | 545.8 (521.2) | 1944 (1909) |
+| Duna 80 x 80 i0, aerobraking (15 passes) | LOG10207 | 2933 s | 536.0 (523.5) | 1946 (1857) |
 
 ## Measured (stand-in)
 
@@ -248,54 +247,80 @@ pol tylo laythe vall bop`.
 
 ## Open, in order
 
-1. **Minmus dv over plan** (inline, 7 flights): 1358-1433 on four, 1496,
-   1714, 1742 on three (plan ~1370-1384), days 60-310 where planned 57-155:
-   the long WAITs (3-5.6 Ms) and TRIMs. Not steering (0.02 m/s). Compare a
-   bad log's WAIT/PUSH/TRIM with `simmission` from the same start. Mun is
-   +0.6-1% on the 35-day plan (6 flights), +5.5% on the one 26.9-day plan
-   (LOG10183); Duna +0.6-3%.
-2. **The frame frozen by a search** (WAIT's push, up to 0.4 s, a few times a
-   flight): make the search incremental across steps (it is a scan of 40 dv
-   values: spread over steps while the coast still has time), not threaded
-   with a time hold (refuted, journal).
-3. **RCS and gimbal** (steering after alignment is done): RCS torque with
-   its monoprop and net force, gimbal torque only while thrusting with the
-   off-axis loss; a test craft with RCS and a gimballed engine. A
-   steering-loss share in the stand-in is not needed at 0.001%.
-4. Planet transfers in game beyond Duna; routes from a moon; aerobraking
-   (below); cheaper moon dodges; weak-engine departures.
+0. **A pass still flown on rails** (1 of 48: Kerbin pass 5): the game was
+   at 100000x and 2098 s past the entry though the governor asked 5x. Find
+   who sets the rate near the air.
+1. **Kerbin aerobraking is slow for this craft**: the RTGs (1200 K) bind the
+   heating near H 100 at 3 km/s; from 3000 km it is hundreds of ~45 s
+   passes. Options: a higher `AERO_HEAT_TARGET` (0.6 now; one pass reached
+   0.638), turning the RTGs out of the flow (`AERO_HOLD` Retrograde --
+   unmeasured), fewer soak seconds. Measure a whole Kerbin run.
+2. **Ike and equatorial targets**: depths are chosen (or a revolution
+   skipped) so the next revolution clears Ike at the modelled drag and the
+   margin either way; the stand-in still met Ike twice on one run. Watch for
+   it in game.
+3. **Weak-engine departures with a fast transfer** (LOG10202): the escape
+   was captured by the Mun and never left Kerbin.
+4. The capture-direction test allows one ~23 deg step near periapsis (the
+   lift term ramping in); the old law flipped ~90 every tick.
+5. RCS and gimbal steering (unmeasured need: 0.001% steering loss); planets
+   beyond Duna in game; routes from a moon.
 
-## Aerobraking (planned, not built -- the user, 2026-10-13: "think about it")
+## Aerobraking (`core/Aero.cs`; Mission `AEROBRAKE`; Controller passes)
 
-Where it pays: captures and orbit-lowering at bodies with an atmosphere
-(Kerbin, Eve, Duna, Laythe, Jool). For a weak engine it is the biggest
-saving there is: Duna's capture plus FINAL is ~1 km/s at 0.04 m/s^2, Jool's
-~2.5 km/s, and both are slow (long burns, many passes through moon bands).
-What it needs:
+At a body with air (Kerbin, Eve, Duna, Laythe, Jool) and a vessel with a
+drag area, on by default (`AEROBRAKE`).
 
-1. **An atmosphere in the stand-in**: density by altitude per body. KSP
-   defines pressure and temperature curves per body; density =
-   p M / (R T). Take the curves from the game (kRPC
-   `body.atmospheric_density_at_position` sampled on a save, the way
-   `kspSim/data/` holds terrain) rather than transcribing constants.
-2. **The vessel's drag**: a ballistic coefficient (m / (Cd A)) measured in
-   the game (kRPC `flight.drag` at known q), and the heating limit (KSP
-   skin temperature; the spaceplane's `trajectory.peak_heating` uses
-   sqrt(rho) v^3). Prograde-pointing drag only -- no lift.
-3. **Propagation through it**: the two-body coast is no longer exact below
-   the atmosphere top; integrate the atmospheric arc with drag (RK4, like
-   the thrust arcs), exact conics everywhere else.
-4. **The law**: aerocapture = aim the arrival periapsis at the altitude
-   whose one pass sheds exactly enough to be bound (a 1-D search on the
-   predicted pass, re-solved every tick of the approach, the B-plane
-   correction steering the periapsis); aerobraking = after any capture, a
-   periapsis in the upper atmosphere lowering the apoapsis pass by pass,
-   lifted out at the end by a burn at apoapsis. Heating caps how deep.
-   Both fit the phase machine as an alternative CAPTURE and a FINAL
-   variant, chosen at planning when the body has an atmosphere.
-5. **The pilot**: KSP will not rails-warp inside an atmosphere, so each
-   pass is physics-warped; Persistent Thrust is irrelevant there (no thrust
-   during a pass).
+- **Air**: density every 1 km (log-linear), sampled from the game's body
+  (`GetDensity(GetPressure, GetTemperature)`, base temperature) in flight; the
+  stand-in's tables (`Aero.Air`) were sampled from the game by kRPC
+  `density_at` (2026-10-14). The air turns with the body (`Body.spin`).
+- **Pass** (`Aero.Pass`): RK4 from the top down and out, gravity plus drag
+  q x cdA x k / m, no thrust. Heating index H = sqrt(rho) v^3 / 1e6 (KSP's
+  high-Mach convective coefficient less its constant), its peak and integral
+  (load); peak deceleration; lowest altitude.
+- **Depth** (`Aero.Deepest`): the lowest periapsis whose pass flown at
+  `AERO_DRAG_MARGIN` (1.5) x drag and density keeps every limit: above the
+  highest terrain + 3 km and 0.2 of the air's depth; H and load under the
+  learned limits; deceleration under `AERO_ACCEL_MAX`; the apoapsis it leaves
+  above the final one; **and a periapsis the engine can lift out of the air
+  (+5 km) within +-60 deg of the next apoapsis** (a weak engine must not be
+  left plunging back in).
+- **Capture**: on SOI entry the arrival periapsis is aimed at the deepest
+  depth safe both for the arrival and for the orbit the capture burn leaves
+  (`AeroCaptureRp`); the capture law counts on the pass's energy at the low
+  end (drag / margin) and burns less.
+- **AEROBRAKE** (after capture, or in FINAL whenever the apoapsis is above
+  the final one): after each pass the next depth is chosen; the guidance sets
+  it in the arc at apoapsis (target ra free, rp = depth, the target plane
+  carried, so the plane change happens at the high apoapsis); among depths
+  from the deepest up in tenths, the first whose next revolution -- at the
+  modelled drag and at the margin either way -- meets no moon; none: if the
+  orbit as it is stays clear a revolution more, the periapsis is kept out of
+  the air for one ("no pass this revolution"). Ends when a pass would lower
+  the apoapsis by less than `AERO_MIN_GAIN` (0.005) of what is left -- but
+  not while the heating limit is still growing -- then the periapsis is lifted
+  out (the arc at apoapsis widened to fit the lift) and FINAL finishes.
+- **Learning** (in game): pass 1 at `AERO_HEAT_FIRST` (30); after each pass,
+  every part's rise of max(skin / skin max, interior / max) is extrapolated
+  linearly to `AERO_HEAT_TARGET` (0.6) of its maximum, the H and load allowed
+  next = the pass's x that factor (at most `AERO_HEAT_GROWTH` 3); the drag
+  scale k = energy shed / modelled at k=1. The stand-in plans at
+  `AERO_HEAT_PLAN` (100) and learns nothing.
+- **In the game**: the mission stops at the top, inbound (the warp's steps
+  shrink to a quarter of the time left to the air); the game flies the pass
+  off rails at physics warp `AERO_PHYSICS_WARP` (4x), SAS holding
+  `AERO_HOLD` (Prograde); every step H, q, the parts' drag (sum of
+  `dragScalar`) and temperatures are measured; out of the air the
+  temperatures are watched until they stop rising (`AERO_SOAK_S` at most),
+  then the orbit is read back and the mission told. If the game drops off
+  rails just above the air on its way down, the pass starts there.
+- **Measured on `qs_lowthrust`** (LOG10201-, 2026-10-14): drag area 18.6-23.7
+  m^2 at Kerbin, 12.9 at Duna, against 4.74 from the drag cubes (the prior is
+  2.7-5x low; k learns it in one pass). The hottest part is always an RTG
+  (max 1200 K): at Kerbin 0.28 -> 0.47 of its limit at H 64, so the limit
+  settles near H 110 (passes at ~65 km at 3 km/s); at Duna 0.23 -> 0.26 at
+  H 14.
 
 ## Traps known
 

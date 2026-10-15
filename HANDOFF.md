@@ -1,38 +1,63 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-14 night: lowThrust steering costs, fast planet transfers, the warp fight fixed
+## 2026-10-14 late: lowThrust aerobraking; capture flip-flop; Minmus push
 
-Defaults fingerprint `bf944a77` (lowThrust, C# `Config`). Committed and
-pushed to origin/main; farm stopped, sleep inhibitor released. How-it-works
-PDF rewritten. History: `docs/lowThrust/journal.md`, "Session, 2026-10-14
-night". Read `lowThrust/CLAUDE.md` before touching it. `build.sh` installed
+Defaults fingerprint `5822bb01` (lowThrust, C# `Config`). Committed and pushed
+to origin/main; farm stopped, sleep inhibitor released. How-it-works PDF
+rewritten. History: `docs/lowThrust/journal.md`, "Session, 2026-10-14
+late". Read `lowThrust/CLAUDE.md` before touching it. `build.sh` installed
 the current dll in the farm and the **live game** (restart KSP to load it).
 
-What changed (the user asked for the first two):
-- **Steering costs after alignment**: thrust along the axis the attitude
-  leaves each step; the hold charged as wheel input/EC (I dw/dt + w x Iw),
-  let go if the wheels cannot give it; `steering:` line in every log.
-  Measured (LOG10182-87): 0.01-0.02 m/s lost a flight, 9-21 EC holding --
-  negligible on `qs_lowthrust`.
-- **High dv budget buys fast planet transfers**: `TRANSFER_TIME_SHARE`
-  (window arriving within a share of the cheapest's wait+flight), scanned at
-  `TRANSFER_SHARES` on planet routes. In game: Duna max-dv 4000 404.8 d /
-  3896 m/s (plan 406.7 / 3906); defaults 511.9 d / 2165 (plan 511.6 / 2151).
-- **The "lag"**: not BetterTimeWarp (EC toggle off in all its presets);
-  the governor and KSP's SOI-transition warp clamp fought every frame (1132
-  drops in the user's live Minmus flight). Mirrored with margin + the game's
-  drop held: 1-13 drops a flight (was 243-2096).
+The user asked (about their live Duna flight, flight-20261014-183836.log):
+- **Why braking started late**: the capture law flip-flopped between
+  retrograde and a periapsis-gradient burn ~100 deg away (the planned
+  periapsis sat exactly on the safety floor), losing every second 250 s tick
+  to turning; half the capture was burned after periapsis. Fixed (smooth law,
+  aim 5% above the floor, unaligned ticks coast only while turning).
+- **Burns away from periapsis in FINAL**: by design -- +-60 deg arcs while
+  crossing Ike's band, a capped burn, apoapsis touch-ups of the periapsis.
+- **Aerobraking, aggressive with a safe margin**: built and flown. Duna
+  200 x 200: 14 passes, 1944 m/s, 546 d (LOG10206); Duna 80 x 80 i0: 15
+  passes, 1946 m/s, 536 d (LOG10207; live flight without it 2462 / 561).
+  Hottest part 0.57 of its limit (target 0.6, every limit checked at 1.5x
+  drag and density). Kerbin from 3000 km: heat-limited by the RTGs at
+  3 km/s -- passes at ~65 km, hundreds of them (one reached 0.638).
+- **Exit lift with this TWR**: was a real risk (Kerbin lift ~300 s vs an
+  85 s arc); now no pass may leave a periapsis the engine cannot lift
+  within +-60 deg of apoapsis, and the exit arc is widened to fit.
+- **Handoff items**: Minmus over plan fixed (the push's re-solve horizon cut
+  off its own encounter; open-loop pushes missed by 29,000 km); WAIT's
+  search spread over steps.
+
+New config (all default): `AEROBRAKE`, `AERO_DRAG_MARGIN` 1.5,
+`AERO_HEAT_FIRST` 30 / `_TARGET` 0.6 / `_GROWTH` 3 / `_PLAN` 100,
+`AERO_TERRAIN_MARGIN_M`, `AERO_MIN_ALT_SHARE`, `AERO_ACCEL_MAX`,
+`AERO_MIN_GAIN` 0.005, `AERO_LIFT_MARGIN_M`, `AERO_PHYSICS_WARP` 3,
+`AERO_HOLD` Prograde, `AERO_SOAK_S`. New save `qs_lowthrust_kell`.
+
+Kerbin 3000 x 100 -> 100 (qs_lowthrust_kell, last flight on ksp0): 19
+passes (63-68 km, RTG to 0.638 once) took the apoapsis to 2550 km, then a
+pass gained < 0.5% and FINAL burned the rest: 675 m/s v 683 without -- for
+this craft Kerbin aerobraking from high orbit does not pay (heat-bound).
 
 Open, in order:
-1. Minmus dv over plan on 3 of 7 inline flights (1496-1742 v ~1380; WAITs
-   of 3-5.6 Ms, TRIMs): compare a bad log with `simmission` from its start.
-2. The WAIT frame freeze (search incremental across steps).
-3. RCS and gimbal (steering after alignment is done).
-4. More planets in game, routes from a moon, aerobraking.
+1. **A pass still flown on rails** (Kerbin pass 5): the governor trace
+   wanted 5x for the last frames before the air, but the game was at
+   100000x and 2098 s ahead at entry (after unaligned AEROBRAKE ticks at
+   100000x, err 120 deg). 1 of 48 passes; it teaches nothing and costs a
+   revolution. Find who sets the rate (log TimeWarp.CurrentRateIndex after
+   Warp.Set each frame near the air).
+2. Kerbin aerobraking heat-bound for this craft: a higher
+   `AERO_HEAT_TARGET`, `AERO_HOLD` Retrograde (RTGs shielded?), less soak.
+3. Ike vs equatorial aerobraking: 0 encounters in game so far; watch.
+4. Weak-engine departure caught by the Mun on a fast transfer (LOG10202).
+5. RCS/gimbal, planets beyond Duna, routes from a moon.
 
-Traps paid: mcs binds newest overloads (`Split(char, options)` broke every
-START -- check `monodis --memberref`); `TimeWarp.fixedDeltaTime` is the
-scaled step; the farm loads the dll at boot (restart after build).
+Traps paid: `pkill -f ltfly.py` kills its own shell; a farm watch loop must
+pick the log newer than the launch (`ls -t` picked a stale one); a time
+"a hair negative" from an anomaly difference must not wrap a revolution;
+the stand-in cannot show what a law's direction jumps cost (instant
+pointing) -- the game can.
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
