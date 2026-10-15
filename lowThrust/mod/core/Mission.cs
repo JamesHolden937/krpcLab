@@ -238,6 +238,17 @@ namespace LowThrust
             double syn = 1 / Math.Abs(1 / here.Period - 1 / dest.Period);
             LaunchWindow w = Transfer.FindWindow(here, dest, ready, star.mu, syn);
             if (w == null) throw new ArgumentException("no Lambert window found");
+            if (cfg.TRANSFER_TIME_SHARE < 1)
+            {
+                // a faster transfer: the cheapest arriving within this share
+                // of the cheapest one's wait and flight
+                double cheapest = w.tDep - ready + w.tof;
+                w = Transfer.FindWindow(here, dest, ready, star.mu, syn, maxTotal: cfg.TRANSFER_TIME_SHARE * cheapest);
+                if (w == null) throw new ArgumentException("no Lambert window arrives within "
+                                                           + F(cfg.TRANSFER_TIME_SHARE, 2) + " of the cheapest's time");
+                Event("fast transfer: arriving within " + F(cfg.TRANSFER_TIME_SHARE, 2) + " of the cheapest's "
+                      + F(cheapest / 21600, 0) + " d of waiting and flight");
+            }
             V3 nNow = V3.Cross(craft.r, craft.v).Unit;
             var park = Transfer.ParkingOrientation(here.mu, rp, ra, w.vinfDep, nNow);
             V3 normal = park.Item1, apse = park.Item2;

@@ -24,6 +24,7 @@ namespace LowThrust
     public class TradeOption
     {
         public double eta, dv, days;
+        public double share = 1.0;           // TRANSFER_TIME_SHARE
         public bool done;
         public string reason;
         public MissionResult result;
@@ -54,18 +55,25 @@ namespace LowThrust
                                              double dvLimit = double.PositiveInfinity,
                                              double timeLimit = double.PositiveInfinity)
         {
-            double[] grid = Grid(cfg);
-            var opts = new TradeOption[grid.Length];
+            double[] etas = Grid(cfg);
+            // a route to another planet: every cutoff at every transfer share
+            bool planet = dest != body && dest.parent != body && dest != body.parent && body.parent != null;
+            double[] shares = planet ? cfg.TRANSFER_SHARES : new[] { 1.0 };
+            var grid = new List<Tuple<double, double>>();
+            foreach (double sh in shares)
+                foreach (double e in etas) grid.Add(Tuple.Create(e, sh));
+            var opts = new TradeOption[grid.Count];
             int next = -1;
             ThreadStart work = () =>
             {
                 while (true)
                 {
                     int i = Interlocked.Increment(ref next);
-                    if (i >= grid.Length) return;
+                    if (i >= grid.Count) return;
                     Config c = cfg.Clone();
-                    c.ETA_DEFAULT = grid[i];
-                    var o = new TradeOption { eta = grid[i] };
+                    c.ETA_DEFAULT = grid[i].Item1;
+                    c.TRANSFER_TIME_SHARE = grid[i].Item2;
+                    var o = new TradeOption { eta = grid[i].Item1, share = grid[i].Item2 };
                     try
                     {
                         MissionResult res = Mission.Fly(system, new Ship(ship.massKg, ship.thrustN, ship.ispS), body,
@@ -80,7 +88,7 @@ namespace LowThrust
                     opts[i] = o;
                 }
             };
-            int nThreads = Math.Max(1, Math.Min(grid.Length, Environment.ProcessorCount - 1));
+            int nThreads = Math.Max(1, Math.Min(grid.Count, Environment.ProcessorCount - 1));
             var threads = new List<Thread>();
             for (int k = 0; k < nThreads; k++)
             {
@@ -101,6 +109,24 @@ namespace LowThrust
             foreach (TradeOption o in done)
                 if (front.Count == 0 || o.dv < front[front.Count - 1].dv - 1e-6) front.Add(o);
             return front;
+        }
+
+        /// <summary>At most n of the frontier (fastest first), evenly spread
+        /// along it, its two ends and keep always among them.</summary>
+        public static List<TradeOption> Thin(List<TradeOption> front, int n, TradeOption keep)
+        {
+            if (front.Count <= n) return front;
+            var idx = new SortedSet<int>();
+            for (int k = 0; k < n; k++) idx.Add((int)Math.Round((front.Count - 1) * (double)k / (n - 1)));
+            int at = keep == null ? -1 : front.IndexOf(keep);
+            if (at >= 0 && !idx.Contains(at))
+            {
+                // the pick replaces its nearest neighbour that is not an end
+                int near = idx.Where(i => i != 0 && i != front.Count - 1).OrderBy(i => Math.Abs(i - at)).First();
+                idx.Remove(near);
+                idx.Add(at);
+            }
+            return idx.Select(i => front[i]).ToList();
         }
 
         /// <summary>The option a budget picks (dvMax m/s, daysMax days; null
@@ -192,8 +218,10 @@ namespace LowThrust
         /// marked.</summary>
         public static List<string> Table(List<TradeOption> scanned, TradeOption chosen)
         {
-            return Frontier(scanned).Select(o => string.Format(IC, "{0} {1,7:F1} d  {2,6:F0} m/s  (arcs {3:F3})",
-                                                                o == chosen ? ">" : " ", o.days, o.dv, o.eta)).ToList();
+            return Frontier(scanned).Select(o => string.Format(IC, "{0} {1,7:F1} d  {2,6:F0} m/s  (arcs {3:F3}{4})",
+                                                                o == chosen ? ">" : " ", o.days, o.dv, o.eta,
+                                                                o.share < 1 ? string.Format(IC, ", transfer {0:F2}", o.share) : ""))
+                                     .ToList();
         }
     }
 }

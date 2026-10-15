@@ -390,10 +390,16 @@ namespace LowThrust
 
         /// <summary>The cheapest Lambert departure from origin to dest
         /// leaving within span seconds of tFrom: least |v_inf out| + weight
-        /// |v_inf in|, over flight times 0.5-1.5 of the Hohmann's.</summary>
+        /// |v_inf in|, over flight times 0.5-1.5 of the Hohmann's -- or, given
+        /// maxTotal, arriving within maxTotal seconds of tFrom (the wait and
+        /// the flight together), over flight times from 0.15 of the
+        /// Hohmann's.</summary>
         public static LaunchWindow FindWindow(Body origin, Body dest, double tFrom, double muSun, double span,
-                                        int nd = 90, int nt = 30, double arrivalWeight = 1.0)
+                                        int nd = 90, int nt = 30, double arrivalWeight = 1.0,
+                                        double maxTotal = double.PositiveInfinity)
         {
+            bool capped = !double.IsInfinity(maxTotal);
+            double tofLo = capped ? 0.15 : 0.5, tofSpan = capped ? 1.35 : 1.0;
             double aT = (origin.sma + dest.sma) / 2;
             double tH = Math.PI * Math.Sqrt(Math.Pow(aT, 3) / muSun);
             double bestC = Py.Inf, bestTd = 0, bestTof = 0;
@@ -409,6 +415,7 @@ namespace LowThrust
             };
             Action<double, double> consider = (td, tof) =>
             {
+                if (td - tFrom + tof > maxTotal) return;
                 var c = cost(td, tof);
                 double cv = c == null ? Py.Inf : c.Item1;
                 if (cv < bestC) { bestC = cv; bestTd = td; bestTof = tof; bestVd = c.Item2; bestVa = c.Item3; }
@@ -416,9 +423,10 @@ namespace LowThrust
             for (int i = 0; i <= nd; i++)
             {
                 double td = tFrom + span * i / nd;
-                for (int j = 0; j <= nt; j++) consider(td, tH * (0.5 + (double)j / nt));
+                for (int j = 0; j <= nt; j++) consider(td, tH * (tofLo + tofSpan * j / nt));
             }
-            double td0 = bestTd, tof0 = bestTof, dtd = span / nd, dtof = tH / nt;
+            if (!bestVd.HasValue) return null;
+            double td0 = bestTd, tof0 = bestTof, dtd = span / nd, dtof = tH * tofSpan / nt;
             for (int k = 0; k < 3; k++)
             {
                 for (int i = -5; i < 6; i++)

@@ -165,8 +165,10 @@ namespace LowThrust
                     try
                     {
                         var watch = Stopwatch.StartNew();
+                        List<TradeOption> front;
                         TradeOption pick = Pick(system, ship, here, r, vel[0], ut, dest, target, c, dvMax, daysMax, out why,
-                                                out PanelState.options);
+                                                out front);
+                        PanelState.options = Tradeoff.Thin(front, 10, pick);
                         var lines = new List<string>();
                         if (pick == null) lines.Add(why);
                         else
@@ -174,7 +176,7 @@ namespace LowThrust
                             MissionResult res = pick.result;
                             lines.Add("PLAN: " + pick.days.ToString("F1", IC) + " days, " + pick.dv.ToString("F0", IC)
                                       + " m/s, " + res.propUsed.ToString("F0", IC) + " kg propellant (arcs "
-                                      + pick.eta.ToString("F3", IC) + ")");
+                                      + pick.eta.ToString("F3", IC) + (pick.share < 1 ? ", transfer " + pick.share.ToString("F2", IC) : "") + ")");
                             var by = new List<KeyValuePair<string, double>>();
                             foreach (Maneuver m in res.maneuvers)
                             {
@@ -370,6 +372,7 @@ namespace LowThrust
                         if (chosen == null) throw new ArgumentException(why);
                         plan = chosen;
                         c.ETA_DEFAULT = chosen.eta;
+                        c.TRANSFER_TIME_SHARE = chosen.share;
                     }
                     planned = new Mission(s, ship, here, r, vel[0], ut, dest, tgt, c);
                 }
@@ -386,9 +389,9 @@ namespace LowThrust
             seen = 0;
             if (leg == 0 && plan != null)
                 log.Event(Planetarium.GetUniversalTime(), string.Format(IC,
-                    "plan: arcs {0:F3}, {1:F0} m/s in {2:F1} days (budget: {3} m/s, {4} days)", plan.eta, plan.dv,
+                    "plan: arcs {0:F3}, transfer share {5:F2}, {1:F0} m/s in {2:F1} days (budget: {3} m/s, {4} days)", plan.eta, plan.dv,
                     plan.days, dvMax.HasValue ? dvMax.Value.ToString("F0", IC) : "none",
-                    daysMax.HasValue ? daysMax.Value.ToString("F1", IC) : "none"));
+                    daysMax.HasValue ? daysMax.Value.ToString("F1", IC) : "none", plan.share));
             Drain();
             cur = null;
             pending = null;

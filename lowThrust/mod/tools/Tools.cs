@@ -139,7 +139,7 @@ namespace LowThrust
                     Console.WriteLine("\n" + why);
                     return 1;
                 }
-                Console.WriteLine("chosen: arcs " + F(pick.eta, 3));
+                Console.WriteLine("chosen: arcs " + F(pick.eta, 3) + ", transfer share " + F(pick.share, 2));
                 res = pick.result;
             }
             else res = Mission.Fly(system, vessel, b0, r, v, ut, b1, target, cfg);

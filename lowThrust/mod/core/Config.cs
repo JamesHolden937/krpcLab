@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -76,6 +77,10 @@ namespace LowThrust
         public double PARK_AP_FRACTION = 0.9;
         // The window is searched from the estimated end of the pump plus this.
         public double WINDOW_LEAD_S = 6 * 3600.0;
+        // A planet transfer arrives within this share of the cheapest
+        // window's wait plus flight (1: the cheapest).  Set per plan by the
+        // dv/time trade (TRANSFER_SHARES).
+        public double TRANSFER_TIME_SHARE = 1.0;
         // A moon push is searched up to this multiple of the tangential push
         // that reaches the moon's orbit ...
         public double PUSH_DV_FACTOR = 2.0;
@@ -162,6 +167,10 @@ namespace LowThrust
         // of the cheapest one's dv is flown (the cheapest alone was 3x slower
         // for 0.7% less dv to the Mun).
         public double BALANCE_DV_SHARE = 0.02;
+        // ... and, on a route to another planet, at each of these transfer
+        // time shares (TRANSFER_TIME_SHARE): faster, dearer Lambert transfers
+        // for a budget that has the dv.
+        public double[] TRANSFER_SHARES = { 1.0, 0.85, 0.7, 0.55, 0.4 };
         // A budget's stand-in flights stop at this multiple of it (so an
         // impossible budget is known quickly, and still says what is possible).
         public double BUDGET_SCAN_FACTOR = 1.5;
@@ -183,6 +192,7 @@ namespace LowThrust
         {
             if (v is double) return ((double)v).ToString("R", CultureInfo.InvariantCulture);
             if (v is bool) return (bool)v ? "True" : "False";
+            if (v is double[]) return string.Join(",", ((double[])v).Select(x => Show(x)).ToArray());
             return Convert.ToString(v, CultureInfo.InvariantCulture);
         }
 
@@ -200,6 +210,9 @@ namespace LowThrust
                 if (f == null) throw new ArgumentException("unknown config field '" + name + "'");
                 if (f.FieldType == typeof(bool))
                     f.SetValue(this, Array.IndexOf(new[] { "1", "true", "yes", "on" }, value.ToLowerInvariant()) >= 0);
+                else if (f.FieldType == typeof(double[]))
+                    f.SetValue(this, value.Split(',').Select(x => double.Parse(x.Trim(), CultureInfo.InvariantCulture))
+                                          .ToArray());
                 else if (f.FieldType == typeof(int))
                     f.SetValue(this, int.Parse(value, CultureInfo.InvariantCulture));
                 else
@@ -214,7 +227,7 @@ namespace LowThrust
             var b = new Config();
             var r = new List<string>();
             foreach (FieldInfo f in Fields())
-                if (!Equals(f.GetValue(this), f.GetValue(b)))
+                if (Show(f.GetValue(this)) != Show(f.GetValue(b)))
                     r.Add(f.Name + "=" + Show(f.GetValue(this)));
             return r;
         }
