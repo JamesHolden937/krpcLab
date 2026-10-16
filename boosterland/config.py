@@ -59,7 +59,6 @@ class Config:
     DEPLOY_GAIN_MIN_M_PER_DEG: float = 20.0
     DEPLOY_GAIN_MAX_M_PER_DEG: float = 60.0
     DEPLOY_LEARN_MIN_DEG: float = 3.0       # learn only from a step this big
-    DEPLOY_MIN_ALT_M: float = 8000.0        # hold the angle below this
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but

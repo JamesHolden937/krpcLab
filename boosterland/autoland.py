@@ -688,14 +688,22 @@ class Autoland:
         learned from each step's change in the predicted miss, starting at
         ``DEPLOY_GAIN_M_PER_DEG``: on the heavy booster 90 -> 45 -> 0 moved
         the landing ~450 m then ~800 m (dep1-1016).
+
+        It acts for the whole coast, down to the landing burn.  ``long`` is
+        measured along the horizontal *velocity*, the axis drag acts on,
+        not along the line to the pad (``miss_components``), which swings
+        round as the booster comes overhead.
         """
         cfg = self.cfg
-        if (snap.ut < self.deploy_next_ut
-                or snap.landing_height < cfg.DEPLOY_MIN_ALT_M):
+        if snap.ut < self.deploy_next_ut or self.prediction is None:
             return
-        long, _ = self.miss_components(snap)
-        if long != long:
+        up = vec.unit(snap.position)
+        along = vec.project_out(snap.velocity, up)
+        if vec.norm(along) < 1.0:
             return
+        miss = vec.project_out(vec.sub(self.prediction.position,
+                                       self.env.target), up)
+        long = vec.dot(miss, vec.unit(along))
         angle = (self.deploy_angle if self.deploy_angle is not None
                  else cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
         gain = (self.deploy_gain if self.deploy_gain is not None
