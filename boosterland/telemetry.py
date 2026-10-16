@@ -35,6 +35,9 @@ class Snapshot:
     terrain_max: float = 7000.0        # highest ground the body can have
     pad_above_datum: float = 0.0       # how high the pad sits over the body's datum
     terrain_below_sea: float = 100.0   # slack for ground under the datum
+    # The largest summed control input (pitch/yaw/roll, autopilot included),
+    # 0-1, or None when kRPC gave no read-back.  The RCS valve fires on it.
+    input_saturation: object = None
 
     @property
     def speed(self):
@@ -123,6 +126,16 @@ class Telemetry:
             "horizontal_speed": add(getattr, flight, "horizontal_speed"),
             "throttle": add(getattr, control, "throttle"),
         }
+        # The summed control input, read back: what ``common.rcs`` fires the
+        # thrusters on (an axis pinned and the turn not closing), as the
+        # shuttle does.  Optional -- a server that will not stream it leaves
+        # the valve on its pointing-error relay.
+        self._inputs = []
+        try:
+            for axis in ("pitch", "yaw", "roll"):
+                self._inputs.append(add(getattr, control, axis))
+        except Exception:                                   # noqa: BLE001
+            self._drop_inputs()
 
     def sample(self, env):
         s = {k: stream() for k, stream in self._streams.items()}
@@ -159,7 +172,26 @@ class Telemetry:
             terrain_max=self.cfg.TERRAIN_MAX_M,
             pad_above_datum=max(0.0, env.target_radius - env.equatorial_radius),
             terrain_below_sea=self.cfg.TERRAIN_BELOW_SEA_M,
+            input_saturation=self._input_saturation(),
         )
+
+    def _input_saturation(self):
+        """Largest |pitch|, |yaw|, |roll| input, or None if unreadable."""
+        if not self._inputs:
+            return None
+        try:
+            return max(abs(float(stream())) for stream in self._inputs)
+        except Exception:                                   # noqa: BLE001
+            self._drop_inputs()
+            return None
+
+    def _drop_inputs(self):
+        for stream in self._inputs:
+            try:
+                stream.remove()
+            except Exception:                               # noqa: BLE001
+                pass
+        self._inputs = []
 
     def _refresh_leg_clearance(self, ut):
         """Measure the COM-to-feet offset, retrying until the game answers.
@@ -217,6 +249,7 @@ class Telemetry:
         return raw if ok else height_above_pad
 
     def close(self):
+        self._drop_inputs()
         for stream in self._streams.values():
             try:
                 stream.remove()

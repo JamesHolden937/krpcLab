@@ -58,6 +58,22 @@ class Config:
     # burn lights the gimbal when it is more than ``CORRECTION_ALIGN_DEG``
     # (20) off and not coming round, so the thrusters are long since open by
     # the time that test is reached.
+    #
+    # **And demand is saturation, not error** -- the shuttle's rule, now the
+    # booster's.  A pointing error says only that the nose is not where it
+    # was told; the wheels, the gimbal and the airbrakes close most of those
+    # alone, and on a booster whose RCS is a ring of Vernors every second open
+    # is landing propellant.  So the valve opens only when a control axis has
+    # been pinned at ``RCS_SAT_INPUT`` for ``RCS_SAT_ON_S`` *and* the error
+    # has not closed by ``RCS_SAT_CLOSING_FRACTION`` over that time, and
+    # shuts once the input has stayed under ``RCS_SAT_RELEASE`` for
+    # ``RCS_SETTLE_S`` (or the error relay settles).  A server that will not
+    # stream the input leaves the error relay below in charge.  See
+    # ``common.rcs``.
+    RCS_SAT_INPUT: float = 0.95
+    RCS_SAT_ON_S: float = 0.5
+    RCS_SAT_CLOSING_FRACTION: float = 0.2
+    RCS_SAT_RELEASE: float = 0.6
     RCS_ERROR_ON_DEG: float = 5.0
     RCS_ERROR_OFF_DEG: float = 1.5
     RCS_SETTLE_S: float = 2.0
@@ -215,6 +231,18 @@ class Config:
                                             # small enough to stay in the
                                             # linear part of the curve.
 
+    AERO_STEER_TRACK_MIN_DEG: float = 3.0   # measure how much of a commanded
+                                            # angle the vehicle holds (see
+                                            # Environment.lift_slope_at) only
+                                            # from commands at least this big
+                                            # -- below it the autopilot's own
+                                            # deadband is the whole answer --
+    AERO_STEER_TRACK_STEADY_S: float = 2.0  # ... that have held within
+    AERO_STEER_TRACK_STEADY_DEG: float = 1.0  # this much for this long
+    AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
+    AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a
+                                            # vehicle with no air at all
+
     # --- Coast ------------------------------------------------------------
     COAST_STEER_GAIN: float = 0.0006        # degrees of tilt per metre of miss
     COAST_MAX_TILT_DEG: float = 12.0
@@ -359,7 +387,7 @@ class Config:
                                             # arrive going straight down
     LANDING_HVEL_TOL: float = 0.3           # lateral speed that counts as nulled
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
-                                            # retrograde for the last few m
+                                            # vertical for the last few m
     LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_attitude
     LANDING_DIVERT_MIN_ACCEL: float = 1.0   # thrust needed before steering means anything
     LANDING_DIVERT_MIN_THROTTLE: float = 0.0    # 0: see run_landing_burn, it hovers
@@ -371,7 +399,16 @@ class Config:
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
     LANDING_DIVERT_GAIN: float = 0.12       # degrees of tilt per metre of miss
-    LANDING_THROTTLE_KP: float = 0.12       # per m/s of speed error
+    LANDING_THROTTLE_GAIN: float = 6.0      # m/s^2 of trim per m/s of speed
+                                            # error; the throttle is this over
+                                            # max_accel.  It was 0.12 throttle
+                                            # per m/s, which is this gain on
+                                            # the original booster (~50 m/s^2
+                                            # empty) and twice it on a 9 g
+                                            # one: five Vectors on 55 t
+                                            # flapped 0 <-> 0.95 on the last
+                                            # 30 m, overshot into a climb and
+                                            # ran the tanks dry (LOG10237)
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
     TOUCHDOWN_SPEED: float = 2.0            # target descent rate at cutoff
     FINAL_APPROACH_RATE: float = 0.5        # m/s of descent allowed per metre up

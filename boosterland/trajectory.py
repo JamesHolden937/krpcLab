@@ -187,7 +187,10 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     span = max(1.0, remaining)
     a_required = (speed * speed - cfg.TOUCHDOWN_SPEED ** 2) / (2.0 * span)
     throttle = (a_required + g) / max_accel
-    throttle += cfg.LANDING_THROTTLE_KP * (speed - target_speed)
+    # The trim is an acceleration, so the loop gain is the same whatever the
+    # thrust-to-weight: a throttle gain fitted to one booster is a loop that
+    # oscillates on a stronger one.
+    throttle += cfg.LANDING_THROTTLE_GAIN * (speed - target_speed) / max_accel
 
     # A booster near the ground must never be thrusting while it is going
     # *up*.  ``span`` is floored at a metre, so a height that reads near zero

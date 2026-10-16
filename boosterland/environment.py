@@ -88,6 +88,10 @@ class Environment:
         self._lift_machs = []
         self._lift_areas = []
         self.lift_slope = None          # the value at the current Mach, logged
+        # The fraction of a commanded angle of attack the vehicle actually
+        # holds; see ``record_tracking``.  1 until measured.
+        self.aoa_tracking = 1.0
+        self.tracking_samples = 0
 
         logbook.event(ut, "env: body=%s mu=%.4g R=%.1f atmo=%.0f pad_r=%.1f "
                            "c0=%.0f omega=(%.3e,%.3e,%.3e)"
@@ -547,9 +551,43 @@ class Environment:
         return vec.dot(force, side) / (q * aoa * abs(aoa))
 
     def lift_slope_at(self, speed, altitude):
-        """Cl*A per radian squared at this Mach, interpolated like the drag."""
-        return self._interp_curve(self._lift_machs, self._lift_areas,
-                                  self.mach(speed, altitude))
+        """Cl*A per radian squared of *commanded* angle, at this Mach.
+
+        The probe measures the lift of the vehicle held at an angle; the
+        propagator is asked about the lift of a *command*.  Those are the same
+        only on a vehicle that holds what it is told, and a booster with six
+        airbrakes at 90 degrees on its trailing end is a weathervane: told 10
+        degrees it held 2-3 (LOG10236 live, LOG10237 farm), and since the
+        force goes as the angle squared the prediction credited it with ten
+        times the lift it made.  The miss walked 800 m short through the last
+        6 km with the solve pinned at its limit, and nothing could see it
+        coming.  So the curve is scaled by the measured tracking squared:
+        lift of what the vehicle *will* hold when given this command.
+        """
+        slope = self._interp_curve(self._lift_machs, self._lift_areas,
+                                   self.mach(speed, altitude))
+        return slope * self.aoa_tracking * self.aoa_tracking
+
+    def record_tracking(self, commanded_deg, held_deg):
+        """Fold one (commanded, held) pair into ``aoa_tracking``.
+
+        The caller only passes pairs taken under a steady command at least
+        ``AERO_STEER_TRACK_MIN_DEG`` -- small commands are dominated by the
+        autopilot's own deadband, and a command that just changed has not had
+        time to be held.  Clamped to ``[AERO_STEER_TRACK_FLOOR, 1]``: holding
+        more than commanded is an oscillation, not authority.
+        """
+        cfg = self.cfg
+        if commanded_deg < cfg.AERO_STEER_TRACK_MIN_DEG:
+            return
+        sample = vec.clamp(held_deg / commanded_deg,
+                           cfg.AERO_STEER_TRACK_FLOOR, 1.0)
+        if self.tracking_samples == 0:
+            self.aoa_tracking = sample
+        else:
+            w = cfg.AERO_STEER_TRACK_SMOOTHING
+            self.aoa_tracking = self.aoa_tracking * (1.0 - w) + sample * w
+        self.tracking_samples += 1
 
     def refresh_lift(self, position, velocity, rotation, nose):
         """Keep the lift curve current: one extra probe per refresh."""

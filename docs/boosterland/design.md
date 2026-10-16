@@ -332,7 +332,7 @@ STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
 - **LANDING_BURN** — drops the gear on the first tick (`GEAR_ON_LANDING_BURN`;
   `GEAR_DEPLOY_ALT_M` is only a backstop, and `GEAR_ACTION_GROUP` fires an
   extra group for legs not on the stock Gear group). Throttle is a
-  constant-deceleration profile (feedforward + `LANDING_THROTTLE_KP` trim),
+  constant-deceleration profile (feedforward + `LANDING_THROTTLE_GAIN` trim, an acceleration divided by `max_accel`),
   tapering into a constant-rate final approach (`FINAL_APPROACH_RATE`) so the
   legs arrive at `TOUCHDOWN_SPEED`. It also *steers*
   (`LANDING_TERMINAL_GUIDANCE`, on): ZEM/ZEV on the propagator's predicted

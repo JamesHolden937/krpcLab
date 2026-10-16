@@ -480,13 +480,23 @@ class TestClosedLoop(unittest.TestCase):
         self.assertTrue(run.correction_making_it_worse(3.0, 583.0))
         # LOG3's second burn.
         run.correction_start_miss = 927.0
+        run.correction_best_miss = None
         self.assertTrue(run.correction_making_it_worse(6.0, 1254.0))
         # A burn that is working is never cut, however far it still has to go.
+        run.correction_best_miss = None
         self.assertFalse(run.correction_making_it_worse(6.0, 800.0))
         # Nor is one whose prediction has gone briefly noisy inside the ratio.
+        run.correction_best_miss = None
         self.assertFalse(run.correction_making_it_worse(6.0, 1100.0))
         # A prediction that is not a number cannot condemn a burn.
         self.assertFalse(run.correction_making_it_worse(6.0, float("nan")))
+        # ... but one that closed the miss and then reopened it past the
+        # abort ratio is: LOG10237's second burn, 900 -> 314 -> 1068.
+        run.correction_start_miss = 900.0
+        run.correction_best_miss = None
+        self.assertFalse(run.correction_making_it_worse(6.0, 314.0))
+        self.assertFalse(run.correction_making_it_worse(7.0, 380.0))
+        self.assertTrue(run.correction_making_it_worse(8.0, 430.0))
         log.close()
 
     def test_coast_drift_is_corrected_before_the_landing_burn(self):

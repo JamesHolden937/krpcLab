@@ -563,8 +563,9 @@ class TestGuidance(unittest.TestCase):
         v = (-20.0, 0.0, 5.0)
         aim = guidance.terminal_attitude(
             env, r, v, cfg.LANDING_DIVERT_MIN_ALT_M - 1.0, 0.0, 25.0, cfg)
-        self.assertLess(
-            vec.angle_between(aim, vec.unit(vec.scale(v, -1.0))), 1e-6)
+        # Standing vertical, not on retrograde: retrograde swings to the
+        # horizontal as the descent stops (LOG10237).
+        self.assertLess(vec.angle_between(aim, vec.unit(r)), 1e-6)
         # And well above it, a zero time-to-go must not produce a wild command.
         high = guidance.terminal_attitude(env, state_above_pad(2000.0)[0],
                                           v, 2000.0, 0.0, 25.0, cfg)
@@ -1374,11 +1375,21 @@ class TestTerminalVelocityNulling(unittest.TestCase):
         cmd = guidance.terminal_command(self.env, r, v, 
                                         self.cfg.LANDING_NULL_ALT_M - 50.0,
                                         6.0, 15.0, self.cfg)
-        retrograde = vec.unit(vec.scale(v, -1.0))
-        lean = vec.project_out(cmd.direction, retrograde)
+        # Low down the lean is from vertical, not from retrograde.
+        lean = vec.project_out(cmd.direction, vec.unit(r))
         # +z is the way it is drifting, so the tilt has to go -z.
         self.assertLess(lean[2], 0.0)
         self.assertGreater(cmd.demand, 0.0)
+
+    def test_an_ascending_booster_is_not_pointed_down(self):
+        """LOG10237: overshot into a climb at 8 m; retrograde pointed down."""
+        height = 8.0
+        r = state_above_pad(height)[0]
+        v = (2.4, 0.0, 6.0)            # climbing, drifting
+        cmd = guidance.terminal_command(self.env, r, v, height, 3.0, 0.0,
+                                        self.cfg)
+        self.assertLess(vec.angle_between(cmd.direction, vec.unit(r)),
+                        self.cfg.LANDING_MAX_TILT_DEG + 1e-6)
 
     def test_low_down_it_ignores_the_offset_entirely(self):
         """Same state, wildly different aiming signals, identical command."""
@@ -1393,13 +1404,12 @@ class TestTerminalVelocityNulling(unittest.TestCase):
             vec.angle_between(plain.direction, with_zem.direction), 0.0,
             places=6)
 
-    def test_a_stopped_booster_is_left_on_retrograde(self):
+    def test_a_stopped_booster_is_left_vertical(self):
         height = self.cfg.LANDING_NULL_ALT_M - 50.0
         r, v = self.low(height, (0.0, self.cfg.LANDING_HVEL_TOL / 2.0))
         cmd = guidance.terminal_command(self.env, r, v, height, 6.0, 15.0,
                                         self.cfg, (0.0, 0.0, 400.0))
-        retrograde = vec.unit(vec.scale(v, -1.0))
-        self.assertAlmostEqual(vec.angle_between(cmd.direction, retrograde),
+        self.assertAlmostEqual(vec.angle_between(cmd.direction, vec.unit(r)),
                                0.0, places=6)
         self.assertEqual(cmd.demand, 0.0)
 

@@ -192,9 +192,11 @@ class Autoland:
         self.extra_lines = ["press START AUTOLAND"]
         self.gear_deployed = False
         self.steer = None               # the angle of attack the coast flies
+        self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.corrections = 0
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
+        self.correction_best_miss = None    # ... and the least it has reached
         self.correction_retired = False     # a burn backfired; stop trying
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
@@ -274,11 +276,15 @@ class Autoland:
         gimbal, and the descent has very little authority on anything else --
         but *needing them in the phase* is not needing them in the tick, and
         the ticks where the booster is already pointed where it was told
-        outnumber the ones where it is turning.  See ``common.rcs``.
+        outnumber the ones where it is turning.  And a turn is not a need
+        either: the valve opens only when a control axis is pinned and the
+        error is not closing on the wheels, gimbal and airbrakes alone
+        (``RCS_SAT_*``, the shuttle's rule).  See ``common.rcs``.
         """
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
-                        apply=self._apply_rcs)
+                        apply=self._apply_rcs,
+                        saturation=snap.input_saturation)
 
     def _apply_rcs(self, wanted):
         try:
@@ -584,6 +590,7 @@ class Autoland:
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
                               snap.direction)
+        self.measure_tracking(snap)
         # Fly the air first, and only then think about the engines.  A booster
         # falling through 30 km of thickening atmosphere with its grid fins out
         # is a wing, and a wing costs no propellant, no relight and none of the
@@ -627,7 +634,42 @@ class Autoland:
         elif self.correction_worthwhile(snap, prediction, distance):
             self.corrections += 1
             self.correction_start_miss = distance
+            self.correction_best_miss = distance
             self.enter(CORRECTION, snap.ut, "miss=%.0fm" % distance)
+
+    def measure_tracking(self, snap):
+        """How much of the commanded angle of attack is the vehicle holding?
+
+        The command in force is the one the last tick set; the angle held is
+        the nose's real angle off retrograde.  A pair counts only once the
+        command has stayed within ``AERO_STEER_TRACK_STEADY_DEG`` for
+        ``AERO_STEER_TRACK_STEADY_S`` -- a command that just moved has not had
+        time to be held, and reading the turn as the vehicle's limit would
+        throw away lift it does have.  See ``Environment.lift_slope_at``.
+        """
+        cfg = self.cfg
+        if self.steer is None:
+            self.steer_history = []
+            return
+        commanded = math.degrees(abs(self.steer.aoa))
+        self.steer_history.append((snap.ut, commanded))
+        window = snap.ut - cfg.AERO_STEER_TRACK_STEADY_S
+        while len(self.steer_history) > 1 and self.steer_history[1][0] <= window:
+            self.steer_history.pop(0)
+        if self.steer_history[0][0] > window:
+            return                                  # not steady for long enough
+        values = [c for _, c in self.steer_history]
+        if max(values) - min(values) > cfg.AERO_STEER_TRACK_STEADY_DEG:
+            return
+        held = vec.angle_between(vec.scale(snap.direction, -1.0),
+                                 snap.velocity)
+        before = self.env.tracking_samples
+        self.env.record_tracking(sum(values) / len(values), held)
+        if before == 0 and self.env.tracking_samples:
+            self.log.event(snap.ut, "aoa tracking: commanded %.1f deg, held "
+                           "%.1f -> lift scaled by %.2f"
+                           % (sum(values) / len(values), held,
+                              self.env.aoa_tracking ** 2))
 
     def alignment_rate(self, ut, align):
         """Degrees per second the attitude error is closing, or None.
@@ -672,9 +714,24 @@ class Autoland:
         """
         if self.correction_start_miss is None or distance != distance:
             return False
+        best = getattr(self, "correction_best_miss", None)
+        best = min(self.correction_start_miss if best is None else best,
+                   distance)
+        self.correction_best_miss = best
         if ut - self.phase_start_ut < self.cfg.CORRECTION_ABORT_GRACE_S:
             return False
-        return distance > self.correction_start_miss * self.cfg.CORRECTION_ABORT_RATIO
+        # Against the *best* miss the burn has reached, not the one it began
+        # at.  A burn that closes the miss and then keeps going opens it
+        # again, and measured against its start it is allowed to undo all of
+        # its own work and 30% more: LOG10237's second burn took 900 m to
+        # 314, burned on for 25 s at a gradient that still read "helping",
+        # and stopped at 1068 having spent 7 t of a heavy booster's landing
+        # propellant.  The best-so-far is the start until the burn improves
+        # on it, so a burn that never helps is cut as before.  The floor of
+        # one entry gate above the best keeps a burn that has nearly closed
+        # the miss from being called a backfire on prediction noise.
+        return distance > max(best * self.cfg.CORRECTION_ABORT_RATIO,
+                              best + self.cfg.CORRECTION_ENTER_M)
 
     def correction_gradient(self, snap, prediction):
         """Metres of miss closed per m/s burned along the correction attitude.
@@ -1068,7 +1125,7 @@ def compact_line(state, snap, prediction, run):
         float("nan"), float("nan"))
     return ("%-12s alt=%8.0f legs=%8.1f%s vs=%7.1f hs=%7.1f spd=%7.1f thr=%.2f "
             "m=%7.2ft pad=%8.0f miss=%8.0f long=%+7.0f cross=%+6.0f "
-            "ttl=%6.0f cda=%5.2f M=%4.2f aoa=%+5.1f hold=%4.1f cla=%s"
+            "ttl=%6.0f cda=%5.2f M=%4.2f aoa=%+5.1f hold=%4.1f cla=%s trk=%.2f"
             % (state, snap.height_above_pad, snap.legs_altitude,
                " " if snap.surface_altitude_ok else "?",
                snap.vertical_speed, snap.horizontal_speed, snap.speed,
@@ -1084,7 +1141,8 @@ def compact_line(state, snap, prediction, run):
                vec.angle_between(vec.scale(snap.direction, -1.0),
                                  snap.velocity),
                "%6.2f" % run.env.lift_slope
-               if run.env.lift_slope is not None else "     -"))
+               if run.env.lift_slope is not None else "     -",
+               run.env.aoa_tracking))
 
 
 def diag_line(snap, run):

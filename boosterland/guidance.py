@@ -415,7 +415,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
       and landing upright beats landing close (failure 5, which is the same
       lesson one layer down).  ``LANDING_DIVERT_MIN_ALT_M`` is now only the
       floor under *that*, held for the last few metres so the vehicle is
-      standing on retrograde when it touches.
+      standing vertical when it touches.
 
     By default the error is measured from the *vehicle's own position*, so
     this stays a closed loop on the real state and does not care that the
@@ -448,11 +448,22 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         return TerminalCommand(vec.unit(r), 0.0)
     if not cfg.LANDING_TERMINAL_GUIDANCE:
         return TerminalCommand(retrograde, 0.0)
+    up = vec.unit(r)
+    # The last stretch is referenced to the ground, not the airflow.
+    # Retrograde is a fine thing to point at while the booster is falling
+    # fast; it stops being one as the descent stops, because it swings toward
+    # the horizontal as the vertical speed goes to zero and points *down*
+    # once it changes sign.  A heavy booster (LOG10237: 9 g, five Vectors)
+    # overshot into a climb at 8 m, was told to point retrograde, and
+    # tumbled to 122 degrees off it; LOG10236 did the same live and broke
+    # up.  Below ``LANDING_NULL_ALT_M`` the steering only nulls lateral speed,
+    # and that is a tilt from *vertical*.
+    near = height <= cfg.LANDING_NULL_ALT_M
+    base = up if near else retrograde
     if not (cfg.LANDING_DIVERT_MIN_ALT_M < height
             <= cfg.LANDING_DIVERT_MAX_ALT_M):
-        return TerminalCommand(retrograde, 0.0)
+        return TerminalCommand(base, 0.0)
 
-    up = vec.unit(r)
     offset = vec.project_out(vec.sub(r, env.target), up)    # where we are, vs the pad
     lateral = vec.project_out(v, up)
     t_go = max(cfg.LANDING_TGO_MIN_S, time_to_land)
@@ -465,7 +476,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         # is the same 4/t_go the full law uses, so this is not a separate
         # controller, it is the same one with its other half switched off.
         if vec.norm(lateral) <= cfg.LANDING_HVEL_TOL:
-            return TerminalCommand(retrograde, 0.0)
+            return TerminalCommand(up, 0.0)
         accel = vec.scale(lateral, -cfg.LANDING_ZEV_GAIN / t_go)
     elif zem is None:
         accel = vec.add(vec.scale(offset, -cfg.LANDING_ZEM_GAIN / (t_go * t_go)),
@@ -487,15 +498,15 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         # separate term for it would count it twice.
         accel = vec.scale(vec.project_out(zem, up),
                           -cfg.LANDING_ZEM_GAIN / (t_go * t_go))
-    accel = vec.project_out(accel, retrograde)   # only the part that tilts us
+    accel = vec.project_out(accel, base)         # only the part that tilts us
     demand = vec.norm(accel)
     if demand < 1e-6:
-        return TerminalCommand(retrograde, 0.0)
+        return TerminalCommand(base, 0.0)
     # The demand is a property of the trajectory, so it is reported even when
     # there is no thrust to meet it -- that is exactly the case the caller
     # needs to know about, because it can open the throttle and create some.
     if thrust_accel < cfg.LANDING_DIVERT_MIN_ACCEL:
-        return TerminalCommand(retrograde, demand)
+        return TerminalCommand(base, demand)
 
     limit = cfg.LANDING_MAX_TILT_DEG
     if tilt_budget_deg is not None:
@@ -503,7 +514,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     tilt = math.atan2(demand, thrust_accel)
     tilt = min(tilt, math.radians(max(0.0, limit)))
     return TerminalCommand(
-        vec.unit(vec.add(retrograde,
+        vec.unit(vec.add(base,
                          vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
 
 
