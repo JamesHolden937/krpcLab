@@ -96,6 +96,20 @@ def set_autopilot_engaged(autopilot, engaged):
 AIRBRAKE_MODULE = "ModuleAeroSurface"   # the stock airbrake's part module
 
 
+def set_airbrake_angle(vessel, angle):
+    """Set every airbrake's deploy angle; return the angles read back."""
+    angles = []
+    for part in vessel.parts.all:
+        for m in part.modules:
+            if m.name == AIRBRAKE_MODULE and m.has_field("Deploy Angle"):
+                try:
+                    m.set_field_float("Deploy Angle", float(angle))
+                    angles.append(m.get_field("Deploy Angle"))
+                except Exception:       # noqa: BLE001 -- KSP-side failure
+                    angles.append("refused")
+    return angles
+
+
 def prepare_vehicle(vessel, cfg):
     """Deploy every airbrake and light every liquid engine, at START.
 
@@ -200,6 +214,7 @@ class Autoland:
         self.steer = None               # the angle of attack the coast flies
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.corrections = 0
+        self.coast_deploy_set = False
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
         self.correction_best_miss = None    # ... and the least it has reached
@@ -602,6 +617,17 @@ class Autoland:
 
     def run_coast(self, snap):
         self.set_throttle(0.0)
+        if (self.cfg.COAST_DEPLOY_ANGLE_DEG >= 0.0
+                and not self.coast_deploy_set):
+            # A fixed deploy angle from the first COAST tick: measures how
+            # much range the brakes' drag commands, after boostback has
+            # aimed on the full deploy and nothing else can answer it.
+            self.coast_deploy_set = True
+            angles = set_airbrake_angle(self.vessel,
+                                        self.cfg.COAST_DEPLOY_ANGLE_DEG)
+            self.log.event(snap.ut, "coast deploy angle %s (asked %.0f)"
+                           % ("/".join(sorted(set(map(str, angles))))
+                              or "n/a", self.cfg.COAST_DEPLOY_ANGLE_DEG))
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
