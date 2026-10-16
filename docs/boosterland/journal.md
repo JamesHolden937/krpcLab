@@ -1,5 +1,73 @@
 # boosterland journal
 
+## Session, 2026-10-16 afternoon: corrections, drag as range, the landing hover
+
+The user asked why the booster needs correction burns at all ("they seem to
+just cause trouble"), whether a control was missing, and suggested using the
+airbrakes' deploy angle for drag. All batches 1x, aim bias 0, 6 a cell,
+logs `rot-<tag>-1016.txt`.
+
+### Corrections
+
+- **noc1** (corrections off v on): heavy 0 v 3 of 6 lost, mean 547 v 741;
+  quicksave mean 98 v 342, worst 235 v 1088. Every burn "backfired": COAST's
+  miss comes from the *steered* prediction (`solve_steer`), CORRECTION's from
+  an unsteered one, so the miss jumps at zero throttle the moment it enters.
+- They cannot simply go: the sim's 25 m/s mid-coast shove (failure 1's case)
+  lands 1.1-2.9 km out without them, 13-137 m with.
+- **`CORRECTION_ENTER_M` 60 -> 1000** (the abort's noise floor split off as
+  `CORRECTION_ABORT_FLOOR_M` 60); still catches the shove (151-210 m).
+- Still, every flight that made three burns missed by 0.7-2.5 km: at 28 km
+  the zero-throttle prediction swings past 1000 m *short*, and a burn within
+  50 deg of retrograde only shortens in the game (the sim, with no aero
+  torque, can hold the tilt that lengthens). **`CORRECTION_OVERSHOOT_ONLY`**
+  (default): never enter on a short miss. The flight-sim kick tests now kick
+  long.
+
+### Missing controls: the airbrakes
+
+- `AIRBRAKE_STEER` (pitch/yaw surfaces, re-flown without the confound of
+  backfiring corrections, abs1): heavy 2 lost + 1 splash, mean ~1020 v 578;
+  quicksave 242 v 160. Deleted.
+- Fixed deploy angle from the first COAST tick (dep1; the game takes the
+  change in flight): heavy at 90/45/0 lands ~450 short / centred / ~800 long,
+  and 0 doubles the cross-track scatter. Probe deleted once the law existed.
+- **`DEPLOY_LAW`** (default, `Autoland.run_deploy`): every `DEPLOY_STEP_S`
+  10 s the angle moves by long/gain (gain >= 20 m/deg, learned upward), at
+  most 10 deg, within 30-90, above `DEPLOY_MIN_ALT_M` 8 km, and the drag curve
+  is re-swept (the probe simulates the shape the vessel has now). The first
+  version (5 s, 15 deg, gain learned down to 3) limit-cycled 90 -> 20 -> 71 ->
+  20 and its late swings threw the cross-track +-400 m (dlaw1, vert1).
+
+### The landing hover (the largest error on both boosters)
+
+Predicted landing point v actual: on quicksave the 2 km prediction was on the
+pad and the booster landed 180-720 m off; on the heavy 400-750 m off a
+prediction steady from 30 km. Low over the right spot, it hovered at 10-30 m
+with the throttle 0 <-> 0.95 every tick and slid sideways. `landing_command`
+flew the profile on |v|: 15 m/s sideways read as 15 m/s against a 3 m/s
+target -> cap (zeroing the divert's tilt budget) -> climb -> the go-around
+guard cuts -> fall -> repeat. **`LANDING_THROTTLE_VERTICAL`** (default): the
+profile is on descent rate, with the sideways speed weighted by
+height / `LANDING_NULL_ALT_M` (pure descent rate hit at 54 m/s in the sim --
+the burn must still brake sideways speed high up). vert1 (pure version):
+heavy 6/6 at 0.9-8.3 m/s within ~30 m of the 2 km prediction; DIVERGED lines
+88-155 -> 5 a flight.
+
+### Where it stands
+
+ov1 (gate + law v gate alone v neither): heavy 17/69/72/75/112/386 v
+354-523 v 328-619; quicksave 8-38 (one 245) v one 1.9 km splash v two
+2.3-2.7 km splashes. brd1, defaults on all six saves: 36/36 intact bar one
+(below); medians steep 12, north 32, cold 59, quicksave 61, heavy 188,
+hot 195. Heavy and qs_hot now land ~200 m **long**: the steered prediction
+reads ~0 at 20 km and drifts 200-580 m long by 10 km, after the law stops.
+
+Open: qs_hot LOG10512 crashed at 145 m/s -- burn entered on time at 697 m
+(needed 698) but the throttle read 0 at 584 m and came up 0.23 -> 0.95 only
+by ~400 m; not explained without DIAG. The steered prediction's lift credit
+is the root of both the old backfires and the late long drift.
+
 ## Session, 2026-10-16: the heavy booster
 
 The user flew a second booster live -- the first stage of "shuttle first

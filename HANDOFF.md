@@ -1,33 +1,50 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-16 (late morning): boosterland -- the heavy booster, NOT fixed
+## 2026-10-16 afternoon: boosterland -- both boosters land; five default changes
 
-The user's live flight of a second booster (the "shuttle first complete test
-flight" first stage, 99 t, 5 Vectors, 6 airbrakes on the top tank) missed
-830 m short and broke up (LOG10236). Full write-up and evidence:
-`docs/boosterland/journal.md`. Committed and pushed. Farm stopped.
+The user asked why the booster needs correction burns, whether a control
+was missing, and to use the airbrakes' deploy angle for drag. Full write-up:
+`docs/boosterland/journal.md` (top section). How-it-works PDF rewritten.
+Committed and pushed; farm stopped. The booster's `config:` line still has
+no `defaults_fingerprint` (open).
 
-- **New save `qs_heavy`** + `boosterland/tools/splicebooster.py` (cuts a
-  booster out of a stack save and drops it into a separation save). Reproduces
-  the live failure.
-- **Six default changes** (journal table): lift scaled by measured aoa
-  tracking; correction aborts against its best miss; landing trim gain per
-  thrust-to-weight (`LANDING_THROTTLE_GAIN` replaces `LANDING_THROTTLE_KP`);
-  landing reference retrograde-in-a-cone; saturation RCS in COAST only;
-  airbrakes not made pitch/yaw surfaces.
-- **Result at 1x**: heavy lands soft (2-9 m/s) but ~600 m short, 1 in 4 lost;
-  original `quicksave` 19-431 m, no better than 2984d8d (16-51 on 6/8).
-- **Refuted, deleted**: propellant pump to the top tanks (user's idea);
-  `DRAG_PROBE_DESCENT` on the heavy (worse).
-- **Next**: the heavy's three corrections are deterministic (855->1190,
-  1240->403, 420->800 on four flights of four) and make most of the miss;
-  read one tick by tick (DIAG logs LOG10310-10315). Then the original
-  booster's hard arrivals (present before this session too).
-- **Traps**: `--timescale` persists per instance -- pass `--timescale 1`;
-  the booster has no governor and everything before ~1010 flew at 4x.
-- **Open**: how-it-works PDF not rewritten (behaviour still moving; the
-  airbrake row in it is now wrong); the booster's `config:` line still has
-  no `defaults_fingerprint`.
+**Defaults now (all measured at 1x, 6 a cell, `logs/rot-<tag>-1016.txt`):**
+- `LANDING_THROTTLE_VERTICAL` -- the landing profile on descent rate, sideways
+  speed weighted by height/250 m. The old |v| law hovered and slid 100-750 m
+  at 10-30 m up on both boosters (cap <-> go-around every tick, no divert
+  authority). vert1: heavy 6/6 soft, on the 2 km prediction +-30 m.
+- `DEPLOY_LAW` -- COAST steps the airbrake deploy angle against the
+  along-track miss (10 s, <= 10 deg, 30-90, gain >= 20 m/deg, above 8 km),
+  re-sweeping drag after each step. Two-sided range; the only one after
+  boostback.
+- `CORRECTION_OVERSHOOT_ONLY` + `CORRECTION_ENTER_M` 1000 (was 60) +
+  `CORRECTION_ABORT_FLOOR_M` 60: corrections only on a long miss > 1 km. In
+  the game a burn within 50 deg of retrograde only shortens; short-miss
+  burns took flights 0.7-2.5 km short.
+- Deleted: `AIRBRAKE_STEER` (re-refuted, abs1), the fixed-angle probe.
+
+**Where it stands** (brd1 + low1's 8 km arm, defaults): 54 flights, 53 intact.
+Medians: qs_steep 12, qs_north 32, qs_hot 43-195, qs_cold 59, quicksave
+56-61, qs_heavy 122-188; worst ~350. Arrivals mostly 1-10 m/s, a few 14-17.
+`DEPLOY_MIN_ALT_M` 3000 v 8000 was null (low1).
+
+**Next, in order:**
+1. The heavy/qs_hot ~150-200 m **long** bias: the steered prediction reads ~0
+   at 20 km and drifts 200-580 m long by 10 km (brd1 prederr). The lift
+   credit in `solve_steer` is the suspect -- it was also behind the old
+   correction "backfires". Measure prediction v outcome with
+   `scratchpad`-style prederr (predicted E/N at 30/20/10/5/2 km v actual;
+   E = -long, N = -cross) before changing anything.
+2. qs_hot LOG10512: burn entered at 697 m (needed 698) but the throttle read
+   0 until ~400 m, crashed at 145 m/s. Fly qs_hot with `DIAG_STATE=True`.
+3. The live install: the user flies defaults live; ask how the heavy does.
+4. `defaults_fingerprint` in the booster's `config:` line.
+
+**Traps paid:** a short-miss correction in the sim lengthens (the sim holds
+50 deg off retrograde; the game cannot); `fakeksp` has no airbrakes, so the
+deploy law and the landing hover cannot be screened there; compare each
+flight's predicted landing point with where it landed before blaming the
+coast -- most of today's miss was made in the last 40 m.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
