@@ -59,8 +59,9 @@ class Config:
     # (20) off and not coming round, so the thrusters are long since open by
     # the time that test is reached.
     #
-    # **And demand is saturation, not error** -- the shuttle's rule, now the
-    # booster's.  A pointing error says only that the nose is not where it
+    # **And in COAST demand is saturation, not error** -- the shuttle's air
+    # rule, in the booster's air phase (the flip, burns and landing keep
+    # the error relay, as the shuttle's non-air phases do).  A pointing error says only that the nose is not where it
     # was told; the wheels, the gimbal and the airbrakes close most of those
     # alone, and on a booster whose RCS is a ring of Vernors every second open
     # is landing propellant.  So the valve opens only when a control axis has

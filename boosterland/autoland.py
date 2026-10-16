@@ -280,15 +280,21 @@ class Autoland:
         gimbal, and the descent has very little authority on anything else --
         but *needing them in the phase* is not needing them in the tick, and
         the ticks where the booster is already pointed where it was told
-        outnumber the ones where it is turning.  And a turn is not a need
-        either: the valve opens only when a control axis is pinned and the
-        error is not closing on the wheels, gimbal and airbrakes alone
-        (``RCS_SAT_*``, the shuttle's rule).  See ``common.rcs``.
+        outnumber the ones where it is turning.  In COAST -- the booster's
+        aerodynamic phase, the shuttle's glide -- a turn is not a need either:
+        the valve opens only when a control axis is pinned and the error is
+        not closing on the wheels and airbrakes alone (``RCS_SAT_*``, the
+        shuttle's rule).  Everywhere else it is the error relay, as on the
+        shuttle: the flip, the burns and the landing are slews that diverge
+        in seconds, and on saturation alone the valve stayed shut while the
+        landing burn tipped 41 deg at full throttle (LOG10251, 47.7 m/s).
+        See ``common.rcs``.
         """
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
-                        saturation=snap.input_saturation)
+                        saturation=(snap.input_saturation
+                                    if self.state == COAST else None))
 
     def _apply_rcs(self, wanted):
         try:
