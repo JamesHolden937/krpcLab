@@ -101,8 +101,8 @@ def prepare_vehicle(vessel, cfg):
 
     This replaces firing an action group, which only worked on a craft whose
     builder had put the right parts on AG2.  Airbrakes are found by their
-    part module, set to ``AIRBRAKE_DEPLOY_ANGLE_DEG``, deployed, and given
-    pitch and yaw control (roll is left as the craft has it).  Liquid engines
+    part module, set to ``AIRBRAKE_DEPLOY_ANGLE_DEG`` and deployed; their
+    control axes are left as the craft has them.  Liquid engines
     are those burning ``LiquidFuel``; activating one leaves the throttle where
     it is, which is zero in STANDBY.  Returns the lines to log: the deploy
     angle is read back, because the game may clamp it to the part's range.
@@ -121,8 +121,12 @@ def prepare_vehicle(vessel, cfg):
                 module.set_field_float("Deploy Angle",
                                        float(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
                 angles.append(module.get_field("Deploy Angle"))
-            surface.pitch_enabled = True
-            surface.yaw_enabled = True
+            # Deployed, but *not* made pitch/yaw control surfaces: an
+            # airbrake that steers modulates its own deployment, so the drag
+            # curve probed during the flip is not the one the coast flies.
+            # Measured at 1x on quicksave: with pitch/yaw on, 93/141/262/300 m
+            # (rt6-1016); the action-group deploy without it, 16-51 m on six
+            # of eight (ab7-1016).
             surface.deployed = True
             brakes += 1
         except Exception as exc:        # noqa: BLE001 -- KSP-side failure
