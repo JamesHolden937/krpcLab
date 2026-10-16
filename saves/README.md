@@ -36,6 +36,7 @@ Read off each save's active vessel (part count, situation, altitude):
 | `qs_shuttle_low` | Mk3 shuttle | flying at 14913 m, 231 m/s, 150 m/s down, Mach 0.8, 23 km from the runway in late GLIDE: the landing chain (cone, approach, flare) from one repeatable state. Taken 2026-09-29 from defaults LOG3765 (`e1a9838c`), which landed 742 m from the midpoint with 23 parts |
 | `qs_lowthrust` | ion probe "lower thrust test": OKTO2 core (SAS level 2), one Dawn 2 kN, 12 RTGs, battery bank (1005 EC), 21 t Ore ballast, nosecone | orbit, 86.75 km circular equatorial. The user's live "low thrust" save (2026-10-13, after PT was installed live), other vessels removed. **A save made before PT was installed has no `PersistentEngine` node, and PT then silently does nothing** (it finds its engine only in `OnLoad`) |
 | `qs_lowthrust_kell` | the same vessel | Kerbin 3000 x 100 km equatorial, at apoapsis (`qs_lowthrust` with SMA 2150000, ECC 0.6744, MNA 3.1): the aerobraking test |
+| `qs_shuttle2_lt`, `qs_shuttle2_lt_nowheel`, `qs_shuttle2_lt_wheelonly` | twin-fin shuttle (`qs_shuttle2_rigoff`), Rhino thrust limiter 5% (100 kN) | orbit 86.7 circular: the lowThrust mod's RCS/gimbal test. `_lt`: gimbal free, RCS group on; `_nowheel`: + reaction wheel `Disabled`; `_wheelonly`: RCS group off, gimbal locked (2026-10-15) |
 
 **The old spaceplane exists in two variants that share a name and a part
 list** (found 2026-09-24 by kspSim, whose tables for one were being used for

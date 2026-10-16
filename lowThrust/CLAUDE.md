@@ -8,7 +8,11 @@ the autopilot and its window run inside the game; no kRPC, Python or
 Persistent Thrust in flight. A farm-only kRPC bridge (`LowThrustKRPC.dll`)
 lets the harness start flights. The root `CLAUDE.md` applies here.
 
-**State (2026-10-14 late):** **aerobraking** works in game: Duna 200 x 200
+**State (2026-10-15 night):** RCS and engine gimbal steer on rails beside
+the wheels (`RCS_MODE`); the attitude model touches a vessel only while a
+mission flies it, and every rotation on rails is checked to leave the orbit
+exactly as it was (`orbit restores`, 0 on every flight). **The in-game Mun
+route stalls in WAIT** (open item 0). Before that, 2026-10-14 late: **aerobraking** works in game: Duna 200 x 200
 in 14 passes for 1944 m/s, 546 d (LOG10206); Duna 80 x 80 equatorial in 15
 for 1946 m/s, 536 d (LOG10207; the live flight without it 2462 / 561); the
 Duna part ~580-610 m/s where it was ~1050. Heat-limited at Kerbin (3 km/s:
@@ -55,7 +59,7 @@ logs: `GameData/LowThrust/PluginData/logs/` (ltfly copies them to
 | `core/Config.cs` | every tunable; `config:` line and fingerprint |
 | `plugin/Controller.cs` | the autopilot: decisions, thrust integrated on rails, the warp governor, PLAN/START/TERMINATE, the log |
 | `plugin/Game.cs` | the system and states through KSP's orbital elements; the engines (thrust, Isp, propellants from the part config, draws); warp limits |
-| `plugin/Attitude.cs` | rotation on rails from the wheels' torque and MOI |
+| `plugin/Attitude.cs` | rotation on rails from the wheels', gimbal's and RCS torque and the MOI; only for a mission |
 | `plugin/Window.cs` | the toolbar window: target, budget, options, max warp, status |
 | `plugin/FlightLog.cs` | the flight log |
 | `bridge/Bridge.cs` | farm-only kRPC service `LowThrustBridge` (Start/Status/Lines/Terminate) |
@@ -88,7 +92,18 @@ logs: `GameData/LowThrust/PluginData/logs/` (ltfly copies them to
   thrusts along the axis as that step leaves it (behind the command while
   the wheels still turn). Once on target it holds exactly, **charged**: the
   wheels' input for I dw/dt + w x Iw, drawn as EC; a hold the wheels cannot
-  give is let go. The `steering:` line logs thrust dv, the cosine loss, dv
+  give is let go. **Actuators** (`Attitude.cs`): wheels (EC), the lit
+  engines' gimbal (only while thrusting, x throttle; free), RCS while the
+  vessel's RCS group is on (nozzles at their lever's share, as `ModuleRCS`
+  fires them; propellant through the part's flow rules). `RCS_MODE` assist:
+  RCS only on an axis wheels+gimbal cannot turn, or a hold beyond them;
+  always: RCS adds authority, the turn's peak held to the wheels' own peak or
+  `RCS_RATE_DEG` (2). A new command restarts the target-rate estimate (a jump
+  read as a rate spun the vessel up and back). **Only while a mission flies
+  the vessel** (`Step(v, active)`; off rails it only measures, read only);
+  all actuators pure torque; the rate is handed back as a rigid rotation
+  about the CoM; each rotation on rails restores the orbital elements if
+  they moved (`orbit restores` in the report). The `steering:` line logs thrust dv, the cosine loss, dv
   flown > `STEER_OFF_DEG` off, the worst angle (LOG10182-87: 0.01-0.02 m/s
   lost, 48-90 m/s > 0.5 deg, worst 2.0; holding 9-21 EC).
 - **Warp governor**: the highest rails rate within: the frame budget
@@ -250,7 +265,12 @@ pol tylo laythe vall bop`.
 
 ## Open, in order
 
-0. **A pass still flown on rails** (1 of 48: Kerbin pass 5): the game was
+0. **Mun WAIT never pushes in game** (LOG10220, LOG10225-26: 46 days of
+   WAIT at 6600 x 100 km; the stand-in arrives in 44 d). The pre-session
+   build stalls the same way; the last working in-game Mun flight
+   (LOG10196) predates 7111c0e (WAIT's search spread over physics steps).
+   Fly 7111c0e^ v 7111c0e, then read `SearchFor` / the spread search.
+0a. **A pass still flown on rails** (1 of 48: Kerbin pass 5): the game was
    at 100000x and 2098 s past the entry though the governor asked 5x. Find
    who sets the rate near the air.
 1. **Kerbin aerobraking is slow for this craft**: the RTGs (1200 K) bind the
@@ -266,8 +286,8 @@ pol tylo laythe vall bop`.
    was captured by the Mun and never left Kerbin.
 4. The capture-direction test allows one ~23 deg step near periapsis (the
    lift term ramping in); the old law flipped ~90 every tick.
-5. RCS and gimbal steering (unmeasured need: 0.001% steering loss); planets
-   beyond Duna in game; routes from a moon.
+5. Planets beyond Duna in game; routes from a moon. RCS translation
+   (unbalanced layouts) is not modelled: RCS is pure torque.
 
 ## Aerobraking (`core/Aero.cs`; Mission `AEROBRAKE`; Controller passes)
 

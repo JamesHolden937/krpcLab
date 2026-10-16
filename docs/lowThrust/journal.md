@@ -708,3 +708,76 @@ equal or -75..-103; Duna 80 i0 in 8-9 passes, 10/10 (4/10 before), dv
 +6/+14/0 where the old survived, else -249/-592. cdA 0.58: Duna 200 within
 +-10 or better; Duna 80 i0 survives, 1907-3746 m/s. Other routes unchanged;
 Kerbin from 3000 km still ~250 heat-limited passes.
+
+## Session, 2026-10-15 night: RCS and gimbal on rails; the attitude model leaves other flights alone
+
+The user asked whether the mod works like Persistent Rotation, then for RCS
+and gimbal steering, and for a guarantee that the rotation on rails can never
+change an orbit -- a live shuttle autopilot flight (spaceplane LOG10208) had
+"plunged into the atmosphere" from what they were sure was a stable orbit.
+
+**The live shuttle flight.** The orbit was 77.6 x 80.0 km at 22:37 (the
+autosave), about 2.3 m/s of retrograde above the air. LOG10208 planned a 31.6
+m/s deorbit 799 s ahead and called `warp_to` for 739 s; the client was
+Ctrl-C'd inside that blocking call and KSP.log ends 2 s into the warp (the
+game closed then). No log shows an orbit change; the deorbit node is placed
+only in the 60 s lead, after the warp. What the mod did do: `Attitude.Step`
+ran for **every** active vessel, mission or not, so the shuttle was rotated
+on rails at its pre-warp rate through the autopilot's warp and the rate was
+handed back on unpacking (to each part's angular velocity only, not w x r).
+Rotating a packed vessel leaves its elements alone and the hand-back error
+was of order 0.3 m/s spread across joints, so it does not explain a plunge --
+but it was the mod acting on a flight that was not its own. Also on the live
+install: Persistent Thrust is enabled on the shuttle's Rhino
+(`HasPersistentThrust`), and burns on rails whenever its throttle is above 0
+during a warp -- a real way for a warp to change an orbit, not evidenced here
+(`persistentThrottle = 0` in the 22:37 save).
+
+**Fixed.** The attitude model turns a vessel only while a mission flies it
+(`Step(v, active)`); it measures off rails always (read only); with no
+mission it never rotates, hands back or draws. The hand-back is a rigid
+rotation (each part also gets w x r about the CoM: momentum unchanged). Each
+rotation on rails snapshots the orbital elements and restores them if they
+moved, counted as `orbit restores` in the report: **0 on every flight**.
+
+**RCS and gimbal** (`RCS_MODE` assist/always/off, `RCS_RATE_DEG` 2):
+torques measured off rails from the game's modules -- every enabled RCS
+nozzle's force about the CoM (`-up` or `-forward`, per-axis enable flags),
+each firing at its lever's share of the longest lever, as `ModuleRCS` does;
+the gimbal tilting each lit engine's nozzles through its range, only while
+thrusting, scaled by throttle. RCS respects the vessel's RCS group and is
+pure torque. Assist: wheels and gimbal turn; RCS only on an axis with no
+free authority (no wheels, no charge) or for a hold beyond them. Always: RCS
+adds authority, but the turn peaks at the wheels' own peak rate (or 2 deg/s).
+
+Test craft: `qs_shuttle2_lt` (qs_shuttle2_rigoff, Rhino limited to 5%,
+gimbal free, RCS on), `_nowheel` (wheel disabled), `_wheelonly` (RCS off,
+gimbal locked); target Kerbin 200 x 150 i3 from 86.7 circular. Measured
+(rot-ltrcs*-1015/1016):
+
+| arm | RCS kg | wheels EC | dv | notes |
+|---|---|---|---|---|
+| assist, wheels | 0 | 109 | 208.0 | identical to wheels-only |
+| always | 187 | 93 | 208.4 | 20 unaligned ticks v 8 |
+| no wheel (RCS + gimbal) | 114 (1.0 holding, 0 while thrusting) | 0 | 207.8 | holds during burns all on the gimbal |
+
+Three bugs found on the way, each from the logs:
+- the activity gate first also stopped *measuring*: a mission starting on
+  rails had zero torque and never turned (ion Mun/Kerbin: 0 fired in 40 min).
+  Measure always; measure again at START.
+- RCS was costed as if every nozzle fired at full (996 kg): now lever share.
+- **a new command read as the target turning**: the target-rate estimate
+  differenced the old command against the new one, a 64 deg jump over a 2 s
+  frame = 0.56 rad/s, and the turn chased it at full authority, then had to
+  stop (25-49 kg a command; 480 kg a flight without wheels). `Unsettle`
+  now restarts the estimate: 480 -> 114 kg. The wheels had the same fault
+  (it cost charge, not propellant).
+
+Regressions on `qs_lowthrust` with the final build: Kerbin 150 x 150 99.6
+m/s, 136 fired (LOG10232, = LOG10151); Kerbin 400 x 150 i3 361.4 m/s
+(LOG10233, LOG10153 361.5). **Mun 50 x 50 stalls in WAIT** for 46 days
+(LOG10220, LOG10226) -- and the pre-session build f2841c5 flown beside it
+stalls identically (LOG10225: same 1289 ticks, 225.8 EC). The stand-in
+arrives (1317 m/s, 44 d). The last in-game Mun flight (LOG10196, 18:24 on
+10-14) predates 7111c0e (WAIT's search spread over physics steps, 19:51):
+that change has never found a Mun push in game. Open.

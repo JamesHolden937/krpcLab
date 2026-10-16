@@ -1,52 +1,61 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-15: lowThrust escape inside the SOI; multi-pass aerobraking
+## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
-Defaults fingerprint `feec62da` (lowThrust, C# `Config`). Committed and
-pushed to origin/main; farm not started this session (everything was
-measured in the stand-in, `lowthrust.exe mission`); sleep inhibitor
-released. How-it-works PDF rewritten. History: `docs/lowThrust/journal.md`,
-"Session, 2026-10-15" and "Aerobraking: the tail, and Ike". `build.sh`
+Defaults fingerprint `8deb8110` (lowThrust, C# `Config`). Committed and
+pushed to origin/main. Farm stopped (swap 0.85 GB after), sleep inhibitor
+released. How-it-works PDF rewritten (new section 3a). History:
+`docs/lowThrust/journal.md`, "Session, 2026-10-15 night". `build.sh`
 installed the dll in the farm and the **live game** (restart KSP to load it).
 
 The user asked:
-- **Why the departure raised the periapsis / didn't finish the transfer
-  inside Kerbin's SOI**: the raise was the DEPART law; the correction was left
-  to the cruise. Now ESCAPE, when the exit would need the cruise's Lambert
-  re-target, aims it from the exit and burns it inside the SOI (Oberth).
-  Live Duna state in the stand-in: 1963 -> 1796 m/s; default craft Jool -89,
-  Dres -109, Duna/Ike unchanged (gated: a small miss is left to the B-plane).
-- **Aerobraking at 32x**: physics warp was an index; BetterTimeWarp's index 3
-  is 32x. Now a rate (`AERO_PHYSICS_WARP` 4.0).
-- **Multi-pass aerobraking (deep, shallower, skim, lift out)**: the tail crept
-  (12-13 passes, ~45% of the remaining apoapsis each) because the floor check
-  used 2.25x drag. Now `AERO_RA_MARGIN` 1.25 or the worst observed miss;
-  ends when a periapsis burn finishes it under `AERO_MIN_PASS_DV` 2 m/s.
-  Plus five Ike fixes and a cost ledger. Stand-in sweep (Duna 200 and 80 i0,
-  cdA 12 and 0.58, 10 dates): 40/40 arrive (24/40 before); Duna 200 cdA 12
-  6-7 passes, dv equal or -75..-103.
-- **"13 arc widths"**: `PLAN_GRID` -- explained (planner frontier).
+- **Does the mod work like Persistent Rotation?** In part: it integrates
+  rotation on rails, but only to steer its own burns (answered).
+- **RCS and gimbal steering**: done. `RCS_MODE` (assist default / always /
+  off), `RCS_RATE_DEG` 2. Assist uses wheels + gimbal, RCS only where they
+  give nothing or a hold exceeds them; respects the RCS action group; pure
+  torque. Measured on `qs_shuttle2_lt*` (new saves, Kerbin 200x150 i3 from
+  86.7): wheels present -> 0 kg RCS; always 187 kg; no wheel 114 kg (holds
+  during burns all on the gimbal); every arm arrives, dv 207.8-208.4.
+- **"Make sure persistent rotation can't change my orbit"** -- the live
+  shuttle "plunged" (spaceplane LOG10208). Findings: orbit was 77.6 x 80 at
+  22:37 (2.3 m/s above the air); the autopilot planned a 31.6 m/s deorbit,
+  `warp_to` 739 s, was Ctrl-C'd 2 s into the warp, and KSP.log ends there.
+  No log shows an orbit change. But the mod *did* rotate the shuttle through
+  that warp: `Attitude.Step` ran on every active vessel. Now: it turns a
+  vessel only while a mission flies it; rigid hand-back (w x r, momentum
+  unchanged); every rotation on rails restores the elements if they moved
+  (`orbit restores`: 0 on all flights). Persistent Thrust is enabled live on
+  the shuttle's Rhino and *would* burn on rails with throttle up during a
+  warp -- told the user; not evidenced in this flight.
 
-New/changed config (all default): `AERO_RA_MARGIN` 1.25, `AERO_MIN_PASS_DV`
-2.0, `AERO_PHYSICS_WARP` 4.0 (a rate, was index 3). No flags.
+Bugs found and fixed this session (in the journal): measuring stopped with
+the gate (a mission starting on rails never turned); RCS costed at full
+nozzle thrust; **a new command read as the target turning** (spun the vessel
+to 30 deg/s and back: 480 -> 114 kg; the wheels wasted EC the same way).
+
+Regressions with the final build: Kerbin 150x150 99.6 m/s (LOG10232),
+Kerbin 400x150 i3 361.4 (LOG10233) -- same as 10-14.
 
 Open, in order:
-1. **Fly multi-pass aerobraking on the farm** (Duna 200, Duna 80 i0 saves) --
-   nothing of this session has flown in the game. Watch: observed miss vs
-   1.25, the last skim's exit lift, Ike trims before passes.
-2. ESCAPE's Lambert burn in game (a live Duna departure).
-3. A pass still flown on rails (Kerbin pass 5, 2026-10-14): find who sets the
-   rate (log TimeWarp.CurrentRateIndex after Warp.Set near the air).
-4. Kerbin aerobraking heat-bound by RTGs (~250 passes from 3000 km): higher
-   `AERO_HEAT_TARGET`, `AERO_HOLD` Retrograde, less soak.
-5. Laythe hits the stand-in time limit (both builds). Weak-engine departure
-   caught by the Mun (LOG10202). RCS/gimbal, routes from a moon.
+1. **Mun route stalls in WAIT in game** (46 days, LOG10220/10225/10226; the
+   pre-session build f2841c5 stalls identically; the stand-in arrives). The
+   last good in-game Mun flight (LOG10196) predates 7111c0e (WAIT's search
+   spread over physics steps). Fly 7111c0e^ against 7111c0e on the farm (copy
+   a worktree build into one clone, as this session did), then read the
+   spread search / `SearchFor`.
+2. Fly multi-pass aerobraking on the farm (Duna 200, Duna 80 i0) -- still
+   unflown in game since 10-15's changes; ESCAPE's Lambert burn in game.
+3. A pass still flown on rails (Kerbin pass 5): who sets the rate.
+4. Kerbin aerobraking heat-bound by RTGs; Laythe stand-in time limit; weak
+   departure caught by the Mun (LOG10202).
 
-Traps paid: an ungated ESCAPE Lambert cost Duna +45 / Ike +100 m/s (a small
-miss is cheaper fixed over the cruise); trims inside AEROBRAKE without a
-ledger blew low-drag runs to 10,837 m/s / 300 passes; the floor guard must
-count a TRIM resuming AEROBRAKE as aerobraking; mono's "Write fault" is
-only `| head` closing the pipe.
+Traps paid: a gate on the attitude model must not gate *measuring* (a
+mission can start on rails); an angle difference between two *commands* is
+not a rate -- restart rate estimates on a command change; `ltfly` batches:
+an instance whose kRPC refuses (ksp5 once) loses its arm silently -- check
+every arm has a LOG; KSP's `Orbit` clashes with `LowThrust.Orbit` in the
+plugin (`global::Orbit`).
 
 ## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
