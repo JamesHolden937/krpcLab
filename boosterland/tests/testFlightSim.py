@@ -527,8 +527,10 @@ class TestClosedLoop(unittest.TestCase):
             while not run.finished and conn.space_center.ut < deadline:
                 run.tick()
                 if not kicked and run.state == "COAST":
-                    # ~2 km of downrange error, the size LOG3 accumulated.
-                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, 25.0))
+                    # ~2 km of downrange error, the size LOG3 accumulated --
+                    # an overshoot: CORRECTION_OVERSHOOT_ONLY leaves a short
+                    # miss alone, since in the game a burn only shortens.
+                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, -25.0))
                     kicked = True
                 advance(cfg.LOOP_SLEEP_S)
         run.shutdown("test complete")
@@ -571,7 +573,7 @@ class TestClosedLoop(unittest.TestCase):
             while not run.finished and conn.space_center.ut < deadline:
                 run.tick()
                 if not kicked and run.state == "COAST":
-                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, 25.0))
+                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, -25.0))
                     kicked = True
                 if run.state == "CORRECTION":
                     break

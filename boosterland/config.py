@@ -43,13 +43,13 @@ class Config:
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
     AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START
-    COAST_DEPLOY_ANGLE_DEG: float = -1.0    # >= 0: re-set every airbrake
-                                            # to this at the first COAST tick
-                                            # (a gain probe for drag as range
-                                            # control); < 0 leaves it
-    DEPLOY_LAW: bool = False                # COAST steps the airbrakes' deploy
+    DEPLOY_LAW: bool = True                 # COAST steps the airbrakes' deploy
                                             # angle against the along-track
-                                            # miss; see Autoland.run_deploy
+                                            # miss; see Autoland.run_deploy.
+                                            # ov1-1016 (with OVERSHOOT_ONLY):
+                                            # heavy 17-386 m, median 74, v
+                                            # 328-619; quicksave 8-245 v two
+                                            # 2.3-2.7 km splashes in six
     DEPLOY_STEP_S: float = 10.0              # one step, then a drag re-sweep
     DEPLOY_MAX_STEP_DEG: float = 10.0
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
@@ -389,7 +389,7 @@ class Config:
     CORRECTION_TILT_GAIN: float = 0.12      # degrees of tilt per metre of miss
     CORRECTION_MAX_BURN_S: float = 45.0     # per-burn guard
     CORRECTION_COOLDOWN_S: float = 20.0     # settle before judging the miss again
-    CORRECTION_OVERSHOOT_ONLY: bool = False  # never enter on a short miss
+    CORRECTION_OVERSHOOT_ONLY: bool = True   # never enter on a short miss
     CORRECTION_MAX_BURNS: int = 3           # engines have limited relights
     CORRECTION_PROBE_DV: float = 5.0        # dv used to test which way a burn moves
     CORRECTION_GRADIENT_POWERED: bool = False   # fly the landing burn in the

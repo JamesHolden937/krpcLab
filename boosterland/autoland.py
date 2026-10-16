@@ -214,7 +214,6 @@ class Autoland:
         self.steer = None               # the angle of attack the coast flies
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.corrections = 0
-        self.coast_deploy_set = False
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
         self.deploy_last = None         # (angle, long) at the last step
@@ -621,17 +620,6 @@ class Autoland:
 
     def run_coast(self, snap):
         self.set_throttle(0.0)
-        if (self.cfg.COAST_DEPLOY_ANGLE_DEG >= 0.0
-                and not self.coast_deploy_set):
-            # A fixed deploy angle from the first COAST tick: measures how
-            # much range the brakes' drag commands, after boostback has
-            # aimed on the full deploy and nothing else can answer it.
-            self.coast_deploy_set = True
-            angles = set_airbrake_angle(self.vessel,
-                                        self.cfg.COAST_DEPLOY_ANGLE_DEG)
-            self.log.event(snap.ut, "coast deploy angle %s (asked %.0f)"
-                           % ("/".join(sorted(set(map(str, angles))))
-                              or "n/a", self.cfg.COAST_DEPLOY_ANGLE_DEG))
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
@@ -875,7 +863,8 @@ class Autoland:
             # so in the game it only ever shortens: entered on a *short* miss
             # it deepened it every time (vert1-1016 LOG10435: 1152 -> 1499,
             # 1003 -> 2320, 1785 -> 2382, splashed 2 km short).
-            long, cross = self.miss_components(snap)
+            long, cross = trajectory.miss_components(
+                self.env, prediction.position, self.env.target, snap.position)
             if long == long and long < 0.0 and abs(long) >= abs(cross):
                 return False
         return (distance > cfg.CORRECTION_ENTER_M
