@@ -9,14 +9,14 @@ GAME
 	Status = 1
 	Seed = 1608018419
 	ROCSeed = 1585854422
-	scene = 5
+	scene = 7
 	editor = None
 	flag = Squad/Flags/default
 	launchID = 12
 	defaultVABLaunchSite = LaunchPad
 	defaultSPHLaunchSite = Runway
 	modded = True
-	envInfo =  - Environment Info - Win32NT 7FFFFFFFFFFFFFFF  Args: KSP_x64.exe -force-d3d11 - 
+	envInfo =  - Environment Info - Win32NT 7FFFFFFFFFFFFFFF  Args: KSP_x64.exe -force-d3d11 -single-instance -screen-fullscreen 0 -popupwindow -screen-width 2560 -screen-height 1440 - 
 	versionFull = 1.12.5.3190 (WindowsPlayer x64)
 	versionCreated = 1.12.5.3190 (WindowsPlayer x64)
 	RemovedROCs
@@ -106,6 +106,40 @@ GAME
 			RepLossMultiplier = 1
 			RepLossDeclined = 1
 		}
+		TUFXGameSettings
+		{
+			FlightSceneProfile = Default-Flight
+			IVAProfile = Default-Internal
+			MapSceneProfile = Default-Tracking
+			EditorSceneProfile = Default-Editor
+			SpaceCenterSceneProfile = Default-KSC
+			TrackingStationProfile = Default-Tracking
+		}
+		TUGameSettings
+		{
+			customEditorReflections = True
+			reflectionResolution = 4
+			recolorGUIWidth = 400
+			recolorGUIHeight = 540
+			recolorGUITopSectionHeight = 100
+			debug = False
+		}
+		RoverDustParameters
+		{
+			enableDust = True
+			qualityScale = 100
+			adaptSurfaceColor = True
+			useLightAware = True
+			debugLogging = False
+		}
+		ImpactPuffsParameters
+		{
+			enableImpactPuffs = True
+			qualityScale = 100
+			adaptSurfaceColor = True
+			useLightAware = True
+			debugLogging = False
+		}
 		CommNetParams
 		{
 			requireSignalForControl = False
@@ -124,10 +158,41 @@ GAME
 			global = True
 			cleanupDelay = 0.5
 		}
+		BlastFxParameters
+		{
+			enableBlastFx = True
+			debugLogging = False
+		}
+		BTWCustomParams2
+		{
+			note1 = 
+			StockAutosaveInterval = 5
+			StockAutosaveShortInterval = 30
+			ResetStockIntervalSettings = False
+			WriteStockIntervalSettings = False
+		}
+		BTWCustomParams
+		{
+			enabled = True
+			hideButton = False
+			hideButtonInFlight = True
+			hideDropdownButtonInFlight = False
+			lockWindowPosInFlight = True
+			lockWindowPos = True
+		}
 		Settings
 		{
 			enableController = True
 			isDebug = False
+		}
+		AeroFxParameters
+		{
+			enableAeroFx = True
+			maxRibbonCount = 4
+			machThresholdMode = 0
+			useLightAware = True
+			maneuverOnly = False
+			debugLogging = False
 		}
 		AdvancedParams
 		{
@@ -193,6 +258,20 @@ GAME
 			facilityLevelSPH = 3
 			facilityLevelTS = 3
 			facilityLevelVAB = 3
+		}
+		FMRS_Settings
+		{
+			enabled = True
+			autoactiveAtLaunch = True
+			_SETTING_Include_Undock = False
+			Timer_Stage_Delay = 0.2
+			_SETTING_Messages = True
+			_SETTING_Auto_Cut_Off = True
+			_SETTING_Auto_Recover = True
+			_SETTING_Throttle_Log = True
+			_SETTING_Parachutes = True
+			_SETTING_Defer_Parachutes_to_StageRecovery = True
+			_SETTING_Control_Uncontrollable = False
 		}
 		TC
 		{
@@ -532,7 +611,7 @@ GAME
 	{
 		name = SentinelScenario
 		scene = 7, 8, 5
-		NextSpawnTime = 92437.658279268624
+		NextSpawnTime = 60898.114034601276
 	}
 	SCENARIO
 	{
@@ -775,7 +854,7 @@ GAME
 	FLIGHTSTATE
 	{
 		version = 1.12.5
-		UT = 61884.895953032777
+		UT = 60095.156085018411
 		activeVessel = 9
 		mapViewFiltering = 31743
 		commNetUIModeTracking = Network
@@ -832,6 +911,7 @@ GAME
 				MNA = 5.345089632672682
 				EPH = 39308.657868908165
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1096,6 +1176,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1147,6 +1233,7 @@ GAME
 				MNA = 6.2585668320723622
 				EPH = 3451127.6933398438
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1217,6 +1304,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1268,6 +1361,7 @@ GAME
 				MNA = 0.067433345992262583
 				EPH = 3280821.9335156251
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1338,6 +1432,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1389,6 +1489,7 @@ GAME
 				MNA = 0.28041922794205043
 				EPH = 4517914.074433594
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1459,6 +1560,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1510,6 +1617,7 @@ GAME
 				MNA = 5.9367657319660374
 				EPH = 3166863.331308594
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1580,6 +1688,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1631,6 +1745,7 @@ GAME
 				MNA = 6.1794156449830284
 				EPH = 4876183.3351953123
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1701,6 +1816,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1752,6 +1873,7 @@ GAME
 				MNA = 6.1312219559573995
 				EPH = 4177835.8991210936
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1822,6 +1944,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1873,6 +2001,7 @@ GAME
 				MNA = 6.1765125403006316
 				EPH = 4689504.6692638174
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -1943,6 +2072,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -1994,6 +2129,7 @@ GAME
 				MNA = 5.8243154247832498
 				EPH = 3109851.1031407709
 				REF = 0
+				IDENT = Squad/Sun
 			}
 			PART
 			{
@@ -2064,6 +2200,12 @@ GAME
 				SuspensionLoadBalancer
 				{
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 		VESSEL
@@ -2072,7 +2214,7 @@ GAME
 			persistentId = 3518653947
 			name = Untitled Space Craft
 			type = Ship
-			sit = FLYING
+			sit = ORBITING
 			landed = False
 			skipGroundPositioning = False
 			skipGroundPositioningForDroppedPart = False
@@ -2081,18 +2223,18 @@ GAME
 			landedAt = 
 			displaylandedAt = 
 			splashed = False
-			met = 1803.139868012222
+			met = 13.419999997851846
 			lct = 60081.736085020559
-			lastUT = 61884.875953032781
-			distanceTraveled = 740462.44829002058
+			lastUT = 60095.156085018411
+			distanceTraveled = 19785.364473089685
 			root = 0
-			lat = -0.026337732293174102
-			lon = -76.969092049955492
-			alt = 14910.562835310819
-			hgt = 14910.5625
-			nrm = -0.5544855,-0.286601961,-0.781284451
-			rot = -0.0699228421,-0.347300202,-0.797632217,0.488135546
-			CoM = -2.86102295E-06,-9.88076496,0.0389661789
+			lat = -4.5990422266192861E-06
+			lon = -13.746908024658614
+			alt = 86758.095953305368
+			hgt = 86758.0938
+			nrm = -0.00655722572,0.979254842,-0.202526927
+			rot = -0.0126735568,0.012775138,-0.709376454,0.704600155
+			CoM = -2.13831663E-06,-8.0459156,0.0311465263
 			stg = 1
 			prst = False
 			ref = 2707926768
@@ -2105,19 +2247,20 @@ GAME
 			OverrideAxisControl = 0,0,0,0
 			OverrideGroupNames = ,,,
 			altDispState = ASL
-			cPch = -1.568383
-			cHdg = -1.315181
+			cPch = 0.1639996
+			cHdg = -4.265663
 			cMod = 0
 			ORBIT
 			{
-				SMA = 311481.07474071346
-				ECC = 0.97812420342989559
-				INC = 1.6207872819485798
-				LPE = 0.37890888524373229
-				LAN = 145.94373437395643
-				MNA = 3.3196361386276045
-				EPH = 61884.875953032781
+				SMA = 686718.02062382223
+				ECC = 4.8502827458171424E-05
+				INC = 2.783268868930034E-06
+				LPE = 16.281961967597351
+				LAN = 181.14116599557727
+				MNA = 2.8817825744515564
+				EPH = 60095.156085018411
 				REF = 1
+				IDENT = Squad/Kerbin
 			}
 			PART
 			{
@@ -2145,10 +2288,10 @@ GAME
 				attN = bottom, 3
 				mass = 1.78999996
 				shielded = False
-				temp = 851.10681121525079
-				tempExt = 560.53293037217782
-				tempExtUnexp = 741.40431814485464
-				staticPressureAtm = 0.067477109783406958
+				temp = 307.10478971196858
+				tempExt = 305.79117773685078
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -2217,6 +2360,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
@@ -2231,10 +2391,53 @@ GAME
 					{
 					}
 				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 157.9658404928858
+					amount = 787.49998658895493
 					maxAmount = 1125
 					flowState = True
 					isTweakable = True
@@ -2245,7 +2448,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 193.06935930529212
+					amount = 962.49998360872269
 					maxAmount = 1375
 					flowState = True
 					isTweakable = True
@@ -2280,10 +2483,10 @@ GAME
 				attN = top, 2
 				mass = 2.41199994
 				shielded = False
-				temp = 714.11459032812604
-				tempExt = 515.46334651684901
-				tempExtUnexp = 515.492859077758
-				staticPressureAtm = 0.067485448845280502
+				temp = 307.10658615162538
+				tempExt = 306.54301048732378
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -2386,7 +2589,7 @@ GAME
 					isEnabled = True
 					actuatorModeCycle = 0
 					authorityLimiter = 100
-					stateString = Not enough Electric Charge
+					stateString = Running
 					stagingEnabled = True
 					WheelState = Active
 					EVENTS
@@ -2624,6 +2827,716 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = MechJebCore
+					isEnabled = True
+					running = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+						OnOrbitProgradeAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnOrbitRetrogradeAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnOrbitNormalAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnOrbitAntinormalAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnOrbitRadialInAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnOrbitRadialOutAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnKillRotationAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnDeactivateSmartASSAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnLandsomewhereAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnLandTargetAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnPanicAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronOffAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronKeepVertAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronZeroSpeedAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronPlusOneSpeedAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronMinusOneSpeedAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnTranslatronToggleHSAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+						OnAscentAPToggleAction
+						{
+							actionGroup = None
+							wasActiveBeforePartWasAdjusted = False
+						}
+					}
+					MechJebLocalSettings
+					{
+						MechJebModuleMenu
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAirplaneAutopilot
+						{
+							HeadingHoldEnabled = False
+							AltitudeHoldEnabled = False
+							VertSpeedHoldEnabled = False
+							RollHoldEnabled = False
+							SpeedHoldEnabled = False
+							AltitudeTarget = 0
+							HeadingTarget = 90
+							RollTarget = 0
+							SpeedTarget = 0
+							VertSpeedTarget = 0
+							BankAngle = 30
+							unlockParts = 
+							unlockTechs = 
+							AccKp
+							{
+								ValConfig = 0.5
+								TextConfig = 0.5
+							}
+							AccKi
+							{
+								ValConfig = 0.5
+								TextConfig = 0.5
+							}
+							AccKd
+							{
+								ValConfig = 0.0050000000000000001
+								TextConfig = 0.005
+							}
+							PitKp
+							{
+								ValConfig = 2
+								TextConfig = 2
+							}
+							PitKi
+							{
+								ValConfig = 1
+								TextConfig = 1
+							}
+							PitKd
+							{
+								ValConfig = 0.0050000000000000001
+								TextConfig = 0.005
+							}
+							RolKp
+							{
+								ValConfig = 0.5
+								TextConfig = 0.5
+							}
+							RolKi
+							{
+								ValConfig = 0.02
+								TextConfig = 0.02
+							}
+							RolKd
+							{
+								ValConfig = 0.5
+								TextConfig = 0.5
+							}
+							YawKp
+							{
+								ValConfig = 1
+								TextConfig = 1
+							}
+							YawKi
+							{
+								ValConfig = 0.25
+								TextConfig = 0.25
+							}
+							YawKd
+							{
+								ValConfig = 0.02
+								TextConfig = 0.02
+							}
+							YawLimit
+							{
+								ValConfig = 10
+								TextConfig = 10
+							}
+							RollLimit
+							{
+								ValConfig = 45
+								TextConfig = 45
+							}
+							PitchDownLimit
+							{
+								ValConfig = 15
+								TextConfig = 15
+							}
+							PitchUpLimit
+							{
+								ValConfig = 25
+								TextConfig = 25
+							}
+						}
+						MechJebModuleAirplaneGuidance
+						{
+							showpid = False
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentClassicAutopilot
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentClassicPathMenu
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentMenu
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentPVGAutopilot
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentPVGSettingsMenu
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentSettings
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAscentSettingsMenu
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAttitudeAdjustment
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+						}
+						MechJebModuleCustomWindowEditor
+						{
+							unlockParts = 
+							unlockTechs = flightControl
+						}
+						MechJebModuleDebugArrows
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleDockingAutopilot
+						{
+							forceRol = False
+							overrideSafeDistance = False
+							overrideTargetSize = False
+							unlockParts = 
+							unlockTechs = 
+							rol
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+						}
+						MechJebModuleDockingGuidance
+						{
+							unlockParts = 
+							unlockTechs = advUnmanned
+						}
+						MechJebModuleInfoItems
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleLandingAutopilot
+						{
+							DeployGears = True
+							DeployChutes = True
+							RCSAdjustment = True
+							unlockParts = 
+							unlockTechs = 
+							TouchdownSpeed
+							{
+								ValConfig = 0.5
+								TextConfig = 0.5
+							}
+							LimitGearsStage
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							LimitChutesStage
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+						}
+						MechJebModuleLandingGuidance
+						{
+							_landingSiteIdx = 0
+							unlockParts = 
+							unlockTechs = unmannedTech
+						}
+						MechJebModuleLandingPredictions
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleManeuverPlanner
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+						}
+						MechJebModuleStageStats
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleNodeEditor
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+						}
+						MechJebModuleNodeExecutor
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleGuidanceController
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleRCSBalancerWindow
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+						}
+						MechJebModuleRendezvousAutopilot
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleRendezvousAutopilotWindow
+						{
+							unlockParts = 
+							unlockTechs = advUnmanned
+						}
+						MechJebModuleRendezvousGuidance
+						{
+							unlockParts = 
+							unlockTechs = advUnmanned
+						}
+						MechJebModuleRoverController
+						{
+							ControlHeading = False
+							ControlSpeed = False
+							BrakeOnEject = False
+							BrakeOnEnergyDepletion = False
+							WarpToDaylight = False
+							StabilityControl = False
+							LimitAcceleration = False
+							unlockParts = 
+							unlockTechs = 
+							heading
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							speed
+							{
+								ValConfig = 10
+								TextConfig = 10
+							}
+						}
+						MechJebModuleRoverWindow
+						{
+							unlockParts = 
+							unlockTechs = fieldScience
+						}
+						MechJebModuleSettings
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleSmartASS
+						{
+							mode = ORBITAL
+							target = OFF
+							advReference = INERTIAL
+							advDirection = FORWARD
+							forceRol = False
+							forcePitch = True
+							forceYaw = True
+							unlockParts = 
+							unlockTechs = flightControl
+							srfHdg
+							{
+								ValConfig = 90
+								TextConfig = 90
+							}
+							srfPit
+							{
+								ValConfig = 90
+								TextConfig = 90
+							}
+							srfRol
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							srfVelYaw
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							srfVelPit
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							srfVelRol
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+							rol
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+						}
+						MechJebModuleSmartRcs
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleSpaceplaneAutopilot
+						{
+							bBreakAsSoonAsLanded = False
+							unlockParts = 
+							unlockTechs = 
+							glideslope
+							{
+								ValConfig = 2.5
+								TextConfig = 2.5
+							}
+							approachSpeed
+							{
+								ValConfig = 80
+								TextConfig = 80
+							}
+							touchdownSpeed
+							{
+								ValConfig = 60
+								TextConfig = 60
+							}
+							maximumSafeBankAngle
+							{
+								ValConfig = 25
+								TextConfig = 25
+							}
+						}
+						MechJebModuleSpaceplaneGuidance
+						{
+							runwayIndex = 0
+							unlockParts = 
+							unlockTechs = unmannedTech
+						}
+						MechJebModuleSpinupController
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleSuicideTimer
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleTargetController
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleThrustWindow
+						{
+							autostageSavedState = False
+							unlockParts = 
+							unlockTechs = advFlightControl
+						}
+						MechJebModuleTranslatron
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+							trans_spd
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+						}
+						MechJebModuleWarpHelper
+						{
+							unlockParts = 
+							unlockTechs = advFlightControl
+							phaseAngle
+							{
+								ValConfig = 0
+								TextConfig = 0
+							}
+						}
+						MechJebModuleWaypointWindow
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleWaypointHelpWindow
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						ModExtensionDemo
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModulePVGGlueBall
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleCustomInfoWindow
+						{
+						}
+						MechJebModuleWarpController
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleDeployableAntennaController
+						{
+							prev_shouldDeploy = False
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleSolarPanelController
+						{
+							prev_shouldDeploy = False
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleThrustController
+						{
+							LimitThrottle = False
+							LimiterMinThrottle = True
+							ElectricThrottle = False
+							unlockParts = 
+							unlockTechs = 
+							MaxThrottle
+							{
+								ValConfig = 1
+								TextConfig = 100
+							}
+							MinThrottle
+							{
+								ValConfig = 0.050000000000000003
+								TextConfig = 5
+							}
+							ElectricThrottleLo
+							{
+								ValConfig = 0.050000000000000003
+								TextConfig = 5
+							}
+							ElectricThrottleHi
+							{
+								ValConfig = 0.14999999999999999
+								TextConfig = 15
+							}
+						}
+						MechJebModuleRCSController
+						{
+							unlockParts = 
+							unlockTechs = 
+							Tf
+							{
+								ValConfig = 1
+								TextConfig = 1
+							}
+							Kp
+							{
+								ValConfig = 0.12492219800962338
+								TextConfig = 0.124922198009623
+							}
+							Ki
+							{
+								ValConfig = 0.0073611111111111091
+								TextConfig = 0.00736111111111111
+							}
+							Kd
+							{
+								ValConfig = 0.53000000000000003
+								TextConfig = 0.53
+							}
+						}
+						MechJebModuleRCSBalancer
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleAttitudeController
+						{
+							unlockParts = 
+							unlockTechs = 
+							MJAttitudeController
+							{
+							}
+							KosAttitudeController
+							{
+							}
+							HybridController
+							{
+							}
+							BetterController
+							{
+							}
+							LQRController
+							{
+							}
+						}
+						MechJebModuleStagingController
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleFlightRecorder
+						{
+							MarkUT = 60081.736085020559
+							DeltaVExpended = 0
+							DragLosses = 0.00048729243354790733
+							GravityLosses = 0.00071741103898986076
+							SteeringLosses = 0
+							MarkLAN = 31.876715963439011
+							MarkLatitude = -0.048596096994804175
+							MarkLongitude = -74.72523834400684
+							MarkAltitude = 71.413434157520527
+							MarkBodyIndex = 1
+							MaxDragGees = 0.00012949383524630962
+							unlockParts = 
+							unlockTechs = 
+						}
+						MechJebModuleFlightRecorderGraph
+						{
+							unlockParts = 
+							unlockTechs = 
+						}
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = Navigator
 					isEnabled = True
 					IsLocked = False
@@ -2674,6 +3587,79 @@ GAME
 				}
 				MODULE
 				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModuleTripLogger
 					isEnabled = True
 					stagingEnabled = True
@@ -2687,8 +3673,6 @@ GAME
 					{
 						flight = 0
 						0 = Orbit,Kerbin
-						0 = Suborbit,Kerbin
-						0 = Flight,Kerbin
 					}
 					UPGRADESAPPLIED
 					{
@@ -2697,7 +3681,7 @@ GAME
 				RESOURCE
 				{
 					name = ElectricCharge
-					amount = 0
+					amount = 149.14279769534028
 					maxAmount = 150
 					flowState = True
 					isTweakable = True
@@ -2708,7 +3692,7 @@ GAME
 				RESOURCE
 				{
 					name = MonoPropellant
-					amount = 20.861090840295901
+					amount = 29.926914992832785
 					maxAmount = 30
 					flowState = True
 					isTweakable = True
@@ -2742,10 +3726,10 @@ GAME
 				attN = bottom, 1
 				mass = 0.100000001
 				shielded = False
-				temp = 772.70738877655776
-				tempExt = 619.26402164631065
+				temp = 307.10915246117946
+				tempExt = 306.72168117449615
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067489999563582814
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -2978,6 +3962,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = FXModuleLookAtConstraint
 					isEnabled = True
 					stagingEnabled = True
@@ -2996,6 +3997,64 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_Coupler
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -3036,10 +4095,10 @@ GAME
 				attN = bottom, 4
 				mass = 6
 				shielded = False
-				temp = 669.01733353298539
-				tempExt = 471.99577083642254
-				tempExtUnexp = 623.56437779130511
-				staticPressureAtm = 0.067450996095858293
+				temp = 306.98865732369364
+				tempExt = 305.34164400665236
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -3165,9 +4224,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -3206,10 +4325,10 @@ GAME
 				attN = bottom, 5
 				mass = 1.78999996
 				shielded = False
-				temp = 416.1922734058947
-				tempExt = 344.19717272904052
-				tempExtUnexp = 413.13969075887775
-				staticPressureAtm = 0.067427263652840103
+				temp = 307.0394761896066
+				tempExt = 305.63732545202225
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -3278,9 +4397,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -3341,10 +4520,10 @@ GAME
 				attN = bottom, 6
 				mass = 1.78999996
 				shielded = False
-				temp = 413.6727820214399
-				tempExt = 342.05729266102401
-				tempExtUnexp = 408.31979872095548
-				staticPressureAtm = 0.06741895282706771
+				temp = 307.04800379270779
+				tempExt = 305.736073536878
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -3413,9 +4592,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -3476,10 +4715,10 @@ GAME
 				attN = bottom, -1
 				mass = 9
 				shielded = False
-				temp = 416.69176120104186
-				tempExt = 363.94651143795255
-				tempExtUnexp = 412.683179460985
-				staticPressureAtm = 0.067413724442337758
+				temp = 307.08531423018695
+				tempExt = 306.40225639269488
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -3558,7 +4797,7 @@ GAME
 					enableYaw = True
 					enablePitch = True
 					enableRoll = True
-					gimbalActive = True
+					gimbalActive = False
 					stagingEnabled = True
 					EVENTS
 					{
@@ -3608,7 +4847,7 @@ GAME
 					independentThrottlePercentage = 0
 					staged = False
 					flameout = False
-					EngineIgnited = True
+					EngineIgnited = False
 					engineShutdown = False
 					currentThrottle = 0
 					thrustPercentage = 5
@@ -3757,6 +4996,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = PersistentEngine
 					isEnabled = True
 					HasPersistentThrust = True
@@ -3766,7 +5022,7 @@ GAME
 					maneuverToleranceInDegree = 90
 					persistentAutopilotMode = StabilityAssist
 					persistentThrust = 0
-					persistentIsp = 340
+					persistentIsp = 0
 					persistentThrottle = 0
 					persistentAverageDensity = 0
 					vesselAlignmentWithAutopilotMode = 0
@@ -3913,6 +5169,79 @@ GAME
 					{
 					}
 				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_Engines
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
 			}
 			PART
 			{
@@ -3941,10 +5270,10 @@ GAME
 				srfN = srfAttach, 5,Size3-Mk3COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 402.73973904753819
-				tempExt = 402.31595803465945
+				temp = 307.08558452613721
+				tempExt = 306.24823658039759
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067393253269002612
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -4069,6 +5398,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -4118,6 +5464,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -4157,10 +5576,10 @@ GAME
 				srfN = srfAttach, 5,Size3-Mk3COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 402.68068380993486
-				tempExt = 402.29702752592681
+				temp = 307.0855622788502
+				tempExt = 306.2316657028573
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067419686965697667
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -4285,6 +5704,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -4334,6 +5770,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -4373,10 +5882,10 @@ GAME
 				srfN = srfAttach, 5,Size3-Mk3COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 402.84685655418281
-				tempExt = 402.35029192040992
+				temp = 307.08556227665747
+				tempExt = 306.23166568665533
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067438553387284009
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -4501,6 +6010,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -4550,6 +6076,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -4589,10 +6188,10 @@ GAME
 				srfN = srfAttach, 5,Size3-Mk3COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 402.59222498998491
-				tempExt = 402.26867460677477
+				temp = 307.08556237655301
+				tempExt = 306.23166642474092
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067412110278555232
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -4717,6 +6316,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -4777,6 +6393,79 @@ GAME
 					{
 					}
 				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
 			}
 			PART
 			{
@@ -4803,10 +6492,10 @@ GAME
 				srfN = srfAttach, 4,Mk3COL
 				mass = 0.00999999978
 				shielded = False
-				temp = 479.66309874314834
-				tempExt = 467.76173071472147
+				temp = 307.08509754989126
+				tempExt = 306.24956911171751
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067412354991431889
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -4886,7 +6575,7 @@ GAME
 					resourceName = 
 					drainRate = 20
 					isDraining = False
-					flowMode = True
+					flowMode = False
 					stagingEnabled = True
 					resourcesToRelease = LiquidFuel,Oxidizer
 					EVENTS
@@ -4954,6 +6643,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -4973,6 +6679,49 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -5010,10 +6759,10 @@ GAME
 				srfN = srfAttach, 4,Mk3COL
 				mass = 0.00999999978
 				shielded = False
-				temp = 479.66108726622588
-				tempExt = 467.76118915599807
+				temp = 307.08509754989126
+				tempExt = 306.24956911171751
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067436289793174994
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -5093,7 +6842,7 @@ GAME
 					resourceName = 
 					drainRate = 20
 					isDraining = False
-					flowMode = True
+					flowMode = False
 					stagingEnabled = True
 					resourcesToRelease = LiquidFuel,Oxidizer
 					EVENTS
@@ -5157,6 +6906,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -5176,6 +6942,49 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -5213,16 +7022,16 @@ GAME
 				srfN = srfAttach, 4,Mk3COL
 				mass = 0.5
 				shielded = False
-				temp = 588.38804095381056
-				tempExt = 406.74219156296971
-				tempExtUnexp = 541.01799167587831
-				staticPressureAtm = 0.067428863698572039
+				temp = 307.10407509493189
+				tempExt = 306.50285458250437
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
 				attached = True
 				autostrutMode = Grandparent
-				rigidAttachment = True
+				rigidAttachment = False
 				flag = 
 				rTrf = wingShuttleDelta
 				modCost = 0
@@ -5300,9 +7109,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -5351,10 +7220,10 @@ GAME
 				srfN = srfAttach, 13,DeltaWingCOL
 				mass = 0.230000004
 				shielded = False
-				temp = 511.33400901745767
-				tempExt = 376.97351058885272
-				tempExtUnexp = 487.91280326518745
-				staticPressureAtm = 0.067411705561105387
+				temp = 307.10759795077627
+				tempExt = 306.37658287978917
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -5435,7 +7304,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -5564,9 +7433,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -5604,10 +7533,10 @@ GAME
 				srfN = srfAttach, 13,DeltaWingCOL
 				mass = 0.150000006
 				shielded = False
-				temp = 444.70871599454614
-				tempExt = 357.00981761090225
-				tempExtUnexp = 448.20127840284124
-				staticPressureAtm = 0.067395888638443452
+				temp = 307.10877009658833
+				tempExt = 306.25833260622335
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -5688,7 +7617,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -5817,9 +7746,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -5857,10 +7846,10 @@ GAME
 				srfN = srfAttach, 15,ElevonCOL
 				mass = 0.449999988
 				shielded = False
-				temp = 401.92120943317275
-				tempExt = 327.56511849614088
-				tempExtUnexp = 396.36876351983352
-				staticPressureAtm = 0.067399479329306608
+				temp = 307.10434863839413
+				tempExt = 306.35145470200422
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -6091,10 +8080,10 @@ GAME
 				srfN = srfAttach, 13,DeltaWingCOL
 				mass = 0.400000006
 				shielded = False
-				temp = 593.0386990638201
-				tempExt = 425.19394178150895
-				tempExtUnexp = 520.05103915276379
-				staticPressureAtm = 0.067394467421352133
+				temp = 307.10376439342843
+				tempExt = 306.30093897662897
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -6169,8 +8158,8 @@ GAME
 					isEnabled = True
 					wheelType = FREE
 					isGrounded = False
-					autoFriction = False
-					frictionMultiplier = 10
+					autoFriction = True
+					frictionMultiplier = 2
 					stagingEnabled = True
 					EVENTS
 					{
@@ -6212,7 +8201,7 @@ GAME
 				{
 					name = ModuleWheelBrakes
 					isEnabled = True
-					brakeTweakable = 200
+					brakeTweakable = 50
 					brakeInput = 0
 					stagingEnabled = True
 					EVENTS
@@ -6492,9 +8481,99 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_Wheels
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -6532,16 +8611,16 @@ GAME
 				srfN = srfAttach, 4,Mk3COL
 				mass = 0.5
 				shielded = False
-				temp = 587.06883144281574
-				tempExt = 407.32677957339524
-				tempExtUnexp = 537.87409518909351
-				staticPressureAtm = 0.067452756146163431
+				temp = 307.10479426450559
+				tempExt = 306.53181545986172
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
 				attached = True
 				autostrutMode = Grandparent
-				rigidAttachment = True
+				rigidAttachment = False
 				flag = 
 				rTrf = wingShuttleDelta
 				modCost = 0
@@ -6619,9 +8698,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -6670,10 +8809,10 @@ GAME
 				srfN = srfAttach, 18,DeltaWingCOL
 				mass = 0.230000004
 				shielded = False
-				temp = 518.77761894300238
-				tempExt = 377.51125230652974
-				tempExtUnexp = 490.88036802896823
-				staticPressureAtm = 0.067458455132579254
+				temp = 307.10776280103067
+				tempExt = 306.39740902772337
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -6754,7 +8893,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -6875,9 +9014,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -6915,10 +9114,10 @@ GAME
 				srfN = srfAttach, 18,DeltaWingCOL
 				mass = 0.150000006
 				shielded = False
-				temp = 441.08722609452479
-				tempExt = 354.79636503125454
-				tempExtUnexp = 444.79398709806196
-				staticPressureAtm = 0.067474394411679517
+				temp = 307.10885606773553
+				tempExt = 306.27005873876254
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -6999,7 +9198,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -7120,9 +9319,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -7160,10 +9419,10 @@ GAME
 				srfN = srfAttach, 20,ElevonCOL
 				mass = 0.449999988
 				shielded = False
-				temp = 401.92120943317275
-				tempExt = 327.56511849614088
-				tempExtUnexp = 396.36876351983352
-				staticPressureAtm = 0.067399479329306608
+				temp = 307.10434863839413
+				tempExt = 306.35145470200422
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -7386,10 +9645,10 @@ GAME
 				srfN = srfAttach, 18,DeltaWingCOL
 				mass = 0.400000006
 				shielded = False
-				temp = 591.34044242676691
-				tempExt = 419.10689861025378
-				tempExtUnexp = 514.42593562799573
-				staticPressureAtm = 0.06747679918629429
+				temp = 307.10293417618482
+				tempExt = 306.26011954166631
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -7464,8 +9723,8 @@ GAME
 					isEnabled = True
 					wheelType = FREE
 					isGrounded = False
-					autoFriction = False
-					frictionMultiplier = 10
+					autoFriction = True
+					frictionMultiplier = 2
 					stagingEnabled = True
 					EVENTS
 					{
@@ -7507,7 +9766,7 @@ GAME
 				{
 					name = ModuleWheelBrakes
 					isEnabled = True
-					brakeTweakable = 200
+					brakeTweakable = 50
 					brakeInput = 0
 					stagingEnabled = True
 					EVENTS
@@ -7763,9 +10022,99 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_Wheels
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -7804,10 +10153,10 @@ GAME
 				attN = bottom, 3
 				mass = 0.25
 				shielded = True
-				temp = 306.4522672895618
-				tempExt = 306.4512669445644
+				temp = 307.11322396523786
+				tempExt = 307.11232924609538
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067433692071869028
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -7895,6 +10244,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
@@ -7909,10 +10275,53 @@ GAME
 					{
 					}
 				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
 				RESOURCE
 				{
 					name = MonoPropellant
-					amount = 278.14787787062619
+					amount = 399.02553323777073
 					maxAmount = 400
 					flowState = True
 					isTweakable = True
@@ -7946,10 +10355,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.150000006
 				shielded = False
-				temp = 497.4129538874044
-				tempExt = 387.76246386130589
-				tempExtUnexp = 496.6988014294011
-				staticPressureAtm = 0.067455471517890872
+				temp = 307.11129221377661
+				tempExt = 306.54353041355006
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -8030,7 +10439,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -8159,9 +10568,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -8199,10 +10668,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.150000006
 				shielded = False
-				temp = 494.42794424217175
-				tempExt = 385.98928257623095
-				tempExtUnexp = 493.51913425476437
-				staticPressureAtm = 0.067486380636618507
+				temp = 307.1130200268089
+				tempExt = 306.75518450428655
+				tempExtUnexp = 4
+				staticPressureAtm = 0
 				expt = 0.100000001
 				state = 0
 				PreFailState = 0
@@ -8283,7 +10752,7 @@ GAME
 					deploy = False
 					deployInvert = False
 					partDeployInvert = False
-					deployAngle = 0
+					deployAngle = 25
 					authorityLimiter = 150
 					stagingEnabled = True
 					EVENTS
@@ -8404,9 +10873,69 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -8443,10 +10972,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.25
 				shielded = False
-				temp = 451.00484654810128
-				tempExt = 496.10006966927324
+				temp = 307.10143093364536
+				tempExt = 305.78269018254514
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067494112622317276
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -8522,7 +11051,7 @@ GAME
 					wheelType = FREE
 					isGrounded = False
 					autoFriction = True
-					frictionMultiplier = 2.00054669
+					frictionMultiplier = 2
 					stagingEnabled = True
 					EVENTS
 					{
@@ -8614,7 +11143,7 @@ GAME
 				{
 					name = ModuleWheelBrakes
 					isEnabled = True
-					brakeTweakable = 0
+					brakeTweakable = 50
 					brakeInput = 0
 					stagingEnabled = True
 					EVENTS
@@ -8894,9 +11423,99 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_Wheels
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -8936,10 +11555,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 490.12140532818756
-				tempExt = 585.4509891246862
+				temp = 307.0905342262264
+				tempExt = 306.23693055279216
 				tempExtUnexp = 4
-				staticPressureAtm = 0.06746795187460003
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -9064,6 +11683,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -9113,6 +11749,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -9152,10 +11861,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 487.46671315886425
-				tempExt = 584.63872027326943
+				temp = 307.09053885271436
+				tempExt = 306.23860385453418
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067486131217725009
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -9280,6 +11989,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -9329,6 +12055,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -9368,10 +12167,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 490.39551587667148
-				tempExt = 585.53485528589113
+				temp = 307.09053335329628
+				tempExt = 306.23692978666128
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067499105706204307
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -9496,6 +12295,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -9545,6 +12361,79 @@ GAME
 					name = KOSNameTag
 					isEnabled = True
 					nameTag = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
 					stagingEnabled = True
 					EVENTS
 					{
@@ -9584,10 +12473,10 @@ GAME
 				srfN = srfAttach, 0,Mk3-Size2COL
 				mass = 0.0399999991
 				shielded = False
-				temp = 487.18726739755476
-				tempExt = 584.55321206809265
+				temp = 307.09053426766764
+				tempExt = 306.23693058916251
 				tempExtUnexp = 4
-				staticPressureAtm = 0.067480921657062473
+				staticPressureAtm = 0
 				expt = 0.5
 				state = 0
 				PreFailState = 0
@@ -9712,6 +12601,23 @@ GAME
 				}
 				MODULE
 				{
+					name = FMRS_PM
+					isEnabled = True
+					stagingEnabled = True
+					MM_DYNAMIC = true
+					parent_vessel = 00000000-0000-0000-0000-000000000000
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
 					name = ModulePartVariants
 					isEnabled = True
 					useVariantMass = True
@@ -9772,13 +12678,86 @@ GAME
 					{
 					}
 				}
+				MODULE
+				{
+					name = ModuleReforged
+					isEnabled = True
+					rdxFinish = False
+					rdxMetal = 0
+					rdxSmooth = 0
+					rdxColored = False
+					rdxR = 1
+					rdxG = 1
+					rdxB = 1
+					rdxKeepShiny = True
+					rdxScale = 1
+					rdxShineSpot = 0
+					rdxRegion = whole
+					rdxStack = 
+					rdxZones = 
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = RSE_RCS
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ShipEffectsCollisions
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
+				MODULE
+				{
+					name = ModuleWaterfallFX
+					isEnabled = True
+					stagingEnabled = True
+					EVENTS
+					{
+					}
+					ACTIONS
+					{
+					}
+					UPGRADESAPPLIED
+					{
+					}
+				}
 			}
 			ACTIONGROUPS
 			{
 				Stage = False, 0
 				Gear = False, 60078.796085021
 				Light = False, 0
-				RCS = False, 61841.5359530397
+				RCS = False, 60086.6960850198
 				SAS = False, 0
 				Brakes = False, 0
 				Abort = False, 0
@@ -9806,9 +12785,9 @@ GAME
 			}
 			CTRLSTATE
 			{
-				pitch = 0.818550348
-				yaw = -0.80629319
-				roll = -0.0902778804
+				pitch = -0.00490136351
+				yaw = 0
+				roll = 0
 				trimPitch = 0
 				trimYaw = 0
 				trimRoll = 0
@@ -9830,6 +12809,12 @@ GAME
 					controlState = KerbalFull
 					canComm = True
 				}
+				AtmoFxModule
+				{
+				}
+				ShipEffects
+				{
+				}
 			}
 		}
 	}
@@ -9850,51 +12835,51 @@ GAME
 		Unity.Collections v0.8.0.0 = True
 		Unity.Jobs v0.2.9.0 = True
 		KSPBurst v1.7.4.10 = True
-		BlendshapeModelLoader v1.6.4.30 = False
-		TexturesUnlimited v1.6.4.30 = False
+		BlendshapeModelLoader v1.6.4.30 = True
+		TexturesUnlimited v1.6.4.30 = True
 		AxisGroupController v1.0.0.0 = True
 		ToolbarControl v0.1.9.14 = True
 		AtmosphereAutopilot.UI v1.0.0.0 = True
 		AtmosphereAutopilot v1.6.1.0 = True
 		B9PartSwitch v2.21.0.4 = True
-		BetterTimeWarpCont v2.3.14.2 = False
-		SharpDX v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = False
-		SharpDX.DXGI v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = False
-		SharpDX.Direct3D11 v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = False
-		KSPTextureLoader v1.0.36.0 / v1.0.36+cda0e0fea05c372369b8464c01035616501d8d28 = False
-		BurstPQS v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = False
+		BetterTimeWarpCont v2.3.14.2 = True
+		SharpDX v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
+		SharpDX.DXGI v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
+		SharpDX.Direct3D11 v4.2.0.0 / v4.2.0+8e5df9f17b1d328c595a9df5851dbb2537b55621 / v4.2.0 = True
+		KSPTextureLoader v1.0.36.0 / v1.0.36+cda0e0fea05c372369b8464c01035616501d8d28 = True
+		BurstPQS v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = True
 		Kopernicus.Parser v1.0.0.0 / v1.0.0.0+2398a50e208a22315a68553b89918c791ea0f073 = True
 		ModularFlightIntegrator v1.0.0.0 / v1.2.10.0 = True
-		Kopernicus v1.0.247.0 / v1.0.247+2398a50e208a22315a68553b89918c791ea0f073 / v1.12.247.0 = False
-		BurstPQS.Kopernicus v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = False
-		ParallaxContinued v1.0.0.0 / v1.0.0+c449da19891ae8a39d569d3de0176a8ca16142b3 = False
-		BurstPQS.ParallaxContinued v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = False
-		CommNetOptimization v0.0.0.0 = False
-		DistantObject v0.0.0.0 = False
-		KSPe.Light.DOE v2.5.5.3 = False
-		Atmosphere v3.2.2.0 = False
-		CelestialShadows v3.2.2.0 = False
-		CityLights v3.2.2.0 = False
-		EVEManager v3.2.2.0 = False
-		PartFX v3.2.2.0 = False
-		PQSManager v3.2.2.0 = False
-		ShaderLoader v3.2.2.0 = False
-		Terrain v3.2.2.0 = False
-		TextureConfig v3.2.2.0 = False
-		Utils v3.2.2.0 = False
-		_BuildManager v3.2.2.0 = False
-		FireflyAPI v1.0.0.0 / v1.0.0+329dbaa96a227c74fcec9d880058e72b53e4d710 = False
-		Firefly v1.0.6.0 / v1.0.6+6ed0f3e49ea946999801ce1f57fa8711e0207cae = False
-		FireflyInstallChecker v1.0.0.0 / v1.0.0+6ed0f3e49ea946999801ce1f57fa8711e0207cae = False
-		FlightRecorder v1.0.0.0 / v1.0.0 = False
-		FMRSContinued v1.2.9.6 = False
+		Kopernicus v1.0.247.0 / v1.0.247+2398a50e208a22315a68553b89918c791ea0f073 / v1.12.247.0 = True
+		BurstPQS.Kopernicus v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = True
+		ParallaxContinued v1.0.0.0 / v1.0.0+c449da19891ae8a39d569d3de0176a8ca16142b3 = True
+		BurstPQS.ParallaxContinued v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = True
+		CommNetOptimization v0.0.0.0 = True
+		DistantObject v0.0.0.0 = True
+		KSPe.Light.DOE v2.5.5.3 = True
+		Atmosphere v3.2.2.0 = True
+		CelestialShadows v3.2.2.0 = True
+		CityLights v3.2.2.0 = True
+		EVEManager v3.2.2.0 = True
+		PartFX v3.2.2.0 = True
+		PQSManager v3.2.2.0 = True
+		ShaderLoader v3.2.2.0 = True
+		Terrain v3.2.2.0 = True
+		TextureConfig v3.2.2.0 = True
+		Utils v3.2.2.0 = True
+		_BuildManager v3.2.2.0 = True
+		FireflyAPI v1.0.0.0 / v1.0.0+329dbaa96a227c74fcec9d880058e72b53e4d710 = True
+		Firefly v1.0.6.0 / v1.0.6+6ed0f3e49ea946999801ce1f57fa8711e0207cae = True
+		FireflyInstallChecker v1.0.0.0 / v1.0.0+6ed0f3e49ea946999801ce1f57fa8711e0207cae = True
+		FlightRecorder v1.0.0.0 / v1.0.0 = True
+		FMRSContinued v1.2.9.6 = True
 		FullAutoStrut v3.0.1.0 = True
-		HUDReplacer v1.4.2.0 / v1.4.2+4ab67a18484a263597eefb6629454dd9dcafe4f9 = False
-		KerbalFX.Core v0.0.0.0 = False
-		KerbalFX.AeroFX v0.0.0.0 = False
-		KerbalFX.BlastFX v0.0.0.0 = False
-		KerbalFX.ImpactPuffs v0.0.0.0 = False
-		KerbalFX.RoverDust v0.0.0.0 = False
+		HUDReplacer v1.4.2.0 / v1.4.2+4ab67a18484a263597eefb6629454dd9dcafe4f9 = True
+		KerbalFX.Core v0.0.0.0 = True
+		KerbalFX.AeroFX v0.0.0.0 = True
+		KerbalFX.BlastFX v0.0.0.0 = True
+		KerbalFX.ImpactPuffs v0.0.0.0 = True
+		KerbalFX.RoverDust v0.0.0.0 = True
 		Google.Protobuf v3.10.1.0 / v3.10.1+d09d649aea36f02c03f8396ba39a8d4db8a607e4 = True
 		KRPC.Core v0.6.0.0 = True
 		KRPC v0.6.0.0 = True
@@ -9907,125 +12892,121 @@ GAME
 		KRPC.RemoteTech v0.6.0.0 = True
 		KRPC.SpaceCenter v0.6.0.0 = True
 		KRPC.UI v0.6.0.0 = True
-		AdvancedFlyByWire v1.8.4.5 = False
-		XInputDotNetPure v1.0.0.0 = False
-		KSPBurnPlanner v0.0.0.0 = False
-		OrbitalMath v1.0.0.0 / v1.0.0 = False
+		AdvancedFlyByWire v1.8.4.5 = True
+		XInputDotNetPure v1.0.0.0 = True
+		KSPBurnPlanner v0.0.0.0 = True
+		OrbitalMath v1.0.0.0 / v1.0.0 = True
 		0_MultipleModuleInPartAPI v1.0.0.0 / v1.0.0+7969fdc50bf4e350193abe5ba2e89533b12ca02f = True
 		KSPCommunityFixes v1.41.0.0 / v1.41.1+7969fdc50bf4e350193abe5ba2e89533b12ca02f / v1.41.1.0 = True
-		KSPTextureLoader.Burst v0.0.0.0 = False
-		alglib v1.0.0.0 = False
-		MechJeb2 v2.15.0.0 / v / v2.15.3.0 = False
-		MechJebLib v1.0.0.0 = False
-		MechJebLibBindings v1.0.0.0 = False
-		NFPropUtils v1.0.0.0 = False
+		KSPTextureLoader.Burst v0.0.0.0 = True
+		alglib v1.0.0.0 = True
+		MechJeb2 v2.15.0.0 / v / v2.15.3.0 = True
+		MechJebLib v1.0.0.0 = True
+		MechJebLibBindings v1.0.0.0 = True
+		NFPropUtils v1.0.0.0 = True
 		PersistentThrust v1.7.5.0 = True
 		SolarSailNavigator v1.0.0.0 = True
-		RecoveryController v0.0.4.3 = False
-		ReforgedRedux v0.0.0.0 = False
+		RecoveryController v0.0.4.3 = True
+		ReforgedRedux v0.0.0.0 = True
 		Restock v1.0.0.0 / v1.0.0+7f266364f4d5f763ed815d920b99e1b449d29ef2 = True
-		RocketSoundEnhancement.Unity v0.9.13.0 / v0.9.13+2054525a2d361b2b4439f4fcfb554be1a8f9fc72 = False
-		RocketSoundEnhancement v0.9.13.0 / v0.9.13+2054525a2d361b2b4439f4fcfb554be1a8f9fc72 = False
-		scatterer v0.905.0.0 = False
+		RocketSoundEnhancement.Unity v0.9.13.0 / v0.9.13+2054525a2d361b2b4439f4fcfb554be1a8f9fc72 = True
+		RocketSoundEnhancement v0.9.13.0 / v0.9.13+2054525a2d361b2b4439f4fcfb554be1a8f9fc72 = True
+		scatterer v0.905.0.0 = True
 		Shabby v0.0.0.0 / v0.4.2 / v0.4.2.0 = True
-		StationKeeping v0.2.3.2 = False
-		Technicolor v0.1.0.0 / v0.1.0 = False
-		TextureReplacer v4.5.3.925 = False
-		TUFX v1.1.1.0 / v1.1.1+a5d61676496ecbe8816c28c50b3dfd2e094803d5 = False
-		VaporCones v1.0.0.0 = False
-		Waterfall v0.11.0.0 / v0.11.0+6be4f897ad86577c6ce2c17e6da0848b14d5250a = False
-		PriorityQueue v5.0.0.0 / v5.0.0 = False
-		Graphing v0.0.0.0 = False
-		KerbalWindTunnel v2.1.1.1 = False
-		MiniExcelDomainWorker v1.0.0.0 = False
-		UI_Tools v0.0.0.0 = False
-		Microsoft.Bcl.HashCode v6.0.0.0 / v6.0.0+d0c2a5a83211e271826172a6b0510c25a52dbd53 / v6.0.24.56208 = False
-		System.Numerics v4.0.0.0 / v4.6.57.0 = False
-		System.Transactions v4.0.0.0 / v4.6.57.0 = False
-		System.Data v4.0.0.0 / v4.6.57.0 = False
-		Deferred v1.3.5.0 = False
+		StationKeeping v0.2.3.2 = True
+		Technicolor v0.1.0.0 / v0.1.0 = True
+		TextureReplacer v4.5.3.925 = True
+		TUFX v1.1.1.0 / v1.1.1+a5d61676496ecbe8816c28c50b3dfd2e094803d5 = True
+		VaporCones v1.0.0.0 = True
+		Waterfall v0.11.0.0 / v0.11.0+6be4f897ad86577c6ce2c17e6da0848b14d5250a = True
+		PriorityQueue v5.0.0.0 / v5.0.0 = True
+		Graphing v0.0.0.0 = True
+		KerbalWindTunnel v2.1.1.1 = True
+		MiniExcelDomainWorker v1.0.0.0 = True
+		UI_Tools v0.0.0.0 = True
+		Microsoft.Bcl.HashCode v6.0.0.0 / v6.0.0+d0c2a5a83211e271826172a6b0510c25a52dbd53 / v6.0.24.56208 = True
+		System.Numerics v4.0.0.0 / v4.6.57.0 = True
+		System.Transactions v4.0.0.0 / v4.6.57.0 = True
+		System.Data v4.0.0.0 / v4.6.57.0 = True
+		Deferred v1.3.5.0 = True
 		000_ClickThroughBlocker = True
 		000_Harmony = True
 		000_KSPBurst = True
-		000_TexturesUnlimited = False
+		000_TexturesUnlimited = True
 		001_AxisGroupController = True
 		001_ToolbarControl = True
 		AtmosphereAutopilot = True
 		B9PartSwitch = True
-		BetterTimeWarp = False
-		BoulderCo = False
+		BetterTimeWarp = True
+		BoulderCo = True
 		BurstPQS = True
-		CommNetOptimization = False
-		DistantObject = False
-		EnvironmentalVisualEnhancements = False
-		Firefly = False
-		FireflyAPI = False
-		FlightRecorder = False
-		FMRS = False
+		CommNetOptimization = True
+		DistantObject = True
+		EnvironmentalVisualEnhancements = True
+		Firefly = True
+		FireflyAPI = True
+		FlightRecorder = True
+		FMRS = True
 		FullAutoStrut = True
-		HUDReplacer = False
-		KerbalFX = False
+		HUDReplacer = True
+		KerbalFX = True
 		Kopernicus = True
 		kRPC = True
-		ksp-advanced-flybywire = False
-		KSPBurnPlanner = False
+		ksp-advanced-flybywire = True
+		KSPBurnPlanner = True
 		KSPCommunityFixes = True
-		KSPTextureLoader = False
-		MechJeb2 = False
+		KSPTextureLoader = True
+		MechJeb2 = True
 		ModularFlightIntegrator = True
-		NearFutureProps = False
-		ParallaxContinued = False
-		Parallax_StockPlanetTextures = False
-		Parallax_StockScatterTextures = False
-		Parallax_StockTerrainTextures = False
+		NearFutureProps = True
+		ParallaxContinued = True
+		Parallax_StockPlanetTextures = True
+		Parallax_StockScatterTextures = True
+		Parallax_StockTerrainTextures = True
 		PersistentThrust = True
 		PersistentThrustNavigator = True
-		PoodsSkyboxes = False
-		RecoveryController = False
-		ReforgedRedux = False
+		PoodsSkyboxes = True
+		RecoveryController = True
+		ReforgedRedux = True
 		ReStock = True
-		RocketSoundEnhancement = False
-		RocketSoundEnhancementDefault = False
-		Scatterer = False
-		ScattererAtmosphereCache = False
+		RocketSoundEnhancement = True
+		RocketSoundEnhancementDefault = True
+		Scatterer = True
+		ScattererAtmosphereCache = True
 		Shabby = True
-		SPVE = False
-		StationKeeping = False
-		StockScattererConfigs = False
-		StockVolumetricClouds = False
-		StockWaterfallEffects = False
-		Technicolor = False
-		TextureReplacer = False
-		TUFX = False
-		VaporCones = False
-		Waterfall = False
-		WaterfallRestock = False
-		WindTunnel = False
-		ZTheme = False
-		zzz_Deferred = False
-		Blackrack_TUFX.cfg = False
+		SPVE = True
+		StationKeeping = True
+		StockScattererConfigs = True
+		StockVolumetricClouds = True
+		StockWaterfallEffects = True
+		Technicolor = True
+		TextureReplacer = True
+		TUFX = True
+		VaporCones = True
+		Waterfall = True
+		WaterfallRestock = True
+		WindTunnel = True
+		ZTheme = True
+		zzz_Deferred = True
+		Blackrack_TUFX.cfg = True
 		ModuleManager.4.2.3.dll = True
 		ModuleManager.ConfigCache = True
 		ModuleManager.ConfigSHA = True
 		ModuleManager.Physics = True
 		ModuleManager.TechTree = True
-		VertexMitchellNetravaliHeightMap v0.3.0.0 = False
-		BurstPQS.VertexMitchellNetravaliHeightMap v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = False
-		KEX-Common v1.0.0.0 = False
-		KEX-EmissiveFX v1.0.0.0 = False
-		KEX-EVAFootprints v1.0.0.0 = False
-		KEX-RegionalPQSMods v1.0.0.0 = False
-		KEX-VertexHeightDeformity v1.0.0.0 = False
-		KEX-VertexHeightMap16 v1.0.0.0 = False
-		KEX-Wormholes v1.0.0.0 = False
-		RunSharp v1.0.0.19 = False
-		000_NiakoUtils = False
-		KopernicusExpansion = False
-		TPR = False
-		BoosterlandAutoLoad v0.0.0.0 = True
-		BoosterlandTimeScale v0.0.0.0 = True
-		BoosterlandAutoLoad = True
-		BoosterlandTimeScale = True
+		VertexMitchellNetravaliHeightMap v0.3.0.0 = True
+		BurstPQS.VertexMitchellNetravaliHeightMap v1.0.0.0 / v0.1.24+174991ba6be39ae49f74d73524f1ee24c642ee25 / v0.1.24 = True
+		KEX-Common v1.0.0.0 = True
+		KEX-EmissiveFX v1.0.0.0 = True
+		KEX-EVAFootprints v1.0.0.0 = True
+		KEX-RegionalPQSMods v1.0.0.0 = True
+		KEX-VertexHeightDeformity v1.0.0.0 = True
+		KEX-VertexHeightMap16 v1.0.0.0 = True
+		KEX-Wormholes v1.0.0.0 = True
+		RunSharp v1.0.0.19 = True
+		000_NiakoUtils = True
+		KopernicusExpansion = True
+		TPR = True
 	}
 	ROSTER
 	{
