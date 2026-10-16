@@ -211,6 +211,10 @@ class Autoland:
         self.state = state
         self.phase_start_ut = ut
         self.correction_align = None    # each burn judges its own turn
+        # A steering command carried through another phase is not a steady
+        # one: the first COAST tick after a correction would otherwise read
+        # the correction's 50-degree tilt as "held" (LOG10244: 87.9).
+        self.steer_history = []
 
     def predict(self, snap, powered, steer=None):
         max_accel = snap.max_accel if powered else 0.0

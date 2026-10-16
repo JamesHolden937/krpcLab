@@ -456,10 +456,15 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     # once it changes sign.  A heavy booster (LOG10237: 9 g, five Vectors)
     # overshot into a climb at 8 m, was told to point retrograde, and
     # tumbled to 122 degrees off it; LOG10236 did the same live and broke
-    # up.  Below ``LANDING_NULL_ALT_M`` the steering only nulls lateral speed,
-    # and that is a tilt from *vertical*.
+    # up.  Below ``LANDING_NULL_ALT_M`` retrograde is kept -- while the
+    # booster falls steeply it is what brakes the lateral speed for free, and
+    # at the throttle cap it is the *only* thing that does, because the tilt
+    # budget is zero there (pure vertical let 5 m/s grow to 14 on qs
+    # LOG10246) -- but held inside ``LANDING_MAX_TILT_DEG`` of vertical, and
+    # vertical outright once the booster is going up.
     near = height <= cfg.LANDING_NULL_ALT_M
-    base = up if near else retrograde
+    base = (within_cone(retrograde, up, cfg.LANDING_MAX_TILT_DEG) if near
+            else retrograde)
     if not (cfg.LANDING_DIVERT_MIN_ALT_M < height
             <= cfg.LANDING_DIVERT_MAX_ALT_M):
         return TerminalCommand(base, 0.0)
@@ -476,7 +481,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         # is the same 4/t_go the full law uses, so this is not a separate
         # controller, it is the same one with its other half switched off.
         if vec.norm(lateral) <= cfg.LANDING_HVEL_TOL:
-            return TerminalCommand(up, 0.0)
+            return TerminalCommand(base, 0.0)
         accel = vec.scale(lateral, -cfg.LANDING_ZEV_GAIN / t_go)
     elif zem is None:
         accel = vec.add(vec.scale(offset, -cfg.LANDING_ZEM_GAIN / (t_go * t_go)),
@@ -516,6 +521,26 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     return TerminalCommand(
         vec.unit(vec.add(base,
                          vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
+
+
+def within_cone(direction, axis, max_deg):
+    """``direction`` rotated toward ``axis`` until it is within ``max_deg``.
+
+    A direction on the far side of the axis (more than 90 deg off) is
+    answered with the axis itself: a booster going up is stood upright, not
+    leaned over at the cone's edge toward wherever it happens to be moving.
+    """
+    d, a = vec.unit(direction), vec.unit(axis)
+    cos = vec.dot(d, a)
+    if cos <= 0.0:
+        return a
+    if cos >= math.cos(math.radians(max_deg)):
+        return d
+    side = vec.unit(vec.project_out(d, a))
+    if vec.norm(side) < 1e-9:
+        return a
+    t = math.radians(max_deg)
+    return vec.unit(vec.add(vec.scale(a, math.cos(t)), vec.scale(side, math.sin(t))))
 
 
 def landing_attitude(env, r, v, prediction, cfg):
