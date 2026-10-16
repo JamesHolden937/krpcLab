@@ -232,12 +232,17 @@ class Config:
                                             # small enough to stay in the
                                             # linear part of the curve.
 
-    AERO_STEER_TRACK_MIN_DEG: float = 3.0   # measure how much of a commanded
+    AERO_STEER_TRACK_SETTLE_S: float = 10.0  # no tracking sample this soon
+                                            # after entering COAST
+    AERO_STEER_TRACK_MIN_DEG: float = 1.0   # measure how much of a commanded
                                             # angle the vehicle holds (see
                                             # Environment.lift_slope_at) only
-                                            # from commands at least this big
-                                            # -- below it the autopilot's own
-                                            # deadband is the whole answer --
+                                            # from commands at least this big.
+                                            # Small commands count: the
+                                            # original booster held 0.1 of a
+                                            # 1.5 deg command, and a lift it
+                                            # does not make must not be
+                                            # credited at any size
     AERO_STEER_TRACK_STEADY_S: float = 2.0  # ... that have held within
     AERO_STEER_TRACK_STEADY_DEG: float = 1.0  # this much for this long
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample

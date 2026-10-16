@@ -677,6 +677,14 @@ class Autoland:
             return
         held = vec.angle_between(vec.scale(snap.direction, -1.0),
                                  snap.velocity)
+        if snap.ut - self.phase_start_ut < cfg.AERO_STEER_TRACK_SETTLE_S:
+            return              # still swinging back from the last phase
+        if held > max(values) + cfg.AERO_STEER_TRACK_STEADY_DEG:
+            # Holding *more* than asked is a nose still coming back from
+            # somewhere else, not authority: every first sample after a
+            # correction read 46-88 deg against a 4-7 deg command and pinned
+            # the tracking at 1 (sweep heavy1-1016, ab7-1016).
+            return
         before = self.env.tracking_samples
         self.env.record_tracking(sum(values) / len(values), held)
         if before == 0 and self.env.tracking_samples:
