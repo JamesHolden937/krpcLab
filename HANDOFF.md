@@ -1,5 +1,20 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-16: boosterland START prepares the vehicle itself
+
+The user asked for the AG2 trigger to go. START now (`prepare_vehicle` in
+`boosterland/autoland.py`) finds every airbrake by its `ModuleAeroSurface`
+module, sets `Deploy Angle` to `AIRBRAKE_DEPLOY_ANGLE_DEG` (90), turns pitch
+and yaw control on and deploys it, and activates every engine burning
+`LiquidFuel`; the counts and the read-back angle are logged.
+`STARTUP_ACTION_GROUP` is gone from boosterland (the spaceplane keeps its
+own). One farm flight, `quicksave` on ksp0, LOG10234: 4 airbrakes at 90
+(not clamped), 1 engine, landed 6 m from the pad at 2.3 m/s. One flight
+says it works, not that accuracy is unchanged. Booster how-it-works PDF
+STANDBY row updated. Farm stopped. Open: the booster's `config:` line still
+has no `defaults_fingerprint` (the hard convention). Everything below is
+still current.
+
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
 Defaults fingerprint `8deb8110` (lowThrust, C# `Config`). Committed and
