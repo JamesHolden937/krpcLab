@@ -306,6 +306,9 @@ class Vessel:
         self.situation = Situation.sub_orbital
         self.control = Control()
         self.auto_pilot = AutoPilot(self)
+        # No airbrakes or engines to prepare at START: the fake's thrust
+        # is ``thrust`` above, not a part.
+        self.parts = types.SimpleNamespace(control_surfaces=[], engines=[])
         self.orbit = types.SimpleNamespace(body=self.body)
         self._flight = Flight(self)
 

@@ -93,6 +93,58 @@ def set_autopilot_engaged(autopilot, engaged):
         return exc
 
 
+AIRBRAKE_MODULE = "ModuleAeroSurface"   # the stock airbrake's part module
+
+
+def prepare_vehicle(vessel, cfg):
+    """Deploy every airbrake and light every liquid engine, at START.
+
+    This replaces firing an action group, which only worked on a craft whose
+    builder had put the right parts on AG2.  Airbrakes are found by their
+    part module, set to ``AIRBRAKE_DEPLOY_ANGLE_DEG``, deployed, and given
+    pitch and yaw control (roll is left as the craft has it).  Liquid engines
+    are those burning ``LiquidFuel``; activating one leaves the throttle where
+    it is, which is zero in STANDBY.  Returns the lines to log: the deploy
+    angle is read back, because the game may clamp it to the part's range.
+    Each part is tried on its own, so one that refuses does not stop the rest.
+    """
+    lines = []
+    brakes, angles = 0, []
+    for surface in vessel.parts.control_surfaces:
+        part = surface.part
+        try:
+            module = next((m for m in part.modules
+                           if m.name == AIRBRAKE_MODULE), None)
+            if module is None:
+                continue
+            if module.has_field("Deploy Angle"):
+                module.set_field_float("Deploy Angle",
+                                       float(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+                angles.append(module.get_field("Deploy Angle"))
+            surface.pitch_enabled = True
+            surface.yaw_enabled = True
+            surface.deployed = True
+            brakes += 1
+        except Exception as exc:        # noqa: BLE001 -- KSP-side failure
+            lines.append("airbrake %s refused: %s"
+                         % (part.title, str(exc).splitlines()[0]))
+    lines.append("airbrakes deployed: %d, deploy angle %s (asked %.0f)"
+                 % (brakes, "/".join(sorted(set(angles))) or "n/a",
+                    cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+    lit = 0
+    for engine in vessel.parts.engines:
+        try:
+            if "LiquidFuel" not in engine.propellant_names:
+                continue
+            engine.active = True
+            lit += 1
+        except Exception as exc:        # noqa: BLE001 -- KSP-side failure
+            lines.append("engine %s refused: %s"
+                         % (engine.part.title, str(exc).splitlines()[0]))
+    lines.append("liquid engines activated: %d" % lit)
+    return lines
+
+
 class Autoland:
     def __init__(self, conn, cfg, logbook):
         self.conn = conn
@@ -337,15 +389,14 @@ class Autoland:
         if self.autostart or self.gui.start_pressed():
             self.autostart = False
             self.rcs_permitted = True   # allowed from here; see ``update_rcs``
-            self.control.set_action_group(self.cfg.STARTUP_ACTION_GROUP, True)
+            for line in prepare_vehicle(self.vessel, self.cfg):
+                self.log.event(snap.ut, line)
             self.control.sas = False
             self.autopilot.reference_frame = self.frame
             self.aim(snap.direction, snap)   # hold attitude, but stop the roll
             self.engage_autopilot(snap.ut)
             self.gui.set_start_label("RUNNING")
-            self.log.event(snap.ut, "start: rcs=%s ag%d on"
-                           % (self.cfg.ENABLE_RCS,
-                              self.cfg.STARTUP_ACTION_GROUP))
+            self.log.event(snap.ut, "start: rcs=%s" % self.cfg.ENABLE_RCS)
             self.enter(SEPARATION, snap.ut)
         self.extra_lines = ["press START AUTOLAND"]
 

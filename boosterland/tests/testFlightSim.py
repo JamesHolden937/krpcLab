@@ -143,10 +143,11 @@ class TestClosedLoop(unittest.TestCase):
         self.assertTrue(run.rcs_permitted)
         self.assertFalse(vessel.control.rcs,
                          "thrusters left open on a settled attitude")
-        self.assertTrue(vessel.control.action_groups.get(2))
         self.assertTrue(vessel.control.gear)
         self.assertEqual(vessel.control.throttle, 0.0)   # engines cut at the end
         body = open(log_path).read()
+        self.assertIn("airbrakes deployed: 0", body)
+        self.assertIn("liquid engines activated: 0", body)
         for phase in ("BOOSTBACK", "COAST", "LANDING_BURN", "TOUCHDOWN"):
             self.assertIn(phase, body)
 

@@ -294,8 +294,9 @@ STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
                                        +--+ CORRECTION
 ```
 
-- **STANDBY** — idle until the in-game START button; then RCS on, action group
-  `STARTUP_ACTION_GROUP` (2) fired, autopilot engaged holding current attitude
+- **STANDBY** — idle until the in-game START button; then RCS on, every airbrake
+  deployed at `AIRBRAKE_DEPLOY_ANGLE_DEG` (90) with pitch and yaw control on,
+  every liquid engine activated, autopilot engaged holding current attitude
   and roll.
 - **SEPARATION** — coast until the upper stage is out of the way, holding the
   separation attitude. The engines are off here whatever else happens, so this

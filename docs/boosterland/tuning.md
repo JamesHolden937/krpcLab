@@ -172,7 +172,9 @@ re-probed in flight. These are the numbers that are not:
 - `PAD_LAT`/`PAD_LON` are the KSC pad, and `TERRAIN_MAX_M` (7000) is Kerbin's
   tallest ground — a hard floor under `Snapshot.landing_height`, so on a body
   with higher terrain it would clamp a *correct* height.
-- `STARTUP_ACTION_GROUP` (2) assumes grid fins on AG2, `ENABLE_RCS` assumes
+- START deploys every airbrake (`ModuleAeroSurface`) at
+  `AIRBRAKE_DEPLOY_ANGLE_DEG` (90) with pitch and yaw on, and activates every
+  `LiquidFuel` engine; `ENABLE_RCS` assumes
   there is RCS, `GEAR_DEPLOY_ALT_M` assumes legs worth deploying at 350 m, and
   `CORRECTION_MAX_BURNS` (3) is a guess at the engine's relights.
 - `LEG_CLEARANCE_FALLBACK_M` (10) is your booster's half-length while

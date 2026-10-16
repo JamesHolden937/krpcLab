@@ -1472,10 +1472,10 @@ def _snapshot_for_correction():
 class TestConfig(unittest.TestCase):
     def test_overrides_are_type_coerced(self):
         cfg = apply_overrides(Config(), ["BOOSTBACK_TOLERANCE_M=250",
-                                         "STARTUP_ACTION_GROUP=3",
+                                         "AIRBRAKE_DEPLOY_ANGLE_DEG=45",
                                          "ENABLE_RCS=false"])
         self.assertEqual(cfg.BOOSTBACK_TOLERANCE_M, 250.0)
-        self.assertEqual(cfg.STARTUP_ACTION_GROUP, 3)
+        self.assertEqual(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, 45.0)
         self.assertIs(cfg.ENABLE_RCS, False)
 
     def test_unknown_field_is_rejected(self):
