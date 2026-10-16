@@ -348,6 +348,8 @@ namespace LowThrust
             engines = new Engines(vessel);
             Attitude.Reset();
             Attitude.rcsMode = cfg.RCS_MODE;
+            Attitude.rcsRate = cfg.RCS_RATE_DEG * Math.PI / 180.0;
+            Attitude.Measure(vessel);
             Attitude.axis = v => engines.AxisWorld();
             if (cfg.WARP_BELOW_LIMITS) Warp.Relax(cfg.TERRAIN_MARGIN_M);
             cpuIndex = 1;

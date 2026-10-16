@@ -55,6 +55,9 @@ namespace LowThrust
         internal static Func<Vessel, Vector3d> axis;
         /// <summary>RCS_MODE: "assist", "always" or "off".</summary>
         internal static string rcsMode = "assist";
+        /// <summary>RCS_RATE_DEG in rad/s: a turn RCS helps peaks at no more
+        /// than this, or the rate the wheels and gimbal alone would reach.</summary>
+        internal static double rcsRate = 2.0 * Math.PI / 180.0;
         /// <summary>The controller's throttle as last flown (0 coasting or
         /// turning): the share of the gimbal's torque there is.</summary>
         internal static double thrustShare;
@@ -124,20 +127,11 @@ namespace LowThrust
             rotated = false;
         }
 
-        /// <summary>One physics step: measure off rails, turn on rails --
-        /// only while a mission flies this vessel (active); otherwise nothing
-        /// is touched.</summary>
+        /// <summary>One physics step: measure off rails (read only, always),
+        /// turn on rails only while a mission flies this vessel (active).</summary>
         internal static void Step(Vessel v, bool active)
         {
             if (v == null) return;
-            if (!active)
-            {
-                // not ours: forget it, so a mission started later begins from
-                // the game's own state, and nothing is handed back
-                vessel = null;
-                rotated = false;
-                return;
-            }
             if (v != vessel)
             {
                 vessel = v;
@@ -148,7 +142,7 @@ namespace LowThrust
             }
             if (!v.packed)
             {
-                if (wasPacked && rotated) HandBack(v);
+                if (wasPacked && rotated && active) HandBack(v);
                 Measure(v);
                 omega = v.angularVelocity;
                 wasPacked = false;
@@ -157,6 +151,9 @@ namespace LowThrust
                 return;
             }
             wasPacked = true;
+            // not a mission's: measured above while off rails (read only),
+            // never turned, and nothing turned earlier is handed back
+            if (!active) { rotated = false; settled = false; return; }
             double dt = TimeWarp.fixedDeltaTime;
             if (target == null)
             {
@@ -171,7 +168,7 @@ namespace LowThrust
 
         // --- measuring (off rails) --------------------------------------------------
 
-        static void Measure(Vessel v)
+        internal static void Measure(Vessel v)
         {
             moi = v.MOI;
             Transform rt = v.ReferenceTransform;
@@ -365,6 +362,8 @@ namespace LowThrust
             Vector3d a = Plan(v, ecShare, rcsShare);
             alpha = a;
             Vector3d wCap = alphaW * ecShare, gCap = alphaG * thrustShare;
+            Vector3d free = wCap + gCap;
+            bool rcsTurn = rcsShare > 0 && (a.x > free.x + 1e-12 || a.y > free.y + 1e-12 || a.z > free.z + 1e-12);
             int n = (int)Math.Ceiling(dt / STEP);
             if (n > MAX_STEPS) n = MAX_STEPS;
             double h = Math.Min(dt / n, STEP);
@@ -381,7 +380,12 @@ namespace LowThrust
                     break;
                 Vector3d ax = sin > 1e-12 ? cross / sin : Vector3d.zero;
                 double acc = AxisAccel(ax, a) * MARGIN;
-                Vector3d want = ax * Math.Min(Math.Sqrt(2 * acc * angle), angle / SETTLE) + targetRate;
+                double speed = Math.Min(Math.Sqrt(2 * acc * angle), angle / SETTLE);
+                // RCS spins the turn up and down faster; it does not raise its
+                // peak past what the wheels would reach (or rcsRate), so the
+                // propellant a turn takes stays small
+                if (rcsTurn) speed = Math.Min(speed, Math.Max(rcsRate, Math.Sqrt(2 * AxisAccel(ax, free) * MARGIN * angle)));
+                Vector3d want = ax * speed + targetRate;
                 Vector3d dw = want - omega;
                 Vector3d acc3 = new Vector3d(Clamp(Div(dw.x / RESPONSE, a.x)) * a.x,
                                              Clamp(Div(dw.y / RESPONSE, a.y)) * a.y,

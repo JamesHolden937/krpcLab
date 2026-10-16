@@ -195,6 +195,11 @@ namespace LowThrust
         // (faster turns, propellant spent); "off" never fires it.  Modelled
         // as pure torque: it never moves the orbit.
         public string RCS_MODE = "assist";
+        // A turn RCS helps peaks at no more than this rate (deg/s), or the
+        // rate the wheels and gimbal alone would reach if higher: RCS
+        // shortens the spin-up and stop, it does not race the turn (the
+        // shuttle without wheels drew 775 kg turning at ~20 deg/s).
+        public double RCS_RATE_DEG = 2.0;
         // Logging only: the steering line reports the thrust dv flown with the
         // axis more than this off its command.
         public double STEER_OFF_DEG = 0.5;
