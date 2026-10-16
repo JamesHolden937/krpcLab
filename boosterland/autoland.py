@@ -216,8 +216,10 @@ class Autoland:
         self.corrections = 0
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
-        self.deploy_last = None         # (angle, long) at the last step
-        self.deploy_gain = None         # metres shorter per degree more
+        self.deploy_record = None       # (angle, curve, ut) at the last step
+        self.deploy_k = None            # d ln(Cd*A) / d angle, per degree
+        self.deploy_resweep_ut = None   # re-sweep once the brakes have moved
+        self.deploy_none = False        # no airbrake answered: law off
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
         self.correction_best_miss = None    # ... and the least it has reached
@@ -677,62 +679,109 @@ class Autoland:
             self.enter(CORRECTION, snap.ut, "miss=%.0fm" % distance)
 
     def run_deploy(self, snap):
-        """Range by drag: step the airbrakes' deploy angle against the
-        predicted along-track miss.
+        """Range by drag: step the airbrakes' deploy angle onto the pad.
 
         The only control after boostback that can make the booster land
         *longer* -- correction burns and the landing burn only shorten.
-        Every ``DEPLOY_STEP_S`` the angle moves by ``long / gain`` (bounded
-        by ``DEPLOY_MAX_STEP_DEG``) and the drag curve is re-swept, because
-        the probe simulates the shape the vessel has now.  The gain is
-        learned from each step's change in the predicted miss, starting at
-        ``DEPLOY_GAIN_M_PER_DEG``: on the heavy booster 90 -> 45 -> 0 moved
-        the landing ~450 m then ~800 m (dep1-1016).
+        Every ``DEPLOY_STEP_S`` it takes a Newton step on a gain it works out
+        for itself, as the product of two things any vehicle can be
+        measured for, so no constant here belongs to one craft:
 
-        It acts for the whole coast, down to the landing burn.  ``long`` is
-        measured along the horizontal *velocity*, the axis drag acts on,
-        not along the line to the pad (``miss_components``), which swings
-        round as the booster comes overhead.
+        * ``S``, metres of along-track miss per unit of ln(Cd*A): the
+          propagator flown twice, the second time with the drag curve scaled
+          by ``1 + DEPLOY_SENS_EPS`` and the same steering.  Exact for this
+          trajectory and this vehicle, and recomputed every step, so it
+          follows the sensitivity as it collapses toward the ground.
+        * ``k``, ln(Cd*A) per degree of deploy: the drag probe simulates the
+          vessel as it is now, so the curve swept after a step against the
+          curve before it, bin by bin, is this vehicle's brake authority at
+          this angle.  The first step is a fixed ``DEPLOY_PROBE_DEG`` that
+          takes the first reading.
+
+        The step is ``-long / (S k)`` times ``DEPLOY_NEWTON_FRACTION``,
+        rate-limited by ``DEPLOY_MAX_STEP_DEG``.  ``long`` is measured along
+        the horizontal velocity, the axis drag acts on.  The curve is
+        re-swept ``DEPLOY_SETTLE_S`` after a step, once the brakes have
+        finished moving.  It acts for the whole coast.
         """
         cfg = self.cfg
-        if snap.ut < self.deploy_next_ut or self.prediction is None:
+        if self.deploy_none:
+            return
+        if (self.deploy_resweep_ut is not None
+                and snap.ut >= self.deploy_resweep_ut):
+            self.deploy_resweep_ut = None
+            self.env.request_resweep()
+        if snap.ut < self.deploy_next_ut or self.deploy_resweep_ut is not None:
             return
         up = vec.unit(snap.position)
         along = vec.project_out(snap.velocity, up)
         if vec.norm(along) < 1.0:
             return
-        miss = vec.project_out(vec.sub(self.prediction.position,
-                                       self.env.target), up)
-        long = vec.dot(miss, vec.unit(along))
+        along = vec.unit(along)
+
+        def long_of(prediction):
+            miss = vec.project_out(vec.sub(prediction.position,
+                                           self.env.target), up)
+            return vec.dot(miss, along)
+
+        eps = cfg.DEPLOY_SENS_EPS
+        base = trajectory.predict_landing(
+            self.env, snap.position, snap.velocity, snap.mass,
+            snap.max_accel, cfg, steer=self.steer)
+        more = trajectory.predict_landing(
+            self.env, snap.position, snap.velocity, snap.mass,
+            snap.max_accel, cfg, steer=self.steer, drag_scale=1.0 + eps)
+        long = long_of(base)
+        sens = (long_of(more) - long) / math.log(1.0 + eps)
+
         angle = (self.deploy_angle if self.deploy_angle is not None
                  else cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
-        gain = (self.deploy_gain if self.deploy_gain is not None
-                else cfg.DEPLOY_GAIN_M_PER_DEG)
-        if self.deploy_last is not None:
-            a0, l0 = self.deploy_last
+        curve = self.env.curve_bins()
+        swept = self.env.last_sweep_ut()
+        if self.deploy_record is not None:
+            a0, c0, t0 = self.deploy_record
             da = angle - a0
-            if abs(da) >= cfg.DEPLOY_LEARN_MIN_DEG:
-                measured = -(long - l0) / da
-                if measured > 0.0:
-                    gain = min(max(0.5 * gain + 0.5 * measured,
-                                   cfg.DEPLOY_GAIN_MIN_M_PER_DEG),
-                               cfg.DEPLOY_GAIN_MAX_M_PER_DEG)
-        self.deploy_gain = gain
+            if (abs(da) >= cfg.DEPLOY_LEARN_MIN_DEG and swept is not None
+                    and swept > t0):
+                ratios = sorted(math.log(n / o) for n, o in zip(curve, c0)
+                                if n and o and n > 0.0 and o > 0.0)
+                if ratios:
+                    k = ratios[len(ratios) // 2] / da
+                    if k > 0.0:
+                        self.deploy_k = (k if self.deploy_k is None else
+                                         0.5 * self.deploy_k + 0.5 * k)
+        self.deploy_record = (angle, curve, snap.ut)
+        self.deploy_next_ut = snap.ut + cfg.DEPLOY_STEP_S
+
         step = 0.0
+        how = "hold"
         if abs(long) > cfg.DEPLOY_DEADBAND_M:
+            if self.deploy_k is None:
+                # No reading of the brakes yet: a fixed step the right way
+                # (more drag shortens, so a long miss opens them).
+                step = math.copysign(cfg.DEPLOY_PROBE_DEG, long * -sens)
+                how = "probe"
+            elif abs(sens * self.deploy_k) > 1e-9:
+                step = (-long / (sens * self.deploy_k)
+                        * cfg.DEPLOY_NEWTON_FRACTION)
+                how = "newton"
             step = max(-cfg.DEPLOY_MAX_STEP_DEG,
-                       min(cfg.DEPLOY_MAX_STEP_DEG, long / gain))
+                       min(cfg.DEPLOY_MAX_STEP_DEG, step))
         new = max(cfg.DEPLOY_MIN_DEG,
                   min(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, angle + step))
-        self.deploy_last = (angle, long)
-        self.deploy_next_ut = snap.ut + cfg.DEPLOY_STEP_S
         if abs(new - angle) >= 0.5:
             got = set_airbrake_angle(self.vessel, new)
-            self.env.request_resweep()
-            self.log.event(snap.ut, "brakes %.0f -> %.0f long=%+.0f gain=%.1f"
-                           " (read %s)" % (angle, new, long, gain,
-                                           "/".join(sorted(set(map(str, got))))
-                                           or "n/a"))
+            if not got:
+                self.deploy_none = True
+                self.log.event(snap.ut, "brakes: no airbrake answered, law off")
+                return
+            self.deploy_resweep_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.log.event(
+                snap.ut, "brakes %.0f -> %.0f %s long=%+.0f S=%.0f k=%s"
+                " (read %s)" % (angle, new, how, long, sens,
+                                "%.4f" % self.deploy_k
+                                if self.deploy_k is not None else "-",
+                                "/".join(sorted(set(map(str, got))))))
         self.deploy_angle = new
 
     def measure_tracking(self, snap):

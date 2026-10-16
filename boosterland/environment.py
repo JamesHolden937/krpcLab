@@ -681,6 +681,13 @@ class Environment:
                 return vec.scale(axis, -1.0)    # flow comes at the nose
         return vec.unit(velocity)
 
+    def curve_bins(self):
+        """A copy of the Mach curve, one entry per bin (None if unfilled)."""
+        return list(self._curve)
+
+    def last_sweep_ut(self):
+        return self._last_sweep_ut
+
     def request_resweep(self):
         """Re-take the whole curve at the next descent-attitude refresh.
 

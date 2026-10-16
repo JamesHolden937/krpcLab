@@ -37,7 +37,7 @@ def gravity_at(env, r):
     return vec.scale(r, -env.mu / (d * d * d))
 
 
-def drag_lookup(env, drag_area=None):
+def drag_lookup(env, drag_area=None, scale=1.0):
     """Cd*A as a function of ``(speed, altitude)``.
 
     A constant is a bad model of a booster's drag: Cd has a transonic hump,
@@ -47,7 +47,9 @@ def drag_lookup(env, drag_area=None):
     both to see the same air.
     """
     if drag_area is not None:
-        return lambda speed, altitude: drag_area
+        return lambda speed, altitude: drag_area * scale
+    if scale != 1.0:
+        return lambda speed, altitude: env.drag_area_at(speed, altitude) * scale
     return env.drag_area_at
 
 
@@ -302,7 +304,7 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
 
 
 def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
-                    steer=None):
+                    steer=None, drag_scale=1.0):
     """Propagate to touchdown, including the landing burn's downrange creep.
 
     ``steer`` is the angle of attack the vehicle is going to fly (see
@@ -311,7 +313,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     that does not include the steering the booster is about to fly is a
     prediction of a trajectory nobody flies.
     """
-    drag = drag_lookup(env, drag_area)
+    drag = drag_lookup(env, drag_area, drag_scale)
     r = tuple(r0)
     v = tuple(v0)
     t = 0.0

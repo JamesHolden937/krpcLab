@@ -50,15 +50,17 @@ class Config:
                                             # heavy 17-386 m, median 74, v
                                             # 328-619; quicksave 8-245 v two
                                             # 2.3-2.7 km splashes in six
-    DEPLOY_STEP_S: float = 10.0              # one step, then a drag re-sweep
-    DEPLOY_MAX_STEP_DEG: float = 10.0
+    DEPLOY_STEP_S: float = 10.0             # one Newton step per this
+    DEPLOY_SETTLE_S: float = 2.0            # re-sweep drag this long after
+                                            # a step (the brakes animate)
+    DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
                                             # scatter (dep1-1016)
     DEPLOY_DEADBAND_M: float = 30.0
-    DEPLOY_GAIN_M_PER_DEG: float = 20.0     # first guess; learned per step
-    DEPLOY_GAIN_MIN_M_PER_DEG: float = 20.0
-    DEPLOY_GAIN_MAX_M_PER_DEG: float = 60.0
-    DEPLOY_LEARN_MIN_DEG: float = 3.0       # learn only from a step this big
+    DEPLOY_SENS_EPS: float = 0.05           # drag scale of the sensitivity probe
+    DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
+    DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
+    DEPLOY_LEARN_MIN_DEG: float = 3.0       # measure k only from a step this big
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but
