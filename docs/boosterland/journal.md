@@ -63,6 +63,9 @@ ov1 (gate + law v gate alone v neither): heavy 17/69/72/75/112/386 v
 hot 195. Heavy and qs_hot now land ~200 m **long**: the steered prediction
 reads ~0 at 20 km and drifts 200-580 m long by 10 km, after the law stops.
 
+low1 (`DEPLOY_MIN_ALT_M` 3000 v 8000, heavy/hot/quicksave): medians 74/54/55
+v 122/43/56, 36/36 intact -- null, 8 km kept.
+
 Open: qs_hot LOG10512 crashed at 145 m/s -- burn entered on time at 697 m
 (needed 698) but the throttle read 0 at 584 m and came up 0.23 -> 0.95 only
 by ~400 m; not explained without DIAG. The steered prediction's lift credit
