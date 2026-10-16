@@ -43,9 +43,6 @@ class Config:
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
     AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START
-    AIRBRAKE_STEER: bool = False            # ... and made pitch/yaw surfaces
-                                            # (refuted at rt6-1016, but flown
-                                            # through backfiring corrections)
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but

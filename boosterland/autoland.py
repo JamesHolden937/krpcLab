@@ -126,11 +126,9 @@ def prepare_vehicle(vessel, cfg):
             # curve probed during the flip is not the one the coast flies.
             # Measured at 1x on quicksave: with pitch/yaw on, 93/141/262/300 m
             # (rt6-1016); the action-group deploy without it, 16-51 m on six
-            # of eight (ab7-1016).  Both with corrections on, which then
-            # backfired every burn; ``AIRBRAKE_STEER`` re-flies it without.
-            if cfg.AIRBRAKE_STEER:
-                surface.pitch_enabled = True
-                surface.yaw_enabled = True
+            # of eight (ab7-1016).  Re-flown with corrections gated at
+            # 1000 m (abs1-1016, 6 a cell): heavy 2 lost + 1 splashed, mean
+            # ~1020 v 578; quicksave mean 242 v 160.
             surface.deployed = True
             brakes += 1
         except Exception as exc:        # noqa: BLE001 -- KSP-side failure
