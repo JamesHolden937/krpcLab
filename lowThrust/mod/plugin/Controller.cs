@@ -293,11 +293,14 @@ namespace LowThrust
                                             engines.thrustN / Engines.Mass(vessel), Py.Degrees(Attitude.alphaW.x),
                                             Py.Degrees(Attitude.alphaW.y), Py.Degrees(Attitude.alphaW.z)));
                 log.Event(ut, string.Format(IC, "attitude on rails: gimbal {0} ({1:F3} {2:F3} {3:F3} deg/s^2 at full thrust); "
-                                                + "RCS {4} nozzle(s) ({5:F3} {6:F3} {7:F3} deg/s^2), RCS_MODE {8}, RCS group {9}",
+                                                + "RCS {4} nozzle(s) ({5:F3} {6:F3} {7:F3} deg/s^2), RCS_MODE {8}, RCS group {9}; "
+                                                + "RCS lever {10:F2} {11:F2} {12:F2} m, Isp {13:F0} s; MOI {14:F0} {15:F0} {16:F0} t m^2",
                                             Attitude.gimbals, Py.Degrees(Attitude.alphaG.x), Py.Degrees(Attitude.alphaG.y),
                                             Py.Degrees(Attitude.alphaG.z), Attitude.rcsThrusters, Py.Degrees(Attitude.alphaR.x),
                                             Py.Degrees(Attitude.alphaR.y), Py.Degrees(Attitude.alphaR.z), cfg.RCS_MODE,
-                                            vessel.ActionGroups[KSPActionGroup.RCS] ? "on" : "off (RCS not used)"));
+                                            vessel.ActionGroups[KSPActionGroup.RCS] ? "on" : "off (RCS not used)",
+                                            Attitude.RcsLever(0), Attitude.RcsLever(1), Attitude.RcsLever(2), Attitude.RcsIsp,
+                                            Attitude.moi.x, Attitude.moi.y, Attitude.moi.z));
                 log.Event(ut, FrameCheck(vessel));
                 log.Event(ut, engines.Describe());
                 if (engines.thrustN <= 0) throw new ArgumentException("no engine lit on this vessel");

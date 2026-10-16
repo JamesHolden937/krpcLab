@@ -315,6 +315,10 @@ namespace LowThrust
             return sum;
         }
 
+        /// <summary>RCS torque per thrust on an axis, m (logging).</summary>
+        internal static double RcsLever(int k) { return rcsLambda[k] > 0 ? 1 / rcsLambda[k] : 0; }
+        internal static double RcsIsp { get { return rcsIsp; } }
+
         static Vector3d PerMoi(Vector3d t)
         {
             return new Vector3d(moi.x > 0 ? t.x / moi.x : 0, moi.y > 0 ? t.y / moi.y : 0, moi.z > 0 ? t.z / moi.z : 0);
@@ -492,8 +496,11 @@ namespace LowThrust
             settled = true;
         }
 
-        /// <summary>A new command: steer again until on it.</summary>
-        internal static void Unsettle() { settled = false; }
+        /// <summary>A new command: steer again until on it.  The jump to it
+        /// is not the target turning: its rate is measured afresh (a jump read
+        /// as a rate spun the vessel up to 30 deg/s and back, 25-50 kg of RCS
+        /// a command).</summary>
+        internal static void Unsettle() { settled = false; haveLast = false; }
 
         static Vector3d AxisBody(Vessel v)
         {
