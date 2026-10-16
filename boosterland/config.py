@@ -75,6 +75,11 @@ class Config:
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
     ENGINE_PAIR_TOL: float = 0.25           # pairing tolerance, of the radius
     ENABLE_RCS: bool = True
+    RCS_TRANSLATE: bool = False             # RCS translation nulls sideways
+                                            # speed below LANDING_NULL_ALT_M;
+                                            # see Autoland.translate
+    RCS_TRANSLATE_TAU_S: float = 1.5        # time constant of that nulling
+    RCS_TRANSLATE_DEADBAND_M_S: float = 0.2
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but
     # allowed is not the same as open.  Most ticks of a five-minute flight the
