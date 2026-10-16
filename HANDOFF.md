@@ -1,19 +1,33 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-16: boosterland START prepares the vehicle itself
+## 2026-10-16 (late morning): boosterland -- the heavy booster, NOT fixed
 
-The user asked for the AG2 trigger to go. START now (`prepare_vehicle` in
-`boosterland/autoland.py`) finds every airbrake by its `ModuleAeroSurface`
-module, sets `Deploy Angle` to `AIRBRAKE_DEPLOY_ANGLE_DEG` (90), turns pitch
-and yaw control on and deploys it, and activates every engine burning
-`LiquidFuel`; the counts and the read-back angle are logged.
-`STARTUP_ACTION_GROUP` is gone from boosterland (the spaceplane keeps its
-own). One farm flight, `quicksave` on ksp0, LOG10234: 4 airbrakes at 90
-(not clamped), 1 engine, landed 6 m from the pad at 2.3 m/s. One flight
-says it works, not that accuracy is unchanged. Booster how-it-works PDF
-STANDBY row updated. Farm stopped. Open: the booster's `config:` line still
-has no `defaults_fingerprint` (the hard convention). Everything below is
-still current.
+The user's live flight of a second booster (the "shuttle first complete test
+flight" first stage, 99 t, 5 Vectors, 6 airbrakes on the top tank) missed
+830 m short and broke up (LOG10236). Full write-up and evidence:
+`docs/boosterland/journal.md`. Committed and pushed. Farm stopped.
+
+- **New save `qs_heavy`** + `boosterland/tools/splicebooster.py` (cuts a
+  booster out of a stack save and drops it into a separation save). Reproduces
+  the live failure.
+- **Six default changes** (journal table): lift scaled by measured aoa
+  tracking; correction aborts against its best miss; landing trim gain per
+  thrust-to-weight (`LANDING_THROTTLE_GAIN` replaces `LANDING_THROTTLE_KP`);
+  landing reference retrograde-in-a-cone; saturation RCS in COAST only;
+  airbrakes not made pitch/yaw surfaces.
+- **Result at 1x**: heavy lands soft (2-9 m/s) but ~600 m short, 1 in 4 lost;
+  original `quicksave` 19-431 m, no better than 2984d8d (16-51 on 6/8).
+- **Refuted, deleted**: propellant pump to the top tanks (user's idea);
+  `DRAG_PROBE_DESCENT` on the heavy (worse).
+- **Next**: the heavy's three corrections are deterministic (855->1190,
+  1240->403, 420->800 on four flights of four) and make most of the miss;
+  read one tick by tick (DIAG logs LOG10310-10315). Then the original
+  booster's hard arrivals (present before this session too).
+- **Traps**: `--timescale` persists per instance -- pass `--timescale 1`;
+  the booster has no governor and everything before ~1010 flew at 4x.
+- **Open**: how-it-works PDF not rewritten (behaviour still moving; the
+  airbrake row in it is now wrong); the booster's `config:` line still has
+  no `defaults_fingerprint`.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
