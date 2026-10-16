@@ -126,7 +126,11 @@ def prepare_vehicle(vessel, cfg):
             # curve probed during the flip is not the one the coast flies.
             # Measured at 1x on quicksave: with pitch/yaw on, 93/141/262/300 m
             # (rt6-1016); the action-group deploy without it, 16-51 m on six
-            # of eight (ab7-1016).
+            # of eight (ab7-1016).  Both with corrections on, which then
+            # backfired every burn; ``AIRBRAKE_STEER`` re-flies it without.
+            if cfg.AIRBRAKE_STEER:
+                surface.pitch_enabled = True
+                surface.yaw_enabled = True
             surface.deployed = True
             brakes += 1
         except Exception as exc:        # noqa: BLE001 -- KSP-side failure
@@ -750,10 +754,10 @@ class Autoland:
         # and stopped at 1068 having spent 7 t of a heavy booster's landing
         # propellant.  The best-so-far is the start until the burn improves
         # on it, so a burn that never helps is cut as before.  The floor of
-        # one entry gate above the best keeps a burn that has nearly closed
+        # a floor of CORRECTION_ABORT_FLOOR_M above the best keeps a burn that has nearly closed
         # the miss from being called a backfire on prediction noise.
         return distance > max(best * self.cfg.CORRECTION_ABORT_RATIO,
-                              best + self.cfg.CORRECTION_ENTER_M)
+                              best + self.cfg.CORRECTION_ABORT_FLOOR_M)
 
     def correction_gradient(self, snap, prediction):
         """Metres of miss closed per m/s burned along the correction attitude.

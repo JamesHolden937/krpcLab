@@ -43,6 +43,9 @@ class Config:
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
     AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START
+    AIRBRAKE_STEER: bool = False            # ... and made pitch/yaw surfaces
+                                            # (refuted at rt6-1016, but flown
+                                            # through backfiring corrections)
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but
@@ -254,7 +257,20 @@ class Config:
     COAST_MAX_TILT_DEG: float = 12.0
 
     # --- Mid-course correction (trims the miss the coast opens up) ---------
-    CORRECTION_ENTER_M: float = 60.0        # start correcting above this miss.
+    CORRECTION_ENTER_M: float = 1000.0      # start correcting above this miss.
+                                            # Only a disturbance the air cannot
+                                            # steer out: a correction starts
+                                            # from COAST's *steered* miss and
+                                            # is judged on an unsteered one, so
+                                            # below this every burn backfired
+                                            # (noc1-1016: corrections off v 60,
+                                            # 6 a cell -- heavy 0 v 3 lost,
+                                            # mean 547 v 741; quicksave mean
+                                            # 98 v 342, worst 235 v 1088).  At
+                                            # 1000 a 25 m/s mid-coast shove is
+                                            # still caught in the sim (151-210 m
+                                            # v 1094-2886 with none).  Was 60;
+                                            # the history below is of that.
                                             # 1200 was set when the predicted
                                             # miss walked by ~1 km through the
                                             # coast (failure 11) -- the gate
@@ -369,6 +385,9 @@ class Config:
                                             # the *phase*, not just itself;
                                             # see run_correction
     CORRECTION_ABORT_GRACE_S: float = 3.0   # ... after this long, so a turn can settle
+    CORRECTION_ABORT_FLOOR_M: float = 60.0  # ... and never on less growth than
+                                            # this past the best (prediction
+                                            # noise; was the old 60 m gate)
     CORRECTION_MIN_GRADIENT: float = 0.5    # metres of miss closed per m/s, minimum
 
     # --- Landing burn -----------------------------------------------------
