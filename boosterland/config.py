@@ -43,6 +43,10 @@ class Config:
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
     AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START
+    COAST_DEPLOY_ANGLE_DEG: float = -1.0    # >= 0: re-set every airbrake
+                                            # to this at the first COAST tick
+                                            # (a gain probe for drag as range
+                                            # control); < 0 leaves it
     AIRBRAKE_STEER: bool = False            # ... and made pitch/yaw surfaces
                                             # (refuted at rt6-1016, but flown
                                             # through backfiring corrections)
