@@ -50,16 +50,16 @@ class Config:
     DEPLOY_LAW: bool = False                # COAST steps the airbrakes' deploy
                                             # angle against the along-track
                                             # miss; see Autoland.run_deploy
-    DEPLOY_STEP_S: float = 5.0              # one step, then a drag re-sweep
-    DEPLOY_MAX_STEP_DEG: float = 15.0
-    DEPLOY_MIN_DEG: float = 20.0            # 0 doubled the heavy's cross-track
+    DEPLOY_STEP_S: float = 10.0              # one step, then a drag re-sweep
+    DEPLOY_MAX_STEP_DEG: float = 10.0
+    DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
                                             # scatter (dep1-1016)
     DEPLOY_DEADBAND_M: float = 30.0
-    DEPLOY_GAIN_M_PER_DEG: float = 10.0     # first guess; learned per step
-    DEPLOY_GAIN_MIN_M_PER_DEG: float = 3.0
+    DEPLOY_GAIN_M_PER_DEG: float = 20.0     # first guess; learned per step
+    DEPLOY_GAIN_MIN_M_PER_DEG: float = 20.0
     DEPLOY_GAIN_MAX_M_PER_DEG: float = 60.0
     DEPLOY_LEARN_MIN_DEG: float = 3.0       # learn only from a step this big
-    DEPLOY_MIN_ALT_M: float = 3000.0        # hold the angle below this
+    DEPLOY_MIN_ALT_M: float = 8000.0        # hold the angle below this
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but
@@ -389,6 +389,7 @@ class Config:
     CORRECTION_TILT_GAIN: float = 0.12      # degrees of tilt per metre of miss
     CORRECTION_MAX_BURN_S: float = 45.0     # per-burn guard
     CORRECTION_COOLDOWN_S: float = 20.0     # settle before judging the miss again
+    CORRECTION_OVERSHOOT_ONLY: bool = False  # never enter on a short miss
     CORRECTION_MAX_BURNS: int = 3           # engines have limited relights
     CORRECTION_PROBE_DV: float = 5.0        # dv used to test which way a burn moves
     CORRECTION_GRADIENT_POWERED: bool = False   # fly the landing burn in the
@@ -450,7 +451,10 @@ class Config:
                                             # ran the tanks dry (LOG10237)
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
     TOUCHDOWN_SPEED: float = 2.0            # target descent rate at cutoff
-    LANDING_THROTTLE_VERTICAL: bool = False  # profile on descent rate, not |v|
+    LANDING_THROTTLE_VERTICAL: bool = True   # profile on descent rate, not |v|
+                                            # (vert1-1016: heavy 6/6 at 0.9-8.3 m/s
+                                            # on the 2 km prediction +-30 m, v 4/6
+                                            # drifting 300-750 m off it)
     FINAL_APPROACH_RATE: float = 0.5        # m/s of descent allowed per metre up
     LANDING_FLARE_ALT_M: float = 12.0       # this low and this slow, hover
     LANDING_FLARE_SPEED: float = 8.0        # thrust is all that can be wanted

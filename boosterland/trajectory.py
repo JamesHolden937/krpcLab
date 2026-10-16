@@ -177,8 +177,15 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         # climbs, is cut by the go-around guard, falls, and repeats -- every
         # tick, on both boosters, drifting 100-750 m (dlaw1-1016).  Thrust
         # along the vertical cannot take out sideways speed; the divert law
-        # can, given throttle that is neither 0 nor the cap.
-        speed = max(0.0, -vertical_speed)
+        # can, given throttle that is neither 0 nor the cap.  Higher up the
+        # sideways speed has to be braked like any other (the closed-loop
+        # sim hit at 54 m/s on descent rate alone), so it is weighted by
+        # height / LANDING_NULL_ALT_M: all of it at the top of the nulling
+        # band, where the divert takes over the lateral, none on the ground.
+        down = max(0.0, -vertical_speed)
+        side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
+        w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
+        speed = math.sqrt(down * down + w * w * side_sq)
     net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)

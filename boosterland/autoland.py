@@ -870,6 +870,14 @@ class Autoland:
         the landing burn, which has seconds and a tilt limit to work with.
         """
         cfg = self.cfg
+        if cfg.CORRECTION_OVERSHOOT_ONLY:
+            # CORRECTION steers within CORRECTION_MAX_TILT_DEG of retrograde,
+            # so in the game it only ever shortens: entered on a *short* miss
+            # it deepened it every time (vert1-1016 LOG10435: 1152 -> 1499,
+            # 1003 -> 2320, 1785 -> 2382, splashed 2 km short).
+            long, cross = self.miss_components(snap)
+            if long == long and long < 0.0 and abs(long) >= abs(cross):
+                return False
         return (distance > cfg.CORRECTION_ENTER_M
                 and snap.max_accel > 0.0
                 and snap.landing_height > cfg.CORRECTION_MIN_ALT_M
