@@ -1169,11 +1169,11 @@ namespace LowThrust
                     kv.Value.maxStepMs)).ToArray()));
             r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant "
                                     + "(mean thrust share {3:F3}); wheels drew {4:F1} EC ({5:F1} holding); RCS drew "
-                                    + "{6:F2} kg ({7:F2} holding); {8} holds the actuators could not give; {9} orbit "
+                                    + "{6:F2} kg ({7:F2} holding, {10:F2} while thrusting); {8} holds the actuators could not give; {9} orbit "
                                     + "restores (a rotation on rails that moved the elements; 0 expected)",
                                 fired, unfired, starved, shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed,
                                 Attitude.ecHold, Attitude.rcsKg, Attitude.rcsHoldKg, Attitude.holdsLost,
-                                Attitude.orbitRestores));
+                                Attitude.orbitRestores, Attitude.rcsBurnKg));
             r.Add(string.Format(IC, "steering: {0:F1} m/s thrust, {1:F2} m/s of it lost to the axis off the command "
                                     + "({2:F3}%); {3:F1} m/s flown more than {4:F1} deg off; worst {5:F2} deg",
                                 steerDv, steerLoss, steerDv > 0 ? 100 * steerLoss / steerDv : 0.0, steerOffDv,
@@ -1188,10 +1188,10 @@ namespace LowThrust
             string ap = k.e < 1 ? alt(k.ra).ToString("F0", IC) : "hyp";
             log.Telemetry(cr.t, string.Format(IC,
                 "{0,-8} {1,-7} ap={2}k pe={3:F0}k i={4:F2} nu={5:F0} thr={6:F2}/{7:F2} err={8:F1} tick={9:F0}s "
-                + "warp={10:F0}x m={11:F0}kg dv={12:F1} step={13:F2}ms",
+                + "warp={10:F0}x m={11:F0}kg dv={12:F1} step={13:F2}ms ec={14:F1} rcs={15:F2}/{16:F2}/{17:F2}kg",
                 mis.phase, cr.body.name, ap, alt(k.rp), Py.Degrees(LowThrust.Orbit.Inclination(cr.r, cr.v)),
                 Py.Degrees(k.nu), c.fired ? c.thr : 0.0, c.thr, c.err, c.tick, TimeWarp.CurrentRate, cr.m, mis.dv,
-                emaMs));
+                emaMs, Attitude.ecUsed, Attitude.rcsKg, Attitude.rcsBurnKg, Attitude.rcsHoldKg));
             if (mis.phase != lastPhase) lastPhase = mis.phase;
         }
 

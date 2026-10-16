@@ -73,6 +73,7 @@ namespace LowThrust
         internal static double ecHold;           // of ecUsed, holding a settled target
         internal static double rcsKg;            // RCS propellant drawn
         internal static double rcsHoldKg;        // of rcsKg, holding
+        internal static double rcsBurnKg;        // of rcsKg, while thrusting
         internal static int holdsLost;           // holds the actuators could not give
         internal static int orbitRestores;       // rotations on rails that moved the elements
         internal static int rcsThrusters, gimbals;
@@ -118,6 +119,7 @@ namespace LowThrust
             ecHold = 0;
             rcsKg = 0;
             rcsHoldKg = 0;
+            rcsBurnKg = 0;
             holdsLost = 0;
             orbitRestores = 0;
             thrustShare = 0;
@@ -174,7 +176,7 @@ namespace LowThrust
             Transform rt = v.ReferenceTransform;
             Vector3d com = v.CurrentCoM;
             Vector3d tw = Vector3d.zero, tg = Vector3d.zero;
-            Vector3d rPos = Vector3d.zero, rNeg = Vector3d.zero, fPos = Vector3d.zero, fNeg = Vector3d.zero;
+            var nozzles = new List<KeyValuePair<Vector3d, double>>();      // body torque kN m, thrust kN
             double rate = 0, rcsF = 0, rcsFlow = 0;
             int nr = 0, ng = 0;
             rcsProps.Clear();
@@ -208,11 +210,7 @@ namespace LowThrust
                             Vector3d tq = Vector3d.Cross((Vector3d)t.position - com, dir * f);
                             Vector3d b = rt.InverseTransformDirection((Vector3)tq);
                             b = new Vector3d(b.x * mask.x, b.y * mask.y, b.z * mask.z);
-                            for (int k = 0; k < 3; k++)
-                            {
-                                if (b[k] > 1e-9) { rPos[k] += b[k]; fPos[k] += f; }
-                                else if (b[k] < -1e-9) { rNeg[k] -= b[k]; fNeg[k] += f; }
-                            }
+                            nozzles.Add(new KeyValuePair<Vector3d, double>(b, f));
                             fm += f;
                             nr++;
                         }
@@ -234,12 +232,25 @@ namespace LowThrust
             alphaG = PerMoi(tg);
             gimbals = ng;
             rcsThrusters = nr;
+            // per axis, as the game fires them: each nozzle at the share of
+            // full thrust its lever on that axis bears to the longest lever
+            // (a nozzle beside the centre of mass hardly fires); the authority
+            // is the weaker direction's torque, the thrust per torque from both
             Vector3d tr = Vector3d.zero;
             for (int k = 0; k < 3; k++)
             {
-                tr[k] = Math.Min(rPos[k], rNeg[k]);
-                double torque = rPos[k] + rNeg[k];
-                rcsLambda[k] = torque > 0 ? (fPos[k] + fNeg[k]) / torque : 0;
+                double leverMax = 0;
+                foreach (var nz in nozzles) leverMax = Math.Max(leverMax, Math.Abs(nz.Key[k]) / nz.Value);
+                double rPos = 0, rNeg = 0, fSum = 0;
+                if (leverMax > 0)
+                    foreach (var nz in nozzles)
+                    {
+                        double tq = nz.Key[k], w = Math.Abs(tq) / nz.Value / leverMax;
+                        if (tq > 0) rPos += w * tq; else rNeg -= w * tq;
+                        fSum += w * nz.Value;
+                    }
+                tr[k] = Math.Min(rPos, rNeg);
+                rcsLambda[k] = rPos + rNeg > 0 ? fSum / (rPos + rNeg) : 0;
             }
             alphaR = PerMoi(tr);
             rcsIsp = rcsFlow > 0 ? rcsF / rcsFlow : 0;
@@ -408,7 +419,12 @@ namespace LowThrust
             ApplyBody(v, turned);
             double used = ecRate * (wheelInput.x + wheelInput.y + wheelInput.z);
             if (used > 0) ecUsed += Draw(v, EcId, used);
-            if (rcsOn) rcsKg += DrawRcs(RcsTonnes(rcsAccel)) * 1000.0;
+            if (rcsOn)
+            {
+                double kg = DrawRcs(RcsTonnes(rcsAccel)) * 1000.0;
+                rcsKg += kg;
+                if (thrustShare > 0) rcsBurnKg += kg;
+            }
             Vector3d tn = Quaternion.Inverse(turned) * (Vector3)tb;
             lastError = Vector3d.Angle(ab, tn);
             // the rest of a long frame, once on target, is held there
@@ -461,6 +477,7 @@ namespace LowThrust
                 double kg = DrawRcs(tonnes) * 1000.0;
                 rcsKg += kg;
                 rcsHoldKg += kg;
+                if (thrustShare > 0) rcsBurnKg += kg;
             }
             return true;
         }
