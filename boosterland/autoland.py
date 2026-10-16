@@ -25,6 +25,7 @@ from common import vec
 from . import guidance, trajectory
 from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
+from .engines import allocate, group_engines
 from .environment import Environment
 from .gui import ControlPanel, telemetry_lines
 from common.logbook import Logbook
@@ -165,6 +166,64 @@ def prepare_vehicle(vessel, cfg):
     return lines
 
 
+class EngineCluster:
+    """The booster's liquid engines, lit center first and then in pairs.
+
+    Built once at START from each engine's position in the vessel frame
+    (whose y axis is the vessel's long axis, the thrust axis), grouped by
+    ``engines.group_engines``.  ``set`` turns a demanded fraction of the
+    cluster's thrust into per-engine ``thrust_limit`` values with the main
+    throttle at 1, writing only the limits that moved.  Guidance's maximum
+    acceleration reads ``max_thrust``, which ignores the limits, so the
+    planner keeps seeing the whole cluster.
+    """
+
+    def __init__(self, vessel, cfg):
+        frame = vessel.reference_frame
+        self.engines = {}
+        thrust, rows = {}, []
+        for i, engine in enumerate(vessel.parts.engines):
+            try:
+                if ("LiquidFuel" not in engine.propellant_names
+                        or engine.throttle_locked):
+                    continue
+                x, _, z = engine.part.position(frame)
+                t = engine.max_vacuum_thrust or engine.max_thrust
+            except Exception:           # noqa: BLE001 -- KSP-side failure
+                continue
+            self.engines[i] = engine
+            thrust[i] = t
+            rows.append((i, (x, z), t))
+        self.thrust = thrust
+        self.groups = group_engines(rows, cfg.ENGINE_AXIS_TOL_M,
+                                    cfg.ENGINE_RING_TOL_M,
+                                    cfg.ENGINE_PAIR_TOL)
+        self.radius = {i: math.hypot(p[0], p[1]) for i, p, _ in rows}
+        self.limits = {}
+
+    def describe(self):
+        return "engine groups (lighting order): " + " ".join(
+            "[%d @ %.1f m]" % (len(g), max(self.radius[k] for k in g))
+            for g in self.groups)
+
+    def set(self, demand):
+        for k, x in allocate(demand, self.groups, self.thrust).items():
+            if abs(self.limits.get(k, -1.0) - x) > 0.005:
+                try:
+                    self.engines[k].thrust_limit = x
+                    self.limits[k] = x
+                except Exception:       # noqa: BLE001 -- KSP-side failure
+                    pass
+
+    def release(self):
+        """Every limit back to 100%, for the player."""
+        for k, engine in self.engines.items():
+            try:
+                engine.thrust_limit = 1.0
+            except Exception:           # noqa: BLE001
+                pass
+
+
 class Autoland:
     def __init__(self, conn, cfg, logbook):
         self.conn = conn
@@ -230,6 +289,8 @@ class Autoland:
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.commanded_throttle = None  # what set_throttle last asked for
+        self.demand = 0.0               # fraction of cluster thrust wanted
+        self.cluster = None             # EngineCluster, built at START
         self.throttle_diverged = False
         self.finished = False
         self.exit_reason = None
@@ -337,6 +398,13 @@ class Autoland:
         Every phase goes through here so ``check_throttle`` has something to
         compare the vessel's actual throttle against.
         """
+        self.demand = throttle
+        cluster = self.cluster
+        if cluster is not None and len(cluster.groups) > 1:
+            # Center engine first, then pairs, each to full: see
+            # EngineCluster.  The main throttle only gates the cluster.
+            cluster.set(throttle)
+            throttle = 1.0 if throttle > 0.0 else 0.0
         self.commanded_throttle = throttle
         self.control.throttle = throttle
 
@@ -436,6 +504,9 @@ class Autoland:
             self.rcs_permitted = True   # allowed from here; see ``update_rcs``
             for line in prepare_vehicle(self.vessel, self.cfg):
                 self.log.event(snap.ut, line)
+            if self.cfg.ENGINE_ALLOCATION:
+                self.cluster = EngineCluster(self.vessel, self.cfg)
+                self.log.event(snap.ut, self.cluster.describe())
             self.control.sas = False
             self.autopilot.reference_frame = self.frame
             self.aim(snap.direction, snap)   # hold attitude, but stop the roll
@@ -1273,6 +1344,8 @@ class Autoland:
         try:
             ut = self.conn.space_center.ut
             self.control.throttle = 0.0
+            if self.cluster is not None:
+                self.cluster.release()
             set_autopilot_engaged(self.autopilot, False)
             self.control.sas = True
         except Exception as exc:                     # game closed / vessel gone
@@ -1305,7 +1378,8 @@ def compact_line(state, snap, prediction, run):
             % (state, snap.height_above_pad, snap.legs_altitude,
                " " if snap.surface_altitude_ok else "?",
                snap.vertical_speed, snap.horizontal_speed, snap.speed,
-               snap.throttle, snap.mass / 1000.0, run.pad_distance(snap),
+               run.demand if run.cluster is not None else snap.throttle,
+               snap.mass / 1000.0, run.pad_distance(snap),
                miss, along, cross, ttl, run.env.drag_area, mach,
                math.degrees(run.steer.aoa) if run.steer else 0.0,
                # What the vehicle is *actually* holding, against what it was
