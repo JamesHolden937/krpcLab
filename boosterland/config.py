@@ -6,6 +6,7 @@ control logic.  Override any of them from the command line, e.g.::
     ./run.sh --set BOOSTBACK_TOLERANCE_M=250 --set LOG_INTERVAL_UT=1
 """
 
+import hashlib
 from dataclasses import dataclass, fields
 
 
@@ -577,6 +578,20 @@ class Config:
                                             # game must not hang the autopilot
     LOG_INTERVAL_UT: float = 2.0            # in-game seconds between log lines
     LOG_DIR: str = "logs"
+
+
+def defaults_fingerprint():
+    """A short hash of every default in ``Config``.
+
+    The config line lists differences from the defaults, which says nothing
+    when a default itself moves between two batches; the fingerprint names
+    the baseline.  Two logs with different fingerprints are not the same
+    experiment, however alike their difference lists look.
+    """
+    base = Config()
+    text = ";".join("%s=%r" % (f.name, getattr(base, f.name))
+                    for f in sorted(fields(base), key=lambda f: f.name))
+    return hashlib.sha1(text.encode()).hexdigest()[:8]
 
 
 def apply_overrides(cfg, pairs):

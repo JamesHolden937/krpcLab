@@ -24,11 +24,11 @@ import krpc
 from common import vec
 from . import guidance, trajectory
 from common import rcs as rcs_valve
-from .config import Config, apply_overrides
+from .config import Config, apply_overrides, defaults_fingerprint
 from .environment import Environment
 from .gui import ControlPanel, telemetry_lines
 from common.logbook import Logbook
-from common.pacing import sleeper
+from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
 from .telemetry import Telemetry
 
@@ -190,7 +190,10 @@ class Autoland:
         changed = ["%s=%s" % (f.name, getattr(cfg, f.name))
                    for f in fields(cfg)
                    if getattr(cfg, f.name) != f.default or f.name in always]
-        logbook.event(ut, "config: %s" % (" ".join(changed) or "(defaults)"))
+        logbook.event(ut, "config: %s defaults_fingerprint=%s"
+                      % (" ".join(changed) or "(defaults)",
+                         defaults_fingerprint()))
+        self.loop_rate = LoopRate()
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
@@ -1252,7 +1255,15 @@ class Autoland:
         # that way is not reproducible at 1x.
         wait = sleeper(self.cfg, lambda: self.conn.space_center.ut, self.conn)
         while not self.finished:
+            started = time.monotonic()
+            state = self.state
             snap = self.tick()
+            if snap is not None:
+                # What control rate the phase actually got: a burn whose
+                # first commands land seconds late was flown through a
+                # latency, not a vehicle, and the log has to say so.
+                self.loop_rate.sample(state, snap.ut,
+                                      time.monotonic() - started)
             wait(self.cfg.LOOP_SLEEP_S,
                  snap.ut if snap is not None else self.conn.space_center.ut)
 
@@ -1267,6 +1278,7 @@ class Autoland:
         except Exception as exc:                     # game closed / vessel gone
             self.log.event(ut, "shutdown control error: %r" % exc)
         self.log.event(ut, "shutdown: %s" % reason)
+        self.log.event(ut, self.loop_rate.report())
         self.telemetry.close()
         self.gui.close()
         try:
