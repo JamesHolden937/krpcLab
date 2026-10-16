@@ -47,6 +47,19 @@ class Config:
                                             # to this at the first COAST tick
                                             # (a gain probe for drag as range
                                             # control); < 0 leaves it
+    DEPLOY_LAW: bool = False                # COAST steps the airbrakes' deploy
+                                            # angle against the along-track
+                                            # miss; see Autoland.run_deploy
+    DEPLOY_STEP_S: float = 5.0              # one step, then a drag re-sweep
+    DEPLOY_MAX_STEP_DEG: float = 15.0
+    DEPLOY_MIN_DEG: float = 20.0            # 0 doubled the heavy's cross-track
+                                            # scatter (dep1-1016)
+    DEPLOY_DEADBAND_M: float = 30.0
+    DEPLOY_GAIN_M_PER_DEG: float = 10.0     # first guess; learned per step
+    DEPLOY_GAIN_MIN_M_PER_DEG: float = 3.0
+    DEPLOY_GAIN_MAX_M_PER_DEG: float = 60.0
+    DEPLOY_LEARN_MIN_DEG: float = 3.0       # learn only from a step this big
+    DEPLOY_MIN_ALT_M: float = 3000.0        # hold the angle below this
     ENABLE_RCS: bool = True
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but

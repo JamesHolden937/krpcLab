@@ -99,8 +99,8 @@ AIRBRAKE_MODULE = "ModuleAeroSurface"   # the stock airbrake's part module
 def set_airbrake_angle(vessel, angle):
     """Set every airbrake's deploy angle; return the angles read back."""
     angles = []
-    for part in vessel.parts.all:
-        for m in part.modules:
+    for surface in vessel.parts.control_surfaces:
+        for m in surface.part.modules:
             if m.name == AIRBRAKE_MODULE and m.has_field("Deploy Angle"):
                 try:
                     m.set_field_float("Deploy Angle", float(angle))
@@ -215,6 +215,10 @@ class Autoland:
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.corrections = 0
         self.coast_deploy_set = False
+        self.deploy_angle = None        # DEPLOY_LAW's command, deg
+        self.deploy_next_ut = 0.0
+        self.deploy_last = None         # (angle, long) at the last step
+        self.deploy_gain = None         # metres shorter per degree more
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
         self.correction_best_miss = None    # ... and the least it has reached
@@ -669,6 +673,11 @@ class Autoland:
                                      if self.steer else 0.0),
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
+        if self.cfg.DEPLOY_LAW:
+            self.run_deploy(snap)
+            self.extra_lines.append("brakes  : %8.0f deg" % (
+                self.deploy_angle if self.deploy_angle is not None
+                else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
         if snap.vertical_speed < 0.0 and height <= needed:
             self.enter(LANDING_BURN, snap.ut,
                        "h=%.0f needed=%.0f miss=%.0f"
@@ -678,6 +687,57 @@ class Autoland:
             self.correction_start_miss = distance
             self.correction_best_miss = distance
             self.enter(CORRECTION, snap.ut, "miss=%.0fm" % distance)
+
+    def run_deploy(self, snap):
+        """Range by drag: step the airbrakes' deploy angle against the
+        predicted along-track miss.
+
+        The only control after boostback that can make the booster land
+        *longer* -- correction burns and the landing burn only shorten.
+        Every ``DEPLOY_STEP_S`` the angle moves by ``long / gain`` (bounded
+        by ``DEPLOY_MAX_STEP_DEG``) and the drag curve is re-swept, because
+        the probe simulates the shape the vessel has now.  The gain is
+        learned from each step's change in the predicted miss, starting at
+        ``DEPLOY_GAIN_M_PER_DEG``: on the heavy booster 90 -> 45 -> 0 moved
+        the landing ~450 m then ~800 m (dep1-1016).
+        """
+        cfg = self.cfg
+        if (snap.ut < self.deploy_next_ut
+                or snap.landing_height < cfg.DEPLOY_MIN_ALT_M):
+            return
+        long, _ = self.miss_components(snap)
+        if long != long:
+            return
+        angle = (self.deploy_angle if self.deploy_angle is not None
+                 else cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
+        gain = (self.deploy_gain if self.deploy_gain is not None
+                else cfg.DEPLOY_GAIN_M_PER_DEG)
+        if self.deploy_last is not None:
+            a0, l0 = self.deploy_last
+            da = angle - a0
+            if abs(da) >= cfg.DEPLOY_LEARN_MIN_DEG:
+                measured = -(long - l0) / da
+                if measured > 0.0:
+                    gain = min(max(0.5 * gain + 0.5 * measured,
+                                   cfg.DEPLOY_GAIN_MIN_M_PER_DEG),
+                               cfg.DEPLOY_GAIN_MAX_M_PER_DEG)
+        self.deploy_gain = gain
+        step = 0.0
+        if abs(long) > cfg.DEPLOY_DEADBAND_M:
+            step = max(-cfg.DEPLOY_MAX_STEP_DEG,
+                       min(cfg.DEPLOY_MAX_STEP_DEG, long / gain))
+        new = max(cfg.DEPLOY_MIN_DEG,
+                  min(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, angle + step))
+        self.deploy_last = (angle, long)
+        self.deploy_next_ut = snap.ut + cfg.DEPLOY_STEP_S
+        if abs(new - angle) >= 0.5:
+            got = set_airbrake_angle(self.vessel, new)
+            self.env.request_resweep()
+            self.log.event(snap.ut, "brakes %.0f -> %.0f long=%+.0f gain=%.1f"
+                           " (read %s)" % (angle, new, long, gain,
+                                           "/".join(sorted(set(map(str, got))))
+                                           or "n/a"))
+        self.deploy_angle = new
 
     def measure_tracking(self, snap):
         """How much of the commanded angle of attack is the vehicle holding?

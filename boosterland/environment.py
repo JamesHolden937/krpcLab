@@ -681,6 +681,16 @@ class Environment:
                 return vec.scale(axis, -1.0)    # flow comes at the nose
         return vec.unit(velocity)
 
+    def request_resweep(self):
+        """Re-take the whole curve at the next descent-attitude refresh.
+
+        The probe simulates the vessel as it is *now*, so after the airbrakes'
+        deploy angle changes every bin is of a shape the booster no longer
+        has until the next sweep.
+        """
+        self._last_sweep_ut = None
+        self._next_aero_ut = None
+
     def refresh_drag(self, ut, position, velocity, rotation, nose=None):
         """Keep the Mach curve current, at a bounded cost in remote calls.
 
