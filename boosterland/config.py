@@ -43,7 +43,12 @@ class Config:
     SEPARATION_CLEARANCE_SCAN: bool = True  # flip when clear, not on a timer
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
-    AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START
+    AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START.
+                                            # Boostback aims on the drag of
+                                            # this angle, so it is also where
+                                            # the deploy law starts: at the
+                                            # top of its range the law can
+                                            # only lengthen
     DEPLOY_LAW: bool = True                 # COAST steps the airbrakes' deploy
                                             # angle against the along-track
                                             # miss; see Autoland.run_deploy.
@@ -55,6 +60,7 @@ class Config:
     DEPLOY_SETTLE_S: float = 2.0            # re-sweep drag this long after
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
+    DEPLOY_MAX_DEG: float = 90.0
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
                                             # scatter (dep1-1016)
     DEPLOY_DEADBAND_M: float = 30.0

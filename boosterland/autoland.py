@@ -842,7 +842,7 @@ class Autoland:
             step = max(-cfg.DEPLOY_MAX_STEP_DEG,
                        min(cfg.DEPLOY_MAX_STEP_DEG, step))
         new = max(cfg.DEPLOY_MIN_DEG,
-                  min(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, angle + step))
+                  min(cfg.DEPLOY_MAX_DEG, angle + step))
         if abs(new - angle) >= 0.5:
             got = set_airbrake_angle(self.vessel, new)
             if not got:
