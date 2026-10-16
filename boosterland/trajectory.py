@@ -170,6 +170,15 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     callers have the velocity vector, so both pass it.
     """
     g = env.mu / (radius * radius)
+    if cfg.LANDING_THROTTLE_VERTICAL and vertical_speed is not None:
+        # The profile is a *descent* profile.  On total speed, a booster
+        # sliding 15 m/s sideways at 20 m reads 15 m/s against a 3 m/s
+        # target, opens to the cap (which zeroes the divert's tilt budget),
+        # climbs, is cut by the go-around guard, falls, and repeats -- every
+        # tick, on both boosters, drifting 100-750 m (dlaw1-1016).  Thrust
+        # along the vertical cannot take out sideways speed; the divert law
+        # can, given throttle that is neither 0 nor the cap.
+        speed = max(0.0, -vertical_speed)
     net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)

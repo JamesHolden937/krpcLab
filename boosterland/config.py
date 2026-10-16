@@ -450,6 +450,7 @@ class Config:
                                             # ran the tanks dry (LOG10237)
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
     TOUCHDOWN_SPEED: float = 2.0            # target descent rate at cutoff
+    LANDING_THROTTLE_VERTICAL: bool = False  # profile on descent rate, not |v|
     FINAL_APPROACH_RATE: float = 0.5        # m/s of descent allowed per metre up
     LANDING_FLARE_ALT_M: float = 12.0       # this low and this slow, hover
     LANDING_FLARE_SPEED: float = 8.0        # thrust is all that can be wanted
