@@ -288,10 +288,16 @@ namespace LowThrust
                 Prepare();
                 log.Event(ut, "target: " + here.name + " -> " + dest.name + " " + text);
                 log.Event(ut, string.Format(IC, "vessel: {0:F0} kg, {1:F0} N from {2} engine(s), Isp {3:F0} s, {4:F4} m/s^2; "
-                                                + "wheels {5:F2} {6:F2} {7:F2} deg/s^2",
+                                                + "wheels {5:F2} {6:F2} {7:F2} deg/s^2 (pitch roll yaw)",
                                             Engines.Mass(vessel), engines.thrustN, engines.list.Count, engines.ispS,
-                                            engines.thrustN / Engines.Mass(vessel), Py.Degrees(Attitude.alpha.x),
-                                            Py.Degrees(Attitude.alpha.y), Py.Degrees(Attitude.alpha.z)));
+                                            engines.thrustN / Engines.Mass(vessel), Py.Degrees(Attitude.alphaW.x),
+                                            Py.Degrees(Attitude.alphaW.y), Py.Degrees(Attitude.alphaW.z)));
+                log.Event(ut, string.Format(IC, "attitude on rails: gimbal {0} ({1:F3} {2:F3} {3:F3} deg/s^2 at full thrust); "
+                                                + "RCS {4} nozzle(s) ({5:F3} {6:F3} {7:F3} deg/s^2), RCS_MODE {8}, RCS group {9}",
+                                            Attitude.gimbals, Py.Degrees(Attitude.alphaG.x), Py.Degrees(Attitude.alphaG.y),
+                                            Py.Degrees(Attitude.alphaG.z), Attitude.rcsThrusters, Py.Degrees(Attitude.alphaR.x),
+                                            Py.Degrees(Attitude.alphaR.y), Py.Degrees(Attitude.alphaR.z), cfg.RCS_MODE,
+                                            vessel.ActionGroups[KSPActionGroup.RCS] ? "on" : "off (RCS not used)"));
                 log.Event(ut, FrameCheck(vessel));
                 log.Event(ut, engines.Describe());
                 if (engines.thrustN <= 0) throw new ArgumentException("no engine lit on this vessel");
@@ -340,6 +346,8 @@ namespace LowThrust
             FlightInputHandler.state.mainThrottle = 0f;
             vessel.ctrlState.mainThrottle = 0f;
             engines = new Engines(vessel);
+            Attitude.Reset();
+            Attitude.rcsMode = cfg.RCS_MODE;
             Attitude.axis = v => engines.AxisWorld();
             if (cfg.WARP_BELOW_LIMITS) Warp.Relax(cfg.TERRAIN_MARGIN_M);
             cpuIndex = 1;
@@ -443,7 +451,9 @@ namespace LowThrust
             frameWatch.Reset();
             frameWatch.Start();
             Vessel v = FlightGlobals.ActiveVessel;
-            Attitude.Step(v);
+            // the attitude model touches the vessel only while a mission
+            // flies it: with none, the mod leaves every vessel to the game
+            Attitude.Step(v, mode == Mode.Flying && v != null && v == vessel);
             if (mode == Mode.Idle || v == null) return;
             if (v != vessel) { Stop("the active vessel changed", false); return; }
             if (mode == Mode.Planning) { Planned(); if (mode != Mode.Flying) return; }
@@ -594,6 +604,7 @@ namespace LowThrust
                 }
             }
             if (write) WriteOrbit(v);
+            Attitude.thrustShare = cur != null && !cur.coast && cur.fired ? cur.thr : 0.0;
             Point(v);
             Shown(v, ut);
             return true;
@@ -1094,6 +1105,7 @@ namespace LowThrust
                 log = null;
             }
             Attitude.target = null;
+            Attitude.thrustShare = 0;
             holding = false;
             cur = null;
             pending = null;
@@ -1154,10 +1166,12 @@ namespace LowThrust
                     kv.Key, kv.Value.frameMs / kv.Value.frames, kv.Value.maxFrameMs, kv.Value.frames,
                     kv.Value.maxStepMs)).ToArray()));
             r.Add(string.Format(IC, "thrust commands: {0} fired, {1} not aligned; {2} substeps short of propellant "
-                                    + "(mean thrust share {3:F3}); wheels drew {4:F1} EC ({5:F1} holding; {6} holds "
-                                    + "the wheels could not give)", fired, unfired, starved,
-                                shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed, Attitude.ecHold,
-                                Attitude.holdsLost));
+                                    + "(mean thrust share {3:F3}); wheels drew {4:F1} EC ({5:F1} holding); RCS drew "
+                                    + "{6:F2} kg ({7:F2} holding); {8} holds the actuators could not give; {9} orbit "
+                                    + "restores (a rotation on rails that moved the elements; 0 expected)",
+                                fired, unfired, starved, shareN > 0 ? shareSum / shareN : 1.0, Attitude.ecUsed,
+                                Attitude.ecHold, Attitude.rcsKg, Attitude.rcsHoldKg, Attitude.holdsLost,
+                                Attitude.orbitRestores));
             r.Add(string.Format(IC, "steering: {0:F1} m/s thrust, {1:F2} m/s of it lost to the axis off the command "
                                     + "({2:F3}%); {3:F1} m/s flown more than {4:F1} deg off; worst {5:F2} deg",
                                 steerDv, steerLoss, steerDv > 0 ? 100 * steerLoss / steerDv : 0.0, steerOffDv,

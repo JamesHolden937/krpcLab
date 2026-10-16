@@ -188,6 +188,13 @@ namespace LowThrust
         // vessel turns at its reaction wheels' rate; the planner assumes it
         // points at once).
         public double ALIGN_DEG = 2.0;
+        // RCS on rails, while the vessel's RCS group is on: "assist" turns on
+        // the reaction wheels (and the gimbal while thrusting) and spends
+        // RCS propellant only where they fall short -- no wheels, no charge,
+        // or a hold beyond their torque; "always" adds RCS to every turn
+        // (faster turns, propellant spent); "off" never fires it.  Modelled
+        // as pure torque: it never moves the orbit.
+        public string RCS_MODE = "assist";
         // Logging only: the steering line reports the thrust dv flown with the
         // axis more than this off its command.
         public double STEER_OFF_DEG = 0.5;
