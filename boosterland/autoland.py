@@ -269,6 +269,7 @@ class Autoland:
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
         self.tune_logged = 0            # log_attitude_tune's progress
+        self.rcs_held = False           # LANDING_RCS_HELD has opened it
         self.autopilot_engaged = False
         self.correction_align = None    # (ut, align) from the last tick
         self.autopilot_retries = 0
@@ -383,6 +384,19 @@ class Autoland:
         landing burn tipped 41 deg at full throttle (LOG10251, 47.7 m/s).
         See ``common.rcs``.
         """
+        if (self.cfg.LANDING_RCS_HELD and self.state == LANDING_BURN
+                and self.rcs_permitted):
+            # The relay flips the valve on the pointing error, and kRPC's
+            # auto-tune re-derives its gains from the torque with the valve
+            # as it is: 112 kN m open, 1.5 shut, Kp 7.6 v 209 (LOG11023,
+            # LOG11037) -- a 30x gain swing every time it flips, through the
+            # one phase that cannot afford it.  Held open, the gains are
+            # steady and the thrusters help hold the burn upright.
+            if not self.rcs_held:
+                self.rcs_held = True
+                self._apply_rcs(True)
+                self.log.event(snap.ut, "rcs held open for the landing burn")
+            return
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
@@ -1147,32 +1161,15 @@ class Autoland:
 
     def log_attitude_tune(self, snap):
         """Say what kRPC's attitude controller is tuned to, once at the burn's
-        start (``LANDING_TIME_TO_PEAK_S`` applied there) and once a second
-        into thrust.  Auto-tune sets the gains from the torque kRPC believes
-        is available -- the gimbal's included -- and in the burns that tipped
-        over (LOG11004, LOG11016) the input fell to 0.1-0.4 while the nose
-        went 30 -> 80 deg off the command."""
+        start and once a second into thrust.  Auto-tune sets the gains from
+        the torque kRPC believes is available -- the gimbal's at the present
+        thrust, and the RCS only while the valve is open -- so the gains
+        swing 30x with the valve (Kp 7.6 at 112 kN m, 209 at 1.5; LOG11023,
+        LOG11037) and fall 15x as thrust comes up."""
         elapsed = snap.ut - self.phase_start_ut
         stage = self.tune_logged
-        if stage == 0:
-            if self.cfg.LANDING_FREEZE_TUNE:
-                # Keep the gains the coast tuned against the torque the
-                # booster really had: under thrust auto-tune credits the
-                # gimbal and cut pitch Kp 7.6 -> 0.49, Ki 7.8 -> 0.18
-                # (LOG11023), and the burns that tipped were flown on those.
-                try:
-                    self.autopilot.auto_tune = False
-                except Exception as exc:                    # noqa: BLE001
-                    self.log.event(snap.ut, "auto_tune not frozen: %r" % exc)
-            ttp = self.cfg.LANDING_TIME_TO_PEAK_S
-            if ttp > 0.0:
-                try:
-                    self.autopilot.time_to_peak = (ttp, ttp, ttp)
-                except Exception as exc:                    # noqa: BLE001
-                    self.log.event(snap.ut, "time_to_peak not set: %r" % exc)
-        elif stage == 1 and (snap.throttle < 0.5 or elapsed < 1.0):
-            return
-        elif stage >= 2:
+        if stage >= 2 or (stage == 1 and (snap.throttle < 0.5
+                                          or elapsed < 1.0)):
             return
         self.tune_logged = stage + 1
         try:
