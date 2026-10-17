@@ -20,7 +20,7 @@ the intended flight profile.
 | read | when |
 |---|---|
 | [docs/boosterland/design.md](../docs/boosterland/design.md) | changing guidance, the propagator, a phase, or the drag/lift estimators |
-| [docs/boosterland/failures.md](../docs/boosterland/failures.md) | **before undoing anything that looks redundant** -- 17 numbered rules, each paid for by a lost or broken flight |
+| [docs/boosterland/failures.md](../docs/boosterland/failures.md) | **before undoing anything that looks redundant** -- 19 numbered rules, each paid for by a lost or broken flight |
 | [docs/boosterland/tuning.md](../docs/boosterland/tuning.md) | measuring a change: `replay.py`, aim bias, sim-vs-game, the accuracy history, a different vehicle or body |
 | [docs/boosterland/testing.md](../docs/boosterland/testing.md) | writing or reading `tests/fakeksp` regressions |
 
