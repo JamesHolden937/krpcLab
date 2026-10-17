@@ -199,24 +199,39 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
+    braking = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
     # A pure constant-deceleration profile is still doing several m/s a couple
     # of metres up -- it assumes the vehicle can brake at full authority right
     # into the ground.  Taper the last stretch into a gentle constant-rate
     # descent so the legs meet the pad at walking pace.
-    target_speed = min(target_speed,
-                       cfg.TOUCHDOWN_SPEED + cfg.FINAL_APPROACH_RATE * remaining)
+    taper = cfg.TOUCHDOWN_SPEED + cfg.FINAL_APPROACH_RATE * remaining
+    target_speed = min(braking, taper)
     if max_accel <= 0.0:
         return 0.0, target_speed
 
     # Feedforward: the deceleration that reaches touchdown speed exactly.
     span = max(1.0, remaining)
     a_required = (speed * speed - cfg.TOUCHDOWN_SPEED ** 2) / (2.0 * span)
-    throttle = (a_required + g) / max_accel
+    feedforward = (a_required + g) / max_accel
     # The trim is an acceleration, so the loop gain is the same whatever the
     # thrust-to-weight: a throttle gain fitted to one booster is a loop that
     # oscillates on a stronger one.
-    throttle += cfg.LANDING_THROTTLE_GAIN * (speed - target_speed) / max_accel
+    throttle = (feedforward + cfg.LANDING_THROTTLE_GAIN
+                * (speed - target_speed) / max_accel)
+    # The trigger lights the burn SUICIDE_MARGIN early plus
+    # SUICIDE_REACTION_S of fall, so the booster starts *below* this
+    # margin-free profile -- and the trim, at 6 m/s^2 per m/s, cancels the
+    # feedforward: every flight of 10-16 idled at 0 for 0.3-1.9 s (~270 m on
+    # qs_hot), then flew the rest pinned at the cap, the spool-up allowance
+    # spent before the engine was asked to spool.  Tilts of 20-40 deg at full
+    # throttle were routine; LOG10512 and LOG10748 tipped over.  On the
+    # braking branch the throttle is never below the one that stops exactly
+    # at touchdown height: an early start burns gently and keeps its margin
+    # in hand; a late one is above the profile, where the trim only adds
+    # (failure 5's thrust-limited case is unchanged).  The taper is left to
+    # the trim, or the final descent becomes a hover.
+    if cfg.LANDING_FEEDFORWARD_FLOOR and braking <= taper:
+        throttle = max(throttle, feedforward)
 
     # A booster near the ground must never be thrusting while it is going
     # *up*.  ``span`` is floored at a metre, so a height that reads near zero

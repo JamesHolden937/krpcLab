@@ -321,3 +321,28 @@ booster docs.
    columns that landed *nearest* — they were the only ones that got close
    enough to reach the flare. A bug that punishes whichever configuration is
    winning inverts a sweep's conclusion, and this one did.
+
+18. **A correction burn near retrograde can only shorten, and the miss it
+   answered was not the one the coast flew** (noc1-1016). COAST judged the
+   miss on the *steered* prediction (`solve_steer`), CORRECTION on an
+   unsteered one, so the miss jumped the moment the phase was entered and
+   every burn "backfired": corrections on v off, heavy 3 of 6 lost v 0,
+   quicksave worst 1088 v 235 m. They cannot simply go -- the sim's 25 m/s
+   mid-coast shove lands 1.1-2.9 km out without them -- so
+   `CORRECTION_ENTER_M` is 1000 (the abort's noise floor is the separate
+   `CORRECTION_ABORT_FLOOR_M`), and **`CORRECTION_OVERSHOOT_ONLY`**: never
+   enter on a short miss. Within 50 deg of retrograde the game's aero torque
+   will not hold the tilt that lengthens; the sim, with none, can, and
+   flattered it. **Do not re-enable short-miss corrections on a sim result.**
+
+19. **The landing burn flew its speed profile on |v|, and hovered** (dlaw1,
+   vert1-1016). 15 m/s of sideways slide at 20 m read as 15 m/s against a
+   3 m/s descent target: throttle to the cap (zeroing the divert's tilt
+   budget), climb, cut by the go-around guard, fall, repeat -- every tick, on
+   both boosters, 100-750 m of drift off a prediction that had been steady
+   since 30 km. `LANDING_THROTTLE_VERTICAL`: the profile is on descent rate,
+   with the sideways speed weighted by height / `LANDING_NULL_ALT_M` (on
+   descent rate alone the closed-loop sim hit at 54 m/s -- high up the burn
+   must still brake sideways speed). **Thrust along the vertical cannot take
+   out sideways speed; do not let the vertical profile see it near the
+   ground.**
