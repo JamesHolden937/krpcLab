@@ -1155,6 +1155,15 @@ class Autoland:
         elapsed = snap.ut - self.phase_start_ut
         stage = self.tune_logged
         if stage == 0:
+            if self.cfg.LANDING_FREEZE_TUNE:
+                # Keep the gains the coast tuned against the torque the
+                # booster really had: under thrust auto-tune credits the
+                # gimbal and cut pitch Kp 7.6 -> 0.49, Ki 7.8 -> 0.18
+                # (LOG11023), and the burns that tipped were flown on those.
+                try:
+                    self.autopilot.auto_tune = False
+                except Exception as exc:                    # noqa: BLE001
+                    self.log.event(snap.ut, "auto_tune not frozen: %r" % exc)
             ttp = self.cfg.LANDING_TIME_TO_PEAK_S
             if ttp > 0.0:
                 try:
