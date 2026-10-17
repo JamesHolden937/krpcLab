@@ -71,7 +71,7 @@ class Config:
     DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
     DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
     DEPLOY_LEARN_MIN_DEG: float = 3.0       # measure k only from a step this big
-    DEPLOY_UNSTEERED: bool = False          # the brakes null the miss of the
+    DEPLOY_UNSTEERED: bool = True           # the brakes null the miss of the
                                             # *unsteered* prediction: drag
                                             # carries the range, the lift
                                             # only trims what is left
@@ -289,7 +289,7 @@ class Config:
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
     AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a
                                             # vehicle with no air at all
-    AERO_STEER_HOLDABLE: bool = False       # compute the angle the booster
+    AERO_STEER_HOLDABLE: bool = True        # compute the angle the booster
                                             # *can* hold before asking for it:
                                             # the aerodynamic restoring moment
                                             # (simulate_aerodynamic_torque_at,
