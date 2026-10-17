@@ -58,6 +58,16 @@ booster docs.
    profile.** Planning on `net / SUICIDE_MARGIN` was tried: every thrust-limited
    sim case got worse (impact 4.1 -> 7.2 m/s, 11.3 -> 26.3, one atmospheric case
    385 -> 1043 m out).
+   **Nor by flooring the throttle at the exact-stop feedforward** (2026-10-17,
+   `LANDING_FEEDFORWARD_FLOOR`, deleted): every game flight idles 0.3-1.9 s
+   after the trigger, which looks like the margin thrown away, but the booster
+   is at terminal velocity then (-184 -> -181 m/s over 1.5 s on qs_hot) -- drag
+   is doing the braking, and the feedforward knows nothing of drag. At a
+   thrust-to-weight near 1 the stopping distance is unbounded, the trigger is
+   met as soon as the booster descends, and the floor turns the predicted
+   burn into a hover from 20 km: in the sim the 320 kN LOG7 booster's
+   boostback never converged (48 km) and it hit at 76 m/s 10 km out, against
+   7.4 m/s and 148 m with the idle. **The idle is drag's turn; leave it.**
 
 6. **CORRECTION commanded an attitude the booster could not reach** (also
    LOG7). It reused `boostback_solution`'s aim, which points along the
