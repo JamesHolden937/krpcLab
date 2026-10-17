@@ -1,5 +1,61 @@
 # boosterland journal
 
+## Session, 2026-10-16/17 night: the paired flags promoted, the landing burn's attitude
+
+All batches 1x, aim bias 0, `logs/rot-<tag>.txt`. The user asked to keep
+working; mid-session, "how accurate is aim now" and "how would we get the
+remaining 40 m".
+
+- **pair1-1017** (4 arms x heavy/quicksave/qs_hot, 12 a cell): both flags
+  v off, pooled 35 a side: mean 47 v 82 m, p90 94 v 190, worst 162 v 431,
+  touchdowns > 10 m/s 6 v 9. `DEPLOY_UNSTEERED` alone 51/115/199, `HOLDABLE`
+  alone 66/154/290. **Both promoted.**
+- **Destroyed vessels**: a crashed booster's streams freeze (same position,
+  86 m/s, 0 t), so LOG10748 and LOG10512 flew a dead snapshot to the 420 s
+  timeout and read as "hovers". Now a bit-identical position for 1 game-s
+  while moving ends the flight as `destroyed`; a > 10% mass drop in one tick
+  is logged as parts lost. 4 of 4 crashes since were caught within 1 s.
+- **LOG10720 and LOG10774** (qs_hot, boostback timeouts, 88 / 52 km): the
+  tanks were lost 2 s into the flip (26.7 -> 0.66 t at Mach 2.8-2.9, 146 deg
+  off). 2 of ~110 qs_hot flights. KSP.log was gone (farm restarted). Open.
+- **`LANDING_FEEDFORWARD_FLOOR`** (refuted, deleted; failure 5 amended):
+  every flight idles 0.3-1.9 s after the landing-burn trigger. It is not the
+  margin thrown away -- the booster is at terminal velocity then and drag
+  brakes it. In the closed-loop sim the floor turned the 320 kN LOG7
+  booster's predicted burn into a hover from 20 km (boostback never
+  converged, 76 m/s 10 km out v 7.4 m/s 148 m).
+- **brd2-1017**, the new defaults on six saves, 12 a cell: median 37 m, mean
+  47, p90 90, worst 269; steep 15, cold 31, quicksave 38, heavy 42, hot 47,
+  north 73 (sd N 98 m, the outlier). No timeouts.
+- **Where the 37 m is made** (brd2): 46/72 lit the burn predicting <= 10 m
+  and landed a median 31 m out; landed distance correlates 0.72 with peak
+  tilt in the burn (0-15 deg: 17 m; >= 25 deg: 56 m). The other 26 lit the
+  burn already 10-250 m off (all 12 heavy flights: 19-95 m; the heavy's miss
+  grows from 8 km to 3 km, e.g. 51 -> 101). The deploy law has no altitude
+  floor (removed 10-16 evening) -- so that growth is the law's behaviour
+  low down, not its absence.
+- **The tip-over** (tip1-1017, telemetry now has `cmd= err= sat= roll=`):
+  the command stays within 0-15 deg of retrograde and the nose drifts up to
+  78 deg off it -- not commanded. kRPC's auto-tune re-derives the gains from
+  the available torque: thrust adds the SSME gimbal (112 -> 623 kN m) and
+  pitch Kp fell 7.6 -> 0.49, Ki 7.8 -> 0.18 (LOG11023); the crashed burns
+  were flown at 0.1-0.4 input while 70-80 deg off.
+- **`LANDING_FREEZE_TUNE`** (auto_tune off at the burn's start; refuted,
+  deleted), frz1-1017, 36 a side: median 20 v 34 m, on-target-at-ignition
+  15 v 27 -- but **4/18 destroyed on qs_north** v 0, touchdowns > 10 m/s 20
+  v 8, peak tilt 25 v 15. The frozen gains were whatever the RCS valve left:
+  LOG11037 froze at 1.5 kN m (valve shut) -> Kp 209, and oscillated at full
+  input. **The RCS valve swings kRPC's gains 30x** every time it flips.
+- **`LANDING_RCS_HELD`** (valve open through the burn), rcsh1-1017, 36 a
+  side on qs_hot/qs_north: median 23 v 34 m, on-target-at-ignition 17 v 32,
+  peak burn tilt max 34 v 81 deg, destroyed 0 v 1, touchdowns > 10 m/s 14 v
+  18. **Promoted.** Its two worst (312, 186 m) were coast-made: brakes pinned
+  at 90 deg 20 s into the coast, 298 / 193 m off at ignition.
+- Still seen with the valve held: pitch Kp ~6 -> 0.5 under thrust, and the
+  roll error reaches 110-135 deg in every arm (roll torque 1.5 kN m; the
+  roll reference follows the trajectory plane, undefined as hs passes 0).
+- How-it-works PDF rewritten (defaults `99de5847`).
+
 ## Session, 2026-10-16 late: the holdable angle, computed
 
 The user asked (1) what the docs say causes the miss, (2) whether the booster

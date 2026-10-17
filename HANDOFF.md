@@ -1,67 +1,56 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-16 late: boosterland -- holdable angle computed; deploy law judged on the unsteered miss (fingerprint `89628946`)
+## 2026-10-17 night: boosterland -- paired flags promoted; the landing burn's attitude (fingerprint `99de5847`)
 
-Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-16 late".
-**Defaults unchanged** this session (both new mechanisms are flags, off);
-how-it-works PDF still current. Committed and pushed; farm stopped (swap
-was 21.6 GB at the end of the batch -- restart before the next comparison);
-sleep inhibitor released.
+Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-16/17 night".
+How-it-works PDF rewritten. Committed and pushed.
 
-**Where it stands (defaults, 1x):** heavy median ~50-90, qs_hot ~30,
-quicksave ~20-55, worst 100-240; every save has an occasional hard or
-tipped arrival. Boostback is *not* the error (exits at long -133..-188
-every flight); the miss is made in the coast.
+**Defaults changed:** `DEPLOY_UNSTEERED`, `AERO_STEER_HOLDABLE` (pair1-1017:
+mean 47 v 82 m, worst 162 v 431) and `LANDING_RCS_HELD` (rcsh1-1017:
+on-target-at-ignition median 17 v 32 m, peak burn tilt max 34 v 81, 0
+destroyed v 1) promoted. A destroyed vessel now ends the flight
+(`destroyed` in the harness line, instead of a 420 s "no exit line").
+Telemetry: `cmd= err= sat= roll=`; the burn logs kRPC's gains/torque.
 
-**The diagnosis (read the journal entry before changing anything):**
-1. The lift solve re-nulls the *steered* prediction every tick and credits
-   lift the booster cannot hold (commanded up to 10 deg, held 0.3-3), so
-   the predicted miss reads ~0 and the deploy law (airbrakes) sees nothing;
-   when the lift saturates the hidden miss appears at once (heavy +280 m at
-   9 km, LOG10598; quicksave -500 / +240, LOG10637). That is the deploy
-   law's "oscillation" -- not a gain. The user wants a gentle law with no
-   hand-tuned gains (generality).
-2. Early in the coast the drag curve is re-measured at descent attitude and
-   the prediction swings hundreds of m (quicksave -1 -> +850 in 8 s with the
-   brakes still).
+**Where it stands (brd2-1017, before RCS_HELD, 12 a save):** median 37 m,
+p90 90, worst 269. steep 15, cold 31, quicksave 38, heavy 42, hot 47,
+north 73. Since RCS_HELD, qs_hot/qs_north median 23.
 
-**Flags (both off; each must end promoted or deleted):**
-- `AERO_STEER_HOLDABLE`: holdable aoa from `simulate_aerodynamic_torque_at`
-  against wheels+RCS+surface torque; the solve and the propagator cap at
-  it. Computes 10 deg at low q down to ~1 deg at 50 kPa on the heavy
-  (matches what it holds). hold1-1016 (`logs/rot-hold1-1016.txt`, 12 a
-  cell): heavy median 49 v 87 (better); qs_hot 60 v 33, quicksave 35 v 20
-  (worse, unexplained).
-- `DEPLOY_UNSTEERED`: the deploy law nulls the *unsteered* prediction --
-  drag carries the range, lift only trims. **Unflown.**
+**Where the remaining error is made** (journal has the split):
+1. *The landing burn* (~2/3 of flights): on target at ignition, still lands
+   15-30 m out, scaling with how far it tips (corr 0.72). kRPC auto-tune
+   cuts pitch Kp ~6 -> 0.5 once the gimbal is credited under thrust; roll
+   error reaches 110-135 deg (roll torque 1.5 kN m, roll reference = the
+   trajectory plane, undefined as hs passes 0).
+2. *The coast* (~1/3): lights the burn 20-300 m off. All heavy flights
+   (miss grows 8 km -> 3 km); qs_north/qs_hot when the brakes pin at 90 deg
+   early (out of drag). The deploy law has no altitude floor.
+
+**Flags:** none open (FEEDFORWARD_FLOOR, FREEZE_TUNE, LANDING_TIME_TO_PEAK_S
+all deleted -- journal).
 
 **Next, in order:**
-1. Restart the farm, then fly one batch, 4 arms x qs_heavy/quicksave/qs_hot,
-   `LAPS=2` (12 a cell, ~45 min):
-   `SAVES_LIST="qs_heavy quicksave qs_hot" LAPS=2 boosterland/tools/brot.sh
-   pair1-1017 "off:" "uns:DEPLOY_UNSTEERED=True" "hold:AERO_STEER_HOLDABLE=True"
-   "both:AERO_STEER_HOLDABLE=True,DEPLOY_UNSTEERED=True"`
-   (arms of brot.sh take comma-separated sets). Expect `both` to be the
-   intended design. Promote the winner(s) to default, delete the losers,
-   update the how-it-works PDF if a default changes.
-2. If the original booster still loses with HOLDABLE: compare its `can=`
-   column with `hold=` (the angle actually held) in the quicksave logs --
-   is the limit too low there, or is the solve now leaving range to a
-   deploy law that cannot take it?
-3. The early-coast prediction swing (re-sweep at descent attitude): don't
-   step the brakes before the descent re-sweep, or take that sweep before
-   boostback exits (a more accurate boostback cut).
-4. Open failures: LOG10720 (qs_hot, BOOSTBACK TIMEOUT 180 s, splashed 88 km
-   -- boostback never converged; separation took 2.3 s); LOG10748 (qs_hot,
-   hovered to the 420 s timeout). Touchdown speed with engine allocation
-   (heavy worst 14 m/s) from the previous handoff.
-5. Breadth on the five original saves; `docs/boosterland/failures.md` still
-   lacks entries for corrections-only-shorten and the |v| landing hover.
+1. Roll in the landing burn: try `target_roll` NaN (damp only) from the
+   burn's start -- the booster cannot follow the reference anyway. Read
+   `roll=` and `hold=` against default, qs_hot + qs_north, 36 a side
+   (`SAVES_LIST="qs_hot qs_north" LAPS=3 boosterland/tools/brot.sh ...`).
+2. The under-thrust gain cut: the gimbal credit is real (freezing gains at
+   7 pinned the input and still tilted 20-36 deg). Measure what the gimbal
+   delivers (`actuators.py`; the SSME's 10.5 deg range) before tuning.
+3. The heavy's coast: why its unsteered miss grows 8 -> 3 km with the brakes
+   free (10 s step, 30 m deadband?). qs_north/qs_hot brakes pinned at 90
+   within 20 s of the coast: the early-coast drag re-sweep (prediction swings
+   hundreds of m) -- take the descent-attitude sweep before boostback exits.
+4. qs_hot boostback flip loses the tanks (LOG10720, LOG10774, 2 in ~110):
+   keep KSP.log next time (read it before restarting the farm).
+5. Touchdowns > 10 m/s: still 14 of 36 on qs_hot/qs_north.
 
-**Traps paid:** don't run the unittest suite while the farm is up (it was,
-for 5 s, no harm); a tracking sample from a small command reads 1.00 and
-licenses full lift credit at 10 deg; read `long` from the *unsteered*
-prediction when asking what the brakes should do.
+**Traps paid:** kRPC's available torque counts RCS only while the valve is
+open, so anything auto-tuned swings 30x with the relay; a frozen tune
+inherits whatever the valve was doing at that tick. The landing-burn idle
+is drag's turn, not lost margin (failure 5). A destroyed vessel's streams
+freeze, they do not raise. KSP.log is overwritten by a farm restart. I ran
+the offline tests for 10 s with the farm up once -- don't.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 

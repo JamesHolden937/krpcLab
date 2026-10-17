@@ -3,7 +3,9 @@
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
 Target pad lat `-0.097162`, lon `-74.557679` (`Config.PAD_LAT/PAD_LON`). It
-lands within a few metres of the pad and is largely settled work. The root
+lands a median ~25-40 m from the pad (worst ~100-300 m) across six saves;
+the remaining error is split between the landing burn's attitude hold and
+the coast's last kilometres -- see the root HANDOFF.md. The root
 `CLAUDE.md` (conventions, farm, cross-cutting rules) applies here in full.
 
 ```
