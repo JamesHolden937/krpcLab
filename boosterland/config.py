@@ -71,9 +71,12 @@ class Config:
     DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
     DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
     DEPLOY_LEARN_MIN_DEG: float = 3.0       # measure k only from a step this big
-    ENGINE_ALLOCATION: bool = False         # throttle = center engine first,
+    ENGINE_ALLOCATION: bool = True          # throttle = center engine first,
                                             # then symmetric pairs, each to
-                                            # full; see autoland.EngineCluster
+                                            # full; see autoland.EngineCluster.
+                                            # alloc2-1016, heavy 12 v 12: miss
+                                            # median 47 worst 79 v 90/362;
+                                            # touchdown 6.7/14 v 4.2/8.7 m/s
     ENGINE_AXIS_TOL_M: float = 0.3          # this near the cluster axis: center
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
     ENGINE_PAIR_TOL: float = 0.25           # pairing tolerance, of the radius
