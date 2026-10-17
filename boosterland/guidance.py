@@ -609,7 +609,30 @@ def landing_throttle(env, r, v, max_accel, cfg, height=None):
     return LandingThrottle(throttle, target_speed, height)
 
 
-def roll_reference(r, v, aim, previous=None, min_plane_speed=0.0):
+def transport_roof(roof, from_nose, to_nose, normal):
+    """``roof`` carried by the rotation that takes ``from_nose`` to
+    ``to_nose`` -- what the roof becomes if the turn is pure pitch.
+
+    The rotation is about ``from_nose x to_nose``; a rotation by theta and
+    by theta - 360 is the same rotation, so the answer does not depend on
+    which way round the flip goes.  Near-opposite noses leave that axis
+    undefined, and ``normal`` (the trajectory plane's) stands in for it.
+    """
+    a, b = vec.unit(from_nose), vec.unit(to_nose)
+    axis = vec.cross(a, b)
+    angle = math.atan2(vec.norm(axis), vec.dot(a, b))
+    if vec.norm(axis) < 1e-6:
+        if vec.dot(a, b) > 0.0:
+            return roof
+        axis = vec.project_out(normal, a)
+        if vec.norm(axis) < 1e-9:
+            return roof
+    q = vec.quat_axis_angle(vec.unit(axis), angle)
+    return vec.quat_rotate(q, roof)
+
+
+def roll_reference(r, v, aim, previous=None, min_plane_speed=0.0,
+                   previous_nose=None):
     """The ``up`` vector to roll the vehicle's roof toward, body frame.
 
     Left to itself the autopilot only damps the roll rate (``target_roll``
@@ -639,12 +662,21 @@ def roll_reference(r, v, aim, previous=None, min_plane_speed=0.0):
     ``previous`` instead: the roof stays where it is and the vehicle pitches
     around it, which is the whole point of holding a roll.
 
+    ``previous_nose``: the nose ``previous`` was the roof for.  Given, the
+    side is taken from ``previous`` *carried through the turn* (see
+    ``transport_roof``) rather than ``previous`` itself, so a flip over the
+    top -- which takes a roof that pointed up to one that points down -- is
+    commanded as pitch alone and not as pitch plus a half roll.
+
     ``min_plane_speed``: below this horizontal speed the trajectory plane is
     whatever the last few m/s of drift make it -- in the landing burn it
     swings with them and the roof command whips round -- so the roof is
     carried from ``previous``, made perpendicular to the new nose.
     """
     nose = vec.unit(aim)
+    if previous is not None and previous_nose is not None:
+        previous = transport_roof(previous, previous_nose, nose,
+                                  vec.cross(r, v))
     if previous is not None and min_plane_speed > 0.0:
         horizontal = vec.project_out(v, vec.unit(r))
         if vec.norm(horizontal) < min_plane_speed:

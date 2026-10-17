@@ -225,6 +225,10 @@ class Config:
                                         # coast sat at 6-10 deg, roll input 0,
                                         # and drifted 142 deg off by ignition
                                         # (LOG11353)
+    ROLL_TRANSPORT: bool = False        # the roof's side is the last roof
+                                        # carried through the nose's turn:
+                                        # a flip over the top is pitch only
+                                        # (guidance.transport_roof)
     ROLL_PLANE_MIN_HS_MPS: float = 0.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)

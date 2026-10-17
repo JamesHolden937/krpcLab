@@ -300,6 +300,45 @@ class TestRollReference(unittest.TestCase):
         self.assertGreater(vec.angle_between(up, previous), 45.0)
 
 
+class TestRollTransport(unittest.TestCase):
+    """A flip over the top carries the roof with it: pitch, no half roll."""
+
+    def setUp(self):
+        self.r = (6.0e5 + 30000.0, 0.0, 0.0)      # zenith +x
+        self.v = (100.0, 0.0, 900.0)              # plane x-z, normal y
+
+    def test_the_rotation_takes_the_nose_where_it_was_going(self):
+        a = vec.unit((0.3, 0.0, -1.0)); b = vec.unit((-0.1, 0.4, 1.0))
+        roof = vec.unit(vec.project_out((1.0, 0.0, 0.0), a))
+        out = guidance.transport_roof(roof, a, b, (0.0, 1.0, 0.0))
+        self.assertAlmostEqual(vec.dot(out, b), 0.0, places=9)
+        self.assertAlmostEqual(vec.norm(out), 1.0, places=9)
+
+    def test_a_flip_over_the_top_is_pitch_only(self):
+        # boostback aim: toward -z, a little up; roof up (+x side)
+        aim = vec.unit((0.25, 0.0, -1.0))
+        up0 = guidance.roll_reference(self.r, self.v, aim)
+        self.assertGreater(up0[0], 0.0)
+        # coast: retrograde, away (+z) and a little down -- 166 deg on
+        coast = vec.unit((-0.25, 0.0, 1.0))
+        carried = guidance.roll_reference(self.r, self.v, coast, up0, 0.0,
+                                          aim)
+        expect = guidance.transport_roof(up0, aim, coast, (0.0, 1.0, 0.0))
+        self.assertLess(vec.angle_between(carried, expect), 1e-6)
+        self.assertLess(carried[0], 0.0, "the roof should now face down")
+        # without the transport the roof stays up: a half roll commanded
+        kept = guidance.roll_reference(self.r, self.v, coast, up0)
+        self.assertGreater(vec.angle_between(kept, expect), 170.0)
+
+    def test_small_turns_agree_with_the_old_rule(self):
+        aim = vec.unit((0.25, 0.0, -1.0))
+        up0 = guidance.roll_reference(self.r, self.v, aim)
+        nxt = vec.unit((0.30, 0.0, -1.0))
+        self.assertLess(vec.angle_between(
+            guidance.roll_reference(self.r, self.v, nxt, up0, 0.0, aim),
+            guidance.roll_reference(self.r, self.v, nxt, up0)), 1e-9)
+
+
 class TestFlipThroughVertical(unittest.TestCase):
     """A big turn is pitch up to the vertical, then pitch down to the aim."""
 

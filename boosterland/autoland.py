@@ -306,6 +306,7 @@ class Autoland:
         self.phase_start_ut = ut
         self.prediction = None
         self.roll_up = None      # last roll reference, for continuity
+        self.roll_nose = None    # the commanded nose roll_up was taken for
         self.rcs = rcs_valve.Valve(cfg, logbook)
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
@@ -395,8 +396,12 @@ class Autoland:
             if self.cfg.ROLL_ALIGN:
                 up = guidance.roll_reference(snap.position, snap.velocity,
                                              direction, self.roll_up,
-                                             self.cfg.ROLL_PLANE_MIN_HS_MPS)
+                                             self.cfg.ROLL_PLANE_MIN_HS_MPS,
+                                             self.roll_nose
+                                             if self.cfg.ROLL_TRANSPORT
+                                             else None)
                 self.roll_up = up
+                self.roll_nose = direction
         set_autopilot_attitude(self.autopilot, direction, up,
                                self.cfg.ROLL_OFFSET_DEG)
         # The *routed* direction, not the one asked for: while the flip is
