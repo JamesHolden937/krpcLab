@@ -1514,11 +1514,36 @@ def attitude_fields(snap, run):
     cmd = getattr(run, "commanded_direction", None)
     if cmd is None or vec.norm(cmd) < 0.5 or snap.speed < 1.0:
         return ""
-    return (" cmd=%.1f err=%.1f sat=%s"
+    roll = roll_error(snap, getattr(run, "roll_up", None))
+    return (" cmd=%.1f err=%.1f sat=%s%s"
             % (vec.angle_between(cmd, vec.scale(snap.velocity, -1.0)),
                run.pointing_error(snap),
                "%.2f" % snap.input_saturation
-               if snap.input_saturation is not None else "-"))
+               if snap.input_saturation is not None else "-",
+               " roll=%.0f" % roll if roll is not None else ""))
+
+
+def roll_error(snap, up):
+    """Degrees between the vehicle's roof and the commanded ``up``, both
+    taken perpendicular to the nose; None if either is unknowable.
+
+    The roof is the vessel frame's -z (kRPC: x right, y nose, z bottom).
+    Which way the attitude quaternion applies is checked, not assumed: the
+    convention that carries the body's +y onto the streamed nose is the one
+    used.  A booster with 1.5 kN m of roll authority (LOG11023) cannot follow
+    a roll reference that swings as the horizontal speed passes through zero
+    -- this says whether it was asked to."""
+    if up is None or snap.rotation is None or len(snap.rotation) != 4:
+        return None
+    nose = vec.unit(snap.direction)
+    for q in (snap.rotation, vec.quat_conjugate(snap.rotation)):
+        if vec.norm(vec.sub(vec.quat_rotate(q, (0.0, 1.0, 0.0)), nose)) < 0.05:
+            roof = vec.project_out(vec.quat_rotate(q, (0.0, 0.0, -1.0)), nose)
+            want = vec.project_out(up, nose)
+            if vec.norm(roof) < 1e-6 or vec.norm(want) < 1e-6:
+                return None
+            return vec.angle_between(roof, want)
+    return None
 
 
 def diag_line(snap, run):
