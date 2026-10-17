@@ -452,6 +452,11 @@ class Config:
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
+    LANDING_FEEDFORWARD_FLOOR: bool = False  # on the braking branch, never
+                                            # throttle below the exact-stop
+                                            # feedforward (the early start idled
+                                            # its margin away; trajectory.
+                                            # landing_command)
     LANDING_DIVERT_LEAD: float = 0.0        # extra trigger height per m of miss
     LANDING_MAX_EARLY_M: float = 1500.0     # cap on that early start
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
