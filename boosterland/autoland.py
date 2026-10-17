@@ -215,6 +215,20 @@ class EngineCluster:
                 except Exception:       # noqa: BLE001 -- KSP-side failure
                     pass
 
+    def delivered(self):
+        """Each group's actual thrust as a fraction of its maximum, e.g.
+        ``1.00/0.43/0.00``: what the game made of the limits, so the log
+        shows a group staying dark until the one before it is full."""
+        out = []
+        for g in self.groups:
+            cap = sum(self.thrust[k] for k in g)
+            try:
+                got = sum(self.engines[k].thrust for k in g)
+            except Exception:           # noqa: BLE001 -- KSP-side failure
+                return None
+            out.append(got / cap if cap > 0.0 else 0.0)
+        return "/".join("%.2f" % x for x in out)
+
     def release(self):
         """Every limit back to 100%, for the player."""
         for k, engine in self.engines.items():
@@ -1529,7 +1543,19 @@ def compact_line(state, snap, prediction, run):
                run.env.aoa_tracking,
                " can=%.1f" % run.env.holdable_deg
                if run.env.holdable_deg is not None else "")
-            + attitude_fields(snap, run))
+            + attitude_fields(snap, run) + engine_fields(state, run))
+
+
+def engine_fields(state, run):
+    """` eng=` each engine group's delivered thrust, a fraction of its own
+    maximum, in lighting order -- only while the engines can burn and the
+    cluster is split (a single group would just repeat `thr=`)."""
+    cluster = run.cluster
+    if (cluster is None or len(cluster.groups) < 2
+            or state not in ("BOOSTBACK", "CORRECTION", "LANDING_BURN")):
+        return ""
+    got = cluster.delivered()
+    return " eng=%s" % got if got else ""
 
 
 def attitude_fields(snap, run):
