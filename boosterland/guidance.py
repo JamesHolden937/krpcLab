@@ -609,7 +609,7 @@ def landing_throttle(env, r, v, max_accel, cfg, height=None):
     return LandingThrottle(throttle, target_speed, height)
 
 
-def roll_reference(r, v, aim, previous=None):
+def roll_reference(r, v, aim, previous=None, min_plane_speed=0.0):
     """The ``up`` vector to roll the vehicle's roof toward, body frame.
 
     Left to itself the autopilot only damps the roll rate (``target_roll``
@@ -638,8 +638,19 @@ def roll_reference(r, v, aim, previous=None):
     command a barrel roll.  Once seeded, the side is carried forward from
     ``previous`` instead: the roof stays where it is and the vehicle pitches
     around it, which is the whole point of holding a roll.
+
+    ``min_plane_speed``: below this horizontal speed the trajectory plane is
+    whatever the last few m/s of drift make it -- in the landing burn it
+    swings with them and the roof command whips round -- so the roof is
+    carried from ``previous``, made perpendicular to the new nose.
     """
     nose = vec.unit(aim)
+    if previous is not None and min_plane_speed > 0.0:
+        horizontal = vec.project_out(v, vec.unit(r))
+        if vec.norm(horizontal) < min_plane_speed:
+            up = vec.project_out(previous, nose)
+            if vec.norm(up) > 1e-6:
+                return vec.unit(up)
     normal = vec.cross(r, v)
     if vec.norm(normal) < 1e-6:            # straight up or down: no plane
         normal = vec.cross(r, previous or (1.0, 0.0, 0.0))

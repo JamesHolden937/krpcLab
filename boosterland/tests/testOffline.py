@@ -284,6 +284,22 @@ class TestRollReference(unittest.TestCase):
         self.assertEqual(up, (0.0, 0.0, 1.0))
 
 
+    def test_slow_drift_carries_the_roof_instead_of_the_plane(self):
+        """Near the ground the trajectory plane is the last few m/s of
+        drift, and turns with it; below ``min_plane_speed`` the roof is the
+        previous one, made perpendicular to the nose."""
+        previous = (0.0, 0.0, 1.0)
+        nose = (1.0, 0.0, 0.0)
+        for drift in [(0.0, 1.5, 0.0), (0.0, -1.5, 0.0), (0.0, 0.0, -1.5)]:
+            v = vec.add((-20.0, 0.0, 0.0), drift)
+            up = guidance.roll_reference(self.r, v, nose, previous, 5.0)
+            self.assertLess(vec.angle_between(up, previous), 1e-6)
+        # above it, the plane rules as before
+        up = guidance.roll_reference(self.r, (-20.0, 30.0, 0.0), nose,
+                                     previous, 5.0)
+        self.assertGreater(vec.angle_between(up, previous), 45.0)
+
+
 class TestFlipRouting(unittest.TestCase):
     """A big turn is taken over the top, not nose-down under it."""
 
