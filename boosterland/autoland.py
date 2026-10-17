@@ -380,7 +380,13 @@ class Autoland:
         self.autopilot.reference_frame = self.frame
         up = None
         if snap is not None:
-            if self.cfg.FLIP_VIA_VERTICAL:
+            if self.cfg.FLIP_THROUGH_VERTICAL:
+                # Big turns are two pitches through the zenith.
+                direction = guidance.flip_through_vertical(
+                    snap.direction, direction, snap.position,
+                    self.cfg.FLIP_VIA_VERTICAL_DEG,
+                    self.cfg.FLIP_VERTICAL_PAST_DEG)
+            elif self.cfg.FLIP_VIA_VERTICAL:
                 # Big turns go over the top rather than nose-down through the
                 # airstream; releases itself as the vehicle comes round.
                 direction = guidance.flip_waypoint(
@@ -388,7 +394,8 @@ class Autoland:
                     self.cfg.FLIP_VIA_VERTICAL_DEG)
             if self.cfg.ROLL_ALIGN:
                 up = guidance.roll_reference(snap.position, snap.velocity,
-                                             direction, self.roll_up)
+                                             direction, self.roll_up,
+                                             self.cfg.ROLL_PLANE_MIN_HS_MPS)
                 self.roll_up = up
         set_autopilot_attitude(self.autopilot, direction, up,
                                self.cfg.ROLL_OFFSET_DEG)
@@ -577,6 +584,13 @@ class Autoland:
                 self.log.event(snap.ut, self.cluster.describe())
             self.control.sas = False
             self.autopilot.reference_frame = self.frame
+            try:
+                # kRPC controls roll only while the pointing error is under
+                # this; above it the roll input is zero and roll drifts.
+                self.autopilot.roll_threshold = float(
+                    self.cfg.ROLL_THRESHOLD_DEG)
+            except Exception:           # noqa: BLE001 -- older kRPC
+                pass
             self.aim(snap.direction, snap)   # hold attitude, but stop the roll
             self.engage_autopilot(snap.ut)
             self.gui.set_start_label("RUNNING")

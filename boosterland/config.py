@@ -211,8 +211,23 @@ class Config:
     # --- Attitude ---------------------------------------------------------
     FLIP_VIA_VERTICAL: bool = True      # route big turns over the top, not under
     FLIP_VIA_VERTICAL_DEG: float = 90.0     # only turns bigger than this
+    FLIP_THROUGH_VERTICAL: bool = False     # ... and through the zenith: pitch
+                                            # up in the nose's vertical plane,
+                                            # down in the target's
+                                            # (guidance.flip_through_vertical)
+    FLIP_VERTICAL_PAST_DEG: float = 10.0    # waypoint: zenith tilted this far
+                                            # toward the target's side
     ROLL_ALIGN: bool = True             # hold roll, roof in the trajectory plane
     ROLL_OFFSET_DEG: float = 0.0        # roof offset from that plane (fin clocking)
+    ROLL_THRESHOLD_DEG: float = 5.0     # kRPC roll_threshold: roll is held only
+                                        # while the pointing error is under it
+                                        # (5 = kRPC's default).  The heavy's
+                                        # coast sat at 6-10 deg, roll input 0,
+                                        # and drifted 142 deg off by ignition
+                                        # (LOG11353)
+    ROLL_PLANE_MIN_HS_MPS: float = 0.0  # below this horizontal speed the roof
+                                        # is carried, not re-taken from the
+                                        # trajectory plane (0 = never)
 
     # --- Aerodynamic steering (flying the coast as a wing) -----------------
     AERO_STEER: bool = True                 # steer the coast with an angle of

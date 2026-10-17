@@ -609,7 +609,7 @@ def landing_throttle(env, r, v, max_accel, cfg, height=None):
     return LandingThrottle(throttle, target_speed, height)
 
 
-def roll_reference(r, v, aim, previous=None):
+def roll_reference(r, v, aim, previous=None, min_plane_speed=0.0):
     """The ``up`` vector to roll the vehicle's roof toward, body frame.
 
     Left to itself the autopilot only damps the roll rate (``target_roll``
@@ -638,8 +638,19 @@ def roll_reference(r, v, aim, previous=None):
     command a barrel roll.  Once seeded, the side is carried forward from
     ``previous`` instead: the roof stays where it is and the vehicle pitches
     around it, which is the whole point of holding a roll.
+
+    ``min_plane_speed``: below this horizontal speed the trajectory plane is
+    whatever the last few m/s of drift make it -- in the landing burn it
+    swings with them and the roof command whips round -- so the roof is
+    carried from ``previous``, made perpendicular to the new nose.
     """
     nose = vec.unit(aim)
+    if previous is not None and min_plane_speed > 0.0:
+        horizontal = vec.project_out(v, vec.unit(r))
+        if vec.norm(horizontal) < min_plane_speed:
+            up = vec.project_out(previous, nose)
+            if vec.norm(up) > 1e-6:
+                return vec.unit(up)
     normal = vec.cross(r, v)
     if vec.norm(normal) < 1e-6:            # straight up or down: no plane
         normal = vec.cross(r, previous or (1.0, 0.0, 0.0))
@@ -655,6 +666,38 @@ def roll_reference(r, v, aim, previous=None):
     if abs(side) < 1e-9:                    # exactly 90 deg from last tick
         return up
     return up if side > 0.0 else vec.scale(up, -1.0)
+
+
+def flip_through_vertical(current, target, up, min_turn_deg, past_deg):
+    """The attitude to command *now* so a big turn is two pitches through
+    the vertical.
+
+    While the nose is on the far side of the vertical from the target
+    (their horizontal parts point apart), command the zenith tilted
+    ``past_deg`` toward the target's side: the nose pitches up in its own
+    vertical plane, crosses the vertical, and the moment its horizontal part
+    points the target's way the routing releases and the nose pitches down
+    to the target in the target's vertical plane.  With the roof held in
+    the trajectory plane (``roll_reference``) both legs are pitch alone --
+    no yaw through the airstream, no rolling while the engines swing.
+
+    Turns under ``min_turn_deg`` are commanded directly.  Memoryless:
+    ``current`` is the real nose, so it releases itself.
+    """
+    nose = vec.unit(current)
+    aim = vec.unit(target)
+    zenith = vec.unit(up)
+    if vec.angle_between(nose, aim) < min_turn_deg:
+        return tuple(aim)
+    h_aim = vec.project_out(aim, zenith)
+    if vec.norm(h_aim) < 1e-6:
+        return tuple(aim)               # the target is the vertical
+    h_aim = vec.unit(h_aim)
+    if vec.dot(vec.project_out(nose, zenith), h_aim) > 0.0:
+        return tuple(aim)               # already over: pitch down to it
+    tilt = math.radians(past_deg)
+    return vec.unit(vec.add(vec.scale(zenith, math.cos(tilt)),
+                            vec.scale(h_aim, math.sin(tilt))))
 
 
 def flip_waypoint(current, target, up, min_turn_deg):

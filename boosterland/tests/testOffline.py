@@ -284,6 +284,64 @@ class TestRollReference(unittest.TestCase):
         self.assertEqual(up, (0.0, 0.0, 1.0))
 
 
+    def test_slow_drift_carries_the_roof_instead_of_the_plane(self):
+        """Near the ground the trajectory plane is the last few m/s of
+        drift, and turns with it; below ``min_plane_speed`` the roof is the
+        previous one, made perpendicular to the nose."""
+        previous = (0.0, 0.0, 1.0)
+        nose = (1.0, 0.0, 0.0)
+        for drift in [(0.0, 1.5, 0.0), (0.0, -1.5, 0.0), (0.0, 0.0, -1.5)]:
+            v = vec.add((-20.0, 0.0, 0.0), drift)
+            up = guidance.roll_reference(self.r, v, nose, previous, 5.0)
+            self.assertLess(vec.angle_between(up, previous), 1e-6)
+        # above it, the plane rules as before
+        up = guidance.roll_reference(self.r, (-20.0, 30.0, 0.0), nose,
+                                     previous, 5.0)
+        self.assertGreater(vec.angle_between(up, previous), 45.0)
+
+
+class TestFlipThroughVertical(unittest.TestCase):
+    """A big turn is pitch up to the vertical, then pitch down to the aim."""
+
+    ZENITH = (1.0, 0.0, 0.0)
+
+    def fly(self, nose, aim, step_deg=2.0):
+        """Step the nose toward each tick's command; return the commands."""
+        path = []
+        for _ in range(400):
+            cmd = guidance.flip_through_vertical(nose, aim, self.ZENITH,
+                                                 90.0, 10.0)
+            path.append((nose, cmd))
+            angle = vec.angle_between(nose, cmd)
+            if angle < 1e-6:
+                break
+            f = min(1.0, step_deg / angle)
+            nose = vec.unit(vec.add(vec.scale(nose, 1.0 - f),
+                                    vec.scale(cmd, f)))
+        return path
+
+    def test_flip_passes_within_the_tilt_of_the_zenith(self):
+        # prograde up and east, aim west and a little down: a 160 deg flip
+        path = self.fly(vec.unit((0.5, 0.0, 1.0)), vec.unit((-0.1, 0.0, -1.0)))
+        closest = min(vec.angle_between(n, self.ZENITH) for n, _ in path)
+        self.assertLess(closest, 12.0)
+        self.assertLess(vec.angle_between(path[-1][0],
+                                          vec.unit((-0.1, 0.0, -1.0))), 1.0)
+
+    def test_every_leg_stays_in_a_vertical_plane(self):
+        """No yaw out of the trajectory plane when both ends lie in it."""
+        path = self.fly(vec.unit((0.5, 0.0, 1.0)), vec.unit((-0.1, 0.0, -1.0)))
+        for nose, cmd in path:
+            self.assertAlmostEqual(nose[1], 0.0, places=9)
+            self.assertAlmostEqual(cmd[1], 0.0, places=9)
+
+    def test_small_turns_are_direct(self):
+        aim = vec.unit((0.2, 0.0, -1.0))
+        cmd = guidance.flip_through_vertical(
+            vec.unit((0.5, 0.0, -1.0)), aim, self.ZENITH, 90.0, 10.0)
+        self.assertLess(vec.angle_between(cmd, aim), 1e-6)
+
+
 class TestFlipRouting(unittest.TestCase):
     """A big turn is taken over the top, not nose-down under it."""
 
