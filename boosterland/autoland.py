@@ -308,6 +308,8 @@ class Autoland:
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
+        self.prev_nose = None           # (ut, direction) of the last tick
+        self.nose_rate = None           # deg/s, see track_nose_rate
         self.throttle_diverged = False
         self.last_sample = None         # (position, mass) of the last tick
         self.frozen_since = None        # ut the position stopped changing
@@ -1434,8 +1436,20 @@ class Autoland:
             self.loop_rate.sample(state, snap.ut, time.monotonic() - started)
         return snap
 
+    def track_nose_rate(self, snap):
+        """How fast the nose is swinging, deg/s, from this tick's direction
+        and the last one's -- streamed already, so it costs no call.  Beside
+        ``err=`` and ``sat=`` it tells a pinned input that is turning the
+        vehicle (and will overshoot) from one losing to a standing moment."""
+        prev = self.prev_nose
+        self.prev_nose = (snap.ut, snap.direction)
+        if prev is not None and snap.ut - prev[0] > 1e-3:
+            self.nose_rate = (vec.angle_between(prev[1], snap.direction)
+                              / (snap.ut - prev[0]))
+
     def _tick(self):
         snap = self.telemetry.sample(self.env)
+        self.track_nose_rate(snap)
         if self.gui.terminate_pressed():
             self.log.event(snap.ut, "TERMINATE pressed in game")
             self.finish("terminated from GUI")
@@ -1568,12 +1582,14 @@ def attitude_fields(snap, run):
     if cmd is None or vec.norm(cmd) < 0.5 or snap.speed < 1.0:
         return ""
     roll = roll_error(snap, getattr(run, "roll_up", None))
-    return (" cmd=%.1f err=%.1f sat=%s%s"
+    rate = getattr(run, "nose_rate", None)
+    return (" cmd=%.1f err=%.1f sat=%s%s%s"
             % (vec.angle_between(cmd, vec.scale(snap.velocity, -1.0)),
                run.pointing_error(snap),
                "%.2f" % snap.input_saturation
                if snap.input_saturation is not None else "-",
-               " roll=%.0f" % roll if roll is not None else ""))
+               " roll=%.0f" % roll if roll is not None else "",
+               " w=%.1f" % rate if rate is not None else ""))
 
 
 def roll_error(snap, up):
