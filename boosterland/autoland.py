@@ -402,6 +402,12 @@ class Autoland:
                 self._apply_rcs(True)
                 self.log.event(snap.ut, "rcs held open for the landing burn")
             return
+        if self.rcs_held:
+            # Out of the burn: shut it and give the valve back to the relay,
+            # which never saw it open and so would never close it.
+            self.rcs_held = False
+            self._apply_rcs(False)
+            self.log.event(snap.ut, "rcs released after the landing burn")
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
