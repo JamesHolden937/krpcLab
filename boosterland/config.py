@@ -189,6 +189,9 @@ class Config:
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
     FLIP_ALIGN_DEG: float = 25.0            # hold throttle until aligned
     FLIP_UNDER_POWER: bool = True           # ignore that gate: light, then flip
+    BOOSTBACK_CLEAR_NOSE: bool = False      # ... but not while thrust along
+                                            # the nose as it points now would
+                                            # close on a neighbour
 
     # --- Separation clearance (when it is safe to flip) --------------------
     CLEARANCE_RANGE_M: float = 500.0        # ignore craft further off than this
@@ -452,8 +455,6 @@ class Config:
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
-    LANDING_ROLL_FREE: bool = False         # in the landing burn, damp the
-                                            # roll rate only (no roll angle)
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady

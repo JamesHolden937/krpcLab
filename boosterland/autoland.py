@@ -270,6 +270,7 @@ class Autoland:
         self.commanded_direction = None  # what ``aim`` last asked for
         self.tune_logged = 0            # log_attitude_tune's progress
         self.rcs_held = False           # LANDING_RCS_HELD has opened it
+        self.nose_block_logged = False  # nose_blocked has said so
         self.autopilot_engaged = False
         self.correction_align = None    # (ut, align) from the last tick
         self.autopilot_retries = 0
@@ -341,12 +342,7 @@ class Autoland:
                 direction = guidance.flip_waypoint(
                     snap.direction, direction, snap.position,
                     self.cfg.FLIP_VIA_VERTICAL_DEG)
-            if self.cfg.ROLL_ALIGN and not (self.cfg.LANDING_ROLL_FREE
-                                            and self.state == LANDING_BURN):
-                # In the burn the roll is only damped: 1.5 kN m of roll
-                # authority (LOG11023) cannot follow a reference that swings
-                # as the horizontal speed passes through zero, and the roll
-                # error read 110-135 deg on every burn (rcsh1-1017).
+            if self.cfg.ROLL_ALIGN:
                 up = guidance.roll_reference(snap.position, snap.velocity,
                                              direction, self.roll_up)
                 self.roll_up = up
@@ -710,6 +706,15 @@ class Autoland:
         elif align > self.cfg.FLIP_ALIGN_DEG and not self.cfg.FLIP_UNDER_POWER:
             # Still flipping: hold thrust so the flip does not add error.
             self.set_throttle(0.0)
+        elif (align > self.cfg.FLIP_ALIGN_DEG and self.cfg.BOOSTBACK_CLEAR_NOSE
+              and self.nose_blocked(snap)):
+            # Lit mid-flip, the thrust is along the nose, not the aim -- and
+            # at the start of the flip the nose points at the stage it just
+            # dropped.  SEPARATION's scan cleared the *aim*; three qs_hot
+            # boosters then drove into the upper stage at 40 m/s and lost
+            # their tanks (LOG10720, LOG10774, LOG11177; KSP.log: airbrake
+            # into the ServiceBay, core into the verniers).
+            self.set_throttle(0.0)
         else:
             self.set_throttle(solution.throttle)
 
@@ -721,6 +726,20 @@ class Autoland:
             "align   : %8.1f deg" % align,
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
+
+    def nose_blocked(self, snap):
+        """Would full thrust along the nose, as it points now, close on a
+        neighbour?  Logged once per flip."""
+        accel = vec.scale(vec.unit(snap.direction), snap.max_accel)
+        blocker = self.proximity.check(snap.ut, snap.position, snap.velocity,
+                                       accel)
+        if blocker is not None and not self.nose_block_logged:
+            self.nose_block_logged = True
+            self.log.event(snap.ut, "boostback thrust held: nose toward %s, "
+                           "%.0f m short of keep-out in %.1f s"
+                           % (blocker.neighbour.name, -blocker.separation,
+                              blocker.time))
+        return blocker is not None
 
     def run_coast(self, snap):
         self.set_throttle(0.0)

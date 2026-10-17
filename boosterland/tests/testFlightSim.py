@@ -260,6 +260,49 @@ class TestClosedLoop(unittest.TestCase):
                            math.radians(cfg.FLIP_ALIGN_DEG),
                            "already aligned; the test proves nothing")
 
+    def _first_boostback_throttle(self, stage, clear_nose):
+        vessel = self.make_booster(slew=8.0)
+        conn = fakeksp.install(vessel)
+        if stage:
+            ahead = fakeksp._unit(vessel.v)
+            fakeksp.add_craft(conn, vessel, fakeksp.OtherCraft(
+                fakeksp._add(vessel.r, fakeksp._scale(ahead, 40.0)),
+                fakeksp._add(vessel.v, fakeksp._scale(ahead, 3.0))))
+        from boosterland import autoland
+        cfg = Config()
+        cfg.BOOSTBACK_CLEAR_NOSE = clear_nose
+        cfg.LOG_DIR = self.tmp.name
+        log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
+        run = autoland.Autoland(conn, cfg, log)
+        run.gui.start_button.clicked = True
+        run.tick()
+        for _ in range(200):
+            if run.state != "SEPARATION":
+                break
+            run.tick()
+            vessel.step(SIM_DT)
+            conn.space_center.ut += SIM_DT
+        run.tick()                                   # first BOOSTBACK tick
+        log.close()
+        self.assertEqual(run.state, "BOOSTBACK")
+        return vessel.control.throttle, open(log.path).read()
+
+    def test_boostback_holds_thrust_while_the_nose_points_at_the_stage(self):
+        """LOG10720/10774/11177: lit mid-flip with the nose still on the
+        stage it had just dropped, the booster drove into it at 40 m/s."""
+        throttle, body = self._first_boostback_throttle(True, True)
+        self.assertEqual(throttle, 0.0, "lit with the nose on the stage")
+        self.assertIn("boostback thrust held", body)
+
+    def test_clear_nose_lights_at_once_with_nothing_there(self):
+        throttle, _ = self._first_boostback_throttle(False, True)
+        self.assertGreater(throttle, 0.0)
+
+    def test_without_clear_nose_it_lights_into_the_stage(self):
+        """The default this flag is measured against: the regression."""
+        throttle, _ = self._first_boostback_throttle(True, False)
+        self.assertGreater(throttle, 0.0)
+
     def test_the_roll_is_commanded_and_held_all_flight(self):
         """Every attitude command carries a roll reference, and it is stable.
 
