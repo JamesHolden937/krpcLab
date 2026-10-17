@@ -268,6 +268,7 @@ class Autoland:
         self.rcs = rcs_valve.Valve(cfg, logbook)
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
+        self.tune_logged = 0            # log_attitude_tune's progress
         self.autopilot_engaged = False
         self.correction_align = None    # (ut, align) from the last tick
         self.autopilot_retries = 0
@@ -1144,7 +1145,42 @@ class Autoland:
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
 
+    def log_attitude_tune(self, snap):
+        """Say what kRPC's attitude controller is tuned to, once at the burn's
+        start (``LANDING_TIME_TO_PEAK_S`` applied there) and once a second
+        into thrust.  Auto-tune sets the gains from the torque kRPC believes
+        is available -- the gimbal's included -- and in the burns that tipped
+        over (LOG11004, LOG11016) the input fell to 0.1-0.4 while the nose
+        went 30 -> 80 deg off the command."""
+        elapsed = snap.ut - self.phase_start_ut
+        stage = self.tune_logged
+        if stage == 0:
+            ttp = self.cfg.LANDING_TIME_TO_PEAK_S
+            if ttp > 0.0:
+                try:
+                    self.autopilot.time_to_peak = (ttp, ttp, ttp)
+                except Exception as exc:                    # noqa: BLE001
+                    self.log.event(snap.ut, "time_to_peak not set: %r" % exc)
+        elif stage == 1 and (snap.throttle < 0.5 or elapsed < 1.0):
+            return
+        elif stage >= 2:
+            return
+        self.tune_logged = stage + 1
+        try:
+            ap = self.autopilot
+            self.log.event(snap.ut, "attitude tune (%s, thr %.2f): time_to_peak"
+                           " %s gains pitch %s yaw %s roll %s torque %s"
+                           % ("burn start" if stage == 0 else "under thrust",
+                              snap.throttle,
+                              _fmt3(ap.time_to_peak), _fmt3(ap.pitch_pid_gains),
+                              _fmt3(ap.yaw_pid_gains), _fmt3(ap.roll_pid_gains),
+                              _fmt3([t / 1000.0 for t in
+                                     self.vessel.available_torque[0]])))
+        except Exception as exc:                            # noqa: BLE001
+            self.log.event(snap.ut, "attitude tune unreadable: %r" % exc)
+
     def run_landing_burn(self, snap):
+        self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
         prediction = self.predict(snap, powered=True)
@@ -1416,6 +1452,10 @@ class Autoland:
             self.conn.close()
         except Exception:
             pass
+
+
+def _fmt3(values):
+    return "(" + ", ".join("%.3g" % v for v in values) + ")"
 
 
 def compact_line(state, snap, prediction, run):

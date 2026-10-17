@@ -452,6 +452,10 @@ class Config:
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
+    LANDING_TIME_TO_PEAK_S: float = 0.0     # kRPC attitude time_to_peak from
+                                            # the landing burn on; 0 leaves
+                                            # kRPC's own (see
+                                            # Autoland.log_attitude_tune)
     LANDING_DIVERT_LEAD: float = 0.0        # extra trigger height per m of miss
     LANDING_MAX_EARLY_M: float = 1500.0     # cap on that early start
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
