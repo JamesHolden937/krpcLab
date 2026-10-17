@@ -163,7 +163,34 @@ def prepare_vehicle(vessel, cfg):
             lines.append("engine %s refused: %s"
                          % (engine.part.title, str(exc).splitlines()[0]))
     lines.append("liquid engines activated: %d" % lit)
+    if cfg.GIMBAL_ROLL_OFF:
+        lines.append(set_gimbal_roll(vessel, False))
     return lines
+
+
+def set_gimbal_roll(vessel, enabled):
+    """Let the engine gimbals answer the roll input, or not.
+
+    kRPC credits an engine cluster's gimbals with almost no roll torque
+    (0.006-0.16 kN m on the heavy, against 300-1600 in pitch and yaw), so
+    auto-tune sets roll gains of 1e3-1e5.  The off-axis engines' gimbals
+    *do* roll the vehicle, hard: lit with the roll input pinned, the heavy
+    spun up to 200 deg/s in 1.3 s (diag2-1017, LOG11353) and coned through
+    the whole burn.  Off, roll is left to RCS and wheels -- the torque kRPC
+    actually credits.  ``ModuleGimbal.enableRoll``, the editor's hidden
+    per-axis toggle; returns the line to log."""
+    done, refused = 0, 0
+    for engine in vessel.parts.engines:
+        try:
+            for module in engine.part.modules:
+                if module.name == "ModuleGimbal":
+                    module.set_field_bool_by_id("enableRoll", bool(enabled))
+                    done += 1
+        except Exception:               # noqa: BLE001 -- KSP-side failure
+            refused += 1
+    return ("gimbal roll %s on %d engines%s"
+            % ("enabled" if enabled else "disabled", done,
+               " (%d refused)" % refused if refused else ""))
 
 
 class EngineCluster:
@@ -1518,6 +1545,8 @@ class Autoland:
             self.control.throttle = 0.0
             if self.cluster is not None:
                 self.cluster.release()
+            if self.cfg.GIMBAL_ROLL_OFF:
+                set_gimbal_roll(self.vessel, True)
             set_autopilot_engaged(self.autopilot, False)
             self.control.sas = True
         except Exception as exc:                     # game closed / vessel gone
