@@ -1,5 +1,49 @@
 # boosterland journal
 
+## Session, 2026-10-16 late: the holdable angle, computed
+
+The user asked (1) what the docs say causes the miss, (2) whether the booster
+can work out how far it can angle itself before planning, (3) whether
+boostback could be more accurate, (4) why the deploy law oscillates -- "we
+need a gentle one ... a hand tuned PID loop is probably bad for generality".
+
+- **Boostback is not the error.** 60 flights (new1, alloc2): it exits at
+  long -133..-188 every time (the deliberate tolerance lead). The miss is
+  made in the coast: on quicksave the prediction 5 s into the coast reads
+  -80..+1500 (the drag curve re-measured at descent attitude) and the deploy
+  law still brings most flights to ~0 at the landing burn.
+- **The heavy's 300-400 m tail** (LOG10598, 10618, 10667, 10674, 10592): from
+  25 km to 10 km the commanded aoa climbs 1.8 -> 10 deg while the booster
+  holds 0.3-3; the steered prediction reads ~0, so the brakes sit at 30; at
+  10 deg (9 km) the miss jumps 0 -> +280 with 20 s left. Tracking read 1.00
+  (commanded 1.6, held 2.4 -- a small-command sample).
+- **The deploy-law "oscillation" is not a gain problem** (LOG10637, 10622):
+  the lift solve re-nulls the *steered* prediction every tick, so the brakes
+  see ~0 until the lift saturates and the hidden miss appears at once
+  (-500 at 12.7 km, +240 at 4.7 km), and the brakes take a 20 deg step
+  each time (30->50->30->50). Separately, with brakes held at 30, the
+  prediction went -1 -> +850 in 8 s as the re-swept curve dropped Cd*A
+  18 -> 6.
+- **`AERO_STEER_HOLDABLE`** (flag, off): `simulate_aerodynamic_torque_at` at
+  a few tilts off retrograde (vessel as it is now), restoring moment per Pa
+  per Mach bin, against wheels + RCS (highest seen) + surfaces*q with
+  margin 0.7; the solve commands no more and the propagator caps lift at it
+  per step. Smoke LOG10686 (heavy, DIAG): moment restoring, ~490 kN m of
+  control (all RCS), limit 10 deg at low q falling to 5.5/3.0/1.7/0.9 deg
+  at q 16-50 kPa -- the tracking sample in the same flight read 2.7 -> 2.0.
+  **hold1-1016** (12 a cell, 1x, aim bias 0, swap 21.6 GB at the end):
+  heavy median 49 worst 94 v 87/180 -- better; qs_hot 60/189 v 33/113,
+  quicksave 35/243 v 20/236 -- worse on the original booster, unexplained
+  (its `can=` reads 10 at 26 km, ~5 at 7 km; the solve rarely asked more).
+  Not promoted, not deleted: it is to be flown paired with the next flag.
+- **`DEPLOY_UNSTEERED`** (flag, off, unflown): the deploy law nulls the
+  *unsteered* prediction, so drag carries the range and the lift only trims
+  what is left and the cross-track. No new constant.
+- Not the flag: LOG10720 (hold, qs_hot) BOOSTBACK TIMEOUT 180 s, splashed
+  88 km -- boostback never converged; LOG10748 (hold, qs_hot) hovered to the
+  420 s harness timeout. Both open.
+- `boosterland/tools/brot.sh` (the rotated batch, `LAPS=`) moved into the repo.
+
 ## Session, 2026-10-16 evening: a general deploy law, engine allocation
 
 The user, on the deploy law's 8 km cutoff: "oscilation is a control issue,

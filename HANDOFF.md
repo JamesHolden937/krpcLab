@@ -1,39 +1,67 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-16 evening: boosterland -- general deploy law, engine allocation (fingerprint `e7e5aa99`)
+## 2026-10-16 late: boosterland -- holdable angle computed; deploy law judged on the unsteered miss (fingerprint `89628946`)
 
-Full write-up: `docs/boosterland/journal.md`, the two 2026-10-16 afternoon/
-evening sections. How-it-works PDF rewritten. Committed and pushed; farm
-stopped; sleep inhibitor released.
+Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-16 late".
+**Defaults unchanged** this session (both new mechanisms are flags, off);
+how-it-works PDF still current. Committed and pushed; farm stopped (swap
+was 21.6 GB at the end of the batch -- restart before the next comparison);
+sleep inhibitor released.
 
-**Defaults now** (all measured at 1x on the farm, `logs/rot-<tag>-1016.txt`):
-- Landing profile on descent rate (`LANDING_THROTTLE_VERTICAL`).
-- Corrections only on an overshoot > 1000 m (`CORRECTION_OVERSHOOT_ONLY`,
-  `CORRECTION_ENTER_M` 1000).
-- Deploy law for the whole coast, Newton steps on a computed gain (S from
-  two propagations, k from the drag curve before/after each step).
-- Airbrakes start at 60 deg; the law ranges 30-90.
-- Engine allocation: center engine to full first, then symmetric pairs.
+**Where it stands (defaults, 1x):** heavy median ~50-90, qs_hot ~30,
+quicksave ~20-55, worst 100-240; every save has an occasional hard or
+tipped arrival. Boostback is *not* the error (exits at long -133..-188
+every flight); the miss is made in the coast.
 
-**Where it stands:** new1 + alloc2, 96 flights, 96 intact. Medians: heavy
-47 (alloc), qs_hot ~31, quicksave ~55; worst heavy 79 with allocation.
+**The diagnosis (read the journal entry before changing anything):**
+1. The lift solve re-nulls the *steered* prediction every tick and credits
+   lift the booster cannot hold (commanded up to 10 deg, held 0.3-3), so
+   the predicted miss reads ~0 and the deploy law (airbrakes) sees nothing;
+   when the lift saturates the hidden miss appears at once (heavy +280 m at
+   9 km, LOG10598; quicksave -500 / +240, LOG10637). That is the deploy
+   law's "oscillation" -- not a gain. The user wants a gentle law with no
+   hand-tuned gains (generality).
+2. Early in the coast the drag curve is re-measured at descent attitude and
+   the prediction swings hundreds of m (quicksave -1 -> +850 in 8 s with the
+   brakes still).
+
+**Flags (both off; each must end promoted or deleted):**
+- `AERO_STEER_HOLDABLE`: holdable aoa from `simulate_aerodynamic_torque_at`
+  against wheels+RCS+surface torque; the solve and the propagator cap at
+  it. Computes 10 deg at low q down to ~1 deg at 50 kPa on the heavy
+  (matches what it holds). hold1-1016 (`logs/rot-hold1-1016.txt`, 12 a
+  cell): heavy median 49 v 87 (better); qs_hot 60 v 33, quicksave 35 v 20
+  (worse, unexplained).
+- `DEPLOY_UNSTEERED`: the deploy law nulls the *unsteered* prediction --
+  drag carries the range, lift only trims. **Unflown.**
 
 **Next, in order:**
-1. Touchdown speed with allocation (heavy median 6.7, worst 14 m/s v 4.2/8.7
-   without) -- read the last 50 m of a hard one (logs at 4 lines/s:
-   alloc2 LOG10681 14.0, LOG10682 9.8).
-2. Breadth: the five original-booster saves on the final defaults (only
-   qs_hot and quicksave were flown since the 60 deg start).
-3. The user flies defaults live: ask how the heavy does.
-4. `docs/boosterland/failures.md` has no entries for today's rules
-   (corrections only shorten in the game; the |v| landing hover).
+1. Restart the farm, then fly one batch, 4 arms x qs_heavy/quicksave/qs_hot,
+   `LAPS=2` (12 a cell, ~45 min):
+   `SAVES_LIST="qs_heavy quicksave qs_hot" LAPS=2 boosterland/tools/brot.sh
+   pair1-1017 "off:" "uns:DEPLOY_UNSTEERED=True" "hold:AERO_STEER_HOLDABLE=True"
+   "both:AERO_STEER_HOLDABLE=True,DEPLOY_UNSTEERED=True"`
+   (arms of brot.sh take comma-separated sets). Expect `both` to be the
+   intended design. Promote the winner(s) to default, delete the losers,
+   update the how-it-works PDF if a default changes.
+2. If the original booster still loses with HOLDABLE: compare its `can=`
+   column with `hold=` (the angle actually held) in the quicksave logs --
+   is the limit too low there, or is the solve now leaving range to a
+   deploy law that cannot take it?
+3. The early-coast prediction swing (re-sweep at descent attitude): don't
+   step the brakes before the descent re-sweep, or take that sweep before
+   boostback exits (a more accurate boostback cut).
+4. Open failures: LOG10720 (qs_hot, BOOSTBACK TIMEOUT 180 s, splashed 88 km
+   -- boostback never converged; separation took 2.3 s); LOG10748 (qs_hot,
+   hovered to the 420 s timeout). Touchdown speed with engine allocation
+   (heavy worst 14 m/s) from the previous handoff.
+5. Breadth on the five original saves; `docs/boosterland/failures.md` still
+   lacks entries for corrections-only-shorten and the |v| landing hover.
 
-**Traps paid:** the sim can hold 50 deg off retrograde, the game cannot, so
-corrections look two-sided only in the sim; `fakeksp` has no airbrakes, RCS
-force or engine cluster; quickfly drives `tick()`, not `run()`; check how
-many engines a save has before reading an allocation result off it; six
-flights a cell cannot resolve a factor of two (identical configurations read
-24 v 55).
+**Traps paid:** don't run the unittest suite while the farm is up (it was,
+for 5 s, no harm); a tracking sample from a small command reads 1.00 and
+licenses full lift credit at 10 deg; read `long` from the *unsteered*
+prediction when asking what the brakes should do.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
