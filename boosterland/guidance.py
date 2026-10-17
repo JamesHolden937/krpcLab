@@ -151,7 +151,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
 
     def fly(u):
         """Propagate under the steering vector ``u``, in plane coordinates."""
-        steer = steer_for(normal, v, u, env.lift_slope_at)
+        steer = steer_for(normal, v, u, env.lift_slope_at, holdable(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -159,7 +159,19 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         return steer, prediction, (long, cross)
 
     limit = math.radians(cfg.AERO_STEER_MAX_AOA_DEG)
+    hold = holdable(env, cfg)
+    most = hold(vec.norm(v), vec.norm(r) - env.equatorial_radius) \
+        if hold is not None else None
+    if most is not None:
+        # Command no more than the vehicle can hold here.  The probes below
+        # still measure the sensitivity at their own angle, and the
+        # propagator caps each of them at the hold limit step by step.
+        limit = min(limit, most)
     probe = math.radians(cfg.AERO_STEER_SOLVE_AOA_DEG)
+    if most is not None and most > 1e-3:
+        # A probe past the limit would be capped by the propagator and
+        # under-read the sensitivity by (most / probe)^2.
+        probe = min(probe, most)
     zero, flat, m0 = fly((0.0, 0.0))
 
     # Do not act on the prediction until the prediction is worth acting on.
@@ -271,7 +283,8 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     best = None
     for scale in (1.0, 0.5):
         trial = (u[0] * scale, u[1] * scale)
-        steer = steer_for(normal, v, trial, env.lift_slope_at)
+        steer = steer_for(normal, v, trial, env.lift_slope_at,
+                         holdable(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -285,7 +298,14 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     return zero, flat
 
 
-def steer_for(normal, v, u, slope=None):
+def holdable(env, cfg):
+    """The propagator's hold limit, if the vehicle's is being computed."""
+    if cfg.AERO_STEER_HOLDABLE:
+        return getattr(env, "holdable_aoa", None)
+    return None
+
+
+def steer_for(normal, v, u, slope=None, hold=None):
     """A :class:`trajectory.Steer` flying the plane-coordinate command ``u``.
 
     ``u`` is ``(in_plane, out_of_plane)`` radians of angle of attack.  The
@@ -298,12 +318,12 @@ def steer_for(normal, v, u, slope=None):
     """
     aoa = math.hypot(u[0], u[1])
     if aoa < 1e-12:
-        return trajectory.Steer(0.0, normal, slope)
+        return trajectory.Steer(0.0, normal, slope, hold)
     phi = math.atan2(u[1], u[0])
     axis = vec.unit(v)
     if abs(phi) > 1e-12 and vec.norm(axis) > 0.0:
         normal = vec.quat_rotate(vec.quat_axis_angle(axis, phi), normal)
-    return trajectory.Steer(aoa, normal, slope)
+    return trajectory.Steer(aoa, normal, slope, hold)
 
 
 def correction_attitude(env, r, v, prediction, cfg, height=None):

@@ -700,6 +700,12 @@ class Autoland:
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
                               snap.direction)
+        first = self.env.holdable_deg is None
+        self.env.refresh_holdable(snap.ut, snap.position, snap.velocity,
+                                  snap.rotation, snap.direction)
+        if first and self.env.holdable_deg is not None:
+            self.log.event(snap.ut, "holdable aoa %.1f deg (computed)"
+                           % self.env.holdable_deg)
         self.measure_tracking(snap)
         # Fly the air first, and only then think about the engines.  A booster
         # falling through 30 km of thickening atmosphere with its grid fins out
@@ -1378,7 +1384,7 @@ def compact_line(state, snap, prediction, run):
         float("nan"), float("nan"))
     return ("%-12s alt=%8.0f legs=%8.1f%s vs=%7.1f hs=%7.1f spd=%7.1f thr=%.2f "
             "m=%7.2ft pad=%8.0f miss=%8.0f long=%+7.0f cross=%+6.0f "
-            "ttl=%6.0f cda=%5.2f M=%4.2f aoa=%+5.1f hold=%4.1f cla=%s trk=%.2f"
+            "ttl=%6.0f cda=%5.2f M=%4.2f aoa=%+5.1f hold=%4.1f cla=%s trk=%.2f%s"
             % (state, snap.height_above_pad, snap.legs_altitude,
                " " if snap.surface_altitude_ok else "?",
                snap.vertical_speed, snap.horizontal_speed, snap.speed,
@@ -1396,7 +1402,9 @@ def compact_line(state, snap, prediction, run):
                                  snap.velocity),
                "%6.2f" % run.env.lift_slope
                if run.env.lift_slope is not None else "     -",
-               run.env.aoa_tracking))
+               run.env.aoa_tracking,
+               " can=%.1f" % run.env.holdable_deg
+               if run.env.holdable_deg is not None else ""))
 
 
 def diag_line(snap, run):

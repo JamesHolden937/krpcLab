@@ -92,6 +92,14 @@ class Environment:
         # holds; see ``record_tracking``.  1 until measured.
         self.aoa_tracking = 1.0
         self.tracking_samples = 0
+        # The restoring moment per unit of dynamic pressure at each probe
+        # angle, per Mach bin; see ``refresh_holdable``.
+        self._hold = [None] * self._bins
+        self._hold_fixed = 0.0          # N m: wheels + RCS, the most seen
+        self._hold_rcs = 0.0
+        self._hold_surface = 0.0        # N m per Pa: control surfaces
+        self._next_hold_ut = None
+        self.holdable_deg = None        # at the current state, logged
 
         logbook.event(ut, "env: body=%s mu=%.4g R=%.1f atmo=%.0f pad_r=%.1f "
                            "c0=%.0f omega=(%.3e,%.3e,%.3e)"
@@ -611,6 +619,125 @@ class Environment:
                 self._lift_machs.append(self._bin_mach(i))
                 self._lift_areas.append(value)
         self.lift_slope = self._lift[index]
+
+    def _probe_torque(self, position, velocity, rotation):
+        try:
+            return self.flight.simulate_aerodynamic_torque_at(
+                self.body, tuple(position), tuple(velocity), tuple(rotation),
+                (0.0, 0.0, 0.0))
+        except Exception:                   # noqa: BLE001 -- KSP-side failure
+            return None
+
+    def _control_torque(self, name):
+        """The weaker tilt axis (pitch or yaw, either sign) of one source."""
+        try:
+            pos, neg = getattr(self.vessel, name)
+        except Exception:                   # noqa: BLE001 -- KSP-side failure
+            return None
+        return min(abs(pos[0]), abs(pos[2]), abs(neg[0]), abs(neg[2]))
+
+    def refresh_holdable(self, ut, position, velocity, rotation, nose):
+        """Measure what the booster can hold off retrograde, before asking.
+
+        A booster with its airbrakes deployed on the trailing end is a
+        weathervane: the air turns the nose back onto retrograde with a moment
+        that grows with the angle, and the attitude controller can only push
+        back with what its wheels, RCS and control surfaces supply.  Where the
+        two meet is the most it will hold -- 2-3 deg on the heavy booster
+        against a 10 deg command (LOG10236) -- and ``tracking`` found that out
+        only after flying it.  This asks the game first: the vessel as it is
+        now (airbrakes, CoM, propellant) turned to a few angles off
+        retrograde, the aerodynamic torque about its CoM at each, reduced to
+        the restoring component per pascal of dynamic pressure.
+        """
+        cfg = self.cfg
+        if not (cfg.AERO_STEER and cfg.AERO_STEER_HOLDABLE) or nose is None:
+            return
+        if self._next_hold_ut is not None and ut < self._next_hold_ut:
+            return
+        self._next_hold_ut = ut + cfg.AERO_STEER_HOLD_PROBE_S
+        speed = vec.norm(velocity)
+        altitude = vec.norm(position) - self.equatorial_radius
+        rho = self.density(altitude)
+        if rho < 1e-9 or speed < 20.0:
+            return
+        q = 0.5 * rho * speed * speed
+        normal = vec.cross(position, velocity)
+        if vec.norm(normal) < 1e-6:
+            return
+        side = vec.unit(vec.cross(vec.unit(normal), velocity))
+        retrograde = vec.scale(vec.unit(velocity), -1.0)
+        top = math.radians(cfg.AERO_STEER_MAX_AOA_DEG)
+        n = max(1, int(cfg.AERO_STEER_HOLD_PROBES))
+        curve = []
+        for i in range(1, n + 1):
+            aoa = top * i / n
+            tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),
+                                      vec.scale(side, math.sin(aoa))))
+            turned = vec.rotation_onto(rotation, nose, tilted)
+            if turned is None:
+                return
+            torque = self._probe_torque(position, velocity, turned)
+            if torque is None:
+                return
+            # tau along cross(t, retrograde) turns t toward retrograde: the
+            # identity (t x F) x t ~ F holds in either handedness.
+            axis = vec.cross(tilted, retrograde)
+            if vec.norm(axis) < 1e-9:
+                return
+            curve.append((aoa, vec.dot(torque, vec.unit(axis)) / q))
+        wheels = self._control_torque("available_reaction_wheel_torque")
+        rcs = self._control_torque("available_rcs_torque")
+        surface = self._control_torque("available_control_surface_torque")
+        if wheels is None or rcs is None or surface is None:
+            return
+        # RCS reads 0 while the valve is shut; it is still there to be used.
+        self._hold_rcs = max(self._hold_rcs, rcs)
+        self._hold_fixed = wheels + self._hold_rcs
+        self._hold_surface = surface / q
+        self._hold[self._bin_index(self.mach(speed, altitude))] = curve
+        held = self.holdable_aoa(speed, altitude)
+        self.holdable_deg = math.degrees(held) if held is not None else None
+        if cfg.DIAG_STATE:
+            self.logbook.event(ut, "diag hold mach=%.2f q=%.0f fixed=%.0f "
+                               "surf=%.0f curve=[%s] -> %s deg"
+                               % (self.mach(speed, altitude), q,
+                                  self._hold_fixed, surface,
+                                  " ".join("%.1f:%.0f" % (math.degrees(a), m)
+                                           for a, m in curve),
+                                  "%.1f" % self.holdable_deg
+                                  if held is not None else "-"))
+
+    def holdable_aoa(self, speed, altitude):
+        """Radians the booster can hold off retrograde here, or None.
+
+        The nearest probed Mach bin's moment curve, scaled by this point's
+        dynamic pressure, against ``AERO_STEER_HOLD_MARGIN`` of the control
+        torque at the same q.  None until something has been probed -- an
+        unmeasured limit must not read as a measured one.
+        """
+        filled = [i for i, c in enumerate(self._hold) if c]
+        if not filled:
+            return None
+        here = self._bin_index(self.mach(speed, altitude))
+        curve = self._hold[min(filled, key=lambda i: abs(i - here))]
+        rho = self.density(altitude)
+        q = 0.5 * rho * speed * speed
+        top = math.radians(self.cfg.AERO_STEER_MAX_AOA_DEG)
+        if q <= 0.0:
+            return top
+        budget = self.cfg.AERO_STEER_HOLD_MARGIN * (
+            self._hold_fixed + self._hold_surface * q) / q
+        last_a, last_m = 0.0, 0.0
+        for aoa, moment in curve:
+            if moment > budget:
+                # Linear between the last angle that held and this one.
+                if moment <= last_m:
+                    return last_a
+                return last_a + (aoa - last_a) * (budget - last_m) / (
+                    moment - last_m)
+            last_a, last_m = aoa, max(last_m, moment)
+        return top
 
     def _probe_bin(self, position, direction, index, altitude, c, rotation):
         """Probe one Mach bin, in the air that bin is going to be used in.

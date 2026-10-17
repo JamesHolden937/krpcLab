@@ -285,6 +285,25 @@ class Config:
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
     AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a
                                             # vehicle with no air at all
+    AERO_STEER_HOLDABLE: bool = False       # compute the angle the booster
+                                            # *can* hold before asking for it:
+                                            # the aerodynamic restoring moment
+                                            # (simulate_aerodynamic_torque_at,
+                                            # at the vessel as it is now)
+                                            # against the control torque.  The
+                                            # solve commands no more, and the
+                                            # propagator credits lift only up
+                                            # to it at each step's q and Mach.
+                                            # The tracking measurement stays
+                                            # as the thing that disagrees.
+    AERO_STEER_HOLD_PROBES: int = 4         # torque probes per refresh, at
+                                            # evenly spaced angles up to
+                                            # AERO_STEER_MAX_AOA_DEG
+    AERO_STEER_HOLD_PROBE_S: float = 2.0    # game seconds between refreshes
+    AERO_STEER_HOLD_MARGIN: float = 0.7     # fraction of the control torque
+                                            # a steady hold may spend on the
+                                            # aerodynamic moment; the rest is
+                                            # left for disturbances
 
     # --- Coast ------------------------------------------------------------
     COAST_STEER_GAIN: float = 0.0006        # degrees of tilt per metre of miss

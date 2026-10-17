@@ -81,6 +81,9 @@ class Steer:
     aoa: float
     normal: tuple
     slope: object = None        # (speed, altitude) -> Cl*A per radian
+    hold: object = None         # (speed, altitude) -> the most the vehicle
+                                # can hold, radians, or None; the lift is
+                                # credited at no more than that
 
 
 def lift_direction(steer, v):
@@ -113,8 +116,13 @@ def acceleration(env, r, v, mass, drag, steer=None):
                 side = lift_direction(steer, v)
                 if slope and side is not None:
                     # a_lift = (1/2) rho |v|^2 K alpha|alpha| / m
+                    aoa = steer.aoa
+                    if steer.hold is not None:
+                        most = steer.hold(speed, altitude)
+                        if most is not None and abs(aoa) > most:
+                            aoa = math.copysign(most, aoa)
                     lift = (0.5 * rho * speed * speed * slope
-                            * steer.aoa * abs(steer.aoa) / mass)
+                            * aoa * abs(aoa) / mass)
                     a = vec.add(a, vec.scale(side, lift))
     w = env.omega
     a = vec.add(a, vec.scale(vec.cross(w, v), -2.0))       # Coriolis
