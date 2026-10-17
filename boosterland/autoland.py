@@ -163,7 +163,7 @@ def prepare_vehicle(vessel, cfg):
             lines.append("engine %s refused: %s"
                          % (engine.part.title, str(exc).splitlines()[0]))
     lines.append("liquid engines activated: %d" % lit)
-    if cfg.GIMBAL_ROLL_OFF:
+    if cfg.GIMBAL_ROLL_OFF and not cfg.GIMBAL_ROLL_UNTIL_BURN:
         lines.append(set_gimbal_roll(vessel, False))
     return lines
 
@@ -350,6 +350,11 @@ class Autoland:
         self.log.event(ut, "phase %s -> %s %s" % (self.state, state, note))
         self.state = state
         self.phase_start_ut = ut
+        if (state == LANDING_BURN and self.cfg.GIMBAL_ROLL_OFF
+                and self.cfg.GIMBAL_ROLL_UNTIL_BURN):
+            # Boostback rolls cleanly on the gimbals at full thrust; the
+            # burn is where kRPC's uncredited gimbal roll spun the heavy.
+            self.log.event(ut, set_gimbal_roll(self.vessel, False))
         self.correction_align = None    # each burn judges its own turn
         # A steering command carried through another phase is not a steady
         # one: the first COAST tick after a correction would otherwise read
@@ -394,11 +399,18 @@ class Autoland:
                     snap.direction, direction, snap.position,
                     self.cfg.FLIP_VIA_VERTICAL_DEG)
             if self.cfg.ROLL_ALIGN:
+                previous, previous_nose = self.roll_up, self.roll_nose
+                if previous is None and self.cfg.ROLL_SEED_ACTUAL:
+                    # Seed on the side of the plane nearest the roof the
+                    # vehicle actually has: never more than 90 deg of roll.
+                    previous = vessel_roof(snap)
+                    previous_nose = snap.direction
                 up = guidance.roll_reference(snap.position, snap.velocity,
-                                             direction, self.roll_up,
+                                             direction, previous,
                                              self.cfg.ROLL_PLANE_MIN_HS_MPS,
-                                             self.roll_nose
+                                             previous_nose
                                              if self.cfg.ROLL_TRANSPORT
+                                             or previous is not self.roll_up
                                              else None)
                 self.roll_up = up
                 self.roll_nose = direction
@@ -1656,6 +1668,20 @@ def attitude_fields(snap, run):
                " w=%.1f" % rate if rate is not None else "",
                " r=%+.0f" % spin if spin is not None else "",
                " in=%+.2f/%+.2f/%+.2f" % inputs if inputs else ""))
+
+
+def vessel_roof(snap):
+    """The vessel's roof (its frame's -z; kRPC: x right, y nose, z bottom)
+    in the reference frame, or None.  Which way the attitude quaternion
+    applies is checked, not assumed: the convention that carries the body's
+    +y onto the streamed nose is the one used."""
+    if snap.rotation is None or len(snap.rotation) != 4:
+        return None
+    nose = vec.unit(snap.direction)
+    for q in (snap.rotation, vec.quat_conjugate(snap.rotation)):
+        if vec.norm(vec.sub(vec.quat_rotate(q, (0.0, 1.0, 0.0)), nose)) < 0.05:
+            return vec.quat_rotate(q, (0.0, 0.0, -1.0))
+    return None
 
 
 def roll_error(snap, up):

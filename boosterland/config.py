@@ -86,6 +86,8 @@ class Config:
                                             # groll1-1017 heavy 12 v 12: burn
                                             # spin 0 v 258 deg/s, miss median
                                             # 20 v 58 m, touchdown 5.8 v 8.7
+    GIMBAL_ROLL_UNTIL_BURN: bool = False    # ... but only from the landing
+                                            # burn: boostback rolls on them
     ENGINE_AXIS_TOL_M: float = 0.3          # this near the cluster axis: center
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
     ENGINE_PAIR_TOL: float = 0.25           # pairing tolerance, of the radius
@@ -229,6 +231,8 @@ class Config:
                                         # carried through the nose's turn:
                                         # a flip over the top is pitch only
                                         # (guidance.transport_roof)
+    ROLL_SEED_ACTUAL: bool = False      # first roof on the side nearest the
+                                        # vehicle's own, not away from the body
     ROLL_PLANE_MIN_HS_MPS: float = 0.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)
