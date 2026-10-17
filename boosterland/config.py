@@ -71,6 +71,10 @@ class Config:
     DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
     DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
     DEPLOY_LEARN_MIN_DEG: float = 3.0       # measure k only from a step this big
+    DEPLOY_UNSTEERED: bool = False          # the brakes null the miss of the
+                                            # *unsteered* prediction: drag
+                                            # carries the range, the lift
+                                            # only trims what is left
     ENGINE_ALLOCATION: bool = True          # throttle = center engine first,
                                             # then symmetric pairs, each to
                                             # full; see autoland.EngineCluster.

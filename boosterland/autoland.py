@@ -805,12 +805,20 @@ class Autoland:
             return vec.dot(miss, along)
 
         eps = cfg.DEPLOY_SENS_EPS
+        # Which miss the brakes answer.  The lift solve re-nulls the *steered*
+        # prediction every tick, so judged on that the brakes see ~0 while
+        # the lift creeps to its limit, and only when it saturates does the
+        # miss appear -- all at once, late (LOG10637: 0 -> -500 m at 12.7 km,
+        # 0 -> +240 at 4.7 km, brakes 30 -> 50 -> 30 -> 50).  Judged on the
+        # unsteered prediction, drag carries the range and the lift is left
+        # the residual and the cross-track.
+        steer = None if cfg.DEPLOY_UNSTEERED else self.steer
         base = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass,
-            snap.max_accel, cfg, steer=self.steer)
+            snap.max_accel, cfg, steer=steer)
         more = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass,
-            snap.max_accel, cfg, steer=self.steer, drag_scale=1.0 + eps)
+            snap.max_accel, cfg, steer=steer, drag_scale=1.0 + eps)
         long = long_of(base)
         sens = (long_of(more) - long) / math.log(1.0 + eps)
 
