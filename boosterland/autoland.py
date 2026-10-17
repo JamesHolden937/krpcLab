@@ -290,8 +290,6 @@ class Autoland:
         self.boostback_under_since = None   # ... and when that run started
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
-        self.translating = False        # RCS translation in the landing burn
-        self.rcs_accel = None           # per-axis RCS accel, vessel frame
         self.cluster = None             # EngineCluster, built at START
         self.throttle_diverged = False
         self.finished = False
@@ -382,13 +380,6 @@ class Autoland:
         landing burn tipped 41 deg at full throttle (LOG10251, 47.7 m/s).
         See ``common.rcs``.
         """
-        if self.translating:
-            # Translation needs the thrusters whatever the pointing error
-            # says; the valve resumes when it ends.
-            if not self.rcs.on:
-                self._apply_rcs(True)
-                self.rcs.on = True
-            return
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
@@ -1182,8 +1173,6 @@ class Autoland:
                            throttle / math.cos(math.radians(tilt)))
         self.set_throttle(throttle)
         self.aim(steer.direction, snap)
-        if self.cfg.RCS_TRANSLATE:
-            self.translate(snap)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),
@@ -1195,54 +1184,6 @@ class Autoland:
             self.set_throttle(0.0)
             self.enter(TOUCHDOWN, snap.ut, "legs=%.1fm vs=%.1f"
                        % (snap.legs_altitude, snap.vertical_speed))
-
-    def translate(self, snap):
-        """Null the sideways speed with RCS translation, near the ground.
-
-        Tilting the whole booster is the engines' way to take out sideways
-        speed, and it costs braking (cos tilt) and needs throttle off the
-        cap.  The RCS can push sideways directly, both ways, at no cost to
-        the burn.  Below ``LANDING_NULL_ALT_M`` the horizontal velocity is
-        driven to zero with time constant ``RCS_TRANSLATE_TAU_S``; the
-        command on each axis is the wanted acceleration over the
-        acceleration that axis's thrusters can make (``available_rcs_force``
-        over mass, read once), so it suits any craft's RCS.  Vessel frame:
-        +x right, +y nose, -z dorsal; ``control.up`` is dorsal.
-        """
-        cfg = self.cfg
-        up = vec.unit(snap.position)
-        lateral = vec.project_out(snap.velocity, up)
-        want = (snap.landing_height <= cfg.LANDING_NULL_ALT_M
-                and vec.norm(lateral) > cfg.RCS_TRANSLATE_DEADBAND_M_S)
-        if not want:
-            if self.translating:
-                self.control.right = 0.0
-                self.control.up = 0.0
-                self.translating = False
-            return
-        if self.rcs_accel is None:
-            try:
-                pos, neg = self.vessel.available_rcs_force
-                m = max(1.0, snap.mass)
-                self.rcs_accel = (
-                    (abs(pos[0]) / m, abs(neg[0]) / m),
-                    (abs(pos[2]) / m, abs(neg[2]) / m))
-            except Exception:           # noqa: BLE001
-                self.rcs_accel = ((0.0, 0.0), (0.0, 0.0))
-            self.log.event(snap.ut, "rcs translation authority: x %.2f/%.2f"
-                           " z %.2f/%.2f m/s^2" % (self.rcs_accel[0]
-                                                   + self.rcs_accel[1]))
-        accel = vec.scale(lateral, -1.0 / cfg.RCS_TRANSLATE_TAU_S)
-        body = vec.quat_rotate(vec.quat_conjugate(snap.rotation), accel)
-
-        def command(a, authority):
-            cap = authority[0] if a > 0.0 else authority[1]
-            return 0.0 if cap <= 0.0 else vec.clamp(a / cap, -1.0, 1.0)
-
-        self.control.right = command(body[0], self.rcs_accel[0])
-        self.control.up = command(-body[2], (self.rcs_accel[1][1],
-                                             self.rcs_accel[1][0]))
-        self.translating = True
 
     def tilt_budget(self, throttle):
         """How far the burn may tilt without stealing braking, in degrees.
@@ -1345,6 +1286,18 @@ class Autoland:
         self.exit_reason = reason
 
     def tick(self):
+        started = time.monotonic()
+        state = self.state
+        snap = self._tick()
+        # What control rate each phase actually got, sampled here rather
+        # than in run() because the farm harness drives tick() itself: a
+        # burn whose commands land late was flown through a latency, not a
+        # vehicle, and the log has to say so.
+        if snap is not None:
+            self.loop_rate.sample(state, snap.ut, time.monotonic() - started)
+        return snap
+
+    def _tick(self):
         snap = self.telemetry.sample(self.env)
         if self.gui.terminate_pressed():
             self.log.event(snap.ut, "TERMINATE pressed in game")
@@ -1385,15 +1338,7 @@ class Autoland:
         # that way is not reproducible at 1x.
         wait = sleeper(self.cfg, lambda: self.conn.space_center.ut, self.conn)
         while not self.finished:
-            started = time.monotonic()
-            state = self.state
             snap = self.tick()
-            if snap is not None:
-                # What control rate the phase actually got: a burn whose
-                # first commands land seconds late was flown through a
-                # latency, not a vehicle, and the log has to say so.
-                self.loop_rate.sample(state, snap.ut,
-                                      time.monotonic() - started)
             wait(self.cfg.LOOP_SLEEP_S,
                  snap.ut if snap is not None else self.conn.space_center.ut)
 
@@ -1405,9 +1350,6 @@ class Autoland:
             self.control.throttle = 0.0
             if self.cluster is not None:
                 self.cluster.release()
-            if self.translating:
-                self.control.right = 0.0
-                self.control.up = 0.0
             set_autopilot_engaged(self.autopilot, False)
             self.control.sas = True
         except Exception as exc:                     # game closed / vessel gone

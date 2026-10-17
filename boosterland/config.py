@@ -43,7 +43,10 @@ class Config:
     SEPARATION_CLEARANCE_SCAN: bool = True  # flip when clear, not on a timer
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
-    AIRBRAKE_DEPLOY_ANGLE_DEG: float = 90.0  # every airbrake, deployed at START.
+    AIRBRAKE_DEPLOY_ANGLE_DEG: float = 60.0  # every airbrake, deployed at START.
+                                            # new1-1016 medians, 90 -> 60:
+                                            # qs_hot 247 -> 31, heavy 79 -> 63,
+                                            # quicksave 79 -> 55.
                                             # Boostback aims on the drag of
                                             # this angle, so it is also where
                                             # the deploy law starts: at the
@@ -75,11 +78,6 @@ class Config:
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
     ENGINE_PAIR_TOL: float = 0.25           # pairing tolerance, of the radius
     ENABLE_RCS: bool = True
-    RCS_TRANSLATE: bool = False             # RCS translation nulls sideways
-                                            # speed below LANDING_NULL_ALT_M;
-                                            # see Autoland.translate
-    RCS_TRANSLATE_TAU_S: float = 1.5        # time constant of that nulling
-    RCS_TRANSLATE_DEADBAND_M_S: float = 0.2
     # **Permission is not demand.**  From START the booster is allowed RCS for
     # the whole flight -- every turn it makes is one time cares about -- but
     # allowed is not the same as open.  Most ticks of a five-minute flight the
