@@ -38,6 +38,7 @@ class Snapshot:
     # The largest summed control input (pitch/yaw/roll, autopilot included),
     # 0-1, or None when kRPC gave no read-back.  The RCS valve fires on it.
     input_saturation: object = None
+    inputs: object = None              # (pitch, yaw, roll) read back, or None
 
     @property
     def speed(self):
@@ -131,6 +132,7 @@ class Telemetry:
         # shuttle does.  Optional -- a server that will not stream it leaves
         # the valve on its pointing-error relay.
         self._inputs = []
+        self._last_inputs = None
         try:
             for axis in ("pitch", "yaw", "roll"):
                 self._inputs.append(add(getattr, control, axis))
@@ -173,17 +175,21 @@ class Telemetry:
             pad_above_datum=max(0.0, env.target_radius - env.equatorial_radius),
             terrain_below_sea=self.cfg.TERRAIN_BELOW_SEA_M,
             input_saturation=self._input_saturation(),
+            inputs=self._last_inputs,
         )
 
     def _input_saturation(self):
         """Largest |pitch|, |yaw|, |roll| input, or None if unreadable."""
+        self._last_inputs = None
         if not self._inputs:
             return None
         try:
-            return max(abs(float(stream())) for stream in self._inputs)
+            self._last_inputs = tuple(float(stream())
+                                      for stream in self._inputs)
         except Exception:                                   # noqa: BLE001
             self._drop_inputs()
             return None
+        return max(abs(x) for x in self._last_inputs)
 
     def _drop_inputs(self):
         for stream in self._inputs:

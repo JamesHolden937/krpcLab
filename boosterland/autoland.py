@@ -310,6 +310,7 @@ class Autoland:
         self.cluster = None             # EngineCluster, built at START
         self.prev_nose = None           # (ut, direction) of the last tick
         self.nose_rate = None           # deg/s, see track_nose_rate
+        self.roll_rate = None           # deg/s about the nose, signed
         self.throttle_diverged = False
         self.last_sample = None         # (position, mass) of the last tick
         self.frozen_since = None        # ut the position stopped changing
@@ -1442,10 +1443,23 @@ class Autoland:
         ``err=`` and ``sat=`` it tells a pinned input that is turning the
         vehicle (and will overshoot) from one losing to a standing moment."""
         prev = self.prev_nose
-        self.prev_nose = (snap.ut, snap.direction)
+        self.prev_nose = (snap.ut, snap.direction, snap.rotation)
         if prev is not None and snap.ut - prev[0] > 1e-3:
-            self.nose_rate = (vec.angle_between(prev[1], snap.direction)
-                              / (snap.ut - prev[0]))
+            dt = snap.ut - prev[0]
+            self.nose_rate = vec.angle_between(prev[1], snap.direction) / dt
+            # Roll: the turn from the last attitude to this one, as a
+            # rotation vector, along the nose.
+            dq = vec.quat_mul(snap.rotation, vec.quat_conjugate(prev[2]))
+            if dq[3] < 0.0:
+                dq = tuple(-c for c in dq)
+            s = vec.norm(dq[:3])
+            if s > 1e-12:
+                angle = 2.0 * math.atan2(s, dq[3])
+                axis = vec.scale(dq[:3], 1.0 / s)
+                self.roll_rate = (math.degrees(angle) / dt
+                                  * vec.dot(axis, snap.direction))
+            else:
+                self.roll_rate = 0.0
 
     def _tick(self):
         snap = self.telemetry.sample(self.env)
@@ -1583,13 +1597,17 @@ def attitude_fields(snap, run):
         return ""
     roll = roll_error(snap, getattr(run, "roll_up", None))
     rate = getattr(run, "nose_rate", None)
-    return (" cmd=%.1f err=%.1f sat=%s%s%s"
+    spin = getattr(run, "roll_rate", None)
+    inputs = getattr(snap, "inputs", None)
+    return (" cmd=%.1f err=%.1f sat=%s%s%s%s%s"
             % (vec.angle_between(cmd, vec.scale(snap.velocity, -1.0)),
                run.pointing_error(snap),
                "%.2f" % snap.input_saturation
                if snap.input_saturation is not None else "-",
                " roll=%.0f" % roll if roll is not None else "",
-               " w=%.1f" % rate if rate is not None else ""))
+               " w=%.1f" % rate if rate is not None else "",
+               " r=%+.0f" % spin if spin is not None else "",
+               " in=%+.2f/%+.2f/%+.2f" % inputs if inputs else ""))
 
 
 def roll_error(snap, up):
