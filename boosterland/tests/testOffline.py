@@ -1223,6 +1223,34 @@ class TestVesselLost(unittest.TestCase):
         self.assertFalse(run.finished)
 
 
+class TestRollError(unittest.TestCase):
+    """The roll column: roof against the commanded up, about the nose."""
+
+    def snap(self, rotation, direction=(0.0, 1.0, 0.0)):
+        return SimpleNamespace(rotation=rotation, direction=direction)
+
+    def test_level_roof_reads_zero(self):
+        self.assertAlmostEqual(autoland_module.roll_error(
+            self.snap((0.0, 0.0, 0.0, 1.0)), (0.0, 0.0, -1.0)), 0.0, places=6)
+
+    def test_a_quarter_roll_reads_ninety(self):
+        self.assertAlmostEqual(autoland_module.roll_error(
+            self.snap((0.0, 0.0, 0.0, 1.0)), (1.0, 0.0, 0.0)), 90.0, places=6)
+
+    def test_either_quaternion_convention_is_found(self):
+        # 90 deg about z carries +y to -x under one convention and +x under
+        # the other; with the nose given as +x the roof (-z) is unmoved.
+        h = math.sqrt(0.5)
+        for nose in ((1.0, 0.0, 0.0), (-1.0, 0.0, 0.0)):
+            self.assertAlmostEqual(autoland_module.roll_error(
+                self.snap((0.0, 0.0, h, h), nose), (0.0, 0.0, -1.0)),
+                0.0, places=6)
+
+    def test_no_reference_is_no_answer(self):
+        self.assertIsNone(autoland_module.roll_error(
+            self.snap((0.0, 0.0, 0.0, 1.0)), None))
+
+
 class TestTwoAxisAeroSteer(unittest.TestCase):
     """The wing is the only cross-track actuator in the flight.
 
