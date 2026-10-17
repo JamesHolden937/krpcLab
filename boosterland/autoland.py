@@ -341,7 +341,12 @@ class Autoland:
                 direction = guidance.flip_waypoint(
                     snap.direction, direction, snap.position,
                     self.cfg.FLIP_VIA_VERTICAL_DEG)
-            if self.cfg.ROLL_ALIGN:
+            if self.cfg.ROLL_ALIGN and not (self.cfg.LANDING_ROLL_FREE
+                                            and self.state == LANDING_BURN):
+                # In the burn the roll is only damped: 1.5 kN m of roll
+                # authority (LOG11023) cannot follow a reference that swings
+                # as the horizontal speed passes through zero, and the roll
+                # error read 110-135 deg on every burn (rcsh1-1017).
                 up = guidance.roll_reference(snap.position, snap.velocity,
                                              direction, self.roll_up)
                 self.roll_up = up

@@ -452,6 +452,8 @@ class Config:
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
+    LANDING_ROLL_FREE: bool = False         # in the landing burn, damp the
+                                            # roll rate only (no roll angle)
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady
