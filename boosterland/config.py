@@ -189,7 +189,7 @@ class Config:
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
     FLIP_ALIGN_DEG: float = 25.0            # hold throttle until aligned
     FLIP_UNDER_POWER: bool = True           # ignore that gate: light, then flip
-    BOOSTBACK_CLEAR_NOSE: bool = False      # ... but not while thrust along
+    BOOSTBACK_CLEAR_NOSE: bool = True       # ... but not while thrust along
                                             # the nose as it points now would
                                             # close on a neighbour
 

@@ -54,7 +54,27 @@ remaining 40 m".
 - Still seen with the valve held: pitch Kp ~6 -> 0.5 under thrust, and the
   roll error reaches 110-135 deg in every arm (roll torque 1.5 kN m; the
   roll reference follows the trajectory plane, undefined as hs passes 0).
-- How-it-works PDF rewritten (defaults `99de5847`).
+- **`LANDING_ROLL_FREE`** (damp roll only in the burn; deleted), roll1-1017,
+  36 a side: on-target mean 22 v 21 m, tilt and hard touchdowns equal --
+  null. The roll error is not what tips the booster.
+- **The boostback breakups are collisions with the upper stage.** KSP.log
+  (read before restarting, ksp1) for LOG11177, the third qs_hot tank loss:
+  3 s after separation the booster's airbrake hit the upper stage's
+  ServiceBay at 40 m/s relative, then its core the stage's verniers, and the
+  Rockomax32 joint broke. `FLIP_UNDER_POWER` lights the engines on the first
+  BOOSTBACK tick with the nose still near prograde -- at the stage -- and the
+  SEPARATION scan had cleared thrust along the *aim* (its own docstring said
+  so). **`BOOSTBACK_CLEAR_NOSE`**: mid-flip, hold the throttle while full
+  thrust along the present nose would close on a neighbour. Sim: holds 1.8 s
+  with a stage 40 m ahead, then lands. nose1-1017 (qs_hot/quicksave/heavy, 36
+  a side): fired on 4/12 qs_hot flights (0.2-0.5 s), never elsewhere;
+  median 33 v 28 m, mean 42 v 39 (scatter); CollisionSpy contacts above
+  1000 m: 0 in both arms (the base rate is ~1 in 50 qs_hot flights, so this
+  batch could not show it). **Promoted** on the mechanism; the breakup rate
+  is not yet re-measured.
+- `LANDING_RCS_HELD` left the valve open on the pad (testFlightSim caught it
+  after the promotion was pushed): it now closes when the burn ends.
+- How-it-works PDF rewritten (defaults `b3b48d4a`).
 
 ## Session, 2026-10-16 late: the holdable angle, computed
 

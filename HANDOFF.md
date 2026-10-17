@@ -1,56 +1,58 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-17 night: boosterland -- paired flags promoted; the landing burn's attitude (fingerprint `99de5847`)
+## 2026-10-17 night: boosterland -- paired flags promoted; landing-burn attitude; boostback collisions (fingerprint `b3b48d4a`)
 
 Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-16/17 night".
-How-it-works PDF rewritten. Committed and pushed.
+How-it-works PDF rewritten. Committed and pushed; farm stopped (swap 15 GB
+at the end); sleep inhibitor released.
 
 **Defaults changed:** `DEPLOY_UNSTEERED`, `AERO_STEER_HOLDABLE` (pair1-1017:
-mean 47 v 82 m, worst 162 v 431) and `LANDING_RCS_HELD` (rcsh1-1017:
-on-target-at-ignition median 17 v 32 m, peak burn tilt max 34 v 81, 0
-destroyed v 1) promoted. A destroyed vessel now ends the flight
-(`destroyed` in the harness line, instead of a 420 s "no exit line").
-Telemetry: `cmd= err= sat= roll=`; the burn logs kRPC's gains/torque.
+mean 47 v 82 m, worst 162 v 431), `LANDING_RCS_HELD` (rcsh1-1017:
+on-target-at-ignition median 17 v 32 m, burn tilt max 34 v 81, 0 destroyed
+v 1), `BOOSTBACK_CLEAR_NOSE` (nose1-1017: accuracy null, fires on 1/3 of
+qs_hot flips; promoted on the KSP.log mechanism). A destroyed vessel ends
+the flight as `destroyed`. Telemetry: `cmd= err= sat= roll=`; the burn logs
+kRPC's gains and torque.
 
-**Where it stands (brd2-1017, before RCS_HELD, 12 a save):** median 37 m,
-p90 90, worst 269. steep 15, cold 31, quicksave 38, heavy 42, hot 47,
-north 73. Since RCS_HELD, qs_hot/qs_north median 23.
+**Where it stands:** nose1-1017 (all defaults bar CLEAR_NOSE, 12 a save):
+qs_hot 30, quicksave 22, heavy 54 median; brd2-1017 (before RCS_HELD) six
+saves median 37, worst 269 (qs_north). No crashes in the last 72 flights.
 
-**Where the remaining error is made** (journal has the split):
-1. *The landing burn* (~2/3 of flights): on target at ignition, still lands
-   15-30 m out, scaling with how far it tips (corr 0.72). kRPC auto-tune
-   cuts pitch Kp ~6 -> 0.5 once the gimbal is credited under thrust; roll
-   error reaches 110-135 deg (roll torque 1.5 kN m, roll reference = the
-   trajectory plane, undefined as hs passes 0).
-2. *The coast* (~1/3): lights the burn 20-300 m off. All heavy flights
-   (miss grows 8 km -> 3 km); qs_north/qs_hot when the brakes pin at 90 deg
-   early (out of drag). The deploy law has no altitude floor.
+**Where the remaining error is made:**
+1. *The landing burn*: on target at ignition, still lands 15-30 m out,
+   scaling with tilt (corr 0.72). Under thrust kRPC auto-tune cuts pitch Kp
+   ~6 -> 0.5 (it credits the SSME gimbal); freezing gains at 7 pinned the
+   input and still tilted 20-36 deg, so authority, not only gain. Roll is
+   not it (null).
+2. *The coast*: lights the burn 20-300 m off on every heavy flight (miss
+   grows 8 -> 3 km with the deploy law free -- no altitude floor) and on
+   qs_north/qs_hot when the brakes pin at 90 early.
 
-**Flags:** none open (FEEDFORWARD_FLOOR, FREEZE_TUNE, LANDING_TIME_TO_PEAK_S
-all deleted -- journal).
+**Flags:** none open.
 
 **Next, in order:**
-1. Roll in the landing burn: try `target_roll` NaN (damp only) from the
-   burn's start -- the booster cannot follow the reference anyway. Read
-   `roll=` and `hold=` against default, qs_hot + qs_north, 36 a side
-   (`SAVES_LIST="qs_hot qs_north" LAPS=3 boosterland/tools/brot.sh ...`).
-2. The under-thrust gain cut: the gimbal credit is real (freezing gains at
-   7 pinned the input and still tilted 20-36 deg). Measure what the gimbal
-   delivers (`actuators.py`; the SSME's 10.5 deg range) before tuning.
-3. The heavy's coast: why its unsteered miss grows 8 -> 3 km with the brakes
-   free (10 s step, 30 m deadband?). qs_north/qs_hot brakes pinned at 90
-   within 20 s of the coast: the early-coast drag re-sweep (prediction swings
-   hundreds of m) -- take the descent-attitude sweep before boostback exits.
-4. qs_hot boostback flip loses the tanks (LOG10720, LOG10774, 2 in ~110):
-   keep KSP.log next time (read it before restarting the farm).
-5. Touchdowns > 10 m/s: still 14 of 36 on qs_hot/qs_north.
+1. What tips the burn with the input pinned: measure the gimbal's delivered
+   torque against kRPC's credit (`testInstances/actuators.py`, the SSME's
+   gimbal range/response; a farm probe that commands full pitch at full
+   thrust on the pad save and reads the angular acceleration). If the
+   gimbal underdelivers, scale the tuning (time_to_peak per axis from the
+   measured torque, as the spaceplane derives it).
+2. The heavy's coast drift 8 -> 3 km: read the deploy law's steps (10 s,
+   30 m deadband) in the heavy logs of nose1/brd2; the early brake pin on
+   qs_north/qs_hot is the early-coast drag re-sweep -- take the
+   descent-attitude sweep before boostback exits.
+3. Re-measure the boostback breakup rate with CLEAR_NOSE: count CollisionSpy
+   ENTER above 1000 m in each ksp*/KSP.log **before** restarting the farm.
+4. Touchdowns > 10 m/s: ~14 of 36 per arm on qs_hot/quicksave/heavy.
 
 **Traps paid:** kRPC's available torque counts RCS only while the valve is
-open, so anything auto-tuned swings 30x with the relay; a frozen tune
-inherits whatever the valve was doing at that tick. The landing-burn idle
-is drag's turn, not lost margin (failure 5). A destroyed vessel's streams
-freeze, they do not raise. KSP.log is overwritten by a farm restart. I ran
-the offline tests for 10 s with the farm up once -- don't.
+open, so auto-tuned gains swing 30x with the relay; a frozen tune inherits
+whatever the valve was doing. The landing-burn idle is drag's turn
+(failure 5). A destroyed vessel's streams freeze, they do not raise.
+KSP.log is overwritten by a farm restart -- read it first. Run the suite
+after a promotion, not only after adding the flag (RCS_HELD broke a test).
+`&& ... | tail` hides a failing suite's status (did it again). Don't run
+the tests with the farm up (did it twice, harmlessly).
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
