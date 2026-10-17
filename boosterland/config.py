@@ -607,6 +607,16 @@ class Config:
                                             # offline; see replay.py
 
     THROTTLE_DIVERGENCE: float = 0.1        # log when the vessel ignores us
+    MASS_LOSS_FRACTION: float = 0.1         # mass down this much in one tick
+                                            # is parts lost, not propellant
+                                            # (LOG10720: 26.7 -> 0.66 t in 2 s)
+    DEAD_STREAM_S: float = 1.0              # game seconds of a bit-identical
+                                            # position while moving: the vessel
+                                            # is destroyed and the streams have
+                                            # frozen (LOG10748 flew a dead
+                                            # snapshot for 60 s to the timeout)
+    DEAD_STREAM_MIN_SPEED: float = 1.0      # below this a still vessel is
+                                            # allowed a constant position
 
     # --- Loop / logging ---------------------------------------------------
     LOOP_SLEEP_S: float = 0.05              # pacing of the loop, seconds

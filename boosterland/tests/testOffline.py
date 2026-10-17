@@ -1161,6 +1161,68 @@ class TestTouchdownBackstop(unittest.TestCase):
                                          self.command(9999.0)))
 
 
+class TestVesselLost(unittest.TestCase):
+    """A destroyed vessel's streams freeze; the flight must end, not hover.
+
+    LOG10748 hit the ground at 87 m/s and the loop flew the frozen snapshot
+    -- same position, same velocity, 0 t -- for a minute until the harness
+    timed out, which reported a hover instead of a crash.
+    """
+
+    def make(self):
+        run = object.__new__(autoland_module.Autoland)
+        run.cfg = Config()
+        run.last_sample = None
+        run.frozen_since = None
+        run.finished = False
+        run.exit_reason = None
+        run.events = []
+        run.log = SimpleNamespace(
+            event=lambda ut, text: run.events.append(text))
+        run.pad_distance = lambda snap: 90.0
+        return run
+
+    def snap(self, ut, position, mass=17.0, speed=128.0):
+        return SimpleNamespace(ut=ut, position=position, mass=mass,
+                               speed=speed, landing_height=-7.5)
+
+    def test_a_frozen_position_while_moving_ends_the_flight(self):
+        run = self.make()
+        ut = 100.0
+        for _ in range(40):
+            ut += 0.04
+            if run.vessel_lost(self.snap(ut, (1.0, 2.0, 3.0), mass=0.0)):
+                break
+        self.assertTrue(run.finished)
+        self.assertTrue(run.exit_reason.startswith("destroyed 90 m from pad"))
+
+    def test_a_moving_vessel_is_not_lost(self):
+        run = self.make()
+        for i in range(100):
+            self.assertFalse(run.vessel_lost(
+                self.snap(100.0 + 0.04 * i, (float(i), 0.0, 0.0))))
+        self.assertFalse(run.finished)
+
+    def test_a_still_vessel_may_keep_its_position(self):
+        run = self.make()
+        for i in range(100):
+            self.assertFalse(run.vessel_lost(
+                self.snap(100.0 + 0.04 * i, (1.0, 2.0, 3.0), speed=0.2)))
+
+    def test_a_paused_game_is_not_a_frozen_vessel(self):
+        run = self.make()
+        for _ in range(100):
+            self.assertFalse(run.vessel_lost(self.snap(100.0, (1.0, 2.0, 3.0))))
+
+    def test_parts_lost_is_said_but_does_not_end_the_flight(self):
+        run = self.make()
+        run.vessel_lost(self.snap(100.0, (0.0, 0.0, 0.0), mass=26.7))
+        self.assertFalse(run.vessel_lost(
+            self.snap(100.04, (1.0, 0.0, 0.0), mass=0.66)))
+        self.assertTrue(any("parts lost" in e for e in run.events))
+        self.assertFalse(run.finished)
+
+
 class TestTwoAxisAeroSteer(unittest.TestCase):
     """The wing is the only cross-track actuator in the flight.
 

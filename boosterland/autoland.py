@@ -292,6 +292,8 @@ class Autoland:
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
         self.throttle_diverged = False
+        self.last_sample = None         # (position, mass) of the last tick
+        self.frozen_since = None        # ut the position stopped changing
         self.finished = False
         self.exit_reason = None
 
@@ -1299,6 +1301,41 @@ class Autoland:
         self.finished = True
         self.exit_reason = reason
 
+    def vessel_lost(self, snap):
+        """Has the vessel broken up or been destroyed?  Logs it; True ends it.
+
+        A destroyed vessel does not always raise: its streams freeze on the
+        last values, so the loop kept flying a dead snapshot -- same position,
+        86 m/s, 0 t -- until the harness timed out (LOG10748, LOG10512), and the
+        flight read as a hover rather than a crash.  Losing parts in flight
+        (LOG10720, the tanks gone in the boostback flip) leaves a live vessel;
+        that is only said, so the log shows where the mass went.
+        """
+        cfg = self.cfg
+        last = self.last_sample
+        self.last_sample = (snap.position, snap.mass)
+        if last is None:
+            return False
+        if (last[1] > 0.0
+                and snap.mass < last[1] * (1.0 - cfg.MASS_LOSS_FRACTION)):
+            self.log.event(snap.ut, "mass %.2f -> %.2f t in one tick: parts lost"
+                           % (last[1], snap.mass))
+        if snap.position != last[0] or snap.speed < cfg.DEAD_STREAM_MIN_SPEED:
+            self.frozen_since = None
+            return False
+        if self.frozen_since is None:
+            self.frozen_since = snap.ut
+            return False
+        if snap.ut - self.frozen_since < cfg.DEAD_STREAM_S:
+            return False
+        self.log.event(snap.ut, "vessel lost: position frozen %.1f s at %.1f m/s,"
+                       " mass %.2f t" % (snap.ut - self.frozen_since,
+                                        snap.speed, snap.mass))
+        self.finish("destroyed %.0f m from pad, alt=%.0f spd=%.1f"
+                    % (self.pad_distance(snap), snap.landing_height,
+                       snap.speed))
+        return True
+
     def tick(self):
         started = time.monotonic()
         state = self.state
@@ -1316,6 +1353,9 @@ class Autoland:
         if self.gui.terminate_pressed():
             self.log.event(snap.ut, "TERMINATE pressed in game")
             self.finish("terminated from GUI")
+            return snap
+
+        if self.vessel_lost(snap):
             return snap
 
         if self.state != STANDBY:
