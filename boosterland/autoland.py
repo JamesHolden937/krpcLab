@@ -1319,7 +1319,7 @@ class Autoland:
         if (last[1] > 0.0
                 and snap.mass < last[1] * (1.0 - cfg.MASS_LOSS_FRACTION)):
             self.log.event(snap.ut, "mass %.2f -> %.2f t in one tick: parts lost"
-                           % (last[1], snap.mass))
+                           % (last[1] / 1000.0, snap.mass / 1000.0))
         if snap.position != last[0] or snap.speed < cfg.DEAD_STREAM_MIN_SPEED:
             self.frozen_since = None
             return False
@@ -1452,7 +1452,24 @@ def compact_line(state, snap, prediction, run):
                if run.env.lift_slope is not None else "     -",
                run.env.aoa_tracking,
                " can=%.1f" % run.env.holdable_deg
-               if run.env.holdable_deg is not None else ""))
+               if run.env.holdable_deg is not None else "")
+            + attitude_fields(snap, run))
+
+
+def attitude_fields(snap, run):
+    """The command beside the attitude: ` cmd=` is the commanded nose's angle
+    off retrograde, ` err=` how far the real nose is from it, ` sat=` the
+    largest control input (1 = an axis pinned).  `hold` alone could not say
+    whether a landing burn 50 deg off retrograde was steering there or losing
+    the vehicle (LOG10969, LOG10971 tipped over at full throttle)."""
+    cmd = getattr(run, "commanded_direction", None)
+    if cmd is None or vec.norm(cmd) < 0.5 or snap.speed < 1.0:
+        return ""
+    return (" cmd=%.1f err=%.1f sat=%s"
+            % (vec.angle_between(cmd, vec.scale(snap.velocity, -1.0)),
+               run.pointing_error(snap),
+               "%.2f" % snap.input_saturation
+               if snap.input_saturation is not None else "-"))
 
 
 def diag_line(snap, run):
