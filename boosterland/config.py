@@ -208,6 +208,12 @@ class Config:
     # --- Attitude ---------------------------------------------------------
     FLIP_VIA_VERTICAL: bool = True      # route big turns over the top, not under
     FLIP_VIA_VERTICAL_DEG: float = 90.0     # only turns bigger than this
+    FLIP_THROUGH_VERTICAL: bool = False     # ... and through the zenith: pitch
+                                            # up in the nose's vertical plane,
+                                            # down in the target's
+                                            # (guidance.flip_through_vertical)
+    FLIP_VERTICAL_PAST_DEG: float = 10.0    # waypoint: zenith tilted this far
+                                            # toward the target's side
     ROLL_ALIGN: bool = True             # hold roll, roof in the trajectory plane
     ROLL_OFFSET_DEG: float = 0.0        # roof offset from that plane (fin clocking)
     ROLL_THRESHOLD_DEG: float = 5.0     # kRPC roll_threshold: roll is held only
