@@ -1,5 +1,44 @@
 # boosterland journal
 
+## Session, 2026-10-16 evening: a general deploy law, engine allocation
+
+The user, on the deploy law's 8 km cutoff: "oscilation is a control issue,
+not something that can't be fixed"; asked for a controller that works for
+ships with different gains, an audit of what else is missing, and engine
+allocation (center engine to full first, then pairs) as a general solution.
+
+- **Deploy law, general** (default): every 10 s a Newton step on a computed
+  gain. S = metres of along-track miss per unit ln(Cd*A), from two
+  propagations (drag x1 and x1.05, same steering); k = ln(Cd*A) per degree,
+  from the drag curve swept 2 s after a step against the one before it,
+  median over Mach bins (first step a fixed 10 deg probe). Step = 0.7 *
+  -long / (S k), rate-limited 20 deg; acts the whole coast; `long` along the
+  horizontal velocity (the line to the pad swings round overhead). No
+  per-craft gain constant. full1 (whole coast, old fixed gain): airbrakes
+  pinned at 90 on quicksave/qs_hot with long misses -- the law had no drag
+  left to add.
+- **Airbrakes start at 60** (`AIRBRAKE_DEPLOY_ANGLE_DEG`, `DEPLOY_MAX_DEG` 90
+  split off): boostback aims on mid-range drag. new1 medians 90 -> 60:
+  qs_hot 247 -> 31, heavy 79 -> 63, quicksave 79 -> 55; 72/72 intact.
+- **`ENGINE_ALLOCATION`** (default; `engines.py`, `EngineCluster`): engines
+  grouped by position across the thrust axis (on-axis, opposite pairs, an
+  odd ring whole), filled in order with per-engine `thrust_limit`, main
+  throttle at 1; guidance still plans on `max_thrust`. The heavy groups as
+  [1 @ 0.0] [2 @ 1.2] [2 @ 1.2]; quicksave/qs_hot are single-engine (their
+  new1 "alloc" cells, 24 v 55 and 10 v 31, are scatter between identical
+  configurations). alloc2, heavy 12 v 12: miss median 47 worst 79 v 90/362;
+  touchdown median 6.7 worst 14 v 4.2/8.7 m/s (open).
+- **`RCS_TRANSLATE`** (sideways speed nulled by RCS below 250 m, scaled by
+  `available_rcs_force`): refuted, deleted -- heavy authority 0.39 m/s^2,
+  harder arrivals (qs_hot 12-13 m/s), misses no better.
+- Not built: an engine-latency term in the burn trigger. The qs_hot crashes'
+  late throttle was the profile law's own command (the early start puts the
+  booster below the profile); the killer was tipping at full throttle. No
+  crash in 96 flights since (new1, alloc2, 4 lines/s logged).
+- `defaults_fingerprint` on the config line (now `e7e5aa99`); loop-rate line
+  sampled in `tick()` (the harness drives tick, so `run()` never sampled):
+  landing burn 0.04 game-s per tick.
+
 ## Session, 2026-10-16 afternoon: corrections, drag as range, the landing hover
 
 The user asked why the booster needs correction burns at all ("they seem to

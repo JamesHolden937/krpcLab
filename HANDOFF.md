@@ -1,50 +1,39 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-16 afternoon: boosterland -- both boosters land; five default changes
+## 2026-10-16 evening: boosterland -- general deploy law, engine allocation (fingerprint `e7e5aa99`)
 
-The user asked why the booster needs correction burns, whether a control
-was missing, and to use the airbrakes' deploy angle for drag. Full write-up:
-`docs/boosterland/journal.md` (top section). How-it-works PDF rewritten.
-Committed and pushed; farm stopped. The booster's `config:` line still has
-no `defaults_fingerprint` (open).
+Full write-up: `docs/boosterland/journal.md`, the two 2026-10-16 afternoon/
+evening sections. How-it-works PDF rewritten. Committed and pushed; farm
+stopped; sleep inhibitor released.
 
-**Defaults now (all measured at 1x, 6 a cell, `logs/rot-<tag>-1016.txt`):**
-- `LANDING_THROTTLE_VERTICAL` -- the landing profile on descent rate, sideways
-  speed weighted by height/250 m. The old |v| law hovered and slid 100-750 m
-  at 10-30 m up on both boosters (cap <-> go-around every tick, no divert
-  authority). vert1: heavy 6/6 soft, on the 2 km prediction +-30 m.
-- `DEPLOY_LAW` -- COAST steps the airbrake deploy angle against the
-  along-track miss (10 s, <= 10 deg, 30-90, gain >= 20 m/deg, above 8 km),
-  re-sweeping drag after each step. Two-sided range; the only one after
-  boostback.
-- `CORRECTION_OVERSHOOT_ONLY` + `CORRECTION_ENTER_M` 1000 (was 60) +
-  `CORRECTION_ABORT_FLOOR_M` 60: corrections only on a long miss > 1 km. In
-  the game a burn within 50 deg of retrograde only shortens; short-miss
-  burns took flights 0.7-2.5 km short.
-- Deleted: `AIRBRAKE_STEER` (re-refuted, abs1), the fixed-angle probe.
+**Defaults now** (all measured at 1x on the farm, `logs/rot-<tag>-1016.txt`):
+- Landing profile on descent rate (`LANDING_THROTTLE_VERTICAL`).
+- Corrections only on an overshoot > 1000 m (`CORRECTION_OVERSHOOT_ONLY`,
+  `CORRECTION_ENTER_M` 1000).
+- Deploy law for the whole coast, Newton steps on a computed gain (S from
+  two propagations, k from the drag curve before/after each step).
+- Airbrakes start at 60 deg; the law ranges 30-90.
+- Engine allocation: center engine to full first, then symmetric pairs.
 
-**Where it stands** (brd1 + low1's 8 km arm, defaults): 54 flights, 53 intact.
-Medians: qs_steep 12, qs_north 32, qs_hot 43-195, qs_cold 59, quicksave
-56-61, qs_heavy 122-188; worst ~350. Arrivals mostly 1-10 m/s, a few 14-17.
-`DEPLOY_MIN_ALT_M` 3000 v 8000 was null (low1).
+**Where it stands:** new1 + alloc2, 96 flights, 96 intact. Medians: heavy
+47 (alloc), qs_hot ~31, quicksave ~55; worst heavy 79 with allocation.
 
 **Next, in order:**
-1. The heavy/qs_hot ~150-200 m **long** bias: the steered prediction reads ~0
-   at 20 km and drifts 200-580 m long by 10 km (brd1 prederr). The lift
-   credit in `solve_steer` is the suspect -- it was also behind the old
-   correction "backfires". Measure prediction v outcome with
-   `scratchpad`-style prederr (predicted E/N at 30/20/10/5/2 km v actual;
-   E = -long, N = -cross) before changing anything.
-2. qs_hot LOG10512: burn entered at 697 m (needed 698) but the throttle read
-   0 until ~400 m, crashed at 145 m/s. Fly qs_hot with `DIAG_STATE=True`.
-3. The live install: the user flies defaults live; ask how the heavy does.
-4. `defaults_fingerprint` in the booster's `config:` line.
+1. Touchdown speed with allocation (heavy median 6.7, worst 14 m/s v 4.2/8.7
+   without) -- read the last 50 m of a hard one (logs at 4 lines/s:
+   alloc2 LOG10681 14.0, LOG10682 9.8).
+2. Breadth: the five original-booster saves on the final defaults (only
+   qs_hot and quicksave were flown since the 60 deg start).
+3. The user flies defaults live: ask how the heavy does.
+4. `docs/boosterland/failures.md` has no entries for today's rules
+   (corrections only shorten in the game; the |v| landing hover).
 
-**Traps paid:** a short-miss correction in the sim lengthens (the sim holds
-50 deg off retrograde; the game cannot); `fakeksp` has no airbrakes, so the
-deploy law and the landing hover cannot be screened there; compare each
-flight's predicted landing point with where it landed before blaming the
-coast -- most of today's miss was made in the last 40 m.
+**Traps paid:** the sim can hold 50 deg off retrograde, the game cannot, so
+corrections look two-sided only in the sim; `fakeksp` has no airbrakes, RCS
+force or engine cluster; quickfly drives `tick()`, not `run()`; check how
+many engines a save has before reading an allocation result off it; six
+flights a cell cannot resolve a factor of two (identical configurations read
+24 v 55).
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
