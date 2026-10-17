@@ -81,8 +81,11 @@ class Config:
                                             # alloc2-1016, heavy 12 v 12: miss
                                             # median 47 worst 79 v 90/362;
                                             # touchdown 6.7/14 v 4.2/8.7 m/s
-    GIMBAL_ROLL_OFF: bool = False           # engine gimbals ignore the roll
-                                            # input; see autoland.set_gimbal_roll
+    GIMBAL_ROLL_OFF: bool = True            # engine gimbals ignore the roll
+                                            # input; see autoland.set_gimbal_roll.
+                                            # groll1-1017 heavy 12 v 12: burn
+                                            # spin 0 v 258 deg/s, miss median
+                                            # 20 v 58 m, touchdown 5.8 v 8.7
     ENGINE_AXIS_TOL_M: float = 0.3          # this near the cluster axis: center
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
     ENGINE_PAIR_TOL: float = 0.25           # pairing tolerance, of the radius
