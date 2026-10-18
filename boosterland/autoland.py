@@ -1080,6 +1080,14 @@ class Autoland:
         if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
             return
         if self.late_state is None:
+            # The probe measures the vessel at its real attitude, so the
+            # full-brake curve has to wait for the coast's descent attitude
+            # and the re-sweep taken there: measured mid-flip it read 0.92 x
+            # the closed brakes' drag (LOG11855) and the solve flew on it.
+            if not (self.env.reswept_ut is not None
+                    and self.env.in_descent_configuration(snap.velocity,
+                                                          snap.direction)):
+                return
             got = set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG)
             if not got:
                 self.late_state = "off"
@@ -1123,6 +1131,12 @@ class Autoland:
                            " at %.0f" % (cfg.DEPLOY_MAX_DEG,
                                          "%.2f" % ratio if ratio else "-",
                                          cfg.DEPLOY_MIN_DEG))
+            if ratio is None or ratio <= 1.0:
+                # Opening the brakes cannot reduce drag: a bad measurement.
+                self.late_state = "handed"
+                self.log.event(snap.ut, "late brakes: not more drag open,"
+                               " ordinary deploy law")
+                return
             self.late_state = "armed"
             self.late_next_ut = snap.ut
         if snap.ut < self.late_next_ut:
