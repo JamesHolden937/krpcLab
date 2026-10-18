@@ -71,6 +71,14 @@ boostback pure pitch through the vertical.
   qs_hot barely bit (command still 80 deg/s at 46 m in LOG11667, destroyed)
   because the full-thrust rate outlived the throttle cut. Now scaled by each
   tick's throttle.
+- **slew2-1017** (throttle-scaled slew, 0.5 and 0.25 v unslewed): 0.25
+  qs_hot miss median/mean/worst 12/13/25 v 22/30/66 m, touchdowns > 10
+  m/s 1 v 4, burn err 15 v 50 deg, command rate in the last 60 m 26 v 96
+  deg/s; heavy err 7 v 37, touchdown 0.8 v 5.9, worst 90 v 112 -- but
+  median 56 v 32 (open). 0.5 in between on both. **0.25 promoted.** The
+  sim (fakeksp, no `available_torque`) then landed at 10.8 m/s: the slew
+  had fallen back to its 5 deg/s floor for the whole burn. An unreadable
+  torque now means no limit.
 
 ## Session, 2026-10-16/17 night: the paired flags promoted, the landing burn's attitude
 

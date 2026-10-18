@@ -1,58 +1,72 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-17 night: boosterland -- paired flags promoted; landing-burn attitude; boostback collisions (fingerprint `b3b48d4a`)
+## 2026-10-17 afternoon: boosterland -- roll held all flight, flips through the vertical, the burn's command slewed (fingerprint `71ef95a5`)
 
-Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-16/17 night".
-How-it-works PDF rewritten. Committed and pushed; farm stopped (swap 15 GB
-at the end); sleep inhibitor released.
+Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-17
+afternoon". How-it-works PDF rewritten (engine figure redrawn: a group
+stays dark until the one before it is full -- the user read the old one
+otherwise). Committed and pushed; farm stopped; sleep inhibitor released.
 
-**Defaults changed:** `DEPLOY_UNSTEERED`, `AERO_STEER_HOLDABLE` (pair1-1017:
-mean 47 v 82 m, worst 162 v 431), `LANDING_RCS_HELD` (rcsh1-1017:
-on-target-at-ignition median 17 v 32 m, burn tilt max 34 v 81, 0 destroyed
-v 1), `BOOSTBACK_CLEAR_NOSE` (nose1-1017: accuracy null, fires on 1/3 of
-qs_hot flips; promoted on the KSP.log mechanism). A destroyed vessel ends
-the flight as `destroyed`. Telemetry: `cmd= err= sat= roll=`; the burn logs
-kRPC's gains and torque.
+**The user asked:** keep engine sets off until the current one saturates
+(it already does -- `eng=` confirms in game); force roll throughout; flips
+to and from boostback as pure pitch through the vertical. All done.
 
-**Where it stands:** nose1-1017 (all defaults bar CLEAR_NOSE, 12 a save):
-qs_hot 30, quicksave 22, heavy 54 median; brd2-1017 (before RCS_HELD) six
-saves median 37, worst 269 (qs_north). No crashes in the last 72 flights.
+**Defaults changed** (each A/B 12 a cell on qs_heavy + qs_hot):
+- `GIMBAL_ROLL_OFF` + `GIMBAL_ROLL_UNTIL_BURN`: gimbals roll the booster
+  through boostback, not in the landing burn. The heavy span 85-257 deg/s
+  in the burn (kRPC credits the cluster ~0 roll torque, roll gains 1e3-1e5);
+  now 0-1. groll1: heavy miss median 20 v 58, touchdown 5.8 v 8.7.
+- Roll held: `ROLL_THRESHOLD_DEG` 180 (kRPC's 5 left roll uncontrolled
+  whenever pointing error > 5), `ROLL_TRANSPORT` (roof carried through the
+  nose's turn -- no half roll mid-flip), `ROLL_SEED_ACTUAL`,
+  `ROLL_PLANE_MIN_HS_MPS` 5. seed1: heavy roll error boostback/coast/burn
+  0/21/26 v 111/95/96 deg.
+- `FLIP_VIA_VERTICAL` now flies `guidance.flip_through_vertical` (two
+  pitches via the zenith); the great-circle `flip_waypoint` deleted.
+- `LANDING_SLEW_SHARE` 0.25: the burn's command moves at most 0.25 s of
+  the vehicle's angular acceleration per second, scaled by this tick's
+  throttle. The command was whipping 57-115 deg/s across a 30 deg cone +
+  tilt below 250 m. slew2: qs_hot miss mean 13 v 30, worst 25 v 66, burn
+  err 15 v 50; heavy err 7 v 37, touchdown 0.8 v 5.9 m/s.
+- Deleted: `LANDING_TOTAL_TILT` (heavy 62 v 25 m). No flags open.
 
-**Where the remaining error is made:**
-1. *The landing burn*: on target at ignition, still lands 15-30 m out,
-   scaling with tilt (corr 0.72). Under thrust kRPC auto-tune cuts pitch Kp
-   ~6 -> 0.5 (it credits the SSME gimbal); freezing gains at 7 pinned the
-   input and still tilted 20-36 deg, so authority, not only gain. Roll is
-   not it (null).
-2. *The coast*: lights the burn 20-300 m off on every heavy flight (miss
-   grows 8 -> 3 km with the deploy law free -- no altitude floor) and on
-   qs_north/qs_hot when the brakes pin at 90 early.
+**Telemetry added:** `eng=` (group delivered thrust), `w=` nose rate, `r=`
+roll rate, `in=` p/y/r inputs, `cv=` command off vertical, `cw=` command
+rate. `roll=` is meaningless mid-flip (projection onto the actual nose):
+read it only where `err` < 5. Batch readers used this session (not in the
+repo; easy to re-write): miss/td per cell, roll rate and roll error per
+phase, max `cw`/`w`/`cv` in the last 60 m.
 
-**Flags:** none open.
+**Measured, not a lever:** the gimbal delivers 91-93% of kRPC's credited
+torque (pitch/yaw pinned +-1 on qs_hot in the air, 0.3 and 1.0 throttle).
+
+**Where it stands** (slew2-1017, new defaults bar the slew's pre-ignition
+detail): qs_hot median 12 / mean 13 / worst 25 m, touchdown 4.5 m/s;
+heavy median 56 / mean 52 / worst 90, touchdown 0.8. 0 destroyed in 72.
 
 **Next, in order:**
-1. What tips the burn with the input pinned: measure the gimbal's delivered
-   torque against kRPC's credit (`testInstances/actuators.py`, the SSME's
-   gimbal range/response; a farm probe that commands full pitch at full
-   thrust on the pad save and reads the angular acceleration). If the
-   gimbal underdelivers, scale the tuning (time_to_peak per axis from the
-   measured torque, as the spaceplane derives it).
-2. The heavy's coast drift 8 -> 3 km: read the deploy law's steps (10 s,
-   30 m deadband) in the heavy logs of nose1/brd2; the early brake pin on
-   qs_north/qs_hot is the early-coast drag re-sweep -- take the
-   descent-attitude sweep before boostback exits.
-3. Re-measure the boostback breakup rate with CLEAR_NOSE: count CollisionSpy
-   ENTER above 1000 m in each ksp*/KSP.log **before** restarting the farm.
-4. Touchdowns > 10 m/s: ~14 of 36 per arm on qs_hot/quicksave/heavy.
+1. **The heavy's median got worse with the slew** (56 v 32; slew1 at 0.5:
+   36 v 25) while its worst improved. Likely the slower command leaves the
+   divert less authority -- read `long=`/`cross=` and `hs=` at touchdown in
+   slew2's s25 heavy logs before changing anything; also its 0.8 m/s
+   touchdowns may be hovers (time from 10 m to contact).
+2. The heavy's coast roll drift (median 21 deg, no actuator with the
+   engines off) -- airbrake roll authority? check their control axes.
+3. Fly the other saves (quicksave, qs_cold, qs_steep, qs_north) on the new
+   defaults: this session flew only qs_heavy and qs_hot (cmd1 also
+   quicksave: touchdowns 12.8 m/s median there, before the slew).
+4. Coast-made misses: qs_hot LOG11703 lit the burn 210 m off (brakes).
+5. Old items still open: the heavy's coast drift 8 -> 3 km; boostback
+   breakup rate with CLEAR_NOSE (count CollisionSpy in ksp*/KSP.log before
+   a farm restart).
 
-**Traps paid:** kRPC's available torque counts RCS only while the valve is
-open, so auto-tuned gains swing 30x with the relay; a frozen tune inherits
-whatever the valve was doing. The landing-burn idle is drag's turn
-(failure 5). A destroyed vessel's streams freeze, they do not raise.
-KSP.log is overwritten by a farm restart -- read it first. Run the suite
-after a promotion, not only after adding the flag (RCS_HELD broke a test).
-`&& ... | tail` hides a failing suite's status (did it again). Don't run
-the tests with the farm up (did it twice, harmlessly).
+**Traps paid:** a fake vessel (fakeksp) has no `available_torque`; a slew
+that fell back to its 5 deg/s floor made the sim land at 10.8 m/s -- an
+unreadable torque must mean no limit. A slew rate read once a second
+outlives a throttle cut. `ModuleGimbal` per-axis toggles are field *ids*
+(`enableRoll`, `set_field_bool_by_id`), not gui names. A batch's "flip roll
+error 178" was the metric, not the vehicle. A `&` inside a command that
+also starts a background waiter leaves a stray loop -- check `pgrep`.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 
