@@ -381,6 +381,13 @@ class Autoland:
         self.correction_best_miss = None    # ... and the least it has reached
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
+        self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
+        self.trim_active = False        # COAST_RCS_TRIM: the flip has settled
+        self.trim_sign = 1.0            # ... -1 once the check flipped it
+        self.trim_flips = 0
+        self.trim_off = False           # ... the check failed twice
+        self.trim_run = None            # (ut, |cross|, side) of this push
+        self.trim_cmd = (0.0, 0.0, 0.0)  # right, forward, up last sent
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
@@ -520,6 +527,16 @@ class Autoland:
                 self.rcs_held = True
                 self._apply_rcs(True)
                 self.log.event(snap.ut, "rcs held open for the landing burn")
+            return
+        if (self.cfg.COAST_RCS_TRIM and self.trim_active
+                and not self.trim_off and self.state == COAST
+                and self.rcs_permitted):
+            # Translating: the valve is the actuator, and relaying it would
+            # swing kRPC's auto-tuned gains as it flips (see above).
+            if not self.rcs_held:
+                self.rcs_held = True
+                self._apply_rcs(True)
+                self.log.event(snap.ut, "rcs held open for the trim")
             return
         if self.rcs_held:
             # Out of the burn: shut it and give the valve back to the relay,
@@ -752,11 +769,27 @@ class Autoland:
         solution = guidance.boostback_solution(
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             snap.isp, prediction, self.cfg)
-        self.aim(solution.aim, snap)
-
-        align = vec.angle_between(snap.direction, solution.aim)
+        aim, throttle = solution.aim, solution.throttle
         distance = self.miss_distance()
         long, cross = self.miss_components(snap)
+        remaining = None
+        if self.cfg.BOOSTBACK_HEADING_HOLD:
+            if (self.boostback_heading is None
+                    and solution.dv < self.cfg.BOOSTBACK_TAPER_DV
+                    and vec.angle_between(snap.direction, solution.aim)
+                    <= self.cfg.FLIP_ALIGN_DEG):
+                self.boostback_heading = solution.aim
+                self.log.event(snap.ut, "boostback heading held: miss=%.0fm "
+                               "long=%+.0f cross=%+.0f dv=%.1f"
+                               % (distance, long, cross, solution.dv))
+            if self.boostback_heading is not None:
+                aim = self.boostback_heading
+                throttle, remaining = guidance.held_boostback(
+                    self.env, snap.position, prediction,
+                    self.boostback_heading, self.cfg)
+        self.aim(aim, snap)
+
+        align = vec.angle_between(snap.direction, aim)
         elapsed = snap.ut - self.phase_start_ut
 
         # Debounce the exit.  The predicted miss is noisy by a couple of
@@ -787,8 +820,14 @@ class Autoland:
         #
         # So the burn ends only inside the band [0, tolerance]: past the pad,
         # but not by more than the phase after it can close.
-        under = (distance <= self.cfg.BOOSTBACK_TOLERANCE_M
-                 and long >= -self.cfg.BOOSTBACK_UNDERSHOOT_M)
+        # On a held heading the cross-track is left for the coast to trim,
+        # so it is the miss *along* the heading that has to be inside the
+        # tolerance -- or the burn could never end with a cross-track miss
+        # bigger than the tolerance.
+        closed = (remaining <= self.cfg.BOOSTBACK_TOLERANCE_M
+                  if remaining is not None
+                  else distance <= self.cfg.BOOSTBACK_TOLERANCE_M)
+        under = closed and long >= -self.cfg.BOOSTBACK_UNDERSHOOT_M
         if under:
             self.boostback_under += 1
             if self.boostback_under_since is None:
@@ -838,7 +877,7 @@ class Autoland:
             # into the ServiceBay, core into the verniers).
             self.set_throttle(0.0)
         else:
-            self.set_throttle(solution.throttle)
+            self.set_throttle(throttle)
 
         self.extra_lines = [
             "miss    : %8.0f m" % distance,
@@ -920,6 +959,8 @@ class Autoland:
             self.extra_lines.append("brakes  : %8.0f deg" % (
                 self.deploy_angle if self.deploy_angle is not None
                 else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+        if self.cfg.COAST_RCS_TRIM:
+            self.run_rcs_trim(snap)
         if snap.vertical_speed < 0.0 and height <= needed:
             self.enter(LANDING_BURN, snap.ut,
                        "h=%.0f needed=%.0f miss=%.0f"
@@ -929,6 +970,80 @@ class Autoland:
             self.correction_start_miss = distance
             self.correction_best_miss = distance
             self.enter(CORRECTION, snap.ut, "miss=%.0fm" % distance)
+
+    def run_rcs_trim(self, snap):
+        """Translate on the RCS thrusters to walk the cross-track miss to 0.
+
+        On the heavy nothing else moves it: the wing reads no lift worth
+        steering on, CORRECTION is a downrange lever and is rarely flown,
+        and the landing burn is held upright.  So the cross-track the
+        boostback ended with -- and whatever the flip's thrusters added --
+        was the touchdown miss.  A sideways dv moves the touchdown by dv
+        times the time left, so at coast entry 100 m is ~0.7 m/s: a second
+        or two of the Vernors, no turn and no relight.
+
+        Starts once the flip has settled (its thrusters are firing for
+        rotation and the error is not yet a hold), holds the valve open from
+        then on (see ``update_rcs``), and checks the sign of its own effect:
+        the translation axes are mapped from the vessel frame, and a wrong
+        sign would push the miss the other way for the whole coast.
+        """
+        if self.trim_off or not self.rcs_permitted or self.prediction is None:
+            self.send_translation((0.0, 0.0, 0.0))
+            return
+        if not self.trim_active:
+            if self.pointing_error(snap) > self.cfg.COAST_RCS_TRIM_SETTLE_DEG:
+                return
+            self.trim_active = True
+            long, cross = self.miss_components(snap)
+            self.log.event(snap.ut, "rcs trim: start at cross=%+.0f long=%+.0f"
+                           % (cross, long))
+        long, cross = self.miss_components(snap)
+        axes = trajectory.miss_axes(self.env.target, snap.position)
+        world = (guidance.rcs_trim_command(cross, axes[1], self.cfg)
+                 if axes is not None else None)
+        if world is None:
+            self.trim_run = None
+            self.send_translation((0.0, 0.0, 0.0))
+            return
+        side = 1.0 if cross > 0.0 else -1.0
+        if self.trim_run is None or self.trim_run[2] != side:
+            self.trim_run = (snap.ut, abs(cross), side)
+        elif (snap.ut - self.trim_run[0] >= self.cfg.COAST_RCS_TRIM_CHECK_S
+              and abs(cross) > self.trim_run[1]
+              + self.cfg.COAST_RCS_TRIM_CHECK_M):
+            if self.trim_flips == 0:
+                self.trim_flips = 1
+                self.trim_sign = -self.trim_sign
+                self.log.event(snap.ut, "rcs trim: cross %+.0f -> %+.0f in "
+                               "%.1fs pushing against it: sign flipped"
+                               % (side * self.trim_run[1], cross,
+                                  snap.ut - self.trim_run[0]))
+                self.trim_run = (snap.ut, abs(cross), side)
+            else:
+                self.trim_off = True
+                self.log.event(snap.ut, "rcs trim: no effect either way "
+                               "(cross %+.0f), off" % cross)
+                self.send_translation((0.0, 0.0, 0.0))
+                return
+        body = body_vector(snap, vec.scale(world, self.trim_sign))
+        if body is None:
+            self.send_translation((0.0, 0.0, 0.0))
+            return
+        # Vessel frame x right, y nose, z bottom; Control.up pushes roofward.
+        self.send_translation((body[0], body[1], -body[2]))
+
+    def send_translation(self, command):
+        """``(right, forward, up)``, each sent only when it has moved."""
+        command = tuple(vec.clamp(c, -1.0, 1.0) for c in command)
+        last = self.trim_cmd
+        for name, new, old in zip(("right", "forward", "up"), command, last):
+            if abs(new - old) > 0.02 or (new == 0.0 and old != 0.0):
+                try:
+                    setattr(self.control, name, new)
+                except Exception:                    # noqa: BLE001
+                    pass
+        self.trim_cmd = command
 
     def run_deploy(self, snap):
         """Range by drag: step the airbrakes' deploy angle onto the pad.
@@ -1902,6 +2017,8 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
+        if self.state != COAST and any(self.trim_cmd):
+            self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
             self.time_gear(snap)
         if self.cfg.DEPLOY_LATE:
@@ -1940,6 +2057,8 @@ class Autoland:
                 self.cluster.release()
             if self.cfg.GIMBAL_ROLL_OFF:
                 set_gimbal_roll(self.vessel, True)
+            if any(self.trim_cmd):
+                self.send_translation((0.0, 0.0, 0.0))
             set_autopilot_engaged(self.autopilot, False)
             self.control.sas = True
         except Exception as exc:                     # game closed / vessel gone
@@ -1993,7 +2112,9 @@ def compact_line(state, snap, prediction, run):
                run.env.aoa_tracking,
                " can=%.1f" % run.env.holdable_deg
                if run.env.holdable_deg is not None else "")
-            + attitude_fields(snap, run) + engine_fields(state, run))
+            + attitude_fields(snap, run) + engine_fields(state, run)
+            + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
+               if any(getattr(run, "trim_cmd", (0.0,))) else ""))
 
 
 def engine_fields(state, run):
@@ -2033,6 +2154,18 @@ def attitude_fields(snap, run):
                " w=%.1f" % rate if rate is not None else "",
                " r=%+.0f" % spin if spin is not None else "",
                " in=%+.2f/%+.2f/%+.2f" % inputs if inputs else ""))
+
+
+def body_vector(snap, world):
+    """``world`` in the vessel frame (x right, y nose, z bottom), or None.
+    The quaternion's convention is checked as ``vessel_roof`` checks it."""
+    if snap.rotation is None or len(snap.rotation) != 4:
+        return None
+    nose = vec.unit(snap.direction)
+    for q in (snap.rotation, vec.quat_conjugate(snap.rotation)):
+        if vec.norm(vec.sub(vec.quat_rotate(q, (0.0, 1.0, 0.0)), nose)) < 0.05:
+            return vec.quat_rotate(vec.quat_conjugate(q), world)
+    return None
 
 
 def vessel_roof(snap):

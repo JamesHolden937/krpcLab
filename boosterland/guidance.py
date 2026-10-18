@@ -64,6 +64,50 @@ def boostback_solution(env, r, v, mass, max_accel, isp, prediction, cfg):
                              dv=dv, burn_time=burn_time, throttle=throttle)
 
 
+def held_boostback(env, r, prediction, heading, cfg):
+    """The boostback taper flown on a fixed ``heading``.
+
+    ``boostback_solution`` re-aims opposite the miss every tick, which is
+    right while the miss is kilometres and wrong at the end: as the
+    along-track part closes, whatever cross-track is left sets the direction,
+    and the nose swings sideways at a few per cent throttle chasing a miss
+    the burn can no longer make any real difference to.  Here the heading
+    is the one taken when the taper began and only the miss *along* it is
+    burnt off, so the throttle still tapers to zero and the nose holds still.
+
+    Returns ``(throttle, remaining)``: ``remaining`` is the miss left along
+    the heading's horizontal part, positive while the burn still has range
+    to take off.
+    """
+    up = vec.unit(r)
+    flat = vec.project_out(heading, up)
+    miss = vec.project_out(miss_vector(env, prediction), up)
+    if vec.norm(flat) < 1e-9:
+        return 0.0, 0.0
+    remaining = -vec.dot(miss, vec.unit(flat))
+    dv = max(0.0, remaining) / max(1.0, prediction.time_to_land)
+    if dv <= 0.0:
+        return 0.0, remaining
+    if dv >= cfg.BOOSTBACK_TAPER_DV:
+        return 1.0, remaining
+    return vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV,
+                     cfg.BOOSTBACK_MIN_THROTTLE, 1.0), remaining
+
+
+def rcs_trim_command(cross, left, cfg):
+    """The world-frame translation that walks the cross-track miss to zero.
+
+    A sideways ``dv`` moves the touchdown point by about ``dv`` times the
+    time left, so pushing toward ``-left`` takes a positive ``cross`` down.
+    Proportional out to ``COAST_RCS_TRIM_FULL_M``, nothing inside the
+    deadband.  Returns a vector of length 0..1, or None for no translation.
+    """
+    if cross != cross or abs(cross) <= cfg.COAST_RCS_TRIM_DEADBAND_M:
+        return None
+    level = min(1.0, abs(cross) / max(cfg.COAST_RCS_TRIM_FULL_M, 1e-6))
+    return vec.scale(vec.unit(left), -math.copysign(level, cross))
+
+
 def _tilt_from_retrograde(env, r, v, miss, max_tilt_deg, gain):
     """Retrograde, tilted to push the predicted landing point onto the pad."""
     retrograde = vec.unit(vec.scale(v, -1.0))

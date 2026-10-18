@@ -202,6 +202,17 @@ class Config:
                                             # Boostback and CORRECTION share
                                             # this law, so it fixes both.
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
+    BOOSTBACK_HEADING_HOLD: bool = False    # in the taper, hold the aim
+                                            # taken at its first tick and burn
+                                            # off the miss *along* it, rather
+                                            # than re-aiming opposite the miss
+                                            # every tick.  Re-aiming swung the
+                                            # nose 30 deg sideways in the last
+                                            # 2 s (cw=41 deg/s, LOG12455) as
+                                            # the along-track part closed and
+                                            # the cross-track one took over the
+                                            # direction -- the yaw at the end
+                                            # of boostback.
     FLIP_ALIGN_DEG: float = 25.0            # hold throttle until aligned
     FLIP_UNDER_POWER: bool = True           # ignore that gate: light, then flip
     BOOSTBACK_CLEAR_NOSE: bool = True       # ... but not while thrust along
@@ -491,6 +502,19 @@ class Config:
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady
+    COAST_RCS_TRIM: bool = False            # translate on RCS in COAST to null
+                                            # the predicted cross-track miss:
+                                            # nothing else on the heavy moves
+                                            # it (its wing reads aoa 0), and
+                                            # the -40..-98 m it leaves boostback
+                                            # with is its touchdown miss
+    COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
+    COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # no translation inside this
+    COAST_RCS_TRIM_FULL_M: float = 30.0     # full input at this cross-track
+    COAST_RCS_TRIM_CHECK_S: float = 4.0     # after this long translating one
+    COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
+                                            # means the axis sign is wrong:
+                                            # flip it once, then give up
     LANDING_DIVERT_LEAD: float = 0.0        # extra trigger height per m of miss
     LANDING_MAX_EARLY_M: float = 1500.0     # cap on that early start
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see

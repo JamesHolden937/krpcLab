@@ -487,6 +487,17 @@ def surface_distance(env, a, b):
     return math.acos(c) * env.target_radius
 
 
+def miss_axes(target, from_position):
+    """``(along, left)``: the unit ground directions ``miss_components``
+    resolves the miss onto, or None where the approach is undefined."""
+    up = vec.unit(target)
+    approach = vec.project_out(vec.sub(target, from_position), up)
+    if vec.norm(approach) < 1e-6:
+        return None
+    along = vec.unit(approach)
+    return along, vec.cross(up, along)
+
+
 def miss_components(env, predicted, target, from_position):
     """The predicted miss as ``(long, cross)`` metres, signed.
 
