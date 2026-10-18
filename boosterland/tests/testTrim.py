@@ -141,7 +141,8 @@ class TestGearBurnDue(unittest.TestCase):
         self.assertIsNotNone(self.run_at("LANDING_BURN", 6.5, 300.0, -150.0))
 
     def test_falling_with_no_burn_drops_them(self):
-        self.assertIsNotNone(self.run_at("COAST", 30.0, 1000.0, -250.0))
+        self.assertIsNone(self.run_at("COAST", 30.0, 1100.0, -250.0))
+        self.assertIsNotNone(self.run_at("COAST", 30.0, 500.0, -250.0))
 
 
 class TestBodyVector(unittest.TestCase):

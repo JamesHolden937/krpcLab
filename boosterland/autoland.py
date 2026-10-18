@@ -1505,7 +1505,10 @@ class Autoland:
         fall = (snap.landing_height / -snap.vertical_speed
                 if snap.vertical_speed < -0.1 else None)
         if self.state != LANDING_BURN:
-            if fall is not None and fall <= self.gear_deploy_s:
+            # Every burn opens with ~4.4 s of fall left (1150 m at 260 m/s),
+            # so the bare deploy time fired before each one (trim4-1018);
+            # half of it is a burn that is overdue.
+            if fall is not None and fall <= 0.5 * self.gear_deploy_s:
                 return "%.1f s fall, no burn yet" % fall
             return None
         if self.prediction is None or self.prediction.time_to_land <= 0.0:

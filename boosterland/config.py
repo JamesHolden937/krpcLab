@@ -202,7 +202,7 @@ class Config:
                                             # Boostback and CORRECTION share
                                             # this law, so it fixes both.
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
-    BOOSTBACK_HEADING_HOLD: bool = False    # in the taper, hold the aim
+    BOOSTBACK_HEADING_HOLD: bool = True     # in the taper, hold the aim
                                             # taken at its first tick and burn
                                             # off the miss *along* it, rather
                                             # than re-aiming opposite the miss
@@ -502,7 +502,7 @@ class Config:
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady
-    COAST_FLIP_RELAY: bool = False          # the coast's flip gets the error
+    COAST_FLIP_RELAY: bool = True           # the coast's flip gets the error
                                             # relay, not the saturation rule:
                                             # kRPC sent no input at 100-145 deg
                                             # of error with the valve shut, and
@@ -510,7 +510,7 @@ class Config:
                                             # (LOG12465).  The relay had opened
                                             # it only by the luck of the end-
                                             # of-boostback swing (LOG12455).
-    COAST_RCS_TRIM: bool = False            # translate on RCS in COAST to null
+    COAST_RCS_TRIM: bool = True             # translate on RCS in COAST to null
                                             # the predicted cross-track miss:
                                             # nothing else on the heavy moves
                                             # it (its wing reads aoa 0), and
