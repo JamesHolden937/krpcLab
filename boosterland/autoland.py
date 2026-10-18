@@ -545,7 +545,9 @@ class Autoland:
             # which never saw it open and so would never close it.
             self.rcs_held = False
             self._apply_rcs(False)
-            self.log.event(snap.ut, "rcs released after the landing burn")
+            self.log.event(snap.ut, "rcs released after the %s"
+                           % ("trim" if self.state == COAST
+                              else "landing burn"))
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
