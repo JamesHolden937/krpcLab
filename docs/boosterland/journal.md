@@ -1,5 +1,72 @@
 # boosterland journal
 
+## Session, 2026-10-17 night to 10-18: timed legs, late brakes, standing up
+
+All batches 1x, aim bias 0, `logs/rot-<tag>.txt`; saves qs_heavy, qs_hot,
+quicksave; 12 a cell unless said. The user asked: time how long the legs take
+to deploy and drop them that long (plus margin) before the ground instead of
+at the burn; cache each leg's time so it is measured once ever; aim long on
+closed brakes and open them fully late, for a slower, cheaper burn; improve
+accuracy; fix tip-overs.
+
+- **Leg timing** (`GEAR_TIMED`): kRPC exposes neither action-group
+  membership nor a part's animation length (it is in the binary model, not
+  the cfg), so the coast cycles the legs once and times each part to
+  `deployed` and back; `boosterland/gearcache.py` keeps the time per part
+  name in `boosterland/data/gearTimes.json` (gitignored, shared by the farm,
+  locked, atomic). LT-2 (`landingLeg1-2`): 4.6 s down, 2.2 s up. The legs
+  drop when the smaller of h/|vs| and the prediction's time to land is
+  below factor x deploy + `GEAR_LEAD_S` (1 s). Factor 2.0 put them down at
+  ~3 km, earlier than the old burn-start trigger (~1.35 km): ab1-1017 heavy
+  median 74 v 39 m. Factor 1.25 (~1.9-2 km): tip1-1018 38 v 56, fl1-1018
+  (18 a cell) 48 v 47, standing 14/18 v 12/18, burn fuel 7.77 v 7.91 t.
+  **Promoted at 1.25.**
+- **Late brakes** (`DEPLOY_LATE`): after the coast's descent re-sweep, the
+  brakes go to full, all Mach bins are probed (the full-brake curve), they
+  return to the law's minimum and a *replacing* re-sweep takes the closed
+  curve. The env carries `late_switch_alt`, so every prediction flies "closed
+  until h, full below"; a bisection on the along-track miss picks h. The
+  first try measured mid-flip and read 0.92x (LOG11855, 186 m out): gated on
+  the re-sweep and descent attitude, a ratio <= 1 falls back to the ordinary
+  law. Full brakes give only 1.17x the drag of 30 deg -- a few hundred metres
+  of range. Heavy over three batches: ignition 264 v 287-290 m/s, burn fuel
+  7.38/7.49/7.45 v 7.87/7.88/7.91 t, worst miss 65/69/87 v 102/93/141,
+  median 51/48/61 v 39/56/47. qs_hot/quicksave: fuel within 0.1 t. **Promoted.**
+- **`DEPLOY_RESWEEP_REPLACE`** (the ordinary law's re-sweep replacing rather
+  than blending a quarter in): ab1-1017 miss null, 5 touchdowns > 6 m/s v 0.
+  Deleted (the replacing sweep stays: `DEPLOY_LATE` uses it).
+- **Tip-overs were invisible**: the sign-off came 2 s after touchdown. The
+  touchdown is now watched `TOUCHDOWN_WATCH_S` (8 s) more and the sign-off
+  says `tilt= max=`. On the old defaults the heavy stood 8/12, 6/12, 5/18
+  (several "No such vessel" FATALs are breakups, not harness errors) and the
+  18-part legless booster 0-3 of 12.
+- **Not the ground hold**: the burn's last command (10-12 deg off vertical)
+  stays on the autopilot after touchdown and the valve opens on the error,
+  inputs pinned -- it looked like a lever. `TOUCHDOWN_ATTITUDE` vertical /
+  release (tip1-1018, standing of 12 on heavy/hot/qs): last 6/3/5, vertical
+  2/2/1, release 4/0/2. A released booster at rest fell 5 s later with no
+  input. Deleted.
+- **The lean at touchdown**: below 250 m the base was retrograde clamped to
+  15 deg of vertical *all the way down*, plus the lateral nulling's tilt; as
+  the descent stops, retrograde swings toward the horizontal, so the last
+  burn tick sat 7-15 deg off vertical on nearly every flight, and the heavy
+  tipped at 0.4 m/s sideways (LOG12086, cv 12.7). `LANDING_UPRIGHT_ALT_M`:
+  the whole command narrows linearly to `LANDING_UPRIGHT_TILT_DEG` (2) at
+  the ground. up1-1018 (18 a cell) heavy standing base 5/18, 20 m 14/18,
+  50 m 14/18; last-tick lean 7-13 v 3-7 v 2-5 deg; worst 87/120/87.
+  **Promoted at 50.** fl1-1018 base (with it): 12/18.
+- **The legless booster cannot stand**: quicksave/qs_hot on any arm 0-3/18.
+  It stands on one engine bell; the airbrakes and probe hit the pad as it
+  goes. Some flights also hit the launch clamps (debris left on the pad from
+  launch, `girder_BOXCOLLIDER` at 12 m in CollisionSpy). qs_hot also arrives
+  at 5-8 m/s sideways: its burn runs 11-19 deg off its command at full
+  throttle and builds the drift at ~100 m.
+- **Two 40-50 km "misses"** (LOG11997, LOG12144) broke up at separation
+  (26.7 -> 0.66 t two seconds in), not in the landing.
+- **Defaults smoke** (def1-1018, 6 a save, fingerprint 9cba676e): heavy
+  standing 5/6, ignition 263 m/s, burn 7.43 t, legs down at ~1.8 km (6.7 s
+  to go), median miss 72 (n=6); qs_hot 0/6 standing, median 30.
+
 ## Session, 2026-10-17 afternoon: the heavy's burn spin, roll held all flight, the burn's command whip
 
 All batches 1x, aim bias 0, `logs/rot-<tag>.txt`, 12 a cell unless said.

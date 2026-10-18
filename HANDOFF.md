@@ -1,72 +1,76 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-17 afternoon: boosterland -- roll held all flight, flips through the vertical, the burn's command slewed (fingerprint `71ef95a5`)
+## 2026-10-18 early: boosterland -- timed legs, late brakes, the booster stands up (fingerprint `9cba676e`)
 
-Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-17
-afternoon". How-it-works PDF rewritten (engine figure redrawn: a group
-stays dark until the one before it is full -- the user read the old one
-otherwise). Committed and pushed; farm stopped; sleep inhibitor released.
+Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-17 night to
+10-18". How-it-works PDF rewritten (late brakes, leg timing, the upright
+cone, the touchdown watch). Committed and pushed; farm stopped; sleep
+inhibitor released.
 
-**The user asked:** keep engine sets off until the current one saturates
-(it already does -- `eng=` confirms in game); force roll throughout; flips
-to and from boostback as pure pitch through the vertical. All done.
+**The user asked:** time the leg action group's deploy and drop it that
+long (+ margin) before the ground; cache each leg type so it is timed once
+ever; aim long on closed brakes and open them fully late, for a slower,
+cheaper burn; improve accuracy; fix tip-overs. All four in as defaults.
 
-**Defaults changed** (each A/B 12 a cell on qs_heavy + qs_hot):
-- `GIMBAL_ROLL_OFF` + `GIMBAL_ROLL_UNTIL_BURN`: gimbals roll the booster
-  through boostback, not in the landing burn. The heavy span 85-257 deg/s
-  in the burn (kRPC credits the cluster ~0 roll torque, roll gains 1e3-1e5);
-  now 0-1. groll1: heavy miss median 20 v 58, touchdown 5.8 v 8.7.
-- Roll held: `ROLL_THRESHOLD_DEG` 180 (kRPC's 5 left roll uncontrolled
-  whenever pointing error > 5), `ROLL_TRANSPORT` (roof carried through the
-  nose's turn -- no half roll mid-flip), `ROLL_SEED_ACTUAL`,
-  `ROLL_PLANE_MIN_HS_MPS` 5. seed1: heavy roll error boostback/coast/burn
-  0/21/26 v 111/95/96 deg.
-- `FLIP_VIA_VERTICAL` now flies `guidance.flip_through_vertical` (two
-  pitches via the zenith); the great-circle `flip_waypoint` deleted.
-- `LANDING_SLEW_SHARE` 0.25: the burn's command moves at most 0.25 s of
-  the vehicle's angular acceleration per second, scaled by this tick's
-  throttle. The command was whipping 57-115 deg/s across a 30 deg cone +
-  tilt below 250 m. slew2: qs_hot miss mean 13 v 30, worst 25 v 66, burn
-  err 15 v 50; heavy err 7 v 37, touchdown 0.8 v 5.9 m/s.
-- Deleted: `LANDING_TOTAL_TILT` (heavy 62 v 25 m). No flags open.
+**Defaults changed** (batches in `logs/rot-<tag>.txt`):
+- `GEAR_TIMED`, `GEAR_LEAD_FACTOR` 1.25, `GEAR_LEAD_S` 1: the coast cycles
+  any untimed leg type once (`gear timed:` event) and caches it in
+  `boosterland/data/gearTimes.json` (gitignored; delete to re-time). LT-2
+  4.6 s. Gear down at time-to-go <= 1.25 x deploy + 1 s (~1.8 km on the
+  heavy). fl1-1018 heavy: standing 14/18 v 12/18, miss 48 v 47, burn fuel
+  7.77 v 7.91 t. Factor 2.0 dropped them at 3 km: median 74 v 39 (ab1).
+  No legs / timing failed -> the old drop at the burn's first tick.
+- `DEPLOY_LATE`: after the coast's descent re-sweep, brakes 90 -> full-brake
+  curve swept -> 30 + replacing re-sweep -> bisect the opening height on the
+  unsteered along-track miss every 5 s -> open fully at h -> the ordinary
+  deploy law. The env's `late_switch_alt` makes every prediction fly it.
+  Heavy, three batches: ignition 264 v 287-290 m/s, burn 7.4-7.5 v 7.9 t,
+  worst 65/69/87 v 102/93/141 m, median 51/48/61 v 39/56/47. Light
+  booster: no saving. Full brakes are only 1.17x the drag of 30 deg.
+- `LANDING_UPRIGHT_ALT_M` 50 / `_TILT_DEG` 2: the burn's whole command is
+  clamped into a cone round vertical narrowing from 30 deg at 50 m of leg
+  height to 2 at the ground. **This was the tip-over**: the base (retrograde
+  within 15 deg) leaned with any sideways speed as the descent stopped, and
+  the last tick sat 7-15 deg off vertical. up1-1018 heavy standing 14/18 v
+  5/18, lean 2-5 v 7-13 deg.
+- `TOUCHDOWN_WATCH_S` 8: the sign-off comes 10 s after contact and adds
+  `tilt= max=` (deg off vertical). Before it, tip-overs read as landings.
+- Deleted: `DEPLOY_RESWEEP_REPLACE` (null miss, 5 hard touchdowns v 0),
+  `TOUCHDOWN_ATTITUDE` vertical/release (null: a released booster at rest
+  fell with no input -- the lean was the cause, not the ground hold).
+  No flags open.
 
-**Telemetry added:** `eng=` (group delivered thrust), `w=` nose rate, `r=`
-roll rate, `in=` p/y/r inputs, `cv=` command off vertical, `cw=` command
-rate. `roll=` is meaningless mid-flip (projection onto the actual nose):
-read it only where `err` < 5. Batch readers used this session (not in the
-repo; easy to re-write): miss/td per cell, roll rate and roll error per
-phase, max `cw`/`w`/`cv` in the last 60 m.
-
-**Measured, not a lever:** the gimbal delivers 91-93% of kRPC's credited
-torque (pitch/yaw pinned +-1 on qs_hot in the air, 0.3 and 1.0 throttle).
-
-**Where it stands** (slew2-1017, new defaults bar the slew's pre-ignition
-detail): qs_hot median 12 / mean 13 / worst 25 m, touchdown 4.5 m/s;
-heavy median 56 / mean 52 / worst 90, touchdown 0.8. 0 destroyed in 72.
+**Where it stands** (fl1-1018 base + def1-1018 smoke): heavy median miss
+47-72 m, worst ~90-140, touchdown 2.0 m/s, standing ~12-14/18; qs_hot
+median 12-30, touchdown 1.7. **The 18-part legless booster (quicksave,
+qs_hot, qs_cold, qs_steep, qs_north) cannot stand**: it lands on one
+engine bell and falls on every arm (0-3/18). A craft problem; give it legs
+(a new save) if standing matters there.
 
 **Next, in order:**
-1. **The heavy's median got worse with the slew** (56 v 32; slew1 at 0.5:
-   36 v 25) while its worst improved. Likely the slower command leaves the
-   divert less authority -- read `long=`/`cross=` and `hs=` at touchdown in
-   slew2's s25 heavy logs before changing anything; also its 0.8 m/s
-   touchdowns may be hovers (time from 10 m to contact).
-2. The heavy's coast roll drift (median 21 deg, no actuator with the
-   engines off) -- airbrake roll authority? check their control axes.
-3. Fly the other saves (quicksave, qs_cold, qs_steep, qs_north) on the new
-   defaults: this session flew only qs_heavy and qs_hot (cmd1 also
-   quicksave: touchdowns 12.8 m/s median there, before the slew).
-4. Coast-made misses: qs_hot LOG11703 lit the burn 210 m off (brakes).
-5. Old items still open: the heavy's coast drift 8 -> 3 km; boostback
-   breakup rate with CLEAR_NOSE (count CollisionSpy in ksp*/KSP.log before
-   a farm restart).
+1. **The heavy's median miss** (47-72, noisy; 39-56 across batches). Read
+   `long=`/`cross=` at the burn and at touchdown -- is it set in the coast
+   (the late switch's residual, `late brakes: open at ... long=`) or in the
+   burn (the upright cone and the 250 m velocity-only stretch leave the
+   offset as it is)?
+2. **qs_hot arrives 5-8 m/s sideways**: its burn runs 11-19 deg off its
+   command at full throttle around 100 m and builds the drift (LOG12092).
+   Slew/torque at the throttle peak.
+3. A legged single-engine save, so the light booster's standing is
+   measurable at all.
+4. Separation breakups: LOG11997, LOG12144 lost the core 2 s after
+   separation (26.7 -> 0.66 t) -> 40-50 km "misses". Count them.
+5. Launch clamps stay on the pad as debris (CollisionSpy:
+   `girder_BOXCOLLIDER` at 12 m) and some landings hit them.
+6. Older: the heavy's coast roll drift; other saves on the new defaults.
 
-**Traps paid:** a fake vessel (fakeksp) has no `available_torque`; a slew
-that fell back to its 5 deg/s floor made the sim land at 10.8 m/s -- an
-unreadable torque must mean no limit. A slew rate read once a second
-outlives a throttle cut. `ModuleGimbal` per-axis toggles are field *ids*
-(`enableRoll`, `set_field_bool_by_id`), not gui names. A batch's "flip roll
-error 178" was the metric, not the vehicle. A `&` inside a command that
-also starts a background waiter leaves a stray loop -- check `pgrep`.
+**Traps paid:** "No such vessel" FATAL after TOUCHDOWN is a breakup (the
+vessel is gone), not a harness error -- it leaves no sign-off line.
+`object.__new__(Autoland)` test helpers must set `late_state`/`gear_timing`.
+A full-brake sweep taken mid-flip reads less drag than closed (0.92x).
+Swap reached 15-16 GB after each 90-min batch: restart the farm between
+batches. Readers used (scratchpad, easy to rewrite): per-cell miss/td/
+ignition speed/burn fuel/standing count; last-burn-tick `hs`/`cv` per flight.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 

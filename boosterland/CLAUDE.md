@@ -3,10 +3,12 @@
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
 Target pad lat `-0.097162`, lon `-74.557679` (`Config.PAD_LAT/PAD_LON`). It
-lands a median ~12 m (qs_hot) to ~55 m (qs_heavy) from the pad, worst
-~25-90 m, on the two saves flown on the current defaults; roll is held all
-flight, flips are pitch through the vertical, and the landing burn's command
-is rate-limited to what the vehicle can follow -- see the root HANDOFF.md. The root
+lands a median ~12-30 m (qs_hot) to ~50-70 m (qs_heavy) from the pad;
+the legged heavy stands upright after ~3 landings in 4 (the burn's command
+is narrowed to 2 deg of vertical at the ground), the 18-part booster has no
+legs and falls over on its engine bell. The legs are timed once per part
+type and dropped by time-to-go; the airbrakes fly closed and long, then
+open fully at a solved height -- see the root HANDOFF.md. The root
 `CLAUDE.md` (conventions, farm, cross-cutting rules) applies here in full.
 
 ```
@@ -28,7 +30,11 @@ the intended flight profile.
 | [docs/boosterland/testing.md](../docs/boosterland/testing.md) | writing or reading `tests/fakeksp` regressions |
 
 Saves: `quicksave`, `qs_hot`, `qs_cold`, `qs_steep`, `qs_north` (18 parts,
-flying at 21 km after separation; `tools/savegen.py` makes more).
+no legs, flying at 21 km after separation; `tools/savegen.py` makes more);
+`qs_heavy` (99 t, five engines, six LT-2 legs).
+
+`boosterland/data/gearTimes.json` is the leg deploy-time cache (gitignored,
+written in flight; delete it and the next flight re-times its legs).
 
 **The booster has no time-scale governor** -- only the spaceplane does
 (`common/pacing.ScaleGovernor`). On the farm, `--timescale` is a fixed
