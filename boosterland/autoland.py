@@ -387,6 +387,8 @@ class Autoland:
         self.trim_pushing = False       # ... and it is translating now
         self.trim_sign = 1.0            # ... -1 once the check flipped it
         self.trim_flips = 0
+        self.trim_confirmed = False     # a push has closed the miss: the
+                                        # sign is proven, stop checking it
         self.trim_off = False           # ... the check failed twice
         self.trim_run = None            # (ut, |cross|, side) of this push
         self.trim_cmd = (0.0, 0.0, 0.0)  # right, forward, up last sent
@@ -1027,6 +1029,9 @@ class Autoland:
                  if axes is not None and self.trim_pushing else None)
         if world is None:
             if self.trim_pushing:
+                if not self.trim_confirmed:
+                    self.trim_confirmed = True
+                    self.log.event(snap.ut, "rcs trim: sign confirmed")
                 self.log.event(snap.ut, "rcs trim: done at cross=%+.0f "
                                "long=%+.0f" % (cross, long))
             self.trim_pushing = False
@@ -1036,7 +1041,8 @@ class Autoland:
         side = 1.0 if cross > 0.0 else -1.0
         if self.trim_run is None or self.trim_run[2] != side:
             self.trim_run = (snap.ut, abs(cross), side)
-        elif (snap.ut - self.trim_run[0] >= self.cfg.COAST_RCS_TRIM_CHECK_S
+        elif (not self.trim_confirmed
+              and snap.ut - self.trim_run[0] >= self.cfg.COAST_RCS_TRIM_CHECK_S
               and abs(cross) > self.trim_run[1]
               + self.cfg.COAST_RCS_TRIM_CHECK_M):
             if self.trim_flips == 0:
