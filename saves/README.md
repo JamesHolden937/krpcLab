@@ -23,10 +23,6 @@ Read off each save's active vessel (part count, situation, altitude):
 | save | vehicle | state |
 |---|---|---|
 | `quicksave`, `qs_hot`, `qs_cold`, `qs_steep`, `qs_north` | booster, 18 parts | flying at 21 km, after stage separation |
-| `qs_plane`, `qs_plane_{inc,high,low,ecc,south,lit,v1}`, `qs_e20..qs_e80`, `qs_soft`, `qs_gear` | old spaceplane, 23 parts (`craft/SPH/spaceplane.craft`) | orbit, 80 km |
-| `qs_entry`, `qs_b*`, `qs_l*`, `qs_m*` | old spaceplane | flying at the 58 km interface |
-| `qs_cone` | old spaceplane | flying at 12 km |
-| `qs_plane_air` | old spaceplane, **low-wing** variant (qs_plane's craft) | flying at 25 km, 1413 m/s, periapsis 29 km: made by `kspSim/tools/airsave.py` from `qs_plane` so its control tables could be probed on its own craft |
 | `qs_shuttle`, `qs_shuttle_inc`, `qs_shuttle_high` | Mk3 shuttle, 30 parts (`craft/SPH/Untitled Space Craft.craft`) | orbit, 87 km |
 | `qs_shuttle2`, `qs_shuttle2_inc`, `qs_shuttle2_high` | Mk3 shuttle **with twin wingtip fins**, 31 parts, 37.95 t (`craft/SPH/shuttle.craft`, the user's 2026-09-30 rebuild): the single tail fin replaced by two Big-S tail fins on the outer elevons, canted 15 deg out, mirror-deployed | orbit, 87 km. **Spliced**, not flown up: the new craft's parts (launched on ksp0, saved) put into `qs_shuttle`'s vessel with its flight state (fuel 787.5/962.5, gear retracted, temperatures, crew), so UT, orbit and fuel equal `qs_shuttle`'s; `_inc`/`_high` by the same `savegen.py` recipe, orbits identical to the old shuttle's |
 | `qs_shuttle2_{,inc_,high_,ecc_}rigoff` | twin-fin shuttle, rigid attachment off on the delta wings | orbit: 87 circular / inc 2.5 deg / 87x193 km / **ecc 77x135 km** (`savegen.py --source qs_shuttle2_rigoff --prograde 30 --radial -70`, 2026-10-09; the earlier ecc save had its periapsis at 69 km, inside the atmosphere, and was replaced) |
@@ -38,17 +34,9 @@ Read off each save's active vessel (part count, situation, altitude):
 | `qs_lowthrust_kell` | the same vessel | Kerbin 3000 x 100 km equatorial, at apoapsis (`qs_lowthrust` with SMA 2150000, ECC 0.6744, MNA 3.1): the aerobraking test |
 | `qs_shuttle2_lt`, `qs_shuttle2_lt_nowheel`, `qs_shuttle2_lt_wheelonly` | twin-fin shuttle (`qs_shuttle2_rigoff`), Rhino thrust limiter 5% (100 kN) | orbit 86.7 circular: the lowThrust mod's RCS/gimbal test. `_lt`: gimbal free, RCS group on; `_nowheel`: + reaction wheel `Disabled`; `_wheelonly`: RCS group off, gimbal locked (2026-10-15) |
 
-**The old spaceplane exists in two variants that share a name and a part
-list** (found 2026-09-24 by kspSim, whose tables for one were being used for
-the other): the *low-wing* craft (wings at z = +0.70 on the service module)
-is `qs_plane`, `qs_plane_lit`, `qs_e20`..`qs_e80`, `qs_gear`, `qs_soft`; the
-*mid-wing* craft (z = 0.00, gear moved with the wings) is `qs_cone`,
-`qs_entry`, `qs_plane_inc`, `qs_plane_{high,low,ecc,south,v1}`, `qs_b*`,
-`qs_l*`, `qs_m*`.  Wing height sets the roll due to sideslip (the game's own
-wrench oracle: -0.035 vs +0.003 N m/Pa at Mach 0.88, 2 deg of sideslip), so
-a result on one is not automatically a result on the other.  Check with
-
-    grep -A8 'name = structuralWing' saves/<save>.sfs | grep position
+The old spaceplane (`qs_plane` and its family: entry, cone, ladder and
+orbit variants, `craft/SPH/spaceplane.craft`) was retired 2026-10-03 and its
+saves removed 2026-10-18; `git log -- saves/qs_plane.sfs` recovers them.
 
 `craft/` is copied from the live install's `saves/default/Ships`.  The VAB
 file's role is not recorded; check its parts before relying on it.
