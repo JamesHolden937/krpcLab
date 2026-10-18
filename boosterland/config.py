@@ -517,13 +517,6 @@ class Config:
                                             # the -40..-98 m it leaves boostback
                                             # with is its touchdown miss
     COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
-    COAST_RCS_TRIM_LONG: bool = False       # ... and the along-track too, once
-                                            # the brakes are handed over (at
-                                            # full they cannot add drag): the
-                                            # Vernors' axial coupling left
-                                            # the trim arm +25 m long at the
-                                            # burn (trim1-1018) and the burn
-                                            # takes off a third of it
     COAST_RCS_TRIM_START_M: float = 10.0    # start pushing past this ...
     COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # ... stop inside this; the valve
                                             # is held open only while pushing
@@ -566,16 +559,6 @@ class Config:
                                             # burn's whole command narrows
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # ... to this at the ground; see
                                             # guidance.terminal_command
-    LANDING_RCS_TRANSLATE: bool = False     # below LANDING_UPRIGHT_ALT_M the
-                                            # cone holds the nose within 2-4
-                                            # deg of vertical and nothing nulls
-                                            # the drift: 9 -> 20 m from the pad
-                                            # in the last 30 m, hs 1.4 -> 3.7
-                                            # (LOG12618).  Translate on the
-                                            # RCS against the horizontal speed
-                                            # and the offset from the pad
-    LANDING_RCS_TRANSLATE_TAU_S: float = 3.0   # offset closed over this long
-    LANDING_RCS_TRANSLATE_FULL_MPS: float = 1.0  # full input at this error
     LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second
@@ -627,14 +610,14 @@ class Config:
                                             # coast to time them, then drop
                                             # them this long before touchdown:
     GEAR_LEAD_FACTOR: float = 1.25          # ... x the measured deploy time
-    GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear
-    GEAR_BURN_TTG: bool = False             # time the drop on the landing
-                                            # burn's powered prediction, not on
-                                            # the fall at the coast's descent
-                                            # rate: that ignores the burn and
-                                            # dropped the legs 13.4-14.1 s
-                                            # before contact for a 6.8 s lead
-                                            # (LOG12534, LOG12653)
+    GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear.
+                                            # The time-to-go is the coast's fall
+                                            # rate, which the burn stretches:
+                                            # the legs are down ~13.5 s before
+                                            # contact for this 6.8 s lead.
+                                            # Timed on the burn's prediction
+                                            # instead it was worse (def2-1018:
+                                            # 22 m, 7/12 stood v 13 m, 10/12)
     GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
     TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s

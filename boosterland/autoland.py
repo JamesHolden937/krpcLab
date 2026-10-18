@@ -392,7 +392,6 @@ class Autoland:
         self.trim_off = False           # ... the check failed twice
         self.trim_run = None            # (ut, |cross|, side) of this push
         self.trim_cmd = (0.0, 0.0, 0.0)  # right, forward, up last sent
-        self.hover_logged = False       # LANDING_RCS_TRANSLATE has said so
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
@@ -1016,16 +1015,13 @@ class Autoland:
             self.log.event(snap.ut, "rcs trim: armed at cross=%+.0f long=%+.0f"
                            % (cross, long))
         long, cross = self.miss_components(snap)
-        with_long = self.cfg.COAST_RCS_TRIM_LONG and self.long_is_free(snap)
-        size = math.hypot(cross, long) if with_long else abs(cross)
-        if not self.trim_pushing and size > self.cfg.COAST_RCS_TRIM_START_M:
+        if (not self.trim_pushing
+                and abs(cross) > self.cfg.COAST_RCS_TRIM_START_M):
             self.trim_pushing = True
-            self.log.event(snap.ut, "rcs trim: push at cross=%+.0f long=%+.0f%s"
-                           % (cross, long, " (both)" if with_long else ""))
+            self.log.event(snap.ut, "rcs trim: push at cross=%+.0f long=%+.0f"
+                           % (cross, long))
         axes = trajectory.miss_axes(self.env.target, snap.position)
-        world = (guidance.rcs_trim_command(
-                     cross, axes[1], self.cfg,
-                     long if with_long else None, axes[0])
+        world = (guidance.rcs_trim_command(cross, axes[1], self.cfg)
                  if axes is not None and self.trim_pushing else None)
         if world is None:
             if self.trim_pushing:
@@ -1066,41 +1062,6 @@ class Autoland:
             return
         # Vessel frame x right, y nose, z bottom; Control.up pushes roofward.
         self.send_translation((body[0], body[1], -body[2]))
-
-    def run_landing_translate(self, snap):
-        """Hold the stood-up burn over the pad on the RCS thrusters.
-
-        Below ``LANDING_UPRIGHT_ALT_M`` the cone stands the nose up and the
-        engines can no longer steer, so the drift the residual tilt makes
-        (0.5 m/s^2 at 3 deg near hover) went unopposed.  The valve is
-        already held open for the burn; this only adds the translation
-        axes, mapped as the coast's trim maps them.
-        """
-        if (snap.legs_altitude > self.cfg.LANDING_UPRIGHT_ALT_M
-                or not self.rcs_permitted):
-            self.send_translation((0.0, 0.0, 0.0))
-            return
-        pad = getattr(self.env, "pad", self.env.target)
-        world = guidance.hover_translation(snap.position, snap.velocity,
-                                           pad, self.cfg)
-        body = (body_vector(snap, vec.scale(world, self.trim_sign))
-                if world is not None else None)
-        if body is None:
-            self.send_translation((0.0, 0.0, 0.0))
-            return
-        if not self.hover_logged:
-            self.hover_logged = True
-            self.log.event(snap.ut, "rcs hover: translating at legs %.0f m"
-                           % snap.legs_altitude)
-        self.send_translation((body[0], body[1], -body[2]))
-
-    def long_is_free(self, snap):
-        """May the trim take the along-track too?  Not while the late
-        brakes' solve owns it; once they are handed over the deploy law
-        and the trim both null it, and the trim is what is left when the
-        brakes are pinned at full (trim1-1018: +25 m long at the burn)."""
-        return not (self.cfg.DEPLOY_LAW and self.cfg.DEPLOY_LATE
-                    and self.late_state not in ("handed", "off"))
 
     def send_translation(self, command):
         """``(right, forward, up)``, each sent only when it has moved."""
@@ -1494,30 +1455,6 @@ class Autoland:
         if self.cfg.GEAR_ACTION_GROUP:
             self.control.set_action_group(self.cfg.GEAR_ACTION_GROUP, down)
 
-    def gear_burn_due(self, snap):
-        """GEAR_BURN_TTG: why the legs drop now, or None.
-
-        Before the burn the only time-to-go is the fall at the present
-        descent rate, which the burn is about to stretch by a factor of
-        two; inside it the powered prediction is good to about a second.
-        So the legs wait for the burn -- unless the fall itself is down to
-        the bare deploy time, which means something has gone wrong."""
-        fall = (snap.landing_height / -snap.vertical_speed
-                if snap.vertical_speed < -0.1 else None)
-        if self.state != LANDING_BURN:
-            # Every burn opens with ~4.4 s of fall left (1150 m at 260 m/s),
-            # so the bare deploy time fired before each one (trim4-1018);
-            # half of it is a burn that is overdue.
-            if fall is not None and fall <= 0.5 * self.gear_deploy_s:
-                return "%.1f s fall, no burn yet" % fall
-            return None
-        if self.prediction is None or self.prediction.time_to_land <= 0.0:
-            return "burn, no prediction"
-        t_go = self.prediction.time_to_land
-        if t_go > self.gear_lead():
-            return None
-        return "%.1f s to go in the burn" % t_go
-
     def time_to_ground(self, snap):
         """Seconds to touchdown, the sooner of the prediction's and the
         fall at the present descent rate (which only slows from here)."""
@@ -1886,8 +1823,6 @@ class Autoland:
                 rate * max(0.0, snap.ut - self.burn_cmd_ut))
         self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
         self.aim(direction, snap)
-        if self.cfg.LANDING_RCS_TRANSLATE:
-            self.run_landing_translate(snap)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),
@@ -1993,15 +1928,10 @@ class Autoland:
         if self.cfg.GEAR_TIMED and self.gear_timing == "done":
             if self.state not in (COAST, CORRECTION, LANDING_BURN):
                 return
-            if self.cfg.GEAR_BURN_TTG:
-                why = self.gear_burn_due(snap)
-                if why is None:
-                    return
-            else:
-                t_go = self.time_to_ground(snap)
-                if t_go is None or t_go > self.gear_lead():
-                    return
-                why = "%.1f s to go" % t_go
+            t_go = self.time_to_ground(snap)
+            if t_go is None or t_go > self.gear_lead():
+                return
+            why = "%.1f s to go" % t_go
         elif self.cfg.GEAR_TIMED and self.gear_timing in ("deploying",
                                                            "retracting"):
             return
@@ -2117,7 +2047,7 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
-        if self.state not in (COAST, LANDING_BURN) and any(self.trim_cmd):
+        if self.state != COAST and any(self.trim_cmd):
             self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
             self.time_gear(snap)
