@@ -527,6 +527,10 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
+    LANDING_UPRIGHT_ALT_M: float = 0.0      # leg height below which the
+                                            # burn's whole command narrows
+    LANDING_UPRIGHT_TILT_DEG: float = 2.0   # ... to this at the ground; see
+                                            # guidance.terminal_command
     LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second
@@ -583,10 +587,6 @@ class Config:
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
     TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s
                                             # sign-off to see if it tips
-    TOUCHDOWN_ATTITUDE: str = "last"        # on the ground: "last" holds the
-                                            # burn's final command; "vertical"
-                                            # holds radial up, valve shut;
-                                            # "release" disengages, inputs 0
 
     # --- Sanity limits on the terrain sensor -------------------------------
     TERRAIN_MAX_M: float = 7000.0           # highest ground the body can have

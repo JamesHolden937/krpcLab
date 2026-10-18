@@ -1037,6 +1037,23 @@ class TestTerminalOnPrediction(unittest.TestCase):
         self.assertAlmostEqual(vec.angle_between(tight.direction, retrograde),
                                0.0, places=6)
 
+    def test_the_command_stands_up_near_the_ground(self):
+        # 2.5 m/s down and 2 m/s sideways, 3 m up: retrograde is ~39 deg off
+        # vertical, and the cone alone would land it leaning 15.
+        r, v = state_above_pad(3.0, (-2.5, 0.0, 2.0))
+        up = vec.unit(r)
+        self.cfg.LANDING_UPRIGHT_ALT_M = 0.0
+        loose = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
+                                          self.cfg)
+        self.assertGreater(vec.angle_between(loose.direction, up), 10.0)
+        self.cfg.LANDING_UPRIGHT_ALT_M = 30.0
+        self.cfg.LANDING_UPRIGHT_TILT_DEG = 2.0
+        upright = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
+                                            self.cfg)
+        self.assertLessEqual(vec.angle_between(upright.direction, up),
+                             2.0 + 0.1 * 28.0 + 1e-6)
+        self.cfg.LANDING_UPRIGHT_ALT_M = 0.0
+
     def test_the_tilt_is_bounded(self):
         r, v = state_above_pad(1000.0, (-200.0, 0.0, 10.0))
         self.cfg.LANDING_MAX_TILT_DEG = 15.0

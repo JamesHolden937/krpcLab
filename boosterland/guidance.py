@@ -383,6 +383,32 @@ def terminal_attitude(env, r, v, height, time_to_land, thrust_accel, cfg):
 
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                      zem=None, tilt_budget_deg=None):
+    """The burn's command, stood up for the last ``LANDING_UPRIGHT_ALT_M``.
+
+    Below 250 m the law points retrograde within ``LANDING_MAX_TILT_DEG`` of
+    vertical, plus whatever the lateral nulling adds, all the way to the
+    ground -- and retrograde swings toward the horizontal as the descent
+    stops, so any sideways speed left became a lean: the last burn tick sat
+    8-15 deg off vertical on nearly every flight, and the booster pried
+    itself over on its legs at 0.4 m/s sideways (tip1-1018, LOG12086: cv
+    12.7).  So the whole command -- base and divert -- is held inside a cone
+    that narrows linearly from the full tilt at ``LANDING_UPRIGHT_ALT_M`` of
+    leg height to ``LANDING_UPRIGHT_TILT_DEG`` at the ground.  0 is off.
+    """
+    cmd = _terminal_command(env, r, v, height, time_to_land, thrust_accel,
+                            cfg, zem, tilt_budget_deg)
+    top = cfg.LANDING_UPRIGHT_ALT_M
+    if top <= 0.0 or height >= top:
+        return cmd
+    full = cfg.LANDING_MAX_TILT_DEG * 2.0    # base cone plus the divert
+    floor = cfg.LANDING_UPRIGHT_TILT_DEG
+    cone = floor + (full - floor) * max(0.0, height) / top
+    return TerminalCommand(within_cone(cmd.direction, vec.unit(r), cone),
+                           cmd.demand)
+
+
+def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
+                      zem=None, tilt_budget_deg=None):
     """Steer the landing burn onto the pad, arriving with no sideways speed.
 
     The old divert was position feedback alone -- tilt proportional to the miss
