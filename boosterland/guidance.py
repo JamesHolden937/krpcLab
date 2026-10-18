@@ -94,18 +94,23 @@ def held_boostback(env, r, prediction, heading, cfg):
                      cfg.BOOSTBACK_MIN_THROTTLE, 1.0), remaining
 
 
-def rcs_trim_command(cross, left, cfg):
-    """The world-frame translation that walks the cross-track miss to zero.
+def rcs_trim_command(cross, left, cfg, long=None, along=None):
+    """The world-frame translation that walks the miss to zero.
 
     A sideways ``dv`` moves the touchdown point by about ``dv`` times the
-    time left, so pushing toward ``-left`` takes a positive ``cross`` down.
+    time left, so pushing toward ``-left`` takes a positive ``cross`` down;
+    given ``long`` and ``along`` the push is against the whole ground miss.
     Proportional out to ``COAST_RCS_TRIM_FULL_M``, nothing inside the
     deadband.  Returns a vector of length 0..1, or None for no translation.
     """
-    if cross != cross or abs(cross) <= cfg.COAST_RCS_TRIM_DEADBAND_M:
+    miss = vec.scale(vec.unit(left), cross)
+    if long is not None and along is not None and long == long:
+        miss = vec.add(miss, vec.scale(vec.unit(along), long))
+    size = vec.norm(miss)
+    if size != size or size <= cfg.COAST_RCS_TRIM_DEADBAND_M:
         return None
-    level = min(1.0, abs(cross) / max(cfg.COAST_RCS_TRIM_FULL_M, 1e-6))
-    return vec.scale(vec.unit(left), -math.copysign(level, cross))
+    level = min(1.0, size / max(cfg.COAST_RCS_TRIM_FULL_M, 1e-6))
+    return vec.scale(miss, -level / size)
 
 
 def _tilt_from_retrograde(env, r, v, miss, max_tilt_deg, gain):

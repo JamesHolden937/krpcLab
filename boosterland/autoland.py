@@ -1013,16 +1013,21 @@ class Autoland:
             self.log.event(snap.ut, "rcs trim: armed at cross=%+.0f long=%+.0f"
                            % (cross, long))
         long, cross = self.miss_components(snap)
-        if not self.trim_pushing and abs(cross) > self.cfg.COAST_RCS_TRIM_START_M:
+        with_long = self.cfg.COAST_RCS_TRIM_LONG and self.long_is_free(snap)
+        size = math.hypot(cross, long) if with_long else abs(cross)
+        if not self.trim_pushing and size > self.cfg.COAST_RCS_TRIM_START_M:
             self.trim_pushing = True
-            self.log.event(snap.ut, "rcs trim: push at cross=%+.0f" % cross)
+            self.log.event(snap.ut, "rcs trim: push at cross=%+.0f long=%+.0f%s"
+                           % (cross, long, " (both)" if with_long else ""))
         axes = trajectory.miss_axes(self.env.target, snap.position)
-        world = (guidance.rcs_trim_command(cross, axes[1], self.cfg)
+        world = (guidance.rcs_trim_command(
+                     cross, axes[1], self.cfg,
+                     long if with_long else None, axes[0])
                  if axes is not None and self.trim_pushing else None)
         if world is None:
             if self.trim_pushing:
-                self.log.event(snap.ut, "rcs trim: done at cross=%+.0f"
-                               % cross)
+                self.log.event(snap.ut, "rcs trim: done at cross=%+.0f "
+                               "long=%+.0f" % (cross, long))
             self.trim_pushing = False
             self.trim_run = None
             self.send_translation((0.0, 0.0, 0.0))
@@ -1054,6 +1059,16 @@ class Autoland:
             return
         # Vessel frame x right, y nose, z bottom; Control.up pushes roofward.
         self.send_translation((body[0], body[1], -body[2]))
+
+    def long_is_free(self, snap):
+        """Is the along-track miss nobody else's?  The late brakes' solve
+        and the deploy law both steer it until the brakes are handed over
+        and the booster is below ``DEPLOY_MIN_ALT_M``."""
+        if self.cfg.DEPLOY_LAW and self.cfg.DEPLOY_LATE \
+                and self.late_state not in ("handed", "off"):
+            return False
+        altitude = vec.norm(snap.position) - self.env.equatorial_radius
+        return not self.cfg.DEPLOY_LAW or altitude <= self.cfg.DEPLOY_MIN_ALT_M
 
     def send_translation(self, command):
         """``(right, forward, up)``, each sent only when it has moved."""

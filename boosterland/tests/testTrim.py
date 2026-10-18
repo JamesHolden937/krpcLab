@@ -78,6 +78,17 @@ class TestRcsTrim(unittest.TestCase):
                                                     self.cfg))
 
 
+    def test_with_long_pushes_against_the_whole_miss(self):
+        left, along = (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+        cmd = guidance.rcs_trim_command(9.0, left, self.cfg, 12.0, along)
+        self.assertAlmostEqual(vec.norm(cmd), 0.5, places=6)
+        self.assertAlmostEqual(cmd[1] / cmd[2], 9.0 / 12.0, places=6)
+        self.assertLess(cmd[2], 0.0)
+        # Inside the deadband on both: nothing.
+        self.assertIsNone(guidance.rcs_trim_command(1.0, left, self.cfg,
+                                                    2.0, along))
+
+
 class TestBodyVector(unittest.TestCase):
     def test_round_trip_through_the_attitude(self):
         q = vec.quat_axis_angle(vec.unit((1.0, 2.0, 0.5)), 1.1)

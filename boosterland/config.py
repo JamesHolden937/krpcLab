@@ -517,6 +517,14 @@ class Config:
                                             # the -40..-98 m it leaves boostback
                                             # with is its touchdown miss
     COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
+    COAST_RCS_TRIM_LONG: bool = False       # ... and the along-track too, once
+                                            # the brakes are handed over and
+                                            # below DEPLOY_MIN_ALT_M, where
+                                            # nothing else moves it: the
+                                            # Vernors' axial coupling left
+                                            # the trim arm +25 m long at the
+                                            # burn (trim1-1018) and the burn
+                                            # takes off a third of it
     COAST_RCS_TRIM_START_M: float = 10.0    # start pushing past this ...
     COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # ... stop inside this; the valve
                                             # is held open only while pushing
