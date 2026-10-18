@@ -1061,14 +1061,12 @@ class Autoland:
         self.send_translation((body[0], body[1], -body[2]))
 
     def long_is_free(self, snap):
-        """Is the along-track miss nobody else's?  The late brakes' solve
-        and the deploy law both steer it until the brakes are handed over
-        and the booster is below ``DEPLOY_MIN_ALT_M``."""
-        if self.cfg.DEPLOY_LAW and self.cfg.DEPLOY_LATE \
-                and self.late_state not in ("handed", "off"):
-            return False
-        altitude = vec.norm(snap.position) - self.env.equatorial_radius
-        return not self.cfg.DEPLOY_LAW or altitude <= self.cfg.DEPLOY_MIN_ALT_M
+        """May the trim take the along-track too?  Not while the late
+        brakes' solve owns it; once they are handed over the deploy law
+        and the trim both null it, and the trim is what is left when the
+        brakes are pinned at full (trim1-1018: +25 m long at the burn)."""
+        return not (self.cfg.DEPLOY_LAW and self.cfg.DEPLOY_LATE
+                    and self.late_state not in ("handed", "off"))
 
     def send_translation(self, command):
         """``(right, forward, up)``, each sent only when it has moved."""

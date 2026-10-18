@@ -89,6 +89,25 @@ class TestRcsTrim(unittest.TestCase):
                                                     2.0, along))
 
 
+class TestLongIsFree(unittest.TestCase):
+    """Run the gate on a bare Autoland: it must read only real fields."""
+    def run_for(self, late_state, **sets):
+        from boosterland.autoland import Autoland
+        run = object.__new__(Autoland)
+        run.cfg = Config()
+        for k, v in sets.items():
+            setattr(run.cfg, k, v)
+        run.late_state = late_state
+        return run.long_is_free(SimpleNamespace(position=(R + 5000.0, 0, 0)))
+
+    def test_owned_by_the_late_solve_until_handed(self):
+        self.assertFalse(self.run_for("armed"))
+        self.assertFalse(self.run_for(None))
+        self.assertTrue(self.run_for("handed"))
+        self.assertTrue(self.run_for("off"))
+        self.assertTrue(self.run_for(None, DEPLOY_LATE=False))
+
+
 class TestBodyVector(unittest.TestCase):
     def test_round_trip_through_the_attitude(self):
         q = vec.quat_axis_angle(vec.unit((1.0, 2.0, 0.5)), 1.1)
