@@ -60,3 +60,6 @@ lowThrust/plugin/*.dll
 # and a KSP install's managed assemblies).
 lowThrust/mod/bin/
 lowThrust/mod/**/*.dll
+
+# boosterland: leg deploy times timed in flight (delete to re-time)
+boosterland/data/

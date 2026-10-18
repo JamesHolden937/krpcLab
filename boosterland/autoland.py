@@ -22,7 +22,7 @@ from dataclasses import fields
 import krpc
 
 from common import vec
-from . import guidance, trajectory
+from . import gearcache, guidance, trajectory
 from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
 from .engines import allocate, group_engines
@@ -109,6 +109,41 @@ def set_airbrake_angle(vessel, angle):
                 except Exception:       # noqa: BLE001 -- KSP-side failure
                     angles.append("refused")
     return angles
+
+
+def gear_parts(vessel):
+    """Every deployable leg and wheel: what the gear group moves."""
+    found = []
+    for kind in ("legs", "wheels"):
+        try:
+            found += [p for p in getattr(vessel.parts, kind) if p.deployable]
+        except Exception:               # noqa: BLE001 -- not exposed (fake)
+            pass
+    return found
+
+
+def part_name(item):
+    """The part's internal name (``landingLeg1-2``), the cache's key."""
+    try:
+        return item.part.name
+    except Exception:                   # noqa: BLE001 -- KSP-side failure
+        return None
+
+
+def _name_counts(names):
+    counts = {}
+    for n in names:
+        counts[n] = counts.get(n, 0) + 1
+    return ", ".join("%d %s" % (c, n) for n, c in sorted(counts.items(),
+                                                          key=str))
+
+
+def deploy_state(part):
+    """'deployed', 'retracted', 'deploying', 'retracting' or 'broken'."""
+    try:
+        return str(part.state).split(".")[-1].lower()
+    except Exception:                   # noqa: BLE001 -- KSP-side failure
+        return None
 
 
 def prepare_vehicle(vessel, cfg):
@@ -318,6 +353,20 @@ class Autoland:
         self.autopilot_retries = 0
         self.extra_lines = ["press START AUTOLAND"]
         self.gear_deployed = False
+        self.touchdown_record = None    # the 2 s sign-off, held for the watch
+        self.touchdown_tilt = 0.0       # most the nose leaned off vertical
+        self.gear_timing = None         # GEAR_TIMED: None, deploying,
+                                        # retracting, done or failed
+        self.gear_items = []
+        self.gear_t0 = None
+        self.gear_deploy_s = None       # measured, game seconds
+        self.gear_names = []
+        self.gear_done = []             # per part: seconds, or False if broken
+        self.gear_t1 = None
+        self.late_state = None          # DEPLOY_LATE; see run_late_deploy
+        self.late_ut = None
+        self.late_next_ut = 0.0
+        self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.corrections = 0
@@ -873,7 +922,10 @@ class Autoland:
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
         if self.cfg.DEPLOY_LAW:
-            self.run_deploy(snap)
+            if self.cfg.DEPLOY_LATE and self.late_state != "handed":
+                self.run_late_deploy(snap)
+            else:
+                self.run_deploy(snap)
             self.extra_lines.append("brakes  : %8.0f deg" % (
                 self.deploy_angle if self.deploy_angle is not None
                 else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
@@ -919,7 +971,7 @@ class Autoland:
         if (self.deploy_resweep_ut is not None
                 and snap.ut >= self.deploy_resweep_ut):
             self.deploy_resweep_ut = None
-            self.env.request_resweep()
+            self.env.request_resweep(replace=cfg.DEPLOY_RESWEEP_REPLACE)
         if snap.ut < self.deploy_next_ut or self.deploy_resweep_ut is not None:
             return
         up = vec.unit(snap.position)
@@ -1000,6 +1052,269 @@ class Autoland:
                                 if self.deploy_k is not None else "-",
                                 "/".join(sorted(set(map(str, got))))))
         self.deploy_angle = new
+
+    def run_late_deploy(self, snap):
+        """Aim long on closed brakes, and open them all where that lands.
+
+        Drag is the only braking that costs nothing, and the landing burn
+        pays for every m/s the coast leaves it.  So rather than hold the
+        brakes part-open the whole way down, hold them at ``DEPLOY_MIN_DEG``
+        -- long -- and open them to ``DEPLOY_MAX_DEG`` low down, in the
+        dense air where they brake hardest, at the altitude whose prediction
+        lands on the pad.  The switch is the control, solved by bisection
+        on the propagator every ``DEPLOY_LATE_STEP_S``, and the environment
+        carries it (``late_switch_alt``) so every prediction -- the lift
+        solve's, the correction's, the burn trigger's -- flies the schedule.
+
+        The full-brake curve is measured, not extrapolated: once at the top
+        of the coast, where the air is too thin for a few seconds of brakes
+        to matter, the brakes open to the top, the whole curve is probed,
+        and they close to the bottom with the current curve re-taken
+        outright (a blended re-sweep would read a quarter of the change).
+        Corrections wait for all of it.  Once the brakes open the ordinary
+        ``run_deploy`` takes over from the top of its range.
+        """
+        cfg = self.cfg
+        if self.late_state in ("off", "switched", "handed"):
+            return
+        if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
+            return
+        if self.late_state is None:
+            got = set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG)
+            if not got:
+                self.late_state = "off"
+                self.deploy_none = True
+                self.log.event(snap.ut, "brakes: no airbrake answered, law off")
+                return
+            self.late_state = "full"
+            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.log.event(snap.ut, "late brakes: open to %.0f to measure"
+                           % cfg.DEPLOY_MAX_DEG)
+            return
+        if self.late_state == "full":
+            if snap.ut < self.late_ut:
+                return
+            bins = self.env.sweep_bins(snap.position, snap.velocity,
+                                       snap.rotation, snap.direction)
+            set_airbrake_angle(self.vessel, cfg.DEPLOY_MIN_DEG)
+            self.deploy_angle = cfg.DEPLOY_MIN_DEG
+            if not self.env.set_full_curve(bins):
+                # No curve: the ordinary law, from the bottom of its range.
+                self.late_state = "handed"
+                self.log.event(snap.ut, "late brakes: full curve unreadable,"
+                               " ordinary deploy law")
+                return
+            self.late_state = "settling"
+            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            return
+        if self.late_state == "settling":
+            if snap.ut < self.late_ut:
+                return
+            if self.late_resweep_ut is None:
+                self.env.request_resweep(replace=True)
+                self.late_resweep_ut = snap.ut
+                return
+            swept = self.env.last_sweep_ut()
+            if swept is None or swept < self.late_resweep_ut:
+                return
+            self.late_resweep_ut = None
+            ratio = self.env.full_curve_ratio()
+            self.log.event(snap.ut, "late brakes: Cd*A at %.0f deg is %s x"
+                           " at %.0f" % (cfg.DEPLOY_MAX_DEG,
+                                         "%.2f" % ratio if ratio else "-",
+                                         cfg.DEPLOY_MIN_DEG))
+            self.late_state = "armed"
+            self.late_next_ut = snap.ut
+        if snap.ut < self.late_next_ut:
+            return
+        self.late_next_ut = snap.ut + cfg.DEPLOY_LATE_STEP_S
+        self.solve_late_switch(snap)
+
+    def solve_late_switch(self, snap):
+        """Bisect for the brake-opening altitude that nulls the long miss.
+
+        The unsteered prediction, like ``run_deploy``: drag carries the
+        range and the lift trims what is left.  Higher opens sooner and
+        lands shorter.  Long even opening now: open now.  Short even never
+        opening: never (the law cannot lengthen past closed brakes).
+        """
+        cfg, env = self.cfg, self.env
+        up = vec.unit(snap.position)
+        along = vec.project_out(snap.velocity, up)
+        if vec.norm(along) < 1.0:
+            return
+        along = vec.unit(along)
+
+        def long_at(switch):
+            env.late_switch_alt = switch
+            p = trajectory.predict_landing(
+                env, snap.position, snap.velocity, snap.mass,
+                snap.max_accel, cfg, steer=None)
+            miss = vec.project_out(vec.sub(p.position, env.target), up)
+            return vec.dot(miss, along)
+
+        lo = env.target_radius - env.equatorial_radius - 1.0
+        hi = vec.norm(snap.position) - env.equatorial_radius
+        f_lo, f_hi = long_at(lo), long_at(hi)
+        if f_hi >= 0.0:
+            switch, f = hi, f_hi
+        elif f_lo <= 0.0:
+            switch, f = None, f_lo
+        else:
+            switch, f = hi, f_hi
+            for _ in range(24):
+                mid = 0.5 * (lo + hi)
+                f = long_at(mid)
+                switch = mid
+                if abs(f) <= cfg.DEPLOY_LATE_TOL_M or hi - lo < 5.0:
+                    break
+                if f > 0.0:
+                    lo = mid
+                else:
+                    hi = mid
+        env.late_switch_alt = switch
+        self.log.event(snap.ut, "late brakes: open at %s long=%+.0f"
+                       " (closed %+.0f, open now %+.0f)"
+                       % ("%.0f m" % switch if switch is not None else "never",
+                          f, f_lo, f_hi))
+
+    def late_switch(self, snap):
+        """Open the brakes where the solve said; hand over once re-swept."""
+        cfg, env = self.cfg, self.env
+        if self.late_state == "armed":
+            if self.state not in (COAST, CORRECTION, LANDING_BURN):
+                return
+            altitude = vec.norm(snap.position) - env.equatorial_radius
+            if env.late_switch_alt is None or altitude > env.late_switch_alt:
+                return
+            set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG)
+            self.deploy_angle = cfg.DEPLOY_MAX_DEG
+            env.late_switch_alt = float("inf")  # all of it at full now
+            self.late_state = "switched"
+            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.log.event(snap.ut, "late brakes %.0f -> %.0f at %.0f m,"
+                           " %.0f m/s" % (cfg.DEPLOY_MIN_DEG,
+                                          cfg.DEPLOY_MAX_DEG,
+                                          snap.height_above_pad, snap.speed))
+        elif self.late_state == "switched" and snap.ut >= self.late_ut:
+            if self.late_resweep_ut is None:
+                env.request_resweep(replace=True)
+                self.late_resweep_ut = snap.ut
+                return
+            swept = env.last_sweep_ut()
+            if swept is None or swept < self.late_resweep_ut:
+                return
+            env.late_switch_alt = None
+            self.late_state = "handed"
+            self.deploy_next_ut = snap.ut
+            self.deploy_record = None
+
+    def time_gear(self, snap):
+        """How long the legs take to deploy: from the cache, or timed once.
+
+        Nothing in kRPC says how long a part's deploy animation is (the
+        length is in the model, not the part's config), so it is measured:
+        the gear group fired early in the coast, where the air is too thin
+        for the legs' drag to matter, each deployable leg and wheel watched
+        until it reads deployed, then fired back.  Each part's time goes in
+        ``gearcache`` under its part name, so a craft whose parts are all
+        there skips the cycle -- every flight after the first.
+        ``landing_gear`` drops them ``GEAR_LEAD_FACTOR`` times the slowest,
+        plus ``GEAR_LEAD_S``, before the ground.  No legs, or a cycle that
+        does not finish: the legs drop when the burn lights, as untimed.
+        """
+        cfg = self.cfg
+        if self.gear_timing in ("done", "failed") or self.gear_deployed:
+            return
+        if self.gear_timing is None:
+            if self.state != COAST:
+                return
+            self.gear_items = gear_parts(self.vessel)
+            if not self.gear_items:
+                self.gear_timing = "failed"
+                self.log.event(snap.ut, "gear: nothing deployable to time")
+                return
+            self.gear_names = [part_name(p) for p in self.gear_items]
+            cached = (gearcache.lookup(self.gear_names)
+                      if None not in self.gear_names else None)
+            if cached is not None:
+                self.gear_deploy_s = max(cached.values())
+                self.gear_timing = "done"
+                self.log.event(snap.ut, "gear: %s deploy in %.2f s (cached);"
+                               " drop at %.1f s to go"
+                               % (_name_counts(self.gear_names),
+                                  self.gear_deploy_s, self.gear_lead()))
+                return
+            self.fire_gear(True)
+            self.gear_timing = "deploying"
+            self.gear_t0 = snap.ut
+            self.gear_done = [None] * len(self.gear_items)
+            return
+        states = [deploy_state(p) for p in self.gear_items]
+        if snap.ut - self.gear_t0 > cfg.GEAR_MEASURE_TIMEOUT_S:
+            self.fire_gear(False)
+            self.gear_timing = "failed"
+            self.gear_deploy_s = None
+            self.log.event(snap.ut, "gear: cycle unfinished after %.0f s (%s)"
+                           ", untimed" % (cfg.GEAR_MEASURE_TIMEOUT_S,
+                                          "/".join(sorted(set(map(str, states))))))
+            return
+        if self.gear_timing == "deploying":
+            for i, st in enumerate(states):
+                if self.gear_done[i] is None and st in ("deployed", "broken"):
+                    self.gear_done[i] = (snap.ut - self.gear_t0
+                                         if st == "deployed" else False)
+            if all(d is not None for d in self.gear_done):
+                times = [d for d in self.gear_done if d is not False]
+                self.gear_deploy_s = max(times) if times else None
+                self.fire_gear(False)
+                self.gear_timing = "retracting"
+                self.gear_t1 = snap.ut
+        elif all(st in ("retracted", "broken") for st in states):
+            if self.gear_deploy_s is None:
+                self.gear_timing = "failed"
+                self.log.event(snap.ut, "gear: every part broken, untimed")
+                return
+            self.gear_timing = "done"
+            retract = snap.ut - self.gear_t1
+            # Per part name, the slowest of its kind (a tick's resolution).
+            entries = {}
+            for name, d in zip(self.gear_names, self.gear_done):
+                if name is None or d is False:
+                    continue
+                old = entries.get(name, {}).get("deploy", 0.0)
+                entries[name] = {"deploy": round(max(old, d), 3),
+                                 "retract": round(retract, 3)}
+            try:
+                gearcache.record(entries)
+                saved = "cached"
+            except OSError as exc:
+                saved = "not cached: %s" % exc
+            self.log.event(snap.ut, "gear timed: %s deploy in %.2f s,"
+                           " retract in %.2f s (%s); drop at %.1f s to go"
+                           % (_name_counts(self.gear_names),
+                              self.gear_deploy_s, retract, saved,
+                              self.gear_lead()))
+
+    def gear_lead(self):
+        return (self.cfg.GEAR_LEAD_FACTOR * self.gear_deploy_s
+                + self.cfg.GEAR_LEAD_S)
+
+    def fire_gear(self, down):
+        self.control.gear = down
+        if self.cfg.GEAR_ACTION_GROUP:
+            self.control.set_action_group(self.cfg.GEAR_ACTION_GROUP, down)
+
+    def time_to_ground(self, snap):
+        """Seconds to touchdown, the sooner of the prediction's and the
+        fall at the present descent rate (which only slows from here)."""
+        best = None
+        if snap.vertical_speed < -0.1:
+            best = snap.landing_height / -snap.vertical_speed
+        if self.prediction is not None and self.prediction.time_to_land > 0.0:
+            t = self.prediction.time_to_land
+            best = t if best is None else min(best, t)
+        return best
 
     def measure_tracking(self, snap):
         """How much of the commanded angle of attack is the vehicle holding?
@@ -1132,6 +1447,10 @@ class Autoland:
         the landing burn, which has seconds and a tilt limit to work with.
         """
         cfg = self.cfg
+        if cfg.DEPLOY_LATE and self.late_state in (None, "full", "settling"):
+            return False                # the brakes are being measured
+        if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
+            return False                # ... or the legs are
         if cfg.CORRECTION_OVERSHOOT_ONLY:
             # CORRECTION steers within CORRECTION_MAX_TILT_DEG of retrograde,
             # so in the game it only ever shortens: entered on a *short* miss
@@ -1452,13 +1771,21 @@ class Autoland:
         self.set_throttle(0.0)
         distance = self.pad_distance(snap)
         self.extra_lines = ["down %0.0f m from pad" % distance]
-        if snap.ut - self.phase_start_ut > 2.0:
+        if self.touchdown_record is None and snap.ut - self.phase_start_ut > 2.0:
             # Say what the game thinks the vehicle is doing, not just how far
             # away it is: LOG5 signed off "landed 15706 m from pad" while the
             # booster was still 24 km up doing 386 m/s.
-            self.finish("%s %.0f m from pad, alt=%.0f spd=%.1f"
-                        % (snap.situation, distance, snap.landing_height,
-                           snap.speed))
+            self.touchdown_record = ("%s %.0f m from pad, alt=%.0f spd=%.1f"
+                                     % (snap.situation, distance,
+                                        snap.landing_height, snap.speed))
+        if self.touchdown_record is not None:
+            # ... and then whether it stays up: a tip-over takes seconds, and
+            # the 2 s figures above are taken before one shows.
+            tilt = vec.angle_between(snap.direction, snap.position)
+            self.touchdown_tilt = max(self.touchdown_tilt, tilt)
+            if snap.ut - self.phase_start_ut > 2.0 + self.cfg.TOUCHDOWN_WATCH_S:
+                self.finish("%s tilt=%.0f max=%.0f" % (
+                    self.touchdown_record, tilt, self.touchdown_tilt))
 
     # -- main loop ---------------------------------------------------------
     def landing_gear(self, snap):
@@ -1470,16 +1797,24 @@ class Autoland:
         # touchdown. GEAR_DEPLOY_ALT_M remains as a backstop for a flight
         # that somehow reaches the ground without the phase.
         why = None
-        if self.cfg.GEAR_ON_LANDING_BURN and self.state == LANDING_BURN:
+        if self.cfg.GEAR_TIMED and self.gear_timing == "done":
+            if self.state not in (COAST, CORRECTION, LANDING_BURN):
+                return
+            t_go = self.time_to_ground(snap)
+            if t_go is None or t_go > self.gear_lead():
+                return
+            why = "%.1f s to go" % t_go
+        elif self.cfg.GEAR_TIMED and self.gear_timing in ("deploying",
+                                                           "retracting"):
+            return
+        elif self.cfg.GEAR_ON_LANDING_BURN and self.state == LANDING_BURN:
             why = "landing burn"
         elif self.state in (COAST, CORRECTION, LANDING_BURN) \
                 and snap.height_above_pad <= self.cfg.GEAR_DEPLOY_ALT_M:
             why = "%.0f m" % self.cfg.GEAR_DEPLOY_ALT_M
         if why is None:
             return
-        self.control.gear = True
-        if self.cfg.GEAR_ACTION_GROUP:
-            self.control.set_action_group(self.cfg.GEAR_ACTION_GROUP, True)
+        self.fire_gear(True)
         self.gear_deployed = True
         self.log.event(snap.ut, "gear down at %.0f m (%s)"
                        % (snap.height_above_pad, why))
@@ -1584,6 +1919,10 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
+        if self.cfg.GEAR_TIMED:
+            self.time_gear(snap)
+        if self.cfg.DEPLOY_LATE:
+            self.late_switch(snap)
         self.landing_gear(snap)
         # After the handler, so the error is measured against the attitude
         # this tick actually commanded rather than the last one's.

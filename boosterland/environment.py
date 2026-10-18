@@ -78,6 +78,12 @@ class Environment:
         self._last_sweep_ut = None      # ... and when that last happened
         self._next_curve_bin = 0
         self._next_aero_ut = None
+        # The curve at full airbrake, taken once (DEPLOY_LATE), and the
+        # altitude below which the propagator flies it: the brakes are going
+        # to open there, so every prediction has to know it.  None = no switch.
+        self._full_machs, self._full_areas = [], []
+        self.late_switch_alt = None
+        self._replace_next = False      # the next sweep replaces, not blends
         self._descent_profile = ()      # (speed, altitude) down to the pad
 
         # Cl*A per radian squared against Mach: same bins, same smoothing, a
@@ -206,10 +212,42 @@ class Environment:
         Outside the probed range the end values are held: extrapolating a Cd
         curve is guesswork, and the ends are where the samples are sparsest.
         """
+        if (self.late_switch_alt is not None and self._full_machs
+                and altitude <= self.late_switch_alt):
+            return self._interp_curve(self._full_machs, self._full_areas,
+                                      self.mach(speed, altitude))
         if not self._curve_machs:
             return self.drag_area
         return self._interp_curve(self._curve_machs, self._curve_areas,
                                   self.mach(speed, altitude))
+
+    def sweep_bins(self, position, velocity, rotation, nose=None):
+        """Probe every Mach bin as the vessel is now, recording nothing.
+
+        Returns one Cd*A per bin, None where the probe would not answer.
+        """
+        altitude = vec.norm(position) - self.equatorial_radius
+        direction = self.probe_direction(velocity, nose)
+        c = self.speed_of_sound(altitude)
+        rotation, _ = self.probe_rotation(rotation, velocity, nose)
+        return [self._probe_bin(position, direction, i, altitude, c, rotation)
+                for i in range(self._bins)]
+
+    def set_full_curve(self, bins):
+        """The full-brake curve, from :meth:`sweep_bins`; False if empty."""
+        pairs = [(self._bin_mach(i), a) for i, a in enumerate(bins)
+                 if a is not None and a > 0.0]
+        self._full_machs = [m for m, _ in pairs]
+        self._full_areas = [a for _, a in pairs]
+        return bool(pairs)
+
+    def full_curve_ratio(self):
+        """Median full-brake / current Cd*A over the bins both hold."""
+        full = dict(zip(self._full_machs, self._full_areas))
+        ratios = sorted(full[m] / a for m, a in zip(self._curve_machs,
+                                                    self._curve_areas)
+                        if m in full and a > 0.0)
+        return ratios[len(ratios) // 2] if ratios else None
 
     @staticmethod
     def _interp_curve(machs, values, mach):
@@ -815,15 +853,20 @@ class Environment:
     def last_sweep_ut(self):
         return self._last_sweep_ut
 
-    def request_resweep(self):
+    def request_resweep(self, replace=False):
         """Re-take the whole curve at the next descent-attitude refresh.
 
         The probe simulates the vessel as it is *now*, so after the airbrakes'
         deploy angle changes every bin is of a shape the booster no longer
-        has until the next sweep.
+        has until the next sweep.  An ordinary re-sweep goes through the
+        clamp and the quarter-weight EMA, so it moves the curve only a
+        quarter of the way to the new shape; ``replace`` throws the old
+        curve away instead, since the change is known and not a spike.
         """
         self._last_sweep_ut = None
         self._next_aero_ut = None
+        if replace:
+            self._replace_next = True
 
     def refresh_drag(self, ut, position, velocity, rotation, nose=None):
         """Keep the Mach curve current, at a bounded cost in remote calls.
@@ -877,6 +920,22 @@ class Environment:
                      for i in range(self._bins)]
             if not any(x is not None for x in fresh):
                 resweeping = False
+        if self._replace_next and self._curve_swept and not resweeping:
+            fresh = [self._probe_bin(position, direction, i, altitude, c,
+                                     rotation)
+                     for i in range(self._bins)]
+            if any(x is not None for x in fresh):
+                self._replace_next = False
+                self._last_sweep_ut = ut
+                self._curve = [None] * self._bins
+                self._samples = [0] * self._bins
+                self._clean = [False] * self._bins
+                self._curve_machs, self._curve_areas = [], []
+                for index, sample in enumerate(fresh):
+                    if sample is not None:
+                        self._record(index, sample, clean)
+                self.drag_area = self.drag_area_at(speed, altitude)
+                return self.drag_area
         if not self._curve_swept or resweeping or repeat:
             before = self.curve_snapshot()
             self._last_sweep_ut = ut

@@ -75,6 +75,18 @@ class Config:
                                             # *unsteered* prediction: drag
                                             # carries the range, the lift
                                             # only trims what is left
+    DEPLOY_LATE: bool = False               # aim long on brakes held at
+                                            # DEPLOY_MIN_DEG, then open them to
+                                            # DEPLOY_MAX_DEG at the altitude
+                                            # that lands on the pad (solved
+                                            # on a measured full-brake curve):
+                                            # slower at the burn.  See
+                                            # Autoland.run_late_deploy
+    DEPLOY_LATE_STEP_S: float = 5.0         # re-solve the switch this often
+    DEPLOY_LATE_TOL_M: float = 10.0         # ... to this along-track miss
+    DEPLOY_RESWEEP_REPLACE: bool = False    # a re-sweep after a brake step
+                                            # replaces the curve rather than
+                                            # blending a quarter of it in
     ENGINE_ALLOCATION: bool = True          # throttle = center engine first,
                                             # then symmetric pairs, each to
                                             # full; see autoland.EngineCluster.
@@ -565,7 +577,15 @@ class Config:
     GEAR_ACTION_GROUP: int = 0              # extra AG to fire with the legs;
                                             # 0 = none (this booster's gear is
                                             # on the stock Gear group)
+    GEAR_TIMED: bool = False                # cycle the legs once early in the
+                                            # coast to time them, then drop
+                                            # them this long before touchdown:
+    GEAR_LEAD_FACTOR: float = 2.0           # ... x the measured deploy time
+    GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear
+    GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
+    TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s
+                                            # sign-off to see if it tips
 
     # --- Sanity limits on the terrain sensor -------------------------------
     TERRAIN_MAX_M: float = 7000.0           # highest ground the body can have
