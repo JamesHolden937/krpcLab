@@ -1,6 +1,6 @@
 #!/bin/sh
 # Fly one save on N simulated instances at once, K flights each.
-#   ./kspSim/tools/simfly.sh qs_plane 6 1 [--set FIELD=VALUE ...]
+#   ./kspSim/tools/simfly.sh qs_shuttle2 6 1 [--set FIELD=VALUE ...]
 #   PILOT=booster ./kspSim/tools/simfly.sh quicksave 4 3
 # Each instance is a kspSim server on 50200+2i; results go to stdout, one
 # line per flight, exactly as the harness (quickglide.py, or quickfly.py for

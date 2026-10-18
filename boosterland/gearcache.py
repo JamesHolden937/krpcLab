@@ -13,9 +13,13 @@ and replace the file atomically.
 import fcntl
 import json
 import os
+import sys
 
-PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
-                    "gearTimes.json")
+# Beside the package, or beside the script when run as a ``tools/bundle.py``
+# single file, which has no ``__file__``.
+PATH = os.path.join(
+    os.path.dirname(os.path.abspath(globals().get("__file__") or sys.argv[0])),
+    "data", "gearTimes.json")
 
 
 def load(path=PATH):

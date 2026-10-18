@@ -7,8 +7,6 @@ __pycache__/
 
 # Flight logs and batch outputs: large, per-machine, and cited by number in the docs.
 logs/
-logs_baseline/
-logs_r2/
 
 # Generated single-file bundles (./tools/bundle.py rebuilds them).
 dist/
@@ -29,8 +27,6 @@ testInstances/kspproxy[0-9]*/
 # Generated from a KSP instance by kspSim/tools/kscterrain.py --instance 0
 kspSim/data/ksc_terrain.json
 .wt-*/
-.venv
-.venv-pypy
 
 # Built from the tracked .cs by testInstances/mkbase.sh (mcs against KSP's
 # own Managed assemblies).

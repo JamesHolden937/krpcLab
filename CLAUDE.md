@@ -46,11 +46,15 @@ from the previous batch's round length times the rounds left.
    (`kspSim/CLAUDE.md`, "Known gaps" -- e.g. the shuttle's high-alpha
    lateral moments). Say which it was and why. Never sims beside the farm.
 2. **End by rewriting HANDOFF.md.** Also do it before any long pause or when
-   the user asks for a summary. Record the date, the defaults fingerprint,
-   commit state, where each airframe stands, every flag added and what it
-   measured (with log/batch names), the blocker and the proposed next step,
-   open items in order, and traps paid for. It's a snapshot: replace it,
-   don't append. The history goes in `docs/<pilot>/journal.md`.
+   the user asks for a summary. It holds **one section per autopilot**,
+   the most recently worked first: rewrite the section of the pilot(s) this
+   session touched in place (move it to the top) and leave the others as
+   they are -- they are the last word on pilots nobody has flown since.
+   Record the date, the defaults fingerprint, commit state, where each
+   airframe stands, every flag added and what it measured (with log/batch
+   names), the blocker and the proposed next step, open items in order, and
+   traps paid for. Each section is a snapshot: replace it, don't append to
+   it. The history goes in `docs/<pilot>/journal.md`.
 3. **On wrap-up: update the how-it-works PDFs, then commit and push to
    GitHub** (`git push origin main`). `docs/<pilot>/howItWorks.pdf` is
    the only tracked copy: when the code's behaviour changed, write the page

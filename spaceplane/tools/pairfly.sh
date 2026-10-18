@@ -53,7 +53,7 @@ B="${2?usage: pairfly.sh \"<sets A>\" \"<sets B>\"}"
 # an arm effect.  Observed, as a 900 m split that was unreadable as a result.
 # This script swaps halves every round by construction, so SAVE_A/SAVE_B
 # compares two *saves* under one configuration with that confound removed.
-SAVE="${SAVE:-qs_plane}"
+SAVE="${SAVE:-qs_shuttle2_rigoff}"
 SAVE_A="${SAVE_A:-$SAVE}"
 SAVE_B="${SAVE_B:-$SAVE}"
 ROUNDS="${ROUNDS:-4}"

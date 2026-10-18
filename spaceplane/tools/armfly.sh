@@ -5,7 +5,7 @@
 # what a coarse bracket of a single knob wants.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-SAVE="${SAVE:-qs_plane}"
+SAVE="${SAVE:-qs_shuttle2_rigoff}"
 TS="${TS:-20}"
 n=0
 for spec in "$@"; do

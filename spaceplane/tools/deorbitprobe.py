@@ -57,7 +57,7 @@ def one(instance, overrides, samples, timeout):
         cmd += ["--set", item]
     loader = [os.path.join(ROOT, ".venv/bin/python"), "-c",
               "import krpc;c=krpc.connect(name='load',address='127.0.0.1',"
-              "rpc_port=%d,stream_port=%d);c.space_center.load('qs_plane')"
+              "rpc_port=%d,stream_port=%d);c.space_center.load('qs_shuttle2_rigoff')"
               % (port, port + 1)]
     subprocess.run(loader, cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read a save's vehicle, state and aerodynamics out of a real game.
 
-    ./kspSim/tools/probe.py --instance 1 --save qs_plane
+    ./kspSim/tools/probe.py --instance 1 --save qs_shuttle2
 
 Writes ``kspSim/models/<save>.json``: everything the simulator needs to fly
 that save without the game -- the initial state, the body, the parts and

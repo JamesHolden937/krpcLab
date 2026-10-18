@@ -10,8 +10,8 @@ beat the glide's own 2.3 km repeatability, with the arms rotated across
 instances so an instance effect cannot masquerade as a dose-response.  Doing
 that by hand is what this replaces.
 
-    ./spaceplane/tools/ladder.py --arms qs_l0,qs_l8,qs_l16 -n 4
-    ./spaceplane/tools/ladder.py --arms qs_l0,qs_l32 -n 3 --instances 0,4 --timescale 6
+    ./spaceplane/tools/ladder.py --arms qs_s2_hac0,qs_s2_hac1,qs_s2_hac2 -n 4
+    ./spaceplane/tools/ladder.py --arms qs_s2_hac0,qs_s2_hac3 -n 3 --instances 0,4 --timescale 6
 
 Three properties it has to keep, each of which is a rule this project has
 already paid for:
@@ -170,7 +170,7 @@ def main():
                         "separate the arms with ';'** -- a comma inside "
                         "'af:save=X,FIELD=V' otherwise splits it into two "
                         "arms, the second a save that does not exist")
-    p.add_argument("--save", default="qs_plane",
+    p.add_argument("--save", default="qs_shuttle2_rigoff",
                    help="the save configuration arms are flown from")
     p.add_argument("--instances", default="0,1,4,5")
     p.add_argument("-n", type=int, default=3, help="flights per arm")

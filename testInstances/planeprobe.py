@@ -498,7 +498,7 @@ def connect_instance(instance, name, save=None):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("instance")
-    p.add_argument("--save", default="qs_plane")
+    p.add_argument("--save", default="qs_shuttle2_rigoff")
     p.add_argument("--mass", type=float, default=None,
                    help="tonnes to compute the derived speeds at "
                         "(default: what the vessel weighs now)")

@@ -30,7 +30,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
-SAVE="${SAVE:-qs_plane}"
+SAVE="${SAVE:-qs_shuttle2_rigoff}"
 N="${N:-8}"
 TS="${TS:-20}"
 INSTANCES="${INSTANCES:-0 1 2 3 4 5}"

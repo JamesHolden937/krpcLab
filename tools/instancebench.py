@@ -27,7 +27,7 @@ is going at 4x" -- so this reports which one is binding, per setting.
     ./tools/instancebench.py 5                          # what is it doing now
     ./tools/instancebench.py 5 --quant 0.05,0.1,0.2,0.4
     ./tools/instancebench.py 5 --quant 0.2 --adaptive --max 32
-    ./tools/instancebench.py 5 --save qs_plane --dwell 25
+    ./tools/instancebench.py 5 --save qs_shuttle2_rigoff --dwell 25
 
 It needs a vessel in the flight scene, because the plugin is a
 ``KSPAddon.Startup.Flight`` addon and writes nothing without one.  Pass

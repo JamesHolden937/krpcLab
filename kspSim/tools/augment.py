@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Add to an existing model what the first probe did not record.
 
-    ./kspSim/tools/augment.py --instance 0 qs_shuttle [qs_plane ...]
+    ./kspSim/tools/augment.py --instance 0 qs_shuttle2 [qs_shuttle ...]
 
 - **Thruster geometry** of every RCS module and engine, read after the scene
   has run for a moment: right after a load ``Thruster.thrust_direction``

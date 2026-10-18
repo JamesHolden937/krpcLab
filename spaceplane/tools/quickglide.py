@@ -445,7 +445,7 @@ def opened_at(path):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("-n", type=int, default=1)
-    p.add_argument("--save", default="qs_plane")
+    p.add_argument("--save", default="qs_shuttle2_rigoff")
     p.add_argument("--instance", default=None)
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
