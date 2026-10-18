@@ -338,6 +338,8 @@ class Autoland:
         self.cluster = None             # EngineCluster, built at START
         self.prev_nose = None           # (ut, direction) of the last tick
         self.nose_rate = None           # deg/s, see track_nose_rate
+        self.prev_cmd = None            # (ut, commanded direction)
+        self.cmd_rate = None            # deg/s the command itself moves
         self.roll_rate = None           # deg/s about the nose, signed
         self.throttle_diverged = False
         self.last_sample = None         # (position, mass) of the last tick
@@ -416,6 +418,12 @@ class Autoland:
         # waypoint, and measuring the error against the final aim would call
         # a turn that is going exactly to plan a 100-degree failure.
         self.commanded_direction = tuple(direction)
+        if snap is not None:
+            prev = self.prev_cmd
+            self.prev_cmd = (snap.ut, self.commanded_direction)
+            if prev is not None and snap.ut - prev[0] > 1e-3:
+                self.cmd_rate = (vec.angle_between(prev[1], direction)
+                                 / (snap.ut - prev[0]))
 
     def pointing_error(self, snap):
         """Degrees between the commanded nose and the real one, or -1.
@@ -1654,9 +1662,12 @@ def attitude_fields(snap, run):
     rate = getattr(run, "nose_rate", None)
     spin = getattr(run, "roll_rate", None)
     inputs = getattr(snap, "inputs", None)
-    return (" cmd=%.1f err=%.1f sat=%s%s%s%s%s"
+    crate = getattr(run, "cmd_rate", None)
+    return (" cmd=%.1f err=%.1f cv=%.1f%s sat=%s%s%s%s%s"
             % (vec.angle_between(cmd, vec.scale(snap.velocity, -1.0)),
                run.pointing_error(snap),
+               vec.angle_between(cmd, snap.position),
+               " cw=%.1f" % crate if crate is not None else "",
                "%.2f" % snap.input_saturation
                if snap.input_saturation is not None else "-",
                " roll=%.0f" % roll if roll is not None else "",
