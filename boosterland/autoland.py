@@ -1494,6 +1494,27 @@ class Autoland:
         if self.cfg.GEAR_ACTION_GROUP:
             self.control.set_action_group(self.cfg.GEAR_ACTION_GROUP, down)
 
+    def gear_burn_due(self, snap):
+        """GEAR_BURN_TTG: why the legs drop now, or None.
+
+        Before the burn the only time-to-go is the fall at the present
+        descent rate, which the burn is about to stretch by a factor of
+        two; inside it the powered prediction is good to about a second.
+        So the legs wait for the burn -- unless the fall itself is down to
+        the bare deploy time, which means something has gone wrong."""
+        fall = (snap.landing_height / -snap.vertical_speed
+                if snap.vertical_speed < -0.1 else None)
+        if self.state != LANDING_BURN:
+            if fall is not None and fall <= self.gear_deploy_s:
+                return "%.1f s fall, no burn yet" % fall
+            return None
+        if self.prediction is None or self.prediction.time_to_land <= 0.0:
+            return "burn, no prediction"
+        t_go = self.prediction.time_to_land
+        if t_go > self.gear_lead():
+            return None
+        return "%.1f s to go in the burn" % t_go
+
     def time_to_ground(self, snap):
         """Seconds to touchdown, the sooner of the prediction's and the
         fall at the present descent rate (which only slows from here)."""
@@ -1969,10 +1990,15 @@ class Autoland:
         if self.cfg.GEAR_TIMED and self.gear_timing == "done":
             if self.state not in (COAST, CORRECTION, LANDING_BURN):
                 return
-            t_go = self.time_to_ground(snap)
-            if t_go is None or t_go > self.gear_lead():
-                return
-            why = "%.1f s to go" % t_go
+            if self.cfg.GEAR_BURN_TTG:
+                why = self.gear_burn_due(snap)
+                if why is None:
+                    return
+            else:
+                t_go = self.time_to_ground(snap)
+                if t_go is None or t_go > self.gear_lead():
+                    return
+                why = "%.1f s to go" % t_go
         elif self.cfg.GEAR_TIMED and self.gear_timing in ("deploying",
                                                            "retracting"):
             return

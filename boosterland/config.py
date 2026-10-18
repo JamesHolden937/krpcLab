@@ -628,6 +628,13 @@ class Config:
                                             # them this long before touchdown:
     GEAR_LEAD_FACTOR: float = 1.25          # ... x the measured deploy time
     GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear
+    GEAR_BURN_TTG: bool = False             # time the drop on the landing
+                                            # burn's powered prediction, not on
+                                            # the fall at the coast's descent
+                                            # rate: that ignores the burn and
+                                            # dropped the legs 13.4-14.1 s
+                                            # before contact for a 6.8 s lead
+                                            # (LOG12534, LOG12653)
     GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
     TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s

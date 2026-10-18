@@ -123,6 +123,27 @@ class TestHoverTranslation(unittest.TestCase):
             (R + 20.0, 0.0, 0.0), (-5.0, 0.0, 0.0), pad, cfg))
 
 
+class TestGearBurnDue(unittest.TestCase):
+    def run_at(self, state, ttl, height, vs):
+        from boosterland.autoland import Autoland
+        run = object.__new__(Autoland)
+        run.cfg = Config()
+        run.gear_deploy_s = 4.6
+        run.state = state
+        run.prediction = SimpleNamespace(time_to_land=ttl)
+        snap = SimpleNamespace(landing_height=height, vertical_speed=vs)
+        return run.gear_burn_due(snap)
+
+    def test_waits_for_the_burn(self):
+        # 1.8 km at 270 m/s: 6.7 s of fall, but the coast does not drop them.
+        self.assertIsNone(self.run_at("COAST", 9.0, 1800.0, -270.0))
+        self.assertIsNone(self.run_at("LANDING_BURN", 9.0, 900.0, -250.0))
+        self.assertIsNotNone(self.run_at("LANDING_BURN", 6.5, 300.0, -150.0))
+
+    def test_falling_with_no_burn_drops_them(self):
+        self.assertIsNotNone(self.run_at("COAST", 30.0, 1000.0, -250.0))
+
+
 class TestBodyVector(unittest.TestCase):
     def test_round_trip_through_the_attitude(self):
         q = vec.quat_axis_angle(vec.unit((1.0, 2.0, 0.5)), 1.1)
