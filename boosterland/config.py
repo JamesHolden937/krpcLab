@@ -75,7 +75,7 @@ class Config:
                                             # *unsteered* prediction: drag
                                             # carries the range, the lift
                                             # only trims what is left
-    DEPLOY_LATE: bool = False               # aim long on brakes held at
+    DEPLOY_LATE: bool = True                # aim long on brakes held at
                                             # DEPLOY_MIN_DEG, then open them to
                                             # DEPLOY_MAX_DEG at the altitude
                                             # that lands on the pad (solved
@@ -578,10 +578,10 @@ class Config:
     GEAR_ACTION_GROUP: int = 0              # extra AG to fire with the legs;
                                             # 0 = none (this booster's gear is
                                             # on the stock Gear group)
-    GEAR_TIMED: bool = False                # cycle the legs once early in the
+    GEAR_TIMED: bool = True                 # cycle the legs once early in the
                                             # coast to time them, then drop
                                             # them this long before touchdown:
-    GEAR_LEAD_FACTOR: float = 2.0           # ... x the measured deploy time
+    GEAR_LEAD_FACTOR: float = 1.25          # ... x the measured deploy time
     GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear
     GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this

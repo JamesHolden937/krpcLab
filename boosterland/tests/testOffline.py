@@ -1153,6 +1153,8 @@ class TestCorrectionAltitudeWindow(unittest.TestCase):
         run = object.__new__(autoland_module.Autoland)
         run.cfg = Config()
         run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
+        run.late_state = "handed"       # the brakes and legs are not being
+        run.gear_timing = "done"        # measured: the window alone decides
         snap = SimpleNamespace(max_accel=18.0, landing_height=height)
         prediction = SimpleNamespace(time_to_land=120.0)
         return run, snap, prediction
@@ -1600,6 +1602,8 @@ class TestCorrectionRetirement(unittest.TestCase):
         run = object.__new__(autoland_module.Autoland)
         run.cfg = Config()
         run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
+        run.late_state = "handed"       # the brakes and legs are not being
+        run.gear_timing = "done"        # measured: the window alone decides
         run.cfg.CORRECTION_RETIRE_ON_BACKFIRE = retire
         run.cfg.CORRECTION_ABORT_GRACE_S = 3.0
         run.corrections = 1
