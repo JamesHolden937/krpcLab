@@ -1317,7 +1317,7 @@ class Autoland:
             except Exception:                           # noqa: BLE001
                 pass
         if self.slew_accel is None:
-            return self.cfg.LANDING_SLEW_MIN_DEG_S
+            return None             # no torque read yet: an unknown is no limit
         return max(math.degrees(self.slew_accel * throttle)
                    * self.cfg.LANDING_SLEW_SHARE,
                    self.cfg.LANDING_SLEW_MIN_DEG_S)
@@ -1368,10 +1368,12 @@ class Autoland:
                            throttle / math.cos(math.radians(tilt)))
         self.set_throttle(throttle)
         direction = steer.direction
-        if self.cfg.LANDING_SLEW_SHARE > 0.0:
+        rate = (self.burn_slew_rate(snap)
+                if self.cfg.LANDING_SLEW_SHARE > 0.0 else None)
+        if rate is not None:
             direction = guidance.slew(
                 self.burn_cmd, direction,
-                self.burn_slew_rate(snap) * max(0.0, snap.ut - self.burn_cmd_ut))
+                rate * max(0.0, snap.ut - self.burn_cmd_ut))
         self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
         self.aim(direction, snap)
 

@@ -518,12 +518,16 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
-    LANDING_SLEW_SHARE: float = 0.0         # s: the burn's command moves at most
+    LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second
-                                            # (0 = unslewed); see burn_slew_rate
-    LANDING_SLEW_MIN_DEG_S: float = 5.0     # floor, and the rate before the
-                                            # first torque read
+                                            # (0 = unslewed); see burn_slew_rate.
+                                            # slew2-1017 v unslewed: qs_hot miss
+                                            # mean 13 v 30, worst 25 v 66, burn
+                                            # err 15 v 50 deg; heavy err 7 v 37,
+                                            # worst 90 v 112 but median 56 v 32
+    LANDING_SLEW_MIN_DEG_S: float = 5.0     # floor under the slew rate (none is
+                                            # applied before a torque is read)
     LANDING_DIVERT_GAIN: float = 0.12       # degrees of tilt per metre of miss
     LANDING_THROTTLE_GAIN: float = 6.0      # m/s^2 of trim per m/s of speed
                                             # error; the throttle is this over

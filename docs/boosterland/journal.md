@@ -1,5 +1,77 @@
 # boosterland journal
 
+## Session, 2026-10-17 afternoon: the heavy's burn spin, roll held all flight, the burn's command whip
+
+All batches 1x, aim bias 0, `logs/rot-<tag>.txt`, 12 a cell unless said.
+The user asked: why not keep the other engine sets off until the current one
+is saturated; force roll throughout the flight; make the flips to and from
+boostback pure pitch through the vertical.
+
+- **Staggered throttle**: the code already fills one group to full before
+  the next lights (`engines.allocate`); the how-it-works figure made it look
+  otherwise (demand is a share of the *whole* cluster). New telemetry `eng=`
+  (each group's delivered thrust, of its maximum) confirms it in game
+  (diag1-1017): `0.94/0.37/0.00`, `0.94/0.09/0.00`. 0.94 = sea-level thrust
+  over the vacuum figure the allocation divides by. Figure redrawn.
+- **The heavy spun in the landing burn** (diag2-1017, new `r=` roll rate,
+  `in=` inputs, `w=` nose rate): 85-257 deg/s through the whole burn.
+  kRPC credits the cluster ~0 roll torque (0.006 kN m unlit, 0.155 lit) and
+  tunes roll gains 1e3-1.7e5; the off-axis Vectors' gimbals roll it hard.
+  The coast had left roll uncontrolled (kRPC's `roll_threshold` 5 deg, the
+  coast flies 6-10 deg off) and 142 deg off by ignition, so the engines lit
+  with roll pinned: 0 -> 200 deg/s in 1.3 s (LOG11353), coning, tip-over.
+- **`GIMBAL_ROLL_OFF`** (`ModuleGimbal.enableRoll`, field id, verified to
+  stick), groll1-1017 heavy: burn spin 0 v 258 deg/s, miss median 20 v 58,
+  touchdown 5.8 v 8.7 m/s, > 10 m/s 1 v 4. **Promoted.** qs_hot (one
+  on-axis engine) unaffected, as it must be.
+- **Forcing roll** (hold1, tr1, seed1-1017). Four things stood in the way:
+  1. kRPC's `roll_threshold` (5 deg): above it roll is not controlled.
+     `ROLL_THRESHOLD_DEG` 180.
+  2. The roll reference kept the roof "up" through a flip over the top,
+     which physically carries it down: a half roll commanded mid-flip.
+     `ROLL_TRANSPORT`: the last roof carried by the nose's own rotation
+     (`guidance.transport_roof`); qs_hot coast roll error after the flip
+     82 -> 2 deg.
+  3. The seed ("roof away from the body") was 90-170 deg from the roll the
+     saves separate in. `ROLL_SEED_ACTUAL`: the side nearest the vehicle's.
+  4. With gimbal roll off the heavy has no roll actuator (RCS 0.15 kN m:
+     input pinned 15 s, ~1 deg/s). `GIMBAL_ROLL_UNTIL_BURN`: gimbal roll
+     through boostback (it rolled 109 -> 1 deg in 4 s, LOG11353), off at the
+     landing burn.
+  Plus `ROLL_PLANE_MIN_HS_MPS` 5 (the roof carried, not re-taken from the
+  plane of the last few m/s of drift). seed1-1017, all v defaults: heavy
+  roll error boostback/coast/burn median 0/21/26 v 111/95/96 deg; qs_hot
+  burn p90 6 v 147; miss mean 33 v 43 heavy, 39 v 56 qs_hot, worst 101 v
+  115, 80 v 212. **All promoted.** The heavy's remaining coast roll error is
+  drift with no actuator.
+- **Flips through the vertical** (`guidance.flip_through_vertical`, now what
+  `FLIP_VIA_VERTICAL` flies; the great-circle `flip_waypoint` deleted): two
+  pitches, up in the nose's vertical plane to the zenith tilted 10 deg toward
+  the target, then down in the target's. In game the coast flip is pinned
+  pitch, roll and yaw input ~0. Accuracy alone: not separable from scatter
+  (heavy flip arms 32, 48 v defaults 42, 20 in two batches).
+- **Measuring roll mid-flip**: `roll=` projects the commanded roof onto the
+  plane of the *actual* nose, meaningless while the nose is 90 deg from its
+  command -- the "178 deg in every flip" of three summaries was that. Read
+  roll error on ticks with err < 5, and the roll rate.
+- **The gimbal delivers what kRPC credits** (torqueprobe, qs_hot in the air,
+  pitch/yaw pinned +1 and -1 so the background rotation cancels): 91-93% at
+  throttle 0.3 and 1.0 (0.62 v 0.68, 2.09 v 2.28 rad/s^2). Not authority.
+- **The single-engine burn tip is the command whipping** (cmd1-1017, new
+  `cv=` command off vertical, `cw=` command rate): in the last 60 m the
+  command swung 57-115 deg/s across 30 deg (retrograde in a 15 deg cone plus
+  a 15 deg velocity tilt whose 4/t_go gain saturates and reverses with the
+  sideways speed); the vehicle chased it into a ~3 s limit cycle at
+  throttle ~0.3.
+- **`LANDING_TOTAL_TILT`** (15 deg on the whole command), slew1-1017:
+  heavy median 62 v 25 m -- takes divert authority. Deleted.
+- **`LANDING_SLEW_SHARE`** (the command moves at most share x the vehicle's
+  angular acceleration per second), slew1-1017 at 0.5 read once a second:
+  heavy max burn err 13 v 39 deg, touchdown 3.8 v 6.0, worst 54 v 119 m;
+  qs_hot barely bit (command still 80 deg/s at 46 m in LOG11667, destroyed)
+  because the full-thrust rate outlived the throttle cut. Now scaled by each
+  tick's throttle.
+
 ## Session, 2026-10-16/17 night: the paired flags promoted, the landing burn's attitude
 
 All batches 1x, aim bias 0, `logs/rot-<tag>.txt`. The user asked to keep
