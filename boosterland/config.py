@@ -566,6 +566,16 @@ class Config:
                                             # burn's whole command narrows
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # ... to this at the ground; see
                                             # guidance.terminal_command
+    LANDING_RCS_TRANSLATE: bool = False     # below LANDING_UPRIGHT_ALT_M the
+                                            # cone holds the nose within 2-4
+                                            # deg of vertical and nothing nulls
+                                            # the drift: 9 -> 20 m from the pad
+                                            # in the last 30 m, hs 1.4 -> 3.7
+                                            # (LOG12618).  Translate on the
+                                            # RCS against the horizontal speed
+                                            # and the offset from the pad
+    LANDING_RCS_TRANSLATE_TAU_S: float = 3.0   # offset closed over this long
+    LANDING_RCS_TRANSLATE_FULL_MPS: float = 1.0  # full input at this error
     LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second

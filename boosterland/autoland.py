@@ -390,6 +390,7 @@ class Autoland:
         self.trim_off = False           # ... the check failed twice
         self.trim_run = None            # (ut, |cross|, side) of this push
         self.trim_cmd = (0.0, 0.0, 0.0)  # right, forward, up last sent
+        self.hover_logged = False       # LANDING_RCS_TRANSLATE has said so
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
@@ -1058,6 +1059,33 @@ class Autoland:
             self.send_translation((0.0, 0.0, 0.0))
             return
         # Vessel frame x right, y nose, z bottom; Control.up pushes roofward.
+        self.send_translation((body[0], body[1], -body[2]))
+
+    def run_landing_translate(self, snap):
+        """Hold the stood-up burn over the pad on the RCS thrusters.
+
+        Below ``LANDING_UPRIGHT_ALT_M`` the cone stands the nose up and the
+        engines can no longer steer, so the drift the residual tilt makes
+        (0.5 m/s^2 at 3 deg near hover) went unopposed.  The valve is
+        already held open for the burn; this only adds the translation
+        axes, mapped as the coast's trim maps them.
+        """
+        if (snap.legs_altitude > self.cfg.LANDING_UPRIGHT_ALT_M
+                or not self.rcs_permitted):
+            self.send_translation((0.0, 0.0, 0.0))
+            return
+        pad = getattr(self.env, "pad", self.env.target)
+        world = guidance.hover_translation(snap.position, snap.velocity,
+                                           pad, self.cfg)
+        body = (body_vector(snap, vec.scale(world, self.trim_sign))
+                if world is not None else None)
+        if body is None:
+            self.send_translation((0.0, 0.0, 0.0))
+            return
+        if not self.hover_logged:
+            self.hover_logged = True
+            self.log.event(snap.ut, "rcs hover: translating at legs %.0f m"
+                           % snap.legs_altitude)
         self.send_translation((body[0], body[1], -body[2]))
 
     def long_is_free(self, snap):
@@ -1828,6 +1856,8 @@ class Autoland:
                 rate * max(0.0, snap.ut - self.burn_cmd_ut))
         self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
         self.aim(direction, snap)
+        if self.cfg.LANDING_RCS_TRANSLATE:
+            self.run_landing_translate(snap)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),
@@ -2052,7 +2082,7 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
-        if self.state != COAST and any(self.trim_cmd):
+        if self.state not in (COAST, LANDING_BURN) and any(self.trim_cmd):
             self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
             self.time_gear(snap)

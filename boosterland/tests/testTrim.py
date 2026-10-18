@@ -108,6 +108,21 @@ class TestLongIsFree(unittest.TestCase):
         self.assertTrue(self.run_for(None, DEPLOY_LATE=False))
 
 
+class TestHoverTranslation(unittest.TestCase):
+    def test_pushes_against_drift_and_offset(self):
+        cfg = Config()
+        pad = (R, 0.0, 0.0)
+        r = (R + 20.0, 6.0, 0.0)            # 6 m off along +y, 20 m up
+        v = (-5.0, 0.0, 1.0)                # descending, drifting +z
+        cmd = guidance.hover_translation(r, v, pad, cfg)
+        self.assertLess(cmd[1], 0.0)        # back toward the pad
+        self.assertLess(cmd[2], 0.0)        # against the drift
+        self.assertAlmostEqual(cmd[0], 0.0, places=9)   # no vertical part
+        self.assertAlmostEqual(vec.norm(cmd), 1.0, places=6)
+        self.assertIsNone(guidance.hover_translation(
+            (R + 20.0, 0.0, 0.0), (-5.0, 0.0, 0.0), pad, cfg))
+
+
 class TestBodyVector(unittest.TestCase):
     def test_round_trip_through_the_attitude(self):
         q = vec.quat_axis_angle(vec.unit((1.0, 2.0, 0.5)), 1.1)

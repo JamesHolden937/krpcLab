@@ -113,6 +113,22 @@ def rcs_trim_command(cross, left, cfg, long=None, along=None):
     return vec.scale(miss, -level / size)
 
 
+def hover_translation(r, v, pad, cfg):
+    """World-frame translation (length 0..1) that nulls the horizontal
+    speed and walks the offset from ``pad`` to zero over
+    ``LANDING_RCS_TRANSLATE_TAU_S``; None inside 0.05 m/s of nothing."""
+    up = vec.unit(pad)
+    speed = vec.project_out(v, up)
+    offset = vec.project_out(vec.sub(r, pad), up)
+    tau = max(cfg.LANDING_RCS_TRANSLATE_TAU_S, 0.1)
+    want = vec.scale(vec.add(speed, vec.scale(offset, 1.0 / tau)), -1.0)
+    size = vec.norm(want)
+    if size < 0.05:
+        return None
+    level = min(1.0, size / max(cfg.LANDING_RCS_TRANSLATE_FULL_MPS, 1e-6))
+    return vec.scale(want, level / size)
+
+
 def _tilt_from_retrograde(env, r, v, miss, max_tilt_deg, gain):
     """Retrograde, tilted to push the predicted landing point onto the pad."""
     retrograde = vec.unit(vec.scale(v, -1.0))
