@@ -1042,6 +1042,7 @@ class TestTerminalOnPrediction(unittest.TestCase):
         # vertical, and the cone alone would land it leaning 15.
         r, v = state_above_pad(3.0, (-2.5, 0.0, 2.0))
         up = vec.unit(r)
+        saved = self.cfg.LANDING_UPRIGHT_ALT_M
         self.cfg.LANDING_UPRIGHT_ALT_M = 0.0
         loose = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
                                           self.cfg)
@@ -1052,7 +1053,7 @@ class TestTerminalOnPrediction(unittest.TestCase):
                                             self.cfg)
         self.assertLessEqual(vec.angle_between(upright.direction, up),
                              2.0 + 0.1 * 28.0 + 1e-6)
-        self.cfg.LANDING_UPRIGHT_ALT_M = 0.0
+        self.cfg.LANDING_UPRIGHT_ALT_M = saved
 
     def test_the_tilt_is_bounded(self):
         r, v = state_above_pad(1000.0, (-200.0, 0.0, 10.0))

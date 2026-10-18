@@ -527,7 +527,7 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
-    LANDING_UPRIGHT_ALT_M: float = 0.0      # leg height below which the
+    LANDING_UPRIGHT_ALT_M: float = 50.0     # leg height below which the
                                             # burn's whole command narrows
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # ... to this at the ground; see
                                             # guidance.terminal_command
