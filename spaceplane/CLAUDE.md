@@ -71,17 +71,13 @@ found on the propagated orbit, `warp_to` takes the game there, SAS turns to
 inclined orbit and never committed, LOG9598), and the coast `warp_to`s
 its release.
 
-Off, built, unflown on the farm: `ABORT_NORTH` (every divert goes north;
-sim: 8/8 stopped 158-197 m north) and `GROUND_SPOILER_ON_NOSE` (the
-touchdown bounce at 68-76 m/s, 3 of 5 breakups).  Open: an inc-orbit
+Open: the touchdown bounce at 68-76 m/s (3 of 5 breakups); an inc-orbit
 glide energy deficit (one ~8-10 km short per 24, both arms); two
 low-speed rollouts that ran off the edge.
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md): fly `ABORT_NORTH` and
-`GROUND_SPOILER_ON_NOSE` on the farm and promote or delete; the inc glide
-energy deficit; then `docs/spaceplane/constantsAudit.md` top-down.
+The root [HANDOFF.md](../HANDOFF.md): the inc glide energy deficit; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
@@ -135,7 +131,9 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 `HAC_WRAP_BEFORE_GATE`, `HAC_CHOOSE_BY_ENERGY`, `HAC_WEAVE_HELD`,
 `HAC_WEAVE_STRAIGHT_ONLY`, the cone flap-brake variants, `PROPELLANT_TRIM*`,
 `AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`, `GLIDE_ENERGY_AIM`, `HAC_ENTRY_DERIVED`,
-`HAC_BANK_FROM_LIFT`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`.
+`HAC_BANK_FROM_LIFT`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`;
+2026-10-18, unflown or never re-flown: `HAC_SHORT_POLAR`, `AIRBRAKE_CACHE`,
+`GROUND_SPOILER_ON_NOSE`.
 
 ## Commands
 

@@ -92,7 +92,7 @@ class Probe:
     velocity to evaluate at, so this costs nothing, and what it buys is that
     the angle of attack and the roll of the airflow are both exactly what was
     asked for rather than whatever a quaternion convention left behind.  It is
-    the opposite trade from ``DRAG_PROBE_AXIAL``, which also moved the
+    the opposite trade from boosterland's retired axial probe, which also moved the
     airflow but did so to a direction with no physical meaning -- zero angle
     of attack along whatever way the booster happened to point.  Here every
     direction asked about is a real attitude the aircraft can be in.

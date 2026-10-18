@@ -68,7 +68,6 @@ class Environment:
         self._curve = [None] * self._bins
         self._clean = [False] * self._bins   # bin measured at a descent attitude
         self._samples = [0] * self._bins     # how far past warm-up each bin is
-        self._rotation_warned = False
         self.diag_probe = None          # (mach, real, descent, aoa)
         self._curve_machs = []          # sorted, filled bins only
         self._curve_areas = []
@@ -404,55 +403,13 @@ class Environment:
         return vec.scale(position, (self.equatorial_radius + altitude) / radius)
 
     def probe_rotation(self, rotation, velocity, nose):
-        """The attitude to evaluate the aerodynamic probe at.
+        """The attitude to evaluate the aerodynamic probe at: the real one.
 
-        Returns ``(rotation, clean)``.
-
-        ``sample_is_clean`` refuses samples taken at the wrong attitude, which
-        keeps the curve honest but cannot help the decision that most needs
-        it: boostback's exit is taken *during* boostback, before any bin has
-        ever been probed at a descent attitude, so it still reads a curve
-        written broadside.  In LOG53 that is the whole 620 m -- boostback
-        stopped on a prediction of 773 m from the pad that was really 113 m,
-        and only the aim bias made up the difference.
-
-        So rather than wait for the vehicle to fly the attitude, turn it: the
-        probe is asked about the *same vessel* rotated along the shortest arc
-        that puts its nose on retrograde, which is where the nose sits all the
-        way down.  ``simulate_aerodynamic_force_at`` takes the attitude to
-        evaluate at, so this costs nothing extra -- it is the same call with a
-        different quaternion, and the whole curve is still probed from one
-        position.
-
-        This is not ``DRAG_PROBE_AXIAL``, which measured worse in game and is
-        still off by default.  That one kept the real attitude and moved the
-        *airflow* onto the vessel's axis, which is a zero angle of attack in
-        whichever direction the booster happened to be pointing -- nose-first
-        during the coast, and this booster falls engines-first behind its grid
-        fins.  It read 10.8-14.2 m^2 where the vehicle really had 17.4-18.8,
-        and the flight landed 3.3 km short.  Here the airflow stays exactly
-        where it really is and the *vessel* is turned to meet it the way the
-        descent will.
-
-        ``vec.rotation_onto`` returns ``None`` if it cannot verify its own
-        answer -- kRPC's frames are left-handed and the quaternion convention
-        is not something to assume -- and then this falls back to the real
-        attitude and the sample is judged by ``sample_is_clean`` as before.
+        Returns ``(rotation, clean)``, ``clean`` from ``sample_is_clean``.
+        Probing the vessel turned onto retrograde instead (the attitude the
+        descent is flown at) lost 3 of 4 heavy boosters in game (pd10-1016).
         """
-        if not self.cfg.DRAG_PROBE_DESCENT or nose is None:
-            return tuple(rotation), self.sample_is_clean(velocity, nose)
-        if vec.norm(velocity) < 1e-6:
-            return tuple(rotation), self.sample_is_clean(velocity, nose)
-        retrograde = vec.scale(vec.unit(velocity), -1.0)
-        turned = vec.rotation_onto(rotation, nose, retrograde)
-        if turned is None:
-            if not self._rotation_warned:
-                self._rotation_warned = True
-                self.logbook.event(
-                    0.0, "descent-attitude probe unavailable: could not verify "
-                         "a rotation onto retrograde; using the real attitude")
-            return tuple(rotation), self.sample_is_clean(velocity, nose)
-        return turned, True
+        return tuple(rotation), self.sample_is_clean(velocity, nose)
 
     def in_descent_configuration(self, velocity, nose):
         """Is the vehicle sitting the way it will sit all the way down?
@@ -549,10 +506,8 @@ class Environment:
 
         The probe turns the *vessel* to an attitude ``AERO_STEER_PROBE_AOA_DEG``
         off retrograde, in the plane the steering is flown in, and leaves the
-        airflow exactly where it really is -- the same construction
-        ``probe_rotation`` uses, and for the same reason (see
-        ``DRAG_PROBE_AXIAL``, which did it the other way round and flew the
-        booster into the sea).
+        airflow exactly where it really is (moving the airflow instead, see
+        ``probe_direction``, flew the booster into the sea).
 
         The answer is reduced to ``Cl*A per radian squared`` along
         ``+cross(n, v)``, the same basis ``trajectory.Steer`` applies it in,
@@ -795,55 +750,12 @@ class Environment:
                            speed, at, rotation)
 
     def probe_direction(self, velocity, nose):
-        """Which way the airflow should come from, for a probe.
+        """Which way the airflow comes from, for a probe: the real velocity.
 
-        ``simulate_aerodynamic_force_at`` evaluates the vessel at the attitude
-        it is given, so a probe taken with the real velocity measures Cd*A *at
-        the angle of attack the booster currently happens to hold*.  That is
-        not a property of the vehicle, and it is not the number the propagator
-        wants: the descent is flown nose-retrograde, at no angle of attack at
-        all.  Boostback holds the booster broadside to a steep airstream for a
-        minute, and every bin probed during it -- the transonic bins included,
-        because that is where boostback ends -- was being written with a
-        side-on area and then used to fly a nose-on descent.
-
-        Two real flights from the *same* quicksave measured the same curve
-        shape 20% apart at every Mach (LOG4 against LOG6), which is worth
-        about a kilometre at the pad: over-stated drag lands the prediction
-        short, so boostback burns too long and the booster flies past.  LOG6
-        crossed 41 m from the pad at 8.3 km and sailed on to 1220 m.
-
-        Taking the airflow along the vessel's own axis instead -- a zero
-        angle of attack probe, independent of what the booster is doing when
-        the sample is taken -- is what this exists to do, and it **measured
-        worse in game, so it defaults off**.
-
-        LOG11 flew it: boostback ended clean at ``miss=145``, the coast then
-        opened to 1272 m by 2926 and 3823 m by the landing burn, and the
-        booster fell 3.3 km short into the sea.  Against a 137/135/145 m
-        baseline over three flights from the same quicksave.  The axial probe
-        read ``cda`` 10.8-14.2 where the same vehicle at the same Mach read
-        17.4-18.8 with the ordinary probe: it under-states the drag, so the
-        propagation flies the booster further than it goes, boostback stops
-        short of the burn it needed, and the real vehicle lands short.
-
-        The reasoning was half right and that is the useful part.  Probing at
-        the current attitude *is* wrong during boostback, which holds the
-        vehicle broadside for a minute.  But it is *right* during the coast,
-        which is most of the flight and all of the part being predicted --
-        the booster really is descending retrograde by then.  And zero angle
-        of attack is not what it descends at either: the grid fins are out,
-        the coast attitude carries a deliberate bias, and retrograde is only
-        ever approximately held.  The honest fix for the boostback samples is
-        to reject them, not to replace every sample with a fiction; that is
-        untried and is the next thing to measure.
-
-        Set ``DRAG_PROBE_AXIAL`` True to fly it anyway.
+        Moving the airflow onto the vessel's axis instead (zero angle of
+        attack in whatever direction it points) read 10.8-14.2 m^2 where the
+        booster had 17.4-18.8, and the flight landed 3.3 km short.
         """
-        if nose is not None and self.cfg.DRAG_PROBE_AXIAL:
-            axis = vec.unit(nose)
-            if vec.norm(axis) > 0.5:            # a real direction, not (0,0,0)
-                return vec.scale(axis, -1.0)    # flow comes at the nose
         return vec.unit(velocity)
 
     def curve_bins(self):

@@ -180,14 +180,10 @@ class TestClosedLoop(unittest.TestCase):
                         "hit at %.1f m/s" % vessel.impact_speed)
 
     def test_the_flip_starts_during_the_separation_coast(self):
-        """Turning and drifting at once, not one then the other.
+        """Turning and drifting at once while the clearance scan holds.
 
-        The booster recedes from the pad at hundreds of m/s through the flip,
-        so the seconds cost downrange the burn then has to undo.  Overlapping
-        the turn with the separation coast is nearly free and, for a
-        slow-turning vehicle, worth kilometres.  It is off by default because
-        an unpowered flip at separation speed is not controllable on a real
-        booster; this covers the option, not the default.
+        Once something is in the way the choice is an unpowered flip or no
+        flip, and no flip leaves the booster broadside in the airstream.
         """
         vessel = self.make_booster(slew=8.0)
         conn = fakeksp.install(vessel)
@@ -198,7 +194,6 @@ class TestClosedLoop(unittest.TestCase):
         from boosterland import autoland
 
         cfg = Config()
-        cfg.SEPARATION_PRETURN = True
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
@@ -1213,7 +1208,6 @@ class TestSeparationClearance(unittest.TestCase):
             fakeksp._add(vessel.r, fakeksp._scale(behind, 25.0)),
             fakeksp._add(vessel.v, fakeksp._scale(behind, 3.0))))
         cfg = Config()
-        self.assertFalse(cfg.SEPARATION_PRETURN, "this covers the default")
         run, log = self.start(vessel, conn, cfg)
         held = vessel.pointing
         end = self.advance(run, conn, vessel, 30.0)

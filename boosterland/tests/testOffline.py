@@ -1595,42 +1595,32 @@ class TestTerminalVelocityNulling(unittest.TestCase):
         self.assertLess(lean[2], 0.0, "leaned away from the overshoot")
 
 
-class TestCorrectionRetirement(unittest.TestCase):
-    """A backfire is evidence about the phase, not just about the burn."""
+class TestCorrectionBackfire(unittest.TestCase):
+    """A burn that makes the miss worse is ended, and the phase may re-enter."""
 
-    def make_run(self, retire):
+    def make_run(self):
         run = object.__new__(autoland_module.Autoland)
         run.cfg = Config()
         run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
         run.late_state = "handed"       # the brakes and legs are not being
         run.gear_timing = "done"        # measured: the window alone decides
-        run.cfg.CORRECTION_RETIRE_ON_BACKFIRE = retire
         run.cfg.CORRECTION_ABORT_GRACE_S = 3.0
         run.corrections = 1
-        run.correction_retired = False
         run.correction_ready_ut = 0.0
         run.correction_start_miss = 200.0
         run.phase_start_ut = 0.0
         return run
 
     def test_a_backfire_is_recognised_after_the_grace_period(self):
-        run = self.make_run(True)
+        run = self.make_run()
         # Inside the grace period a burn is allowed to give ground: it has to
         # swing the nose round before it takes any.
         self.assertFalse(run.correction_making_it_worse(1.0, 900.0))
         self.assertTrue(run.correction_making_it_worse(10.0, 900.0))
         self.assertFalse(run.correction_making_it_worse(10.0, 210.0))
 
-    def test_retirement_blocks_further_corrections(self):
-        run = self.make_run(True)
-        run.correction_retired = True
-        snap = _snapshot_for_correction()
-        self.assertFalse(run.correction_worthwhile(snap, _prediction(), 5000.0),
-                         "corrected again after retiring")
-
-    def test_without_the_flag_the_phase_may_re_enter(self):
-        run = self.make_run(False)
-        run.correction_retired = False
+    def test_the_phase_may_re_enter(self):
+        run = self.make_run()
         snap = _snapshot_for_correction()
         run.correction_gradient = lambda *a: 99.0
         self.assertTrue(run.correction_worthwhile(snap, _prediction(), 5000.0))

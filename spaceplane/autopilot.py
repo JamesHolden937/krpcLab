@@ -435,9 +435,6 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
-        self.env.flown_polar = None
-        if cfg.HAC_SHORT_POLAR:
-            self._load_flown_polar(ut)
         # ``GLIDE_TAEM_ENERGY`` / ``_ALPHA``: set by the glide below
         # ``GLIDE_TAEM_MACH``, ``None`` everywhere else.
         self.env.taem = None
@@ -526,7 +523,6 @@ class Autopilot:
         self.sas_hold = False       # DEORBIT_SAS_ALIGN: SAS has the attitude
         self.node_normal_sign = None    # the burn node's, from a read-back
         self._load_capped = False       # HAC_LOAD_MAX binding last tick
-        self._short_polar = False       # HAC_SHORT_POLAR binding last tick
         self.sas_node = None
         self.sas_since = None
         self.sas_aligned_prev = False
@@ -1912,8 +1908,6 @@ class Autopilot:
         grounded = self.main_wheels_grounded()
         if not (landed or grounded):
             return
-        if self.cfg.GROUND_SPOILER_ON_NOSE and not self.nose_down(snap):
-            return
         self._ground_spoiler_done = True
         brake = None or getattr(
             self, "flap_brake", None)
@@ -1951,10 +1945,7 @@ class Autopilot:
                      "deploy angle read back %s"
             % (getattr(brake, "kind", "spoiler"), "out" if ok else "FAILED",
                vec.norm(snap.velocity),
-               ("nose down %.1f s after main contact"
-                % (snap.ut - self._spoiler_wait_since)
-                if self.cfg.GROUND_SPOILER_ON_NOSE else
-                "main wheels grounded" if grounded else "rollout"),
+               "main wheels grounded" if grounded else "rollout",
                len(brake.surfaces()), "/".join(readback) or "-"))
 
     def release_reaction_wheels(self, ut):
@@ -2051,26 +2042,6 @@ class Autopilot:
         if nose is not None and nose_target > 0.0:
             self.logbook.event(ut, "nose gear: %s: %s" % (
                 nose.part.title, self._set_friction(nose, nose_target)))
-
-    def nose_down(self, snap):
-        """``GROUND_SPOILER_ON_NOSE``: True once the nose wheel reports
-        grounded, or ``GROUND_SPOILER_NOSE_TIMEOUT_S`` after the first main
-        contact this asks about (a wheel that cannot say must not hold the
-        spoiler in for good)."""
-        since = getattr(self, "_spoiler_wait_since", None)
-        if since is None:
-            since = self._spoiler_wait_since = snap.ut
-        if snap.ut - since >= float(self.cfg.GROUND_SPOILER_NOSE_TIMEOUT_S):
-            return True
-        if not hasattr(self, "_nose_wheel_cache"):
-            self._nose_wheel_cache = self._nose_wheel()
-        nose = self._nose_wheel_cache
-        if nose is None:
-            return True
-        try:
-            return bool(nose.grounded)
-        except Exception:                               # noqa: BLE001
-            return True
 
     def _nose_wheel(self):
         """The frontmost wheel, by the rule ``_brake_wheels`` excludes it by."""
@@ -2355,17 +2326,6 @@ class Autopilot:
         self._brake_measured = True
         if snap.dynamic_pressure > 1.0:
             self.flap_brake = None
-            # ``AIRBRAKE_CACHE``: the set this craft measured in vacuum on an
-            # earlier flight, matched part by part.
-            cached = (self._load_brake_cache()
-                      if getattr(self.cfg, "AIRBRAKE_CACHE", False) else None)
-            if cached is not None:
-                self.flap_brake = cached
-                self.flap_set = None
-                self.logbook.event(snap.ut, "brake (measured): engaged in the "
-                                            "air -- armed from the cache: "
-                                            "%s" % cached.describe())
-                return
             self.logbook.event(snap.ut, "brake (measured): engaged in the air "
                                         "(q=%.0f Pa) -- not measured, not "
                                         "armed" % snap.dynamic_pressure)
@@ -2462,79 +2422,6 @@ class Autopilot:
             return
         self.flap_brake = spoiler
         self.flap_set = flaps
-        if spoiler is not None:
-            self._save_brake_cache(spoiler)
-
-    # -- the measured brake, kept between flights ---------------------------
-    #
-    # **A save that starts in the air has never had a brake.**  The probe
-    # needs vacuum, so every cone and final-approach save flew without the
-    # one spender the cone's surplus logic is written around, and a flag
-    # tested from those saves was disconnected (sav-spend-1006).  The set is
-    # a property of the craft, not the flight: key it on the surfaces and
-    # reuse it.
-
-    def _brake_cache_path(self, records):
-        import hashlib
-        names = sorted("%s@%.1f,%.1f,%.1f" % ((r.title,) + tuple(r.position))
-                       for r in records)
-        key = hashlib.sha1("|".join(names).encode()).hexdigest()[:12]
-        root = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__))), "logs", "brakecache")
-        return os.path.join(root, key + ".json")
-
-    @staticmethod
-    def _record_id(record):
-        return "%s@%.1f,%.1f,%.1f" % ((record.title,) + tuple(record.position))
-
-    def _save_brake_cache(self, brake):
-        try:
-            import json
-            records = self._surface_records() or []
-            if not records or not getattr(brake, "parts", None):
-                return
-            path = self._brake_cache_path(records)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            data = {
-                "parts": [[self._record_id(r), sense, dl, dm]
-                          for r, sense, dl, dm in brake.parts],
-                "gains": list(brake.gains),
-                "kind": getattr(brake, "kind", "spoiler"),
-                "verified_lift": getattr(brake, "verified_lift", None),
-                "verified_deg": getattr(brake, "verified_deg", None),
-            }
-            with open(path, "w") as fh:
-                json.dump(data, fh)
-        except Exception:                               # noqa: BLE001
-            pass
-
-    def _load_brake_cache(self):
-        try:
-            import json
-            records = self._surface_records() or []
-            if not records:
-                return None
-            path = self._brake_cache_path(records)
-            if not os.path.exists(path):
-                return None
-            with open(path) as fh:
-                data = json.load(fh)
-            by_id = dict((self._record_id(r), r) for r in records)
-            parts = []
-            for rid, sense, dl, dm in data["parts"]:
-                if rid not in by_id:
-                    return None
-                parts.append((by_id[rid], sense, dl, dm))
-            brake = airbrake_mod.MeasuredBrake(
-                [], 0.0, 0.0, reasons=("cached",), parts=parts
-            ).with_gains(*data["gains"])
-            brake.kind = data.get("kind", "spoiler")
-            if data.get("verified_lift") is not None:
-                brake.verified_lift = data["verified_lift"]
-                brake.verified_deg = data["verified_deg"]
-            return brake
-        except Exception:                               # noqa: BLE001
-            return None
 
     def deploy_set(self, surface_set, out, base_deg=None):
         """Deploy or stow any measured set (spoiler or flaps)."""
@@ -3459,32 +3346,6 @@ class Autopilot:
                                "%.1f m/s at UT %.0f, %.1f deg off retrograde"
                            % (mode, dv, node_ut,
                               vec.angle_between(snap.nose, retro)))
-
-    def _load_flown_polar(self, ut):
-        """``HAC_SHORT_POLAR``: this craft's flown cone polar from
-        ``logs/conepolar/`` (``tools/conepolar.py``), and say so."""
-        try:
-            import json
-            import re
-            key = "%s|%d" % (self.vessel.name, len(self.vessel.parts.all))
-            path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "logs", "conepolar",
-                re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_") + ".json")
-            if not os.path.exists(path):
-                self.logbook.event(ut, "flown polar: none for %r (%s)"
-                                   % (key, path))
-                return
-            with open(path) as fh:
-                data = json.load(fh)
-            self.env.flown_polar = data
-            self.logbook.event(
-                ut, "flown polar: %r from %d logs: %s"
-                % (key, data.get("logs", 0),
-                   " ".join("%.0f:%.2f" % (b[0], b[1] / b[2])
-                            for b in data["bins"] if b[2] > 0)))
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(ut, "flown polar: not loaded (%s)" % (exc,))
 
     def load_alpha_cap(self, snap):
         """``HAC_LOAD_MAX``: the highest alpha whose lift stays within that
@@ -5439,13 +5300,6 @@ class Autopilot:
         self.hac_command = command
         self.hac_radius = command.radius
         alpha = min(command.alpha, self.alpha_ceiling)
-        short = getattr(command, "short_alpha", None) is not None \
-            and command.alpha <= command.short_alpha + 1e-6
-        if short != self._short_polar:
-            self._short_polar = short
-            self.logbook.event(snap.ut, "cone short of height: %s" % (
-                "alpha held at %.1f deg off the flown polar (path %.0f m)"
-                % (command.alpha, command.path) if short else "released"))
         cap = self.load_alpha_cap(snap)
         if cap is not None and cap < alpha:
             if not self._load_capped:

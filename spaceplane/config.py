@@ -274,19 +274,6 @@ class Config:
     # node-1011's 16 i90 flights (cone entries 167-313 m/s); unmeasured on
     # a fast entry, which the farm has not produced.
     HAC_LOAD_MAX: float = 3.0
-    # **A cone short of height flies the alpha that stretches it** (node-
-    # 1011: every short landing on the inclined orbits left the cone 0.4-3
-    # km low after flying it at L/D 1.94-2.25 and alpha 8-9, where the good
-    # ones flew 2.25-2.75 at ~7; the flown polar's L/D rises as alpha falls,
-    # 2.05 at 13 deg to 3.13 at 5).  When even the tightest circle is longer
-    # than the path the height pays for (``available``), the cone needs
-    # ``total / available`` times the ratio it is getting: the flown polar
-    # (``logs/conepolar/<craft>.json``, ``tools/conepolar.py``) gives the
-    # alpha below the lift peak that delivers it, and the alpha command is
-    # capped there (at the best bin when even that is short).  No file, no
-    # change.  ``HAC_SHORT_BEST_GLIDE`` (table best-L/D alpha, all or
-    # nothing) was refuted on the sim only, whose subsonic lift is gap 8.
-    HAC_SHORT_POLAR: bool = False
     # Roll out when there is this little turn left, or when the height is
     # gone -- whichever comes first.  The second is not a fallback, it is the
     # floor the cone is flown above: below the low gate's altitude there is
@@ -385,11 +372,6 @@ class Config:
     # when the table is ready.  Off.
     HAC_AIM_DERIVED: bool = True  # default 2026-10-06: rot-weave-1006, rot-aim-1006
     HAC_LADDER_STEP_M: float = 500.0
-    # Arm the measured brake from this craft's last vacuum measurement
-    # when engaged in the air (``Autopilot._load_brake_cache``,
-    # ``logs/brakecache/``, written by every vacuum probe).  Off: an
-    # air-start save has no brake.
-    AIRBRAKE_CACHE: bool = False
     HAC_WEAVE_DEADBAND_M: float = 800.0     # surplus worth weaving for
     # The reversal is on a clock rather than on a cross-track band, because
     # the quantity a band would watch -- the offset from the intended path --
@@ -1512,17 +1494,6 @@ class Config:
     # the rollout currently stops, and it has to be re-cut if that moves.
     ROLLOUT_STOP_RESERVE_M: float = 300.0
     ROLLOUT_SPOILER_DEG: float = 25.0
-    # **The ground spoiler waits for the nose wheel.**  Deployed at main-gear
-    # contact its set pitches the nose up beyond full nose-down elevon at
-    # 65-76 m/s: alpha 2-4 -> 11-15 deg in one tick and the vehicle flies
-    # again, 17-22 m up, and lands the second time at 10-15 m/s of sink
-    # (taemfix-1010: LOG9567, 9578, 9580, three of the five broken
-    # landings).  The bounce scales with airspeed, not sink.  With this on
-    # the spoiler deploys once the nose wheel reports grounded (the nose
-    # gear then holds the moment), or ``GROUND_SPOILER_NOSE_TIMEOUT_S``
-    # after main contact if it never says.
-    GROUND_SPOILER_ON_NOSE: bool = False
-    GROUND_SPOILER_NOSE_TIMEOUT_S: float = 4.0
     # **The attitude to hold on the ground, which ROLLOUT was not holding at
     # all.**  ``run_rollout`` commanded brakes and nosewheel and never called
     # ``aim``, so kRPC's autopilot went on holding whatever the flare had

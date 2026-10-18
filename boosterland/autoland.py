@@ -379,7 +379,6 @@ class Autoland:
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
         self.correction_best_miss = None    # ... and the least it has reached
-        self.correction_retired = False     # a burn backfired; stop trying
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.commanded_throttle = None  # what set_throttle last asked for
@@ -676,16 +675,8 @@ class Autoland:
 
         The engines are off here whatever else happens -- that is the whole
         point of the coast -- so this is the one part of the flip that can
-        only be flown on RCS and reaction wheels.  With
-        ``SEPARATION_PRETURN`` the attitude command is already the boostback
-        aim, which overlaps the turn with a coast that was happening anyway:
-        the vehicle recedes from the pad at several hundred m/s throughout,
-        so every second spent pointed the wrong way is downrange the burn
-        then has to undo (at 900 m/s an 11 s flip buys 10 km of extra work,
-        which is what stretches the burn, ends it lower, and leaves no coast
-        for CORRECTION).
-
-        It defaults off all the same.  An unpowered flip at separation speed
+        only be flown on RCS and reaction wheels.  It turns only while the
+        clearance scan holds the phase.  An unpowered flip at separation speed
         is barely controllable on a real booster -- no gimbal, and aero
         torque fighting back -- and it is what LOG9 looked like from the
         cockpit.  Holding the separation attitude here keeps the whole turn
@@ -733,7 +724,7 @@ class Autoland:
         # no flip, and LOG16 shows what no flip costs: the booster sat
         # broadside at Mach 2.4 with the grid fins deployed and lost an
         # airbrake to the airstream.  Turning while waiting is free.
-        if cfg.SEPARATION_PRETURN or blocker is not None:
+        if blocker is not None:
             self.aim(solution.aim, snap)
 
         self.extra_lines = [
@@ -1448,8 +1439,7 @@ class Autoland:
                                            snap.landing_height)
         return -trajectory.miss_gradient(
             self.env, snap.position, snap.velocity, snap.mass, aim, self.cfg,
-            self.cfg.CORRECTION_PROBE_DV,
-            snap.max_accel if self.cfg.CORRECTION_GRADIENT_POWERED else 0.0)
+            self.cfg.CORRECTION_PROBE_DV, 0.0)
 
     def correction_worthwhile(self, snap, prediction, distance):
         """Is there enough miss, altitude and time left to be worth a burn?
@@ -1480,7 +1470,6 @@ class Autoland:
                 and snap.landing_height <= cfg.CORRECTION_MAX_ALT_M
                 and prediction.time_to_land > cfg.CORRECTION_MIN_TTL_S
                 and self.corrections < cfg.CORRECTION_MAX_BURNS
-                and not self.correction_retired
                 and snap.ut >= self.correction_ready_ut
                 and self.settled_enough_to_correct(snap)
                 and self.correction_gradient(snap, prediction)
@@ -1544,33 +1533,13 @@ class Autoland:
                 or backfiring)
         if done:
             self.set_throttle(0.0)
-            # A backfire retires the phase, it does not merely end the burn.
-            # ``correction_making_it_worse`` bounds one burn; nothing bounded
-            # the *sequence*, and the sequence is where the damage is.  One
-            # qs_hot flight ran eight burns: two that worked (367 -> 38,
-            # 554 -> 62), three that achieved nothing (171 -> 148, 153 -> 157,
-            # 159 -> 193 -- by then the burn's real effect was smaller than
-            # the prediction noise it was chasing), and then three that each
-            # aborted as backfiring and each left the miss worse than they
-            # found it: 238 -> 560 -> 701 -> 1572, landing 1421 m out against
-            # 56 m for the same config on the same save.  Every one of those
-            # last three reported a healthy gradient on every tick.
-            #
-            # So the first backfire is taken as evidence about the phase
-            # rather than about the burn: whatever the gradient says next
-            # time, it has just been wrong by more than the abort ratio, and
-            # re-entering has only ever made things worse.
-            if backfiring and cfg.CORRECTION_RETIRE_ON_BACKFIRE:
-                self.correction_retired = True
             # Let the trajectory (and the drag estimate) settle before judging
             # the miss again, or the phase flaps in and out on prediction noise.
             self.correction_ready_ut = snap.ut + cfg.CORRECTION_COOLDOWN_S
-            self.enter(COAST, snap.ut, "miss=%.0fm burns=%d grad=%.2f%s%s"
+            self.enter(COAST, snap.ut, "miss=%.0fm burns=%d grad=%.2f%s"
                        % (distance, self.corrections, gradient,
                           " BACKFIRING from %.0fm" % self.correction_start_miss
-                          if backfiring else "",
-                          " -- CORRECTION retired" if self.correction_retired
-                          else ""))
+                          if backfiring else ""))
         elif align > cfg.CORRECTION_ALIGN_DEG and self.turning_too_slowly(rate):
             # Still a long way off the aim and not getting there: light the
             # engines anyway, gently, and let the gimbal do the turning.  A

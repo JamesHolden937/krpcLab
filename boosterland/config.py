@@ -39,7 +39,6 @@ class Config:
 
     # --- Sequencing -------------------------------------------------------
     SEPARATION_COAST_S: float = 3.0     # drift before the flip, scan disabled
-    SEPARATION_PRETURN: bool = False    # start the flip during that drift
     SEPARATION_CLEARANCE_SCAN: bool = True  # flip when clear, not on a timer
     SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
@@ -478,13 +477,7 @@ class Config:
     CORRECTION_OVERSHOOT_ONLY: bool = True   # never enter on a short miss
     CORRECTION_MAX_BURNS: int = 3           # engines have limited relights
     CORRECTION_PROBE_DV: float = 5.0        # dv used to test which way a burn moves
-    CORRECTION_GRADIENT_POWERED: bool = False   # fly the landing burn in the
-                                            # gradient probes too; see
-                                            # trajectory.miss_gradient
     CORRECTION_ABORT_RATIO: float = 1.3     # abort if the miss grows this much
-    CORRECTION_RETIRE_ON_BACKFIRE: bool = False  # a burn that backfires ends
-                                            # the *phase*, not just itself;
-                                            # see run_correction
     CORRECTION_ABORT_GRACE_S: float = 3.0   # ... after this long, so a turn can settle
     CORRECTION_ABORT_FLOOR_M: float = 60.0  # ... and never on less growth than
                                             # this past the best (prediction
@@ -627,11 +620,6 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
-    DRAG_PROBE_AXIAL: bool = False          # see Environment.probe_direction: measured worse
-    DRAG_PROBE_DESCENT: bool = False        # probe the attitude the descent is
-                                            # flown at instead of the one the
-                                            # booster currently holds; see
-                                            # Environment.probe_rotation
     DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
                                             # off retrograde (0 = take them
                                             # all).  Measured at 20: it cannot
