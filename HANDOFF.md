@@ -1,76 +1,63 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-18 early: boosterland -- timed legs, late brakes, the booster stands up (fingerprint `9cba676e`)
+## 2026-10-18 day: boosterland -- cross-track trim on RCS, no boostback yaw (fingerprint `bb3fa2e6`)
 
-Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-17 night to
-10-18". How-it-works PDF rewritten (late brakes, leg timing, the upright
-cone, the touchdown watch). Committed and pushed; farm stopped; sleep
+Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-18 day".
+How-it-works PDF rewritten. Committed and pushed; farm stopped; sleep
 inhibitor released.
 
-**The user asked:** time the leg action group's deploy and drop it that
-long (+ margin) before the ground; cache each leg type so it is timed once
-ever; aim long on closed brakes and open them fully late, for a slower,
-cheaper burn; improve accuracy; fix tip-overs. All four in as defaults.
+**The user asked:** keep eliminating the miss; is the yaw at the end of
+boostback intentional (no -- fixed); can anything but the gimbal roll the
+heavy (only the Vernors; airbrakes cannot); should a reaction wheel go on
+(not yet: it would only buy roll, and roll is not costing anything
+measured); are the legs deploying early (yes, ~13.5 s before contact for a
+6.8 s lead -- a fix was flown and lost, below).
 
-**Defaults changed** (batches in `logs/rot-<tag>.txt`):
-- `GEAR_TIMED`, `GEAR_LEAD_FACTOR` 1.25, `GEAR_LEAD_S` 1: the coast cycles
-  any untimed leg type once (`gear timed:` event) and caches it in
-  `boosterland/data/gearTimes.json` (gitignored; delete to re-time). LT-2
-  4.6 s. Gear down at time-to-go <= 1.25 x deploy + 1 s (~1.8 km on the
-  heavy). fl1-1018 heavy: standing 14/18 v 12/18, miss 48 v 47, burn fuel
-  7.77 v 7.91 t. Factor 2.0 dropped them at 3 km: median 74 v 39 (ab1).
-  No legs / timing failed -> the old drop at the burn's first tick.
-- `DEPLOY_LATE`: after the coast's descent re-sweep, brakes 90 -> full-brake
-  curve swept -> 30 + replacing re-sweep -> bisect the opening height on the
-  unsteered along-track miss every 5 s -> open fully at h -> the ordinary
-  deploy law. The env's `late_switch_alt` makes every prediction fly it.
-  Heavy, three batches: ignition 264 v 287-290 m/s, burn 7.4-7.5 v 7.9 t,
-  worst 65/69/87 v 102/93/141 m, median 51/48/61 v 39/56/47. Light
-  booster: no saving. Full brakes are only 1.17x the drag of 30 deg.
-- `LANDING_UPRIGHT_ALT_M` 50 / `_TILT_DEG` 2: the burn's whole command is
-  clamped into a cone round vertical narrowing from 30 deg at 50 m of leg
-  height to 2 at the ground. **This was the tip-over**: the base (retrograde
-  within 15 deg) leaned with any sideways speed as the descent stopped, and
-  the last tick sat 7-15 deg off vertical. up1-1018 heavy standing 14/18 v
-  5/18, lean 2-5 v 7-13 deg.
-- `TOUCHDOWN_WATCH_S` 8: the sign-off comes 10 s after contact and adds
-  `tilt= max=` (deg off vertical). Before it, tip-overs read as landings.
-- Deleted: `DEPLOY_RESWEEP_REPLACE` (null miss, 5 hard touchdowns v 0),
-  `TOUCHDOWN_ATTITUDE` vertical/release (null: a released booster at rest
-  fell with no input -- the lean was the cause, not the ground hold).
-  No flags open.
+**Defaults changed** (batches `logs/rot-trim1..4-1018`, `rot-def2-1018`):
+- `BOOSTBACK_HEADING_HOLD`: the taper flies the aim held at its first tick
+  and exits on the miss *along* it. Removes the 30-deg end-of-burn swing.
+- `COAST_FLIP_RELAY`: the coast's flip gets the RCS error relay until the
+  nose is within 10 deg (it had RCS only by the luck of that swing).
+- `COAST_RCS_TRIM`: once settled, push sideways on the Vernors against the
+  cross-track (>10 m start, <3 m stop), valve open only while pushing,
+  sign self-checked until the first successful push. ~0.15-0.2 t.
+  Heavy miss 26/17/22 v 35/47 over three batches; def2 defaults: contact
+  median 13 m, worst 33, stood 10/12. qs_hot: null.
+- Deleted after measuring: `COAST_RCS_TRIM_LONG`, `LANDING_RCS_TRANSLATE`,
+  `GEAR_BURN_TTG` (journal). No flags open.
 
-**Where it stands** (fl1-1018 base + def1-1018 smoke): heavy median miss
-47-72 m, worst ~90-140, touchdown 2.0 m/s, standing ~12-14/18; qs_hot
-median 12-30, touchdown 1.7. **The 18-part legless booster (quicksave,
-qs_hot, qs_cold, qs_steep, qs_north) cannot stand**: it lands on one
-engine bell and falls on every arm (0-3/18). A craft problem; give it legs
-(a new save) if standing matters there.
+**Where it stands:** heavy contact median ~13-20 m, cross-track ~0, the
+rest is along-track plus a 9 -> 20 m drift over the last 30 m. Standing
+10/12 on the defaults but only ~50% when it touches 10-34 m from centre:
+**the KSC pad model's colliders** (its "Fuel Tank" at 14-18 m, the launch
+clamps nearer) are in the way. Under 10 m it stands ~75%.
 
 **Next, in order:**
-1. **The heavy's median miss** (47-72, noisy; 39-56 across batches). Read
-   `long=`/`cross=` at the burn and at touchdown -- is it set in the coast
-   (the late switch's residual, `late brakes: open at ... long=`) or in the
-   burn (the upright cone and the 250 m velocity-only stretch leave the
-   offset as it is)?
-2. **qs_hot arrives 5-8 m/s sideways**: its burn runs 11-19 deg off its
-   command at full throttle around 100 m and builds the drift (LOG12092).
-   Slew/torque at the throttle peak.
-3. A legged single-engine save, so the light booster's standing is
-   measurable at all.
-4. Separation breakups: LOG11997, LOG12144 lost the core 2 s after
-   separation (26.7 -> 0.66 t) -> 40-50 km "misses". Count them.
-5. Launch clamps stay on the pad as debris (CollisionSpy:
-   `girder_BOXCOLLIDER` at 12 m) and some landings hit them.
-6. Older: the heavy's coast roll drift; other saves on the new defaults.
+1. **The last-30-m drift** (the remaining miss and the standing): the cone's
+   2-4 deg of tilt near hover pushes ~0.5 m/s^2 sideways (LOG12618). Two
+   leads: (a) measure the RCS `up` axis sign and authority directly (a
+   pulse in the coast and read the velocity change) -- the hover version
+   flew on an unproven sign; (b) aim the cone's residual tilt *against*
+   the drift instead of leaving it to attitude error.
+2. The leg lead: the time-to-go is the coast-speed fall, so the legs are
+   down ~13.5 s early. A burn-aware estimate that is right early in the
+   burn (the powered prediction reads 4 s at 9.7 actual) -- or measure the
+   burn's duration per vehicle. Earlier legs measured worse (factor 2.0).
+3. Pad debris: the launch clamps stay on the pad (live too). Ask the user
+   before recovering vessels; an aim point chosen clear of them is the
+   alternative.
+4. Older: qs_hot sideways arrival, a legged single-engine save, separation
+   breakups (LOG12500 again: 0.66 t at 2 s), the coast's roll drift.
 
-**Traps paid:** "No such vessel" FATAL after TOUCHDOWN is a breakup (the
-vessel is gone), not a harness error -- it leaves no sign-off line.
-`object.__new__(Autoland)` test helpers must set `late_state`/`gear_timing`.
-A full-brake sweep taken mid-flip reads less drag than closed (0.92x).
-Swap reached 15-16 GB after each 90-min batch: restart the farm between
-batches. Readers used (scratchpad, easy to rewrite): per-cell miss/td/
-ignition speed/burn fuel/standing count; last-burn-tick `hs`/`cv` per flight.
+**Traps paid:** a fallen booster's reported miss is where the wreck lies
+(+25-35 m): use the first TOUCHDOWN line's `pad=`. Summaries that drop "no
+exit line" rows drop every fallen booster. Every new `cfg.X` must exist --
+grep the diff; a bare-`Autoland` test runs the method. ksp5 returned
+nothing for all of trim3 (12 flights lost silently): check every instance
+has rows. Swap reached ~20 GB per 40-min batch: restart between batches.
+Readers (scratchpad, easy to rewrite): per-arm contact distance from the
+first TOUCHDOWN `pad=`, stood from `max=`, gear-to-contact seconds,
+burn-entry mass; KSP.log CollisionSpy matched to flights by wall clock.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 

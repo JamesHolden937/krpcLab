@@ -3,12 +3,16 @@
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
 Target pad lat `-0.097162`, lon `-74.557679` (`Config.PAD_LAT/PAD_LON`). It
-lands a median ~12-30 m (qs_hot) to ~50-70 m (qs_heavy) from the pad;
-the legged heavy stands upright after ~3 landings in 4 (the burn's command
-is narrowed to 2 deg of vertical at the ground), the 18-part booster has no
-legs and falls over on its engine bell. The legs are timed once per part
-type and dropped by time-to-go; the airbrakes fly closed and long, then
-open fully at a solved height -- see the root HANDOFF.md. The root
+lands a median ~12-30 m (qs_hot) to ~13-20 m (qs_heavy, at first contact)
+from the pad. Boostback holds its heading through the taper; the coast's
+flip runs on the RCS error relay; once settled, the coast pushes sideways on
+the RCS to null the cross-track (`COAST_RCS_TRIM`). The legged heavy stands
+~10 times in 12, but falls about half the time it touches 10-34 m out: the
+KSC pad model's own colliders and the launch clamps are there. The 18-part
+booster has no legs and falls over on its engine bell. The legs are timed
+once per part type and dropped by time-to-go (in practice ~13.5 s early);
+the airbrakes fly closed and long, then open fully at a solved height --
+see the root HANDOFF.md. The root
 `CLAUDE.md` (conventions, farm, cross-cutting rules) applies here in full.
 
 ```

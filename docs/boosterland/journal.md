@@ -470,3 +470,92 @@ fingerprint moves because the fields are gone:
 `__file__`), so `dist/boosterlandAutoland.py` had failed its selftest since
 `GEAR_TIMED`; it now sits beside the script there. Unreferenced logs older
 than a week are zipped in `logs/archive/LOG<k>xxx.zip`.
+
+## Session, 2026-10-18 day: the cross-track trim, the boostback yaw, the pad
+
+The user asked to keep eliminating the miss, and whether the yaw at the end
+of boostback was intentional. Fingerprint `c7b78daa` -> `bb3fa2e6`. Batches
+in `logs/rot-<tag>.txt`; all heavy unless said.
+
+### The yaw (not intentional)
+
+Boostback aims opposite the predicted horizontal miss. In its last ~2 s the
+along-track part closes and the ~100 m cross-track takes over the direction:
+the command swung 30 deg sideways at 41 deg/s at 2% throttle (LOG12455
+`cw=41 err=30`, yaw input -0.94). **`BOOSTBACK_HEADING_HOLD`** (default):
+the aim at the first taper tick (nose within 25 deg) is held, only the miss
+along it is burnt off, and the exit tests that miss, not the distance.
+
+The swing had been opening the RCS valve (error relay) right before the
+coast, and the coast's flip ran on that by luck: with the swing gone the
+valve stayed shut through the flip (saturation rule) and kRPC sent **zero
+input at 100-145 deg of error** -- the airflow turned it (LOG12465).
+**`COAST_FLIP_RELAY`** (default): the error relay until the coast has
+*settled* (nose within 10 deg), then the saturation rule.
+
+### The heavy's miss was its cross-track
+
+On qs_heavy the cross-track at burn entry equalled the N/S touchdown miss to
+~5 m (LOG12453-12462: -74/-98/-90/-44/+8 v N -70/-92/-92/-42/+4); 83
+flights of three earlier batches averaged N -30. Nothing after boostback
+moves it: the heavy's wing solves aoa 0, CORRECTION is downrange and rarely
+flown, the burn is held upright. **`COAST_RCS_TRIM`** (default): once
+settled, translate on the Vernors against the cross-track (start > 10 m,
+stop < 3 m, input cross/30 m), world direction to vessel frame through the
+attitude quaternion, valve held open only while pushing. -63 -> -3 m in
+2.2 s (LOG12466). The first version held the valve open all coast: roll
+input pinned at -1, 1.6 t of propellant (LOG12465); push-only costs
+~0.15-0.2 t.
+
+| batch | arm | heavy miss med / worst | stood |
+|---|---|---|---|
+| trim1 | base / hold / trim | 35/83, 67/90, 26/69 | 10, 12, 6 of 12 |
+| trim2 | base / trim | 47/74, 17/43 | 10, 6 of 12 |
+| trim3 | trim | 22/86 (n=10, ksp5 dead) | 7/10 |
+| def2 | new defaults | contact 13 / 33 | 10/12 |
+
+`hold` alone is worse (67): it leaves the cross-track for nothing to fix.
+qs_hot: trim null (12 v 29, 29 v 18): its correction burn already clears the
+cross-track. Its legless booster falls every time anyway.
+
+### Why the heavy falls over: the pad
+
+The reported miss of a fallen booster is where the wreck lies, ~25-35 m
+from where it touched -- use the first TOUCHDOWN line's `pad=`. By contact
+distance (trim1-4): **0-9 m 16 stood / 5 fell; 10-34 m 18 / 33; 35+ 63 / 6.**
+KSP.log CollisionSpy (trim4): only 4 of 30 falls touched a launch clamp
+(`girder_BOXCOLLIDER`); at 14-18 m the engine bells land on the pad
+model's **"Fuel Tank"** collider. Base stood more often only because it
+missed by 40-90 m, off the pad. Standing needs < 10 m.
+
+### Refuted, deleted
+
+- **`COAST_RCS_TRIM_LONG`** (trim the along-track too, once the brakes are
+  handed over). The Vernors' axial coupling left trim arms +20-25 m long at
+  the burn and the brakes, at 90 already, cannot add drag. It fixed that
+  (-2 at the burn, trim3) but not the landing: 26 v 22 (3/10 stood), def2
+  12 m but 4/12 stood, worst 59, +0.4 t. First version read a deleted
+  field `DEPLOY_MIN_ALT_M` and crashed 22 of trim2's 24 tlong flights.
+- **`LANDING_RCS_TRANSLATE`** (below 50 m, translate against hs + offset/3 s).
+  The last 30 m drift 9 -> 20 m from the pad as the cone's 2-4 deg of tilt
+  pushes ~0.5 m/s^2 sideways (LOG12618: hs 1.4 -> 3.7). Saturated `up`
+  input for 4 s did not stop it (LOG12653). def2: 16 m 9/12 v 13 m 10/12.
+  The `up` axis sign is unproven -- it took the sim's convention; the
+  coast trim only exercises `right` (the roll hold puts cross there).
+- **`GEAR_BURN_TTG`** (the user: "legs deploying a bit early?" -- yes: the
+  time-to-go is the fall at coast speed, legs down 13.4-14.1 s before
+  contact for a 6.8 s lead). Timing on the burn's powered prediction
+  still dropped them ~11 s early (its ttl reads short early in the burn:
+  4 at 9.7 s actual) and def2 was worse: 22 m, 7/12. The lead's real
+  value is now written beside `GEAR_LEAD_S`.
+
+### Traps paid
+
+- A sign check on a *combined* push misread drift as a wrong sign and
+  flipped it (LOG12652, 101 m): check only until one push has closed.
+- Every new `cfg.X` read must exist: a test that runs the method on a bare
+  `object.__new__(Autoland)` catches it; so does grepping the diff.
+- `rot` summaries that drop "no exit line" rows drop every fallen booster:
+  my first trim1 headline (median 10) was 26 with them in.
+- Asked whether the airbrakes could roll the heavy: they cannot -- their
+  force lies in a plane through the axis. Roll is gimbal (lit) and Vernors.
