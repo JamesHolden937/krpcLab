@@ -342,7 +342,7 @@ class Autoland:
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
         self.slew_read_ut = -1e9
-        self.slew_rate = cfg.LANDING_SLEW_MIN_DEG_S
+        self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
         self.roll_rate = None           # deg/s about the nose, signed
         self.throttle_diverged = False
@@ -1301,20 +1301,26 @@ class Autoland:
         """deg/s the landing burn's command may move: LANDING_SLEW_SHARE
         seconds of the vehicle's own angular acceleration, the weaker of
         pitch and yaw, from kRPC's credited torque (the gimbal delivers 91-93%
-        of it, torqueprobe on qs_hot) -- re-read once a game second, since
-        it scales with the throttle."""
-        if snap.ut - self.slew_read_ut >= 1.0:
+        of it, torqueprobe on qs_hot).  Gimbal torque goes with thrust, so
+        the acceleration per unit throttle is re-read once a game second
+        while lit and scaled by *this* tick's throttle: read once and held,
+        the full-thrust rate outlived the throttle cut that starts the
+        oscillation (slew1-1017, LOG11667: 80 deg/s at 46 m)."""
+        throttle = self.demand if self.cluster is not None else snap.throttle
+        if snap.ut - self.slew_read_ut >= 1.0 and throttle > 0.2:
             self.slew_read_ut = snap.ut
             try:
                 torque = self.vessel.available_torque[0]
                 moi = self.vessel.moment_of_inertia
-                accel = min(torque[0] / moi[0], torque[2] / moi[2])
-                self.slew_rate = max(math.degrees(accel)
-                                     * self.cfg.LANDING_SLEW_SHARE,
-                                     self.cfg.LANDING_SLEW_MIN_DEG_S)
+                self.slew_accel = (min(torque[0] / moi[0], torque[2] / moi[2])
+                                   / throttle)
             except Exception:                           # noqa: BLE001
                 pass
-        return self.slew_rate
+        if self.slew_accel is None:
+            return self.cfg.LANDING_SLEW_MIN_DEG_S
+        return max(math.degrees(self.slew_accel * throttle)
+                   * self.cfg.LANDING_SLEW_SHARE,
+                   self.cfg.LANDING_SLEW_MIN_DEG_S)
 
     def run_landing_burn(self, snap):
         self.log_attitude_tune(snap)

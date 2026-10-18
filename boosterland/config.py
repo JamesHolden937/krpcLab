@@ -518,9 +518,6 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
-    LANDING_TOTAL_TILT: bool = False        # below LANDING_NULL_ALT_M the cap
-                                            # is on the whole command off
-                                            # vertical (cone + tilt reached 30)
     LANDING_SLEW_SHARE: float = 0.0         # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second

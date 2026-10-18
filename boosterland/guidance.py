@@ -538,14 +538,9 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         limit = min(limit, tilt_budget_deg)
     tilt = math.atan2(demand, thrust_accel)
     tilt = min(tilt, math.radians(max(0.0, limit)))
-    direction = vec.unit(vec.add(base,
-                                 vec.scale(vec.unit(accel), math.tan(tilt))))
-    if near and cfg.LANDING_TOTAL_TILT:
-        # The cap is on the whole command off vertical, not on the cone and
-        # the tilt separately -- together they reached 30 deg and swung
-        # across the vertical as the sideways speed changed sign.
-        direction = within_cone(direction, up, cfg.LANDING_MAX_TILT_DEG)
-    return TerminalCommand(direction, demand)
+    return TerminalCommand(
+        vec.unit(vec.add(base,
+                         vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
 
 
 def slew(previous, target, max_deg):
