@@ -180,13 +180,13 @@ two vectors are near enough to opposite that the arc is a coin toss, and it can
 swing the nose *down* through the airstream — engines into the flow, and the
 half the vehicle has least authority to recover from.
 
-`guidance.flip_waypoint` checks the arc for turns beyond `FLIP_VIA_VERTICAL_DEG`
-(90°), and when the shortest one dives it commands the up-side point of the
-*same* great circle first. The nose then passes as near the vertical as the two
-vectors allow, and the routing releases itself once the rest of the turn is
-unambiguous, because it re-decides from the vehicle's real attitude every tick
-rather than holding state. It costs about 20° of extra travel on a 170° flip
-and never leaves the plane of the two vectors.
+`guidance.flip_through_vertical` takes every turn beyond `FLIP_VIA_VERTICAL_DEG`
+(90°) as two pitches through the zenith: while the nose's horizontal part points
+away from the target's, it commands the zenith tilted `FLIP_VERTICAL_PAST_DEG`
+(10°) toward the target, so the nose pitches up in its own vertical plane; once
+over, the target itself, so it pitches down in the target's. Memoryless -- it
+reads the real nose every tick. With the roof carried through the turn
+(`guidance.transport_roof`, `ROLL_TRANSPORT`) both legs are pure pitch.
 
 In `fakeksp` this is a no-op on all four entry states (identical distances bar
 two runs differing by 2 m): with the current phase attitudes the direct arc

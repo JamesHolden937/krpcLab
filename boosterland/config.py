@@ -86,7 +86,7 @@ class Config:
                                             # groll1-1017 heavy 12 v 12: burn
                                             # spin 0 v 258 deg/s, miss median
                                             # 20 v 58 m, touchdown 5.8 v 8.7
-    GIMBAL_ROLL_UNTIL_BURN: bool = False    # ... but only from the landing
+    GIMBAL_ROLL_UNTIL_BURN: bool = True     # ... but only from the landing
                                             # burn: boostback rolls on them
     ENGINE_AXIS_TOL_M: float = 0.3          # this near the cluster axis: center
     ENGINE_RING_TOL_M: float = 0.3          # radii this close: one ring
@@ -211,29 +211,32 @@ class Config:
     CLEARANCE_RADIUS_FALLBACK_M: float = 15.0   # used while a box is unreadable
 
     # --- Attitude ---------------------------------------------------------
-    FLIP_VIA_VERTICAL: bool = True      # route big turns over the top, not under
+    FLIP_VIA_VERTICAL: bool = True      # big turns through the zenith: pitch
+                                        # up in the nose's vertical plane,
+                                        # down in the target's
+                                        # (guidance.flip_through_vertical)
     FLIP_VIA_VERTICAL_DEG: float = 90.0     # only turns bigger than this
-    FLIP_THROUGH_VERTICAL: bool = False     # ... and through the zenith: pitch
-                                            # up in the nose's vertical plane,
-                                            # down in the target's
-                                            # (guidance.flip_through_vertical)
     FLIP_VERTICAL_PAST_DEG: float = 10.0    # waypoint: zenith tilted this far
                                             # toward the target's side
     ROLL_ALIGN: bool = True             # hold roll, roof in the trajectory plane
     ROLL_OFFSET_DEG: float = 0.0        # roof offset from that plane (fin clocking)
-    ROLL_THRESHOLD_DEG: float = 5.0     # kRPC roll_threshold: roll is held only
+    # Roll is held the whole flight (seed1-1017, 12 a cell, all six on
+    # against the defaults: heavy roll error boostback/coast/burn median
+    # 0/21/26 v 111/95/96 deg, qs_hot burn p90 6 v 147; miss mean 33 v 43
+    # heavy, 39 v 56 qs_hot; worst 101 v 115, 80 v 212).
+    ROLL_THRESHOLD_DEG: float = 180.0     # kRPC roll_threshold: roll is held only
                                         # while the pointing error is under it
                                         # (5 = kRPC's default).  The heavy's
                                         # coast sat at 6-10 deg, roll input 0,
                                         # and drifted 142 deg off by ignition
                                         # (LOG11353)
-    ROLL_TRANSPORT: bool = False        # the roof's side is the last roof
+    ROLL_TRANSPORT: bool = True         # the roof's side is the last roof
                                         # carried through the nose's turn:
                                         # a flip over the top is pitch only
                                         # (guidance.transport_roof)
-    ROLL_SEED_ACTUAL: bool = False      # first roof on the side nearest the
+    ROLL_SEED_ACTUAL: bool = True       # first roof on the side nearest the
                                         # vehicle's own, not away from the body
-    ROLL_PLANE_MIN_HS_MPS: float = 0.0  # below this horizontal speed the roof
+    ROLL_PLANE_MIN_HS_MPS: float = 5.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)
 

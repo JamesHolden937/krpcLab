@@ -386,18 +386,13 @@ class Autoland:
         self.autopilot.reference_frame = self.frame
         up = None
         if snap is not None:
-            if self.cfg.FLIP_THROUGH_VERTICAL:
-                # Big turns are two pitches through the zenith.
+            if self.cfg.FLIP_VIA_VERTICAL:
+                # Big turns are two pitches through the zenith, never a dive
+                # through the airstream; releases itself as the nose crosses.
                 direction = guidance.flip_through_vertical(
                     snap.direction, direction, snap.position,
                     self.cfg.FLIP_VIA_VERTICAL_DEG,
                     self.cfg.FLIP_VERTICAL_PAST_DEG)
-            elif self.cfg.FLIP_VIA_VERTICAL:
-                # Big turns go over the top rather than nose-down through the
-                # airstream; releases itself as the vehicle comes round.
-                direction = guidance.flip_waypoint(
-                    snap.direction, direction, snap.position,
-                    self.cfg.FLIP_VIA_VERTICAL_DEG)
             if self.cfg.ROLL_ALIGN:
                 previous, previous_nose = self.roll_up, self.roll_nose
                 if previous is None and self.cfg.ROLL_SEED_ACTUAL:

@@ -381,62 +381,6 @@ class TestFlipThroughVertical(unittest.TestCase):
         self.assertLess(vec.angle_between(cmd, aim), 1e-6)
 
 
-class TestFlipRouting(unittest.TestCase):
-    """A big turn is taken over the top, not nose-down under it."""
-
-    ZENITH = (1.0, 0.0, 0.0)
-
-    def route(self, current, target, min_turn=90.0):
-        return guidance.flip_waypoint(current, target, self.ZENITH, min_turn)
-
-    def test_a_small_turn_is_commanded_directly(self):
-        target = (0.5, 0.0, 0.87)
-        self.assertEqual(self.route((0.7, 0.0, 0.71), target), vec.unit(target))
-
-    def test_a_big_turn_that_already_climbs_is_commanded_directly(self):
-        # Nose well above the horizon, target on it: the direct arc stays up.
-        target = (0.0, 0.0, -1.0)
-        self.assertEqual(self.route((0.6, 0.0, 0.8), target), vec.unit(target))
-
-    def test_a_big_turn_that_would_dive_is_routed_over_the_top(self):
-        """Both endpoints below the horizon; the short arc goes under."""
-        waypoint = self.route((-0.3, 0.0, 0.95), (-0.3, 0.0, -0.95))
-        self.assertGreater(vec.dot(waypoint, self.ZENITH), 0.0,
-                           "commanded the nose down through the airstream")
-
-    def test_an_exactly_opposite_turn_climbs(self):
-        waypoint = self.route((-0.2, 0.0, 0.98), (0.2, 0.0, -0.98))
-        self.assertAlmostEqual(vec.norm(waypoint), 1.0, places=9)
-        self.assertGreater(vec.dot(waypoint, self.ZENITH), 0.9,
-                           "did not head for the vertical")
-
-    def test_the_waypoint_is_on_the_same_arc_as_the_two_vectors(self):
-        """Routing changes which way round, never which plane.
-
-        Going over the top must not become a detour out of the trajectory
-        plane -- the extra travel is 20 deg on a 170 deg flip only because
-        the waypoint stays on the great circle through both vectors.
-        """
-        nose, target = (-0.3, 0.0, 0.95), (-0.3, 0.0, -0.95)
-        normal = vec.unit(vec.cross(nose, target))
-        self.assertAlmostEqual(vec.dot(self.route(nose, target), normal), 0.0,
-                               places=9)
-
-    def test_it_releases_itself_as_the_nose_comes_round(self):
-        """Fed its own waypoint, it eventually commands the target.
-
-        The routing has no state: it re-decides from the vehicle's real
-        attitude every tick, so it has to stop steering at the waypoint on
-        its own once the rest of the turn is unambiguous.
-        """
-        target = (-0.3, 0.0, -0.95)
-        nose = (-0.3, 0.0, 0.95)
-        for _ in range(20):
-            commanded = self.route(nose, target)
-            nose = commanded          # a vehicle that turns instantly
-        self.assertEqual(commanded, vec.unit(target))
-
-
 class TestRotationOnto(unittest.TestCase):
     """Turning a vessel onto a direction without assuming a convention.
 
