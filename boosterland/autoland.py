@@ -339,6 +339,10 @@ class Autoland:
         self.prev_nose = None           # (ut, direction) of the last tick
         self.nose_rate = None           # deg/s, see track_nose_rate
         self.prev_cmd = None            # (ut, commanded direction)
+        self.burn_cmd = None            # last landing-burn command, slewed
+        self.burn_cmd_ut = 0.0
+        self.slew_read_ut = -1e9
+        self.slew_rate = cfg.LANDING_SLEW_MIN_DEG_S
         self.cmd_rate = None            # deg/s the command itself moves
         self.roll_rate = None           # deg/s about the nose, signed
         self.throttle_diverged = False
@@ -1293,6 +1297,25 @@ class Autoland:
         except Exception as exc:                            # noqa: BLE001
             self.log.event(snap.ut, "attitude tune unreadable: %r" % exc)
 
+    def burn_slew_rate(self, snap):
+        """deg/s the landing burn's command may move: LANDING_SLEW_SHARE
+        seconds of the vehicle's own angular acceleration, the weaker of
+        pitch and yaw, from kRPC's credited torque (the gimbal delivers 91-93%
+        of it, torqueprobe on qs_hot) -- re-read once a game second, since
+        it scales with the throttle."""
+        if snap.ut - self.slew_read_ut >= 1.0:
+            self.slew_read_ut = snap.ut
+            try:
+                torque = self.vessel.available_torque[0]
+                moi = self.vessel.moment_of_inertia
+                accel = min(torque[0] / moi[0], torque[2] / moi[2])
+                self.slew_rate = max(math.degrees(accel)
+                                     * self.cfg.LANDING_SLEW_SHARE,
+                                     self.cfg.LANDING_SLEW_MIN_DEG_S)
+            except Exception:                           # noqa: BLE001
+                pass
+        return self.slew_rate
+
     def run_landing_burn(self, snap):
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
@@ -1338,7 +1361,13 @@ class Autoland:
             throttle = min(self.cfg.LANDING_THROTTLE_CAP,
                            throttle / math.cos(math.radians(tilt)))
         self.set_throttle(throttle)
-        self.aim(steer.direction, snap)
+        direction = steer.direction
+        if self.cfg.LANDING_SLEW_SHARE > 0.0:
+            direction = guidance.slew(
+                self.burn_cmd, direction,
+                self.burn_slew_rate(snap) * max(0.0, snap.ut - self.burn_cmd_ut))
+        self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
+        self.aim(direction, snap)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),

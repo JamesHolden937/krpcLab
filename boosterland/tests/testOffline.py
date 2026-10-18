@@ -339,6 +339,24 @@ class TestRollTransport(unittest.TestCase):
             guidance.roll_reference(self.r, self.v, nxt, up0)), 1e-9)
 
 
+class TestSlew(unittest.TestCase):
+    """The landing burn's command ramps; it never steps."""
+
+    def test_a_reversal_is_cut_to_the_rate(self):
+        a = vec.unit((1.0, 0.0, 0.5)); b = vec.unit((1.0, 0.0, -0.5))
+        out = guidance.slew(a, b, 5.0)
+        self.assertAlmostEqual(vec.angle_between(a, out), 5.0, places=6)
+        self.assertLess(vec.angle_between(out, b), vec.angle_between(a, b))
+
+    def test_a_small_change_is_passed_through(self):
+        a = vec.unit((1.0, 0.0, 0.05)); b = vec.unit((1.0, 0.0, 0.0))
+        self.assertLess(vec.angle_between(guidance.slew(a, b, 5.0), b), 1e-9)
+
+    def test_no_history_is_no_limit(self):
+        b = (0.0, 1.0, 0.0)
+        self.assertEqual(guidance.slew(None, b, 1.0), b)
+
+
 class TestFlipThroughVertical(unittest.TestCase):
     """A big turn is pitch up to the vertical, then pitch down to the aim."""
 

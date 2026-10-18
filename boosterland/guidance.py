@@ -538,9 +538,33 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         limit = min(limit, tilt_budget_deg)
     tilt = math.atan2(demand, thrust_accel)
     tilt = min(tilt, math.radians(max(0.0, limit)))
-    return TerminalCommand(
-        vec.unit(vec.add(base,
-                         vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
+    direction = vec.unit(vec.add(base,
+                                 vec.scale(vec.unit(accel), math.tan(tilt))))
+    if near and cfg.LANDING_TOTAL_TILT:
+        # The cap is on the whole command off vertical, not on the cone and
+        # the tilt separately -- together they reached 30 deg and swung
+        # across the vertical as the sideways speed changed sign.
+        direction = within_cone(direction, up, cfg.LANDING_MAX_TILT_DEG)
+    return TerminalCommand(direction, demand)
+
+
+def slew(previous, target, max_deg):
+    """``target``, or the direction ``max_deg`` from ``previous`` toward it.
+
+    A command that steps is a command no vehicle flies: the landing burn's
+    reversed 60 deg in a tick as the sideways speed changed sign, and the
+    booster chased it into an oscillation (cmd1-1017, cw= 57-115 deg/s)."""
+    if previous is None:
+        return tuple(target)
+    a, b = vec.unit(previous), vec.unit(target)
+    angle = vec.angle_between(a, b)
+    if angle <= max_deg or angle < 1e-9:
+        return tuple(b)
+    axis = vec.cross(a, b)
+    if vec.norm(axis) < 1e-9:
+        return tuple(b)
+    q = vec.quat_axis_angle(vec.unit(axis), math.radians(max_deg))
+    return vec.unit(vec.quat_rotate(q, a))
 
 
 def within_cone(direction, axis, max_deg):

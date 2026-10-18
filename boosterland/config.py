@@ -518,6 +518,15 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
+    LANDING_TOTAL_TILT: bool = False        # below LANDING_NULL_ALT_M the cap
+                                            # is on the whole command off
+                                            # vertical (cone + tilt reached 30)
+    LANDING_SLEW_SHARE: float = 0.0         # s: the burn's command moves at most
+                                            # this many seconds of the vehicle's
+                                            # angular acceleration per second
+                                            # (0 = unslewed); see burn_slew_rate
+    LANDING_SLEW_MIN_DEG_S: float = 5.0     # floor, and the rate before the
+                                            # first torque read
     LANDING_DIVERT_GAIN: float = 0.12       # degrees of tilt per metre of miss
     LANDING_THROTTLE_GAIN: float = 6.0      # m/s^2 of trim per m/s of speed
                                             # error; the throttle is this over
