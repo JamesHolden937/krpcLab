@@ -382,7 +382,9 @@ class Autoland:
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
+        self.coast_settled = False      # the coast's flip has come round
         self.trim_active = False        # COAST_RCS_TRIM: the flip has settled
+        self.trim_pushing = False       # ... and it is translating now
         self.trim_sign = 1.0            # ... -1 once the check flipped it
         self.trim_flips = 0
         self.trim_off = False           # ... the check failed twice
@@ -528,7 +530,7 @@ class Autoland:
                 self._apply_rcs(True)
                 self.log.event(snap.ut, "rcs held open for the landing burn")
             return
-        if (self.cfg.COAST_RCS_TRIM and self.trim_active
+        if (self.cfg.COAST_RCS_TRIM and self.trim_pushing
                 and not self.trim_off and self.state == COAST
                 and self.rcs_permitted):
             # Translating: the valve is the actuator, and relaying it would
@@ -548,7 +550,10 @@ class Autoland:
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
                         saturation=(snap.input_saturation
-                                    if self.state == COAST else None))
+                                    if self.state == COAST
+                                    and (self.coast_settled
+                                         or not self.cfg.COAST_FLIP_RELAY)
+                                    else None))
 
     def _apply_rcs(self, wanted):
         try:
@@ -959,6 +964,12 @@ class Autoland:
             self.extra_lines.append("brakes  : %8.0f deg" % (
                 self.deploy_angle if self.deploy_angle is not None
                 else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+        if (not self.coast_settled and self.pointing_error(snap)
+                <= self.cfg.COAST_RCS_TRIM_SETTLE_DEG):
+            self.coast_settled = True
+            self.log.event(snap.ut, "coast settled: err %.1f deg after %.1fs"
+                           % (self.pointing_error(snap),
+                              snap.ut - self.phase_start_ut))
         if self.cfg.COAST_RCS_TRIM:
             self.run_rcs_trim(snap)
         if snap.vertical_speed < 0.0 and height <= needed:
@@ -989,20 +1000,28 @@ class Autoland:
         sign would push the miss the other way for the whole coast.
         """
         if self.trim_off or not self.rcs_permitted or self.prediction is None:
+            self.trim_pushing = False
             self.send_translation((0.0, 0.0, 0.0))
             return
         if not self.trim_active:
-            if self.pointing_error(snap) > self.cfg.COAST_RCS_TRIM_SETTLE_DEG:
+            if not self.coast_settled:
                 return
             self.trim_active = True
             long, cross = self.miss_components(snap)
-            self.log.event(snap.ut, "rcs trim: start at cross=%+.0f long=%+.0f"
+            self.log.event(snap.ut, "rcs trim: armed at cross=%+.0f long=%+.0f"
                            % (cross, long))
         long, cross = self.miss_components(snap)
+        if not self.trim_pushing and abs(cross) > self.cfg.COAST_RCS_TRIM_START_M:
+            self.trim_pushing = True
+            self.log.event(snap.ut, "rcs trim: push at cross=%+.0f" % cross)
         axes = trajectory.miss_axes(self.env.target, snap.position)
         world = (guidance.rcs_trim_command(cross, axes[1], self.cfg)
-                 if axes is not None else None)
+                 if axes is not None and self.trim_pushing else None)
         if world is None:
+            if self.trim_pushing:
+                self.log.event(snap.ut, "rcs trim: done at cross=%+.0f"
+                               % cross)
+            self.trim_pushing = False
             self.trim_run = None
             self.send_translation((0.0, 0.0, 0.0))
             return
@@ -1022,6 +1041,7 @@ class Autoland:
                 self.trim_run = (snap.ut, abs(cross), side)
             else:
                 self.trim_off = True
+                self.trim_pushing = False
                 self.log.event(snap.ut, "rcs trim: no effect either way "
                                "(cross %+.0f), off" % cross)
                 self.send_translation((0.0, 0.0, 0.0))

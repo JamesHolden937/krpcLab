@@ -502,6 +502,14 @@ class Config:
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady
+    COAST_FLIP_RELAY: bool = False          # the coast's flip gets the error
+                                            # relay, not the saturation rule:
+                                            # kRPC sent no input at 100-145 deg
+                                            # of error with the valve shut, and
+                                            # the flip was left to the airflow
+                                            # (LOG12465).  The relay had opened
+                                            # it only by the luck of the end-
+                                            # of-boostback swing (LOG12455).
     COAST_RCS_TRIM: bool = False            # translate on RCS in COAST to null
                                             # the predicted cross-track miss:
                                             # nothing else on the heavy moves
@@ -509,7 +517,10 @@ class Config:
                                             # the -40..-98 m it leaves boostback
                                             # with is its touchdown miss
     COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
-    COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # no translation inside this
+    COAST_RCS_TRIM_START_M: float = 10.0    # start pushing past this ...
+    COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # ... stop inside this; the valve
+                                            # is held open only while pushing
+                                            # (open all coast: 1.6 t, LOG12465)
     COAST_RCS_TRIM_FULL_M: float = 30.0     # full input at this cross-track
     COAST_RCS_TRIM_CHECK_S: float = 4.0     # after this long translating one
     COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
