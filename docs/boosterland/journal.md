@@ -451,3 +451,22 @@ prediction still over-credits lift. Read a correction tick by tick with
   and its LINE regex no longer matches quickfly's output ("FAILED rc=0").
 - A worktree's `fly.sh` looks for `ksp<N>` beside itself: symlink them.
 - Six instances reach ~20 GB of zram in a batch from a 10 GB start.
+
+## Housekeeping, 2026-10-18 (fingerprint `9cba676e` -> `c7b78daa`)
+
+No flights. Five flags that sat off by default were deleted with their code
+(the user: "delete the flags"); the defaults fly exactly as before, only the
+fingerprint moves because the fields are gone:
+- `SEPARATION_PRETURN` (turn during the separation drift even with nothing
+  in the way; the turn while the clearance scan holds stays).
+- `CORRECTION_GRADIENT_POWERED` (the gradient probes fly no landing burn).
+- `CORRECTION_RETIRE_ON_BACKFIRE` (a backfire ends the burn, not the phase).
+- `DRAG_PROBE_AXIAL` (measured worse: read 10.8-14.2 m^2 against 17.4-18.8,
+  landed 3.3 km short) and `DRAG_PROBE_DESCENT` (pd10-1016: 3 of 4 heavies
+  lost, 628-884 m); `probe_direction`/`probe_rotation` now return the real
+  airflow and attitude.
+
+`gearcache.PATH` fell over in a `tools/bundle.py` single file (no
+`__file__`), so `dist/boosterlandAutoland.py` had failed its selftest since
+`GEAR_TIMED`; it now sits beside the script there. Unreferenced logs older
+than a week are zipped in `logs/archive/LOG<k>xxx.zip`.

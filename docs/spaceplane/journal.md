@@ -2712,3 +2712,19 @@ glides peaked at 1.4-2.4 g.
 The gate batch (gate-1012, LOG10105+, low-alpha config +- the damper gate)
 was stopped at wrap-up after one cycle: inconclusive, and the flag deleted
 with the tumble dropped.
+
+## Housekeeping, 2026-10-18 (fingerprint `01de6e69` -> `33f45bd7`)
+
+No flights. Three flags that sat off by default were deleted with their code
+(the user: "delete the flags"); the defaults fly as before:
+- `HAC_SHORT_POLAR` (built 10-11, never re-flown; `airframe.polar_short_alpha`
+  and the flown-polar loader went with it -- `tools/conepolar.py` still
+  writes `logs/conepolar/`, now read by nothing in flight).
+- `AIRBRAKE_CACHE` (arm the brake from a cached vacuum probe on an air-start
+  save; never measured) and the cache writer.
+- `GROUND_SPOILER_ON_NOSE` / `_NOSE_TIMEOUT_S` (built 10-10 for the
+  touchdown bounce, unflown; the bounce stays open).
+
+The retired old craft (`qs_plane`) is no longer any tool's default save:
+`quickglide`, `ladder`, `planeprobe`, `farmfly`/`pairfly`/`armfly`,
+`deorbitprobe` and `instancebench` default to `qs_shuttle2_rigoff`.
