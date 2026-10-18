@@ -26,19 +26,22 @@ measured); are the legs deploying early (yes, ~13.5 s before contact for a
 - Deleted after measuring: `COAST_RCS_TRIM_LONG`, `LANDING_RCS_TRANSLATE`,
   `GEAR_BURN_TTG` (journal). No flags open.
 
-**Where it stands:** heavy contact median ~13-20 m, cross-track ~0, the
-rest is along-track plus a 9 -> 20 m drift over the last 30 m. Standing
-10/12 on the defaults but only ~50% when it touches 10-34 m from centre:
-**the KSC pad model's colliders** (its "Fuel Tank" at 14-18 m, the launch
-clamps nearer) are in the way. Under 10 m it stands ~75%.
+**Where it stands:** heavy contact median ~13 m (def2), cross-track ~0.
+**The remaining miss is along-track, set before the burn**: def2's defaults
+reach burn entry +14..+54 m long (median +28); the burn halves it and the
+last 30 m add only 1-7 m. The two falls were the two longest (+49, +54 ->
+contact 30-33 m). Standing ~50% when it touches 10-34 m from centre: the
+KSC pad model's colliders ("Fuel Tank" at 14-18 m) and the launch clamps.
 
 **Next, in order:**
-1. **The last-30-m drift** (the remaining miss and the standing): the cone's
-   2-4 deg of tilt near hover pushes ~0.5 m/s^2 sideways (LOG12618). Two
-   leads: (a) measure the RCS `up` axis sign and authority directly (a
-   pulse in the coast and read the velocity change) -- the hover version
-   flew on an unproven sign; (b) aim the cone's residual tilt *against*
-   the drift instead of leaving it to attitude error.
+1. **The +28 m along-track at the burn.** It comes with the trim (trim arms
+   +20..+28 v -7..+1 without, three batches) and grows after the late brakes
+   open fully (LOG12746: +24 at the switch, +73 eight seconds later), where
+   no drag is left to add. Candidates: the Vernors' push has an axial
+   component (axis ~ velocity in the coast), or the open valve shifts the
+   held attitude. Log the along-track change across each push and after
+   the switch, trim on v off; then cancel on `forward` or stop late
+   re-pushes.
 2. The leg lead: the time-to-go is the coast-speed fall, so the legs are
    down ~13.5 s early. A burn-aware estimate that is right early in the
    burn (the powered prediction reads 4 s at 9.7 actual) -- or measure the
