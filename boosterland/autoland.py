@@ -971,7 +971,7 @@ class Autoland:
         if (self.deploy_resweep_ut is not None
                 and snap.ut >= self.deploy_resweep_ut):
             self.deploy_resweep_ut = None
-            self.env.request_resweep(replace=cfg.DEPLOY_RESWEEP_REPLACE)
+            self.env.request_resweep()
         if snap.ut < self.deploy_next_ut or self.deploy_resweep_ut is not None:
             return
         up = vec.unit(snap.position)
@@ -1783,6 +1783,25 @@ class Autoland:
 
     def run_touchdown(self, snap):
         self.set_throttle(0.0)
+        mode = self.cfg.TOUCHDOWN_ATTITUDE
+        if mode != "last" and self.rcs_permitted:
+            # Held on the ground, the burn's last command -- 10-12 deg off
+            # vertical, wherever the divert left it -- is a lever: the valve
+            # opens on the error, every axis pins, and the booster pries
+            # itself over in ~5 s at 1-2 m/s (ab1-1017: LOG11916, LOG11905).
+            self.rcs_permitted = False
+            self._apply_rcs(False)
+            if mode == "release":
+                set_autopilot_engaged(self.autopilot, False)
+                try:
+                    self.control.pitch = 0.0
+                    self.control.yaw = 0.0
+                    self.control.roll = 0.0
+                except Exception:                    # noqa: BLE001
+                    pass
+            self.log.event(snap.ut, "touchdown attitude: %s" % mode)
+        if mode == "vertical":
+            self.aim(vec.unit(snap.position))
         distance = self.pad_distance(snap)
         self.extra_lines = ["down %0.0f m from pad" % distance]
         if self.touchdown_record is None and snap.ut - self.phase_start_ut > 2.0:
