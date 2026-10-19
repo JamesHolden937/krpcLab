@@ -32,6 +32,7 @@ from common import panel, paths
 PILOTS = [
     ("DEORBIT AND LAND", "spaceplane", "spaceplane.autopilot"),
     ("BOOSTBACK AND LAND", "boosterland", "boosterland.autoland"),
+    ("BOOSTBACK FROM FMRS SAVE", "fmrs", "boosterland.fmrs"),
     ("ASCENT, BOOSTER HOME", "ascent", "ascent.autopilot"),
 ]
 
@@ -152,6 +153,13 @@ def fly(module, connection_args, started):
     return code, sorted(log_names() - before, key=lambda n: int(n[3:]))
 
 
+def hide(window):
+    try:
+        window.show(False)
+    except Exception:                                   # noqa: BLE001
+        pass            # the scene was reloaded under it; rebuilt after
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(
         description="In-game launcher for the krpcLab autopilots.")
@@ -191,11 +199,24 @@ def main(argv=None):
             # so, until the autopilot is drawing, and comes back after.
             window.show_buttons(False)
             window.show(True, "starting %s ..." % label.lower())
-            code, logs = fly(module, forward, lambda: window.show(False))
+            code, logs = fly(module, forward, lambda: hide(window))
             ended = "finished" if code == 0 else "exited %d" % code
-            window.show_buttons(True)
-            window.show(True, "%s %s\n%s" % (
-                name, ended, ", ".join(logs) if logs else "no log written"))
+            status = "%s %s\n%s" % (
+                name, ended, ", ".join(logs) if logs else "no log written")
+            try:
+                window.show_buttons(True)
+                window.show(True, status)
+            except Exception:                           # noqa: BLE001
+                # A pilot that loads a save (fmrs) rebuilds the scene, and
+                # the panel and this connection go with it: start afresh.
+                window.close()
+                try:
+                    conn.close()
+                except Exception:                       # noqa: BLE001
+                    pass
+                conn = krpc.connect(**kwargs)
+                window = LauncherPanel(conn)
+                window.show(True, status)
     except KeyboardInterrupt:
         return 0
     finally:
