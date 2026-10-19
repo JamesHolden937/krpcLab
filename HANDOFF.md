@@ -1,5 +1,50 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-18 evening: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `a5a3ed87`)
+
+New pilot `ascent/` (read `ascent/CLAUDE.md`; history `docs/ascent/journal.md`).
+Launcher button "ASCENT, BOOSTER HOME", `./run.sh --pilot ascent`.
+
+**The user asked:** install kRPC MechJeb live and on the farm (done:
+darchambault's KRPC.MechJeb **0.8.1** -- the released 0.7.1 cannot see
+MechJeb 2.15's ascent; MechJeb2 now kept in the farm's `base/`; **restart
+the live KSP to load it**); MechJeb ascent that separates when the booster
+has just enough to boost back and land; booster throttled (outer engines
+off first) to 0.75 of the upper stage's acceleration, confirmed under
+before staging. "Make it general; add a fuel tank": three stacks --
+`qs_stack` (the shuttle stack), `qs_stack_small` (VAB "Untitled Space
+Craft"), `qs_stack_stretch` (+X200-32 via `ascent/tools/stretchcraft.py`).
+
+**Measured** (`logs/rot-def2-1018.txt`, 18 flights, 1x): 18/18 launch and
+separate; throttle-down 0.24-0.26 s at exactly target (1.51 v 2.02 g heavy,
+0.66 v 0.88 g small); every booster reached the ground with propellant:
+heavy 0.58-6.40 t of a ~7.0 t model "left" (reserve 4.4), small 0.6-1.37 of
+1.9 (reserve 1.3, nearly all used twice), stretched 1.4-2.0 of 2.1. Heavy
+lands 6-358 m, standing; the small boosters (no legs) fall over or crash --
+boosterland on a light one-engine booster (landing burn from 12 km on the
+stretched one; LOG12798 130 m/s sideways at 37 m).
+HANDOFF=upper (MechJeb to orbit after separation): ORBIT_CHECK_PENDING
+
+**Next, in order:**
+1. The boostback flip (boosterland's item 0 below) -- the biggest lever on
+   separation too: ascent's `budget.boostback` models the flip at
+   `FLIP_RATE_DEG_S` 30 under full thrust, and must model whatever law
+   boosterland flies (the propagator must fly the law the vehicle flies).
+2. Learn the model's error per booster from the boosterland logs (real/model
+   burn ratio: ~+9% boostback, ~+9% landing on the heavy) and only then cut
+   `RESERVE_FRACTION`; a flat cut starves the small booster. Worth ~3 t
+   (~45 m/s upper-stage dv) on the heavy.
+3. `SEP_ACCEL_RATIO` 0.75 costs ~4.6 m/s; 0.9 or 1 confirm tick would save
+   ~1 m/s. Low priority.
+
+**Traps paid:** `run_launch` must wait on `engine.active`, not thrust
+(MechJeb's countdown holds the throttle; 7/18 staged into the decoupler);
+booster limits must stay on through staging (2140 kN v 1280 target when
+released); a thruster's transform is null just after staging (fallback to
+the part axis); boosterland's `shutdown` closes the connection -- read
+anything after it before calling it; `Vessel.resources_in_decouple_stage`
+of the upper stage reads 0 once the booster has left.
+
 ## 2026-10-18 day: boosterland -- cross-track trim on RCS, no boostback yaw (fingerprint `bb3fa2e6`)
 
 Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-18 day".
@@ -34,6 +79,31 @@ contact 30-33 m). Standing ~50% when it touches 10-34 m from centre: the
 KSC pad model's colliders ("Fuel Tank" at 14-18 m) and the launch clamps.
 
 **Next, in order:**
+**0. (the user, 2026-10-18 evening) Flip on a low throttle, chosen on the
+fly.** Boostback lights at full throttle and flips through ~150 deg under
+it (`FLIP_UNDER_POWER`). ascent's model says that waste is the biggest
+cost in the boostback: heavy at the ascent's separation state (30.8 km,
+17.9 km out, 668 away/674 up, 86 t) needs 955 m/s flipping at 30 deg/s
+full thrust v 787 pointed already; a 5 s coast then burn 809 -- ~146 m/s,
+~4 t. The user's idea: thrust only as much as the flip needs for gimbal
+authority, computed live. Formulation: bang-bang turn of angle theta at
+alpha(T) = (k*T + tau_rcs + tau_wheel)/I, t(T) = 2*sqrt(theta/alpha);
+cost(T) = (T/m)*t(T)*(1 - useful fraction) + drift(t), where drift is the
+return dv the downrange travel during t adds (~5 m/s per s here; take it
+from the boostback solution's dv slope). Waste rises ~sqrt(T), drift falls
+~1/sqrt(T): an interior optimum, re-solved every tick as theta shrinks;
+then full thrust once aligned. Everything is live: `burn_slew_rate`
+already reads gimbal accel per unit throttle (`available_torque` /
+`moment_of_inertia`, gimbal delivers 91-93% of it); RCS torque from
+`available_rcs_torque` (Vernors), aero torque at the separation q.
+Traps: kRPC's auto-tune follows available torque, so gains swing with
+throttle (and with the RCS valve -- memory `krpc-autotune-follows-rcs-
+valve`): hold the throttle steady per segment or set gains; the centre
+engine alone (cluster group 0) may be the natural low-throttle mode;
+`BOOSTBACK_CLEAR_NOSE` must still hold thrust while the nose points at the
+upper stage. Measure the flip time and the boostback's mass used against
+today's defaults on qs_heavy + the ascent's handoff state, then put the
+same law into `ascent/budget.boostback`.
 1. **The +28 m along-track at the burn.** It comes with the trim (trim arms
    +20..+28 v -7..+1 without, three batches) and grows after the late brakes
    open fully (LOG12746: +24 at the switch, +73 eight seconds later), where
