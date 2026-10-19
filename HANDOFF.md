@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-18 evening: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `a5a3ed87`)
+## 2026-10-18 evening: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `0b835a5b`)
 
 New pilot `ascent/` (read `ascent/CLAUDE.md`; history `docs/ascent/journal.md`).
 Launcher button "ASCENT, BOOSTER HOME", `./run.sh --pilot ascent`.
@@ -26,10 +26,13 @@ stretched one; LOG12798 130 m/s sideways at 37 m).
 HANDOFF=upper (MechJeb to orbit after separation): ORBIT_CHECK_PENDING
 
 **Next, in order:**
-1. The boostback flip (boosterland's item 0 below) -- the biggest lever on
-   separation too: ascent's `budget.boostback` models the flip at
-   `FLIP_RATE_DEG_S` 30 under full thrust, and must model whatever law
-   boosterland flies (the propagator must fly the law the vehicle flies).
+1. Done: boosterland's `FLIP_THROTTLE_LAW` (default) and ascent's budget
+   models it (reads boosterland's config incl. `--booster-set`; booster
+   gimbal/RCS/inertia summed over its parts, `booster flip model` line at
+   separation). flip1-1018: shuttle stack separates at 32.1 km with 33.3 t
+   (v 30.7 km, 36.6 t), boostback 20.3 v 23.6 t, landed with 5.1 v 4.9 t;
+   small 7.1 v 7.6 t, stretched 8.3 v 8.8 t. The shuttle stack then lands
+   ~250 m short (coast, boosterland item b/c), not the flip.
 2. Learn the model's error per booster from the boosterland logs (real/model
    burn ratio: ~+9% boostback, ~+9% landing on the heavy) and only then cut
    `RESERVE_FRACTION`; a flat cut starves the small booster. Worth ~3 t
@@ -79,31 +82,63 @@ contact 30-33 m). Standing ~50% when it touches 10-34 m from centre: the
 KSC pad model's colliders ("Fuel Tank" at 14-18 m) and the launch clamps.
 
 **Next, in order:**
-**0. (the user, 2026-10-18 evening) Flip on a low throttle, chosen on the
-fly.** Boostback lights at full throttle and flips through ~150 deg under
-it (`FLIP_UNDER_POWER`). ascent's model says that waste is the biggest
-cost in the boostback: heavy at the ascent's separation state (30.8 km,
-17.9 km out, 668 away/674 up, 86 t) needs 955 m/s flipping at 30 deg/s
-full thrust v 787 pointed already; a 5 s coast then burn 809 -- ~146 m/s,
-~4 t. The user's idea: thrust only as much as the flip needs for gimbal
-authority, computed live. Formulation: bang-bang turn of angle theta at
-alpha(T) = (k*T + tau_rcs + tau_wheel)/I, t(T) = 2*sqrt(theta/alpha);
-cost(T) = (T/m)*t(T)*(1 - useful fraction) + drift(t), where drift is the
-return dv the downrange travel during t adds (~5 m/s per s here; take it
-from the boostback solution's dv slope). Waste rises ~sqrt(T), drift falls
-~1/sqrt(T): an interior optimum, re-solved every tick as theta shrinks;
-then full thrust once aligned. Everything is live: `burn_slew_rate`
-already reads gimbal accel per unit throttle (`available_torque` /
-`moment_of_inertia`, gimbal delivers 91-93% of it); RCS torque from
-`available_rcs_torque` (Vernors), aero torque at the separation q.
-Traps: kRPC's auto-tune follows available torque, so gains swing with
-throttle (and with the RCS valve -- memory `krpc-autotune-follows-rcs-
-valve`): hold the throttle steady per segment or set gains; the centre
-engine alone (cluster group 0) may be the natural low-throttle mode;
-`BOOSTBACK_CLEAR_NOSE` must still hold thrust while the nose points at the
-upper stage. Measure the flip time and the boostback's mass used against
-today's defaults on qs_heavy + the ascent's handoff state, then put the
-same law into `ascent/budget.boostback`.
+**DONE this evening -- `FLIP_THROTTLE_LAW` (now default; boosterland
+fingerprint now `7aa71525`):** the boostback flip burns the throttle that makes the turn
+cheapest (`guidance.flip_throttle`: waste u*a*t(u)*(1-sin th/th) against the
+drift `guidance.drift_rate` buys back, t from a bang-bang turn at
+u*gimbal + RCS/wheels; gimbal from geometry, RCS/wheels read live). Logged
+as `flip law:` (inputs) and `flip done:` (seconds, tonnes, mean throttle).
+`flipheavy-1018` (qs_heavy, 6 v 6): boostback 27.9 v 29.5 t, flip ~6 s at
+mean throttle 0.08-0.16, stood 6/6 v 4/6, lands ~+45 m long (median 43 v
+20 m; boostback exit miss identical, so the shift is downstream -- the
+coast is ~1.6 t heavier). `flip1-1018` (ascent stacks): -3.3 t boostback on
+the shuttle stack, all spent on the climb (ascent models the same law).
+
+**Next for the coast (the user, 2026-10-18 evening; another agent will
+take these):**
+
+a. **Why the miss reads 0-3 m above ~14 km and jumps to ~40 below.** The
+   displayed miss is of the *steered* prediction, re-nulled every tick by
+   `solve_steer`, so it reads ~0 while the commanded aoa creeps up (LOG12905:
+   0.4 deg at 21 km -> 3.0 at 15 km). The late brakes went 30 -> 90 at
+   20.4 km; six open brakes at the tail are a weathervane, the holdable aoa
+   is ~3 deg, the solve saturates at ~14 km and the residual appears at once
+   (-36..-45 m), partly recovered lower (landed -18). Same mechanism as
+   `DEPLOY_UNSTEERED`'s comment (LOG10637). On the ascent's hotter
+   separations it is part of the shuttle stack's ~250 m-short landings
+   (flip1-1018, law arm: -25..-608).
+
+b. **Brakes for speed, not range.** The user: "do you need to deploy full so
+   early? I just want it near terminal velocity by the landing burn." Full
+   deploy buys little drag: the measured `Cd*A at 90 deg is N x at 30` is
+   1.07-1.20 on most of this session's flights (one 1.62) -- ~6% terminal
+   velocity, ~15 m/s at the burn, ~0.3 t. It opens early (4-23 km this
+   session) because `DEPLOY_LATE` makes it the *range* actuator: boostback
+   aims long on 30 deg and the switch height is solved to pull it back (the
+   flight above was +731 m long closed -> opened at 20.4 km). Proposal:
+   boostback aims at the pad on the 30-deg profile, lift steering trims
+   range all the way down (it keeps authority with the brakes at 30), and
+   90 only low -- at a height computed for ~terminal at the burn -- or
+   never. Risk: `DEPLOY_LATE` won its comparison (journal), so the brakes do
+   real range work; measure against the defaults on qs_heavy + the ascent
+   stacks.
+
+c. **Angle of attack as a speed brake** (the user: "lift creates drag, so
+   use aoa to make it slower"). Shuttle-style: fly an aoa for drag and roll
+   the lift vector round (coning / bank reversals) so the lift cancels.
+   Unknown is the drag curve: at the 2-5 deg the booster holds now there is
+   no measurable Cd*A rise in the logs (LOG12906: 18.1 at 0.4 deg v 14.7 at
+   4.5, Mach-dominated), but a long cylinder shows ~10x its tail area side-on
+   (heavy: ~112 v ~11 m2), so 10-30 deg may matter -- only holdable with the
+   brakes at 30 or in. Step 1: add a drag-vs-aoa probe beside
+   `Environment.refresh_holdable`'s torque probe (same rotated-attitude
+   machinery), 0-30 deg at brakes 30 and 90, logged with the holdable angle
+   per brake setting; fly one batch. Step 2, if aoa buys drag: brakes at
+   30 for authority, aoa for speed with the lift rolled to cancel, a lift
+   offset for range, brakes 90 only where the curve says. Whatever the
+   coast flies, `ascent/budget.landing_dv` models the landing from the
+   terminal velocity -- keep it in step.
+
 1. **The +28 m along-track at the burn.** It comes with the trim (trim arms
    +20..+28 v -7..+1 without, three batches) and grows after the late brakes
    open fully (LOG12746: +24 at the switch, +73 eight seconds later), where
