@@ -180,6 +180,12 @@ K="$BASE/GameData/kRPC/PluginData/settings.cfg"
 sed -i 's/^\(\s*autoStartServers\s*=\s*\).*/\1True/' "$K"
 grep -q "autoStartServers = True" "$K" || { echo "kRPC autostart not set" >&2; exit 1; }
 
+# --- MechJeb: no per-craft settings from the live game ---------------------
+# ascent/ sets every MechJeb field it relies on over kRPC; whatever the user
+# last configured live for a craft type must not ride along into the farm.
+rm -f "$BASE"/GameData/MechJeb2/Plugins/PluginData/MechJeb2/*.cfg
+[ -f "$BASE/GameData/kRPC/KRPC.MechJeb.dll" ] || echo "warning: no KRPC.MechJeb in kRPC/ -- ascent/ cannot fly" >&2
+
 # --- graphics settings: small window, cheap frame, physics untouched -------
 S="$BASE/settings.cfg"
 set_key() { sed -i "s/^\(\s*$1\s*=\s*\).*/\1$2/" "$S"; }

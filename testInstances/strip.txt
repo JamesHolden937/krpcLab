@@ -51,7 +51,6 @@ NearFutureProps
 #   ModuleManager.ConfigCache / .ConfigSHA / .Physics / .TechTree
 #
 # Whole directories removed in the second round:
-MechJeb2
 WindTunnel
 FMRS
 BetterTimeWarp

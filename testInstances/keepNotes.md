@@ -28,7 +28,9 @@ actually was:
 | `SquadExpansion` banners, missions, stock craft | 203 MB | content, not parts |
 | `KSPCommunityFixes/PluginData/TextureCache` | 74 MB | a regenerated cache.  `PNGTextureCache.cfg` and the other four answered prompts **stayed** -- deleting *those* is the silent hang below |
 | `ModuleManager.Config{Cache,SHA}`, `.Physics`, `.TechTree` | 4 MB | MM regenerates them; deleting one only costs a slow first load |
-| MechJeb2, WindTunnel, FMRS, BetterTimeWarp, ksp-advanced-flybywire, KSPBurnPlanner, CommNetOptimization, FlightRecorder, HUDReplacer, RecoveryController, StationKeeping | 20 MB | GUI and planning tools.  None flies the vehicle; `quickfly.py` drives it over kRPC |
+| WindTunnel, FMRS, BetterTimeWarp, ksp-advanced-flybywire, KSPBurnPlanner, CommNetOptimization, FlightRecorder, HUDReplacer, RecoveryController, StationKeeping | 20 MB | GUI and planning tools.  None flies the vehicle; `quickfly.py` drives it over kRPC |
+
+**MechJeb2 was put back on 2026-10-18** for `ascent/` (MechJeb ascent guidance over KRPC.MechJeb, whose `KRPC.MechJeb.dll`/`.json` sit in the live install's `GameData/kRPC/` and are copied with it -- see `ascent/CLAUDE.md`).  Its `PluginData/MechJeb2/*.cfg` per-craft settings are deleted so every instance starts at MechJeb's defaults.
 
 **Three were put back**, and they are the ones worth knowing about:
 
