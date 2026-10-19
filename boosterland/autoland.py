@@ -382,6 +382,12 @@ class Autoland:
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
+        self.flip_gimbal = None         # FLIP_THROTTLE_LAW: rad/s^2 per unit
+        self.flip_fixed = 0.0           # throttle; RCS + wheels, rad/s^2
+        self.flip_done = False
+        self.flip_prev = None           # (ut, align deg) last tick
+        self.flip_start = None          # (ut, mass) at the first flip tick
+        self.flip_u = []                # throttles the law chose
         self.coast_settled = False      # the coast's flip has come round
         self.trim_active = False        # COAST_RCS_TRIM: the flip has settled
         self.trim_pushing = False       # ... and it is translating now
@@ -800,6 +806,8 @@ class Autoland:
 
         align = vec.angle_between(snap.direction, aim)
         elapsed = snap.ut - self.phase_start_ut
+        if self.cfg.FLIP_THROTTLE_LAW and not self.flip_done:
+            throttle = min(throttle, self.flip_law(snap, align, prediction))
 
         # Debounce the exit.  The predicted miss is noisy by a couple of
         # hundred metres near the end of boostback -- it is a fresh
@@ -896,6 +904,80 @@ class Autoland:
             "align   : %8.1f deg" % align,
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
+
+    def flip_authority(self):
+        """Angular acceleration the flip can count on, rad/s^2: the gimbals'
+        per unit throttle (geometry: each engine's thrust times the sine of
+        its gimbal travel times its lever about the centre of mass, over the
+        weaker tilt axis' moment of inertia), and what RCS and wheels give
+        without thrust.  RCS reads 0 while the valve is shut, so the most it
+        has read is kept."""
+        moi = self.vessel.moment_of_inertia
+        inertia = max(1.0, min(moi[0], moi[2]))
+        if self.flip_gimbal is None:
+            frame = self.vessel.reference_frame
+            torque = 0.0
+            for engine in self.vessel.parts.engines:
+                try:
+                    if ("LiquidFuel" not in engine.propellant_names
+                            or not engine.gimballed):
+                        continue
+                    travel = math.radians(engine.gimbal_range
+                                          * engine.gimbal_limit)
+                    lever = abs(engine.part.position(frame)[1])
+                    thrust = engine.max_vacuum_thrust or engine.max_thrust
+                    torque += thrust * math.sin(travel) * lever
+                except Exception:       # noqa: BLE001 -- KSP-side failure
+                    continue
+            self.flip_gimbal = (self.cfg.FLIP_GIMBAL_SHARE * torque
+                                / inertia)
+        rcs = self.env._control_torque("available_rcs_torque") or 0.0
+        wheels = self.env._control_torque(
+            "available_reaction_wheel_torque") or 0.0
+        self.flip_rcs = max(getattr(self, "flip_rcs", 0.0), rcs)
+        self.flip_fixed = (self.flip_rcs + wheels) / inertia
+        self.flip_inertia = inertia
+        return self.flip_gimbal, self.flip_fixed
+
+    def flip_law(self, snap, align, prediction):
+        """FLIP_THROTTLE_LAW: the throttle for this tick of the flip, or 1
+        once the nose is within FLIP_ALIGN_DEG (the flip is over, and the
+        boostback's own throttle rules)."""
+        if align <= self.cfg.FLIP_ALIGN_DEG:
+            self.flip_done = True
+            if self.flip_start is not None:
+                ut0, m0 = self.flip_start
+                self.log.event(snap.ut, "flip done: %.1f s, %.2f t burned, "
+                               "throttle mean %.2f (law)"
+                               % (snap.ut - ut0, (m0 - snap.mass) / 1e3,
+                                  sum(self.flip_u) / max(1, len(self.flip_u))))
+            return 1.0
+        gimbal, fixed = self.flip_authority()
+        omega = 0.0
+        if self.flip_prev is not None and snap.ut > self.flip_prev[0]:
+            omega = math.radians(self.flip_prev[1] - align) / (
+                snap.ut - self.flip_prev[0])
+        self.flip_prev = (snap.ut, align)
+        up = vec.unit(snap.position)
+        to_pad = vec.project_out(vec.sub(self.env.pad, snap.position), up)
+        x = vec.norm(to_pad)
+        away = vec.scale(vec.unit(to_pad), -1.0) if x > 1.0 else up
+        v_away = vec.dot(vec.project_out(snap.velocity, up), away)
+        drift = guidance.drift_rate(x, v_away, prediction.time_to_land
+                                    if prediction is not None else 100.0)
+        u, t, cost = guidance.flip_throttle(math.radians(align), omega,
+                                            gimbal, fixed, snap.max_accel,
+                                            drift)
+        if self.flip_start is None:
+            self.flip_start = (snap.ut, snap.mass)
+            self.log.event(snap.ut, "flip law: align %.0f deg, gimbal %.3f "
+                           "rad/s2 per throttle, rcs+wheels %.3f, inertia "
+                           "%.0f t m2, thrust %.1f m/s2, drift %.1f m/s per "
+                           "s -> u %.2f, turn %.1f s, cost %.0f m/s"
+                           % (align, gimbal, fixed, self.flip_inertia / 1e3,
+                              snap.max_accel, drift, u, t, cost))
+        self.flip_u.append(u)
+        return u
 
     def nose_blocked(self, snap):
         """Would full thrust along the nose, as it points now, close on a

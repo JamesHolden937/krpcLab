@@ -39,6 +39,12 @@ after both, before the margin.
 import math
 from dataclasses import dataclass
 
+from boosterland.guidance import drift_rate, flip_throttle
+
+from boosterland.config import Config as _BoosterConfig
+
+FLIP_ALIGN_DEG = _BoosterConfig().FLIP_ALIGN_DEG    # the flip is over inside
+
 G0 = 9.80665
 
 
@@ -51,6 +57,10 @@ class Booster:
     isp_vac: float          # s
     isp_sl: float           # s
     radius: float           # m, body radius for the frontal area
+    # For a flip flown on boosterland's FLIP_THROTTLE_LAW (None: the old
+    # full-throttle flip at a fixed rate):
+    gimbal_accel: float = None  # rad/s^2 per unit throttle
+    fixed_accel: float = 0.0    # rad/s^2 from RCS and wheels
 
 
 @dataclass
@@ -117,6 +127,9 @@ def boostback(body, booster, state, flip_rate_deg=30.0, dt=0.1,
     mdot = booster.thrust_vac / (booster.isp_vac * G0)
     rate = math.radians(max(1e-3, flip_rate_deg))
     point = math.atan2(w, u)    # nose angle in the (away, up) plane
+    spin = 0.0                  # rad/s, the law's turn
+    law = booster.gimbal_accel is not None
+    flipping = True
     dv = 0.0
     t = 0.0
     while t < max_s and m > booster.dry_mass:
@@ -125,12 +138,35 @@ def boostback(body, booster, state, flip_rate_deg=30.0, dt=0.1,
         if u <= want:
             break
         target = math.pi                        # horizontal, towards the pad
-        if point < target:
-            point = min(target, point + rate * dt)
         a = booster.thrust_vac / m
-        step = a * dt
+        throttle = 1.0
+        if law:
+            theta = max(0.0, target - point)
+            if flipping and theta <= math.radians(FLIP_ALIGN_DEG):
+                flipping = False
+            if flipping:
+                fall = fall_time(h, w, g)
+                throttle, _, _ = flip_throttle(
+                    theta, spin, booster.gimbal_accel, booster.fixed_accel,
+                    a, drift_rate(x, u, fall))
+            alpha = throttle * booster.gimbal_accel + booster.fixed_accel
+            if spin * spin / (2.0 * max(alpha, 1e-9)) >= theta:
+                spin = max(0.0, spin - alpha * dt)
+            else:
+                spin += alpha * dt
+            point = min(target, point + spin * dt)
+        elif point < target:
+            point = min(target, point + rate * dt)
+        step = a * dt * throttle
+        if step <= 0.0:
+            # coasting through the flip on RCS and wheels
+            x += u * dt
+            h += w * dt
+            w -= g * dt
+            t += dt
+            continue
         du = step * math.cos(point)
-        if u + du < want:                       # matched inside this step
+        if du < 0.0 and u + du < want:          # matched inside this step
             frac = (want - u) / du
             step *= frac
             du *= frac
@@ -140,7 +176,7 @@ def boostback(body, booster, state, flip_rate_deg=30.0, dt=0.1,
         w += step * math.sin(point) - g * dt * frac
         x += u * dt * frac
         h += w * dt * frac
-        m -= mdot * dt * frac
+        m -= mdot * dt * frac * throttle
         dv += step
         t += dt * frac
     # The cross-track has to go too; it is small, so it is charged in

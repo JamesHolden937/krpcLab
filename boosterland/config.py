@@ -215,6 +215,16 @@ class Config:
                                             # of boostback.
     FLIP_ALIGN_DEG: float = 25.0            # hold throttle until aligned
     FLIP_UNDER_POWER: bool = True           # ignore that gate: light, then flip
+    # The user's 2026-10-18 proposal: during the flip, burn only the
+    # throttle that makes the turn cheapest -- gimbal authority bought with
+    # thrust that mostly points the wrong way, against the drift every
+    # second of turning adds (guidance.flip_throttle, solved every tick from
+    # the live gimbal geometry, RCS and wheel torque).  Off = full throttle
+    # through the flip.  ascent/budget.boostback models the same law.
+    FLIP_THROTTLE_LAW: bool = False
+    FLIP_GIMBAL_SHARE: float = 0.9          # of the geometric gimbal torque
+                                            # the attitude loop delivers (91-
+                                            # 93% measured, burn_slew_rate)
     BOOSTBACK_CLEAR_NOSE: bool = True       # ... but not while thrust along
                                             # the nose as it points now would
                                             # close on a neighbour

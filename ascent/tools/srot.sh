@@ -12,7 +12,10 @@ for i in 0 1 2 3 4 5; do
     j=$(( (k + i) % NC )); arm=${ARMS[$((j/NS))]}; save=${SAVES[$((j%NS))]}
     name=${arm%%:*}; set=${arm#*:}
     args=(--instance $i -n 1 --save "$save" --timescale 1)
-    [ -n "$set" ] && for s1 in ${set//,/ }; do args+=(--set "$s1"); done
+    # "B.FIELD=V" is a boosterland override for the landing (--booster-set)
+    [ -n "$set" ] && for s1 in ${set//,/ }; do
+      case "$s1" in B.*) args+=(--booster-set "${s1#B.}") ;; *) args+=(--set "$s1") ;; esac
+    done
     res=$(timeout 1800 "$P/ascent/tools/stackfly.py" "${args[@]}" 2>&1 | grep -E "^[0-9]+/[0-9]+ " | tail -1)
     echo "ksp$i $name $save |$res" >> "$OUT"
   done

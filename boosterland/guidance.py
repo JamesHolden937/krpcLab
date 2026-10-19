@@ -28,6 +28,62 @@ class BoostbackSolution:
     throttle: float
 
 
+def turn_time(theta, omega, accel):
+    """Seconds to turn ``theta`` rad and stop, starting at ``omega`` rad/s
+    towards the target, at a constant angular acceleration ``accel``: the
+    bang-bang minimum.  Already going too fast to stop in time counts as the
+    time to brake (the overshoot is what the next tick re-solves)."""
+    if accel <= 0.0:
+        return float("inf")
+    theta = max(0.0, theta)
+    w = max(0.0, omega)
+    if w * w / (2.0 * accel) >= theta:
+        return w / accel
+    return (2.0 * math.sqrt(accel * theta + 0.5 * w * w) - w) / accel
+
+
+def flip_throttle(theta, omega, gimbal_accel, fixed_accel, thrust_accel,
+                  drift_rate, steps=40):
+    """The throttle that makes the rest of the flip cheapest.
+
+    Thrust lit during the flip buys gimbal authority (``gimbal_accel``,
+    rad/s^2 per unit throttle) on top of whatever RCS and wheels give
+    (``fixed_accel``), so a higher throttle turns faster -- but only the part
+    of it along the target is any use.  Over a turn of ``theta`` that is
+    ``sin(theta)/theta`` of it; the rest is spent.  And every second of the
+    turn the booster drifts on, which the burn has to buy back at
+    ``drift_rate`` m/s per second.  So
+
+        cost(u) = u * thrust_accel * t(u) * (1 - sin(theta)/theta)
+                  + drift_rate * t(u),      t(u) = turn_time(alpha(u))
+
+    -- the waste rises with u and the drift falls with it.  Returns
+    ``(u, t, cost)`` for the cheapest u on a grid over [0, 1]; u = 0 is a
+    coast flip on RCS and wheels alone, when they can do it.
+    """
+    theta = max(0.0, theta)
+    useless = 1.0 - (math.sin(theta) / theta if theta > 1e-6 else 1.0)
+    best = None
+    for k in range(steps + 1):
+        u = k / float(steps)
+        a = u * gimbal_accel + fixed_accel
+        t = turn_time(theta, omega, a)
+        if not math.isfinite(t):
+            continue
+        cost = u * thrust_accel * t * useless + drift_rate * t
+        if best is None or cost < best[2] - 1e-9:
+            best = (u, t, cost)
+    return best if best is not None else (1.0, float("inf"), float("inf"))
+
+
+def drift_rate(x, v_away, time_to_land):
+    """m/s of boostback dv that each second of not burning adds: the return
+    speed ``x/T`` grows as the booster flies on (``v_away/T``) and as the
+    time it has left to get back shrinks (``x/T^2``)."""
+    t = max(1.0, time_to_land)
+    return max(0.0, v_away) / t + max(0.0, x) / (t * t)
+
+
 def boostback_solution(env, r, v, mass, max_accel, isp, prediction, cfg):
     miss = miss_vector(env, prediction)
     up = vec.unit(r)

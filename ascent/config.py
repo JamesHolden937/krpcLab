@@ -38,6 +38,10 @@ class Config:
     # boosterland log's hold= column on a new booster; a slower flip wastes
     # more of the burn.
     FLIP_RATE_DEG_S: float = 30.0
+    # With boosterland's FLIP_THROTTLE_LAW the flip is modelled from the
+    # booster's own gimbal, RCS and inertia (summed over its parts), re-read
+    # this often; FLIP_RATE_DEG_S is the full-throttle flip's model.
+    AUTHORITY_REFRESH_S: float = 15.0
     # Drag coefficient on the booster's frontal area while it falls.  1.0 is
     # a bare cylinder; airbrakes only slow it more, so the landing estimate
     # errs towards keeping propellant.

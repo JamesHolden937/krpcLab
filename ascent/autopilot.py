@@ -85,6 +85,7 @@ class Stack:
         self.mass0 = sum(p.mass for p in self.parts)
         self.prop0 = prop
         self.dry = self.mass0 - prop
+        self.sizes = {}
         self.radius = self._radius(logbook, ut)
         self.thrust = {i: e.max_vacuum_thrust or e.max_thrust
                        for i, e in enumerate(self.engines)}
@@ -117,11 +118,76 @@ class Stack:
             r = 0.5 * max(hi[0] - lo[0], hi[2] - lo[2])
             if 0.05 < r < 20.0:
                 best = max(best, r)
+                self.sizes[p] = (hi[1] - lo[1], r)
         if best <= 0.0:
             best = 1.25
             logbook.event(ut, "booster radius: no usable tank bounding box, "
                           "assuming %.2f m" % best)
         return best
+
+    def authority(self, gimbal_share):
+        """The booster's turning authority once free, from its own parts:
+        (gimbal rad/s^2 per unit throttle, RCS + wheels rad/s^2, pitch
+        inertia kg m^2).  Its centre of mass and inertia are summed over the
+        parts -- each a point mass plus, for a tank, a solid cylinder about
+        its own centre -- in the booster's axis frame, because the vessel's
+        own values are the whole stack's."""
+        frame = self.vessel.reference_frame
+        axis, a, b = self.axes
+        rows = []
+        for p in self.parts:
+            try:
+                m = p.mass
+                pos = p.position(frame)
+            except Exception:           # noqa: BLE001
+                continue
+            rows.append((p, m, vec.dot(pos, axis), vec.dot(pos, a),
+                         vec.dot(pos, b)))
+        total = sum(r[1] for r in rows) or 1.0
+        za = sum(r[1] * r[2] for r in rows) / total
+        xa = sum(r[1] * r[3] for r in rows) / total
+        ya = sum(r[1] * r[4] for r in rows) / total
+        inertia = 0.0
+        for p, m, z, x, y in rows:
+            radial2 = (x - xa) ** 2 + (y - ya) ** 2
+            inertia += m * ((z - za) ** 2 + 0.5 * radial2)
+            size = self.sizes.get(p)
+            if size is not None:
+                length, radius = size
+                inertia += m * (length * length / 12.0 + radius * radius / 4.0)
+        inertia = max(1.0, inertia)
+        gimbal = 0.0
+        for i, e in enumerate(self.engines):
+            try:
+                if not e.gimballed:
+                    continue
+                travel = math.radians(e.gimbal_range * e.gimbal_limit)
+                z = vec.dot(e.part.position(frame), axis)
+            except Exception:           # noqa: BLE001
+                continue
+            gimbal += self.thrust[i] * math.sin(travel) * abs(z - za)
+        fixed = 0.0
+        for p, m, z, x, y in rows:
+            try:
+                rcs = p.rcs
+                wheel = p.reaction_wheel
+            except Exception:           # noqa: BLE001
+                continue
+            if rcs is not None:
+                try:
+                    f = rcs.max_vacuum_thrust
+                    # A radial nozzle pushes along the pitch axis it is
+                    # wanted on for ~1/pi of directions, about its lever.
+                    fixed += f * abs(z - za) / math.pi
+                except Exception:       # noqa: BLE001
+                    pass
+            if wheel is not None:
+                try:
+                    tq = wheel.max_torque
+                    fixed += min(tq[0], tq[2])
+                except Exception:       # noqa: BLE001
+                    pass
+        return gimbal_share * gimbal / inertia, fixed / inertia, inertia
 
     def build_groups(self, cfg):
         """Group the booster's engines centre first, then pairs, in the plane
@@ -144,6 +210,7 @@ class Stack:
         if vec.norm(vec.project_out((1.0, 0.0, 0.0), axis)) < 0.3:
             a = vec.unit(vec.project_out((0.0, 0.0, 1.0), axis))
         b = vec.cross(axis, a)
+        self.axes = (axis, a, b)
         for i, e in enumerate(self.engines):
             p = e.part.position(frame)
             rows.append((i, (vec.dot(p, a), vec.dot(p, b)), self.thrust[i]))
@@ -153,7 +220,7 @@ class Stack:
 
 
 class Ascent:
-    def __init__(self, conn, cfg, logbook):
+    def __init__(self, conn, cfg, logbook, booster_set=()):
         self.conn = conn
         self.cfg = cfg
         self.log = logbook
@@ -172,7 +239,13 @@ class Ascent:
                       % (" ".join(changed) or "(defaults)",
                          defaults_fingerprint()))
         from boosterland.config import Config as BoosterConfig
-        bcfg = BoosterConfig()
+        from boosterland.config import apply_overrides as booster_overrides
+        # The configuration boosterland will fly the booster with: the
+        # budget has to model the flip it will actually fly.
+        bcfg = booster_overrides(BoosterConfig(), list(booster_set))
+        self.bcfg = bcfg
+        self.flip_auth = None           # (gimbal, fixed, inertia), law only
+        self.flip_auth_ut = -1e9
         self.pad = self.body.surface_position(bcfg.PAD_LAT, bcfg.PAD_LON,
                                               self.frame)
         pad_alt = self.body.surface_height(bcfg.PAD_LAT, bcfg.PAD_LON)
@@ -254,13 +327,23 @@ class Ascent:
                      thrust_sl / isp_s if isp_s else 1.0)
         self._thrust_sl = thrust_sl
 
-    def recovery(self, r, v):
+    def recovery(self, r, v, ut=None):
         stack = self.stack
+        gimbal, fixed = None, 0.0
+        if self.bcfg.FLIP_THROTTLE_LAW:
+            if ut is not None and (self.flip_auth is None or ut
+                                   - self.flip_auth_ut
+                                   >= self.cfg.AUTHORITY_REFRESH_S):
+                self.flip_auth = stack.authority(self.bcfg.FLIP_GIMBAL_SHARE)
+                self.flip_auth_ut = ut
+            if self.flip_auth is not None:
+                gimbal, fixed = self.flip_auth[0], self.flip_auth[1]
         b = budget.Booster(mass=stack.mass(), dry_mass=stack.dry,
                            thrust_vac=sum(stack.thrust.values()),
                            thrust_sl=self._thrust_sl,
                            isp_vac=self._isp[0], isp_sl=self._isp[1],
-                           radius=stack.radius)
+                           radius=stack.radius, gimbal_accel=gimbal,
+                           fixed_accel=fixed)
         state = self.geometry(r, v)
         rec = budget.recovery(self.model_body, b, state,
                               cd=self.cfg.LANDING_CD,
@@ -375,7 +458,7 @@ class Ascent:
 
     def run_ascent(self, ut, r, v):
         cfg = self.cfg
-        rec, state, b = self.recovery(r, v)
+        rec, state, b = self.recovery(r, v, ut)
         need = rec.propellant - rec.propellant_left
         reserve = rec.propellant_left - cfg.RESERVE_FRACTION * need
         self.reserve_hist.append((ut, reserve))
@@ -459,6 +542,12 @@ class Ascent:
         v = self.vessel.velocity(self.frame)
         rec, state, b = self.recovery(r, v)
         self.sep_record = (ut, rec, state, b)
+        if self.flip_auth is not None:
+            self.log.event(ut, "booster flip model (FLIP_THROTTLE_LAW): "
+                           "gimbal %.3f rad/s2 per throttle, rcs+wheels "
+                           "%.3f, pitch inertia %.0f t m2"
+                           % (self.flip_auth[0], self.flip_auth[1],
+                              self.flip_auth[2] / 1e3))
         self.log.event(ut, "separating: %s" % self.budget_text(
             rec, state, b, rec.propellant_left
             - self.cfg.RESERVE_FRACTION * (rec.propellant
@@ -658,7 +747,7 @@ def booster_landing_report(ascent):
 
 
 def run(conn, cfg, log, autostart=False, booster_set=(), wait=None):
-    ascent = Ascent(conn, cfg, log)
+    ascent = Ascent(conn, cfg, log, booster_set)
     ascent.rpc = RpcCounter()
     ascent.rpc.install(conn)
     ascent.autostart = autostart
