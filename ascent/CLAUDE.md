@@ -17,6 +17,13 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   landing burn from terminal velocity on the widest tank's area,
   `LANDING_CD` 1.0. Matches LOG12758's measured boostback (1251 m/s) and
   landing (~330) -- `tests/testBudget.py`.
+- MechJeb's attitude: PVG kicks the nose over from `PITCH_START_VELOCITY`
+  50 m/s at `PITCH_RATE_DEG_S` 1.0 deg/s, then follows prograde (MechJeb's
+  0.5 flew 55 deg at 10 km). Roll: `vertical_roll`/`turn_roll` are set to
+  the pad roll read against a pitch-over towards `ROLL_REF_HEADING_DEG` 90
+  (`attitude.pad_roll`), so an eastward launch never rolls; telemetry
+  carries `pit= hdg= roll=` (kRPC's euler angles are ambiguous while
+  vertical: heading 270 / roll -90 is heading 90 / roll +90).
 - Separation: when that propellant, projected `SEP_LEAD_S` ahead, falls to
   `RESERVE_FRACTION` (0.15) of what the two burns need.
 - Throttle-down: booster thrust limits (MechJeb keeps the main throttle) to

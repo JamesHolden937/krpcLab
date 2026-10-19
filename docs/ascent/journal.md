@@ -83,3 +83,29 @@ All 1x, defaults, saves `qs_stack` / `qs_stack_small` / `qs_stack_stretch`.
 - The throttle-down had been reading `control.throttle` for MechJeb's
   throttle; with the write gone it read 0 and timed out with a 0 kN
   target. Now read from the booster engines' delivered/allowed thrust.
+
+## 2026-10-19: gravity turn and roll
+
+The user: "it won't do a proper gravity turn", and force the roll to the
+launch roll (as if launching east), 90 east, 80 km.
+
+- Cause of the steep climb: the script left PVG's pre-guidance pitch program
+  at MechJeb's defaults, pitch start 50 m/s and pitch rate 0.5 deg/s (AoA
+  limit 5, optimizer only below q 10 kPa -- after separation). Every stack
+  flew it lofted: small 55 deg at 10 km / 37 at 30 km, shuttle stack 63 / 46.
+- Roll: MechJeb had force_roll on with vertical/turn roll 0, so it rolled the
+  vehicle to 0 whatever it sat at. Now set to the pad roll against a
+  heading-90 pitch-over. Small stack +89.6 held from liftoff to separation
+  (LOG12929); shuttle stack +179.8 held (LOG12935). MechJeb's roll sign
+  agrees with kRPC's.
+- Pitch rate, small stack, one flight each (trajectory shape, not scatter):
+  0.5 -> 80/68/55/44 deg at 2/5/10/20 km, sep 34.1 km (LOG12929, booster
+  crashed 333 m out, the usual small-booster landing); 1.0 -> 70/56/45/36,
+  sep 30.1 km, booster 10 m from pad (LOG12932); 1.5 -> 63/53/39/28, sep
+  26.0 km, 52 m (LOG12931). 1.0 made the default.
+- Shuttle stack at 1.0: 63/54/39/25 deg at 2/5/10/20 km, separates 20.5 km
+  (was 32 km) with 44.6 t, booster landed 3 m from the pad with 3.25 t
+  (LOG12935-36). The heavy stack now drops its booster lower and faster;
+  whether that is right for the upper stage is open (HANDOFF=upper is still
+  broken). The pitch rate is a fitted constant -- one value for stacks of
+  TWR ~1.4-1.7; a kick derived from TWR would be the general form.
