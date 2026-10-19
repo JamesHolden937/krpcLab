@@ -389,6 +389,11 @@ class Ascent:
             a = self.mj.ascent_autopilot
             a.ascent_type = int(self.cfg.ASCENT_TYPE)
             a.desired_orbit_altitude = float(self.cfg.ORBIT_ALT_M)
+            # PVG (MechJeb 2.15) targets periapsis *and* apoapsis; left at
+            # its default, it burned every upper stage to the end -- the
+            # small stacks onto escape, the shuttle stack to a 460 km
+            # apoapsis on a suborbital path (LOG12916-12918).
+            a.desired_apoapsis = float(self.cfg.ORBIT_ALT_M)
             a.desired_inclination = float(self.cfg.INCLINATION_DEG)
             a.autostage = False
             try:
@@ -396,10 +401,11 @@ class Ascent:
             except Exception:           # noqa: BLE001
                 pass
             a.enabled = True
-            self.log.event(ut, "mechjeb ascent: type %d, %.0f m, inc %.1f, "
-                           "autostage off; status %s"
+            self.log.event(ut, "mechjeb ascent: type %d, %.0f m (apoapsis "
+                           "%.0f), inc %.1f, autostage off; status %s"
                            % (a.ascent_type, a.desired_orbit_altitude,
-                              a.desired_inclination, a.status))
+                              a.desired_apoapsis, a.desired_inclination,
+                              a.status))
             self.gui.set_start_label("RUNNING")
             self.enter(LAUNCH, ut)
 
