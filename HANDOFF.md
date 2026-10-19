@@ -1,6 +1,17 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-18 evening: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `0b835a5b`)
+## 2026-10-19: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `13617a08`)
+
+**2026-10-19 (gravity turn, roll):** the climb was steep because PVG's pitch
+kick was left at MechJeb's 0.5 deg/s; now `PITCH_RATE_DEG_S` 1.0 (small stack
+45 deg at 10 km, LOG12932; shuttle stack 39 at 10 km, separates 20.5 km not
+32, booster 3 m from pad, LOG12935-36). MechJeb's roll is set to the pad
+roll against a heading-90 pitch-over (`attitude.pad_roll`): no roll motion
+on an eastward launch, verified in telemetry (`roll=`). Open: the kick is a
+fitted constant (derive it from TWR); the lower separation on the heavy
+stack is untested for the upper stage (HANDOFF=upper still broken);
+howItWorks.pdf not yet redrawn for these two. Rest of the section below is
+from 2026-10-18.
 
 New pilot `ascent/` (read `ascent/CLAUDE.md`; history `docs/ascent/journal.md`).
 Launcher button "ASCENT, BOOSTER HOME", `./run.sh --pilot ascent`.
