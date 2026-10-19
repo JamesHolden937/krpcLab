@@ -1,83 +1,28 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-19: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `13617a08`)
+## 2026-10-19 afternoon: boosterland -- FMRS boostback button; flight code as 2026-10-18 (fingerprint `bb3fa2e6`)
 
-**2026-10-19 (gravity turn, roll):** the climb was steep because PVG's pitch
-kick was left at MechJeb's 0.5 deg/s; now `PITCH_RATE_DEG_S` 1.0 (small stack
-45 deg at 10 km, LOG12932; shuttle stack 39 at 10 km, separates 20.5 km not
-32, booster 3 m from pad, LOG12935-36). MechJeb's roll is set to the pad
-roll against a heading-90 pitch-over (`attitude.pad_roll`): no roll motion
-on an eastward launch, verified in telemetry (`roll=`). Open: the kick is a
-fitted constant (derive it from TWR); the lower separation on the heavy
-stack is untested for the upper stage (HANDOFF=upper still broken);
-howItWorks.pdf not yet redrawn for these two. Rest of the section below is
-from 2026-10-18.
+**New this session: `boosterland/fmrs.py`, launcher button "BOOSTBACK FROM
+FMRS SAVE"** (`./run.sh --pilot fmrs`). Loads FMRS's separation save
+(`FMRS/FMRS_save_<n>`, the first one holding a booster in flight -- the
+live `FMRS_save_0` of 2026-10-19 is a stack split on the pad, so it is
+skipped), pauses as soon as the game answers, switches to the heaviest
+engined vessel in flight near the active one, builds `Autoland` paused and
+unpauses: zero game time lost between the load and the first tick
+(LOG12940: save_0 skipped, save_1 loaded in 8.7 s wall, BOOSTBACK 0.5 s
+after). kRPC's `load` takes the `FMRS/` subfolder; its `save` does not
+(writes `FMRS_<name>` in the save folder). FMRS's own `save.txt` is not
+touched -- untested whether FMRS objects in the live game. The launcher now
+rebuilds its panel when a pilot's load destroyed it.
 
-New pilot `ascent/` (read `ascent/CLAUDE.md`; history `docs/ascent/journal.md`).
-Launcher button "ASCENT, BOOSTER HOME", `./run.sh --pilot ascent`.
+Test state: ascent on `qs_stack` on ksp0, paused and saved at separation
+(20.5 km, Mach 3, 26.7 km from the pad, booster 99 t). Boostback fine (miss
+179 m at COAST, 27 m at 20 km) but the coast lost it below 17 km: cross
+-2.2 km by 11 km, long -8.6 km at the burn, destroyed 8.9 km out. One
+flight, a booster lighter (62 t at COAST) than `qs_heavy`; the save is not
+kept (rebuild with ascent + pause at the second engined vessel). Worth a
+look as boosterland's next item if FMRS-state flights keep missing.
 
-**The user asked:** install kRPC MechJeb live and on the farm (done:
-darchambault's KRPC.MechJeb **0.8.1** -- the released 0.7.1 cannot see
-MechJeb 2.15's ascent; MechJeb2 now kept in the farm's `base/`; **restart
-the live KSP to load it**); MechJeb ascent that separates when the booster
-has just enough to boost back and land; booster throttled (outer engines
-off first) to 0.75 of the upper stage's acceleration, confirmed under
-before staging. "Make it general; add a fuel tank": three stacks --
-`qs_stack` (the shuttle stack), `qs_stack_small` (VAB "Untitled Space
-Craft"), `qs_stack_stretch` (+X200-32 via `ascent/tools/stretchcraft.py`).
-
-**Measured** (`logs/rot-def2-1018.txt`, 18 flights, 1x): 18/18 launch and
-separate; throttle-down 0.24-0.26 s at exactly target (1.51 v 2.02 g heavy,
-0.66 v 0.88 g small); every booster reached the ground with propellant:
-heavy 0.58-6.40 t of a ~7.0 t model "left" (reserve 4.4), small 0.6-1.37 of
-1.9 (reserve 1.3, nearly all used twice), stretched 1.4-2.0 of 2.1. Heavy
-lands 6-358 m, standing; the small boosters (no legs) fall over or crash --
-boosterland on a light one-engine booster (landing burn from 12 km on the
-stretched one; LOG12798 130 m/s sideways at 37 m).
-After the flip law and the throttle fix (LOG12923-26, defaults): shuttle
-stack separates 32.1 km with 33.4 t, booster lands 79 m with 4.6 t; small
-26 m with 0.95 t; throttle-down 0.26 s at target on both.
-
-**HANDOFF=upper does not reach orbit -- open.** Every upper stage burns to
-depletion under MechJeb PVG: the small stacks to hyperbolic with periapsis
-exactly 80 km, the shuttle stack 112 x -22 km and falls (LOG12916-12922,
-`UPPER` telemetry). Fixed on the way and not the cause: PVG apoapsis target
-(now set), kRPC's held throttle (no write any more). PVG keeps thrusting
-after periapsis passes target (84 km at apoapsis 267 km); settings dump
-looks sane. Suspect PVG's stage model after a manual staging (it planned
-the booster to depletion), or `last_stage`/`optimize_stage`. Try: classic
-ascent (`ASCENT_TYPE=0`) as a control; MechJeb's autostage left on with the
-booster's decoupler the only stage it could fire; re-engage the ascent
-after separation so PVG re-plans from one stage.
-
-**Next, in order:**
-1. Done: boosterland's `FLIP_THROTTLE_LAW` (default) and ascent's budget
-   models it (reads boosterland's config incl. `--booster-set`; booster
-   gimbal/RCS/inertia summed over its parts, `booster flip model` line at
-   separation). flip1-1018: shuttle stack separates at 32.1 km with 33.3 t
-   (v 30.7 km, 36.6 t), boostback 20.3 v 23.6 t, landed with 5.1 v 4.9 t;
-   small 7.1 v 7.6 t, stretched 8.3 v 8.8 t. The shuttle stack then lands
-   ~250 m short (coast, boosterland item b/c), not the flip.
-2. Learn the model's error per booster from the boosterland logs (real/model
-   burn ratio: ~+9% boostback, ~+9% landing on the heavy) and only then cut
-   `RESERVE_FRACTION`; a flat cut starves the small booster. Worth ~3 t
-   (~45 m/s upper-stage dv) on the heavy.
-3. HANDOFF=upper to orbit (above).
-4. `SEP_ACCEL_RATIO` 0.75 costs ~4.6 m/s; 0.9 or 1 confirm tick would save
-   ~1 m/s. Low priority.
-
-**Traps paid:** never write `control.throttle` on a MechJeb-flown vessel
-(kRPC re-applies it every frame -- MechJeb could not cut off) and never
-read it either (0.00 through a full burn): the throttle-down reads the
-booster engines' delivered/allowed thrust. `run_launch` must wait on `engine.active`, not thrust
-(MechJeb's countdown holds the throttle; 7/18 staged into the decoupler);
-booster limits must stay on through staging (2140 kN v 1280 target when
-released); a thruster's transform is null just after staging (fallback to
-the part axis); boosterland's `shutdown` closes the connection -- read
-anything after it before calling it; `Vessel.resources_in_decouple_stage`
-of the upper stage reads 0 once the booster has left.
-
-## 2026-10-18 day: boosterland -- cross-track trim on RCS, no boostback yaw (fingerprint `bb3fa2e6`)
 
 Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-18 day".
 How-it-works PDF rewritten. Committed and pushed; farm stopped; sleep
@@ -198,6 +143,83 @@ has rows. Swap reached ~20 GB per 40-min batch: restart between batches.
 Readers (scratchpad, easy to rewrite): per-arm contact distance from the
 first TOUCHDOWN `pad=`, stood from `max=`, gear-to-contact seconds,
 burn-entry mass; KSP.log CollisionSpy matched to flights by wall clock.
+
+## 2026-10-19: ascent -- MechJeb climb, booster dropped when it can just get home (fingerprint `13617a08`)
+
+**2026-10-19 (gravity turn, roll):** the climb was steep because PVG's pitch
+kick was left at MechJeb's 0.5 deg/s; now `PITCH_RATE_DEG_S` 1.0 (small stack
+45 deg at 10 km, LOG12932; shuttle stack 39 at 10 km, separates 20.5 km not
+32, booster 3 m from pad, LOG12935-36). MechJeb's roll is set to the pad
+roll against a heading-90 pitch-over (`attitude.pad_roll`): no roll motion
+on an eastward launch, verified in telemetry (`roll=`). Open: the kick is a
+fitted constant (derive it from TWR); the lower separation on the heavy
+stack is untested for the upper stage (HANDOFF=upper still broken);
+howItWorks.pdf not yet redrawn for these two. Rest of the section below is
+from 2026-10-18.
+
+New pilot `ascent/` (read `ascent/CLAUDE.md`; history `docs/ascent/journal.md`).
+Launcher button "ASCENT, BOOSTER HOME", `./run.sh --pilot ascent`.
+
+**The user asked:** install kRPC MechJeb live and on the farm (done:
+darchambault's KRPC.MechJeb **0.8.1** -- the released 0.7.1 cannot see
+MechJeb 2.15's ascent; MechJeb2 now kept in the farm's `base/`; **restart
+the live KSP to load it**); MechJeb ascent that separates when the booster
+has just enough to boost back and land; booster throttled (outer engines
+off first) to 0.75 of the upper stage's acceleration, confirmed under
+before staging. "Make it general; add a fuel tank": three stacks --
+`qs_stack` (the shuttle stack), `qs_stack_small` (VAB "Untitled Space
+Craft"), `qs_stack_stretch` (+X200-32 via `ascent/tools/stretchcraft.py`).
+
+**Measured** (`logs/rot-def2-1018.txt`, 18 flights, 1x): 18/18 launch and
+separate; throttle-down 0.24-0.26 s at exactly target (1.51 v 2.02 g heavy,
+0.66 v 0.88 g small); every booster reached the ground with propellant:
+heavy 0.58-6.40 t of a ~7.0 t model "left" (reserve 4.4), small 0.6-1.37 of
+1.9 (reserve 1.3, nearly all used twice), stretched 1.4-2.0 of 2.1. Heavy
+lands 6-358 m, standing; the small boosters (no legs) fall over or crash --
+boosterland on a light one-engine booster (landing burn from 12 km on the
+stretched one; LOG12798 130 m/s sideways at 37 m).
+After the flip law and the throttle fix (LOG12923-26, defaults): shuttle
+stack separates 32.1 km with 33.4 t, booster lands 79 m with 4.6 t; small
+26 m with 0.95 t; throttle-down 0.26 s at target on both.
+
+**HANDOFF=upper does not reach orbit -- open.** Every upper stage burns to
+depletion under MechJeb PVG: the small stacks to hyperbolic with periapsis
+exactly 80 km, the shuttle stack 112 x -22 km and falls (LOG12916-12922,
+`UPPER` telemetry). Fixed on the way and not the cause: PVG apoapsis target
+(now set), kRPC's held throttle (no write any more). PVG keeps thrusting
+after periapsis passes target (84 km at apoapsis 267 km); settings dump
+looks sane. Suspect PVG's stage model after a manual staging (it planned
+the booster to depletion), or `last_stage`/`optimize_stage`. Try: classic
+ascent (`ASCENT_TYPE=0`) as a control; MechJeb's autostage left on with the
+booster's decoupler the only stage it could fire; re-engage the ascent
+after separation so PVG re-plans from one stage.
+
+**Next, in order:**
+1. Done: boosterland's `FLIP_THROTTLE_LAW` (default) and ascent's budget
+   models it (reads boosterland's config incl. `--booster-set`; booster
+   gimbal/RCS/inertia summed over its parts, `booster flip model` line at
+   separation). flip1-1018: shuttle stack separates at 32.1 km with 33.3 t
+   (v 30.7 km, 36.6 t), boostback 20.3 v 23.6 t, landed with 5.1 v 4.9 t;
+   small 7.1 v 7.6 t, stretched 8.3 v 8.8 t. The shuttle stack then lands
+   ~250 m short (coast, boosterland item b/c), not the flip.
+2. Learn the model's error per booster from the boosterland logs (real/model
+   burn ratio: ~+9% boostback, ~+9% landing on the heavy) and only then cut
+   `RESERVE_FRACTION`; a flat cut starves the small booster. Worth ~3 t
+   (~45 m/s upper-stage dv) on the heavy.
+3. HANDOFF=upper to orbit (above).
+4. `SEP_ACCEL_RATIO` 0.75 costs ~4.6 m/s; 0.9 or 1 confirm tick would save
+   ~1 m/s. Low priority.
+
+**Traps paid:** never write `control.throttle` on a MechJeb-flown vessel
+(kRPC re-applies it every frame -- MechJeb could not cut off) and never
+read it either (0.00 through a full burn): the throttle-down reads the
+booster engines' delivered/allowed thrust. `run_launch` must wait on `engine.active`, not thrust
+(MechJeb's countdown holds the throttle; 7/18 staged into the decoupler);
+booster limits must stay on through staging (2140 kN v 1280 target when
+released); a thruster's transform is null just after staging (fallback to
+the part axis); boosterland's `shutdown` closes the connection -- read
+anything after it before calling it; `Vessel.resources_in_decouple_stage`
+of the upper stage reads 0 once the booster has left.
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 

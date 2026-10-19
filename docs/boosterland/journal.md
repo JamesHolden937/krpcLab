@@ -584,3 +584,14 @@ missed by 40-90 m, off the pad. Standing needs < 10 m.
   my first trim1 headline (median 10) was 26 with them in.
 - Asked whether the airbrakes could roll the heavy: they cannot -- their
   force lies in a plane through the axis. Roll is gimbal (lit) and Vernors.
+
+## 2026-10-19 afternoon: FMRS boostback button
+
+`boosterland/fmrs.py` + launcher button: load FMRS's separation save paused,
+switch to the booster, unpause on boosterland's first tick (no clicking
+time spent falling). The live `FMRS_save_0` was a pad split (stack staged
+4 s after launch), so the button takes the first `FMRS_save_<n>` with a
+booster in flight. Test on ksp0 (LOG12937 load-only, LOG12940 flown): an
+ascent-on-`qs_stack` separation at 20.5 km / Mach 3; boostback to 179 m,
+then the coast diverged below 17 km (cross -2.2 km, long -8.6 km) and the
+booster was destroyed 8.9 km out. One flight; not chased.
