@@ -221,7 +221,11 @@ class Config:
     # second of turning adds (guidance.flip_throttle, solved every tick from
     # the live gimbal geometry, RCS and wheel torque).  Off = full throttle
     # through the flip.  ascent/budget.boostback models the same law.
-    FLIP_THROTTLE_LAW: bool = False
+    # flipheavy-1018 (qs_heavy, 6 v 6): boostback 27.9 v 29.5 t, flip 6 s
+    # at mean throttle 0.08-0.16, stood 6/6 v 4/6, but lands ~+45 m long
+    # (median 43 v 20 m).  flip1-1018 (ascent stacks): boostback -3.3 t on
+    # the shuttle stack, all of it spent on the climb.
+    FLIP_THROTTLE_LAW: bool = True
     FLIP_GIMBAL_SHARE: float = 0.9          # of the geometric gimbal torque
                                             # the attitude loop delivers (91-
                                             # 93% measured, burn_slew_rate)
