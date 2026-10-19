@@ -14,6 +14,18 @@ class Config:
     ORBIT_ALT_M: float = 80000.0        # MechJeb's target orbit
     INCLINATION_DEG: float = 0.0
     ASCENT_TYPE: int = 1                # MechJeb 2.15: 0 classic, 1 PVG
+    # PVG's gravity turn: vertical to this surface speed, then the nose is
+    # pitched over at this rate until it meets prograde, which it then
+    # follows (AoA-limited) until PVG's optimizer takes over below its
+    # dynamic-pressure trigger -- after the booster is dropped.  The kick
+    # alone sets the turn's shape.  MechJeb's defaults (50, 0.5) flew the
+    # stacks steep: 55 deg at 10 km, 37 at 30 km (LOG12916-12923).
+    PITCH_START_VELOCITY: float = 50.0
+    PITCH_RATE_DEG_S: float = 0.5
+    # MechJeb rolls the vehicle to its roll setting; it is set to the roll
+    # the vehicle sits at on the pad, read against a pitch-over towards
+    # this heading, so a launch that way never rolls (attitude.pad_roll).
+    ROLL_REF_HEADING_DEG: float = 90.0
     # MechJeb's own autostaging stays off for the booster: this script
     # stages it.  After separation it is turned on again for the upper
     # stage's own staging (HANDOFF=upper only).

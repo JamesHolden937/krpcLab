@@ -44,7 +44,7 @@ from common.pacing import LoopRate, sleeper
 from common.rpccount import RpcCounter
 from boosterland.engines import allocate, group_engines
 from boosterland.gui import ControlPanel
-from . import budget
+from . import attitude, budget
 from .config import Config, apply_overrides, defaults_fingerprint
 
 STANDBY = "STANDBY"
@@ -283,6 +283,7 @@ class Ascent:
         self.throttle_seen = None       # main throttle at THROTTLE_DOWN
         self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
+        self.att = None                 # pitch/heading/roll streams
 
     # -- helpers -----------------------------------------------------------
     def enter(self, state, ut, note=""):
@@ -293,6 +294,24 @@ class Ascent:
     def finish(self, reason):
         self.finished = True
         self.exit_reason = reason
+
+    def pad_roll(self):
+        """The roll the vehicle sits at, against a pitch-over towards
+        ``ROLL_REF_HEADING_DEG`` (``attitude.pad_roll``)."""
+        right = self.sc.transform_direction(
+            (1.0, 0.0, 0.0), self.vessel.reference_frame,
+            self.vessel.surface_reference_frame)
+        return attitude.pad_roll(right, self.cfg.ROLL_REF_HEADING_DEG)
+
+    def attitude_text(self):
+        """Pitch, heading and roll for the telemetry line, from streams."""
+        if self.att is None:
+            flight = self.vessel.flight(self.vessel.surface_reference_frame)
+            add = self.conn.add_stream
+            self.att = tuple(add(getattr, flight, k)
+                             for k in ("pitch", "heading", "roll"))
+        p, h, r = (s() for s in self.att)
+        return " pit=%5.1f hdg=%5.1f roll=%+6.1f" % (p, h, r)
 
     def geometry(self, r, v):
         """Height above the pad, ground distance from it, and the velocity
@@ -396,6 +415,12 @@ class Ascent:
             # apoapsis on a suborbital path (LOG12916-12918).
             a.desired_apoapsis = float(self.cfg.ORBIT_ALT_M)
             a.desired_inclination = float(self.cfg.INCLINATION_DEG)
+            a.pitch_start_velocity = float(self.cfg.PITCH_START_VELOCITY)
+            a.pitch_rate = float(self.cfg.PITCH_RATE_DEG_S)
+            roll = self.pad_roll()
+            a.force_roll = True
+            a.vertical_roll = roll
+            a.turn_roll = roll
             a.autostage = False
             try:
                 self.mj.staging_controller.enabled = False
@@ -403,9 +428,13 @@ class Ascent:
                 pass
             a.enabled = True
             self.log.event(ut, "mechjeb ascent: type %d, %.0f m (apoapsis "
-                           "%.0f), inc %.1f, autostage off; status %s"
+                           "%.0f), inc %.1f, pitch from %.0f m/s at %.2f "
+                           "deg/s, roll %.1f (pad, vs heading %.0f), "
+                           "autostage off; status %s"
                            % (a.ascent_type, a.desired_orbit_altitude,
                               a.desired_apoapsis, a.desired_inclination,
+                              a.pitch_start_velocity, a.pitch_rate,
+                              a.vertical_roll, self.cfg.ROLL_REF_HEADING_DEG,
                               a.status))
             self.gui.set_start_label("RUNNING")
             self.enter(LAUNCH, ut)
@@ -673,7 +702,8 @@ class Ascent:
                                      rec.landing_dv,
                                      rec.propellant_left / 1e3,
                                      reserve / 1e3, self.main_throttle()
-                                     if self.stack else 1.0)):
+                                     if self.stack else 1.0)
+                                  + self.attitude_text()):
                 pass
         try:
             self.gui.update(["phase   : %s" % self.state] + self.extra)
