@@ -19,9 +19,11 @@ class Config:
     # follows (AoA-limited) until PVG's optimizer takes over below its
     # dynamic-pressure trigger -- after the booster is dropped.  The kick
     # alone sets the turn's shape.  MechJeb's defaults (50, 0.5) flew the
-    # stacks steep: 55 deg at 10 km, 37 at 30 km (LOG12916-12923).
+    # stacks steep: 55 deg at 10 km, 37 at 30 km (LOG12916-12923, 12929).
+    # 1.0 on the small stack: 70 at 2 km, 45 at 10, 36 at 20 (LOG12932);
+    # 1.5 was 39 at 10 km and dropped the booster at 26 km (LOG12931).
     PITCH_START_VELOCITY: float = 50.0
-    PITCH_RATE_DEG_S: float = 0.5
+    PITCH_RATE_DEG_S: float = 1.0
     # MechJeb rolls the vehicle to its roll setting; it is set to the roll
     # the vehicle sits at on the pad, read against a pitch-over towards
     # this heading, so a launch that way never rolls (attitude.pad_roll).
