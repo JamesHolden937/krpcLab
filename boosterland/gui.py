@@ -12,12 +12,12 @@ class ControlPanel:
     WIDTH = panel.WIDTH
     HEIGHT = panel.HEIGHT
 
-    def __init__(self, conn):
+    def __init__(self, conn, title="BOOSTERLAND", start_label="START AUTOLAND"):
         self.conn = conn
         self.ui = conn.ui
         self.panel = panel.window(conn)
 
-        self.title = self.panel.add_text("BOOSTERLAND")
+        self.title = self.panel.add_text(title)
         self.title.rect_transform.position = (0, self.HEIGHT / 2 - 25)
         self.title.rect_transform.size = (self.WIDTH - 20, 24)
         self.title.size = 16
@@ -31,7 +31,7 @@ class ControlPanel:
         self.body.color = panel.TEXT
         self.body.alignment = self.ui.TextAnchor.upper_left
 
-        self.start_button = self.panel.add_button("START AUTOLAND")
+        self.start_button = self.panel.add_button(start_label)
         self.start_button.rect_transform.position = (0, -self.HEIGHT / 2 + 60)
         self.start_button.rect_transform.size = (self.WIDTH - 40, 32)
 

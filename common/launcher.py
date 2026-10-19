@@ -32,6 +32,7 @@ from common import panel, paths
 PILOTS = [
     ("DEORBIT AND LAND", "spaceplane", "spaceplane.autopilot"),
     ("BOOSTBACK AND LAND", "boosterland", "boosterland.autoland"),
+    ("ASCENT, BOOSTER HOME", "ascent", "ascent.autopilot"),
 ]
 
 # run.sh --pilot accepts these as well as the names above.
