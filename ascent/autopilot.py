@@ -131,8 +131,13 @@ class Stack:
         rows = []
         axis = (0.0, 0.0, 0.0)
         for i, e in enumerate(self.engines):
-            d = e.thrusters[0].thrust_direction(frame) if e.thrusters \
-                else e.part.direction(frame)
+            try:
+                d = e.thrusters[0].thrust_direction(frame)
+            except Exception:           # noqa: BLE001
+                # A thruster's transform is null for a moment after the
+                # staging that lit it (all three HANDOFF=upper flights of
+                # 2026-10-18 died here); the part's axis is the same line.
+                d = e.part.direction(frame)
             axis = vec.add(axis, vec.scale(d, self.thrust[i]))
         axis = vec.unit(axis)
         a = vec.unit(vec.project_out((1.0, 0.0, 0.0), axis))
