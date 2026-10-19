@@ -588,9 +588,14 @@ class Ascent:
             except Exception:           # noqa: BLE001
                 pass
         orbit = self.vessel.orbit
-        self.extra = ["apo %.0f peri %.0f" % (orbit.apoapsis_altitude,
-                                              orbit.periapsis_altitude),
-                      "mj      : %s" % a.status]
+        apo, peri = orbit.apoapsis_altitude, orbit.periapsis_altitude
+        status = a.status
+        self.extra = ["apo %.0f peri %.0f" % (apo, peri),
+                      "mj      : %s" % status]
+        self.log.telemetry(ut, "UPPER         apo=%9.0f peri=%9.0f thr=%.2f "
+                           "m=%6.2ft mj=%s"
+                           % (apo, peri, self.control.throttle,
+                              self.vessel.mass / 1e3, status))
         if not a.enabled:
             self.log.event(ut, "orbit: apo %.0f peri %.0f inc %.2f; "
                            "mechjeb finished"

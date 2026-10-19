@@ -86,7 +86,10 @@ class Config:
     LOOP_PACING_MAX_STRETCH: float = 5.0
     LOG_INTERVAL_UT: float = 2.0
     LOG_DIR: str = "logs"
-    ORBIT_TIMEOUT_S: float = 900.0      # HANDOFF=upper: give up after this
+    # HANDOFF=upper: give up after this.  900 cut the shuttle stack off
+    # before MechJeb finished (LOG12831); a coast to apoapsis alone can be
+    # several minutes.
+    ORBIT_TIMEOUT_S: float = 3600.0
 
 
 def defaults_fingerprint():
