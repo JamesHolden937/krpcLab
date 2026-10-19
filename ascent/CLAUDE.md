@@ -25,9 +25,15 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   thrust is under target on two ticks. The limits stay on after staging
   until boosterland's cluster owns them (released at staging they let the
   booster reach 2140 kN against a 1280 target, LOG12760).
+- The throttle is MechJeb's: never write `control.throttle` on the ascending
+  vessel (kRPC holds it over MechJeb) and never read it (it shows 0.00 under
+  MechJeb) -- `main_throttle` reads the booster engines.
+- With boosterland's `FLIP_THROTTLE_LAW` (its default) `budget.boostback`
+  flies the same throttle law, the booster's authority summed over its parts.
 - `HANDOFF=booster` (default): switch to the booster, run
   `boosterland.Autoland` in-process (its own LOG, named in this one). The
-  upper stage is abandoned. `HANDOFF=upper`: MechJeb to orbit instead.
+  upper stage is abandoned. `HANDOFF=upper`: MechJeb to orbit instead -- **broken**: PVG burns every
+  upper stage to depletion (HANDOFF.md).
 
 **MechJeb over kRPC** needs KRPC.MechJeb built for MechJeb 2.15: the
 released 0.7.1 (Genhis) cannot find 2.15's ascent module. Installed is

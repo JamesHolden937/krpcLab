@@ -23,7 +23,21 @@ heavy 0.58-6.40 t of a ~7.0 t model "left" (reserve 4.4), small 0.6-1.37 of
 lands 6-358 m, standing; the small boosters (no legs) fall over or crash --
 boosterland on a light one-engine booster (landing burn from 12 km on the
 stretched one; LOG12798 130 m/s sideways at 37 m).
-HANDOFF=upper (MechJeb to orbit after separation): ORBIT_CHECK_PENDING
+After the flip law and the throttle fix (LOG12923-26, defaults): shuttle
+stack separates 32.1 km with 33.4 t, booster lands 79 m with 4.6 t; small
+26 m with 0.95 t; throttle-down 0.26 s at target on both.
+
+**HANDOFF=upper does not reach orbit -- open.** Every upper stage burns to
+depletion under MechJeb PVG: the small stacks to hyperbolic with periapsis
+exactly 80 km, the shuttle stack 112 x -22 km and falls (LOG12916-12922,
+`UPPER` telemetry). Fixed on the way and not the cause: PVG apoapsis target
+(now set), kRPC's held throttle (no write any more). PVG keeps thrusting
+after periapsis passes target (84 km at apoapsis 267 km); settings dump
+looks sane. Suspect PVG's stage model after a manual staging (it planned
+the booster to depletion), or `last_stage`/`optimize_stage`. Try: classic
+ascent (`ASCENT_TYPE=0`) as a control; MechJeb's autostage left on with the
+booster's decoupler the only stage it could fire; re-engage the ascent
+after separation so PVG re-plans from one stage.
 
 **Next, in order:**
 1. Done: boosterland's `FLIP_THROTTLE_LAW` (default) and ascent's budget
@@ -37,10 +51,14 @@ HANDOFF=upper (MechJeb to orbit after separation): ORBIT_CHECK_PENDING
    burn ratio: ~+9% boostback, ~+9% landing on the heavy) and only then cut
    `RESERVE_FRACTION`; a flat cut starves the small booster. Worth ~3 t
    (~45 m/s upper-stage dv) on the heavy.
-3. `SEP_ACCEL_RATIO` 0.75 costs ~4.6 m/s; 0.9 or 1 confirm tick would save
+3. HANDOFF=upper to orbit (above).
+4. `SEP_ACCEL_RATIO` 0.75 costs ~4.6 m/s; 0.9 or 1 confirm tick would save
    ~1 m/s. Low priority.
 
-**Traps paid:** `run_launch` must wait on `engine.active`, not thrust
+**Traps paid:** never write `control.throttle` on a MechJeb-flown vessel
+(kRPC re-applies it every frame -- MechJeb could not cut off) and never
+read it either (0.00 through a full burn): the throttle-down reads the
+booster engines' delivered/allowed thrust. `run_launch` must wait on `engine.active`, not thrust
 (MechJeb's countdown holds the throttle; 7/18 staged into the decoupler);
 booster limits must stay on through staging (2140 kN v 1280 target when
 released); a thruster's transform is null just after staging (fallback to
@@ -93,6 +111,9 @@ mean throttle 0.08-0.16, stood 6/6 v 4/6, lands ~+45 m long (median 43 v
 20 m; boostback exit miss identical, so the shift is downstream -- the
 coast is ~1.6 t heavier). `flip1-1018` (ascent stacks): -3.3 t boostback on
 the shuttle stack, all spent on the climb (ascent models the same law).
+How-it-works PDF: the law is page 3; the phase table's BOOSTBACK row (page
+2, "full throttle before the turn is finished") predates it -- fold it in at
+the next rewrite. Journal: "Session, 2026-10-18 evening".
 
 **Next for the coast (the user, 2026-10-18 evening; another agent will
 take these):**

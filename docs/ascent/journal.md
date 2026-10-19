@@ -61,3 +61,25 @@ All 1x, defaults, saves `qs_stack` / `qs_stack_small` / `qs_stack_stretch`.
     (LOG12798: 130 m/s sideways at 37 m), the stretched one's landing burn
     starts at ~12 km. Those are boosterland on a light single-engine
     booster, not the separation.
+
+### Later the same evening: the flip, and the upper stage
+
+- **Flip law** (the user's idea; boosterland `FLIP_THROTTLE_LAW`, now its
+  default): the budget models the same law from the booster's parts.
+  `flip1-1018` (36, off v law, n=6 a cell): shuttle stack separates at 32.1
+  km with 33.3 t (v 30.7 km, 36.6 t), boostback 20.3 v 23.6 t, landed with
+  5.1 v 4.9 t, but lands ~250 m short (coast; boosterland HANDOFF items
+  a-c); small 7.1 v 7.6 t boostback, stretched 8.3 v 8.8.
+- **HANDOFF=upper never reached orbit.** 900 s timeout too short (now 3600,
+  the user). Then: every upper stage burned to depletion -- small stacks to
+  hyperbolic with periapsis exactly 80 km, shuttle stack to 460 km x -80
+  (later 112 x -22) and fell. (1) PVG's apoapsis target was its default:
+  now set (no change). (2) `control.throttle = 1.0` at launch: kRPC holds a
+  client-set throttle, so MechJeb could never cut off -- removed; but kRPC's
+  throttle read then shows 0.00 through a full-thrust burn and the upper
+  stage *still* burned to escape (LOG12922): PVG itself keeps thrusting
+  after periapsis passes target (84 km at apoapsis 267 km). Unsolved; PVG
+  settings dumped look sane (`optimize_stage_flag` on, `last_stage -1`).
+- The throttle-down had been reading `control.throttle` for MechJeb's
+  throttle; with the write gone it read 0 and timed out with a 0 kN
+  target. Now read from the booster engines' delivered/allowed thrust.

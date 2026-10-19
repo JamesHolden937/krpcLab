@@ -1,5 +1,30 @@
 # boosterland journal
 
+## Session, 2026-10-18 evening: the flip's throttle (from ascent)
+
+The user, working on `ascent/`: "do low throttle during flip, just enough to
+flip fast; calculate what throttle and therefore gimbal authority would be
+most efficient on the fly."  ascent's budget had shown the full-throttle
+flip as the biggest single cost in the boostback (955 v 787 m/s pointed
+already, heavy at the ascent's separation state).
+
+`FLIP_THROTTLE_LAW` (`guidance.flip_throttle`, `drift_rate`, `turn_time`;
+`Autoland.flip_law`, `flip_authority`): cost(u) = u*a*t(u)*(1 - sin th/th)
++ D*t(u), t(u) the bang-bang turn at u*gimbal + RCS/wheels, gimbal from the
+engines' geometry (x0.9), RCS/wheels read live (max kept), D = v_away/T +
+x/T^2.  Re-solved every tick until the nose is within FLIP_ALIGN_DEG.
+
+- `flipheavy-1018` (qs_heavy, 6 v 6, 1x): boostback 27.9 v 29.5 t (-1.6 t);
+  flip 5.8-6.3 s at mean throttle 0.08-0.16, 1.3-1.45 t; boostback exit miss
+  identical (~170 m); touchdown mass +0.75 t; stood 6/6 v 4/6; lands long
+  +27..+57 m E (median 43 v 20 m).  First tick: gimbal 1.32 rad/s2 per
+  throttle, RCS 0 (valve still shut), inertia 5651 t m2, drift 5.3 m/s/s ->
+  u 0.15.
+- `flip1-1018` (ascent stacks): shuttle stack boostback 20.3 v 23.6 t.
+- Promoted to the default.  Open: the +45 m long on qs_heavy (the coast is
+  1.6 t heavier); the coast items in HANDOFF (a: steered miss hides the
+  saturation; b: brakes for speed, not range; c: aoa as a speed brake).
+
 ## Session, 2026-10-17 night to 10-18: timed legs, late brakes, standing up
 
 All batches 1x, aim bias 0, `logs/rot-<tag>.txt`; saves qs_heavy, qs_hot,
