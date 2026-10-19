@@ -19,6 +19,12 @@ class Config:
     # stage's own staging (HANDOFF=upper only).
     MJ_AUTOSTAGE_AFTER_SEP: bool = True
 
+    # --- Launch ----------------------------------------------------------
+    # Lit but still on the pad this long after staging: release the next
+    # stage (clamps) -- if it decouples nothing.  Give up after the timeout.
+    LAUNCH_CLAMP_WAIT_S: float = 3.0
+    LAUNCH_TIMEOUT_S: float = 20.0
+
     # --- When to separate --------------------------------------------------
     # Separate when the booster's propellant, after the boostback and the
     # landing it would fly from this state, is down to this reserve -- a

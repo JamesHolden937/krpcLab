@@ -79,6 +79,7 @@ readers. New autopilots go here and plug into all of it.
 | directory | what |
 |---|---|
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
+| `ascent/` | MechJeb ascent guidance (over KRPC.MechJeb) that drops the booster when it has just enough propellant to fly home, throttled so the upper stage pulls away, then hands it to boosterland. Read `ascent/CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
 | `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
@@ -401,6 +402,7 @@ Read the file that covers what you are about to touch; do not load them all.
 |---|---|
 | [spaceplane/CLAUDE.md](spaceplane/CLAUDE.md) | anything in `spaceplane/`: where it stands, what is next, what is refuted |
 | [boosterland/CLAUDE.md](boosterland/CLAUDE.md) | anything in `boosterland/` |
+| [ascent/CLAUDE.md](ascent/CLAUDE.md) | anything in `ascent/`, or MechJeb on the farm |
 | [docs/testInstances.md](docs/testInstances.md) | running the parallel-instance farm, or when instances die |
 | [docs/farmSetup.md](docs/farmSetup.md) | building the farm from scratch on a new machine (the game copies are not in git) |
 | [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |

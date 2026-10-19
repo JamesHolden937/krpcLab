@@ -202,6 +202,7 @@ class Ascent:
         self.landed_prop = float("nan")  # booster propellant after landing
         self.landed_ut = 0.0
         self.launch_tries = 0
+        self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
 
     # -- helpers -----------------------------------------------------------
@@ -315,11 +316,15 @@ class Ascent:
             self.enter(LAUNCH, ut)
 
     def run_launch(self, ut):
-        """Stage until an engine burns and the vehicle is off the pad --
+        """Stage until an engine is lit and the vehicle is off the pad --
         engines first, then any clamps -- and never a stage that decouples
-        anything: that one is the booster's."""
+        anything: that one is the booster's.
+
+        A lit engine is ``active``, not ``thrust > 0``: MechJeb holds the
+        throttle for its countdown, and a check on thrust staged straight
+        into the booster's decoupler (7 flights of def1-1018)."""
         sit = self.vessel.situation
-        lit = any(e.active and e.thrust > 0.0 for e in self.vessel.parts.engines)
+        lit = any(e.active for e in self.vessel.parts.engines)
         if lit and sit not in (self.sc.VesselSituation.pre_launch,
                                self.sc.VesselSituation.landed):
             self.stack = Stack(self.conn, self.vessel, self.log, ut)
@@ -333,21 +338,34 @@ class Ascent:
                               [len(g) for g in self.stack.groups]))
             self.enter(ASCENT, ut, "liftoff")
             return
-        if ut - self.phase_ut < 1.0 * self.launch_tries:
+        waited = ut - self.phase_ut
+        if lit:
+            # Burning and still on the pad: clamps, or thrust still coming
+            # up.  Release the next stage only if it decouples nothing.
+            if waited - self.lit_ut < self.cfg.LAUNCH_CLAMP_WAIT_S:
+                return
+            nxt = self.control.current_stage - 1
+            if nxt < 0 or any(p.decoupler is not None
+                              for p in self.vessel.parts.in_stage(nxt)):
+                if waited > self.cfg.LAUNCH_TIMEOUT_S:
+                    raise RuntimeError("lit for %.0f s and still on the pad"
+                                       % waited)
+                return
+        elif self.launch_tries and waited < 1.0 * self.launch_tries:
             return
-        nxt = self.control.current_stage - 1
-        if nxt < 0 or self.launch_tries >= 4:
+        if self.launch_tries >= 4:
             raise RuntimeError("could not launch: stage %d, situation %s"
                                % (self.control.current_stage, sit))
-        if any(p.decoupler is not None
-               for p in self.vessel.parts.in_stage(nxt)):
-            if not lit:
-                raise RuntimeError("the next stage decouples before any "
-                                   "engine is lit")
-            return                      # lit and waiting to rise
+        nxt = self.control.current_stage - 1
+        if not lit and (nxt < 0 or any(
+                p.decoupler is not None
+                for p in self.vessel.parts.in_stage(nxt))):
+            raise RuntimeError("the next stage decouples before any engine "
+                               "is lit")
         self.control.throttle = 1.0
         self.control.activate_next_stage()
         self.launch_tries += 1
+        self.lit_ut = waited
         self.log.event(ut, "launch: staged to %d" % self.control.current_stage)
 
     def run_ascent(self, ut, r, v):
@@ -609,7 +627,11 @@ def fly_booster(conn, ascent, args_set, pacing_game_time=False):
         # Read what the booster landed with before boosterland's shutdown,
         # which closes the connection.
         try:
-            ascent.landed_prop = ascent.stack.propellant()
+            # The booster's own resources: the stack's per-decouple-stage
+            # view belonged to the vessel it has left.
+            res = booster.resources
+            ascent.landed_prop = sum(res.amount(n) * ascent.stack.density[n]
+                                     for n in PROPELLANTS)
             ascent.landed_ut = sc.ut
         except Exception:               # noqa: BLE001
             pass

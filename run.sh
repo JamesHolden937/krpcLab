@@ -8,7 +8,7 @@
 #   ./run.sh --pilot booster --autostart      # ... or starts at once
 #   ./run.sh --pilot plane --set GATE_ALT_M=1600 --set LOG_INTERVAL_UT=1
 #
-# --pilot takes spaceplane (plane) or boosterland (booster); the list is
+# --pilot takes spaceplane (plane), boosterland (booster) or ascent; the list is
 # PILOTS in common/launcher.py.  Every other flag goes to the autopilot (or the
 # launcher) unchanged.
 #
