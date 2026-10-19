@@ -32,6 +32,15 @@ class Config:
     # stages it.  After separation it is turned on again for the upper
     # stage's own staging (HANDOFF=upper only).
     MJ_AUTOSTAGE_AFTER_SEP: bool = True
+    # HANDOFF=upper: what guides the upper stage once the booster is gone.
+    #   "keep": PVG as engaged at launch -- it planned the booster too, and
+    #     after the separation burned every upper stage to depletion
+    #     (LOG12916-12922: periapsis held at target, apoapsis to escape).
+    #   "reengage": PVG off and on again, so it re-plans from the one stage
+    #     left.
+    #   "classic": MechJeb's classic ascent from separation: burn to the
+    #     apoapsis target, coast, circularize.
+    UPPER_GUIDANCE: str = "keep"
 
     # --- Launch ----------------------------------------------------------
     # Lit but still on the pad this long after staging: release the next

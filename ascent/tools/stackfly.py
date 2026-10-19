@@ -83,6 +83,7 @@ REPORT = re.compile(r"booster propellant: (\S+) t at separation, model needed "
 BLOG = re.compile(r"booster handed to boosterland: (\S+)")
 TOUCH = re.compile(r"TOUCHDOWN .* pad=\s*([\d.]+)")
 SHUT = re.compile(r"shutdown: (.*)")
+ORBIT = re.compile(r"orbit: apo (\S+) peri (\S+)")
 DOWN = re.compile(r"phase THROTTLE_DOWN -> SEPARATE (.*)")
 
 
@@ -110,6 +111,10 @@ def summarise(path):
             out["bend"] = s[-1] if s else "-"
         except OSError:
             pass
+    m = ORBIT.search(body)
+    if m:
+        out["orbit"] = "%.0f x %.0f km" % (float(m.group(1)) / 1e3,
+                                          float(m.group(2)) / 1e3)
     s = SHUT.findall(body)
     out["end"] = s[-1] if s else "-"
     return out
@@ -141,11 +146,11 @@ def fmt(r):
         v = r.get(k)
         return "-" if v is None else f % v
     return ("%s sep alt=%s dr=%s va=%s vu=%s | prop %s t need %s reserve %s "
-            "-> landed with %s t | %s pad=%s (%s) | %s"
+            "-> landed with %s t | %s pad=%s (%s) | orbit %s | %s"
             % (r["log"], g("alt"), g("dr"), g("va"), g("vu"),
                g("prop_sep", "%.2f"), g("need", "%.2f"), g("reserve", "%.2f"),
                g("left", "%.2f"), r.get("blog", "-"), g("pad"),
-               r.get("bend", "-"), r["end"]))
+               r.get("bend", "-"), r.get("orbit", "-"), r["end"]))
 
 
 def main(argv=None):

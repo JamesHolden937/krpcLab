@@ -284,6 +284,7 @@ class Ascent:
         self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
         self.att = None                 # pitch/heading/roll streams
+        self.upper_engaged = False      # HANDOFF=upper guidance set up
 
     # -- helpers -----------------------------------------------------------
     def enter(self, state, ut, note=""):
@@ -643,6 +644,18 @@ class Ascent:
 
     def run_handoff_upper(self, ut):
         a = self.mj.ascent_autopilot
+        if not self.upper_engaged:
+            self.upper_engaged = True
+            mode = self.cfg.UPPER_GUIDANCE
+            if mode in ("reengage", "classic"):
+                a.enabled = False
+                if mode == "classic":
+                    a.ascent_type = 0
+                a.enabled = True
+            elif mode != "keep":
+                raise ValueError("UPPER_GUIDANCE %r" % mode)
+            self.log.event(ut, "upper guidance: %s (type %d), status %s"
+                           % (mode, a.ascent_type, a.status))
         if self.cfg.MJ_AUTOSTAGE_AFTER_SEP and not a.autostage:
             a.autostage = True
             try:
