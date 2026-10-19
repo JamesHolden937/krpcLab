@@ -280,6 +280,7 @@ class Ascent:
         self.landed_prop = float("nan")  # booster propellant after landing
         self.landed_ut = 0.0
         self.launch_tries = 0
+        self.throttle_seen = None       # main throttle at THROTTLE_DOWN
         self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
 
@@ -456,7 +457,11 @@ class Ascent:
                 for p in self.vessel.parts.in_stage(nxt))):
             raise RuntimeError("the next stage decouples before any engine "
                                "is lit")
-        self.control.throttle = 1.0
+        # No throttle write: kRPC re-applies a throttle a client has set on
+        # every frame, so 1.0 written here pinned the throttle for the whole
+        # flight and MechJeb could never cut the upper stage off (every
+        # upper stage burned to depletion, LOG12919-12921).  MechJeb's
+        # ascent throttles up itself.
         self.control.activate_next_stage()
         self.launch_tries += 1
         self.lit_ut = waited
@@ -503,9 +508,31 @@ class Ascent:
                    rec.boostback_dv, rec.burn_s, rec.apex, rec.landing_dv,
                    rec.terminal, rec.propellant_left / 1e3, reserve / 1e3))
 
+    def main_throttle(self):
+        """The main throttle MechJeb is flying, from what the booster's
+        engines deliver against what their limits allow.  kRPC's
+        ``control.throttle`` does not read MechJeb's throttle (0.00 through
+        a full-thrust burn, LOG12922)."""
+        if self.throttle_seen is not None:
+            return self.throttle_seen
+        got, cap = 0.0, 0.0
+        for i, e in enumerate(self.stack.engines):
+            try:
+                lim = e.thrust_limit
+                if lim < 0.05:
+                    continue
+                got += e.thrust
+                cap += e.max_thrust * lim
+            except Exception:           # noqa: BLE001
+                continue
+        return min(1.0, got / cap) if cap > 0.0 else 1.0
+
     def run_throttle_down(self, ut):
         cfg = self.cfg
-        throttle = self.control.throttle
+        # Read once, before the limits move: once they do, the engines'
+        # thrust lags the new limit and the ratio is not the throttle.
+        throttle = self.main_throttle()
+        self.throttle_seen = throttle
         m_b = self.stack.mass()
         a_u, f_u, m_u = self.upper_accel(self.vessel.mass, m_b, throttle)
         target, _ = budget.separation_target(a_u, m_b, 0.0, cfg.SEP_ACCEL_RATIO)
@@ -598,9 +625,10 @@ class Ascent:
         status = a.status
         self.extra = ["apo %.0f peri %.0f" % (apo, peri),
                       "mj      : %s" % status]
-        self.log.telemetry(ut, "UPPER         apo=%9.0f peri=%9.0f thr=%.2f "
-                           "m=%6.2ft mj=%s"
-                           % (apo, peri, self.control.throttle,
+        thrust = sum(e.thrust for e in self.stack.upper)
+        self.log.telemetry(ut, "UPPER         apo=%9.0f peri=%9.0f "
+                           "thrust=%5.0fkN m=%6.2ft mj=%s"
+                           % (apo, peri, thrust / 1e3,
                               self.vessel.mass / 1e3, status))
         if not a.enabled:
             self.log.event(ut, "orbit: apo %.0f peri %.0f inc %.2f; "
@@ -644,7 +672,8 @@ class Ascent:
                                      rec.propellant / 1e3, rec.boostback_dv,
                                      rec.landing_dv,
                                      rec.propellant_left / 1e3,
-                                     reserve / 1e3, self.control.throttle)):
+                                     reserve / 1e3, self.main_throttle()
+                                     if self.stack else 1.0)):
                 pass
         try:
             self.gui.update(["phase   : %s" % self.state] + self.extra)
