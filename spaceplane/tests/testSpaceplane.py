@@ -5711,3 +5711,52 @@ class TestPeakHeating(unittest.TestCase):
                                         (1500.0, 30000.0)])
         self.assertAlmostEqual(got, math.sqrt(1.0e-3) * 8.0e9 / 1e6)
         self.assertIsNone(traj.peak_heating(Env(), []))
+
+
+class TestFuelToNose(unittest.TestCase):
+    """``FUEL_TO_NOSE``: every LF/Ox tank pumped into the forward-most, once,
+    no more than it holds."""
+
+    def _ap(self, tanks, on=True):
+        moves = []
+
+        class Res:
+            def __init__(self, held):
+                self.held = held
+
+            def amount(self, name):
+                return self.held.get(name, 0.0)
+
+        def part(**held):
+            return SimpleNamespace(resources=Res(held))
+
+        parts = {k: [(y, part(**{k: a}), cap) for y, a, cap in v]
+                 for k, v in tanks.items()}
+        xfer = SimpleNamespace(start=lambda f, t, n, a: moves.append(
+            (f, t, n, a)))
+        ap = object.__new__(autopilot_module.Autopilot)
+        ap.cfg = SimpleNamespace(FUEL_TO_NOSE=on)
+        ap.conn = SimpleNamespace(space_center=SimpleNamespace(
+            ResourceTransfer=xfer))
+        ap.logbook = SimpleNamespace(event=lambda *a: None)
+        ap._trim_tanks = lambda: parts
+        return ap, parts, moves
+
+    def test_pumps_forward_once_and_within_room(self):
+        ap, parts, moves = self._ap({"LiquidFuel": [
+            (-5.0, 60.0, 100.0), (-3.0, 60.0, 100.0), (10.0, 20.0, 100.0)]})
+        snap = SimpleNamespace(ut=0.0)
+        ap.fuel_to_nose(snap)
+        ap.fuel_to_nose(snap)
+        nose = parts["LiquidFuel"][-1][1]
+        self.assertEqual([(m[1], m[3]) for m in moves],
+                         [(nose, 60.0), (nose, 20.0)])
+
+    def test_off_and_already_forward_move_nothing(self):
+        ap, _, moves = self._ap({"LiquidFuel": [
+            (-5.0, 60.0, 100.0), (10.0, 20.0, 100.0)]}, on=False)
+        ap.fuel_to_nose(SimpleNamespace(ut=0.0))
+        ap, _, moves2 = self._ap({"LiquidFuel": [
+            (-5.0, 0.0, 100.0), (10.0, 80.0, 100.0)]})
+        ap.fuel_to_nose(SimpleNamespace(ut=0.0))
+        self.assertEqual(moves + moves2, [])

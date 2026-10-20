@@ -2143,8 +2143,10 @@ class Config:
     # of the twin-fin shuttle's (whose reserve sits in the nose adapter),
     # and departs laterally at Mach 2-5 on 10 of 12 flights
     # (rot-stackorb-1020); pumping recovers 0.32 m of that.  A no-op on
-    # ``qs_shuttle2``.
-    FUEL_TO_NOSE: bool = False
+    # ``qs_shuttle2``.  **Default 2026-10-20**, rot-nose-1020 (qs_stackorb,
+    # 6 an arm): glide sideslip max 9-15 deg v 17-56, 0/6 departures v 3/6
+    # (those 15-43 km short); every pumped flight reached the field.
+    FUEL_TO_NOSE: bool = True
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and
@@ -2756,11 +2758,6 @@ class Config:
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
     ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
-    # ``retune_pitch_air`` in the glide too (it is cone-on only).  The stack's
-    # orbiter (aft CoM) flies 5-10 deg above the commanded alpha at Mach 2-5
-    # on the 18 s static pitch figure while the surfaces give 2000+ kN m,
-    # and departs laterally from there (rot-stackorb-1020).
-    ATTITUDE_PITCH_AIR_IN_GLIDE: bool = False
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
