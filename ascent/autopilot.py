@@ -765,11 +765,20 @@ class Ascent:
         self.extra = ["apo %.0f peri %.0f" % (apo, peri),
                       "mj      : %s" % status]
         thrust = sum(e.thrust for e in self.stack.upper)
+        mass = self.vessel.mass
         self.log.telemetry(ut, "UPPER         apo=%9.0f peri=%9.0f "
                            "thrust=%5.0fkN m=%6.2ft mj=%s"
-                           % (apo, peri, thrust / 1e3,
-                              self.vessel.mass / 1e3, status))
-        if not a.enabled:
+                           % (apo, peri, thrust / 1e3, mass / 1e3, status))
+        sit = self.vessel.situation
+        if mass <= 0.0 or sit in (self.sc.VesselSituation.landed,
+                                  self.sc.VesselSituation.splashed):
+            # a stage that hit the ground reads mass 0 and MechJeb's status
+            # never changes: without this the loop flew the wreck to the
+            # timeout (shape1-1019, TURN_SHAPE 0.3)
+            self.log.event(ut, "upper stage lost: %s, mass %.2f t"
+                           % (sit, mass / 1e3))
+            self.finish("upper stage lost")
+        elif not a.enabled:
             self.log.event(ut, "orbit: apo %.0f peri %.0f inc %.2f mass "
                            "%.3f t; mechjeb finished"
                            % (orbit.apoapsis_altitude,
