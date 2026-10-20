@@ -22975,7 +22975,7 @@ GAME
 				state = 0
 				PreFailState = 0
 				attached = True
-				autostrutMode = Heaviest
+				autostrutMode = Grandparent
 				rigidAttachment = False
 				flag = Squad/Flags/default
 				rTrf = GearMedium
@@ -24890,7 +24890,7 @@ GAME
 				state = 0
 				PreFailState = 0
 				attached = True
-				autostrutMode = Heaviest
+				autostrutMode = Grandparent
 				rigidAttachment = False
 				flag = Squad/Flags/default
 				rTrf = GearMedium
@@ -27325,7 +27325,7 @@ GAME
 				state = 0
 				PreFailState = 0
 				attached = True
-				autostrutMode = Heaviest
+				autostrutMode = Grandparent
 				rigidAttachment = False
 				flag = Squad/Flags/default
 				rTrf = GearSmall

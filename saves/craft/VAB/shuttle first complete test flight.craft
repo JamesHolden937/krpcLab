@@ -5238,7 +5238,7 @@ PART
 	attRot0 = -0.763911426,2.58499363E-12,3.06003682E-12,0.64532119
 	mir = 1,1,1
 	symMethod = Mirror
-	autostrutMode = Heaviest
+	autostrutMode = Grandparent
 	rigidAttachment = False
 	istg = -1
 	resPri = 0
@@ -5777,7 +5777,7 @@ PART
 	attRot0 = 0.692033231,0.00822970178,0.00789057929,-0.721775651
 	mir = 1,1,1
 	symMethod = Mirror
-	autostrutMode = Heaviest
+	autostrutMode = Grandparent
 	rigidAttachment = False
 	istg = -1
 	resPri = 0
@@ -6267,7 +6267,7 @@ PART
 	attRot0 = -0.00789054856,-0.721775651,-0.692033291,0.00822967011
 	mir = 1,1,1
 	symMethod = Mirror
-	autostrutMode = Heaviest
+	autostrutMode = Grandparent
 	rigidAttachment = False
 	istg = -1
 	resPri = 0
