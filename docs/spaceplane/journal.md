@@ -2728,3 +2728,49 @@ No flights. Three flags that sat off by default were deleted with their code
 The retired old craft (`qs_plane`) is no longer any tool's default save:
 `quickglide`, `ladder`, `planeprobe`, `farmfly`/`pairfly`/`armfly`,
 `deorbitprobe` and `instancebench` default to `qs_shuttle2_rigoff`.
+
+## Session, 2026-10-20 morning: the live tumble is an aft CoM -- `FUEL_TO_NOSE`
+
+The user: "Check the last spaceplane log. It got into a tumble again."
+LOG12759 (live, 2026-10-18, defaults `33f45bd7`): the **stack's orbiter**
+("shuttle first complete test flight", 32 parts, 30.16 t after its ore
+payload was dropped) -- not `shuttle.craft`.  It flew the first reversal
+(q 330 Pa) clean; on the second (Mach 5, q 2 kPa) the bank overshot (+45
+v +34), alpha swung 23-41 against 33, and the bank oscillation grew
+16 -> 19 -> 26 -> 129 -> 172 deg past the command while the roll damper
+slowed roll and yaw 5.3 -> 18.8 s and the RCS relay flipped yaw's figure
+5.3 <-> 18.8 on each toggle; yaw input pinned, slip to +-60, alpha to 70.
+
+**Reproduced on the farm.**  New save `qs_stackorb`: `qs_stack` flown to
+81 x 79 km by `ascent/tools/stackfly.py` on ksp0, bay opened, TD-18 fired
+(the two Large Holding Tanks, 30 t of ore, as the user did live), debris
+removed.  rot-stackorb-1020 (12 defaults, LOG13117-13128): glide slip max
+14-72 deg on 11 of 12 (`qs_shuttle2` never past 11), alpha to 96, four
+arrivals 24-40 km short.  The parts are identical to `qs_shuttle2` (plus
+the decoupler); the difference is the propellant.  `qs_shuttle2`'s reserve
+(440 units after DRAIN) sits in the nose adapter; the orbiter reaches orbit
+with ~69 units in each of three tanks.  Measured in game (CoM from the
+nose tank): `qs_shuttle2` glide 9.80 m, `qs_stackorb` 10.43 m (0.63 aft),
+pumped to the nose 10.11 m.  This is `DRAIN_TO_BURN`'s refutation
+(2026-09-30: 1.8 t out of the nose, 3/3 hypersonic departures) met by a
+craft that arrives that way.
+
+rot-nose-1020 (LOG13129-13146, qs_stackorb, 6 an arm, defaults `f3c7e879`):
+
+| arm | glide slip max | far-short departures | outcome |
+|---|---|---|---|
+| defaults | 17-56 | 3/6 (-15, -30, -43 km) | 1 intact +7 km splash, 2 broke on the runway |
+| `FUEL_TO_NOSE` | 9-15 | 0/6 | 4 intact +2.9..+4.9 km splashed, 2 broke on the runway (+156, +408) |
+| + `ATTITUDE_PITCH_AIR_IN_GLIDE` | 8-36 | 1/6 (-12 km, 13 across) | 5 on the runway, all broke at 53-81 m/s |
+
+**`FUEL_TO_NOSE` promoted** (pump every LF/Ox tank into the forward-most on
+the first COAST tick; a no-op where the fuel is already forward).
+`ATTITUDE_PITCH_AIR_IN_GLIDE` (the cone's surface-authority pitch retune in
+the glide) deleted: a departure and slip to 36.
+
+Left on this airframe (not the tumble): pumped, it arrives long and
+splashes past the runway end (+2.9..+4.9 km), and every runway arrival
+broke on touchdown at 53-81 m/s.  The remaining 0.3 m of aft CoM is not
+recoverable from propellant (it has 0.9 t); the cone and touchdown on a
+light, aft-CoM orbiter are the next item.  The roll damper slows a
+departure it did not cause (both live tumbles): not changed here.

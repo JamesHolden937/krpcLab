@@ -1,5 +1,43 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-20 morning: spaceplane -- the live tumble is an aft CoM; `FUEL_TO_NOSE` default (fingerprint `12d2b275`)
+
+Committed and pushed.  Farm stopped, sleep inhibitor released.  How-it-works
+PDF: COAST paragraph updated (page 3).  Journal: "Session, 2026-10-20
+morning".
+
+**The user asked:** the last spaceplane log tumbled again -- fix it.
+LOG12759 (live 2026-10-18) flew **the stack's orbiter** ("shuttle first
+complete test flight", ore payload dropped, 30.2 t), which the farm had
+never flown from orbit.
+
+- **New save `qs_stackorb`** (saves/README): `qs_stack` flown to 81 x 79
+  km by `ascent/tools/stackfly.py`, payload dropped, debris removed.
+- **Reproduced:** rot-stackorb-1020, 12 defaults: glide slip max 14-72 deg
+  on 11/12 (qs_shuttle2: <= 11), four 24-40 km short.
+- **Cause: propellant, not shape.**  Same parts as `qs_shuttle2`;
+  `qs_shuttle2` keeps its reserve in the nose adapter, the orbiter reaches
+  orbit with ~69 units in each of three tanks.  CoM measured from the nose
+  tank: 9.80 m (qs_shuttle2 glide) v 10.43 (qs_stackorb), 10.11 pumped.
+- **Fix, default: `FUEL_TO_NOSE`** (`Autopilot.fuel_to_nose`, first COAST
+  tick, pump every LF/Ox tank to the forward-most; logged `fuel to nose:`).
+  rot-nose-1020, 6 an arm: slip max 9-15 v 17-56, **0/6 departures v 3/6**,
+  every flight to the field.  A no-op on `qs_shuttle2`.
+- Flown and deleted: `ATTITUDE_PITCH_AIR_IN_GLIDE` (1/6 departed, slip 36).
+
+**Open on `qs_stackorb`, in order:**
+1. Pumped, it arrives long: 4/6 intact but splashed +2.9..+4.9 km past the
+   midpoint; the two that stopped on the runway broke at touchdown (56-63
+   m/s).  Read landsum/conesum on rot-nose-1020's arm1 (LOG13130, 13133,
+   13135, 13138, 13143, 13146) before changing anything.
+2. The roll damper slows roll *and* yaw into a departure (both live
+   tumbles, LOG10020 and LOG12759); the RCS relay flips yaw's figure 3.5x
+   per toggle.  Neither caused this one, but both feed a departure once it
+   has started.
+3. Fly the other orbits/airframes once on the new default to confirm the
+   no-op (`qs_shuttle2_rigoff`, `_ecc_`): the pump must log "nothing to
+   move" there.
+
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
 **`boosterland/fmrs.py`, launcher button "BOOSTBACK FROM FMRS SAVE"**
@@ -264,7 +302,7 @@ an instance whose kRPC refuses (ksp5 once) loses its arm silently -- check
 every arm has a LOG; KSP's `Orbit` clashes with `LowThrust.Orbit` in the
 plugin (`global::Orbit`).
 
-## 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
+### Earlier spaceplane snapshot -- 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
 Defaults unchanged all session (every arm was a flag; all deleted).
 Committed and pushed to origin/main.  Farm stopped, sleep inhibitor
@@ -313,20 +351,7 @@ trajectory would be better, thermally checked.
   survived).  The code for the band/thermal limits was deleted
   (`git show e145a51`); `deorbit heating` stays in the log.
 
-### The live tumble (LOG10020) -- dropped
-
-The user: "probably a freak accident."  Sideslip -3 -> -24 deg at Mach 3.7,
-roll input pinned at -1, the roll damper slowing roll and yaw to 24 s, then a
-rolling tumble.  **Not reproducible on the farm**: 72 default flights
-(tumble-1012, low70-1012) including 16 from the live orbit
-(`qs_shuttle2_i90low_rigoff`, new save: 70.23 km circular) -- glide slip p-p
-<= 11 on every one.  Two fixes flown and deleted: `ATTITUDE_YAW_RCS_ARMED`
-(17/24 v 21/24, rigoff arrivals +3.4 km long) and `ROLL_DAMPER_SLIP_MAX_DEG`
-(never cleanly measured).  The live install differs from the farm by
-mods, notably **ksp-advanced-flybywire with an SDL controller enabled**
-(pitch/roll/yaw/throttle bound; its input is summed into `yrin=`), KJR,
-MechJeb, BetterTimeWarp.  If a live flight departs again, ask whether a
-stick was connected before re-opening this.
+### The live tumble -- superseded by 2026-10-20 above (aft CoM, `FUEL_TO_NOSE`)
 
 ### Added (default, logging only)
 

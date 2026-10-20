@@ -81,6 +81,13 @@ The root [HANDOFF.md](../HANDOFF.md): the inc glide energy deficit; then `docs/s
 
 ## Standing facts (each paid for; the journal has the evidence)
 
+- **The propellant left after the burn is the shuttle's ballast and must
+  sit in the nose** (`FUEL_TO_NOSE`, 2026-10-20).  The stack's orbiter
+  (`qs_stackorb`, same parts as `qs_shuttle2`) arrives with its last 0.9 t
+  spread over three tanks, CoM 0.63 m aft, and departed laterally on
+  10/12 (both live tumbles' signature: alpha over the command, bank
+  swings growing, slip to 70); pumped, 0/6.  Any new craft or orbit that
+  burns its nose tank dry before entry is that airframe.
 - **The shuttle trims at ~22 deg hypersonically** (lowa-1012): commanding
   16-18 at Mach 4-5 flies ~22 and leaks into yaw (slip > 10 on 22% of
   ticks v 9%); a 10-20 deg plan went 3/12 v 11/12.  Heat is not what
