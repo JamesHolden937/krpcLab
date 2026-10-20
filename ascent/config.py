@@ -19,9 +19,17 @@ class Config:
     # separation did not help (escape on 4/4, upper1-1019); classic from
     # the separation reached 80 x 80 km on 3/3 (LOG12942, 12949, 12952).
     ASCENT_TYPE: int = 0
-    # Classic's "turn shape" (MechJeb's percentage / 100): low is a steep
-    # climb, high an early flat turn.
+    # Classic's "turn shape" (MechJeb's percentage / 100): low is a flat
+    # early turn, high a steep climb that turns late.  TURN_SHAPE_SOLVE: at liftoff, solve it
+    # from the craft (turnshape.solve: the shape that leaves the upper stage
+    # the most mass in orbit, the booster's separation by budget.recovery);
+    # TURN_SHAPE is then only the fallback when the solve finds no orbit.
     TURN_SHAPE: float = 0.4
+    TURN_SHAPE_SOLVE: bool = False
+    # The drag table the solve flies, sampled from the game at zero angle
+    # of attack (Flight.simulate_aerodynamic_force_at) on this grid.
+    DRAG_HEIGHTS_M: str = "0,5000,10000,20000,30000,45000"
+    DRAG_SPEEDS_MS: str = "100,200,300,350,400,500,700,1000,1500,2200"
     # PVG only (ASCENT_TYPE 1).  PVG's gravity turn: vertical to this surface speed, then the nose is
     # pitched over at this rate until it meets prograde, which it then
     # follows (AoA-limited) until PVG's optimizer takes over below its

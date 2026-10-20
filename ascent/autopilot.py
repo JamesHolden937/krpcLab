@@ -44,7 +44,7 @@ from common.pacing import LoopRate, sleeper
 from common.rpccount import RpcCounter
 from boosterland.engines import allocate, group_engines
 from boosterland.gui import ControlPanel
-from . import attitude, budget
+from . import attitude, budget, turnshape
 from .config import Config, apply_overrides, defaults_fingerprint
 
 STANDBY = "STANDBY"
@@ -463,6 +463,8 @@ class Ascent:
                               self._thrust_sl / 1e3, self._isp[0],
                               self._isp[1], self.stack.dry / 1e3,
                               [len(g) for g in self.stack.groups]))
+            if self.cfg.TURN_SHAPE_SOLVE:
+                self.solve_turn_shape(ut)
             self.enter(ASCENT, ut, "liftoff")
             return
         waited = ut - self.phase_ut
@@ -498,6 +500,111 @@ class Ascent:
         self.launch_tries += 1
         self.lit_ut = waited
         self.log.event(ut, "launch: staged to %d" % self.control.current_stage)
+
+    def solve_turn_shape(self, ut):
+        """Set MechJeb's classic turn shape to the one ``turnshape.solve``
+        finds for this craft (see ``Config.TURN_SHAPE_SOLVE``)."""
+        t0 = time.monotonic()
+        stack, cfg = self.stack, self.cfg
+        body, frame = self.body, self.frame
+        a = self.mj.ascent_autopilot
+        pad_alt = self.pad_alt
+        b_thrust_vac = sum(stack.thrust.values())
+        gimbal, fixed = None, 0.0
+        if self.bcfg.FLIP_THROTTLE_LAW:
+            gimbal, fixed, _ = stack.authority(self.bcfg.FLIP_GIMBAL_SHARE)
+        booster = budget.Booster(
+            mass=stack.mass(), dry_mass=stack.dry, thrust_vac=b_thrust_vac,
+            thrust_sl=self._thrust_sl, isp_vac=self._isp[0],
+            isp_sl=self._isp[1], radius=stack.radius, gimbal_accel=gimbal,
+            fixed_accel=fixed)
+        b_engines = turnshape.Engines(
+            b_thrust_vac, self._isp[0],
+            self._isp[0] + (self._isp[1] - self._isp[0])
+            / max(1e-3, self.pad_pressure))
+        f_u, inv_v, inv_s = 0.0, 0.0, 0.0
+        for e in stack.upper:
+            f = e.max_vacuum_thrust or e.max_thrust
+            f_u += f
+            inv_v += f / max(1.0, e.vacuum_specific_impulse)
+            inv_s += f / max(1.0, e.specific_impulse_at(1.0))
+        u_engines = turnshape.Engines(f_u, f_u / inv_v if inv_v else 1.0,
+                                      f_u / inv_s if inv_s else 1.0)
+        res = self.vessel.resources
+        total_prop = sum(res.amount(n) * stack.density[n]
+                         for n in PROPELLANTS)
+        upper_mass = self.vessel.mass - booster.mass
+        upper_prop = max(0.0, total_prop - stack.propellant())
+        # drag at zero angle of attack, the vessel as it stands
+        flight = self.vessel.flight(frame)
+        up = vec.unit(self.vessel.position(frame))
+        rot = self.vessel.rotation(frame)
+        heights = [float(x) for x in cfg.DRAG_HEIGHTS_M.split(",")]
+        speeds = [float(x) for x in cfg.DRAG_SPEEDS_MS.split(",")]
+        r_pad = vec.norm(self.pad)
+        table = []
+        for h in heights:
+            pos = vec.scale(up, r_pad + h)
+            rho = body.density_at(pad_alt + h)
+            row = []
+            for v in speeds:
+                vel = vec.scale(up, v)
+                cda = None
+                if rho > 1e-6:
+                    try:
+                        force = flight.simulate_aerodynamic_force_at(
+                            body, pos, vel, rot)
+                        d = -vec.dot(force, up)
+                        if d > 0.0:
+                            cda = d / (0.5 * rho * v * v)
+                    except Exception:   # noqa: BLE001
+                        pass
+                row.append(cda)
+            table.append(row)
+        for i, row in enumerate(table):     # fill gaps from the row below
+            for j, c in enumerate(row):
+                if c is None:
+                    row[j] = table[i - 1][j] if i else 0.0
+        depth = body.atmosphere_depth if body.has_atmosphere else 0.0
+        step = 1000.0
+        n = int(max(0.0, depth - pad_alt) / step) + 2
+        pres = [body.pressure_at(pad_alt + k * step) / ATM
+                if body.has_atmosphere else 0.0 for k in range(n)]
+        dens = [body.density_at(pad_alt + k * step)
+                if body.has_atmosphere else 0.0 for k in range(n)]
+        world = turnshape.World(self.model_body, body.rotational_speed,
+                                pres, dens, step)
+        if a.auto_path:
+            start, end = a.auto_turn_start_altitude, a.auto_turn_end_altitude
+        else:
+            start, end = a.turn_start_altitude, a.turn_end_altitude
+        path = turnshape.Path(start=start - pad_alt, end=end - pad_alt,
+                              end_angle=a.turn_end_angle,
+                              orbit=cfg.ORBIT_ALT_M - pad_alt,
+                              reserve=cfg.RESERVE_FRACTION,
+                              landing_cd=cfg.LANDING_CD,
+                              flip_rate_deg=cfg.FLIP_RATE_DEG_S)
+        craft = turnshape.Craft(
+            booster, b_engines, upper_mass, upper_prop, u_engines,
+            any(e.active for e in stack.upper), heights, speeds, table)
+        best, flown = turnshape.solve(craft, world, path)
+        curve = " ".join("%.2f:%.1f" % (r.shape, r.mass / 1e3)
+                         for r in sorted(flown, key=lambda r: r.shape)[::2])
+        if math.isfinite(best.mass):
+            a.turn_shape_exponent = float(best.shape)
+        self.log.event(ut, "turn shape: %s %.3f (orbit %.2f t, sep %.0f m "
+                       "%.0f m out at %.0f s, circ %.0f m/s) path %.0f-%.0f m"
+                       " end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
+                       "isp %.0f/%.0f lit %s; cda %s; %.2f s wall; curve %s"
+                       % ("solved" if math.isfinite(best.mass)
+                          else "NO ORBIT, kept", a.turn_shape_exponent,
+                          best.mass / 1e3, best.sep_height,
+                          best.sep_downrange, best.sep_time, best.circ_dv,
+                          start, end, a.turn_end_angle, upper_mass / 1e3,
+                          upper_prop / 1e3, f_u / 1e3, u_engines.isp_vac,
+                          u_engines.isp_sl, craft.upper_lit,
+                          "/".join("%.1f" % c for c in table[1]),
+                          time.monotonic() - t0, curve))
 
     def run_ascent(self, ut, r, v):
         cfg = self.cfg
