@@ -89,11 +89,36 @@ class Stack:
         self.radius = self._radius(logbook, ut)
         self.thrust = {i: e.max_vacuum_thrust or e.max_thrust
                        for i, e in enumerate(self.engines)}
+        self.control_part = self._control_part(vessel, ids)
+        if self.control_part is None:
+            logbook.event(ut, "WARNING upper stage has no control source: "
+                          "no crewed command part and no probe core above "
+                          "the booster -- once separated nothing can "
+                          "throttle or steer it, MechJeb included")
         logbook.event(ut, "booster: decouple stage %d, %d parts, %.1f t "
                       "(%.1f t propellant), %d engines, radius %.2f m; "
-                      "upper stage: %d engines"
+                      "upper stage: %d engines, control %s"
                       % (stage, len(self.parts), self.mass0 / 1e3, prop / 1e3,
-                         len(self.engines), self.radius, len(self.upper)))
+                         len(self.engines), self.radius, len(self.upper),
+                         self.control_part))
+
+    @staticmethod
+    def _control_part(vessel, booster_parts):
+        """The upper stage's control source: a crewed command part or a
+        probe core outside the booster; None when there is neither.  An
+        uncrewed pod controls nothing -- qs_stack_small, launched empty,
+        flew its upper stage at a throttle MechJeb could not move
+        (LOG12992-13025, LOG13028)."""
+        try:
+            parts = vessel.parts.with_module("ModuleCommand")
+        except Exception:               # noqa: BLE001
+            return "unknown"
+        for p in parts:
+            if p in booster_parts:
+                continue
+            if p.crew_capacity == 0 or len(p.crew) > 0:
+                return p.title
+        return None
 
     def propellant(self):
         return sum(self.resources.amount(n) * self.density[n]
