@@ -95,6 +95,11 @@ class Stack:
                           "no crewed command part and no probe core above "
                           "the booster -- once separated nothing can "
                           "throttle or steer it, MechJeb included")
+        torn = self._struts_across(sc, vessel, ids)
+        if torn:
+            logbook.event(ut, "WARNING autostruts cross the booster's "
+                          "decoupler and will be torn at separation: %s"
+                          % ", ".join(torn))
         logbook.event(ut, "booster: decouple stage %d, %d parts, %.1f t "
                       "(%.1f t propellant), %d engines, radius %.2f m; "
                       "upper stage: %d engines, control %s"
@@ -119,6 +124,39 @@ class Stack:
             if p.crew_capacity == 0 or len(p.crew) > 0:
                 return p.title
         return None
+
+    @staticmethod
+    def _struts_across(sc, vessel, booster_parts):
+        """Upper-stage parts autostrutted to a part in the booster.  A
+        Heaviest strut goes to the heaviest part of the whole stack -- a
+        booster tank -- and a Root strut to the root; KSP cuts both at
+        separation and the part snaps back from where the strut held it.
+        The shuttle stack's wing-mounted gear were strutted to the booster's
+        S3-14400 and the delta wings broke off at separation (CollisionSpy
+        JOINTBREAK in the decoupling frame, fix1-1019).  kRPC cannot set
+        the mode: this only says so; the craft has to change."""
+        try:
+            parts = list(vessel.parts.all)
+            mode = sc.AutoStrutMode
+            heavy = max(parts, key=lambda p: p.mass)
+            root = vessel.parts.root
+        except Exception:               # noqa: BLE001
+            return []
+        to = {}
+        if heavy in booster_parts:
+            to[mode.heaviest] = to[mode.force_heaviest] = "heaviest"
+        if root in booster_parts:
+            to[mode.root] = to[mode.force_root] = "root"
+        out = []
+        if not to:
+            return out
+        for p in parts:
+            if p in booster_parts:
+                continue
+            m = p.auto_strut_mode
+            if m in to:
+                out.append("%s (%s)" % (p.title, to[m]))
+        return out
 
     def propellant(self):
         return sum(self.resources.amount(n) * self.density[n]
@@ -639,9 +677,12 @@ class Ascent:
                                 pres, dens, step)
         if a.auto_path:
             start, end = a.auto_turn_start_altitude, a.auto_turn_end_altitude
+            start_v = a.auto_turn_start_velocity
         else:
             start, end = a.turn_start_altitude, a.turn_end_altitude
+            start_v = a.turn_start_velocity
         path = turnshape.Path(start=start - pad_alt, end=end - pad_alt,
+                              start_speed=start_v,
                               end_angle=a.turn_end_angle,
                               orbit=cfg.ORBIT_ALT_M - pad_alt,
                               reserve=cfg.RESERVE_FRACTION,
@@ -658,13 +699,13 @@ class Ascent:
             self.mj_settings["turn_shape_exponent"] = float(best.shape)
         self.log.event(ut, "turn shape: %s %.3f (orbit %.2f t, sep %.0f m "
                        "%.0f m out at %.0f s, circ %.0f m/s) path %.0f-%.0f m"
-                       " end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
+                       " or %.0f m/s, end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
                        "isp %.0f/%.0f lit %s; cda %s; %.2f s wall; curve %s"
                        % ("solved" if math.isfinite(best.mass)
                           else "NO ORBIT, kept", a.turn_shape_exponent,
                           best.mass / 1e3, best.sep_height,
                           best.sep_downrange, best.sep_time, best.circ_dv,
-                          start, end, a.turn_end_angle, upper_mass / 1e3,
+                          start, end, start_v, a.turn_end_angle, upper_mass / 1e3,
                           upper_prop / 1e3, f_u / 1e3, u_engines.isp_vac,
                           u_engines.isp_sl, craft.upper_lit,
                           "/".join("%.1f" % c for c in table[1]),
