@@ -31,6 +31,14 @@ class TestTurnShape(unittest.TestCase):
         self.assertAlmostEqual(ts.pitch_deg(31000.0, path, 0.4),
                                90.0 - 0.5 ** 0.4 * 90.0)
 
+    def test_turn_measured_from_where_the_speed_started_it(self):
+        # MechJeb leaves the vertical at its start speed below the start
+        # height and runs the curve from there (LOG13036: from ~1250 m)
+        path = ts.Path(start=3500.0, end=59500.0, start_speed=99.0)
+        self.assertAlmostEqual(ts.pitch_deg(1944.0, path, 0.46, 1250.0),
+                               90.0 - (694.0 / 58250.0) ** 0.46 * 90.0)
+        self.assertEqual(ts.pitch_deg(1944.0, path, 0.46), 90.0)
+
     def test_circular_orbit_apoapsis(self):
         w = kerbin()
         r = R + 80000.0

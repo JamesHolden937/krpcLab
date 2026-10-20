@@ -677,9 +677,12 @@ class Ascent:
                                 pres, dens, step)
         if a.auto_path:
             start, end = a.auto_turn_start_altitude, a.auto_turn_end_altitude
+            start_v = a.auto_turn_start_velocity
         else:
             start, end = a.turn_start_altitude, a.turn_end_altitude
+            start_v = a.turn_start_velocity
         path = turnshape.Path(start=start - pad_alt, end=end - pad_alt,
+                              start_speed=start_v,
                               end_angle=a.turn_end_angle,
                               orbit=cfg.ORBIT_ALT_M - pad_alt,
                               reserve=cfg.RESERVE_FRACTION,
@@ -696,13 +699,13 @@ class Ascent:
             self.mj_settings["turn_shape_exponent"] = float(best.shape)
         self.log.event(ut, "turn shape: %s %.3f (orbit %.2f t, sep %.0f m "
                        "%.0f m out at %.0f s, circ %.0f m/s) path %.0f-%.0f m"
-                       " end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
+                       " or %.0f m/s, end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
                        "isp %.0f/%.0f lit %s; cda %s; %.2f s wall; curve %s"
                        % ("solved" if math.isfinite(best.mass)
                           else "NO ORBIT, kept", a.turn_shape_exponent,
                           best.mass / 1e3, best.sep_height,
                           best.sep_downrange, best.sep_time, best.circ_dv,
-                          start, end, a.turn_end_angle, upper_mass / 1e3,
+                          start, end, start_v, a.turn_end_angle, upper_mass / 1e3,
                           upper_prop / 1e3, f_u / 1e3, u_engines.isp_vac,
                           u_engines.isp_sl, craft.upper_lit,
                           "/".join("%.1f" % c for c in table[1]),

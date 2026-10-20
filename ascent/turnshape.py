@@ -76,8 +76,12 @@ class World:
 
 @dataclass
 class Path:
-    start: float                # m above sea level... used as height here
+    start: float                # m above the pad: the vertical climb's top
     end: float
+    # m/s surface speed that also ends the vertical climb (MechJeb's
+    # turn-start velocity); the turn is then measured from the height it
+    # began at, not from ``start``
+    start_speed: float = float("inf")
     end_angle: float = 0.0      # deg
     orbit: float = 80000.0      # m, apoapsis and circular target
     reserve: float = 0.15       # RESERVE_FRACTION
@@ -98,12 +102,16 @@ class Result:
     track: list = field(default_factory=list)
 
 
-def pitch_deg(h, path, shape):
-    if h <= path.start:
+def pitch_deg(h, path, shape, turn_start=None):
+    """MechJeb classic's pitch at height h.  ``turn_start`` is the height
+    the vertical climb ended at (``path.start`` or lower, when the speed
+    ended it first); None while still climbing vertically."""
+    h0 = path.start if turn_start is None else turn_start
+    if h <= h0:
         return 90.0
     if h >= path.end:
         return path.end_angle
-    x = (h - path.start) / (path.end - path.start)
+    x = (h - h0) / (path.end - h0)
     return 90.0 - x ** shape * (90.0 - path.end_angle)
 
 
@@ -181,6 +189,7 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
     fine = False                    # re-flying the last interval per step
     track = []
     next_track = 0.0
+    turn_start = None               # height the vertical climb ended at
     target_r = R + path.orbit       # the pad is the reference (as budget)
     while t < max_s:
         h = r - R
@@ -245,7 +254,10 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
                 return Result(shape, -float("inf"), *_sep(sep), track=track, circ_dv=dv,
                               reason="no propellant to circularize")
             return Result(shape, m_orbit, *_sep(sep), track=track, circ_dv=dv)
-        pitch = math.radians(pitch_deg(h, path, shape))
+        if turn_start is None and (h >= path.start
+                                   or speed >= path.start_speed):
+            turn_start = min(h, path.start)
+        pitch = math.radians(pitch_deg(h, path, shape, turn_start))
         a_t = thrust / mass
         drag = 0.5 * rho * speed * speed * cda_at(craft, h, speed) / mass
         dr_ = -drag * ur / speed if speed > 1e-6 else 0.0
