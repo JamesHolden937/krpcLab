@@ -349,7 +349,6 @@ class Ascent:
         self.att = None                 # pitch/heading/roll streams
         self.mj_settings = {}           # ascent_settings as applied
         self.settings_checked = False
-        self.ignite_ut = None           # upper engines lit (upper_lit)
 
     # -- helpers -----------------------------------------------------------
     def enter(self, state, ut, note=""):
@@ -806,8 +805,6 @@ class Ascent:
         waited = ut - self.phase_ut
         if (self.down_ticks >= cfg.SEP_CONFIRM_TICKS
                 or waited >= cfg.SEP_THROTTLE_TIMEOUT_S):
-            if not self.upper_lit(ut):
-                return
             note = ("booster %.0f kN <= target %.0f kN (%.2f g free v upper "
                     "%.2f g) after %.2fs"
                     % (got / 1e3, target / 1e3, got / m_b / 9.80665,
@@ -816,44 +813,6 @@ class Ascent:
                 note = "TIMEOUT: " + note
             self.enter(SEPARATE, ut, note)
             self.separate(ut)
-
-    def upper_lit(self, ut):
-        """Light the upper stage's engines before the decoupler fires, and
-        report whether they are delivering their thrust yet.
-
-        Staged together, the decoupler lets go in the frame before the
-        upper engines make thrust, and the booster -- still at
-        SEP_ACCEL_RATIO of an upper-stage acceleration that is not there
-        yet -- rams the upper stage: the shuttle stack's delta wings broke
-        off on 10 of 17 flights (CollisionSpy JOINTBREAK in the decoupling
-        frame, def2-1019, sepcheck-1019).  Lit first, each stage is already
-        under its own thrust when the joint goes."""
-        cfg = self.cfg
-        cold = [e for e in self.stack.upper if not e.active]
-        if self.ignite_ut is None:
-            self.ignite_ut = ut
-            for e in cold:
-                try:
-                    e.active = True
-                except Exception:       # noqa: BLE001
-                    pass
-            if cold:
-                self.log.event(ut, "upper stage: lighting %d engines before "
-                               "the decoupler" % len(cold))
-        want = sum(e.max_thrust for e in self.stack.upper) \
-            * max(self.throttle_seen or 1.0, 1e-3)
-        got = sum(e.thrust for e in self.stack.upper)
-        waited = ut - self.ignite_ut
-        if got >= cfg.SEP_UPPER_THRUST_FRACTION * want:
-            self.log.event(ut, "upper stage lit: %.0f of %.0f kN after %.2f s"
-                           % (got / 1e3, want / 1e3, waited))
-            return True
-        if waited >= cfg.SEP_IGNITE_TIMEOUT_S:
-            self.log.event(ut, "upper stage lit TIMEOUT: %.0f of %.0f kN "
-                           "after %.2f s; separating anyway"
-                           % (got / 1e3, want / 1e3, waited))
-            return True
-        return False
 
     def separate(self, ut):
         stage = self.stack.stage
