@@ -134,3 +134,36 @@ craft", "you shouldn't have to hope it lands somewhere").
   0.524, predicted 64.66 t, flew 64.72 t; predicted no orbit at 0.10/0.28.
   Surplus in orbit ~1.3 t LFO (~70 m/s). LOG12991 sits 1.7 t above the
   sweep's 0.5/0.6 cells -- one flight, unresolved.
+
+## 2026-10-19 night: three stacks to orbit; the shuttle keeps its wings
+
+- **Small/stretch upper stage lost 24/24** (def2-1019): the Mk1-3 pod was
+  uncrewed (the farm launch found every kerbal Missing), so once the
+  booster's probe core left nothing could command the upper stage --
+  `ControlState.none`, MechJeb's throttle cut at 80 km ignored (Cheetah at
+  full to 161 x 60 km), then zero after the rails warp. First guess (MechJeb
+  settings lost with the core) was wrong: re-read after separation, "as
+  set" (LOG13028); the re-check stays as a guard. Fix: Jebediah seated in
+  both saves; the ascent logs the upper stage's control source at liftoff
+  and warns when there is none. fix1-1019: 24/24 to 80 x 80, small 10.17 t,
+  stretch 10.11 t, sd ~0.01.
+- **qs_stack trimodal 62.5 / 63.55 / 64.8 t** (def2, sepcheck): the delta
+  wings broke off at separation (CollisionSpy JOINTBREAK in the decoupling
+  frame) on ~11 of 12 flights. Cause: the three wing-mounted gears were
+  autostrutted Heaviest = the booster's S3-14400, so KSP tore the struts at
+  decoupling. gs1-1019 (gears Grandparent): 12/12 intact, 0 joint breaks,
+  64.48 t sd ~0.1 -- the solve's predicted ~64.6. Promoted into qs_stack
+  and the craft file; the ascent warns about upper-stage struts to a
+  booster part. The user's live craft still needs the change in the VAB.
+- **Abandoned: hot staging** (light the upper engines before the decoupler,
+  on the theory that the booster rammed the unlit shuttle): fix1-1019 broke
+  the wings with the Rhino at full 1992 kN 0.12 s before the decoupler.
+  Deleted.
+- **turnshape vs flight** (shapetrack.py, new): downrange was inertial
+  (R*theta, ~19 km of pad rotation by separation) -- now along the ground.
+  MechJeb leaves the vertical at `auto_turn_start_velocity` (98.9 m/s on the
+  shuttle stack, ~1.25 km) as well as at its start height, and runs the
+  curve from where it began; the model now does too (flown pitch matches to
+  ~1 deg, LOG13036). Not yet flown: model2-1019 was stopped part-way.
+- Small stack: predicted 10.34 t, flew 10.17; stretch 10.26 / 10.11 (both
+  before the turn-start fix).

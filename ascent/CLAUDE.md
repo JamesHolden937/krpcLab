@@ -12,7 +12,11 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
 
 - `autopilot.py` -- the phase machine, the only kRPC-aware code. `Stack`
   finds the booster from the staging (the parts the next decoupling drops
-  that carry lit engines); nothing about the vehicle is configured.
+  that carry lit engines); nothing about the vehicle is configured. At
+  liftoff it logs the upper stage's control source and warns when there is
+  none (an uncrewed pod controls nothing) or when upper-stage autostruts
+  run to a booster part (Heaviest/Root -- torn at separation; kRPC cannot
+  change the mode, the craft must).
 - `budget.py` -- pure: the propellant the booster would land with if it
   separated now. Boostback integrated with the flip under power (nose turns
   from prograde over the top at `FLIP_RATE_DEG_S`), ballistic vacuum return;
@@ -20,8 +24,9 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   `LANDING_CD` 1.0. Matches LOG12758's measured boostback (1251 m/s) and
   landing (~330) -- `tests/testBudget.py`.
 - `turnshape.py` -- pure: MechJeb classic's pitch-vs-altitude path
-  (`90 - ((h-start)/(end-start))**shape * 90`, start/end read from MechJeb's
-  auto path) flown as a point mass over a rotating body, with the craft's
+  (`90 - ((h-h0)/(end-h0))**shape * 90`; the vertical climb ends at
+  MechJeb's start height or start speed, whichever first, and h0 is the
+  height it ended at; all read from MechJeb's auto path) flown as a point mass over a rotating body, with the craft's
   thrust/Isp/masses, a Cd*A table sampled from the game at zero AoA
   (`simulate_aerodynamic_force_at`, `DRAG_HEIGHTS_M` x `DRAG_SPEEDS_MS`),
   the game's pressure/density, separation by `budget.recovery` (the same
@@ -29,7 +34,9 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   (coarse scan + golden section, ~0.5 s) picks the shape that leaves the
   most mass in orbit; `Ascent.solve_turn_shape` runs it at every liftoff
   and sets MechJeb's `turn_shape_exponent`. `TURN_SHAPE` 0.4 is only the
-  no-orbit fallback. Low shape = flat early turn.
+  no-orbit fallback. Low shape = flat early turn. Downrange is along the
+  ground. Every log carries `turn shape track:` (predicted t:h/dr/v);
+  `tools/shapetrack.py LOG...` sets it against the telemetry.
 - `ASCENT_TYPE` 0 (classic). PVG (1) plans the stack and never re-plans
   after this script stages the booster: it burned every upper stage to
   depletion. The PVG pitch-kick fields (`PITCH_*`) do nothing under classic.
@@ -57,7 +64,9 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   `ORBIT_TIMEOUT_S`. The booster keeps the throttle-down thrust limits it
   was saved with; `boosterland/fmrs.py` clears them for a one-group booster.
   `HANDOFF=booster`: switch to the booster and run `boosterland.Autoland`
-  in-process (its own LOG); the upper stage is abandoned.
+  in-process (its own LOG); the upper stage is abandoned. On the first
+  HANDOFF tick MechJeb's ascent settings are re-read and any that differ
+  are put back (`check_settings`).
 
 **MechJeb over kRPC** needs KRPC.MechJeb built for MechJeb 2.15: the
 released 0.7.1 (Genhis) cannot find 2.15's ascent module. Installed is

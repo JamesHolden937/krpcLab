@@ -1,67 +1,53 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-19 evening: ascent -- classic MechJeb, follows the upper stage to orbit, turn shape solved per craft (fingerprint `316c85cd`)
+## 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
 
-All committed and pushed; `docs/ascent/howItWorks.pdf` redrawn for classic
-+ the solve. Launcher button renamed "ASCENT TO ORBIT". Farm stopped.
+All committed and pushed. Farm stopped. The user stopped the session and
+will fly the current defaults live themselves (no re-fly asked for).
 
-**What the user asked, in order:** (1) follow the ship (upper stage) now that
-the FMRS button exists for the booster; (2) use MechJeb's *classic* ascent,
-not PVG; (3) make the classic "turn shape" (MechJeb's 40% default) the most
-efficient, balancing booster downrange against trajectory efficiency --
-**calculated from the craft, per flight, not fitted by sweeping values**
-(the user objected twice to sweeps standing in for a calculation, and to
-"verifying it lands in a band": the solve's answer is what flies).
+**Where it stands (defaults):** classic MechJeb, turn shape solved at
+liftoff, booster dropped by budget, upper stage followed to orbit.
+- qs_stack (shuttle, gears now autostrut Grandparent): 12/12 to 80 x 80,
+  **64.48 t sd ~0.1** in orbit (gs1-1019, LOG13070-13081), 0 joint breaks.
+  That leaves ~1.0 t LFO = **~51 m/s** (Rhino 340 s) -- the 34 t ore payload
+  eats the margin.
+- qs_stack_small 12/12 10.17 t; qs_stack_stretch 12/12 10.11 t
+  (fix1-1019, LOG13034-13069; Jebediah now in the pod).
 
-**Where it stands (defaults):**
-- `ASCENT_TYPE` 0 classic, `HANDOFF` "upper". PVG is not used: it plans the
-  full stack and never re-plans after the script stages the booster, so it
-  held periapsis at 80 km and burned the upper stage to escape
-  (LOG12916-12922). PVG re-engaged after separation: hyperbolic on 4/4
-  (rot-upper1-1019, LOG12943-12950). Classic from separation: 80 x 80 km
-  on 3/3 (LOG12942, 12949, 12952). `UPPER_GUIDANCE` flag deleted.
-- `turnshape.py` + `Ascent.solve_turn_shape` (no flag): at liftoff, sample
-  drag (60 `simulate_aerodynamic_force_at` calls, zero AoA), pressure and
-  density, read MechJeb's auto path (start 3500 m, end 59500 m on Kerbin),
-  fly the ascent model for each shape, set `turn_shape_exponent` to the
-  best. Logs `turn shape: solved ...` with the predicted curve.
-- `qs_stack` = the user's VAB "shuttle first complete test flight" (70
-  parts, the upgraded booster, **two full ore tanks ~34 t** in the shuttle;
-  checked part for part against the live craft file).
-
-**Measured:**
-- `rot-shape1-1019` (fixed shapes, qs_stack, 6 a cell, *farm at 15-24 GB
-  swap*): 0.2 and 0.3 fail 6/6 (flat turn, booster separates at 5 / 11 km,
-  upper stage falls back); 0.4 62.13 t sd 0.50 (n=5); 0.5 63.00 sd 0.54;
-  0.6 62.89 sd 0.50; 0.7 63.19 sd 0.87 (mass in 80 x 80 km orbit).
-- LOG12991 (solve, clean single instance): **solved 0.524, predicted
-  64.66 t, flew 64.72 t.** Model curve: 0.10 and 0.28 no orbit (matches the
-  sweep's failures), 0.44-0.55 ~64.6, 0.91 63.7. Upper 100.9 t with 37.5 t
-  LFO -> **surplus in orbit ~1.3 t LFO, ~70 m/s** (Rhino Isp 340) -- about
-  a deorbit burn; the ore payload eats the margin. Told the user.
-- Open discrepancy: LOG12991 is 1.7 t above the sweep's 0.5/0.6 cells
-  (~63.0, sd 0.5). One flight; the sweep ran on a swapped farm. Fly ~6 of
-  the defaults on a freshly restarted farm before reading anything into it.
+**This session changed:**
+1. Saves: small/stretch had an uncrewed pod -- no control source after
+   separation (all 24 lost). qs_stack gears Heaviest -> Grandparent: the
+   struts ran to the booster tank and tore the delta wings off at
+   separation (~11/12). Craft file fixed too. **The user's live VAB craft
+   still has Heaviest on the three gears** -- told them.
+2. Liftoff warnings (no flag, logging only): `upper stage: ... control X`
+   / `WARNING upper stage has no control source`; `WARNING autostruts
+   cross the booster's decoupler`.
+3. `check_settings`: MechJeb ascent settings re-read after separation and
+   re-applied if lost (they were not lost in any flight; a guard).
+4. turnshape: downrange along the ground (was inertial); the turn starts
+   at MechJeb's start speed or height, curve measured from there
+   (`Path.start_speed`). **Not flown yet** -- model2-1019 was stopped
+   part-way; its partial logs are not a result.
+5. `turn shape track:` log line + `ascent/tools/shapetrack.py` (model vs
+   telemetry). Before item 4 the model ran 1.4-3.6 km short in downrange
+   at separation on all three stacks.
+6. Hot staging tried and deleted (did not prevent the wing loss).
 
 **Next, in order:**
-1. 6 flights of the defaults on qs_stack (clean farm) -- settles the 1.7 t
-   question and checks predicted-vs-flown over n, not 1.
-2. Run the solve on `qs_stack_small` / `qs_stack_stretch` (they have not
-   flown classic or the solve at all; the small booster may not suit the
-   separation budget under a classic path).
-3. Model gaps worth closing if 1-2 disagree: drag is sampled at zero AoA
-   (classic flies a pitch, not prograde -- most off-airflow on flat
-   turns); booster throttle-down and coast drag left out.
-4. Older items still open from 2026-10-18: learn the budget model's error
-   per booster before cutting `RESERVE_FRACTION`; `SEP_ACCEL_RATIO`.
+1. Whatever the user's live flights report.
+2. One batch of the defaults on all three stacks (srot LAPS=2): does the
+   turn-start model move the solved shape, and do predicted mass and
+   shapetrack agree with the flights?
+3. Model gaps still open: drag at zero AoA, booster throttle-down and coast
+   drag left out; `RESERVE_FRACTION` per booster; `SEP_ACCEL_RATIO`.
 
-**Traps paid:** `pkill -f <pattern>` from a bash tool call kills the tool's
-own shell (pattern in its command line) -- kill by PID. A farm restart
-interrupted mid-`start.sh` leaves an instance that answers its port but
-never loads a save; a harness then waits 30 min silently (`./stop.sh` and
-start again). kRPC `space_center.load("FMRS/x")` reads a subfolder; `save`
-does not (writes `FMRS_x`). In MechJeb classic, a *low* turn shape is the
-flat early turn.
+**Traps paid:** `pgrep -f`/`pkill -f` with a pattern that also appears in
+your own command line kills the tool's shell (again) -- kill by PID from a
+separate listing. The farm restart overwrites every KSP.log: read the
+CollisionSpy / explosion lines before restarting. A farm launch with every
+kerbal Missing produces an uncrewed pod silently. Swap read 10-15 GB right
+after each farm restart tonight (other memory pressure on the machine).
 
 ## 2026-10-19 afternoon: boosterland -- FMRS boostback button; flight code as 2026-10-18 (fingerprint `bb3fa2e6`)
 
