@@ -134,18 +134,29 @@ def find_booster(save):
     return None if best is None else best[1]
 
 
-def prepare_boostback(save_dir, names, log):
-    """Write the first FMRS save holding a booster, with the booster made
-    its active vessel, as BOOSTBACK.  Returns (source name, main vessel's
-    name, booster Vessel)."""
+def prepare_boostback(save_dir, names, log, main_id):
+    """Write the first FMRS save of this launch holding a booster, with the
+    booster made its active vessel, as BOOSTBACK.  Returns (source name,
+    main vessel's name, booster Vessel).
+
+    A save belongs to this launch when its active vessel is the live main
+    mission's (``main_id``, its persistentId): FMRS leaves the last launch's
+    saves on disk when it records no separation (switched off, or not
+    armed), and one of those would otherwise be flown as this one's."""
     tried = []
     for name in names:
         path = os.path.join(save_dir, name + ".sfs")
         if not os.path.exists(path):
             break                       # numbered in order: no more saves
         save = Save.read(path)
+        main = save.vessels()[save.active]
+        main_name = main.name
+        if main.persistent_id != main_id:
+            log.event(0.0, "fmrs: %s is another launch's (%r, not the live "
+                      "main mission): skipped" % (name, main_name))
+            tried.append(name + " (another launch)")
+            continue
         index = find_booster(save)
-        main_name = save.vessels()[save.active].name
         if index is None:
             log.event(0.0, "fmrs: %s has no booster in flight near %r"
                       % (name, main_name))
@@ -154,7 +165,8 @@ def prepare_boostback(save_dir, names, log):
         save.active = index
         save.write(os.path.join(save_dir, BOOSTBACK + ".sfs"))
         return name, main_name, save.vessels()[index]
-    raise RuntimeError("no FMRS save with a booster in flight (tried %s)"
+    raise RuntimeError("no FMRS save of this launch with a booster in "
+                       "flight (tried %s); is FMRS enabled and armed?"
                        % ", ".join(tried or ["none"]))
 
 
@@ -288,11 +300,12 @@ def main(argv=None):
         conn = None
         log.event(0.0, "fmrs: main mission saved as %s in %s"
                   % (MAIN, save_dir))
-        source, main_name, booster = prepare_boostback(
-            save_dir, [args.save] if args.save else SAVES, log)
-        booster_id = booster.persistent_id
         main_save = Save.read(os.path.join(save_dir, MAIN + ".sfs"))
-        if main_save.vessels()[main_save.active].persistent_id == booster_id:
+        main_id = main_save.vessels()[main_save.active].persistent_id
+        source, main_name, booster = prepare_boostback(
+            save_dir, [args.save] if args.save else SAVES, log, main_id)
+        booster_id = booster.persistent_id
+        if main_id == booster_id:
             raise RuntimeError("the live game is flying the booster, so it "
                                "is not the main mission: switch back first")
         conn = load_paused(args, BOOSTBACK)

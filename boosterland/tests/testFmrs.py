@@ -67,7 +67,7 @@ class TestFmrsSaves(unittest.TestCase):
         text = save_text([ROCK, UPPER, BOOSTER], 1)
         self.write("FMRS/FMRS_save_1", text)
         source, main_name, booster = fmrs.prepare_boostback(
-            self.dir, fmrs.SAVES, self.log)
+            self.dir, fmrs.SAVES, self.log, "1")
         self.assertEqual((source, main_name, booster.name),
                          ("FMRS/FMRS_save_1", "upper", "booster"))
         out = os.path.join(self.dir, fmrs.BOOSTBACK + ".sfs")
@@ -79,7 +79,17 @@ class TestFmrsSaves(unittest.TestCase):
     def test_no_booster_anywhere_raises(self):
         self.write("FMRS/FMRS_save_0", save_text([ROCK, UPPER, FAIRING], 1))
         with self.assertRaises(RuntimeError):
-            fmrs.prepare_boostback(self.dir, fmrs.SAVES, self.log)
+            fmrs.prepare_boostback(self.dir, fmrs.SAVES, self.log, "1")
+
+    def test_another_launchs_save_is_skipped(self):
+        old_upper = vessel("upper", 7, "FLYING", -0.0976, -72.3037, 28245.0,
+                           True)
+        self.write("FMRS/FMRS_save_0", save_text([ROCK, old_upper, BOOSTER],
+                                                 1))
+        with self.assertRaises(RuntimeError):
+            fmrs.prepare_boostback(self.dir, fmrs.SAVES, self.log, "1")
+        self.assertFalse(os.path.exists(
+            os.path.join(self.dir, fmrs.BOOSTBACK + ".sfs")))
 
     def test_merge_replaces_the_booster_and_keeps_the_active_vessel(self):
         landed = vessel("booster", 2, "LANDED", PAD[0], PAD[1], 70.0, True)
