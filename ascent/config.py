@@ -99,6 +99,11 @@ class Config:
     # ... or give up waiting after this long and separate anyway.  An engine
     # with a slow spool-down is the only thing that should ever reach it.
     SEP_THROTTLE_TIMEOUT_S: float = 5.0
+    # The upper stage's engines are lit before the decoupler fires
+    # (Ascent.upper_lit), and it fires once they deliver this fraction of
+    # their thrust -- or after the timeout, for an engine that spools.
+    SEP_UPPER_THRUST_FRACTION: float = 0.9
+    SEP_IGNITE_TIMEOUT_S: float = 3.0
 
     # --- After separation --------------------------------------------------
     # "upper": stay with the upper stage and let MechJeb fly it to orbit;
