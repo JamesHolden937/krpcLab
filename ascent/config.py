@@ -20,12 +20,12 @@ class Config:
     # the separation reached 80 x 80 km on 3/3 (LOG12942, 12949, 12952).
     ASCENT_TYPE: int = 0
     # Classic's "turn shape" (MechJeb's percentage / 100): low is a flat
-    # early turn, high a steep climb that turns late.  TURN_SHAPE_SOLVE: at liftoff, solve it
-    # from the craft (turnshape.solve: the shape that leaves the upper stage
-    # the most mass in orbit, the booster's separation by budget.recovery);
-    # TURN_SHAPE is then only the fallback when the solve finds no orbit.
+    # early turn, high a steep climb that turns late.  It is solved at every
+    # liftoff from the craft on the pad (turnshape.solve: the shape that
+    # leaves the upper stage the most mass in orbit, the booster separating
+    # by budget.recovery).  TURN_SHAPE is only the fallback when the solve
+    # finds no orbit at all.
     TURN_SHAPE: float = 0.4
-    TURN_SHAPE_SOLVE: bool = False
     # The drag table the solve flies, sampled from the game at zero angle
     # of attack (Flight.simulate_aerodynamic_force_at) on this grid.
     DRAG_HEIGHTS_M: str = "0,5000,10000,20000,30000,45000"

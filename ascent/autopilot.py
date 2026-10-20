@@ -463,7 +463,7 @@ class Ascent:
                               self._thrust_sl / 1e3, self._isp[0],
                               self._isp[1], self.stack.dry / 1e3,
                               [len(g) for g in self.stack.groups]))
-            if self.cfg.TURN_SHAPE_SOLVE:
+            if self.cfg.ASCENT_TYPE == 0:
                 self.solve_turn_shape(ut)
             self.enter(ASCENT, ut, "liftoff")
             return
@@ -503,7 +503,7 @@ class Ascent:
 
     def solve_turn_shape(self, ut):
         """Set MechJeb's classic turn shape to the one ``turnshape.solve``
-        finds for this craft (see ``Config.TURN_SHAPE_SOLVE``)."""
+        finds for this craft (see ``Config.TURN_SHAPE``)."""
         t0 = time.monotonic()
         stack, cfg = self.stack, self.cfg
         body, frame = self.body, self.frame
