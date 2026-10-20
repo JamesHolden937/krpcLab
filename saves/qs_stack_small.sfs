@@ -1854,6 +1854,7 @@ GAME
 				modMass = 0
 				moduleVariantName = 
 				moduleCargoStackableQuantity = 1
+				crew = Jebediah Kerman
 				EVENTS
 				{
 				}
@@ -13281,7 +13282,7 @@ GAME
 			badS = True
 			veteran = True
 			tour = False
-			state = Missing
+			state = Assigned
 			inactive = False
 			inactiveTimeEnd = 0
 			gExperienced = 0
