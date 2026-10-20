@@ -79,7 +79,7 @@ readers. New autopilots go here and plug into all of it.
 | directory | what |
 |---|---|
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
-| `ascent/` | MechJeb ascent guidance (over KRPC.MechJeb) that drops the booster when it has just enough propellant to fly home, throttled so the upper stage pulls away, then hands it to boosterland. Read `ascent/CLAUDE.md` |
+| `ascent/` | MechJeb classic ascent (over KRPC.MechJeb), turn shape solved from the craft at liftoff; drops the booster when it has just enough propellant to fly home and follows the upper stage to orbit (the booster is flown from FMRS's save by `boosterland/fmrs.py`). Read `ascent/CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
 | `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |

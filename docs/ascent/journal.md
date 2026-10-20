@@ -109,3 +109,28 @@ launch roll (as if launching east), 90 east, 80 km.
   whether that is right for the upper stage is open (HANDOFF=upper is still
   broken). The pitch rate is a fitted constant -- one value for stacks of
   TWR ~1.4-1.7; a kick derived from TWR would be the general form.
+
+## 2026-10-19 evening: follow the upper stage; classic; turn shape solved
+
+The user: follow the ship now that the FMRS button flies the booster; use
+classic, not PVG; make the turn shape the most efficient -- computed from
+the craft per flight (twice: "you are supposed to calculate it from the
+craft", "you shouldn't have to hope it lands somewhere").
+
+- **PVG after a script-staged drop** never re-plans: the upper stage holds
+  periapsis 80 km and burns apoapsis to escape. Re-engaging PVG after
+  separation: hyperbolic 4/4 (rot-upper1-1019, LOG12943-12950). Classic
+  from separation: 80 x 80 on 3/3 (LOG12942, 12949, 12952). Abandoned
+  approach: making PVG behave after a manual staging (four attempts over
+  two sessions); replaced by classic for the whole flight.
+- **Turn-shape sweep** (rot-shape1-1019, qs_stack with the 34 t ore payload,
+  6 a cell, farm swapped 15-24 GB): 0.2/0.3 fail 6/6 (flat turn, upper
+  stage falls back -- also found HANDOFF=upper flying a wreck to the
+  timeout; now ends on "upper stage lost"); 0.4 62.13 t; 0.5 63.00; 0.6
+  62.89; 0.7 63.19 (sd ~0.5). Used only as a check of the model, not as a
+  value.
+- **turnshape.solve** (ascent model with the game's drag table, the same
+  separation rule, burn to apoapsis + circularization): LOG12991 solved
+  0.524, predicted 64.66 t, flew 64.72 t; predicted no orbit at 0.10/0.28.
+  Surplus in orbit ~1.3 t LFO (~70 m/s). LOG12991 sits 1.7 t above the
+  sweep's 0.5/0.6 cells -- one flight, unresolved.

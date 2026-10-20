@@ -1,8 +1,10 @@
 # ascent
 
-MechJeb flies the climb; this drops the booster at the last moment it can
-still fly home, throttled so the upper stage pulls away, and hands it to
-`boosterland`. The root `CLAUDE.md` applies in full.
+MechJeb's classic ascent flies the climb on a turn shape solved from the
+craft at liftoff; this drops the booster at the last moment it can still
+fly home, throttled so the upper stage pulls away, and stays with the upper
+stage to an 80 x 80 km orbit. The booster is flown afterwards from FMRS's
+separation save (launcher "BOOSTBACK FROM FMRS SAVE", `boosterland/fmrs.py`). The root `CLAUDE.md` applies in full.
 
 ```
 STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
@@ -17,9 +19,21 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   landing burn from terminal velocity on the widest tank's area,
   `LANDING_CD` 1.0. Matches LOG12758's measured boostback (1251 m/s) and
   landing (~330) -- `tests/testBudget.py`.
-- MechJeb's attitude: PVG kicks the nose over from `PITCH_START_VELOCITY`
-  50 m/s at `PITCH_RATE_DEG_S` 1.0 deg/s, then follows prograde (MechJeb's
-  0.5 flew 55 deg at 10 km). Roll: `vertical_roll`/`turn_roll` are set to
+- `turnshape.py` -- pure: MechJeb classic's pitch-vs-altitude path
+  (`90 - ((h-start)/(end-start))**shape * 90`, start/end read from MechJeb's
+  auto path) flown as a point mass over a rotating body, with the craft's
+  thrust/Isp/masses, a Cd*A table sampled from the game at zero AoA
+  (`simulate_aerodynamic_force_at`, `DRAG_HEIGHTS_M` x `DRAG_SPEEDS_MS`),
+  the game's pressure/density, separation by `budget.recovery` (the same
+  rule), the upper stage to apoapsis and the circularization. `solve`
+  (coarse scan + golden section, ~0.5 s) picks the shape that leaves the
+  most mass in orbit; `Ascent.solve_turn_shape` runs it at every liftoff
+  and sets MechJeb's `turn_shape_exponent`. `TURN_SHAPE` 0.4 is only the
+  no-orbit fallback. Low shape = flat early turn.
+- `ASCENT_TYPE` 0 (classic). PVG (1) plans the stack and never re-plans
+  after this script stages the booster: it burned every upper stage to
+  depletion. The PVG pitch-kick fields (`PITCH_*`) do nothing under classic.
+  Roll: `vertical_roll`/`turn_roll` are set to
   the pad roll read against a pitch-over towards `ROLL_REF_HEADING_DEG` 90
   (`attitude.pad_roll`), so an eastward launch never rolls; telemetry
   carries `pit= hdg= roll=` (kRPC's euler angles are ambiguous while
@@ -37,10 +51,13 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   MechJeb) -- `main_throttle` reads the booster engines.
 - With boosterland's `FLIP_THROTTLE_LAW` (its default) `budget.boostback`
   flies the same throttle law, the booster's authority summed over its parts.
-- `HANDOFF=booster` (default): switch to the booster, run
-  `boosterland.Autoland` in-process (its own LOG, named in this one). The
-  upper stage is abandoned. `HANDOFF=upper`: MechJeb to orbit instead -- **broken**: PVG burns every
-  upper stage to depletion (HANDOFF.md).
+- `HANDOFF=upper` (default): MechJeb classic to orbit, autostage on after
+  the separation; ends on MechJeb finishing (`orbit:` event with the mass in
+  orbit), on the upper stage being lost (mass 0 / landed / splashed), or
+  `ORBIT_TIMEOUT_S`. The booster keeps the throttle-down thrust limits it
+  was saved with; `boosterland/fmrs.py` clears them for a one-group booster.
+  `HANDOFF=booster`: switch to the booster and run `boosterland.Autoland`
+  in-process (its own LOG); the upper stage is abandoned.
 
 **MechJeb over kRPC** needs KRPC.MechJeb built for MechJeb 2.15: the
 released 0.7.1 (Genhis) cannot find 2.15's ascent module. Installed is
@@ -58,7 +75,7 @@ second X200-32, `tools/stretchcraft.py`, 91.9 t) -- all on the pad.
 ./run.sh --pilot ascent                        # live: panel waits for START
 ./ascent/tools/stackfly.py --instance 0 -n 1 --save qs_stack_small
 ./ascent/tools/srot.sh TAG "arm:SET=1,X=2" ... # every save on all six instances
-.venv-pypy/bin/python -m unittest ascent.tests.testBudget
+.venv-pypy/bin/python -m unittest ascent.tests     # testBudget, testTurnShape
 ```
 
 Where it stands, what is open: the root `HANDOFF.md`, section "ascent";
