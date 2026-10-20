@@ -284,6 +284,8 @@ class Ascent:
         self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
         self.att = None                 # pitch/heading/roll streams
+        self.mj_settings = {}           # ascent_settings as applied
+        self.settings_checked = False
 
     # -- helpers -----------------------------------------------------------
     def enter(self, state, ut, note=""):
@@ -407,21 +409,8 @@ class Ascent:
     def run_standby(self, ut):
         if self.autostart or self.gui.start_pressed():
             a = self.mj.ascent_autopilot
-            a.ascent_type = int(self.cfg.ASCENT_TYPE)
-            a.desired_orbit_altitude = float(self.cfg.ORBIT_ALT_M)
-            # PVG (MechJeb 2.15) targets periapsis *and* apoapsis; left at
-            # its default, it burned every upper stage to the end -- the
-            # small stacks onto escape, the shuttle stack to a 460 km
-            # apoapsis on a suborbital path (LOG12916-12918).
-            a.desired_apoapsis = float(self.cfg.ORBIT_ALT_M)
-            a.desired_inclination = float(self.cfg.INCLINATION_DEG)
-            a.pitch_start_velocity = float(self.cfg.PITCH_START_VELOCITY)
-            a.pitch_rate = float(self.cfg.PITCH_RATE_DEG_S)
-            a.turn_shape_exponent = float(self.cfg.TURN_SHAPE)
-            roll = self.pad_roll()
-            a.force_roll = True
-            a.vertical_roll = roll
-            a.turn_roll = roll
+            self.mj_settings = self.ascent_settings(self.pad_roll())
+            self.apply_settings(a, self.mj_settings)
             a.autostage = False
             try:
                 self.mj.staging_controller.enabled = False
@@ -441,6 +430,54 @@ class Ascent:
                               a.status))
             self.gui.set_start_label("RUNNING")
             self.enter(LAUNCH, ut)
+
+    def ascent_settings(self, roll):
+        """What this script sets on MechJeb's ascent, by attribute."""
+        cfg = self.cfg
+        return {
+            "ascent_type": int(cfg.ASCENT_TYPE),
+            "desired_orbit_altitude": float(cfg.ORBIT_ALT_M),
+            # PVG (MechJeb 2.15) targets periapsis *and* apoapsis; left at
+            # its default, it burned every upper stage to the end -- the
+            # small stacks onto escape, the shuttle stack to a 460 km
+            # apoapsis on a suborbital path (LOG12916-12918).
+            "desired_apoapsis": float(cfg.ORBIT_ALT_M),
+            "desired_inclination": float(cfg.INCLINATION_DEG),
+            "pitch_start_velocity": float(cfg.PITCH_START_VELOCITY),
+            "pitch_rate": float(cfg.PITCH_RATE_DEG_S),
+            "turn_shape_exponent": float(cfg.TURN_SHAPE),
+            "force_roll": True,
+            "vertical_roll": float(roll),
+            "turn_roll": float(roll),
+        }
+
+    @staticmethod
+    def apply_settings(a, settings):
+        for k, v in settings.items():
+            setattr(a, k, v)
+
+    def check_settings(self, ut, why):
+        """Re-read MechJeb's ascent settings and put back any that differ.
+        MechJeb runs on one core per vessel: when the separation leaves the
+        upper stage under a core that is not the one configured at launch
+        (the small stack's booster carries the probe core), that core flies
+        its own defaults -- a 100 km target, LOG12992-12996."""
+        a = self.mj.ascent_autopilot
+        off = []
+        for k, v in self.mj_settings.items():
+            try:
+                now = getattr(a, k)
+            except Exception:           # noqa: BLE001
+                continue
+            if (isinstance(v, float) and abs(now - v) > 1e-6 * max(1.0, abs(v))) \
+                    or (not isinstance(v, float) and now != v):
+                off.append("%s %s->%s" % (k, now, v))
+                setattr(a, k, v)
+        self.log.event(ut, "mechjeb settings %s: %s; enabled %s, status %s"
+                       % (why, ", ".join(off) or "as set", a.enabled,
+                          a.status))
+        if off and not a.enabled:
+            a.enabled = True
 
     def run_launch(self, ut):
         """Stage until an engine is lit and the vehicle is off the pad --
@@ -592,6 +629,7 @@ class Ascent:
                          for r in sorted(flown, key=lambda r: r.shape)[::2])
         if math.isfinite(best.mass):
             a.turn_shape_exponent = float(best.shape)
+            self.mj_settings["turn_shape_exponent"] = float(best.shape)
         self.log.event(ut, "turn shape: %s %.3f (orbit %.2f t, sep %.0f m "
                        "%.0f m out at %.0f s, circ %.0f m/s) path %.0f-%.0f m"
                        " end %.0f deg; upper %.1f t (%.1f prop) %.0f kN "
@@ -758,6 +796,9 @@ class Ascent:
         self.enter(HANDOFF, ut, self.cfg.HANDOFF)
 
     def run_handoff_upper(self, ut):
+        if not self.settings_checked:
+            self.settings_checked = True
+            self.check_settings(ut, "after separation")
         a = self.mj.ascent_autopilot
         if self.cfg.MJ_AUTOSTAGE_AFTER_SEP and not a.autostage:
             a.autostage = True
