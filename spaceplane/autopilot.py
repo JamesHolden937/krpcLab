@@ -4664,6 +4664,7 @@ class Autopilot:
             self.interface_logged = True
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
+        self.fuel_to_nose(snap)
         self.set_rcs(False, snap)
         self.coast_watch(snap)
         self.coast_warp(snap)
@@ -6469,6 +6470,42 @@ class Autopilot:
                 pass
         self._pitch_assist = trim
 
+    def fuel_to_nose(self, snap):
+        """``FUEL_TO_NOSE``: once, on the first COAST tick, pump every
+        propellant's tanks into its forward-most one (as much as it holds).
+
+        The burn is over and the propellant left is ballast, and **the
+        shuttle needs its ballast forward**: an aft CoM trims the
+        hypersonic glide degrees above the command and departs laterally
+        (`qs_stackorb`, the stack's orbiter, 10 of 12 departed with its
+        last 0.9 t spread over three tanks).  A craft whose propellant
+        already sits in the nose tank (`qs_shuttle2`) is left as it was."""
+        if (not getattr(self.cfg, "FUEL_TO_NOSE", False)
+                or getattr(self, "_fuel_to_nose_done", False)):
+            return
+        self._fuel_to_nose_done = True
+        tanks = self._trim_tanks()
+        moved = []
+        try:
+            xfer = self.conn.space_center.ResourceTransfer
+            for name, row in tanks.items():
+                _, nose, cap = row[-1]
+                room = cap - float(nose.resources.amount(name))
+                for _, part, _ in row[:-1]:
+                    have = float(part.resources.amount(name))
+                    amount = min(have, room)
+                    if amount <= 0.5:
+                        continue
+                    xfer.start(part, nose, name, amount)
+                    room -= amount
+                    moved.append("%.0f %s" % (amount, name))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "fuel to nose: failed (%s: %s)"
+                               % (type(exc).__name__, exc))
+            return
+        self.logbook.event(snap.ut, "fuel to nose: %s" % (
+            ", ".join(moved) or "nothing to move"))
+
     def _trim_tanks(self):
         """Every tank of each propellant, by station along the vessel's
         long axis (+ forward), read once: ``{resource: [(y, part, max)]}``
@@ -6706,7 +6743,10 @@ class Autopilot:
         # on the defaults, ``logs/pairfly-shuttle-pitchair.txt``.  The glide
         # was already pointing (alpha error -0.5, sd 3); the dive this is for
         # happens below Mach 1, in the cone and on final.
-        if self.state not in (HAC, APPROACH, FLARE):
+        # ``ATTITUDE_PITCH_AIR_IN_GLIDE`` opens it to the glide as well.
+        if self.state not in (HAC, APPROACH, FLARE) and not (
+                self.state == GLIDE and getattr(
+                    self.cfg, "ATTITUDE_PITCH_AIR_IN_GLIDE", False)):
             return
         last = getattr(self, "_air_ut", None)
         dt = 0.0 if last is None else max(0.0, snap.ut - last)

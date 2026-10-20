@@ -2136,6 +2136,15 @@ class Config:
     # the surface, so the steeper burns a high orbit takes still fit.
     DRAIN_RESERVE_PERIAPSIS_M: float = 0.0
     DRAIN_RESERVE_MARGIN: float = 1.25
+    # **The propellant left after the burn is ballast, and it belongs in the
+    # nose** (``Autopilot.fuel_to_nose``): on the first COAST tick every
+    # LF/Ox tank is pumped into the forward-most.  The stack's orbiter
+    # reaches orbit with ~0.9 t spread over three tanks, its CoM 0.63 m aft
+    # of the twin-fin shuttle's (whose reserve sits in the nose adapter),
+    # and departs laterally at Mach 2-5 on 10 of 12 flights
+    # (rot-stackorb-1020); pumping recovers 0.32 m of that.  A no-op on
+    # ``qs_shuttle2``.
+    FUEL_TO_NOSE: bool = False
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and
@@ -2747,6 +2756,11 @@ class Config:
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
     ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
+    # ``retune_pitch_air`` in the glide too (it is cone-on only).  The stack's
+    # orbiter (aft CoM) flies 5-10 deg above the commanded alpha at Mach 2-5
+    # on the 18 s static pitch figure while the surfaces give 2000+ kN m,
+    # and departs laterally from there (rot-stackorb-1020).
+    ATTITUDE_PITCH_AIR_IN_GLIDE: bool = False
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
