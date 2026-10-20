@@ -605,6 +605,12 @@ class Ascent:
                           u_engines.isp_sl, craft.upper_lit,
                           "/".join("%.1f" % c for c in table[1]),
                           time.monotonic() - t0, curve))
+        if math.isfinite(best.mass):
+            # the predicted flight, for shapetrack.py against the telemetry
+            tr = turnshape.fly(craft, world, path, best.shape,
+                               track_every=cfg.SHAPE_TRACK_S).track
+            self.log.event(ut, "turn shape track: " + " ".join(
+                "%.0f:%.0f/%.0f/%.0f" % p for p in tr))
 
     def run_ascent(self, ut, r, v):
         cfg = self.cfg

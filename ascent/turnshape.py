@@ -94,6 +94,8 @@ class Result:
     sep_time: float = float("nan")
     circ_dv: float = float("nan")
     reason: str = ""
+    # (t, height, ground downrange, air speed) every ``track_every`` s
+    track: list = field(default_factory=list)
 
 
 def pitch_deg(h, path, shape):
@@ -157,8 +159,13 @@ def apsides(world, r, vr, vt):
     return ra, h / ra
 
 
-def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
-    """One ascent for ``shape``; returns a ``Result``."""
+def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
+        track_every=None):
+    """One ascent for ``shape``; returns a ``Result``.  ``track_every`` (s)
+    records the trajectory for comparison with a flight's telemetry.
+
+    Downrange is along the ground: theta is inertial, and the pad turns with
+    the body, so the pad's own angle omega*t comes off."""
     R = world.body.radius
     mu = world.body.mu
     r, theta = R, 0.0
@@ -172,6 +179,8 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
     sep = None
     snap = None                     # state at the last coarse check
     fine = False                    # re-flying the last interval per step
+    track = []
+    next_track = 0.0
     target_r = R + path.orbit       # the pad is the reference (as budget)
     while t < max_s:
         h = r - R
@@ -180,9 +189,13 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
         # air-relative velocity: the atmosphere turns with the body
         ur, ut = vr, vt - world.omega * r
         speed = math.hypot(ur, ut)
+        ground = R * (theta - world.omega * t)
+        if track_every and t >= next_track and not fine:
+            next_track = t + track_every
+            track.append((t, h, ground, speed))
         if attached and (fine or t >= next_check):
             next_check = t + recover_every
-            state = budget.State(height=h, downrange=R * theta, v_away=ut,
+            state = budget.State(height=h, downrange=ground, v_away=ut,
                                  v_cross=0.0, v_up=ur)
             bb = budget.Booster(mass=b.dry_mass + b_prop,
                                 dry_mass=b.dry_mass,
@@ -202,7 +215,7 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
                     r, theta, vr, vt, b_prop, u_prop, t = snap
                     continue
                 attached = False
-                sep = (h, R * theta, t)
+                sep = (h, ground, t)
             elif not fine:
                 snap = (r, theta, vr, vt, b_prop, u_prop, t)
         mass = (b.dry_mass + b_prop if attached else 0.0) \
@@ -215,7 +228,7 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
             thrust += craft.upper_engines.thrust(p)
             u_prop -= craft.upper_engines.mdot * dt
             if u_prop <= 0.0:
-                return Result(shape, -float("inf"), *_sep(sep),
+                return Result(shape, -float("inf"), *_sep(sep), track=track,
                               reason="upper stage out of propellant")
         ra, va = apsides(world, r, vr, vt)
         if not attached and ra is not None and ra >= target_r:
@@ -229,9 +242,9 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
             m_orbit = mass * math.exp(-dv / (isp * G0))
             m_need = mass - u_prop
             if m_orbit < m_need:
-                return Result(shape, -float("inf"), *_sep(sep), circ_dv=dv,
+                return Result(shape, -float("inf"), *_sep(sep), track=track, circ_dv=dv,
                               reason="no propellant to circularize")
-            return Result(shape, m_orbit, *_sep(sep), circ_dv=dv)
+            return Result(shape, m_orbit, *_sep(sep), track=track, circ_dv=dv)
         pitch = math.radians(pitch_deg(h, path, shape))
         a_t = thrust / mass
         drag = 0.5 * rho * speed * speed * cda_at(craft, h, speed) / mass
@@ -247,9 +260,9 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0):
         theta += vt / r * dt
         t += dt
         if r < R - 1.0:
-            return Result(shape, -float("inf"), *_sep(sep),
+            return Result(shape, -float("inf"), *_sep(sep), track=track,
                           reason="fell back")
-    return Result(shape, -float("inf"), *_sep(sep), reason="timeout")
+    return Result(shape, -float("inf"), *_sep(sep), track=track, reason="timeout")
 
 
 def _sep(sep):

@@ -30,6 +30,10 @@ class Config:
     # of attack (Flight.simulate_aerodynamic_force_at) on this grid.
     DRAG_HEIGHTS_M: str = "0,5000,10000,20000,30000,45000"
     DRAG_SPEEDS_MS: str = "100,200,300,350,400,500,700,1000,1500,2200"
+    # Log the solved shape's predicted flight every this many seconds
+    # ("turn shape track:"), for ascent/tools/shapetrack.py to read against
+    # the telemetry: what would disagree with the model.
+    SHAPE_TRACK_S: float = 10.0
     # PVG only (ASCENT_TYPE 1).  PVG's gravity turn: vertical to this surface speed, then the nose is
     # pitched over at this rate until it meets prograde, which it then
     # follows (AoA-limited) until PVG's optimizer takes over below its
