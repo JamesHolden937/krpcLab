@@ -83,7 +83,7 @@ REPORT = re.compile(r"booster propellant: (\S+) t at separation, model needed "
 BLOG = re.compile(r"booster handed to boosterland: (\S+)")
 TOUCH = re.compile(r"TOUCHDOWN .* pad=\s*([\d.]+)")
 SHUT = re.compile(r"shutdown: (.*)")
-ORBIT = re.compile(r"orbit: apo (\S+) peri (\S+)")
+ORBIT = re.compile(r"orbit: apo (\S+) peri (\S+) inc \S+(?: mass (\S+) t)?")
 DOWN = re.compile(r"phase THROTTLE_DOWN -> SEPARATE (.*)")
 
 
@@ -115,6 +115,8 @@ def summarise(path):
     if m:
         out["orbit"] = "%.0f x %.0f km" % (float(m.group(1)) / 1e3,
                                           float(m.group(2)) / 1e3)
+        if m.group(3):
+            out["orbit"] += " %s t" % m.group(3)
     s = SHUT.findall(body)
     out["end"] = s[-1] if s else "-"
     return out

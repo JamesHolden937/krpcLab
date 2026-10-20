@@ -33,7 +33,7 @@ PILOTS = [
     ("DEORBIT AND LAND", "spaceplane", "spaceplane.autopilot"),
     ("BOOSTBACK AND LAND", "boosterland", "boosterland.autoland"),
     ("BOOSTBACK FROM FMRS SAVE", "fmrs", "boosterland.fmrs"),
-    ("ASCENT, BOOSTER HOME", "ascent", "ascent.autopilot"),
+    ("ASCENT TO ORBIT", "ascent", "ascent.autopilot"),
 ]
 
 # run.sh --pilot accepts these as well as the names above.

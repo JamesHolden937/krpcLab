@@ -284,7 +284,6 @@ class Ascent:
         self.lit_ut = 0.0               # phase-relative time of the last stage
         self.last = None
         self.att = None                 # pitch/heading/roll streams
-        self.upper_engaged = False      # HANDOFF=upper guidance set up
 
     # -- helpers -----------------------------------------------------------
     def enter(self, state, ut, note=""):
@@ -418,6 +417,7 @@ class Ascent:
             a.desired_inclination = float(self.cfg.INCLINATION_DEG)
             a.pitch_start_velocity = float(self.cfg.PITCH_START_VELOCITY)
             a.pitch_rate = float(self.cfg.PITCH_RATE_DEG_S)
+            a.turn_shape_exponent = float(self.cfg.TURN_SHAPE)
             roll = self.pad_roll()
             a.force_roll = True
             a.vertical_roll = roll
@@ -430,11 +430,13 @@ class Ascent:
             a.enabled = True
             self.log.event(ut, "mechjeb ascent: type %d, %.0f m (apoapsis "
                            "%.0f), inc %.1f, pitch from %.0f m/s at %.2f "
-                           "deg/s, roll %.1f (pad, vs heading %.0f), "
+                           "deg/s, turn shape %.2f, roll %.1f (pad, vs "
+                           "heading %.0f), "
                            "autostage off; status %s"
                            % (a.ascent_type, a.desired_orbit_altitude,
                               a.desired_apoapsis, a.desired_inclination,
                               a.pitch_start_velocity, a.pitch_rate,
+                              a.turn_shape_exponent,
                               a.vertical_roll, self.cfg.ROLL_REF_HEADING_DEG,
                               a.status))
             self.gui.set_start_label("RUNNING")
@@ -644,18 +646,6 @@ class Ascent:
 
     def run_handoff_upper(self, ut):
         a = self.mj.ascent_autopilot
-        if not self.upper_engaged:
-            self.upper_engaged = True
-            mode = self.cfg.UPPER_GUIDANCE
-            if mode in ("reengage", "classic"):
-                a.enabled = False
-                if mode == "classic":
-                    a.ascent_type = 0
-                a.enabled = True
-            elif mode != "keep":
-                raise ValueError("UPPER_GUIDANCE %r" % mode)
-            self.log.event(ut, "upper guidance: %s (type %d), status %s"
-                           % (mode, a.ascent_type, a.status))
         if self.cfg.MJ_AUTOSTAGE_AFTER_SEP and not a.autostage:
             a.autostage = True
             try:
@@ -673,11 +663,12 @@ class Ascent:
                            % (apo, peri, thrust / 1e3,
                               self.vessel.mass / 1e3, status))
         if not a.enabled:
-            self.log.event(ut, "orbit: apo %.0f peri %.0f inc %.2f; "
-                           "mechjeb finished"
+            self.log.event(ut, "orbit: apo %.0f peri %.0f inc %.2f mass "
+                           "%.3f t; mechjeb finished"
                            % (orbit.apoapsis_altitude,
                               orbit.periapsis_altitude,
-                              math.degrees(orbit.inclination)))
+                              math.degrees(orbit.inclination),
+                              self.vessel.mass / 1e3))
             self.finish("orbit")
         elif ut - self.phase_ut > self.cfg.ORBIT_TIMEOUT_S:
             self.finish("orbit TIMEOUT")

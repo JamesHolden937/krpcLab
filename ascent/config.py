@@ -13,8 +13,16 @@ class Config:
     # --- MechJeb ascent ----------------------------------------------------
     ORBIT_ALT_M: float = 80000.0        # MechJeb's target orbit
     INCLINATION_DEG: float = 0.0
-    ASCENT_TYPE: int = 1                # MechJeb 2.15: 0 classic, 1 PVG
-    # PVG's gravity turn: vertical to this surface speed, then the nose is
+    # MechJeb 2.15: 0 classic, 1 PVG.  PVG plans the stack it is engaged on
+    # and never re-plans after this script drops the booster: every upper
+    # stage burned to depletion (LOG12916-12922), re-engaging it after the
+    # separation did not help (escape on 4/4, upper1-1019); classic from
+    # the separation reached 80 x 80 km on 3/3 (LOG12942, 12949, 12952).
+    ASCENT_TYPE: int = 0
+    # Classic's "turn shape" (MechJeb's percentage / 100): low is a steep
+    # climb, high an early flat turn.
+    TURN_SHAPE: float = 0.4
+    # PVG only (ASCENT_TYPE 1).  PVG's gravity turn: vertical to this surface speed, then the nose is
     # pitched over at this rate until it meets prograde, which it then
     # follows (AoA-limited) until PVG's optimizer takes over below its
     # dynamic-pressure trigger -- after the booster is dropped.  The kick
@@ -32,15 +40,6 @@ class Config:
     # stages it.  After separation it is turned on again for the upper
     # stage's own staging (HANDOFF=upper only).
     MJ_AUTOSTAGE_AFTER_SEP: bool = True
-    # HANDOFF=upper: what guides the upper stage once the booster is gone.
-    #   "keep": PVG as engaged at launch -- it planned the booster too, and
-    #     after the separation burned every upper stage to depletion
-    #     (LOG12916-12922: periapsis held at target, apoapsis to escape).
-    #   "reengage": PVG off and on again, so it re-plans from the one stage
-    #     left.
-    #   "classic": MechJeb's classic ascent from separation: burn to the
-    #     apoapsis target, coast, circularize.
-    UPPER_GUIDANCE: str = "keep"
 
     # --- Launch ----------------------------------------------------------
     # Lit but still on the pad this long after staging: release the next
@@ -90,11 +89,13 @@ class Config:
     SEP_THROTTLE_TIMEOUT_S: float = 5.0
 
     # --- After separation --------------------------------------------------
+    # "upper": stay with the upper stage and let MechJeb fly it to orbit;
+    #   the booster is flown afterwards from FMRS's separation save
+    #   (launcher "BOOSTBACK FROM FMRS SAVE", boosterland/fmrs.py).
     # "booster": switch to the booster and fly boosterland's autoland in this
     #   process (the upper stage is left to MechJeb, which stops flying it
     #   when it is no longer the active vessel).
-    # "upper": stay with the upper stage and let MechJeb fly it to orbit.
-    HANDOFF: str = "booster"
+    HANDOFF: str = "upper"
     # Seconds the switch to the booster may take.
     SWITCH_TIMEOUT_S: float = 10.0
 

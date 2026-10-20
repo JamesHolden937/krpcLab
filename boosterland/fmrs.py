@@ -183,8 +183,17 @@ def main(argv=None):
         conn.krpc.paused = False
         log.event(sc.ut, "fmrs: unpaused, boosterland flying")
         wait = sleeper(cfg, lambda: sc.ut, conn)
+        first = True
         while not run.finished:
             snap = run.tick()
+            if first and (run.cluster is None
+                          or len(run.cluster.groups) <= 1):
+                # ascent leaves its throttle-down thrust limits on the
+                # booster; boosterland's cluster rewrites them only with
+                # more than one engine group (as ascent.fly_booster).
+                for e in booster.parts.engines:
+                    e.thrust_limit = 1.0
+            first = False
             wait(cfg.LOOP_SLEEP_S, snap.ut if snap is not None else sc.ut)
         reason = run.exit_reason or "complete"
     except KeyboardInterrupt:
