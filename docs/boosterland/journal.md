@@ -595,3 +595,29 @@ booster in flight. Test on ksp0 (LOG12937 load-only, LOG12940 flown): an
 ascent-on-`qs_stack` separation at 20.5 km / Mach 3; boostback to 179 m,
 then the coast diverged below 17 km (cross -2.2 km, long -8.6 km) and the
 booster was destroyed 8.9 km out. One flight; not chased.
+
+## 2026-10-20: FMRS button -- booster active on load, jump back to the main mission
+
+The user asked for two things: no vessel switch after the load (edit the
+save so the booster is the active vessel, then load it), and a JUMP BACK TO
+MAIN MISSION button once the booster is down or destroyed, which writes the
+booster's final state into the main mission's save before loading it.
+
+`common/sfs.py` edits a save's FLIGHTSTATE vessels as text (CRLF kept).
+`fmrs.py` now saves the live game as `krpclab_main` (unique name first, so
+the save folder can be found on disk), picks the booster in the FMRS file
+itself (closest in-flight vessel with an engine module, within 5 km, instead
+of the heaviest via kRPC), writes `FMRS/krpclab_boostback` with it active,
+and loads that. At the end it offers the jump: `krpclab_booster` is saved,
+its booster block replaces the main save's copy (removed if destroyed),
+`activeVessel` is kept on the main vessel, and `krpclab_main` is loaded.
+
+ksp0: LOG13114 (main = qs_heavy, whose active vessel *is* that booster --
+the jump refused to remove it; now checked before flying) and LOG13115
+(main = FMRS_save_0): load to first tick 2.6 s wall, booster destroyed
+91 m from the pad (ksp0's old FMRS save; it falls over), removed from the
+main mission, which reloaded with the upper stage active at 39 km. The
+landed merge is covered only by `tests/testFmrs.py`.
+
+`fakeksp.Vessel` had no `moment_of_inertia`, so FLIP_THROTTLE_LAW made 20
+closed-loop tests error since 2026-10-18; added (a cylinder's inertia).

@@ -47,7 +47,7 @@ multiplier for it, and what the loop achieved is not logged.
 
 ```bash
 ./run.sh --pilot booster                       # fly it in your game, waiting for START
-./run.sh --pilot fmrs                          # load FMRS's separation save, fly its booster (fmrs.py)
+./run.sh --pilot fmrs                          # FMRS separation save, booster made active in the file, flown; then JUMP BACK TO MAIN MISSION (fmrs.py)
 ./boosterland/tools/quickfly.py -n 3           # fly the quicksave repeatedly (live game)
 ./testInstances/fly.sh 0 -n 3 --timescale 4    # ... on farm instance 0
 ./boosterland/tools/quickfly.py -n 1 --set DIAG_STATE=True   # log enough to replay it

@@ -291,6 +291,10 @@ def main(argv=None):
         source, main_name, booster = prepare_boostback(
             save_dir, [args.save] if args.save else SAVES, log)
         booster_id = booster.persistent_id
+        main_save = Save.read(os.path.join(save_dir, MAIN + ".sfs"))
+        if main_save.vessels()[main_save.active].persistent_id == booster_id:
+            raise RuntimeError("the live game is flying the booster, so it "
+                               "is not the main mission: switch back first")
         conn = load_paused(args, BOOSTBACK)
         sc = conn.space_center
         vessel = sc.active_vessel

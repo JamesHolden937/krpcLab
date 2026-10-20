@@ -1,68 +1,33 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
+## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
-All committed and pushed. Farm stopped. The user stopped the session and
-will fly the current defaults live themselves (no re-fly asked for).
-
-**Where it stands (defaults):** classic MechJeb, turn shape solved at
-liftoff, booster dropped by budget, upper stage followed to orbit.
-- qs_stack (shuttle, gears now autostrut Grandparent): 12/12 to 80 x 80,
-  **64.48 t sd ~0.1** in orbit (gs1-1019, LOG13070-13081), 0 joint breaks.
-  That leaves ~1.0 t LFO = **~51 m/s** (Rhino 340 s) -- the 34 t ore payload
-  eats the margin.
-- qs_stack_small 12/12 10.17 t; qs_stack_stretch 12/12 10.11 t
-  (fix1-1019, LOG13034-13069; Jebediah now in the pod).
-
-**This session changed:**
-1. Saves: small/stretch had an uncrewed pod -- no control source after
-   separation (all 24 lost). qs_stack gears Heaviest -> Grandparent: the
-   struts ran to the booster tank and tore the delta wings off at
-   separation (~11/12). Craft file fixed too. **The user's live VAB craft
-   still has Heaviest on the three gears** -- told them.
-2. Liftoff warnings (no flag, logging only): `upper stage: ... control X`
-   / `WARNING upper stage has no control source`; `WARNING autostruts
-   cross the booster's decoupler`.
-3. `check_settings`: MechJeb ascent settings re-read after separation and
-   re-applied if lost (they were not lost in any flight; a guard).
-4. turnshape: downrange along the ground (was inertial); the turn starts
-   at MechJeb's start speed or height, curve measured from there
-   (`Path.start_speed`). **Not flown yet** -- model2-1019 was stopped
-   part-way; its partial logs are not a result.
-5. `turn shape track:` log line + `ascent/tools/shapetrack.py` (model vs
-   telemetry). Before item 4 the model ran 1.4-3.6 km short in downrange
-   at separation on all three stacks.
-6. Hot staging tried and deleted (did not prevent the wing loss).
-
-**Next, in order:**
-1. Whatever the user's live flights report.
-2. One batch of the defaults on all three stacks (srot LAPS=2): does the
-   turn-start model move the solved shape, and do predicted mass and
-   shapetrack agree with the flights?
-3. Model gaps still open: drag at zero AoA, booster throttle-down and coast
-   drag left out; `RESERVE_FRACTION` per booster; `SEP_ACCEL_RATIO`.
-
-**Traps paid:** `pgrep -f`/`pkill -f` with a pattern that also appears in
-your own command line kills the tool's shell (again) -- kill by PID from a
-separate listing. The farm restart overwrites every KSP.log: read the
-CollisionSpy / explosion lines before restarting. A farm launch with every
-kerbal Missing produces an uncrewed pod silently. Swap read 10-15 GB right
-after each farm restart tonight (other memory pressure on the machine).
-
-## 2026-10-19 afternoon: boosterland -- FMRS boostback button; flight code as 2026-10-18 (fingerprint `bb3fa2e6`)
-
-**New this session: `boosterland/fmrs.py`, launcher button "BOOSTBACK FROM
-FMRS SAVE"** (`./run.sh --pilot fmrs`). Loads FMRS's separation save
-(`FMRS/FMRS_save_<n>`, the first one holding a booster in flight -- the
-live `FMRS_save_0` of 2026-10-19 is a stack split on the pad, so it is
-skipped), pauses as soon as the game answers, switches to the heaviest
-engined vessel in flight near the active one, builds `Autoland` paused and
-unpauses: zero game time lost between the load and the first tick
-(LOG12940: save_0 skipped, save_1 loaded in 8.7 s wall, BOOSTBACK 0.5 s
-after). kRPC's `load` takes the `FMRS/` subfolder; its `save` does not
-(writes `FMRS_<name>` in the save folder). FMRS's own `save.txt` is not
-touched -- untested whether FMRS objects in the live game. The launcher now
-rebuilds its panel when a pilot's load destroyed it.
+**`boosterland/fmrs.py`, launcher button "BOOSTBACK FROM FMRS SAVE"**
+(`./run.sh --pilot fmrs`), reworked 2026-10-20 at the user's request:
+1. It first saves the live game (the main mission) as `krpclab_main` --
+   under a unique name, found on disk among `~/Kerbal Space Program/saves/*`
+   and `testInstances/ksp*/saves/*`, then renamed; that is how it learns
+   the save folder (`--save-dir` overrides; a remote `--address` needs it).
+   Refuses if the live game's active vessel *is* the booster.
+2. It reads the `FMRS/FMRS_save_<n>` files as text (`common/sfs.py`), takes
+   the first with a booster (closest vessel to the active one, in flight,
+   with an engine module, within 5 km), writes a copy with `activeVessel`
+   set to it (`FMRS/krpclab_boostback`) and loads that: **no vessel switch**
+   (ksp0: 2.6 s wall from button to the first tick, LOG13114/13115).
+3. When the flight ends (touchdown settled, destroyed, or TERMINATE) the
+   panel shows **JUMP BACK TO MAIN MISSION** (TERMINATE stays with the
+   booster). Jump: saves the booster's game as `krpclab_booster`, replaces
+   every VESSEL with the booster's persistentId in `krpclab_main` by the
+   booster's final block (or removes it if destroyed), keeps
+   `activeVessel` on the main vessel, loads `krpclab_main`.
+   Tested on ksp0 (LOG13115, main = FMRS_save_0 itself): destroyed booster
+   removed, main mission reloaded with the upper stage active. The
+   **landed** merge is unit-tested only (`tests/testFmrs.py`) -- ksp0's
+   FMRS save crashes its booster (91-316 m out, falls over); not chased.
+   Untested: whether FMRS itself objects to the reloaded main mission.
+Also: `fakeksp.Vessel` gained `moment_of_inertia`/`reference_frame`
+(FLIP_THROTTLE_LAW read them; 20 closed-loop tests had errored since
+2026-10-18). Suite 656 OK.
 
 Test state: ascent on `qs_stack` on ksp0, paused and saved at separation
 (20.5 km, Mach 3, 26.7 km from the pad, booster 99 t). Boostback fine (miss
@@ -192,6 +157,55 @@ has rows. Swap reached ~20 GB per 40-min batch: restart between batches.
 Readers (scratchpad, easy to rewrite): per-arm contact distance from the
 first TOUCHDOWN `pad=`, stood from `max=`, gear-to-contact seconds,
 burn-entry mass; KSP.log CollisionSpy matched to flights by wall clock.
+
+## 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
+
+All committed and pushed. Farm stopped. The user stopped the session and
+will fly the current defaults live themselves (no re-fly asked for).
+
+**Where it stands (defaults):** classic MechJeb, turn shape solved at
+liftoff, booster dropped by budget, upper stage followed to orbit.
+- qs_stack (shuttle, gears now autostrut Grandparent): 12/12 to 80 x 80,
+  **64.48 t sd ~0.1** in orbit (gs1-1019, LOG13070-13081), 0 joint breaks.
+  That leaves ~1.0 t LFO = **~51 m/s** (Rhino 340 s) -- the 34 t ore payload
+  eats the margin.
+- qs_stack_small 12/12 10.17 t; qs_stack_stretch 12/12 10.11 t
+  (fix1-1019, LOG13034-13069; Jebediah now in the pod).
+
+**This session changed:**
+1. Saves: small/stretch had an uncrewed pod -- no control source after
+   separation (all 24 lost). qs_stack gears Heaviest -> Grandparent: the
+   struts ran to the booster tank and tore the delta wings off at
+   separation (~11/12). Craft file fixed too. **The user's live VAB craft
+   still has Heaviest on the three gears** -- told them.
+2. Liftoff warnings (no flag, logging only): `upper stage: ... control X`
+   / `WARNING upper stage has no control source`; `WARNING autostruts
+   cross the booster's decoupler`.
+3. `check_settings`: MechJeb ascent settings re-read after separation and
+   re-applied if lost (they were not lost in any flight; a guard).
+4. turnshape: downrange along the ground (was inertial); the turn starts
+   at MechJeb's start speed or height, curve measured from there
+   (`Path.start_speed`). **Not flown yet** -- model2-1019 was stopped
+   part-way; its partial logs are not a result.
+5. `turn shape track:` log line + `ascent/tools/shapetrack.py` (model vs
+   telemetry). Before item 4 the model ran 1.4-3.6 km short in downrange
+   at separation on all three stacks.
+6. Hot staging tried and deleted (did not prevent the wing loss).
+
+**Next, in order:**
+1. Whatever the user's live flights report.
+2. One batch of the defaults on all three stacks (srot LAPS=2): does the
+   turn-start model move the solved shape, and do predicted mass and
+   shapetrack agree with the flights?
+3. Model gaps still open: drag at zero AoA, booster throttle-down and coast
+   drag left out; `RESERVE_FRACTION` per booster; `SEP_ACCEL_RATIO`.
+
+**Traps paid:** `pgrep -f`/`pkill -f` with a pattern that also appears in
+your own command line kills the tool's shell (again) -- kill by PID from a
+separate listing. The farm restart overwrites every KSP.log: read the
+CollisionSpy / explosion lines before restarting. A farm launch with every
+kerbal Missing produces an uncrewed pod silently. Swap read 10-15 GB right
+after each farm restart tonight (other memory pressure on the machine).
 
 ## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
 

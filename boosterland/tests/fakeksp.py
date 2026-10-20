@@ -313,6 +313,15 @@ class Vessel:
         self._flight = Flight(self)
 
     # -- kRPC surface --
+    reference_frame = Frame("vessel")
+
+    @property
+    def moment_of_inertia(self):
+        """A 40 m x 4 m cylinder's tilt and roll inertia: FLIP_THROTTLE_LAW
+        reads it; the fake's slew rate, not this, sets how fast it turns."""
+        tilt = self.mass * 40.0 ** 2 / 12.0
+        return (tilt, self.mass * 2.0 ** 2 / 2.0, tilt)
+
     def flight(self, frame):
         return self._flight
 
