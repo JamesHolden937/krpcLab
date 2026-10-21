@@ -1472,6 +1472,14 @@ class Config:
     ABORT_NORTH: bool = True  # default 2026-10-11 (the user; farm-unflown, sim 8/8)
     ABORT_NORTH_OFFSET_M: float = 150.0
     ABORT_SHORT_M: float = 30.0
+    # ``ABORT_NORTH_TOLERANT``: divert only on a real miss -- short by more
+    # than ``ABORT_SHORT_SHARE`` of the height left (never under
+    # ``ABORT_SHORT_M``), and an overrun judged on the larger of the last
+    # second's deceleration and the rollout's average since touchdown.
+    # share-1020: 4 of 12 rigoff flights diverted onto the grass beside the
+    # runway on 31-33 m at 1.5 km, or on one low decel reading.
+    ABORT_NORTH_TOLERANT: bool = False
+    ABORT_SHORT_SHARE: float = 0.1
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
     GEAR_ALT_M: float = 800.0

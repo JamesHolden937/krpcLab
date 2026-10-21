@@ -5894,8 +5894,14 @@ class Autopilot:
             divert=self.divert)
         self.command = command
         short = getattr(command, "threshold_excess", None)
+        margin = float(self.cfg.ABORT_SHORT_M)
+        if getattr(self.cfg, "ABORT_NORTH_TOLERANT", False):
+            # The best-glide estimate's own error grows with the height
+            # left: 31 m short at 1.5 km is inside it (share-1020: three
+            # such diverts all reached the runway's length, on the grass).
+            margin = max(margin, float(self.cfg.ABORT_SHORT_SHARE) * height)
         if (self.cfg.ABORT_NORTH and not self.divert and short is not None
-                and short < -float(self.cfg.ABORT_SHORT_M)):
+                and short < -margin):
             self.divert_north(snap, "short of the threshold by %.0f m of "
                                     "height at h=%.0f" % (-short, height))
         sink = -vec.dot(snap.velocity, vec.unit(snap.position))
@@ -6142,6 +6148,18 @@ class Autopilot:
             # tarmac left: past the far end, divert north.
             down = vec.dot(offset, along)
             decel = self.rollout_decel(snap.ut, speed)
+            if (decel is not None
+                    and getattr(self.cfg, "ABORT_NORTH_TOLERANT", False)
+                    and self.touchdown_ut is not None
+                    and self.touchdown_speed
+                    and snap.ut - self.touchdown_ut > 1.0):
+                # The braking the rollout has shown since touchdown, when
+                # the last second's reading is lower: one low reading at
+                # 31 m/s (0.4 m/s^2) diverted with 1217 m of tarmac left
+                # (LOG13347; the rollout's own average was ~1.3).
+                shown = ((self.touchdown_speed - speed)
+                         / (snap.ut - self.touchdown_ut))
+                decel = max(decel, shown)
             if decel is not None and speed > 5.0:
                 stop = speed * speed / (2.0 * max(0.2, decel))
                 left = float(self.cfg.RUNWAY_LENGTH_M) - down
