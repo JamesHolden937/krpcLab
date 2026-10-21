@@ -1247,7 +1247,15 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # grass and touched down 1290 m past the threshold.
     to_threshold = max(0.0, distance - airframe.touchdown_aim(env, cfg)
                        + float(getattr(cfg, "APPROACH_AIM_SHIFT_M", 0.0)))
-    command.threshold_excess = height - to_threshold / max(0.1, clean_ld)
+    # **On the best glide, not the approach's ratio.**  A vehicle short of
+    # the threshold slows toward best glide and stretches; judged at the
+    # approach's 4.2 the divert fired 140-320 m of height "short" at
+    # h=1400-1800 on four flights that all touched down past the threshold
+    # (orbits2-1021, LOG13427, 13431, 13438, 13440).
+    reach_ld = clean_ld
+    if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
+        reach_ld = max(clean_ld, airframe.glide_ld(env, cfg))
+    command.threshold_excess = height - to_threshold / max(0.1, reach_ld)
     command.scurve_deg = scurve_deg
     # **The speed the approach is trying to hold, published.**  Anything that
     # adds drag has to know it: a glider that ends up below this can only get
