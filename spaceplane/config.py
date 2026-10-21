@@ -204,21 +204,9 @@ class Config:
     HAC_FAST_MACH_MAX: float = 0.85
     HAC_FAST_BLEED: float = 3.0
     HAC_FAST_ALPHA_MIN_DEG: float = -5.0
-    # **The fast cone as an envelope, not a number** (the user, 2026-10-20:
-    # "don't target a specific number ... let everything before it go as
-    # fast as it can while still retaining steering capability and
-    # capability to slow down by landing").  With this on the cone's speed
-    # target is the smaller of two speeds the vehicle computes every tick,
-    # floored at the q target: the fastest whose level-turn radius at
-    # ``HAC_BANK_MAX_DEG`` (with ``HAC_HOLD_MARGIN``) fits the circle being
-    # flown, and the fastest from which the vehicle at its most draggy
-    # (``HAC_ALPHA_MAX_DEG``, split rudder at its stop) still bleeds to the
-    # gate's speed over the path left (``guidance.cone_envelope``; the
-    # margin scales the bleed rate).  No Mach cap.  Implies the fast cone's
-    # alpha floor.
-    HAC_ENVELOPE: bool = False
+    # The bleed bound (``guidance.cone_envelope``) scales the max-drag
+    # bleed rate by this.
     HAC_ENVELOPE_BLEED_MARGIN: float = 0.5
-    HAC_ENVELOPE_SURPLUS_M: float = 3000.0
     # **The cone's speed from its energy** (``guidance.cone_energy_speed``;
     # the user, 2026-10-20: "find another way to derive glide speed that
     # would work well for all craft ... just make it not exceed a certain
@@ -1491,13 +1479,6 @@ class Config:
     # end.  Latched; ``guidance.north_side`` finds north off the pole.
     ABORT_NORTH: bool = True  # default 2026-10-11 (the user; farm-unflown, sim 8/8)
     ABORT_NORTH_OFFSET_M: float = 150.0
-    # **Not on the first seconds' deceleration** (``Autopilot.fly_rollout``):
-    # braking grows as the wing unloads onto the wheels, and the divert
-    # latched on the first tick's estimate -- predicted 942 m with 931 left
-    # (LOG13150), stopped in ~540 with ~390 to spare, on the grass 150 m
-    # north.  Of 48 flights on 2026-10-20 ~60% diverted, nearly all by under
-    # 20 m.  Past the end, it diverts at once.
-    ROLLOUT_DIVERT_SETTLE_S: float = 3.0
     ABORT_SHORT_M: float = 30.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.

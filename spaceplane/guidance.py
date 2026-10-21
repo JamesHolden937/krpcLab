@@ -1910,7 +1910,7 @@ def cone_speed(env, cfg, stall, height):
 
 
 def cone_envelope(env, cfg, stall, height, path, radius, gravity, cone_ld):
-    """``HAC_ENVELOPE``: the fastest the cone may fly here -- the smaller of
+    """``HAC_ENERGY_SPEED``'s bounds: the fastest the cone may fly here -- the smaller of
     the speed whose held turn fits ``radius`` at ``HAC_BANK_MAX_DEG`` and
     the speed it can still bleed to the gate's over ``path``.
 
@@ -2260,18 +2260,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
             if bleed > 0.0:
                 quick = min(quick, bleed)
             target = max(target, quick)
-    if getattr(cfg, "HAC_ENVELOPE", False):
-        # Only as fast as the surplus pays for: flying fast is flying at a
-        # lower L/D, and with no surplus it is flying short (envelope v1,
-        # env-1020: 3/6 short by 2.5-9.4 km).  The share of the envelope's
-        # excess taken grows with the path the height can pay for beyond
-        # the plan, over ``HAC_ENVELOPE_SURPLUS_M``.
-        quick = cone_envelope(env, cfg, stall, height, total, radius,
-                              gravity, cone_ld)
-        share = 0.0 if short else vec.clamp(
-            surplus / max(1.0, float(cfg.HAC_ENVELOPE_SURPLUS_M)), 0.0, 1.0)
-        if quick > target:
-            target += share * (quick - target)
     # ``HAC_SPEED_ERR_MAX_MS``: the speed error the law acts on is
     # clamped, so a cone entered far below its target accelerates a few
     # degrees under trim instead of pushing over to the alpha floor --
@@ -2284,7 +2272,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     alpha = trim + cfg.HAC_SPEED_KP * error
     floor = cfg.ALPHA_MIN_DEG
     if (float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0) > 1.0
-            or getattr(cfg, "HAC_ENVELOPE", False)
             or getattr(cfg, "HAC_ENERGY_SPEED", False)):
         floor = min(floor, float(cfg.HAC_FAST_ALPHA_MIN_DEG))
     alpha = vec.clamp(alpha, floor, cfg.HAC_ALPHA_MAX_DEG)

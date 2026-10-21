@@ -6133,12 +6133,7 @@ class Autopilot:
             if decel is not None and speed > 5.0:
                 stop = speed * speed / (2.0 * max(0.2, decel))
                 left = float(self.cfg.RUNWAY_LENGTH_M) - down
-                # ``ROLLOUT_DIVERT_SETTLE_S``: not on the deceleration of the
-                # first seconds, unless already past the end.
-                settled = (self.touchdown_ut is None or snap.ut
-                           - self.touchdown_ut
-                           >= float(self.cfg.ROLLOUT_DIVERT_SETTLE_S))
-                if stop > left and (settled or left <= 0.0):
+                if stop > left:
                     self.divert_north(snap, "overrun: stopping in %.0f m "
                                             "with %.0f m of tarmac left at "
                                             "%.0f m/s" % (stop, left, speed))
