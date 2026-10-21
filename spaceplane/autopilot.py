@@ -6741,6 +6741,7 @@ class Autopilot:
                                   for j in range(len(trim_alphas))])
             for cs in surfaces:
                 cs.deflection_override = False
+            self.measure_rcs(snap)
         except Exception as exc:                        # noqa: BLE001
             self.logbook.event(snap.ut, "surfaces: measurement failed (%s: "
                                "%s) -- kRPC keeps the attitude"
@@ -6777,6 +6778,58 @@ class Autopilot:
                    "%.2f x |command| /s" % law[0] if law[1] else
                    "%.2f /s" % law[0],
                    alphas[j], "  ".join(cells)))
+
+    def measure_rcs(self, snap):
+        """The moment each control input makes on the RCS, in vacuum with
+        nothing else flying: per input, +1 then -1 for
+        ``SURFACE_OWN_RCS_PULSE_S`` each (the second undoes the spin the
+        first put in), I x the change of body rate over each, averaged.
+        ``_rcs_columns``: three body-component moments (N m per unit)."""
+        self._rcs_columns = None
+        try:
+            was = bool(self.control.rcs)
+            inertia = tuple(float(i) for i in self.vessel.moment_of_inertia)
+        except Exception:                               # noqa: BLE001
+            return
+        pulse = float(self.cfg.SURFACE_OWN_RCS_PULSE_S)
+
+        def rate():
+            s = self.telemetry.sample(self.env)
+            axes = allocate.body_axes(s.right, s.nose, s.roof)
+            return s.ut, allocate.body(s.angular_velocity, axes)
+        cols = []
+        try:
+            self.control.rcs = True
+            for name in ("pitch", "roll", "yaw"):
+                got = []
+                for sign in (1.0, -1.0):
+                    t0, w0 = rate()
+                    setattr(self.control, name, sign)
+                    self.settle_game(pulse)
+                    t1, w1 = rate()
+                    setattr(self.control, name, 0.0)
+                    if t1 > t0:
+                        got.append(tuple(sign * i * (b - a) / (t1 - t0)
+                                         for i, a, b in zip(inertia, w0, w1)))
+                if len(got) != 2:
+                    return
+                cols.append(vec.scale(vec.add(got[0], got[1]), 0.5))
+        except Exception:                               # noqa: BLE001
+            return
+        finally:
+            try:
+                for name in ("pitch", "roll", "yaw"):
+                    setattr(self.control, name, 0.0)
+                self.control.rcs = was
+            except Exception:                           # noqa: BLE001
+                pass
+        self._rcs_columns = cols
+        self.logbook.event(snap.ut, "rcs: kN m per unit input (right/nose/"
+                           "belly): %s" % "  ".join(
+                               "%s %+.0f/%+.0f/%+.0f" % ((n,) + tuple(
+                                   c / 1e3 for c in col))
+                               for n, col in zip(("pitch", "roll", "yaw"),
+                                                 cols)))
 
     def _quiet_inputs(self):
         """For a vacuum sweep: kRPC and SAS let go and the client's inputs
@@ -7022,7 +7075,7 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 return
             cache = self._own_cache = (snap.ut, inertia, rcs)
-        _, inertia, rcs_t = cache
+        _, inertia, _ = cache
         error = allocate.body(allocate.attitude_error(axes, target), axes)
         rate = allocate.body(omega, axes)
         # **The moment in hand is measured, not modelled**: I x the angular
@@ -7062,17 +7115,15 @@ class Autopilot:
         want = allocate.wanted_torque(
             inertia, error, rate, tuple(cfg.SURFACE_OWN_W_RAD_S),
             float(cfg.SURFACE_OWN_ZETA))
-        # The RCS as three actuators, one per control input, each a torque
-        # about its own body axis (``SURFACE_OWN_RCS_SIGNS``: the sense of a
-        # positive pitch/roll/yaw input in the raw body frame, measured).
+        # The RCS as three actuators, one per control input, each the
+        # three-axis moment that input was measured to make in vacuum
+        # (``measure_rcs``): on the twin-fin shuttle a yaw input makes ~6x
+        # more roll than yaw, which a per-axis model had backwards.
         valve = bool(getattr(self.rcs, "on", False)) and bool(
             cfg.SURFACE_OWN_RCS)
-        signs = tuple(float(s) for s in cfg.SURFACE_OWN_RCS_SIGNS)
-        rcs_cols = []
-        for k in range(3):
-            col = [0.0, 0.0, 0.0]
-            col[k] = signs[k] * rcs_t[k] if valve else 0.0
-            rcs_cols.append(tuple(col))
+        measured = getattr(self, "_rcs_columns", None)
+        rcs_cols = [tuple(c) if valve and measured else (0.0, 0.0, 0.0)
+                    for c in (measured or [None] * 3)]
         # The deflection the measured acceleration came from: each surface
         # travels at its own measured rate, so it is not the command.
         act, synced = self.surface_actuators(snap.ut)

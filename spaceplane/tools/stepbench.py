@@ -134,6 +134,9 @@ def main():
                    help="open loop: pulse each surface alone and compare "
                         "the moment it makes with its measured column")
     p.add_argument("--pulse", type=float, default=0.5)
+    p.add_argument("--rcs", action="store_true",
+                   help="RCS on and the valve held open, as a flight's "
+                        "relay does when it fires")
     p.add_argument("--on-ticks", type=int, default=6)
     p.add_argument("--only", type=int, action="append", default=[],
                    help="identify only these surface indices")
@@ -169,6 +172,7 @@ def main():
     # By position relative to the root part: the vessel frame's origin is
     # the CoM, which the two saves' propellant puts in different places.
     frame = run.vessel.parts.root.reference_frame
+    rcs_columns = run._rcs_columns
     tables = [(tuple(round(c, 1) for c in cs.part.position(frame)), table,
                law) for (cs, table), law in zip(run._surfaces,
                                                  run._surface_rate)]
@@ -188,6 +192,10 @@ def main():
             laws.append(best[2])
     run._surfaces = mapped
     run._surface_rate = laws
+    run._rcs_columns = rcs_columns
+    if args.rcs:
+        run.control.rcs = True
+        run.rcs.on = True
     run._surface_machs, run._surface_alphas = machs, alphas
     run.state = ap.HAC
     try:
@@ -218,6 +226,14 @@ def main():
         plan.append(("%s %+g" % (names[k], args.deg),
                      rotate_axes(base, k, senses[k] * args.deg)))
         plan.append(("back", base))
+    # A bank: the roll a glide commands is about the airflow, not the
+    # nose -- at 40 deg of alpha a body roll is mostly sideslip, which
+    # the airframe's own stability fights (failure 99).
+    flow = vec.unit(snap.velocity)
+    q = vec.quat_axis_angle(flow, math.radians(args.deg))
+    plan.append(("bank %+g" % args.deg,
+                 tuple(vec.quat_rotate(q, a) for a in base)))
+    plan.append(("back", base))
     summary = []
     for label, target in plan:
         right, nose, belly = target

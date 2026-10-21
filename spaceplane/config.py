@@ -2728,16 +2728,10 @@ class Config:
     # probe), low-passed by this share per tick (1 = raw).
     SURFACE_OWN_ACCEL_MAX_DT_S: float = 0.5
     SURFACE_OWN_ACCEL_LP: float = 0.6
-    # The raw body-axis sense (right, nose, belly) of a positive pitch,
-    # roll and yaw input's torque, each about its own axis.  Measured in
-    # vacuum on qs_cargo_rigoff (2026-10-21, rate change after 1 s at +1):
-    # pitch -0.021 about right, roll -0.055 about nose, yaw -0.021 about
-    # belly -- all negative.
-    SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, -1.0, -1.0)
-    # The RCS as allocated actuators at all.  Each input is modelled as a
-    # torque about its own axis only, and on the twin-fin shuttle a yaw
-    # input makes ~6x more roll than yaw (rate change +0.126 nose-axis v
-    # -0.021 belly-axis): rot-sown2-1021 rolled +-15 deg with yrin at +-1.
+    # Each RCS input pulsed this long (game-s) each way in vacuum to read
+    # the moment it makes (``Autopilot.measure_rcs``).
+    SURFACE_OWN_RCS_PULSE_S: float = 0.4
+    # The RCS as allocated actuators at all (on its measured columns).
     SURFACE_OWN_RCS: bool = True
     # **The stall is the trimmed lift** (``Autopilot.trimmed_lift``): the
     # most lift the vehicle can hold at Mach 0.25 with its pitching moment
