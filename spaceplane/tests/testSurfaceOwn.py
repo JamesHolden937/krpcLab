@@ -20,8 +20,10 @@ ELEV_R = (-10.0, -8.0, 0.0)        # nose-up and roll the other
 
 
 def table(col, even=(0.0, 0.0, 0.0)):
-    """Every cell the same: odd slope ``col``, even part ``even``."""
-    cell = (col, even)
+    """Every cell the same: the moment ``col d + even d^2`` at
+    ``allocate.CURVE_D``."""
+    cell = tuple(vec.add(vec.scale(col, d), vec.scale(even, d * d))
+                 for d in allocate.CURVE_D)
     return [[cell, cell], [cell, cell]]
 
 
@@ -141,7 +143,7 @@ class TestOwnAttitude(unittest.TestCase):
 
 class TestSurfaceModel(unittest.TestCase):
     def test_the_slope_is_taken_at_the_deflection(self):
-        # m(d) = a d + b d^2: slope a + 2 b d.
+        # m(d) = x d + 0.5 z d^2: slope x + z d, central over +-0.25.
         s, _, _ = pilot([(1.0, 0.0, 0.0)])
         s._surfaces = [(None, table((1.0, 0.0, 0.0), (0.0, 0.0, 0.5)))]
         at0 = s.surface_columns(3.0, 20.0, 1000.0, [0.0])[0]
@@ -152,35 +154,81 @@ class TestSurfaceModel(unittest.TestCase):
         self.assertAlmostEqual(at_neg[2], -500.0)
         self.assertAlmostEqual(at_half[0], 1000.0)
 
-    def test_travel_rate_from_a_ramp(self):
-        neutral = ((0.0, 0.0, 0.0), 0.0)
-        full = ((10.0, 0.0, 0.0), 0.0)
-        # 0.8 unit/s: f = 0.8 t until it arrives.
-        series = [(t, (10.0 * min(1.0, 0.8 * t), 0.0, 0.0))
-                  for t in (0.02, 0.3, 0.6, 0.9, 1.4)]
-        self.assertAlmostEqual(ap.Autopilot.travel_rate(series, neutral,
-                                                        full), 0.8)
-        # Every sample already there: too fast to tell.
-        self.assertIsNone(ap.Autopilot.travel_rate(
-            [(0.5, (10.0, 0.0, 0.0))], neutral, full))
+    def test_a_curve_that_turns_back_has_a_slope_of_the_other_sign(self):
+        # Stalls past +0.5: the moment falls from there to +1.
+        cell = ((-1.0, 0, 0), (-0.5, 0, 0), (0, 0, 0), (0.5, 0, 0),
+                (0.2, 0, 0))
+        self.assertGreater(allocate.curve_slope(cell, 0.0)[0], 0.0)
+        self.assertLess(allocate.curve_slope(cell, 0.9)[0], 0.0)
+        self.assertAlmostEqual(allocate.curve_moment(cell, 0.75)[0], 0.35)
 
-    def test_actuators_lag_the_command_at_their_rate(self):
-        s, _, _ = pilot([CANARD, CANARD])
-        s.cfg.SURFACE_OWN_ACTUATORS = True
-        s._surface_rate = [1.0, None]
-        s._surface_defl = [0.0, 0.0]
+    def test_travel_rate_from_the_arrival(self):
+        # A -1 -> +1 travel at 1.6 unit/s arrives at 1.25 s, whatever the
+        # moment curve does on the way (here it overshoots and comes back).
+        def m(d):
+            return (10.0 * d - 6.0 * max(0.0, d - 0.5), 0.0, 4.0 * d * d)
+        series = [(t, m(min(1.0, -1.0 + 1.6 * t)))
+                  for t in [i * 0.05 for i in range(31)]]
+        self.assertAlmostEqual(ap.Autopilot.travel_rate(series, 2.0), 1.6,
+                               delta=0.07)
+        # Already there by the first sample: too fast to tell.
+        self.assertIsNone(ap.Autopilot.travel_rate(
+            [(t, m(1.0)) for t in (0.0, 0.5, 1.0)], 2.0))
+
+    def test_actuators_follow_their_measured_law(self):
+        s, _, _ = pilot([CANARD, CANARD, CANARD])
+        # constant 1 unit/s; proportional 2 x |command|; unmeasured.
+        s._surface_rate = [(1.0, False), (2.0, True), None]
+        s._surface_defl = [0.0, 0.0, 0.0]
         s.surface_actuators(10.0)
-        s._surface_defl = [0.8, 0.8]
+        s._surface_defl = [0.8, 0.8, 0.8]
         now, synced = s.surface_actuators(10.2)
         self.assertAlmostEqual(now[0], 0.2)       # 1 unit/s x 0.2 s
         self.assertAlmostEqual(synced[0], 0.1)    # averaged over the tick
-        self.assertAlmostEqual(now[1], 0.8)       # no rate: instant
+        self.assertAlmostEqual(now[1], 0.32)      # 2 x 0.8 x 0.2
+        self.assertAlmostEqual(now[2], 0.8)       # no law: instant
+        s._surface_defl = [0.8, 0.0, 0.8]         # 0 freezes it
         now, _ = s.surface_actuators(10.4)
-        self.assertAlmostEqual(now[0], 0.4)
-        s.cfg.SURFACE_OWN_ACTUATORS = False
-        now, _ = s.surface_actuators(10.6)
-        self.assertEqual(now, [0.8, 0.8])
+        self.assertAlmostEqual(now[1], 0.32)
 
+    def test_a_small_target_is_reached_by_a_larger_command(self):
+        # From +1 to +0.1 in 0.1 s at 2 x |command|: 0.1 itself would
+        # take 4.5 s; the command that makes it in a tick is -1 (capped),
+        # 0.2 of travel, and the model lands where it said.
+        cmd = allocate.actuator_command(1.0, 0.1, 0.1, 2.0, True)
+        self.assertEqual(cmd, -1.0)
+        act = allocate.actuator_step(1.0, cmd, 0.1, 2.0, True)
+        self.assertAlmostEqual(act, 0.8)
+        # Within reach at a smaller command: lands exactly.
+        cmd = allocate.actuator_command(0.15, 0.1, 0.1, 2.0, True)
+        self.assertAlmostEqual(allocate.actuator_step(0.15, cmd, 0.1, 2.0,
+                                                      True), 0.1)
+        # A target it reaches at its own speed is commanded as itself.
+        self.assertEqual(allocate.actuator_command(0.4, 0.5, 0.1, 2.0,
+                                                   True), 0.5)
+        # Arrived: exactly 0, which freezes it.
+        self.assertEqual(allocate.actuator_command(0.1, 0.102, 0.1, 2.0,
+                                                   True), 0.0)
+        # A stock surface is commanded where it should go.
+        self.assertEqual(allocate.actuator_command(1.0, 0.1, 0.1, 1.0,
+                                                   False), 0.1)
+
+    def test_the_law_is_told_from_two_travels(self):
+        def travel(start, end, speed):
+            t, out, d = 0.0, [], start
+            while t <= 2.0:
+                out.append((t, (10.0 * d, 0.0, 0.0)))
+                t += 0.04
+                d = d + max(-speed * 0.04, min(speed * 0.04, end - d))
+            return out
+        prop = ap.Autopilot.actuator_law(travel(-0.5, 0.5, 1.0),
+                                         travel(0.5, 0.25, 0.5))
+        self.assertTrue(prop[1])
+        self.assertAlmostEqual(prop[0], 2.0, delta=0.1)
+        stock = ap.Autopilot.actuator_law(travel(-0.5, 0.5, 1.07),
+                                          travel(0.5, 0.25, 1.07))
+        self.assertFalse(stock[1])
+        self.assertAlmostEqual(stock[0], 1.07, delta=0.06)
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,6 +54,64 @@ def wanted_torque(inertia, error, rate, w, zeta):
                  for i, wi, e, r in zip(inertia, ws, error, rate))
 
 
+CURVE_D = (-1.0, -0.5, 0.0, 0.5, 1.0)
+
+
+def curve_moment(cell, d):
+    """A surface's added moment at deflection ``d``, piecewise linear over
+    ``cell``: its moments at ``CURVE_D`` (the middle one 0)."""
+    d = max(CURVE_D[0], min(CURVE_D[-1], d))
+    for i in range(len(CURVE_D) - 1):
+        if d <= CURVE_D[i + 1]:
+            f = (d - CURVE_D[i]) / (CURVE_D[i + 1] - CURVE_D[i])
+            return vec.add(vec.scale(cell[i], 1.0 - f),
+                           vec.scale(cell[i + 1], f))
+    return cell[-1]
+
+
+def curve_slope(cell, d, h=0.25):
+    """The moment per unit deflection at ``d``: a central difference of
+    ``curve_moment`` over +-``h``, one-sided at the ends of travel."""
+    lo = max(CURVE_D[0], d - h)
+    hi = min(CURVE_D[-1], d + h)
+    if hi <= lo:
+        return (0.0, 0.0, 0.0)
+    return vec.scale(vec.sub(curve_moment(cell, hi), curve_moment(cell, lo)),
+                     1.0 / (hi - lo))
+
+
+def actuator_step(act, cmd, dt, rate, proportional):
+    """Where a surface commanded to ``cmd`` is ``dt`` later, from ``act``.
+
+    Two travel laws, told apart by measurement (``Autopilot.actuator_law``):
+    a stock surface moves at a constant ``rate`` (units of deflection per
+    second); one under AtmosphereAutopilot's override moves at ``rate *
+    |cmd|`` -- its deploy path steps ``deflection/deployAngle`` toward 1 at
+    2/s, so the deflection moves at twice the commanded angle per second,
+    and a command of exactly 0 freezes it where it is."""
+    speed = rate * (abs(cmd) if proportional else 1.0)
+    return act + max(-speed * dt, min(speed * dt, cmd - act))
+
+
+def actuator_command(act, want, dt, rate, proportional, hold=0.005):
+    """The command that brings a surface from ``act`` to ``want`` over the
+    next ``dt``: ``want`` itself on a constant-rate surface.  On a
+    proportional one a small target is a slow one, so: exactly 0 (frozen)
+    once it is within ``hold``; ``want`` when it arrives in time at its own
+    speed (it stops there); else a larger command the same way, sized so
+    the travel takes the tick -- the next tick re-plans from where the
+    model says it got to."""
+    if not proportional:
+        return want
+    gap = want - act
+    if abs(gap) <= hold:
+        return 0.0
+    if rate * abs(want) * dt >= abs(gap):
+        return want
+    mag = min(1.0, abs(gap) / max(1e-9, rate * dt))
+    return mag if gap > 0.0 else -mag
+
+
 def solve(columns, want, lo, hi, reg=1e-3, passes=4):
     """Bounded least squares: steps ``d`` (one per actuator) with
     ``sum d_i columns[i] ~= want`` and ``lo_i <= d_i <= hi_i``.

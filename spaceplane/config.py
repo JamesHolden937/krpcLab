@@ -2721,9 +2721,6 @@ class Config:
     SURFACE_OWN_TICK_S: float = 0.2      # the glide's tick while owning
     SURFACE_OWN_REFRESH_S: float = 1.0   # inertia and RCS torque, re-read
     SURFACE_OWN_PROBE_ALPHAS: tuple = (-10.0, 0.0, 10.0, 20.0, 30.0, 40.0)
-    # Each surface's deflection modelled as travelling at its measured
-    # rate (``Autopilot.surface_actuators``), the increment added to that.
-    SURFACE_OWN_ACTUATORS: bool = True
     SURFACE_OWN_MAX_STEP: float = 0.5    # deflection per tick
     SURFACE_OWN_REG: float = 1e-3        # allocation damping, scale-free
     # The angular acceleration the moment in hand is read from: differenced

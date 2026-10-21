@@ -54,10 +54,11 @@ def identify(sc, run, say, args):
     column says the pulse makes -- whether B is the craft's B, and how
     long a deflection takes to arrive."""
     ap.set_autopilot_engaged(run.autopilot, False)
+    for name in ("pitch", "roll", "yaw"):
+        setattr(run.control, name, 0.0)
     surfaces = run._surfaces
     for cs, _ in surfaces:
-        cs.deflection_override = True
-        cs.deflection = 0.003
+        cs.deflection_override = False
     inertia = tuple(float(i) for i in run.vessel.moment_of_inertia)
     prev = None
     base = None
@@ -86,10 +87,14 @@ def identify(sc, run, say, args):
         if args.only and i not in args.only:
             continue
         rows = []
-        for phase, d, n in (("pre", 0.003, 4),
+        for phase, d, n in (("pre", None, 4),
                             ("on", args.pulse, args.on_ticks),
-                            ("off", 0.003, args.on_ticks)):
-            cs.deflection = d
+                            ("off", None, args.on_ticks)):
+            # Off is the input path with no input: an override of ~0
+            # would leave the surface where it was.
+            cs.deflection_override = d is not None
+            if d is not None:
+                cs.deflection = d
             for _ in range(n):
                 snap, m, col = tick(phase, i, d)
                 if m is not None:
@@ -113,7 +118,6 @@ def identify(sc, run, say, args):
                                        + tuple(c * args.pulse / 1e3
                                                for c in col)))
     for cs, _ in surfaces:
-        cs.deflection = 0.003
         cs.deflection_override = False
 
 
@@ -165,8 +169,9 @@ def main():
     # By position relative to the root part: the vessel frame's origin is
     # the CoM, which the two saves' propellant puts in different places.
     frame = run.vessel.parts.root.reference_frame
-    tables = [(tuple(round(c, 1) for c in cs.part.position(frame)), table)
-              for cs, table in run._surfaces]
+    tables = [(tuple(round(c, 1) for c in cs.part.position(frame)), table,
+               law) for (cs, table), law in zip(run._surfaces,
+                                                 run._surface_rate)]
     machs, alphas = run._surface_machs, run._surface_alphas
 
     # 2. the same craft in the air
@@ -174,13 +179,15 @@ def main():
     time.sleep(1.0)
     run = ap.Autopilot(conn, cfg, book)
     frame = run.vessel.parts.root.reference_frame
-    mapped = []
+    mapped, laws = [], []
     for cs in run.vessel.parts.control_surfaces:
         pos = tuple(round(c, 1) for c in cs.part.position(frame))
         best = min(tables, key=lambda t: vec.norm(vec.sub(t[0], pos)))
         if vec.norm(vec.sub(best[0], pos)) < 0.5:
             mapped.append((cs, best[1]))
+            laws.append(best[2])
     run._surfaces = mapped
+    run._surface_rate = laws
     run._surface_machs, run._surface_alphas = machs, alphas
     run.state = ap.HAC
     try:
@@ -190,8 +197,8 @@ def main():
     snap = run.telemetry.sample(run.env)
     base = allocate.body_axes(snap.right, snap.nose, snap.roof)
     for i, (cs, table) in enumerate(mapped):
-        say("d[%d] %s at %s" % (i, cs.part.title, tuple(
-            round(c, 1) for c in cs.part.position(frame))))
+        say("d[%d] %s at %s, travel %s" % (i, cs.part.title, tuple(
+            round(c, 1) for c in cs.part.position(frame)), laws[i]))
     say("air: %d of %d surfaces mapped, q %.0f Pa, alpha %.1f, inertia "
         "%s kg m^2" % (len(mapped), len(tables), snap.dynamic_pressure,
                        snap.krpc_aoa, "/".join(
@@ -237,7 +244,9 @@ def main():
                 "%+6.1f q=%.0f a=%.1f d=%s%s"
                 % ((label, snap.ut - start) + err + rate
                    + (snap.dynamic_pressure, snap.krpc_aoa,
-                      " ".join("%+.2f" % d for d in run._surface_defl),
+                      " ".join("%+.2f" % d for d in
+                               getattr(run, "_surface_act", None)
+                               or run._surface_defl),
                       moments)))
             wake = snap.ut + args.tick
             while sc.ut < wake:
