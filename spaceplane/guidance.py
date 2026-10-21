@@ -1911,6 +1911,41 @@ def cone_speed(env, cfg, stall, height):
     return speed
 
 
+def cone_envelope(env, cfg, stall, height, path, radius, gravity, cone_ld):
+    """``HAC_ENVELOPE``: the fastest the cone may fly here -- the smaller of
+    the speed whose held turn fits ``radius`` at ``HAC_BANK_MAX_DEG`` and
+    the speed it can still bleed to the gate's over ``path``.
+
+    The bleed is in energy: flown at its most draggy (``HAC_ALPHA_MAX_DEG``
+    with the split rudder at its stop, the table's L/D times the last
+    ``HAC_SPLIT_FACTOR``) the vehicle spends ``1/LD_brake`` of energy
+    height per metre of path while the cone's profile descends
+    ``1/cone_ld``, so the kinetic energy falls at the difference: ``v^2 =
+    v_gate^2 + 2 g m (1/LD_brake - 1/cone_ld) s``, ``m`` =
+    ``HAC_ENVELOPE_BLEED_MARGIN``.  0.0 where either cannot be priced."""
+    if not stall or radius is None or radius <= 0.0 or not cone_ld:
+        return 0.0
+    g = gravity if gravity > 0.0 else 9.81
+    turn = math.sqrt(radius * g * math.tan(math.radians(cfg.HAC_BANK_MAX_DEG))
+                     / max(1e-6, cfg.HAC_HOLD_MARGIN))
+    gate = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
+    try:
+        cla, cda = env.coefficients(cfg.HAC_ALPHA_MAX_DEG, gate, height)
+    except Exception:                                       # noqa: BLE001
+        return 0.0
+    if cla <= 0.0 or cda <= 0.0:
+        return 0.0
+    brake_ld = cla / cda
+    if getattr(cfg, "HAC_SPLIT_BRAKE", False) and cfg.HAC_SPLIT_FACTOR:
+        brake_ld *= sorted(cfg.HAC_SPLIT_FACTOR)[-1][1]
+    rate = 1.0 / max(0.1, brake_ld) - 1.0 / max(0.1, cone_ld)
+    if rate <= 0.0:
+        return 0.0
+    bleed = math.sqrt(gate * gate + 2.0 * g * float(
+        cfg.HAC_ENVELOPE_BLEED_MARGIN) * rate * max(0.0, path))
+    return min(turn, bleed)
+
+
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
         previous=None, max_step=None, weave=0.0, roll_rate=None,
         ld_scale=None, weave_ok=True):
@@ -2149,6 +2184,9 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
+    if getattr(cfg, "HAC_ENVELOPE", False):
+        target = max(target, cone_envelope(env, cfg, stall, height, total,
+                                           radius, gravity, cone_ld))
     # ``HAC_SPEED_ERR_MAX_MS``: the speed error the law acts on is
     # clamped, so a cone entered far below its target accelerates a few
     # degrees under trim instead of pushing over to the alpha floor --
@@ -2160,7 +2198,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         error = vec.clamp(error, -limit, limit)
     alpha = trim + cfg.HAC_SPEED_KP * error
     floor = cfg.ALPHA_MIN_DEG
-    if float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0) > 1.0:
+    if (float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0) > 1.0
+            or getattr(cfg, "HAC_ENVELOPE", False)):
         floor = min(floor, float(cfg.HAC_FAST_ALPHA_MIN_DEG))
     alpha = vec.clamp(alpha, floor, cfg.HAC_ALPHA_MAX_DEG)
 

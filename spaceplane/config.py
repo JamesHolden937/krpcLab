@@ -209,6 +209,20 @@ class Config:
     # airspeed: the glide hands over more energy, so less of it is thrown
     # away at 40 deg of alpha with the RCS open below Mach 1.5.
     HAC_FAST_TAEM: bool = False
+    # **The fast cone as an envelope, not a number** (the user, 2026-10-20:
+    # "don't target a specific number ... let everything before it go as
+    # fast as it can while still retaining steering capability and
+    # capability to slow down by landing").  With this on the cone's speed
+    # target is the smaller of two speeds the vehicle computes every tick,
+    # floored at the q target: the fastest whose level-turn radius at
+    # ``HAC_BANK_MAX_DEG`` (with ``HAC_HOLD_MARGIN``) fits the circle being
+    # flown, and the fastest from which the vehicle at its most draggy
+    # (``HAC_ALPHA_MAX_DEG``, split rudder at its stop) still bleeds to the
+    # gate's speed over the path left (``guidance.cone_envelope``; the
+    # margin scales the bleed rate).  No Mach cap.  Implies the fast cone's
+    # alpha floor.
+    HAC_ENVELOPE: bool = False
+    HAC_ENVELOPE_BLEED_MARGIN: float = 0.5
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,

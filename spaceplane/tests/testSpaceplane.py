@@ -5717,6 +5717,28 @@ class TestHacSpeedQ(unittest.TestCase):
                          guidance.cone_speed(env, base, 50.0, 9000.0))
 
 
+class TestConeEnvelope(unittest.TestCase):
+    """``HAC_ENVELOPE``: turn-limited far out, bleed-limited near the gate,
+    the gate's speed at the gate."""
+
+    def test_envelope(self):
+        cfg = replace(Config(), HAC_SPEED_Q=True, HAC_ENVELOPE=True)
+        env = FakeEnv(cfg)
+        gate = guidance.cone_speed(env, cfg, 50.0, cfg.GATE_ALT_M)
+        at_gate = guidance.cone_envelope(env, cfg, 50.0, cfg.GATE_ALT_M,
+                                         0.0, 8000.0, 9.81, 2.4)
+        self.assertAlmostEqual(at_gate, gate)
+        speeds = [guidance.cone_envelope(env, cfg, 50.0, 6000.0, s, 8000.0,
+                                         9.81, 2.4)
+                  for s in (0.0, 2000.0, 8000.0, 1e6)]
+        self.assertEqual(speeds, sorted(speeds))
+        turn = math.sqrt(8000.0 * 9.81 * math.tan(math.radians(
+            cfg.HAC_BANK_MAX_DEG)) / cfg.HAC_HOLD_MARGIN)
+        self.assertAlmostEqual(speeds[-1], turn)
+        self.assertEqual(guidance.cone_envelope(env, cfg, 50.0, 6000.0,
+                                                1e4, None, 9.81, 2.4), 0.0)
+
+
 class TestPeakHeating(unittest.TestCase):
     """``trajectory.peak_heating``: sqrt(rho) v^3 / 1e6 at its largest."""
 
