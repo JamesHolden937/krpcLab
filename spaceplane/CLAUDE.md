@@ -48,13 +48,26 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-11 evening, fingerprint `b5651d39`)
+## Where it stands (2026-10-20 evening, fingerprint `ffa022d6`)
+
+**The user's goals:** fly craft with minimum stability margin, and the
+shortest reliable time from deorbit burn to an intact stop.  Burn->stop
+on `qs_shuttle2_rigoff` is now ~1265 s (was ~1560): the deorbit takes the
+*latest* window that still leaves the glide 25% of the first window's
+reach (`DEORBIT_LATEST`); the touchdown aim is 1200 m (5/6 on the runway
+v 3/6); the cone's speed comes from its energy (`HAC_ENERGY_SPEED`) and
+the table now measures negative alpha (signed lift).  The cone is
+energy-bound: going faster there needs energy the glide currently
+throws away at 40 deg below Mach 1.5.  Score landings by the `DOWN:`
+line, not by `along`.  The low-margin test airframe is
+`qs_shuttle2_fwdwing_rigoff`; `qs_stackorb` is not flown (the user).
+
+## Earlier (2026-10-11 evening, fingerprint `b5651d39`)
 
 **The cone holds dynamic pressure** (`HAC_SPEED_Q`, promoted 2026-10-11):
 its speed target is the gate target's q at every height (~245 m/s true at
 12 km), not a constant true airspeed that is below the stall up high.
-speedq2-1011: **19/24 v 14/24**, RCS in the cone 15-40 s v 92-99.  Its
-misses are now high (rolled out 3-4 km over, overruns), not out of height.
+speedq2-1011: **19/24 v 14/24**, RCS in the cone 15-40 s v 92-99.
 
 ## Earlier (2026-10-10 late, fingerprint `bc9ac544`)
 
@@ -140,7 +153,9 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 `AIRFRAME_DERIVED`, `APPROACH_LD_DERIVED`, `GLIDE_ENERGY_AIM`, `HAC_ENTRY_DERIVED`,
 `HAC_BANK_FROM_LIFT`, `ALPHA_TRACKING_ON`, `APPROACH_CAPTURE_TAU_SHARE`;
 2026-10-18, unflown or never re-flown: `HAC_SHORT_POLAR`, `AIRBRAKE_CACHE`,
-`GROUND_SPOILER_ON_NOSE`.
+`GROUND_SPOILER_ON_NOSE`; 2026-10-20: `HAC_FAST_FACTOR`, `HAC_FAST_TAEM`,
+`HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
+`ROLLOUT_DIVERT_SETTLE_S`.
 
 ## Commands
 

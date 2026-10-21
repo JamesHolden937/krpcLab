@@ -2774,3 +2774,98 @@ broke on touchdown at 53-81 m/s.  The remaining 0.3 m of aft CoM is not
 recoverable from propellant (it has 0.9 t); the cone and touchdown on a
 light, aft-CoM orbiter are the next item.  The roll damper slows a
 departure it did not cause (both live tumbles): not changed here.
+
+## Session, 2026-10-20 evening: shorter descents -- the latest burn, the near aim, the cone's speed from energy
+
+**The user's goals, set this session:** (1) make craft flyable with
+minimum stability margin; (2) reliable landings in as short a time from
+deorbit burn to an intact stop on the runway as possible.  Defaults
+fingerprint at the end: `ffa022d6`.  All batches `qs_shuttle2_rigoff`
+unless named; burn->stop is game seconds from `DEORBIT -> COAST` to
+`STOPPED`.
+
+**Where the time went** (four defaults flights, LOG13130-13144): ~1500 s
+from burn to wheels -- coast 737 (49%), glide 480 (33%), cone 175 (11%),
+approach+flare ~100.  The deorbit plan took the *first* solvable state:
+the farthest burn and the longest coast.
+
+- **`DEORBIT_LATEST`, default.**  The plan walks past the first solvable
+  state while burns still solve, are affordable, reach sideways, keep the
+  hotter window corner's peak heating under `max(650, the first
+  window's)`, and leave the glide a window at least 25% as wide as the
+  first's; it plans 60 s inside the last such state and the live search
+  holds the commit until then.
+  - v1 (no window floor), env-1020: burn->td 520-820 s v ~1560, but the
+    latest that merely solves left a 12 km window of 298 and 162 m/s of
+    burn; 5/6 lost (two flared at 109 m/s of sink).  Also exposed a bug
+    for every flight: the burn's runaway guard sat after the misaligned
+    early return, so a nose off attitude after a 165 m/s, 3 s burn held
+    DEORBIT retrograde into the air (LOG13182/13187/13191).  Guard moved
+    first.
+  - share 0.4, env2-1020: 34 m/s, 153 km window, burn->td ~1350, 5/5 down.
+  - share 0.25, es-1020: 42 m/s, 108 km window, burn->td **1233-1270 v
+    1554-1612**, 6/6 intact; predicted peak heating 346 v 365, skin max
+    0.71-0.72 v 0.70-0.74 (a shorter entry is a cooler one here).
+  - The heat cap first refused the 500 km orbit's normal window (819 >
+    650; it has flown at skin 0.845) and sent the burn six hours on to a
+    180 m/s window: 20-850 km misses (breadth-1020).  The cap now bounds
+    only the walk later.
+- **`TOUCHDOWN_AIM_M` 1800 -> 1200, default** (the user: "aim it close
+  as possible to the close edge without landing short").  es-1020:
+  touchdown 583-813 m past the threshold v 1160-2868, on the runway 5/6
+  v 3/6, no overrun diverts v 4/6.  Earlier tries (2026-10-03/06) lost
+  because the cone then handed over 1.3-1.7 km of surplus.
+- **The overrun divert is not the bug it looked like.**  Scored by
+  `along` alone, most of the afternoon's "stops" were 100-190 m north on
+  the grass: the rollout predicts its stop from the deceleration achieved
+  and latched a divert on overruns of under 20 m.  The rollout
+  decelerates at a steady ~1.3 m/s^2 (LOG13202, 49.5 m/s to rest), so
+  the overruns were real but thin; `ROLLOUT_DIVERT_SETTLE_S` (3 s) was
+  null and deleted.  The near aim is the fix.  **Score by the `DOWN:`
+  line, never by `along` alone.**
+- **The cone's speed.**  The cone sits on its alpha floor (0) below ~9 km
+  -- the cambered wing carries 1 g at zero alpha near the q target.
+  - `HAC_FAST_FACTOR` 1.4 (x the q target, Mach 0.85 cap, bled to the
+    approach speed above the gate, alpha floor -5): cone 128 v 163 s
+    median, ~35 s saved, losses 2/14 v 2/14.  Deleted (a multiplier; the
+    user asked for a law).
+  - `HAC_FAST_TAEM` (glide hands over at the cone's own entry speed):
+    no change to the subsonic glide's ~40 deg command or its RCS time;
+    longer arrivals.  Deleted.
+  - `HAC_ENVELOPE` (fastest of turn radius / max-drag bleed, no Mach
+    cap): 3/6 then (surplus-limited) 4/6 short by 2-9 km.  Deleted.
+  - **`HAC_ENERGY_SPEED`, default** (with `ALPHA_NEGATIVE_BINS`): the
+    fastest speed whose own L/D spends 90% of the energy above the gate
+    over the tightest circle it can hold at that speed, capped where lift
+    at the -5 deg floor carries the weight.  es2-1020: the solve offers
+    ~the q target (ves 152-206 v vt 163-203) -- **the cone is
+    energy-bound; there is no hidden surplus to fly as speed**.  On the
+    runway 6/8 v 4/8, cone time unchanged.  A faster cone needs more
+    energy handed over, which the glide currently throws away at 40 deg.
+- **`ALPHA_NEGATIVE_BINS`, default: the table below zero works.**  The
+  2026-10-09 negative bins were deleted for reading lift *rising* as alpha
+  fell; two bugs: the probe stored lift as a magnitude
+  (`|project_out(force, flow)|`) and `Table.lookup` mirrored `|alpha|`.
+  Signed lift on the negative bins, signed lookup when the table has them.
+- **Stability margin (goal 1).**  The stack orbiter (dropped as a test
+  airframe at the user's request) departs in two stages (LOG13145):
+  Mach 4-3, alpha 13 deg over its command and sideslip -17 with inputs at
+  0.2-0.3 while the roll damper slowed roll/yaw 5.3 -> 18.9 s; then Mach
+  2-1, yaw/roll pinned at -1.00 and sideslip to 50 -- yaw authority 141
+  kN m surfaces + 279 RCS against 1985 in pitch.
+  - `ROLL_DAMPER_SLIP_GATE_DEG` (damper held fastest past 8 deg of
+    sideslip): 8/8 lost, 7/8 departed v 5/8.  Deleted: faster is worse,
+    as 2026-09-26 found at 1.0 s.
+  - `RCS_HOLD_IN_AIR` (valve held open GLIDE-FLARE): es2-1020 rigoff
+    sideslip 8-14 v 8-26 (promoted), then fwd-1020 on the low-margin
+    airframe sideslip median ~27 v ~14 and alpha 10-53 over v 8-15 --
+    the pitch thrusters drive alpha through the trim.  Deleted.
+  - **New save `qs_shuttle2_fwdwing_rigoff`**: wings (elevons, fins,
+    mains) 0.6 m forward.  fwd-1020: 6/8 on the runway on defaults, one
+    lost (alpha 117 over, sideslip 54, destroyed in the cone).
+- **Breadth on the new defaults:** inc_rigoff 3/4 on the runway (1
+  overrun +1.7 km); the 500 km orbit is out until 80 km is reliable (the
+  user).
+
+Batches: fast-, env-, env2-, es-, breadth-, br3-, rcs- (killed), es2-,
+fwd-1020.

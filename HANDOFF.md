@@ -1,42 +1,62 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-20 morning: spaceplane -- the live tumble is an aft CoM; `FUEL_TO_NOSE` default (fingerprint `12d2b275`)
+## 2026-10-20 evening: spaceplane -- latest burn, near aim, cone speed from energy (fingerprint `ffa022d6`)
 
-Committed and pushed.  Farm stopped, sleep inhibitor released.  How-it-works
-PDF: COAST paragraph updated (page 3).  Journal: "Session, 2026-10-20
-morning".
+Committed and pushed.  How-it-works PDF rewritten.  Journal: "Session,
+2026-10-20 evening".  Farm and sleep inhibitor: see the last lines of
+this section.
 
-**The user asked:** the last spaceplane log tumbled again -- fix it.
-LOG12759 (live 2026-10-18) flew **the stack's orbiter** ("shuttle first
-complete test flight", ore payload dropped, 30.2 t), which the farm had
-never flown from orbit.
+**The user's goals now (memory `spaceplane-goals-2026-10-20`):** (1) make
+craft flyable with minimum stability margin; (2) reliable landings in
+the shortest time from deorbit burn to an intact stop.  Don't size burns
+for nose ballast (the user's craft issue); don't fly `qs_stackorb`.
 
-- **New save `qs_stackorb`** (saves/README): `qs_stack` flown to 81 x 79
-  km by `ascent/tools/stackfly.py`, payload dropped, debris removed.
-- **Reproduced:** rot-stackorb-1020, 12 defaults: glide slip max 14-72 deg
-  on 11/12 (qs_shuttle2: <= 11), four 24-40 km short.
-- **Cause: propellant, not shape.**  Same parts as `qs_shuttle2`;
-  `qs_shuttle2` keeps its reserve in the nose adapter, the orbiter reaches
-  orbit with ~69 units in each of three tanks.  CoM measured from the nose
-  tank: 9.80 m (qs_shuttle2 glide) v 10.43 (qs_stackorb), 10.11 pumped.
-- **Fix, default: `FUEL_TO_NOSE`** (`Autopilot.fuel_to_nose`, first COAST
-  tick, pump every LF/Ox tank to the forward-most; logged `fuel to nose:`).
-  rot-nose-1020, 6 an arm: slip max 9-15 v 17-56, **0/6 departures v 3/6**,
-  every flight to the field.  A no-op on `qs_shuttle2`.
-- Flown and deleted: `ATTITUDE_PITCH_AIR_IN_GLIDE` (1/6 departed, slip 36).
+**New defaults this session** (all `qs_shuttle2_rigoff`, 6-8 an arm):
+- `DEORBIT_LATEST` (window share 0.25, heat cap max(650, first window)):
+  burn->stop ~1265 s v ~1560 (about 5 min saved), 42 m/s v 26, skin max
+  0.71-0.72.
+- `TOUCHDOWN_AIM_M` 1200 (was 1800): touchdown 583-813 m in, 5/6 on the
+  runway v 3/6.
+- `HAC_ENERGY_SPEED` + `ALPHA_NEGATIVE_BINS` (signed lift below zero:
+  the old bins were a magnitude bug plus a mirrored lookup): the cone is
+  energy-bound -- the solve asks for ~the q target, cone time unchanged.
+- Burn runaway guard now runs before the misaligned early return (it was
+  unreachable: three flights held DEORBIT into the air).
+- Deleted after measuring: `HAC_FAST_FACTOR`, `HAC_FAST_TAEM`,
+  `HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
+  `ROLLOUT_DIVERT_SETTLE_S`.  No flags open.
 
-**Open on `qs_stackorb`, in order:**
-1. Pumped, it arrives long: 4/6 intact but splashed +2.9..+4.9 km past the
-   midpoint; the two that stopped on the runway broke at touchdown (56-63
-   m/s).  Read landsum/conesum on rot-nose-1020's arm1 (LOG13130, 13133,
-   13135, 13138, 13143, 13146) before changing anything.
-2. The roll damper slows roll *and* yaw into a departure (both live
-   tumbles, LOG10020 and LOG12759); the RCS relay flips yaw's figure 3.5x
-   per toggle.  Neither caused this one, but both feed a departure once it
-   has started.
-3. Fly the other orbits/airframes once on the new default to confirm the
-   no-op (`qs_shuttle2_rigoff`, `_ecc_`): the pump must log "nothing to
-   move" there.
+**Where it stands (fwd-1020, 8 an arm):** rigoff 5/8 on the runway, 0
+lost, the other 3 stopped 240-830 m along but off the side (the
+overrun divert, real but thin margins); burn->stop 1236-1304 s.
+Low-margin airframe `qs_shuttle2_fwdwing_rigoff` (wings 0.6 m fwd): 6/8
+on the runway, 1 lost (alpha 117 over, sideslip 54, in the cone).
+
+**Next, in order:**
+1. **Score by the `DOWN:` line.**  `along` alone counts grass stops.
+2. **Goal 2, the rollout:** stops cluster where the 1.3 m/s^2 braking
+   ends; touchdown is now 600-800 m in.  The touchdown aim as a law
+   (predicted touchdown a measured margin past the threshold), then
+   stronger braking (only wheels brake now).
+3. **Goal 2, the glide:** the cone is energy-bound and the glide throws
+   energy away below Mach 1.5 at ~40 deg of alpha with the RCS open.
+   Find what holds the terminal glide on its alpha ceiling (not the
+   handover target: `HAC_FAST_TAEM` was null).  Handing that energy to
+   the cone as speed is where the next minute is.
+4. **Goal 2, the burn:** walk the window share below 0.25 (0.15) and
+   measure what the glide can still correct.
+5. **Goal 1:** fly `qs_shuttle2_fwdwing_rigoff` at 0.9-1.2 m forward to
+   find where it departs.  Faster response and held RCS were both worse;
+   next is a yaw damper on sideslip/yaw rate outside kRPC's PID, or
+   limiting alpha (the departures start with alpha 13+ over command).
+6. Breadth: `inc_rigoff` 3/4; 500 km out until 80 km is reliable.
+
+**Traps paid:** `pkill -f`/`pgrep -f` from a shell whose own command line
+holds the pattern kills that shell (exit 144) -- collect PIDs with `ps
+-eo pid,args | awk` into a file first.  A heat cap below the orbit's own
+first window refuses it and the plan wanders for hours: cap the *walk*,
+not the window.  Quote batch ETAs and then check the halfway rows; a
+500 km flight can hold a cycle for an hour.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
