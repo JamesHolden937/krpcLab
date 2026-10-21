@@ -6783,8 +6783,9 @@ class Autopilot:
         """The moment each control input makes on the RCS, in vacuum with
         nothing else flying: per input, +1 then -1 for
         ``SURFACE_OWN_RCS_PULSE_S`` each (the second undoes the spin the
-        first put in), I x the change of body rate over each, averaged.
-        ``_rcs_columns``: three body-component moments (N m per unit)."""
+        first put in), from the change of body rate over each.
+        ``_rcs_columns``: per input, its moment curve at
+        ``allocate.CURVE_D`` (N m, body components), linear each way."""
         self._rcs_columns = None
         try:
             was = bool(self.control.rcs)
@@ -6809,11 +6810,33 @@ class Autopilot:
                     t1, w1 = rate()
                     setattr(self.control, name, 0.0)
                     if t1 > t0:
-                        got.append(tuple(sign * i * (b - a) / (t1 - t0)
-                                         for i, a, b in zip(inertia, w0, w1)))
+                        # Euler: the moment is I w' + w x (I w) -- a craft
+                        # already turning has gyroscopic terms its pulse
+                        # did not make, and the -1 pulse does not cancel
+                        # them (rolling at ~10 deg/s, the cargo craft
+                        # read a yaw input as +26 kN m of pitch).
+                        w = vec.scale(vec.add(w0, w1), 0.5)
+                        gyro = vec.cross(w, tuple(i * x for i, x in
+                                                  zip(inertia, w)))
+                        m = vec.add(tuple(i * (b - a) / (t1 - t0)
+                                          for i, a, b in zip(inertia, w0,
+                                                             w1)), gyro)
+                        got.append(vec.scale(m, sign))
+                        self.logbook.event(t1, "rcs pulse %s %+g: w %s "
+                                           "deg/s, %.2f s, %s kN m" % (
+                            name, sign, "/".join("%+.1f" % math.degrees(x)
+                                                 for x in w),
+                            t1 - t0, "/".join("%+.0f" % (x / 1e3)
+                                              for x in m)))
                 if len(got) != 2:
                     return
-                cols.append(vec.scale(vec.add(got[0], got[1]), 0.5))
+                # A curve, like a surface's: the two directions fire
+                # different thrusters, and on a craft whose CoM is not
+                # where its RCS was placed for they differ (the cargo
+                # craft: pitch +1 -27/0/-4 kN m, -1 +11/0/-22).
+                plus, minus = got[0], vec.scale(got[1], -1.0)
+                cols.append((minus, vec.scale(minus, 0.5), (0.0, 0.0, 0.0),
+                             vec.scale(plus, 0.5), plus))
         except Exception:                               # noqa: BLE001
             return
         finally:
@@ -6824,12 +6847,14 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 pass
         self._rcs_columns = cols
-        self.logbook.event(snap.ut, "rcs: kN m per unit input (right/nose/"
-                           "belly): %s" % "  ".join(
-                               "%s %+.0f/%+.0f/%+.0f" % ((n,) + tuple(
-                                   c / 1e3 for c in col))
-                               for n, col in zip(("pitch", "roll", "yaw"),
-                                                 cols)))
+        self.logbook.event(snap.ut, "rcs: kN m at input +1 / -1 (right/"
+                           "nose/belly): %s" % "  ".join(
+                               "%s %s / %s" % (n, "/".join(
+                                   "%+.0f" % (c / 1e3) for c in cell[4]),
+                                   "/".join("%+.0f" % (c / 1e3)
+                                            for c in cell[0]))
+                               for n, cell in zip(("pitch", "roll", "yaw"),
+                                                  cols)))
 
     def _quiet_inputs(self):
         """For a vacuum sweep: kRPC and SAS let go and the client's inputs
@@ -7122,8 +7147,10 @@ class Autopilot:
         valve = bool(getattr(self.rcs, "on", False)) and bool(
             cfg.SURFACE_OWN_RCS)
         measured = getattr(self, "_rcs_columns", None)
-        rcs_cols = [tuple(c) if valve and measured else (0.0, 0.0, 0.0)
-                    for c in (measured or [None] * 3)]
+        rcs_cols = [allocate.curve_slope(cell, u) if valve and measured
+                    else (0.0, 0.0, 0.0)
+                    for cell, u in zip(measured or [None] * 3,
+                                       self._rcs_in)]
         # The deflection the measured acceleration came from: each surface
         # travels at its own measured rate, so it is not the command.
         act, synced = self.surface_actuators(snap.ut)
