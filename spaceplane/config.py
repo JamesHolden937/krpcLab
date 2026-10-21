@@ -1489,9 +1489,10 @@ class Config:
     ABORT_NORTH_TOLERANT: bool = True
     ABORT_SHORT_SHARE: float = 0.1
     # The short test's reach on the larger of the approach's ratio and the
-    # swept table's best glide (``airframe.glide_ld``, at the landing mass):
-    # a short vehicle stretches.  orbits2-1021: four diverts at 10-18% of
-    # the height all reached the runway's length on the grass.
+    # swept table's best glide (``env.best_ld``, at the landing mass), over
+    # the energy height (speed above best glide counted): a short vehicle
+    # stretches.  orbits2-1021: four diverts at 10-18% of the height, all at
+    # ~150 m/s, reached the runway's length on the grass.
     ABORT_SHORT_BEST_GLIDE: bool = True
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.

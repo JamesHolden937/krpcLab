@@ -1252,10 +1252,23 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # approach's 4.2 the divert fired 140-320 m of height "short" at
     # h=1400-1800 on four flights that all touched down past the threshold
     # (orbits2-1021, LOG13427, 13429, 13431, 13440).
+    # And on *energy* height: speed over best glide is range too, spent at
+    # the same ratio (dE/ds = D/L).  The four diverts were at 150-155 m/s
+    # against a 93 m/s best glide -- some 720 m of height uncounted.  The
+    # table's own numbers (``env.best_ld`` / ``best_speed``, re-read at the
+    # landing mass): ``airframe.glide_ld`` with a ``cfg`` is the configured
+    # 4.2, and the first cut of this read that and changed nothing.
     reach_ld = clean_ld
+    energy = height
     if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
-        reach_ld = max(clean_ld, airframe.glide_ld(env, cfg))
-    command.threshold_excess = height - to_threshold / max(0.1, reach_ld)
+        measured = getattr(env, "best_ld", None)
+        if measured is not None and measured > 0.0:
+            reach_ld = max(clean_ld, measured)
+        glide = airframe.at_mass(env, getattr(env, "best_speed", None))
+        if glide is not None and glide > 0.0:
+            energy = height + (speed * speed - glide * glide) / (
+                2.0 * max(0.1, gravity))
+    command.threshold_excess = energy - to_threshold / max(0.1, reach_ld)
     command.scurve_deg = scurve_deg
     # **The speed the approach is trying to hold, published.**  Anything that
     # adds drag has to know it: a glider that ends up below this can only get

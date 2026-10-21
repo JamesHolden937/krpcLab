@@ -5075,6 +5075,46 @@ class TestTheThresholdReachIsOnTheCleanRatio(unittest.TestCase):
         self.assertIn("to_threshold / max(0.1, reach_ld)", src)
 
 
+class TestTheShortTestCountsTheMeasuredGlide(unittest.TestCase):
+    """``ABORT_SHORT_BEST_GLIDE``: the reach is on the table's best glide
+    and the energy height, so speed over best glide moves the answer (the
+    first cut read the configured ratio and was inert)."""
+
+    def excess(self, cfg, speed, best_ld=None, best_speed=None):
+        env = FakeEnv(cfg)
+        env.best_ld = best_ld
+        env.best_speed = best_speed
+        end = env.runway.ends["09"]
+        along = env.runway.horizontal(end, end["along"])
+        height, distance = 1400.0, 8000.0
+        back = vec.add(end["threshold"], vec.scale(along, -distance))
+        r = vec.scale(vec.unit(back), vec.norm(end["threshold"]) + height)
+        gamma = math.atan2(height, distance)
+        v = vec.scale(vec.unit(vec.sub(vec.scale(along, math.cos(gamma)),
+                                       vec.scale(vec.unit(r),
+                                                 math.sin(gamma)))), speed)
+        return guidance.approach(env, cfg, end, r, v, MASS, GRAVITY,
+                                 height).threshold_excess
+
+    def test_speed_over_best_glide_is_reach(self):
+        cfg = Config()
+        slow = self.excess(cfg, 95.0, 4.72, 93.0)
+        fast = self.excess(cfg, 150.0, 4.72, 93.0)
+        self.assertAlmostEqual(fast - slow,
+                               (150.0 ** 2 - 95.0 ** 2) / (2 * GRAVITY), 0)
+
+    def test_the_measured_ratio_is_read_not_the_constant(self):
+        cfg = Config()
+        plain = self.excess(cfg, 95.0)
+        measured = self.excess(cfg, 95.0, 6.0, None)
+        self.assertGreater(measured, plain + 50.0)
+
+    def test_off_is_the_approach_ratio_on_height(self):
+        cfg = replace(Config(), ABORT_SHORT_BEST_GLIDE=False)
+        self.assertAlmostEqual(self.excess(cfg, 150.0, 6.0, 93.0),
+                               self.excess(cfg, 95.0), 3)
+
+
 class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):
     """``FLARE_DOOR_FROM_RESPONSE``: the door is the pitch response at the
     present sink plus the pull-up at ``FLARE_TRACK_LOAD_MAX``."""
