@@ -168,11 +168,6 @@ class Config:
     # of sink and pulled 14 deg at 7 kPa to stop (LOG10017).  0 = unclamped.
     # Default 2026-10-11 (the user: smoother; unflown, they test it live).
     HAC_SPEED_ERR_MAX_MS: float = 25.0
-    # The cone's alpha is the banked trim *at the target speed* plus the
-    # speed term (``guidance.hac``), as on the approach; off is trim at the
-    # present speed, which climbs as the vehicle slows and holds it on the
-    # back of the drag curve (LOG13429).
-    HAC_TRIM_AT_TARGET: bool = False
     # **The cone holds the dynamic pressure it hands over, not a true
     # airspeed** (``guidance.cone_speed``).  The target above is a constant
     # *true* airspeed, so in thin air it asks for a low *equivalent* one:
@@ -2162,6 +2157,11 @@ class Config:
     # against the burn's aim, what it owes, and why when it cannot say --
     # with the pointing error and vertical speed beside it.
     COAST_WATCH_S: float = 0.0
+    # RCS permitted through the coast (the pointing-error relay decides when
+    # it fires): the turn from the burn's attitude to the entry attitude
+    # comes after the warp, under a minute above the air, and the wheels
+    # alone left a third of flights entering 25-62 deg in sideslip.
+    COAST_RCS_TURN: bool = True
 
     # -- the drain ---------------------------------------------------------
     # 2.780 t of the 9.495 t on board, so 29% of the vehicle and a 29% cut in

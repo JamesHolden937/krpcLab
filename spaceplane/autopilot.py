@@ -4822,7 +4822,13 @@ class Autopilot:
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
         self.fuel_to_nose(snap)
-        self.set_rcs(False, snap)
+        # ``COAST_RCS_TURN``: the valve's error relay, as in the burn.  The
+        # warp holds the burn's retrograde attitude to ~70 km and the turn
+        # to the entry attitude (up to ~155 deg) then has under a minute;
+        # on the wheels alone a third of flights met the air 25-62 deg in
+        # sideslip and lost the roll axis at Mach 5-7 (trim2-1021, LOG13530,
+        # 13537, 13558).
+        self.set_rcs(bool(getattr(self.cfg, "COAST_RCS_TURN", False)), snap)
         self.coast_watch(snap)
         self.coast_warp(snap)
         self.end = self.env.runway.choose(snap.position, snap.velocity)
