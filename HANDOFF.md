@@ -1,67 +1,72 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-20 evening / 10-21 night: spaceplane -- latest burn, near aim, cone speed from energy (fingerprint `cb0ae1d4`)
+## 2026-10-21 morning: spaceplane -- breadth over four orbits; coast RCS, divert on energy height, latest-burn fixes (fingerprint `fb9a9b61`)
 
-Committed and pushed.  How-it-works PDF rewritten.  Journal: "Session,
-2026-10-20 evening".  Farm and sleep inhibitor: see the last lines of
-this section.
+Committed and pushed.  How-it-works PDF updated.  Journal: "Morning,
+2026-10-21".  Farm stopped, sleep inhibitor released at the end.
 
-**The user's goals now (memory `spaceplane-goals-2026-10-20`):** (1) make
-craft flyable with minimum stability margin; (2) reliable landings in
-the shortest time from deorbit burn to an intact stop.  Don't size burns
-for nose ballast (the user's craft issue); don't fly `qs_stackorb`.
+**The user's goals (memory `spaceplane-goals-2026-10-20`):** (1) craft
+flyable with minimum stability margin; (2) reliable landings in the
+shortest burn-to-intact-stop time.  Don't size burns for nose ballast;
+don't fly `qs_stackorb`; 500 km saves out until 80 km is reliable.
 
-**New defaults this session** (all `qs_shuttle2_rigoff`, 6-8 an arm):
-- `DEORBIT_LATEST` (window share 0.25, heat cap max(650, first window)):
-  burn->stop ~1265 s v ~1560 (about 5 min saved), 42 m/s v 26, skin max
-  0.71-0.72.
-- `TOUCHDOWN_AIM_M` 1200 (was 1800): touchdown 583-813 m in, 5/6 on the
-  runway v 3/6.
-- `HAC_ENERGY_SPEED` + `ALPHA_NEGATIVE_BINS` (signed lift below zero:
-  the old bins were a magnitude bug plus a mirrored lookup): the cone is
-  energy-bound -- the solve asks for ~the q target, cone time unchanged.
-- Burn runaway guard now runs before the misaligned early return (it was
-  unreachable: three flights held DEORBIT into the air).
-- Deleted after measuring: `HAC_FAST_FACTOR`, `HAC_FAST_TAEM`,
-  `HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
-  `ROLLOUT_DIVERT_SETTLE_S`.  No flags open.
+**Defaults now** (on top of 10-20's `DEORBIT_LATEST` share 0.15, aim
+1200, cone energy speed, `ABORT_NORTH_TOLERANT`):
+- **Latest-burn fixes** (c29d7ff): the walk's first hit no longer goes to
+  the live search (ecc: SAS held a node for *now* 950 s, 0/6 burned); the
+  walk refuses burns dearer than a surface periapsis (high: 75.6 m/s, 24
+  km window).
+- **`ABORT_SHORT_BEST_GLIDE`**: the short divert judges reach on
+  max(4.2, the table's best glide at the landing mass) over *energy*
+  height.  The first cut read `airframe.glide_ld(env, cfg)` = the
+  configured 4.2 and was inert -- with a cfg, `_derived` always returns
+  the constant.
+- **`COAST_RCS_TURN`**: RCS relay permitted in the coast.  The warp holds
+  the burn's retrograde attitude to ~70 km; on wheels alone a third of
+  entries met the air 25-62 deg in sideslip and lost roll at Mach 5-7.
+  coastrcs-1021 ecc 9/9, entry sideslip <=1 deg, no glide departures.
+- **`BANK_ACCEL_NO_RCS`**: the reversal slew is sized on wheels +
+  surfaces, not `available_torque` (which counts RCS while open).
+  bankrcs-1021 high 4/10 v 1/9.
+- Deleted: `HAC_TRIM_AT_TARGET` (30/47 v 31/47).  No flags open.
 
-**Past midnight (tol-1021):** window share 0.15 and `ABORT_NORTH_TOLERANT`
-promoted -- rigoff 5/6 on the runway (defaults had 2/6: spurious
-diverts), burn->stop **1080-1129 s** (was ~1560).  Share 0.10 lost the
-glide's room (3/6).  Wings 0.9 m forward: 0/6.
+**Where it stands (on the runway, latest batches):** base 5/6, inc 6/6
+(orbits-1021); ecc 9/9 + 6/8 + 7/9; **high 4/9, 4/10** -- the blocker.
+Burn->stop 1150-1250 s on ecc/high, ~1100 on base.
 
-**Where it stood before (fwd-1020, 8 an arm):** rigoff 5/8 on the runway, 0
-lost, the other 3 stopped 240-830 m along but off the side (the
-overrun divert, real but thin margins); burn->stop 1236-1304 s.
-Low-margin airframe `qs_shuttle2_fwdwing_rigoff` (wings 0.6 m fwd): 6/8
-on the runway, 1 lost (alpha 117 over, sideslip 54, in the cone).
+**The blocker -- high orbit, energy-poor arrivals:** with clean entries
+the high glide banks -46..-56 at Mach 7, predicts on aim through Mach 5,
+then from Mach 4.5 its own predicted cone entry sits at the 12.07 km
+floor against the 14.14 km target and it arrives at 12 km and 157-197 m/s
+(LOG13601; good arrivals 12-15 km at 200-280).  The propagator
+over-predicts range at high bank on this steep entry (60.8 m/s, 42 km
+window); the departing entries used to hide it.
 
 **Next, in order:**
-1. **Score by the `DOWN:` line.**  `along` alone counts grass stops.
-2. **Goal 2, the rollout:** stops cluster where the 1.3 m/s^2 braking
-   ends; touchdown is now 600-800 m in.  The touchdown aim as a law
-   (predicted touchdown a measured margin past the threshold), then
-   stronger braking (only wheels brake now).
-3. **Goal 2, the glide:** the cone is energy-bound and the glide throws
-   energy away below Mach 1.5 at ~40 deg of alpha with the RCS open.
-   Find what holds the terminal glide on its alpha ceiling (not the
-   handover target: `HAC_FAST_TAEM` was null).  Handing that energy to
-   the cone as speed is where the next minute is.
-4. **Goal 2, the burn:** walk the window share below 0.25 (0.15) and
-   measure what the glide can still correct.
-5. **Goal 1:** fly `qs_shuttle2_fwdwing_rigoff` at 0.9-1.2 m forward to
-   find where it departs.  Faster response and held RCS were both worse;
-   next is a yaw damper on sideslip/yaw rate outside kRPC's PID, or
-   limiting alpha (the departures start with alpha 13+ over command).
-6. Breadth: `inc_rigoff` 3/4; 500 km out until 80 km is reliable.
+1. **Score by each log's own save and `config:` line**, never `armN`:
+   when an instance dies at a cycle restart the arm labels stop matching
+   (trim2-1021, ksp2).  And by the `DOWN:` line, not `along`.
+2. **High orbit:** measure the propagator's range error against bank on
+   `qs_shuttle2_high_rigoff` (predicted vs flown energy at Mach 4.5,
+   split by the bank flown above Mach 5).  If the model can't be fixed,
+   derive the latest burn's window floor from that error rather than
+   re-fitting `DEORBIT_LATEST_WINDOW_SHARE`.
+3. Re-fly base and inc on the new defaults (coast RCS changes every
+   entry).
+4. Spurious short diverts: one in ~24 remains (LOG13462: 105 m "short"
+   at 102 m/s, touched down mid-runway).
+5. Goal 2: rollout braking (~1.3-2 m/s^2, wheels only), a touchdown-aim
+   law, the terminal glide's energy at ~40 deg alpha below Mach 1.5.
+6. Goal 1: `qs_shuttle2_fwdwing_rigoff` on the new defaults -- coast RCS
+   and the torque-sized reversal may change where it departs; then a yaw
+   damper on sideslip/yaw rate.
 
-**Traps paid:** `pkill -f`/`pgrep -f` from a shell whose own command line
-holds the pattern kills that shell (exit 144) -- collect PIDs with `ps
--eo pid,args | awk` into a file first.  A heat cap below the orbit's own
-first window refuses it and the plan wanders for hours: cap the *walk*,
-not the window.  Quote batch ETAs and then check the halfway rows; a
-500 km flight can hold a cycle for an hour.
+**Traps paid:** `airframe.glide_ld(env, cfg)`/`stall(env, cfg)` return
+the *configured* constant whenever a cfg is passed -- read `env.best_ld`
+etc. for the table's number.  A batch that loses an instance mislabels
+its arms.  `&&` after `| tail` commits even when the tests fail (the
+pipe's status is tail's).  `pkill -f` from a shell holding the pattern
+kills that shell.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 

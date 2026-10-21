@@ -2884,3 +2884,61 @@ fwd-1020.
   0.10 3/6 (two overruns).  Both promoted: share 0.15, tolerant diverts.
   Burn->stop on rigoff is now ~1100 s against ~1560 at the session's
   start.
+
+**Morning, 2026-10-21 -- breadth across the four 80 km-family orbits:**
+- orbits-1021 (base, inc, ecc, high, 6 each): base 5/6, inc 6/6 on the
+  runway; **ecc 0/6 burned** and **high 1/6**.
+  - ecc: the first window already solves, so on the tick the latest-burn
+    walk started (`plan_latest` set, `plan_scan` cleared) `plan_tick`
+    returned False and the live search took the hit -- SAS held a node
+    for *now* through the walk's 950 s and timed out 171 deg off.  Fixed:
+    `plan_tick` owns that tick; a hold begun before the plan is released
+    in the LATEST gate (c29d7ff).
+  - high: the walk accepted 75.6 m/s against the 74.5 of a surface
+    periapsis (a 24 km window; misses of 75 km both ways).  The walk now
+    refuses what the first scan would (`plan_walk_cheap`).  Then 60.8 m/s,
+    42 km window.
+- orbits2-1021 (ecc, high, 12 each): 6/12, 7/12.  Three groups: spurious
+  short diverts at 10-18% of the height, cones out of energy, glides
+  arriving 27-33 km short.
+- `ABORT_SHORT_BEST_GLIDE`, **first cut inert**: `airframe.glide_ld(env,
+  cfg)` returns the configured 4.2 whenever a cfg is passed (`_derived`),
+  so it divided by the same number.  orbits3's 19/24 was noise.  Rewired
+  to `env.best_ld` / `env.best_speed` (the table at the landing mass,
+  4.72 at 93 m/s) and **energy height** -- the spurious diverts were at
+  ~150 m/s, ~720 m of height uncounted (c60a165, with unit tests that
+  the speed and the measured ratio move the answer).
+- `HAC_TRIM_AT_TARGET` (the cone trims at its target speed, as the
+  approach does after failure 65): trim/trim2-1021 by logged config
+  30/47 v 31/47.  Deleted.
+- **trim2-1021 lost ksp2 at cycle 3's restart and the arm labels then
+  stopped matching the saves** -- score by the log's own save and
+  `config:` line, never by `armN`.
+- **Departures at the entry interface (the real loss on ecc):** the coast
+  warps with the burn's retrograde attitude to ~70 km and then has under
+  a minute to turn up to ~155 deg to the entry attitude, and `run_coast`
+  held RCS closed.  A third of flights met the air 25-62 deg in sideslip
+  and lost the roll axis at Mach 5-7 (LOG13530, 13537, 13558).
+  `COAST_RCS_TURN` (the pointing-error relay, ~27 units): coastrcs-1021
+  **ecc 9/9 v 9/10, entry sideslip <=1 deg v 7/10 over 15, glide
+  departures 0 v 5**; high 4/9 v 5/8 -- entering on the commanded
+  attitude, the high orbit's glide banks -46..-56 at Mach 7 (v -30..-45)
+  and the first reversal from there swings 15-28 deg of sideslip; three
+  arrived 12-31 km short.  Promoted (bb05eae).
+- `BANK_ACCEL_NO_RCS` (in flight): the reversal slew is sized on
+  `available_torque`, which counts RCS while the valve is open -- yaw
+  299 kN m against the surfaces' ~150 at q 1500.
+  bankrcs-1021 (9-10 an arm): **high 4/10 v 1/9** on the runway, glide
+  sideslip >30 deg 1 v 3; ecc 6/8 v 7/9.  Promoted.
+- **The high orbit is now the blocker** (coast RCS on: 4/9, 1/9, 4/10 on
+  the runway): the glide arrives energy-poor (12 km at 157-197 m/s
+  against 200-280).  It predicts on aim through Mach 5 while banking
+  -55, then from Mach 4.5 its own predicted cone entry sits at the
+  12.07 km floor against the 14.14 target (LOG13601).  The propagator
+  over-predicts range at high bank on this steep (60.8 m/s, 42 km
+  window) entry; the departing entries hid it.  Next: measure the
+  propagator's range error against bank on the high orbit (or widen the
+  latest burn's window there -- but derive it, don't fit the share).
+
+Batches: orbits-, orbits2-, orbits3-, trim-, trim2-, coastrcs-,
+bankrcs-1021.

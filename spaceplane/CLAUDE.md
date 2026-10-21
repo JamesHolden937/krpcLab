@@ -48,20 +48,31 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-21 night, fingerprint `cb0ae1d4`)
+## Where it stands (2026-10-21 morning, fingerprint `fb9a9b61`)
 
 **The user's goals:** fly craft with minimum stability margin, and the
 shortest reliable time from deorbit burn to an intact stop.  Burn->stop
-on `qs_shuttle2_rigoff` is now ~1100 s (was ~1560): the deorbit takes the
-*latest* window that still leaves the glide 15% of the first window's
-reach (`DEORBIT_LATEST`); diverts north only on a real miss
-(`ABORT_NORTH_TOLERANT`); the touchdown aim is 1200 m (5/6 on the runway
-v 3/6); the cone's speed comes from its energy (`HAC_ENERGY_SPEED`) and
-the table now measures negative alpha (signed lift).  The cone is
-energy-bound: going faster there needs energy the glide currently
-throws away at 40 deg below Mach 1.5.  Score landings by the `DOWN:`
-line, not by `along`.  The low-margin test airframe is
-`qs_shuttle2_fwdwing_rigoff`; `qs_stackorb` is not flown (the user).
+is ~1100 s on `qs_shuttle2_rigoff` and 1150-1250 on ecc/high (was ~1560):
+the deorbit takes the *latest* window that still leaves the glide 15% of
+the first window's reach and costs no more than a surface periapsis
+(`DEORBIT_LATEST`); the coast turns to the entry attitude on the RCS relay
+(`COAST_RCS_TURN` -- on wheels alone a third of entries met the air
+25-62 deg in sideslip); reversals are slewed on wheel + surface torque
+only (`BANK_ACCEL_NO_RCS`); the short divert judges reach on the table's
+best glide over energy height (`ABORT_SHORT_BEST_GLIDE`).  On the runway:
+base 5/6, inc 6/6, ecc 22/26 -- **high 8/19 is the blocker**: clean
+entries bank -55 at Mach 7 and the propagator over-predicts range there,
+so the glide arrives at 12 km and ~180 m/s.  Score landings by the
+`DOWN:` line and by each log's own save/`config:` (arm labels slip when
+an instance dies).  `airframe.glide_ld(env, cfg)` returns the *constant*;
+the table's numbers are `env.best_ld`/`best_speed`.  The low-margin test
+airframe is `qs_shuttle2_fwdwing_rigoff`; `qs_stackorb` is not flown.
+
+## Earlier (2026-10-21 night, fingerprint `cb0ae1d4`)
+
+Burn->stop ~1100 s on rigoff via `DEORBIT_LATEST`, aim 1200,
+`ABORT_NORTH_TOLERANT`, the cone's energy speed and signed negative-alpha
+lift.
 
 ## Earlier (2026-10-11 evening, fingerprint `b5651d39`)
 
