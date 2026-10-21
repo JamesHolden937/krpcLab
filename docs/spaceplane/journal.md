@@ -2948,3 +2948,50 @@ bankrcs-1021.
   and energy-short cones -- the terminal glide's hand-over energy now
   scatters both ways with clean entries.  Burn->stop 1087-1160 base,
   1105-1212 inc.
+
+## Afternoon, 2026-10-21 -- the user's cargo craft, and owning the attitude
+
+The user flew a modified shuttle live ("Cargo Shuttle Test": OKTO2 probe
+nose, no reaction wheel, 29.3 t; LOG13661) and it departed at entry.
+Spliced onto `qs_shuttle2_rigoff`'s orbit as `saves/qs_cargo_rigoff`.
+
+- **rot-cargo-1021 (defaults): 12/12 lost**, 80-277 km short; the glide
+  flies 10-45 deg over its alpha command.  `tools/stiffprobe.py`
+  (LOG13674/13675; the first run's nose-up sign was wrong -- the +1 input
+  reads 0 in vacuum; settled by comparing airframes, raw torque about +x is
+  nose-down): divergent between ~10 and ~28 deg hypersonically.
+- **`PITCH_STIFF_AUG`** (rot-aug-1021, cargo 0/6): the client's pitch was
+  fought to ~0 total.  Then measured directly: **client control inputs do
+  not reach a vessel kRPC is flying** (qs_shuttle2_gate: -0.5/0/+0.5 gave
+  the same alpha and read-back).  `GLIDE_PITCH_OFFLOAD` and
+  `FLARE_PITCH_P` have therefore never acted.
+- **`PITCH_OWN`** on control.pitch (rot-own-1021): inert; with kRPC's
+  pitch tune at 60 s the shuttle flew pitch uncontrolled -- 6/6 on the
+  runway, 5/6 broke up.  On the canards by override (rot-canown-1021):
+  cargo 0/3, shuttle 2/2 splashed long; ksp3 froze at load and hung the
+  harness 45 min.
+- **`SURFACE_OWN`** (the user: "build the mixer ... what if a craft only
+  has one set of elevons"): every surface measured in vacuum, kRPC
+  disengaged, INDI + bounded allocation.  On the probe's moment
+  (rot-sown-1021): shuttle 1/6, standing -14 deg pitch / -6..-15 roll
+  below Mach 5 with the surfaces unsaturated.  On measured angular
+  acceleration (rot-sown2-1021): 0/12, lateral oscillation, sideslip p-p
+  >100.  Without RCS (rot-sownnr-1021): 0/12.  Four nulls on one
+  mechanism -> method changed: `tools/stepbench.py`.
+- **Signs, in the air with kRPC off (LOG13751-13754):** probed torque and
+  angular acceleration agree on all three axes (pitch canards -995 kN m /
+  -0.37 rad/s^2; roll opposed elevons +179 / +3.44; yaw opposed fins
+  -487 / -0.24).  RCS +1 on each input: -0.021 / -0.055 / -0.021 on its
+  own axis, but yaw input +0.126 on roll.
+- **stepbench** (LOG13755-13759): the first run mapped 0/8 surfaces (vessel
+  frame moves with the CoM).  Pitch and yaw settle with no acceleration
+  filter and steps <= 0.08/tick; roll spins at 30-85 deg/s.  Unsolved.
+- **`STALL_TRIMMED`** (unflown): the shuttle "trims" only to 2 deg at Mach
+  0.25 by the vacuum surface sweep -- the averaged +-1 measure understates
+  one-sided surfaces.  Not to be flown until each side is measured.
+- Also: `VACUUM_SURFACE_HOLD`, `common.idle` gimbal lock
+  (boosterland/ascent), and the shared-code move to `common/`
+  (config/cli/panel/krpcpilot/geo; fingerprints unchanged).
+
+Batches: rot-cargo-, rot-aug-, rot-own-, rot-canown- (partial),
+rot-sown-, rot-sown2-, rot-sownnr-1021; bench LOG13755-13759.

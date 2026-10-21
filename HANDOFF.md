@@ -1,80 +1,96 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-21 morning: spaceplane -- breadth over four orbits; coast RCS, divert on energy height, latest-burn fixes (fingerprint `fb9a9b61`)
+## 2026-10-21 afternoon: spaceplane -- the user's cargo craft; client-owned attitude (unsolved); shared code moved to common/ (fingerprint `c95f1067`)
 
-Committed and pushed.  How-it-works PDF updated.  Journal: "Morning,
-2026-10-21".  Farm stopped, sleep inhibitor released at the end.
+Committed (not yet pushed).  Farm up; sleep inhibitor held.  Journal:
+"Afternoon, 2026-10-21".  The morning's state (base 8/12, inc 7/12, ecc
+9/9, high 4/9-10) is unchanged on the defaults: nothing below changed a
+default that flies.
 
-**The user's goals (memory `spaceplane-goals-2026-10-20`):** (1) craft
-flyable with minimum stability margin; (2) reliable landings in the
-shortest burn-to-intact-stop time.  Don't size burns for nose ballast;
-don't fly `qs_stackorb`; 500 km saves out until 80 km is reliable.
+**The user's craft** (`saves/qs_cargo_rigoff`: "Cargo Shuttle Test" on
+`qs_shuttle2_rigoff`'s orbit -- OKTO2 probe nose instead of the Mk1-3 pod,
+no reaction wheel, 29.3 t, CoM ~3 m aft relative to the wings):
+**12/12 lost on the defaults** (rot-cargo-1021), 80-277 km short: the
+glide flies 10-45 deg *over* its alpha command.  `tools/stiffprobe.py`
+(LOG13675): its hypersonic pitching moment is **divergent between ~10 and
+~28 deg** (e-fold ~5 s at Mach 5), stable either side; the twin-fin
+shuttle is stable everywhere and ~5x stiffer.  The alpha ceiling learner
+reads the swings as "cannot hold" and lowers the command into the band.
 
-**Defaults now** (on top of 10-20's `DEORBIT_LATEST` share 0.15, aim
-1200, cone energy speed, `ABORT_NORTH_TOLERANT`):
-- **Latest-burn fixes** (c29d7ff): the walk's first hit no longer goes to
-  the live search (ecc: SAS held a node for *now* 950 s, 0/6 burned); the
-  walk refuses burns dearer than a surface periapsis (high: 75.6 m/s, 24
-  km window).
-- **`ABORT_SHORT_BEST_GLIDE`**: the short divert judges reach on
-  max(4.2, the table's best glide at the landing mass) over *energy*
-  height.  The first cut read `airframe.glide_ld(env, cfg)` = the
-  configured 4.2 and was inert -- with a cfg, `_derived` always returns
-  the constant.
-- **`COAST_RCS_TURN`**: RCS relay permitted in the coast.  The warp holds
-  the burn's retrograde attitude to ~70 km; on wheels alone a third of
-  entries met the air 25-62 deg in sideslip and lost roll at Mach 5-7.
-  coastrcs-1021 ecc 9/9, entry sideslip <=1 deg, no glide departures.
-- **`BANK_ACCEL_NO_RCS`**: the reversal slew is sized on wheels +
-  surfaces, not `available_torque` (which counts RCS while open).
-  bankrcs-1021 high 4/10 v 1/9.
-- Deleted: `HAC_TRIM_AT_TARGET` (30/47 v 31/47).  No flags open.
+**Found, project-wide: client control inputs never reach a vessel kRPC's
+autopilot is flying** (qs_shuttle2_gate, kRPC engaged: client pitch -0.5 /
+0 / +0.5 gave the same alpha and read-back; LOG of 13:24).  So the
+defaults `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` have **never acted** --
+every result credited to them was something else.  Delete them (inert:
+no flight changes).  What *does* reach the vessel under kRPC:
+`ControlSurface.deflection_override` (how `CANARD_TRIM` works).
 
-**Where it stands (on the runway, latest batches, all on coast RCS):**
-base 8/12, inc 7/12 (base-1021); ecc 9/9 + 6/8 + 7/9; **high 4/9,
-4/10**.  No entry departures anywhere now.  Burn->stop ~1090-1160 s on
-base, 1105-1210 inc, 1150-1250 ecc/high.
+**Tried this session, all on qs_cargo_rigoff + qs_shuttle2_rigoff (6+6):**
+- `PITCH_STIFF_AUG` (stiffness term added to client pitch): inert by the
+  above (rot-aug-1021, cargo 0/6).  Deleted.
+- `PITCH_OWN` on control.pitch: inert; its only effect was kRPC's pitch
+  tune at 60 s -- pitch uncontrolled; shuttle 6/6 on the runway but 5/6
+  broke up (rot-own-1021).  Then on the canards (override): cargo 0/3,
+  shuttle 2/2 splashed 28-43 km long (rot-canown-1021, ksp3 froze at load
+  -- the harness has no timeout).  Deleted.
+- **`SURFACE_OWN` (off, kept: the user's direction)** -- kRPC disengaged,
+  every surface's 3-axis moment per unit deflection measured in vacuum
+  (`measure_surfaces`, per Mach row, alpha 10/30), INDI, bounded
+  allocation over all surfaces (+ RCS, `SURFACE_OWN_RCS`)
+  (`spaceplane/allocate.py`).  On the probe's moment: shuttle 1/6 near the
+  runway, standing -14 deg pitch below Mach 5 (rot-sown-1021).  On
+  measured angular acceleration: 0/6 + 0/6, roll/yaw oscillating
+  (rot-sown2-1021).  Without RCS: worse, 0/12 (rot-sownnr-1021).
+- **Signs are all verified in game** (LOG13751-13754, air, kRPC off):
+  probed torque and measured angular acceleration agree on all three body
+  axes; +pitch input nose-up; RCS inputs -1 on each own axis (but yaw RCS
+  makes ~6x more roll than yaw on the shuttle -- the diagonal RCS model is
+  wrong).
+- **`tools/stepbench.py`** (the method change): vacuum sweep on the orbit
+  save, the same craft on `qs_shuttle2_gate` (surfaces mapped by
+  root-relative position), steps about each axis, ~1 min.  LOG13755-13759:
+  pitch and yaw settle with `SURFACE_OWN_ACCEL_LP=1`,
+  `SURFACE_OWN_MAX_STEP=0.08`; **roll spins** (30-85 deg/s, error pinned
+  at the measure's 57 deg ceiling) while the law asks to decelerate.
 
-**The blocker -- the glide's hand-over energy, both ways:** base-1021's
-misses are cone arrivals at 420-440 m/s that roll out 3.4-6.4 km high
-and overrun 1-16 km (LOG13636, 13646, 13648, 13655), plus energy-short
-cones; the terminal glide's 14.1 km target is missed in both directions
-now that entries are clean (they used to dump energy departing).
-**High orbit, energy-poor arrivals:** with clean entries
-the high glide banks -46..-56 at Mach 7, predicts on aim through Mach 5,
-then from Mach 4.5 its own predicted cone entry sits at the 12.07 km
-floor against the 14.14 km target and it arrives at 12 km and 157-197 m/s
-(LOG13601; good arrivals 12-15 km at 200-280).  The propagator
-over-predicts range at high bank on this steep entry (60.8 m/s, 42 km
-window); the departing entries used to hide it.
+**The blocker:** the owned roll axis.  Roll inertia ~1e5 against ~1.2e6
+pitch/yaw, elevon roll comes with large pitch and adverse yaw, and the
+measured-acceleration INDI is unsynchronised (u not filtered like
+omega-dot; surfaces have travel rate).  Next, on the bench, in order:
+(1) synchronise u and omega-dot (same filter, the command that produced
+the measured acceleration); (2) model the surface actuator (rate limit,
+probe the travel time); (3) roll about the velocity vector rather than
+the nose at alpha (failure 99: at alpha a body roll is sideslip); (4) RCS
+as measured 3-vectors.  Only fly the farm when stepbench settles all three
+axes, and fly it from an entry save as well (stepbench is subsonic only;
+make one with `entrysave.py`).  If the bench cannot be made to settle, the
+alternative is keeping kRPC for roll/yaw and owning only pitch by
+override of pitch-only surfaces -- but that fails a craft with one set of
+elevons (the user's point).
 
-**Next, in order:**
-1. **Score by each log's own save and `config:` line**, never `armN`:
-   when an instance dies at a cycle restart the arm labels stop matching
-   (trim2-1021, ksp2).  And by the `DOWN:` line, not `along`.
-2. **High orbit:** measure the propagator's range error against bank on
-   `qs_shuttle2_high_rigoff` (predicted vs flown energy at Mach 4.5,
-   split by the bank flown above Mach 5).  If the model can't be fixed,
-   derive the latest burn's window floor from that error rather than
-   re-fitting `DEORBIT_LATEST_WINDOW_SHARE`.
-3. The terminal glide's energy at the cone (both sides): why the
-   cone-entry energy solve below Mach 4.5 lets 430 m/s arrivals through
-   -- check its prediction against the flown energy at the handover over
-   base-1021 and coastrcs/bankrcs-1021 (`conesum.py`).
-4. Spurious short diverts: one in ~24 remains (LOG13462: 105 m "short"
-   at 102 m/s, touched down mid-runway).
-5. Goal 2: rollout braking (~1.3-2 m/s^2, wheels only), a touchdown-aim
-   law, the terminal glide's energy at ~40 deg alpha below Mach 1.5.
-6. Goal 1: `qs_shuttle2_fwdwing_rigoff` on the new defaults -- coast RCS
-   and the torque-sized reversal may change where it departs; then a yaw
-   damper on sideslip/yaw rate.
+**Also new:** `STALL_TRIMMED` (off, unflown) -- the stall from the most
+lift the vehicle can hold trimmed by its own surfaces, replacing
+`airframe.MARGIN` 0.70.  Its sweep says the shuttle trims only to 2 deg at
+Mach 0.25 while it flies the cone at ~12: the vacuum surface measure
+(+-1 averaged) understates nonlinear surfaces (canards: +1 27 m^3, -1 149).
+Fix the measure (each side separately) before flying it; then the
+approach multipliers (2.25 etc., fitted on the old MARGIN stall) need
+converting -- the user wants the landing speeds derived, not constant.
+`VACUUM_SURFACE_HOLD` (default): surfaces neutral below 10 Pa.
 
-**Traps paid:** `airframe.glide_ld(env, cfg)`/`stall(env, cfg)` return
-the *configured* constant whenever a cfg is passed -- read `env.best_ld`
-etc. for the table's number.  A batch that loses an instance mislabels
-its arms.  `&&` after `| tail` commits even when the tests fail (the
-pipe's status is tail's).  `pkill -f` from a shell holding the pattern
-kills that shell.
+**Shared code (user request):** `common/config.py` (`--set`,
+fingerprint -- hashes unchanged), `common/cli.py` (standard flags +
+connect, five parsers), `common/panel.ControlPanel`, `common/krpcpilot.py`
+(engage/aim kRPC), `common/geo.py`, `common/idle.py` (gimbals locked with
+no thrust in boosterland/ascent, surfaces held in vacuum).  `kspSim/vec`
+stays separate on purpose.
+
+**Traps paid:** `pkill -f` in a waiter matches its own command line
+(exit 144 -- the batch was fine); a frozen instance hangs `rotfly.sh`
+forever (wrap batches in `timeout`); worktree test runs resolve kspSim/
+root tests to the main tree (the PyPy .pth) -- run by module with
+`PYTHONPATH=$PWD`; vessel-frame part positions move with the CoM between
+saves (map by the root part's frame).
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
