@@ -2494,17 +2494,6 @@ class Autopilot:
         input's saturation rather than on the pointing error alone
         (``RCS_SAT_*``).
         """
-        if (air and permitted and snap is not None
-                and getattr(self.cfg, "RCS_HOLD_IN_AIR", False)
-                and snap.dynamic_pressure < self.cfg.RCS_Q_MAX_PA):
-            # ``RCS_HOLD_IN_AIR``: open, steadily -- kRPC re-derives its
-            # gains from the torque available, which counts the thrusters
-            # only while the valve is open, so a relay swings them.
-            if not self.rcs.on:
-                self._apply_rcs(True)
-                self.rcs.on = True
-            self.rcs_on = True
-            return
         self.rcs.update(snap.ut if snap is not None else 0.0, permitted,
                         self.valve_error(snap),
                         None if snap is None else snap.dynamic_pressure,

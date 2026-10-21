@@ -2887,16 +2887,6 @@ class Config:
     # relay settles).  ``RCS_Q_MAX_PA`` still shuts it.  Replaces the
     # glide's Mach floor and the no-RCS-below-the-glide rule (unflown; the
     # user tests live).  See ``common.rcs``.
-    # **Held open from GLIDE through FLARE** (below ``RCS_Q_MAX_PA``):
-    # the relay toggles the torque kRPC tunes on (yaw 18.9 <-> 5.3 s on
-    # every toggle, LOG13145), and on the aft-CoM stack orbiter the yaw
-    # authority is the thrusters' 279 kN m against the fins' 141.  Off =
-    # the saturation/error relay below.
-    # es2-1020 (8 an arm, rigoff): worst sideslip 8-14 deg v 8-26, on the
-    # runway 5/8 v 4/8, ~100 more units of monopropellant (204-245 left
-    # v 272-354).  Default 2026-10-20 (the user's goal: fly craft with
-    # less stability margin).
-    RCS_HOLD_IN_AIR: bool = True
     RCS_SAT_INPUT: float = 0.95
     RCS_SAT_ON_S: float = 0.5
     RCS_SAT_CLOSING_FRACTION: float = 0.2
