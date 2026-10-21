@@ -188,21 +188,9 @@ class Config:
     # misses moved from out-of-height (water, wrecks) to rolled-out-high
     # (two rigoff overruns +4-5 km).  Default 2026-10-11.
     HAC_SPEED_Q: bool = True  # default 2026-10-11: rot-speedq2-1011 19/24 v 14/24
-    # **A fast cone** (``guidance.cone_speed``; the user, 2026-10-20: "glide
-    # as fast as possible while still getting good turn radius, and still
-    # having the ability to slow down").  The cone's ~175 s from 12 km to
-    # the gate is ~57 m/s of sink at ~90-100 m/s equivalent, and below ~9
-    # km it sits on its alpha floor (0) -- the cambered wing carries 1 g at
-    # zero alpha near that speed, so the q target is all it can fly.  With
-    # this > 1 the target is this multiple of the q-matched speed, capped
-    # at ``HAC_FAST_MACH_MAX``, and bled back to the approach speed in a
-    # band above the gate ``HAC_FAST_BLEED`` metres of height per metre of
-    # kinetic energy to lose -- so the handover is the approach's speed as
-    # now.  The speed loop may go below zero alpha to ``HAC_FAST_ALPHA_MIN_DEG``
-    # (the trim stays on the measured rows, which stop at 0).  0 = off.
-    HAC_FAST_FACTOR: float = 0.0
-    HAC_FAST_MACH_MAX: float = 0.85
-    HAC_FAST_BLEED: float = 3.0
+    # The cone's alpha floor under ``HAC_ENERGY_SPEED`` (the speed loop may
+    # unload below the trim); also its speed cap: the speed at which lift at
+    # this alpha still carries the weight.
     HAC_FAST_ALPHA_MIN_DEG: float = -5.0
     # The bleed bound (``guidance.cone_envelope``) scales the max-drag
     # bleed rate by this.
@@ -218,7 +206,11 @@ class Config:
     # the solve (the rest goes to the brakes, which close the loop).
     # Wants ``ALPHA_NEGATIVE_BINS`` (without it the floor's lift is read
     # mirrored, high, and the cap comes out low).
-    HAC_ENERGY_SPEED: bool = False
+    # es2-1020 (8 an arm, rigoff): the solve offers ~the q target
+    # (ves 152-206 v vt 163-203) -- the cone is energy-bound, there is no
+    # hidden surplus to fly as speed; cone 147-202 s v 153-222, on the
+    # runway 6/8 v 4/8.  Default 2026-10-20 (the law the user asked for).
+    HAC_ENERGY_SPEED: bool = True
     HAC_ENERGY_SPEED_MARGIN: float = 0.9
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
@@ -2224,7 +2216,7 @@ class Config:
     # the first try at negative bins was deleted (2026-10-09).  The cambered
     # wing carries 1 g at zero alpha near the cone's speed, so without
     # these the trim of anything faster has no row to land on.
-    ALPHA_NEGATIVE_BINS: bool = False
+    ALPHA_NEGATIVE_BINS: bool = True  # default 2026-10-20 with HAC_ENERGY_SPEED (es2-1020)
     ALPHA_NEGATIVE_BIN_DEGS: tuple = (-8.0, -5.0, -2.0)
     MACH_BINS: tuple = (0.0, 0.3, 0.6, 0.9, 1.2, 1.6, 2.0, 2.5, 3.0, 4.0,
                         5.0, 6.0, 8.0)
@@ -2900,7 +2892,11 @@ class Config:
     # every toggle, LOG13145), and on the aft-CoM stack orbiter the yaw
     # authority is the thrusters' 279 kN m against the fins' 141.  Off =
     # the saturation/error relay below.
-    RCS_HOLD_IN_AIR: bool = False
+    # es2-1020 (8 an arm, rigoff): worst sideslip 8-14 deg v 8-26, on the
+    # runway 5/8 v 4/8, ~100 more units of monopropellant (204-245 left
+    # v 272-354).  Default 2026-10-20 (the user's goal: fly craft with
+    # less stability margin).
+    RCS_HOLD_IN_AIR: bool = True
     RCS_SAT_INPUT: float = 0.95
     RCS_SAT_ON_S: float = 0.5
     RCS_SAT_CLOSING_FRACTION: float = 0.2

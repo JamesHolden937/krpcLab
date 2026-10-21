@@ -5698,26 +5698,6 @@ class TestHacSpeedQ(unittest.TestCase):
                                    places=9)
         self.assertEqual(guidance.cone_speed(env, on, 50.0, 500.0), gate)
 
-    def test_fast_cone_bleeds_to_the_gate_speed(self):
-        """``HAC_FAST_FACTOR``: the multiple above the band, the q-matched
-        speed at the gate, monotone through the band, Mach-capped."""
-        base = replace(Config(), HAC_SPEED_Q=True)
-        fast = replace(base, HAC_FAST_FACTOR=1.4, HAC_FAST_MACH_MAX=5.0)
-        env = FakeEnv(base)
-        g = base.GATE_ALT_M
-        self.assertEqual(guidance.cone_speed(env, fast, 50.0, g),
-                         guidance.cone_speed(env, base, 50.0, g))
-        high = guidance.cone_speed(env, fast, 50.0, 9000.0)
-        self.assertAlmostEqual(
-            high / guidance.cone_speed(env, base, 50.0, 9000.0), 1.4)
-        ratios = [guidance.cone_speed(env, fast, 50.0, h)
-                  / guidance.cone_speed(env, base, 50.0, h)
-                  for h in (g + 10.0, g + 300.0, g + 700.0, g + 1100.0)]
-        self.assertEqual(ratios, sorted(ratios))
-        capped = replace(fast, HAC_FAST_MACH_MAX=0.1)
-        self.assertEqual(guidance.cone_speed(env, capped, 50.0, 9000.0),
-                         guidance.cone_speed(env, base, 50.0, 9000.0))
-
 
 class TestConeEnergySpeed(unittest.TestCase):
     """``HAC_ENERGY_SPEED``: more energy buys a faster cone, none buys the
