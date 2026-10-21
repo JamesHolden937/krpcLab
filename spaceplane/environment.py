@@ -413,6 +413,10 @@ class Environment:
         self._probe_alt = list(float(a) for a in cfg.PROBE_ALTITUDES)
         self.lift = Table(self._alphas, self._machs)
         self.drag = Table(self._alphas, self._machs)
+        # ``PITCH_STIFF_AUG``: the pitching moment per unit q (m^3, nose-up
+        # positive) from the same probe, so the airframe's own static
+        # stiffness dCmA/dalpha is a measured curve, not a guess.
+        self.moment = Table(self._alphas, self._machs)
         self.lift_trim = LiftTrim(cfg)
         self._swept = False
         self._next_row = 0
@@ -587,15 +591,46 @@ class Environment:
                 vec.scale(nose, math.cos(alpha)),
                 vec.scale(dorsal, math.sin(alpha)))))
         # The whole row in one round trip (``Config.RPC_BATCH``).
-        forces = krpcbatch.ask(self.conn, [
-            (self.flight.simulate_aerodynamic_force_at,
-             (self.body, tuple(position),
-              tuple(vec.scale(direction, speed)), tuple(rotation)))
-            for direction in directions],
-            batched=getattr(self.cfg, "RPC_BATCH", False))
+        # ``PITCH_STIFF_AUG`` asks for the wrench instead -- the same call
+        # with the moment beside the force.  **Raw torque about the vessel's
+        # +x (right) is nose-down**: Unity's rotation sense turns +y (the
+        # nose) toward +z (the belly), and moving the CoM aft lowers it and
+        # flattens its slope (``tools/stiffprobe.py``, LOG13674/13675).
+        right = None
+        if getattr(self.cfg, "PITCH_STIFF_AUG", False):
+            try:
+                right = vec.unit(self.conn.space_center.transform_direction(
+                    (1.0, 0.0, 0.0), self.vessel.reference_frame,
+                    self.frame))
+                ut = self.conn.space_center.ut
+            except Exception:                           # noqa: BLE001
+                right = None
+        if right is not None:
+            wrenches = krpcbatch.ask(self.conn, [
+                (self.flight.simulate_aerodynamic_wrench_at,
+                 (self.body, tuple(position),
+                  tuple(vec.scale(direction, speed)), tuple(rotation),
+                  (0.0, 0.0, 0.0), ut))
+                for direction in directions],
+                batched=getattr(self.cfg, "RPC_BATCH", False))
+            forces = [None if w is None else w[0] for w in wrenches]
+            torques = [None if w is None else w[1] for w in wrenches]
+        else:
+            forces = krpcbatch.ask(self.conn, [
+                (self.flight.simulate_aerodynamic_force_at,
+                 (self.body, tuple(position),
+                  tuple(vec.scale(direction, speed)), tuple(rotation)))
+                for direction in directions],
+                batched=getattr(self.cfg, "RPC_BATCH", False))
+            torques = [None] * len(forces)
         for column, (direction, force) in enumerate(zip(directions, forces)):
             if force is None:
                 continue
+            torque = torques[column]
+            if torque is not None:
+                cma = -vec.dot(torque, right) / q
+                if abs(cma) < 1e5:
+                    self.moment.set(index, column, cma, weight)
             flow = direction
             # Drag along the flow; lift is everything across it, as a
             # magnitude.  The direction is a control input -- the bank angle
@@ -626,6 +661,20 @@ class Environment:
             self.rows_measured += 1
         return got
 
+    def pitch_stiffness(self, alpha_deg, mach):
+        """``dCmA/dalpha`` at this state, m^3 per radian, nose-up positive:
+        negative is a restoring (stable) airframe, positive a divergent one.
+        A central difference across ``PITCH_AUG_SLOPE_SPAN_DEG`` of the
+        moment table; ``None`` when the table has no moment (the flag off,
+        or a server without the wrench probe)."""
+        if not self.moment.filled():
+            return None
+        h = max(0.5, float(getattr(self.cfg, "PITCH_AUG_SLOPE_SPAN_DEG",
+                                   5.0))) / 2.0
+        hi = self.moment.lookup(alpha_deg + h, mach)
+        lo = self.moment.lookup(alpha_deg - h, mach)
+        return (hi - lo) / math.radians(2.0 * h)
+
     def dump_table(self, ut):
         """Write the swept table into the log, once, whole.
 
@@ -643,15 +692,23 @@ class Environment:
         a row means nothing without it.  Thirteen lines a flight, in STANDBY,
         where nothing is happening.
         """
-        self.logbook.event(ut, "aero table: alpha:ClA/CdA per Mach row, "
-                               "probed at the altitude each Mach is flown at")
+        moment = getattr(self, "moment", None)
+        self.logbook.event(ut, "aero table: alpha:ClA/CdA%s per Mach row, "
+                               "probed at the altitude each Mach is flown at"
+                           % ("/CmA (m^3, nose-up +)"
+                              if moment is not None and moment.filled()
+                              else ""))
         for index, mach in enumerate(self._machs):
             cells = []
             for column, alpha in enumerate(self._alphas):
                 cla = self.lift.raw[index][column]
                 cda = self.drag.raw[index][column]
+                cma = (None if moment is None
+                       else moment.raw[index][column])
                 if cla is None or cda is None:
                     cells.append("%g:-" % alpha)
+                elif cma is not None:
+                    cells.append("%g:%.1f/%.1f/%+.1f" % (alpha, cla, cda, cma))
                 else:
                     cells.append("%g:%.1f/%.1f" % (alpha, cla, cda))
             self.logbook.event(ut, "aero M=%.1f alt=%.0f %s"

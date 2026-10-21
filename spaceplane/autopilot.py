@@ -310,6 +310,27 @@ def ungate_roll(cfg, autopilot, logbook=None, ut=0.0):
     return True
 
 
+def stiff_aug(cfg, m_alpha, inertia, surf, alpha_deg, commanded_deg):
+    """``PITCH_STIFF_AUG``'s law, pure: ``(gain per rad, pitch input)``.
+
+    ``m_alpha`` is the airframe's stiffness, N m per radian, nose-up
+    positive (negative restores).  The target stiffness is ``-I w^2``; the
+    deficit over it, divided by the surfaces' pitch torque per unit input,
+    is the gain on the alpha error -- zero for an airframe already stiffer,
+    capped at ``PITCH_AUG_MAX_GAIN``.  The input is nose-up positive and
+    capped at ``PITCH_AUG_MAX_INPUT``."""
+    if surf <= 0.0 or inertia <= 0.0:
+        return 0.0, 0.0
+    target = -inertia * float(cfg.PITCH_AUG_W_RAD_S) ** 2
+    deficit = m_alpha - target
+    if deficit <= 0.0:
+        return 0.0, 0.0
+    gain = min(float(cfg.PITCH_AUG_MAX_GAIN), deficit / surf)
+    cap = float(cfg.PITCH_AUG_MAX_INPUT)
+    u = vec.clamp(-gain * math.radians(alpha_deg - commanded_deg), -cap, cap)
+    return gain, u
+
+
 def set_autopilot_attitude(autopilot, direction, up=None, roll=0.0):
     """Command a nose direction and the vector to roll the roof toward.
 
@@ -6576,6 +6597,7 @@ class Autopilot:
         decays over the same time in ROLLOUT and is zero elsewhere."""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
+        self._pitch_aug = self.pitch_stiff_aug(snap)
         if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
                 self.state == GLIDE or (getattr(self, "_offload_live", False)
                                         and self.state not in (FLARE,
@@ -6585,7 +6607,85 @@ class Autopilot:
         if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
             self.flare_pitch_p(snap, error)
             return
+        if getattr(self.cfg, "PITCH_STIFF_AUG", False):
+            self._send_pitch(0.0)
         return
+
+    def _send_pitch(self, trim):
+        """The client's pitch input: a trim plus ``PITCH_STIFF_AUG``'s term.
+
+        kRPC sums this with its own output.  Sent only when it moves, and
+        once more on the way to zero, so an idle trim costs no calls."""
+        value = vec.clamp(trim + getattr(self, "_pitch_aug", 0.0), -1.0, 1.0)
+        sent = getattr(self, "_pitch_assist_sent", 0.0)
+        if abs(value - sent) > 0.002 or (value == 0.0 and sent):
+            try:
+                self.control.pitch = value
+                self._pitch_assist_sent = value
+            except Exception:                           # noqa: BLE001
+                pass
+
+    def pitch_stiff_aug(self, snap):
+        """``PITCH_STIFF_AUG``: top the airframe's pitch stiffness up to
+        ``PITCH_AUG_W_RAD_S``, as a pitch input on the alpha error.
+
+        kRPC's attitude controller is tuned for a pure inertia -- its gains
+        come from the moment of inertia and the available torque alone -- so
+        it relies on the airframe's own restoring moment and cannot see a
+        pitch-up band.  The cargo shuttle (``qs_cargo_rigoff``) has one:
+        its moment table is stable below 10 deg and above ~28, divergent
+        between (e-fold ~5 s at Mach 5), and every glide limit-cycled through
+        it 10-45 deg over its command (rot-cargo-1021, 12/12 lost).
+
+        The stiffness is the swept moment table's slope at the flown alpha
+        and Mach, times q (``Environment.pitch_stiffness``); the target is
+        ``-I w^2`` with ``I`` the pitch moment of inertia.  A stiffer
+        airframe gets nothing, so a stable craft flies as before; a softer
+        one gets the deficit, divided by the surfaces' pitch torque per unit
+        input, as the gain on (alpha - commanded).  Returns the input."""
+        self._aug_k = 0.0
+        if not getattr(self.cfg, "PITCH_STIFF_AUG", False) or self.state \
+                not in (GLIDE, HAC, APPROACH, FLARE):
+            return 0.0
+        q = snap.dynamic_pressure
+        if q < float(self.cfg.PITCH_AUG_MIN_Q_PA):
+            return 0.0
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return 0.0
+        alpha = float(snap.krpc_aoa)
+        slope = self.env.pitch_stiffness(alpha, mach)
+        if slope is None:
+            return 0.0
+        cache = getattr(self, "_aug_cache", None)
+        if cache is None or snap.ut - cache[0] >= float(
+                self.cfg.PITCH_AUG_REFRESH_S) or snap.ut < cache[0]:
+            try:
+                inertia = float(self.vessel.moment_of_inertia[0])
+                surf = abs(float(
+                    self.vessel.available_control_surface_torque[0][0]))
+            except Exception:                           # noqa: BLE001
+                return 0.0
+            cache = self._aug_cache = (snap.ut, inertia, surf)
+        _, inertia, surf = cache
+        gain, u = stiff_aug(self.cfg, slope * q, inertia, surf, alpha,
+                            float(self.commanded_alpha))
+        self._aug_k = gain
+        engaged = gain > 0.0
+        if engaged != getattr(self, "_aug_logged", False):
+            self._aug_logged = engaged
+            self.logbook.event(
+                snap.ut, "pitch augmentation %s at Mach %.1f alpha %.1f: "
+                         "stiffness %+.0f kN m/rad (target %+.0f), surfaces "
+                         "%.0f kN m -> gain %.2f per rad"
+                % ("on" if engaged else "off", mach, alpha,
+                   slope * q / 1000.0,
+                   -inertia * float(self.cfg.PITCH_AUG_W_RAD_S) ** 2
+                   / 1000.0, surf / 1000.0, gain))
+        return u
 
     def glide_pitch_offload(self, snap):
         """``GLIDE_PITCH_OFFLOAD``: carry the glide's *standing* pitch input
@@ -6651,13 +6751,7 @@ class Autopilot:
             if abs(trim) < 0.005:
                 trim = 0.0
                 self._offload_live = False
-        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
-                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
-            try:
-                self.control.pitch = trim
-                self._pitch_assist_sent = trim
-            except Exception:                           # noqa: BLE001
-                pass
+        self._send_pitch(trim)
         self._pitch_assist = trim
 
     def fuel_to_nose(self, snap):
@@ -6881,13 +6975,7 @@ class Autopilot:
                 self.cfg.ROLLOUT_RAMP_S)))
         else:
             trim = 0.0
-        if abs(trim - getattr(self, "_pitch_assist_sent", 0.0)) > 0.002 or (
-                trim == 0.0 and getattr(self, "_pitch_assist_sent", 0.0)):
-            try:
-                self.control.pitch = trim
-                self._pitch_assist_sent = trim
-            except Exception:                           # noqa: BLE001
-                pass
+        self._send_pitch(trim)
         self._pitch_assist = trim
 
     def retune_attitude(self, snap):
@@ -7108,6 +7196,11 @@ class Autopilot:
                 interval = self.cfg.ORBIT_TICK_S
             elif self.state == GLIDE:
                 interval = self.cfg.GLIDE_TICK_S
+                # An augmented pitch axis is a sampled loop on the alpha
+                # error; at the glide's 1 s it would lag the mode it damps.
+                if getattr(self, "_aug_k", 0.0) > 0.0:
+                    interval = min(interval,
+                                   float(self.cfg.PITCH_AUG_TICK_S))
             else:
                 interval = self.cfg.TICK_S
             ut = snap.ut if snap is not None else self.conn.space_center.ut
@@ -7316,7 +7409,11 @@ def compact_line(state, snap, run):
         # read-back as ``pin=``'s first number).
         "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
                                 getattr(snap, "roll_input", 0.0) or 0.0),
-        ] + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
+        ] + ([] if not getattr(run.cfg, "PITCH_STIFF_AUG", False) else [
+        # ``PITCH_STIFF_AUG``: the gain (per rad) and the input it sent.
+        "aug=%4.2f/%+5.2f" % (getattr(run, "_aug_k", 0.0),
+                              getattr(run, "_pitch_aug", 0.0)),
+        ]) + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
         # ``CANARD_TRIM``: the canards' commanded trim (fraction of travel,
         # + nose-up) and the low-passed summed pitch input it closes on.
         "ctrim=%+5.2f/%+5.2f" % (getattr(run, "_ctrim", 0.0),
