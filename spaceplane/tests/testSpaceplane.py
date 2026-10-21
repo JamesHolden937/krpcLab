@@ -5739,6 +5739,23 @@ class TestConeEnvelope(unittest.TestCase):
                                                 1e4, None, 9.81, 2.4), 0.0)
 
 
+class TestNegativeAlphaTable(unittest.TestCase):
+    """``ALPHA_NEGATIVE_BINS``: a table with rows below zero is read signed,
+    not mirrored; one without keeps the mirror."""
+
+    def test_signed_lookup(self):
+        from spaceplane.environment import Table
+        t = Table((-4.0, 0.0, 4.0), (0.0,))
+        for c, v in enumerate((-20.0, 40.0, 100.0)):
+            t.set(0, c, v)
+        self.assertAlmostEqual(t.lookup(-2.0, 0.0), 10.0)
+        self.assertAlmostEqual(t.lookup(-4.0, 0.0), -20.0)
+        m = Table((0.0, 4.0), (0.0,))
+        m.set(0, 0, 40.0)
+        m.set(0, 1, 100.0)
+        self.assertAlmostEqual(m.lookup(-2.0, 0.0), 70.0)
+
+
 class TestPeakHeating(unittest.TestCase):
     """``trajectory.peak_heating``: sqrt(rho) v^3 / 1e6 at its largest."""
 

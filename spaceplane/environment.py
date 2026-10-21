@@ -102,7 +102,9 @@ class Table:
 
     def lookup(self, alpha_deg, mach):
         dense = self._dense if self._dense is not None else self.resolve()
-        a = abs(alpha_deg)
+        # Mirrored about zero unless the table has rows below it
+        # (``ALPHA_NEGATIVE_BINS``): a cambered wing's polar is not even.
+        a = alpha_deg if self.alphas[0] < 0.0 else abs(alpha_deg)
         alphas, machs = self.alphas, self.machs
 
         i = 0
@@ -403,7 +405,10 @@ class Environment:
         # (alpha, Mach) -> Cl*A, Cd*A.  ``None`` means never probed; the
         # interpolation holds the nearest measured value rather than
         # extrapolating a coefficient into a regime nobody has asked about.
-        self._alphas = tuple(float(a) for a in cfg.ALPHA_BINS)
+        bins = tuple(cfg.ALPHA_BINS)
+        if getattr(cfg, "ALPHA_NEGATIVE_BINS", False):
+            bins = tuple(cfg.ALPHA_NEGATIVE_BIN_DEGS) + bins
+        self._alphas = tuple(sorted(float(a) for a in bins))
         self._machs = tuple(float(m) for m in cfg.MACH_BINS)
         self._probe_alt = list(float(a) for a in cfg.PROBE_ALTITUDES)
         self.lift = Table(self._alphas, self._machs)
@@ -599,7 +604,20 @@ class Environment:
             # lift an angle of attack makes.
             cda = -vec.dot(force, flow) / q
             cla = vec.norm(vec.project_out(force, flow)) / q
-            if not (0.0 <= cda < 1e4) or not (0.0 <= cla < 1e4):
+            low = 0.0
+            if self._alphas[column] < 0.0:
+                # **Signed below zero.**  The magnitude is right wherever
+                # lift points along the dorsal; below zero alpha it turns
+                # round, and as a magnitude the row read lift *rising* as
+                # alpha fell (M0.3: -6 16.5, -3 15.6, 0 45.7 -- -6 is
+                # really ~-16), so the 1 g trim came out at -6 (LOG8879).
+                # The sign is the lift's along the pitch plane's normal.
+                normal = vec.project_out(dorsal, flow)
+                if vec.norm(normal) > 1e-9:
+                    if vec.dot(force, vec.unit(normal)) < 0.0:
+                        cla = -cla
+                low = -1e4
+            if not (0.0 <= cda < 1e4) or not (low <= cla < 1e4):
                 continue
             self.drag.set(index, column, cda, weight)
             self.lift.set(index, column, cla, weight)

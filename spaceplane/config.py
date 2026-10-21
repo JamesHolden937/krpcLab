@@ -2190,6 +2190,15 @@ class Config:
     # booster could hold one scalar against Mach alone.
     ALPHA_BINS: tuple = (0.0, 2.0, 5.0, 8.0, 12.0, 16.0, 20.0, 25.0, 30.0,
                          35.0, 40.0, 50.0, 65.0, 90.0)
+    # **The polar below zero alpha** (the user, 2026-10-20: "can't you make
+    # the lift table work at negative alpha?").  These bins are probed with
+    # *signed* lift (``Environment._probe_row``): the magnitude the table
+    # stores everywhere else turned negative lift into positive and was why
+    # the first try at negative bins was deleted (2026-10-09).  The cambered
+    # wing carries 1 g at zero alpha near the cone's speed, so without
+    # these the trim of anything faster has no row to land on.
+    ALPHA_NEGATIVE_BINS: bool = False
+    ALPHA_NEGATIVE_BIN_DEGS: tuple = (-8.0, -5.0, -2.0)
     MACH_BINS: tuple = (0.0, 0.3, 0.6, 0.9, 1.2, 1.6, 2.0, 2.5, 3.0, 4.0,
                         5.0, 6.0, 8.0)
     # Print the swept table into the log once, in STANDBY.  Thirteen lines
