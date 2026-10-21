@@ -2755,6 +2755,11 @@ class Config:
     # pitch -0.021 about right, roll -0.055 about nose, yaw -0.021 about
     # belly -- all negative.
     SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, -1.0, -1.0)
+    # The RCS as allocated actuators at all.  Each input is modelled as a
+    # torque about its own axis only, and on the twin-fin shuttle a yaw
+    # input makes ~6x more roll than yaw (rate change +0.126 nose-axis v
+    # -0.021 belly-axis): rot-sown2-1021 rolled +-15 deg with yrin at +-1.
+    SURFACE_OWN_RCS: bool = True
     # **The stall is the trimmed lift** (``Autopilot.trimmed_lift``): the
     # most lift the vehicle can hold at Mach 0.25 with its pitching moment
     # cancelled by its own surfaces within their travel, measured in vacuum

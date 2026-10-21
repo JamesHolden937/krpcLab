@@ -6956,7 +6956,8 @@ class Autopilot:
         # The RCS as three actuators, one per control input, each a torque
         # about its own body axis (``SURFACE_OWN_RCS_SIGNS``: the sense of a
         # positive pitch/roll/yaw input in the raw body frame, measured).
-        valve = bool(getattr(self.rcs, "on", False))
+        valve = bool(getattr(self.rcs, "on", False)) and bool(
+            cfg.SURFACE_OWN_RCS)
         signs = tuple(float(s) for s in cfg.SURFACE_OWN_RCS_SIGNS)
         rcs_cols = []
         for k in range(3):
