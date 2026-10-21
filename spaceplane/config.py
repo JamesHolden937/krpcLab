@@ -1948,6 +1948,26 @@ class Config:
     # window is found), and the vehicle turns to the burn attitude in the
     # lead.  The live trigger still decides the commit; a window that has
     # not appeared ``DEORBIT_PLAN_GRACE_S`` after it was due is replanned.
+    # **The latest, closest burn** (the user, 2026-10-20: "wait we aren't
+    # doing latest closest burn? add that. make sure to give thermal a safe
+    # margin").  The plan takes the *first* solvable state, which is the
+    # farthest burn and the longest entry: ~737 s of coast and ~480 s of
+    # glide of the ~1500 from burn to wheels.  With this on, the scan keeps
+    # going past the first hit while burns still solve, are affordable,
+    # reach sideways and keep the entry's predicted peak heating (the
+    # hotter of ``deorbit_window``'s two corners, ``trajectory.
+    # peak_heating``) at or under ``DEORBIT_LATEST_HEAT_MAX``; the plan is
+    # the last such state less ``DEORBIT_LATEST_MARGIN_S``, and the live
+    # search does not commit before it.
+    # **The heating cap is a measured margin.**  Peak index (hot corner)
+    # against the hottest part's skin fraction, defaults 2026-10-18..20:
+    # qs_shuttle2_rigoff 365 -> 0.72, qs_stackorb 356 -> 0.77,
+    # i90low 449 -> 0.79, e500i45 819 -> 0.845 (the hottest flown; parts
+    # fail at 1.0).  The skin grows ~0.07-0.15 per doubling, so 650 puts
+    # the hottest airframe near ~0.85 and keeps ~15% to the limit.
+    DEORBIT_LATEST: bool = False
+    DEORBIT_LATEST_HEAT_MAX: float = 650.0
+    DEORBIT_LATEST_MARGIN_S: float = 60.0
     DEORBIT_PLAN: bool = True
     DEORBIT_PLAN_STEP_S: float = 60.0
     DEORBIT_PLAN_RESOLVE_S: float = 8.0

@@ -2838,6 +2838,13 @@ class Autopilot:
             self.panel.set_start_label("waiting: runway out of reach")
             self.set_warp(False)
             return
+        if (getattr(self.cfg, "DEORBIT_LATEST", False)
+                and self.plan is not None
+                and snap.ut + lead < self.plan["ut"]):
+            # ``DEORBIT_LATEST``: it solves already, but later is closer.
+            self.panel.set_start_label("latest burn in %.0f s"
+                                       % (self.plan["ut"] - snap.ut - lead))
+            return
         if self.warp_factor:
             # Drop out of warp and re-ask at 1x before committing.  The
             # search's answer is a function of the state it was taken at, and
@@ -3050,6 +3057,16 @@ class Autopilot:
         if dv is None:
             why["unsolved"] = why.get("unsolved", 0) + 1
             return None
+        if getattr(cfg, "DEORBIT_LATEST", False):
+            # ``DEORBIT_LATEST``: the entry this burn makes, priced on the
+            # hotter corner of the window the solve just read.
+            heats = [h for _, h in (getattr(self.env, "window_heating", None)
+                                    or ()) if h is not None]
+            self.plan_heat = max(heats) if heats else None
+            if self.plan_heat is None \
+                    or self.plan_heat > cfg.DEORBIT_LATEST_HEAT_MAX:
+                why["heat"] = why.get("heat", 0) + 1
+                return None
         if not self.burn_affordable(dv):
             why["dv"] = why.get("dv", 0) + 1
             return None
@@ -3096,6 +3113,7 @@ class Autopilot:
 
     def plan_start(self, snap):
         self.plan = None
+        self.plan_latest = None
         self.plan_refusals = {}
         self.plan_warped_to = None
         if self.side_reach is None:
@@ -3191,6 +3209,18 @@ class Autopilot:
                     scan["t"] += scan["skip"]
                     scan["prev"] = None
                     continue
+                if getattr(cfg, "DEORBIT_LATEST", False):
+                    # Walk on while it still solves (``plan_extend``).
+                    scan["wall"] += time.monotonic() - start
+                    self.plan_scan = None
+                    # From the scan's own step, which solved too (the
+                    # bisection only moved the first hit earlier).
+                    first = (scan["t"], scan["r"], scan["v"], hit,
+                             self.side_check, None)
+                    self.plan_latest = dict(
+                        first=t_hit, t=scan["t"], r=scan["r"], v=scan["v"],
+                        good=[first], n=scan["n"], wall=scan["wall"])
+                    return
                 scan["wall"] += time.monotonic() - start
                 self.plan_scan = None
                 self.plan_found(snap, t_hit, hit, scan, None)
@@ -3201,6 +3231,65 @@ class Autopilot:
                 cfg.DEORBIT_PLAN_STEP_S, cfg.DEORBIT_PLAN_DT_S)
             scan["t"] += cfg.DEORBIT_PLAN_STEP_S
         scan["wall"] += time.monotonic() - start
+
+    def plan_extend(self, snap):
+        """``DEORBIT_LATEST``: from the first solvable state, step on while
+        burns still solve (heat-capped, affordable, in reach), bisect the
+        last one to ``DEORBIT_PLAN_RESOLVE_S`` and plan
+        ``DEORBIT_LATEST_MARGIN_S`` inside it.  A slice a tick."""
+        cfg = self.cfg
+        ext = self.plan_latest
+        mass = snap.mass
+        start = time.monotonic()
+        step = float(cfg.DEORBIT_PLAN_STEP_S)
+        while time.monotonic() - start < cfg.DEORBIT_PLAN_TICK_WALL_S:
+            if step <= cfg.DEORBIT_PLAN_RESOLVE_S or ext.get("done"):
+                break
+            r2, v2 = trajectory.coast(self.env, ext["r"], ext["v"], mass,
+                                      ext.get("step", step),
+                                      cfg.DEORBIT_PLAN_DT_S)
+            hit = self.plan_try(r2, v2, mass)
+            ext["n"] += 1
+            span = ext.get("step", step)
+            if hit is not None:
+                ext.update(t=ext["t"] + span, r=r2, v=v2)
+                ext["good"].append((ext["t"], r2, v2, hit, self.side_check,
+                                    getattr(self, "plan_heat", None)))
+                if ext.get("bisecting"):
+                    ext["step"] = 0.5 * span
+            else:
+                ext["bisecting"] = True
+                ext["step"] = 0.5 * span
+            if ext.get("bisecting") and ext["step"] <= cfg.DEORBIT_PLAN_RESOLVE_S:
+                ext["done"] = True
+        ext["wall"] += time.monotonic() - start
+        if not ext.get("done"):
+            return
+        self.plan_latest = None
+        last = ext["good"][-1]
+        # The latest state the scan kept that is the margin inside the last
+        # one that solved (the first, if the span is shorter than that).
+        pick = ext["good"][0]
+        for row in ext["good"]:
+            if row[0] <= last[0] - cfg.DEORBIT_LATEST_MARGIN_S:
+                pick = row
+        t_plan, _, _, hit, side, heat = pick
+        if pick is ext["good"][0]:
+            t_plan = max(ext["first"], t_plan)
+        self.side_check = side
+        self.logbook.event(
+            snap.ut, "deorbit latest: burns solve from UT %.0f to %.0f "
+                     "(%.0f s), planned at %.0f, dv %.1f m/s (first %.1f), "
+                     "peak heating %s (max %.0f); past the last: %s"
+            % (ext["first"], last[0], last[0] - ext["first"], t_plan, hit[0],
+               ext["good"][0][3][0],
+               "-" if heat is None else "%.0f" % heat,
+               cfg.DEORBIT_LATEST_HEAT_MAX,
+               " ".join("%s %d" % kv for kv in sorted(
+                   self.plan_refusals.items())) or "none"))
+        note = None
+        self.plan_found(snap, t_plan, hit,
+                        dict(n=ext["n"], wall=ext["wall"]), note)
 
     def plan_found(self, snap, t_hit, hit, scan, note):
         self.plan = dict(ut=t_hit, dv=hit[0], end=hit[1])
@@ -3251,6 +3340,13 @@ class Autopilot:
         """
         cfg = self.cfg
         ut = snap.ut
+        if self.plan is None and getattr(self, "plan_latest", None):
+            self.plan_extend(snap)
+            if self.plan is None:
+                self.set_throttle(0.0)
+                self.set_warp(True)
+                self.panel.set_start_label("planning: latest burn")
+                return True
         if self.plan is None:
             if self.plan_scan is None:
                 if (self.plan_failed_ut is not None
