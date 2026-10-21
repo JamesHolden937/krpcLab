@@ -188,6 +188,27 @@ class Config:
     # misses moved from out-of-height (water, wrecks) to rolled-out-high
     # (two rigoff overruns +4-5 km).  Default 2026-10-11.
     HAC_SPEED_Q: bool = True  # default 2026-10-11: rot-speedq2-1011 19/24 v 14/24
+    # **A fast cone** (``guidance.cone_speed``; the user, 2026-10-20: "glide
+    # as fast as possible while still getting good turn radius, and still
+    # having the ability to slow down").  The cone's ~175 s from 12 km to
+    # the gate is ~57 m/s of sink at ~90-100 m/s equivalent, and below ~9
+    # km it sits on its alpha floor (0) -- the cambered wing carries 1 g at
+    # zero alpha near that speed, so the q target is all it can fly.  With
+    # this > 1 the target is this multiple of the q-matched speed, capped
+    # at ``HAC_FAST_MACH_MAX``, and bled back to the approach speed in a
+    # band above the gate ``HAC_FAST_BLEED`` metres of height per metre of
+    # kinetic energy to lose -- so the handover is the approach's speed as
+    # now.  The speed loop may go below zero alpha to ``HAC_FAST_ALPHA_MIN_DEG``
+    # (the trim stays on the measured rows, which stop at 0).  0 = off.
+    HAC_FAST_FACTOR: float = 0.0
+    HAC_FAST_MACH_MAX: float = 0.85
+    HAC_FAST_BLEED: float = 3.0
+    HAC_FAST_ALPHA_MIN_DEG: float = -5.0
+    # ``guidance.taem_target`` priced at the speed the cone is entered at
+    # (``cone_speed`` at ``HAC_ALT_M``) rather than the old constant true
+    # airspeed: the glide hands over more energy, so less of it is thrown
+    # away at 40 deg of alpha with the RCS open below Mach 1.5.
+    HAC_FAST_TAEM: bool = False
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,

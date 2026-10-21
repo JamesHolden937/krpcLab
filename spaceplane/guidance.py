@@ -52,6 +52,8 @@ def taem_target(env, cfg):
     # The old constant true airspeed even under ``HAC_SPEED_Q``: the glide's
     # delivery is not what that flag measures.
     speed = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+    if getattr(cfg, "HAC_FAST_TAEM", False):
+        speed = cone_speed(env, cfg, stall, cfg.HAC_ALT_M)
     g = env.mu / (env.equatorial_radius ** 2)
     return cfg.HAC_ALT_M + speed * speed / (2.0 * g) + cfg.GLIDE_TAEM_MARGIN_M
 
@@ -1889,6 +1891,23 @@ def cone_speed(env, cfg, stall, height):
             return speed
         if rho_gate and rho and rho > 0.0:
             speed *= math.sqrt(rho_gate / rho)
+    # ``HAC_FAST_FACTOR``: a multiple of that, bled back to it in a band
+    # above the gate sized on the kinetic energy to lose (linear in v^2
+    # across the band), and never past ``HAC_FAST_MACH_MAX``.
+    fast = float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0)
+    if fast > 1.0 and height > cfg.GATE_ALT_M:
+        base = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
+        g = env.mu / (env.equatorial_radius ** 2)
+        band = (float(cfg.HAC_FAST_BLEED) * (fast * fast - 1.0)
+                * base * base / (2.0 * g))
+        share = vec.clamp((height - cfg.GATE_ALT_M) / max(1.0, band),
+                          0.0, 1.0)
+        quick = speed * math.sqrt(1.0 + (fast * fast - 1.0) * share)
+        try:
+            limit = float(cfg.HAC_FAST_MACH_MAX) * env.speed_of_sound(height)
+        except Exception:                                   # noqa: BLE001
+            limit = quick
+        speed = max(speed, min(quick, limit))
     return speed
 
 
@@ -2140,7 +2159,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if limit > 0.0:
         error = vec.clamp(error, -limit, limit)
     alpha = trim + cfg.HAC_SPEED_KP * error
-    alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.HAC_ALPHA_MAX_DEG)
+    floor = cfg.ALPHA_MIN_DEG
+    if float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0) > 1.0:
+        floor = min(floor, float(cfg.HAC_FAST_ALPHA_MIN_DEG))
+    alpha = vec.clamp(alpha, floor, cfg.HAC_ALPHA_MAX_DEG)
 
     needed = floor_alt + total / max(0.1, cone_ld)
     if rungs is not None:
