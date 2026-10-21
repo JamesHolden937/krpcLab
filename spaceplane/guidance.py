@@ -2262,6 +2262,15 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     limit = float(getattr(cfg, "HAC_SPEED_ERR_MAX_MS", 0.0) or 0.0)
     if limit > 0.0:
         error = vec.clamp(error, -limit, limit)
+    if getattr(cfg, "HAC_TRIM_AT_TARGET", False):
+        # **Trim at the target speed, not the present one** -- the
+        # approach's law (failure 65).  Trim at the present speed rises as
+        # the vehicle slows, so a slow cone pulls more alpha, more drag, and
+        # slows further: LOG13429 sat at 110 m/s against 174-209 at 7 km
+        # holding 10 deg, then dived the height away (orbits2-1021).
+        at = alpha_for_load(env, target, height, mass, gravity, load)
+        if at is not None:
+            trim = at
     alpha = trim + cfg.HAC_SPEED_KP * error
     floor = cfg.ALPHA_MIN_DEG
     if getattr(cfg, "HAC_ENERGY_SPEED", False):

@@ -168,6 +168,11 @@ class Config:
     # of sink and pulled 14 deg at 7 kPa to stop (LOG10017).  0 = unclamped.
     # Default 2026-10-11 (the user: smoother; unflown, they test it live).
     HAC_SPEED_ERR_MAX_MS: float = 25.0
+    # The cone's alpha is the banked trim *at the target speed* plus the
+    # speed term (``guidance.hac``), as on the approach; off is trim at the
+    # present speed, which climbs as the vehicle slows and holds it on the
+    # back of the drag curve (LOG13429).
+    HAC_TRIM_AT_TARGET: bool = False
     # **The cone holds the dynamic pressure it hands over, not a true
     # airspeed** (``guidance.cone_speed``).  The target above is a constant
     # *true* airspeed, so in thin air it asks for a low *equivalent* one:
