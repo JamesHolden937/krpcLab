@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """stiffprobe.py <instance> [save ...] -- each craft's pitch stiffness, from the game.
 
-TEMPORARY TEST HARNESS: prints to stdout deliberately.
+Writes a ``logs/LOG<n>`` like every flight; nothing prints.
 
 Loads each save (in vacuum, where deflecting a surface costs nothing), pumps
 its propellant into the forward-most tank of each kind as ``FUEL_TO_NOSE``
@@ -37,6 +37,7 @@ paths.use_venv()
 import krpc  # noqa: E402
 
 from common import vec  # noqa: E402
+from common.logbook import Logbook  # noqa: E402
 
 STATES = [("M7", 55000.0, 2050.0), ("M5", 40000.0, 1550.0),
           ("M3", 30000.0, 950.0), ("M1.5", 19000.0, 445.0),
@@ -84,6 +85,12 @@ def main():
                         stream_port=int(open(os.path.join(base, ".stream_port")).read()))
     sc = conn.space_center
     alphas = [float(a) for a in args.alphas.split(",")]
+    book = Logbook(os.path.join(ROOT, "logs"), 0.0)
+    book.event(sc.ut, "stiffprobe: instance %s, saves %s, pump %s" % (
+        args.instance, " ".join(args.saves), not args.no_pump))
+
+    def log(text):
+        book.event(sc.ut, text)
     for save in args.saves:
         sc.load(save)
         time.sleep(2.0)
@@ -103,7 +110,7 @@ def main():
         rot = tuple(v.rotation(frame))
         flight = v.flight(frame)
         inertia = v.moment_of_inertia[0]
-        print("== %s: %s, %d parts, %.2f t, I_pitch %.0f t m^2, pumped: %s"
+        log("== %s: %s, %d parts, %.2f t, I_pitch %.0f t m^2, pumped: %s"
               % (save, v.name, len(v.parts.all), v.mass / 1e3,
                  inertia / 1e3, ", ".join(moved) or "nothing"))
 
@@ -140,7 +147,7 @@ def main():
             mid = dctrl[len(dctrl) // 2]
             up_sign = 1.0 if mid > 0.0 else -1.0    # CmA sign of nose-up
             m = [up_sign * x[1] for x in r]         # nose-up positive
-            print("  %-5s q=%6.0f Pa  nose-up is %s CmA  ClA/CmA(nose-up+): %s"
+            log("  %-5s q=%6.0f Pa  nose-up is %s CmA  ClA/CmA(nose-up+): %s"
                   % (label, q, "+" if up_sign > 0 else "-", " ".join(
                       "%g:%.0f/%+.1f" % (a, x[0], mm)
                       for a, x, mm in zip(alphas, r, m))))
@@ -158,13 +165,14 @@ def main():
                     else "DIVERGENT, e-fold %.1f s" % (1.0 / math.sqrt(-w2))
                     if w2 < 0 else "neutral")
                 ctl = abs(up_sign * mid)
-                print("        trim %5.1f deg  stiffness %+.2f m^3/deg  %s  "
+                log("        trim %5.1f deg  stiffness %+.2f m^3/deg  %s  "
                       "control %.1f m^3/unit = %.1f deg of alpha per unit "
                       "input" % (a_t, stiff, kind, ctl,
                                  ctl / abs(stiff) if stiff else float("inf")))
             if not trims:
-                print("        no trim in the sweep (moment one sign: %s)"
+                log("        no trim in the sweep (moment one sign: %s)"
                       % ("nose-up" if m[0] > 0 else "nose-down"))
+    book.close()
     conn.close()
 
 
