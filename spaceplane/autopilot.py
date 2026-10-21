@@ -3072,8 +3072,18 @@ class Autopilot:
             heats = [h for _, h in (getattr(self.env, "window_heating", None)
                                     or ()) if h is not None]
             self.plan_heat = max(heats) if heats else None
-            if self.plan_heat is None \
-                    or self.plan_heat > cfg.DEORBIT_LATEST_HEAT_MAX:
+            # The cap holds the *walk later* to the margin; it never refuses
+            # the first window the plan would take anyway, nor anything as
+            # cool as it (from 500 km that window is already at 819 against
+            # 650, and refusing it sent the burn six hours on to a 180 m/s
+            # window that missed by 20-850 km: breadth-1020, LOG13247-13256).
+            first_heat = getattr(self, "plan_first_heat", None)
+            cap = cfg.DEORBIT_LATEST_HEAT_MAX
+            if first_heat is not None:
+                cap = max(cap, first_heat)
+            if self.plan_heat is None or (
+                    getattr(self, "plan_first_width", None) is not None
+                    and self.plan_heat > cap):
                 why["heat"] = why.get("heat", 0) + 1
                 return None
             # ... and leaves the glide room to correct: the window it can
@@ -3140,6 +3150,7 @@ class Autopilot:
         self.plan = None
         self.plan_latest = None
         self.plan_first_width = None
+        self.plan_first_heat = None
         self.plan_refusals = {}
         self.plan_warped_to = None
         if self.side_reach is None:
@@ -3243,6 +3254,7 @@ class Autopilot:
                     # bisection only moved the first hit earlier).
                     self.plan_first_width = getattr(self, "plan_width",
                                                     None)
+                    self.plan_first_heat = getattr(self, "plan_heat", None)
                     first = (scan["t"], scan["r"], scan["v"], hit,
                              self.side_check, None)
                     self.plan_latest = dict(
