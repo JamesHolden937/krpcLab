@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-20 evening: spaceplane -- latest burn, near aim, cone speed from energy (fingerprint `ffa022d6`)
+## 2026-10-20 evening / 10-21 night: spaceplane -- latest burn, near aim, cone speed from energy (fingerprint `cb0ae1d4`)
 
 Committed and pushed.  How-it-works PDF rewritten.  Journal: "Session,
 2026-10-20 evening".  Farm and sleep inhibitor: see the last lines of
@@ -26,7 +26,12 @@ for nose ballast (the user's craft issue); don't fly `qs_stackorb`.
   `HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
   `ROLLOUT_DIVERT_SETTLE_S`.  No flags open.
 
-**Where it stands (fwd-1020, 8 an arm):** rigoff 5/8 on the runway, 0
+**Past midnight (tol-1021):** window share 0.15 and `ABORT_NORTH_TOLERANT`
+promoted -- rigoff 5/6 on the runway (defaults had 2/6: spurious
+diverts), burn->stop **1080-1129 s** (was ~1560).  Share 0.10 lost the
+glide's room (3/6).  Wings 0.9 m forward: 0/6.
+
+**Where it stood before (fwd-1020, 8 an arm):** rigoff 5/8 on the runway, 0
 lost, the other 3 stopped 240-830 m along but off the side (the
 overrun divert, real but thin margins); burn->stop 1236-1304 s.
 Low-margin airframe `qs_shuttle2_fwdwing_rigoff` (wings 0.6 m fwd): 6/8

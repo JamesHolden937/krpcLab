@@ -2869,3 +2869,18 @@ the farthest burn and the longest coast.
 
 Batches: fast-, env-, env2-, es-, breadth-, br3-, rcs- (killed), es2-,
 fwd-1020.
+
+**Continued past midnight (2026-10-21), fingerprint `cb0ae1d4`:**
+- share-1020 (6 an arm): window share 0.15 -> 62 m/s, burn->stop ~1100;
+  wings 0.6 m forward 2/6 on the runway (3 lost), 0.9 m 0/6 (3 lost) --
+  0.9 m is past what the controller holds; 0.6 m varies batch to batch
+  (6/8 the batch before).
+- **Half the defaults' "stops" were spurious diverts onto the grass**:
+  the approach latched north on 31-35 m short at 1.5 km, the rollout on
+  one low decel reading (0.4 m/s^2 at 31 m/s with 1217 m left).
+  `ABORT_NORTH_TOLERANT` (short past 10% of the height left; overrun on
+  max(last second's decel, the average since touchdown)), tol-1021:
+  **5/6 v 2/6**; with share 0.15 5/6 at burn->stop 1080-1129 s; share
+  0.10 3/6 (two overruns).  Both promoted: share 0.15, tolerant diverts.
+  Burn->stop on rigoff is now ~1100 s against ~1560 at the session's
+  start.

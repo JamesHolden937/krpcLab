@@ -1478,7 +1478,10 @@ class Config:
     # second's deceleration and the rollout's average since touchdown.
     # share-1020: 4 of 12 rigoff flights diverted onto the grass beside the
     # runway on 31-33 m at 1.5 km, or on one low decel reading.
-    ABORT_NORTH_TOLERANT: bool = False
+    # tol-1021 (6 an arm, rigoff): on the runway **5/6 v 2/6** (defaults: 3
+    # spurious diverts onto the grass), and 5/6 again at window share 0.15.
+    # Default 2026-10-21.
+    ABORT_NORTH_TOLERANT: bool = True
     ABORT_SHORT_SHARE: float = 0.1
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
@@ -1974,7 +1977,11 @@ class Config:
     # 12 km of window against 298 at the first (LOG13177-13196, latest
     # limited by the reserve at 162 m/s), and 4 of 6 were lost.  A burn is
     # only taken while its window is at least this share of the first's.
-    DEORBIT_LATEST_WINDOW_SHARE: float = 0.25  # env2-1020 at 0.4: 34 m/s, ~200 s saved
+    # 0.4 (env2-1020): 34 m/s, burn->stop ~1350.  0.25 (es-1020): 42 m/s,
+    # ~1265.  **0.15** (tol-1021, with ABORT_NORTH_TOLERANT): 62 m/s,
+    # 1080-1129 s, 5/6 on the runway.  0.10: 72 m/s, 1034-1115 s, 3/6 (two
+    # overruns +1.6/+7.3 km) -- past the glide's room.  Default 2026-10-21.
+    DEORBIT_LATEST_WINDOW_SHARE: float = 0.15
     DEORBIT_PLAN: bool = True
     DEORBIT_PLAN_STEP_S: float = 60.0
     DEORBIT_PLAN_RESOLVE_S: float = 8.0

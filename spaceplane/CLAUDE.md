@@ -48,13 +48,14 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-20 evening, fingerprint `ffa022d6`)
+## Where it stands (2026-10-21 night, fingerprint `cb0ae1d4`)
 
 **The user's goals:** fly craft with minimum stability margin, and the
 shortest reliable time from deorbit burn to an intact stop.  Burn->stop
-on `qs_shuttle2_rigoff` is now ~1265 s (was ~1560): the deorbit takes the
-*latest* window that still leaves the glide 25% of the first window's
-reach (`DEORBIT_LATEST`); the touchdown aim is 1200 m (5/6 on the runway
+on `qs_shuttle2_rigoff` is now ~1100 s (was ~1560): the deorbit takes the
+*latest* window that still leaves the glide 15% of the first window's
+reach (`DEORBIT_LATEST`); diverts north only on a real miss
+(`ABORT_NORTH_TOLERANT`); the touchdown aim is 1200 m (5/6 on the runway
 v 3/6); the cone's speed comes from its energy (`HAC_ENERGY_SPEED`) and
 the table now measures negative alpha (signed lift).  The cone is
 energy-bound: going faster there needs energy the glide currently
