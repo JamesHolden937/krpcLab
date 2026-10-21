@@ -2729,6 +2729,12 @@ class Config:
     # inputs never reach a vessel kRPC is flying, so it is all or nothing.
     # w (pitch, roll, yaw) and zeta are the response asked of every
     # airframe; the tick has to be well inside 1/w.
+    # Control surfaces held at neutral below ON Pa of dynamic pressure and
+    # handed back above OFF (``Autopilot.hold_vacuum_surfaces``): no moment
+    # to be had, and fins flapping in orbit look broken.
+    VACUUM_SURFACE_HOLD: bool = True
+    VACUUM_SURFACE_ON_Q_PA: float = 10.0
+    VACUUM_SURFACE_OFF_Q_PA: float = 20.0
     SURFACE_OWN: bool = False
     SURFACE_OWN_W_RAD_S: tuple = (0.8, 1.2, 0.8)
     SURFACE_OWN_ZETA: float = 0.8

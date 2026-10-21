@@ -39,6 +39,7 @@ from dataclasses import fields
 import krpc
 
 from common import vec
+from common.idle import IdleGimbals, VacuumSurfaces
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from common.rpccount import RpcCounter
@@ -327,6 +328,15 @@ class Ascent:
         self.gui = ControlPanel(conn, title="ASCENT", start_label="START ASCENT")
         self.loop_rate = LoopRate()
         self.rpc = None
+        # Nozzles and fins still while they can do nothing: no thrust, no
+        # air.  The throttle is MechJeb's, so "firing" is the thrust read.
+        say = (lambda text: self.log.event(self.sc.ut, text))
+        self.idle_gimbals = (IdleGimbals(self.vessel, log=say)
+                             if cfg.IDLE_GIMBAL_LOCK else None)
+        self.vacuum_surfaces = (
+            VacuumSurfaces(self.vessel, cfg.VACUUM_SURFACE_ON_Q_PA,
+                           cfg.VACUUM_SURFACE_OFF_Q_PA, log=say)
+            if cfg.VACUUM_SURFACE_HOLD else None)
         self.state = STANDBY
         self.phase_ut = ut
         self.autostart = False
@@ -923,6 +933,7 @@ class Ascent:
             self.run_throttle_down(ut)
         elif self.state == HANDOFF and self.cfg.HANDOFF == "upper":
             self.run_handoff_upper(ut)
+        self.idle_actuators()
         self.loop_rate.sample(self.state, ut, time.monotonic() - started)
         if self.state in (ASCENT, THROTTLE_DOWN) and self.last is not None:
             rec, state, b, reserve = self.last
@@ -944,10 +955,32 @@ class Ascent:
             pass
         return ut
 
+    def idle_actuators(self):
+        """``IDLE_GIMBAL_LOCK`` / ``VACUUM_SURFACE_HOLD`` on the vessel this
+        pilot flies, once it is off the pad."""
+        if self.state in (STANDBY, LAUNCH):
+            return
+        try:
+            if self.idle_gimbals is not None:
+                self.idle_gimbals.update(self.vessel.thrust > 0.0)
+            if self.vacuum_surfaces is not None:
+                self.vacuum_surfaces.update(
+                    self.vessel.flight(self.frame).dynamic_pressure)
+        except Exception:               # noqa: BLE001
+            pass
+
     def shutdown(self, reason):
         ut = 0.0
         try:
             ut = self.sc.ut
+        except Exception:               # noqa: BLE001
+            pass
+        # Nozzles and fins back to the player.
+        try:
+            if self.idle_gimbals is not None:
+                self.idle_gimbals.update(True)
+            if self.vacuum_surfaces is not None:
+                self.vacuum_surfaces.release("the flight is over")
         except Exception:               # noqa: BLE001
             pass
         if self.state not in (HANDOFF, DONE):

@@ -120,6 +120,14 @@ class Config:
     LOOP_SLEEP_S: float = 0.1
     LOOP_PACING_GAME_TIME: bool = False
     LOOP_PACING_MAX_STRETCH: float = 5.0
+    # Engine gimbals locked while the vessel makes no thrust, and control
+    # surfaces held neutral below ON Pa of dynamic pressure (back above
+    # OFF) -- ``common.idle``: neither does anything then, and both look
+    # broken moving in vacuum.
+    IDLE_GIMBAL_LOCK: bool = True
+    VACUUM_SURFACE_HOLD: bool = True
+    VACUUM_SURFACE_ON_Q_PA: float = 10.0
+    VACUUM_SURFACE_OFF_Q_PA: float = 20.0
     LOG_INTERVAL_UT: float = 2.0
     LOG_DIR: str = "logs"
     # HANDOFF=upper: give up after this.  900 cut the shuttle stack off

@@ -25,10 +25,12 @@ import math
 import os
 import sys
 import time
+from types import SimpleNamespace
 
 import krpc
 
 from common import krpcbatch, rcs, vec
+from common.idle import VacuumSurfaces
 from common.logbook import Logbook
 from common.pacing import LoopRate, ScaleGovernor, sleeper
 from common.rpccount import RpcCounter
@@ -545,6 +547,12 @@ class Autopilot:
         self.flap_brake_out = False
         self.airbrake_ut = None
         self.gimbals_locked = self._lock_gimbals(ut)
+        # Fins still in vacuum (``VACUUM_SURFACE_HOLD``): nothing to fly.
+        self.vacuum_surfaces = VacuumSurfaces(
+            self.vessel, cfg.VACUUM_SURFACE_ON_Q_PA,
+            cfg.VACUUM_SURFACE_OFF_Q_PA,
+            log=lambda text: self.logbook.event(
+                getattr(self, "last_ut", 0.0) or 0.0, text))
         self._release_nose_brake(ut)
         self._set_main_gear(ut)
         self.log_actuators(ut)
@@ -2335,6 +2343,8 @@ class Autopilot:
         except Exception:                               # noqa: BLE001
             pass
         self._brake_measured = True
+        if getattr(self, "vacuum_surfaces", None) is not None:
+            self.vacuum_surfaces.suspend("measuring the brake")
         if snap.dynamic_pressure > 1.0:
             self.flap_brake = None
             self.logbook.event(snap.ut, "brake (measured): engaged in the air "
@@ -6521,6 +6531,7 @@ class Autopilot:
         # nothing to do with it -- and it duly broke every test that drives
         # ``aim`` on a stub.  The brake is a per-tick decision about the
         # vehicle, so it belongs where the state is authoritative.
+        self.hold_vacuum_surfaces(snap)
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
         self.measure_surfaces(snap)
@@ -6612,6 +6623,22 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 pass
 
+    def hold_vacuum_surfaces(self, snap):
+        """``VACUUM_SURFACE_HOLD``: every control surface at neutral while
+        there is no air to fly them in -- they make no moment, and a fin
+        flapping in orbit looks broken.  Stood aside while the client owns
+        the surfaces (``SURFACE_OWN``) and while the vacuum measurements
+        deflect them (each suspends and resumes it)."""
+        hold = getattr(self, "vacuum_surfaces", None)
+        if hold is None or not getattr(self.cfg, "VACUUM_SURFACE_HOLD",
+                                       False):
+            return
+        if getattr(self, "_surfaces_on", False) or self.surfaces_owned():
+            hold.suspend("the client flies them")
+            return
+        hold.resume()
+        hold.update(snap.dynamic_pressure)
+
     def surfaces_owned(self):
         """``SURFACE_OWN``: the client flies the attitude, GLIDE to FLARE,
         on every control surface whose effect was measured
@@ -6687,6 +6714,8 @@ class Autopilot:
             pass
         self._surfaces_measured = True
         self._surfaces = []
+        if getattr(self, "vacuum_surfaces", None) is not None:
+            self.vacuum_surfaces.suspend("measuring the surfaces")
         if snap.dynamic_pressure > 1.0:
             self.logbook.event(snap.ut, "surfaces: engaged in the air (q=%.0f"
                                " Pa) -- not measured, kRPC keeps the "
@@ -7468,6 +7497,12 @@ class Autopilot:
             self.sas_release(self.last_ut or 0.0)
         except Exception:                                   # noqa: BLE001
             pass
+        # The surfaces go back to the game whatever state they were held in.
+        hold = getattr(self, "vacuum_surfaces", None)
+        if hold is not None:
+            hold.release("the flight is over")
+        if getattr(self, "_surfaces_on", False):
+            self.release_surfaces(SimpleNamespace(ut=self.last_ut or 0.0))
         self.finished_reason = reason
         self.running = False
 

@@ -739,6 +739,10 @@ class Config:
     LOOP_PACING_MAX_STRETCH: float = 5.0    # give up on a tick after this many
                                             # intervals of wall clock: a paused
                                             # game must not hang the autopilot
+    # Engine gimbals locked while the commanded throttle is 0 and freed
+    # when it rises (``common.idle.IdleGimbals``): a gimbal makes no torque
+    # without thrust, and a nozzle swinging on the coast looks broken.
+    IDLE_GIMBAL_LOCK: bool = True
     LOG_INTERVAL_UT: float = 2.0            # in-game seconds between log lines
     LOG_DIR: str = "logs"
 

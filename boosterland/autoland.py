@@ -28,6 +28,7 @@ from .config import Config, apply_overrides, defaults_fingerprint
 from .engines import allocate, group_engines
 from .environment import Environment
 from .gui import ControlPanel, telemetry_lines
+from common.idle import IdleGimbals
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
@@ -329,6 +330,11 @@ class Autoland:
                       % (" ".join(changed) or "(defaults)",
                          defaults_fingerprint()))
         self.loop_rate = LoopRate()
+        self.idle_gimbals = None
+        if getattr(cfg, "IDLE_GIMBAL_LOCK", False):
+            self.idle_gimbals = IdleGimbals(
+                self.vessel, log=lambda text: self.log.event(
+                    self.conn.space_center.ut, text))
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
@@ -586,6 +592,10 @@ class Autoland:
             throttle = 1.0 if throttle > 0.0 else 0.0
         self.commanded_throttle = throttle
         self.control.throttle = throttle
+        # Nozzles still while nothing burns (``IDLE_GIMBAL_LOCK``).
+        idle = getattr(self, "idle_gimbals", None)
+        if idle is not None:
+            idle.update(throttle > 0.0)
 
     def check_throttle(self, snap):
         """Say so in the log when the vessel is not at the commanded throttle.
@@ -2169,6 +2179,8 @@ class Autoland:
                 self.cluster.release()
             if self.cfg.GIMBAL_ROLL_OFF:
                 set_gimbal_roll(self.vessel, True)
+            if self.idle_gimbals is not None:
+                self.idle_gimbals.update(True)      # freed for the player
             if any(self.trim_cmd):
                 self.send_translation((0.0, 0.0, 0.0))
             set_autopilot_engaged(self.autopilot, False)
