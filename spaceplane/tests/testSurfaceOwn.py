@@ -19,8 +19,10 @@ ELEV_L = (-10.0, 8.0, 0.0)         # nose-up and roll one way
 ELEV_R = (-10.0, -8.0, 0.0)        # nose-up and roll the other
 
 
-def table(col):
-    return [[col, col], [col, col]]
+def table(col, even=(0.0, 0.0, 0.0)):
+    """Every cell the same: odd slope ``col``, even part ``even``."""
+    cell = (col, even)
+    return [[cell, cell], [cell, cell]]
 
 
 def pilot(layout, aero=(0.0, 0.0, 0.0)):
@@ -45,7 +47,7 @@ def pilot(layout, aero=(0.0, 0.0, 0.0)):
         _surface_machs=(0.0, 10.0), _surface_alphas=(0.0, 40.0),
         commanded_nose=NOSE, commanded_up=ROOF)
     for name in ("surfaces_owned", "surface_columns", "own_attitude",
-                 "release_surfaces"):
+                 "surface_actuators", "release_surfaces"):
         setattr(s, name, getattr(ap.Autopilot, name).__get__(s))
     snap = SimpleNamespace(ut=10.0, position=(0, 1, 0), velocity=(0, 1, 0),
                            right=RIGHT, rotation=(0, 0, 0, 1),
@@ -135,6 +137,49 @@ class TestOwnAttitude(unittest.TestCase):
         s, _, _ = pilot([CANARD])
         s._surfaces = []
         self.assertFalse(s.surfaces_owned())
+
+
+class TestSurfaceModel(unittest.TestCase):
+    def test_the_slope_is_taken_at_the_deflection(self):
+        # m(d) = a d + b d^2: slope a + 2 b d.
+        s, _, _ = pilot([(1.0, 0.0, 0.0)])
+        s._surfaces = [(None, table((1.0, 0.0, 0.0), (0.0, 0.0, 0.5)))]
+        at0 = s.surface_columns(3.0, 20.0, 1000.0, [0.0])[0]
+        at_half = s.surface_columns(3.0, 20.0, 1000.0, [0.5])[0]
+        at_neg = s.surface_columns(3.0, 20.0, 1000.0, [-0.5])[0]
+        self.assertAlmostEqual(at0[2], 0.0)
+        self.assertAlmostEqual(at_half[2], 500.0)
+        self.assertAlmostEqual(at_neg[2], -500.0)
+        self.assertAlmostEqual(at_half[0], 1000.0)
+
+    def test_travel_rate_from_a_ramp(self):
+        neutral = ((0.0, 0.0, 0.0), 0.0)
+        full = ((10.0, 0.0, 0.0), 0.0)
+        # 0.8 unit/s: f = 0.8 t until it arrives.
+        series = [(t, (10.0 * min(1.0, 0.8 * t), 0.0, 0.0))
+                  for t in (0.02, 0.3, 0.6, 0.9, 1.4)]
+        self.assertAlmostEqual(ap.Autopilot.travel_rate(series, neutral,
+                                                        full), 0.8)
+        # Every sample already there: too fast to tell.
+        self.assertIsNone(ap.Autopilot.travel_rate(
+            [(0.5, (10.0, 0.0, 0.0))], neutral, full))
+
+    def test_actuators_lag_the_command_at_their_rate(self):
+        s, _, _ = pilot([CANARD, CANARD])
+        s.cfg.SURFACE_OWN_ACTUATORS = True
+        s._surface_rate = [1.0, None]
+        s._surface_defl = [0.0, 0.0]
+        s.surface_actuators(10.0)
+        s._surface_defl = [0.8, 0.8]
+        now, synced = s.surface_actuators(10.2)
+        self.assertAlmostEqual(now[0], 0.2)       # 1 unit/s x 0.2 s
+        self.assertAlmostEqual(synced[0], 0.1)    # averaged over the tick
+        self.assertAlmostEqual(now[1], 0.8)       # no rate: instant
+        now, _ = s.surface_actuators(10.4)
+        self.assertAlmostEqual(now[0], 0.4)
+        s.cfg.SURFACE_OWN_ACTUATORS = False
+        now, _ = s.surface_actuators(10.6)
+        self.assertEqual(now, [0.8, 0.8])
 
 
 if __name__ == "__main__":

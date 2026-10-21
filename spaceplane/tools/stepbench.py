@@ -47,6 +47,76 @@ def rotate_axes(axes, axis_index, deg):
     return tuple(vec.quat_rotate(q, a) for a in axes)
 
 
+def identify(sc, run, say, args):
+    """Open loop, kRPC off, every surface at neutral: each surface in turn
+    to ``--pulse`` for 0.4 game-s and back, logging every tick's measured
+    moment (I x the differenced body rate) against what the surface's
+    column says the pulse makes -- whether B is the craft's B, and how
+    long a deflection takes to arrive."""
+    ap.set_autopilot_engaged(run.autopilot, False)
+    surfaces = run._surfaces
+    for cs, _ in surfaces:
+        cs.deflection_override = True
+        cs.deflection = 0.003
+    inertia = tuple(float(i) for i in run.vessel.moment_of_inertia)
+    prev = None
+    base = None
+
+    def tick(label, i, d):
+        nonlocal prev
+        snap = run.telemetry.sample(run.env)
+        axes = allocate.body_axes(snap.right, snap.nose, snap.roof)
+        rate = allocate.body(snap.angular_velocity, axes)
+        m = None
+        if prev is not None and snap.ut > prev[0]:
+            dt = snap.ut - prev[0]
+            m = tuple(I * (r - p) / dt
+                      for I, r, p in zip(inertia, rate, prev[1]))
+        prev = (snap.ut, rate)
+        mach = run.env.mach(vec.norm(snap.velocity), vec.norm(snap.position)
+                            - run.env.equatorial_radius)
+        # The slope at half the pulse times the pulse is a p + b p^2,
+        # the whole moment the pulse adds on the quadratic model.
+        col = run.surface_columns(mach, float(snap.krpc_aoa),
+                                  snap.dynamic_pressure,
+                                  [0.5 * args.pulse] * len(surfaces))[i]
+        return snap, m, col
+
+    for i, (cs, _) in enumerate(surfaces):
+        if args.only and i not in args.only:
+            continue
+        rows = []
+        for phase, d, n in (("pre", 0.003, 4),
+                            ("on", args.pulse, args.on_ticks),
+                            ("off", 0.003, args.on_ticks)):
+            cs.deflection = d
+            for _ in range(n):
+                snap, m, col = tick(phase, i, d)
+                if m is not None:
+                    rows.append((phase, m))
+                    say("id d[%d] %-3s t=%.2f q=%.0f a=%+.1f M=%+.0f/%+.0f/"
+                        "%+.0f kNm col*pulse=%+.0f/%+.0f/%+.0f"
+                        % ((i, phase, snap.ut, snap.dynamic_pressure,
+                            snap.krpc_aoa) + tuple(x / 1e3 for x in m)
+                           + tuple(c * args.pulse / 1e3 for c in col)))
+                wake = snap.ut + args.tick
+                while sc.ut < wake:
+                    time.sleep(0.005)
+        pre = [m for ph, m in rows if ph == "pre"]
+        on = [m for ph, m in rows if ph == "on"][2:]
+        if pre and on:
+            d_m = tuple(sum(m[k] for m in on) / len(on)
+                        - sum(m[k] for m in pre) / len(pre) for k in range(3))
+            say("id d[%d] %s: measured %+.0f/%+.0f/%+.0f kNm, column "
+                "%+.0f/%+.0f/%+.0f" % ((i, cs.part.title)
+                                       + tuple(x / 1e3 for x in d_m)
+                                       + tuple(c * args.pulse / 1e3
+                                               for c in col)))
+    for cs, _ in surfaces:
+        cs.deflection = 0.003
+        cs.deflection_override = False
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("instance")
@@ -56,6 +126,13 @@ def main():
     p.add_argument("--hold", type=float, default=5.0)
     p.add_argument("--tick", type=float, default=0.1)
     p.add_argument("--set", action="append", default=[])
+    p.add_argument("--identify", action="store_true",
+                   help="open loop: pulse each surface alone and compare "
+                        "the moment it makes with its measured column")
+    p.add_argument("--pulse", type=float, default=0.5)
+    p.add_argument("--on-ticks", type=int, default=6)
+    p.add_argument("--only", type=int, action="append", default=[],
+                   help="identify only these surface indices")
     args = p.parse_args()
     cfg = apply_overrides(Config(), ["SURFACE_OWN=1"] + args.set)
     rpc, stream = paths.ports(args.instance)
@@ -112,8 +189,18 @@ def main():
         pass
     snap = run.telemetry.sample(run.env)
     base = allocate.body_axes(snap.right, snap.nose, snap.roof)
-    say("air: %d of %d surfaces mapped, q %.0f Pa, alpha %.1f"
-        % (len(mapped), len(tables), snap.dynamic_pressure, snap.krpc_aoa))
+    for i, (cs, table) in enumerate(mapped):
+        say("d[%d] %s at %s" % (i, cs.part.title, tuple(
+            round(c, 1) for c in cs.part.position(frame))))
+    say("air: %d of %d surfaces mapped, q %.0f Pa, alpha %.1f, inertia "
+        "%s kg m^2" % (len(mapped), len(tables), snap.dynamic_pressure,
+                       snap.krpc_aoa, "/".join(
+                           "%.3g" % i for i in run.vessel.moment_of_inertia)))
+
+    if args.identify:
+        identify(sc, run, say, args)
+        book.close()
+        return
 
     # 3. hold, then step each axis and back
     names = ("pitch", "roll", "yaw")
@@ -140,10 +227,18 @@ def main():
             rate = tuple(math.degrees(r) for r in allocate.body(
                 snap.angular_velocity, axes))
             rows.append((snap.ut - start, err))
+            dbg = getattr(run, "_own_dbg", None)
+            # want / in hand / allocated step, kN m per body axis
+            # (right, nose, belly), the arithmetic ``own_attitude`` did.
+            moments = "" if dbg is None else " M=%s" % " ".join(
+                "%+.0f/%+.0f/%+.0f" % tuple(v[k] / 1e3 for v in dbg[:3])
+                for k in range(3))
             say("%-10s t=%5.2f err=%+6.2f/%+6.2f/%+6.2f rate=%+6.1f/%+6.1f/"
-                "%+6.1f d=%s" % ((label, snap.ut - start) + err + rate
-                                 + (" ".join("%+.2f" % d for d in
-                                             run._surface_defl),)))
+                "%+6.1f q=%.0f a=%.1f d=%s%s"
+                % ((label, snap.ut - start) + err + rate
+                   + (snap.dynamic_pressure, snap.krpc_aoa,
+                      " ".join("%+.2f" % d for d in run._surface_defl),
+                      moments)))
             wake = snap.ut + args.tick
             while sc.ut < wake:
                 time.sleep(0.005)

@@ -6568,11 +6568,12 @@ class Autopilot:
                 and bool(getattr(self, "_surfaces", None))
                 and self.state in (GLIDE, HAC, APPROACH, FLARE))
 
-    def _probe_torques(self, states):
+    def _probe_torques(self, states, with_ut=False):
         """``(torque, lift)`` per unit q at each synthetic ``(alt, speed,
         alpha)`` state, the attitude and surfaces as they are now, in one
         batch: the torque in body components ``(right, nose, belly)``, the
-        lift along the pitch plane's normal (``ClA``)."""
+        lift along the pitch plane's normal (``ClA``).  ``with_ut``: also
+        the game time the batch was answered at, as ``(out, ut)``."""
         env = self.env
         nose, dorsal = env._axes()
         if nose is None:
@@ -6594,8 +6595,11 @@ class Autopilot:
                           (env.body, pos, tuple(vec.scale(d, speed)), rot,
                            (0.0, 0.0, 0.0), ut)))
             qs.append(0.5 * env.density(alt) * speed * speed)
+        if with_ut:
+            calls.append((getattr, (sc, "ut")))
         got = krpcbatch.ask(self.conn, calls,
                             batched=getattr(self.cfg, "RPC_BATCH", False))
+        answered = got.pop() if with_ut else None
         out = []
         for w, q, (_, _, alpha_deg) in zip(got, qs, states):
             if w is None or q <= 0.0:
@@ -6607,7 +6611,7 @@ class Autopilot:
             lift_dir = vec.unit(vec.project_out(dorsal, flow))
             out.append((tuple(c / q for c in allocate.body(w[1], axes)),
                         vec.dot(w[0], lift_dir) / q))
-        return out
+        return (out, answered) if with_ut else out
 
     def measure_surfaces(self, snap):
         """``SURFACE_OWN``: every control surface's moment per unit
@@ -6667,30 +6671,46 @@ class Autopilot:
                 cs.deflection_override = True
                 cs.deflection = neutral
             self.settle_game(settle)
-            base = self._probe_torques(trim_states)
-            found, trim_cols = [], []
+            both = self._probe_torques(states + trim_states)
+            base_main, base = both[:n_main], both[n_main:]
+            found, trim_cols, rates = [], [], []
             for cs in surfaces:
                 got = {}
                 for d in (1.0, -1.0):
                     cs.deflection = d
+                    series = self.surface_travel(states[0]) if d > 0 \
+                        else None
                     self.settle_game(settle)
                     got[d] = self._probe_torques(states + trim_states)
                 cs.deflection = neutral
                 if not got[1.0] or not got[-1.0]:
                     continue
+                rates.append(self.travel_rate(series, base_main[0],
+                                              got[1.0][0]))
 
                 def half(a, b):
                     if a is None or b is None:
                         return None
                     return (vec.scale(vec.sub(a[0], b[0]), 0.5),
                             0.5 * (a[1] - b[1]))
+                # The moment a deflection d adds, a d + b d^2: ``a`` the
+                # odd half, ``b`` the even -- a deflected surface's drag
+                # makes the same yaw either way, and on the shuttle's
+                # outboard elevons and canards the even part is the larger
+                # (the bench's pulses, LOG13762: the odd half alone had
+                # their yaw backwards).
                 table = []
                 for k in range(len(rows)):
                     row = []
                     for j in range(len(alphas)):
-                        h = half(got[1.0][k * len(alphas) + j],
-                                 got[-1.0][k * len(alphas) + j])
-                        row.append(None if h is None else h[0])
+                        i = k * len(alphas) + j
+                        p, m, n = got[1.0][i], got[-1.0][i], base_main[i]
+                        if p is None or m is None or n is None:
+                            row.append(None)
+                            continue
+                        row.append((vec.scale(vec.sub(p[0], m[0]), 0.5),
+                                    vec.sub(vec.scale(vec.add(p[0], m[0]),
+                                                      0.5), n[0])))
                     table.append(row)
                 found.append((cs, table))
                 trim_cols.append([half(got[1.0][n_main + j],
@@ -6705,6 +6725,7 @@ class Autopilot:
             return
         self._surface_machs = tuple(r[0] for r in rows)
         self._surface_alphas = alphas
+        self._surface_rate = rates
         self._surfaces = found if getattr(self.cfg, "SURFACE_OWN", False) \
             else []
         self.trimmed_lift(snap, trim_alphas, base, trim_cols)
@@ -6716,14 +6737,63 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 title, x, y, z = "?", 0.0, 0.0, 0.0
             cells = []
+            j = min(range(len(alphas)), key=lambda j: abs(alphas[j] - 10.0))
             for k, (mach, _, _) in enumerate(rows):
-                if mach in (0.3, 1.2, 4.0, 7.0) and table[k][0] is not None:
-                    cells.append("M%.1f %+.1f/%+.1f/%+.1f" % (
-                        (mach,) + tuple(table[k][0])))
+                if mach in (0.3, 1.2, 4.0, 7.0) and table[k][j] is not None:
+                    cells.append("M%.1f %+.1f/%+.1f/%+.1f even %+.1f/%+.1f/"
+                                 "%+.1f" % ((mach,) + tuple(table[k][j][0])
+                                            + tuple(table[k][j][1])))
+            rate = self._surface_rate[found.index((cs, table))]
             self.logbook.event(
-                snap.ut, "surface %s at (%+.1f, %+.1f, %+.1f): m^3 per unit "
-                         "(right/nose/belly) at alpha %g: %s"
-                % (title, x, y, z, alphas[0], "  ".join(cells)))
+                snap.ut, "surface %s at (%+.1f, %+.1f, %+.1f): travel %s/s; "
+                         "m^3 per unit (right/nose/belly) at alpha %g: %s"
+                % (title, x, y, z, "%.2f" % rate if rate else "fast",
+                   alphas[j], "  ".join(cells)))
+
+    def surface_travel(self, state):
+        """The probe's moment at one synthetic ``state`` while a surface
+        just commanded to a new deflection travels there: ``[(game seconds
+        since the command, moment per q), ...]`` over ~1.5 game-s."""
+        try:
+            t0 = self.conn.space_center.ut
+        except Exception:                               # noqa: BLE001
+            return []
+        series = []
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            got = self._probe_torques([state], with_ut=True)
+            if got is None:
+                return series
+            out, ut = got
+            if out and out[0] is not None and ut is not None:
+                series.append((ut - t0, out[0][0]))
+                if ut - t0 >= 1.5:
+                    break
+            time.sleep(0.01)
+        return series
+
+    @staticmethod
+    def travel_rate(series, neutral, full):
+        """A surface's travel, units of deflection per game-second, from
+        ``surface_travel``'s series of a 0 -> +1 command: the share of the
+        settled moment each sample had reached over the time it took,
+        median over the samples caught mid-travel; ``None`` when none was
+        (instant, or too fast for the samples)."""
+        if not series or neutral is None or full is None:
+            return None
+        span = vec.sub(full[0], neutral[0])
+        size = vec.dot(span, span)
+        if size <= 0.0:
+            return None
+        rates = []
+        for t, m in series:
+            f = vec.dot(vec.sub(m, neutral[0]), span) / size
+            if 0.05 < f < 0.95 and t > 0.0:
+                rates.append(f / t)
+        if not rates:
+            return None
+        rates.sort()
+        return rates[len(rates) // 2]
 
     def trimmed_lift(self, snap, alphas, base, cols):
         """``STALL_TRIMMED``: the most lift the vehicle can hold with its
@@ -6772,10 +6842,11 @@ class Autopilot:
             # reading (``landing=True``) takes it the same way.
             self.report_airframe(snap)
 
-    def surface_columns(self, mach, alpha_deg, q_dyn):
+    def surface_columns(self, mach, alpha_deg, q_dyn, defl=None):
         """Each measured surface's torque per unit deflection (N m, body
         components) at this Mach, alpha and dynamic pressure, bilinear in
-        the measured rows and held at their ends."""
+        the measured rows and held at their ends: the slope ``a + 2 b d``
+        of its moment curve at deflection ``defl[i]`` (0 when omitted)."""
         machs, alphas = self._surface_machs, self._surface_alphas
 
         def bracket(grid, x):
@@ -6789,12 +6860,15 @@ class Autopilot:
         i0, i1, fm = bracket(machs, mach)
         j0, j1, fa = bracket(alphas, alpha_deg)
         cols = []
-        for _, table in self._surfaces:
+        for k, (_, table) in enumerate(self._surfaces):
             corners = [table[i][j] for i in (i0, i1) for j in (j0, j1)]
             if any(c is None for c in corners):
                 cols.append((0.0, 0.0, 0.0))
                 continue
-            c00, c01, c10, c11 = corners
+            d = float(defl[k]) if defl is not None else 0.0
+            slopes = [vec.add(c[0], vec.scale(c[1], 2.0 * d))
+                      for c in corners]
+            c00, c01, c10, c11 = slopes
             lo = vec.add(vec.scale(c00, 1 - fa), vec.scale(c01, fa))
             hi = vec.add(vec.scale(c10, 1 - fa), vec.scale(c11, fa))
             cols.append(vec.scale(vec.add(vec.scale(lo, 1 - fm),
@@ -6831,6 +6905,7 @@ class Autopilot:
             self.autopilot_engaged = False
             self._surface_defl = [0.0] * len(surfaces)
             self._surface_sent = [None] * len(surfaces)
+            self._surface_act = None
             self._rcs_in = [0.0, 0.0, 0.0]
             try:
                 for cs, _ in surfaces:
@@ -6928,14 +7003,19 @@ class Autopilot:
             col = [0.0, 0.0, 0.0]
             col[k] = signs[k] * rcs_t[k] if valve else 0.0
             rcs_cols.append(tuple(col))
-        cols = self.surface_columns(mach, float(snap.krpc_aoa), q_dyn) \
-            + rcs_cols
-        held = list(self._surface_defl) + list(self._rcs_in)
+        # The deflection the measured acceleration came from: each surface
+        # travels at its own measured rate, so it is not the command.
+        _, synced = self.surface_actuators(snap.ut)
+        cols = self.surface_columns(mach, float(snap.krpc_aoa), q_dyn,
+                                    synced) + rcs_cols
+        held = list(synced) + list(self._rcs_in)
         step = float(cfg.SURFACE_OWN_MAX_STEP)
         lo = [max(-1.0 - h, -step) for h in held]
         hi = [min(1.0 - h, step) for h in held]
-        steps, _ = allocate.solve(cols, vec.sub(want, now), lo, hi,
-                                  reg=float(cfg.SURFACE_OWN_REG))
+        steps, made = allocate.solve(cols, vec.sub(want, now), lo, hi,
+                                     reg=float(cfg.SURFACE_OWN_REG))
+        # For the bench (``tools/stepbench.py``): this tick's arithmetic.
+        self._own_dbg = (want, now, made, inertia)
         new = [vec.clamp(h + s, -1.0, 1.0) for h, s in zip(held, steps)]
         n = len(surfaces)
         try:
@@ -6956,6 +7036,33 @@ class Autopilot:
         self._own_line = (tuple(math.degrees(e) for e in error),
                           tuple(math.degrees(r) for r in rate),
                           max((abs(d) for d in new[:n]), default=0.0))
+
+    def surface_actuators(self, ut):
+        """``SURFACE_OWN_ACTUATORS``: each surface's deflection as the game
+        has it -- moving toward its last command at its measured travel
+        (``travel_rate``; a Big-S elevon at its 150% limiter takes ~1 s end
+        to end) -- now, and averaged over the tick just gone, which is the
+        deflection the differenced angular acceleration was made by.  An
+        increment added to the *command* instead counts every deflection
+        still on its way as missing and adds it again (the bench's roll,
+        LOG13761: the wanted moment ramped while the one in hand lagged).
+        Off, or a surface with no measured rate: the command, at once."""
+        cmd = list(self._surface_defl)
+        act = getattr(self, "_surface_act", None) or list(cmd)
+        last = getattr(self, "_surface_act_ut", None)
+        dt = 0.0 if last is None else max(0.0, min(1.0, ut - last))
+        rates = getattr(self, "_surface_rate", None) or []
+        model = bool(getattr(self.cfg, "SURFACE_OWN_ACTUATORS", False))
+        now = []
+        for i, (a, c) in enumerate(zip(act, cmd)):
+            r = rates[i] if i < len(rates) else None
+            if not model or not r:
+                now.append(c)
+            else:
+                now.append(a + vec.clamp(c - a, -r * dt, r * dt))
+        self._surface_act = now
+        self._surface_act_ut = ut
+        return now, [0.5 * (a + b) for a, b in zip(act, now)]
 
     def release_surfaces(self, snap):
         """Hand every surface and the attitude back to kRPC."""
