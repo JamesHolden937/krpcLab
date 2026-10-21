@@ -101,6 +101,25 @@ class TestOwnAttitude(unittest.TestCase):
         self.assertAlmostEqual(made(s, cs, layout)[0] * 1000.0, -2e4,
                                delta=50.0)
 
+    def test_a_moment_seen_only_in_the_rates_is_cancelled(self):
+        # No probe moment at all; between two ticks the vehicle pitched
+        # nose-down (raw +x) at 0.01 rad/s^2 -- a moment nothing modelled.
+        layout = [CANARD, CANARD]
+        s, snap, cs = pilot(layout)
+        s.cfg.SURFACE_OWN_ACCEL_LP = 1.0
+        s.own_attitude(snap)
+        first = list(s._surface_defl)
+        snap2 = SimpleNamespace(**vars(snap))
+        snap2.ut = snap.ut + 0.2
+        snap2.angular_velocity = (0.002, 0.0, 0.0)
+        s.own_attitude(snap2)
+        # tau_now = I a = 1.4e6 * 0.01 nose-down; the step is nose-up by
+        # that much (less the damping the new rate asks for).
+        step = sum((d1 - d0) * col[0] for d0, d1, col
+                   in zip(first, s._surface_defl, layout)) * 1000.0
+        want = -1.4e6 * 0.01 - 1.4e6 * 2 * 0.8 * 0.8 * 0.002
+        self.assertAlmostEqual(step, want, delta=abs(want) * 0.01)
+
     def test_hands_back(self):
         layout = [CANARD]
         s, snap, cs = pilot(layout)

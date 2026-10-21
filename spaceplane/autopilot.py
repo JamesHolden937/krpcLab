@@ -6850,7 +6850,8 @@ class Autopilot:
 
             e      = rotation from the body axes to the commanded ones
             tau_d  = I (w^2 e - 2 zeta w rate)          per body axis
-            tau_0  = the game's aero moment at the actual state + RCS now
+            tau_0  = I x the angular acceleration measured over the last
+                     tick (the game's probe on the first)
             steps  = argmin |B steps - (tau_d - tau_0)|, within each
                      actuator's travel                  (``allocate.solve``)
 
@@ -6913,17 +6914,42 @@ class Autopilot:
                 return
             cache = self._own_cache = (snap.ut, inertia, rcs)
         _, inertia, rcs_t = cache
-        aero = (0.0, 0.0, 0.0)
-        if q_dyn > 0.0:
-            try:
-                _, torque = self.env.flight.simulate_aerodynamic_wrench_at(
-                    self.env.body, tuple(snap.position), tuple(snap.velocity),
-                    tuple(rot), tuple(omega), snap.ut)
-                aero = allocate.body(torque, axes)
-            except Exception:                           # noqa: BLE001
-                return
         error = allocate.body(allocate.attitude_error(axes, target), axes)
         rate = allocate.body(omega, axes)
+        # **The moment in hand is measured, not modelled**: I x the angular
+        # acceleration seen since the last tick, which holds every moment
+        # acting -- aero, RCS, gyroscopic, whatever nobody modelled.  On the
+        # game's probe instead, the twin-fin shuttle held -14 deg of pitch
+        # and -6..-15 of roll for minutes below Mach 5 with the surfaces at
+        # 0.8 (rot-sown-1021): the probe's moment is biased against the
+        # flown one, and a law that steps until "wanted = in hand" settles
+        # wherever the bias says.  The probe answers only the first tick.
+        prev = getattr(self, "_own_prev_rate", None)
+        self._own_prev_rate = (snap.ut, rate)
+        now = None
+        if prev is not None and 0.0 < snap.ut - prev[0] <= float(
+                cfg.SURFACE_OWN_ACCEL_MAX_DT_S):
+            dt = snap.ut - prev[0]
+            accel = tuple((r - p) / dt for r, p in zip(rate, prev[1]))
+            lp = getattr(self, "_own_accel", None)
+            k = float(cfg.SURFACE_OWN_ACCEL_LP)
+            accel = accel if lp is None else tuple(
+                a0 + k * (a - a0) for a, a0 in zip(accel, lp))
+            self._own_accel = accel
+            now = tuple(i * a for i, a in zip(inertia, accel))
+        if now is None:
+            self._own_accel = None
+            if q_dyn <= 0.0:
+                now = (0.0, 0.0, 0.0)
+            else:
+                try:
+                    _, torque = self.env.flight.simulate_aerodynamic_wrench_at(
+                        self.env.body, tuple(snap.position),
+                        tuple(snap.velocity), tuple(rot), tuple(omega),
+                        snap.ut)
+                    now = allocate.body(torque, axes)
+                except Exception:                       # noqa: BLE001
+                    return
         want = allocate.wanted_torque(
             inertia, error, rate, tuple(cfg.SURFACE_OWN_W_RAD_S),
             float(cfg.SURFACE_OWN_ZETA))
@@ -6937,9 +6963,6 @@ class Autopilot:
             col = [0.0, 0.0, 0.0]
             col[k] = signs[k] * rcs_t[k] if valve else 0.0
             rcs_cols.append(tuple(col))
-        now = aero
-        for k in range(3):
-            now = vec.add(now, vec.scale(rcs_cols[k], self._rcs_in[k]))
         cols = self.surface_columns(mach, float(snap.krpc_aoa), q_dyn) \
             + rcs_cols
         held = list(self._surface_defl) + list(self._rcs_in)

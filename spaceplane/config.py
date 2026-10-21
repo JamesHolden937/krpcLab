@@ -2744,6 +2744,11 @@ class Config:
     SURFACE_OWN_PROBE_ALPHAS: tuple = (10.0, 30.0)
     SURFACE_OWN_MAX_STEP: float = 0.5    # deflection per tick
     SURFACE_OWN_REG: float = 1e-3        # allocation damping, scale-free
+    # The angular acceleration the moment in hand is read from: differenced
+    # over at most this gap between ticks (a longer one restarts from the
+    # probe), low-passed by this share per tick (1 = raw).
+    SURFACE_OWN_ACCEL_MAX_DT_S: float = 0.5
+    SURFACE_OWN_ACCEL_LP: float = 0.6
     # The raw body-axis sense (right, nose, belly) of a positive pitch,
     # roll and yaw input's torque, each about its own axis.  Measured in
     # vacuum on qs_cargo_rigoff (2026-10-21, rate change after 1 s at +1):
