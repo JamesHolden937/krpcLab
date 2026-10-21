@@ -145,7 +145,14 @@ def main():
             q = r[0][2]
             dctrl = [c - x[1] for c, x in zip(ctrl[label], r)]
             mid = dctrl[len(dctrl) // 2]
-            up_sign = 1.0 if mid > 0.0 else -1.0    # CmA sign of nose-up
+            # Raw torque about the vessel's right axis is positive
+            # *nose-down* (Unity's rotation sense: +x turns the nose, +y,
+            # toward the belly, +z).  Settled by comparing airframes, not by
+            # the +1 input, whose read-back sign is logged beside it: moving
+            # the CoM aft lowers the raw moment and flattens its slope.
+            up_sign = -1.0
+            log("        +1 pitch input: dCmA(raw) %s"
+                % " ".join("%g:%+.1f" % (a, d) for a, d in zip(alphas, dctrl)))
             m = [up_sign * x[1] for x in r]         # nose-up positive
             log("  %-5s q=%6.0f Pa  nose-up is %s CmA  ClA/CmA(nose-up+): %s"
                   % (label, q, "+" if up_sign > 0 else "-", " ".join(
