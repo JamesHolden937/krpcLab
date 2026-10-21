@@ -705,6 +705,12 @@ class Config:
     # swing is not; measure the torque, don't fit a time); unflown.
     BANK_ACCEL_SHARE: float = 0.5
     BANK_ACCEL_READ_S: float = 1.0
+    # The torque that sizes the slew is the wheels' and the surfaces' only:
+    # kRPC's ``available_torque`` counts RCS while the valve is open, so a
+    # reversal begun with it open is slewed at the thrusters' rate and the
+    # yaw cannot follow (coastrcs-1021: high-orbit reversals from -55 deg
+    # at Mach 6.5 swung 15-28 deg of sideslip).
+    BANK_ACCEL_NO_RCS: bool = False
     # A tick counts as a sample only when the command led the flown bank by
     # at least this -- the vehicle was being asked for more than it gave.
     BANK_RATE_SAT_DEG: float = 5.0

@@ -1081,7 +1081,16 @@ class Autopilot:
         if last is None or snap.ut - last >= float(
                 self.cfg.BANK_ACCEL_READ_S) or snap.ut < last:
             try:
-                torque = self.vessel.available_torque[0]
+                if getattr(self.cfg, "BANK_ACCEL_NO_RCS", False):
+                    # ``BANK_ACCEL_NO_RCS``: the authority the roll can
+                    # count on, not whatever the valve has open this second
+                    # -- kRPC's total includes RCS only while it is on.
+                    wheel = self.vessel.available_reaction_wheel_torque[0]
+                    surf = self.vessel.available_control_surface_torque[0]
+                    torque = tuple(abs(a) + abs(b)
+                                   for a, b in zip(wheel, surf))
+                else:
+                    torque = self.vessel.available_torque[0]
                 inertia = self.vessel.moment_of_inertia
             except Exception:                           # noqa: BLE001
                 torque = inertia = None
