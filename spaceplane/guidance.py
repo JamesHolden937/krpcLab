@@ -2247,6 +2247,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
+    energy_speed = None
     if getattr(cfg, "HAC_ENERGY_SPEED", False) and not short:
         # The fastest the energy pays for, never past what the vehicle can
         # still bleed to the gate's speed (``cone_envelope``'s bleed term;
@@ -2260,6 +2261,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
             if bleed > 0.0:
                 quick = min(quick, bleed)
             target = max(target, quick)
+        energy_speed = quick
     # ``HAC_SPEED_ERR_MAX_MS``: the speed error the law acts on is
     # clamped, so a cone entered far below its target accelerates a few
     # degrees under trim instead of pushing over to the alpha floor --
@@ -2314,6 +2316,7 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     command.short = short
     command.weave_deg = weave_deg
     command.alpha_target_speed = target
+    command.energy_speed = energy_speed
     command.plan_ld = ((rungs[-1][1] / max(1.0, rungs[-1][0] - floor_alt))
                        if rungs is not None and len(rungs) >= 2 else cone_ld)
     command.surplus = surplus

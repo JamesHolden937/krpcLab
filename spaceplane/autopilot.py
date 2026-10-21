@@ -7372,6 +7372,13 @@ def compact_line(state, snap, run):
                        else ("" if c.on_circle else " join")))
         bits.append("path=%6.0f need=%6.0f wv=%4.1f sink=%5.1f"
                     % (c.path, c.needed_height, c.weave_deg, c.sink))
+        # The speed the cone's alpha is flying to, and (``HAC_ENERGY_SPEED``)
+        # what the energy solve offered before the bleed bound.
+        bits.append("vt=%4.0f" % (getattr(c, "alpha_target_speed", 0.0)
+                                  or 0.0))
+        if getattr(run.cfg, "HAC_ENERGY_SPEED", False):
+            got = getattr(c, "energy_speed", None)
+            bits.append("ves=%s" % ("-" if got is None else "%.0f" % got))
         if getattr(run.cfg, "HAC_LD_MEASURED", False):
             bits.append("ldk=%.2f pld=%.2f"
                         % (getattr(run, "hac_ld_scale", None) or 0.0,

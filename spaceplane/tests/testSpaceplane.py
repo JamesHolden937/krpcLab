@@ -1971,7 +1971,8 @@ class TestTheApproachCapturesTheCentreline(unittest.TestCase):
 
     def setUp(self):
         # The capture law as written against LOG1366 (default 0.15 since 2026-10-03).
-        self.cfg = Config(APPROACH_CAPTURE_MARGIN=0.35)
+        # The capture law's geometry, at the aim it was written against.
+        self.cfg = Config(APPROACH_CAPTURE_MARGIN=0.35, TOUCHDOWN_AIM_M=1800.0)
         self.env = FakeEnv(self.cfg)
 
     def state(self, cross, lateral_rate, speed=115.0, height=1000.0,
@@ -5497,6 +5498,7 @@ class TestTheDeorbitIsPlannedAhead(unittest.TestCase):
 
     def pilot(self, **over):
         ap = autopilot_module.Autopilot.__new__(autopilot_module.Autopilot)
+        over.setdefault("DEORBIT_LATEST", False)   # the first-window scan
         ap.cfg = Config(**over)
         ap.env = FakeEnv(ap.cfg)
         ap.logbook = self.Log()

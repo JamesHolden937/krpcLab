@@ -1962,14 +1962,19 @@ class Config:
     # i90low 449 -> 0.79, e500i45 819 -> 0.845 (the hottest flown; parts
     # fail at 1.0).  The skin grows ~0.07-0.15 per doubling, so 650 puts
     # the hottest airframe near ~0.85 and keeps ~15% to the limit.
-    DEORBIT_LATEST: bool = False
+    # es-1020 (6 an arm, qs_shuttle2_rigoff, share 0.25): burn to wheels
+    # **1233-1270 s v 1554-1612**, dv 42 v 26 m/s, window 108 km v 296,
+    # predicted peak heating 346 v 365 and skin 0.71-0.72 v 0.70-0.74 (a
+    # shorter entry is a cooler one here), 6/6 intact v 6/6, long 1 v 3.
+    # Default 2026-10-20.
+    DEORBIT_LATEST: bool = True
     DEORBIT_LATEST_HEAT_MAX: float = 650.0
     DEORBIT_LATEST_MARGIN_S: float = 60.0
     # The latest burn that merely solves leaves the glide almost nothing:
     # 12 km of window against 298 at the first (LOG13177-13196, latest
     # limited by the reserve at 162 m/s), and 4 of 6 were lost.  A burn is
     # only taken while its window is at least this share of the first's.
-    DEORBIT_LATEST_WINDOW_SHARE: float = 0.4
+    DEORBIT_LATEST_WINDOW_SHARE: float = 0.25  # env2-1020 at 0.4: 34 m/s, ~200 s saved
     DEORBIT_PLAN: bool = True
     DEORBIT_PLAN_STEP_S: float = 60.0
     DEORBIT_PLAN_RESOLVE_S: float = 8.0
@@ -2632,7 +2637,13 @@ class Config:
     # A derived aim with the float half and no rollout term
     # (``TOUCHDOWN_AIM_DERIVED``) crashed 5-9 km short on four saves and was
     # deleted 2026-10-09.  spaceplane/CLAUDE.md, "Next".
-    TOUCHDOWN_AIM_M: float = 1800.0
+    # **1200, default 2026-10-20** (the user: "aim it close as possible to
+    # the close edge without landing short"): es-1020, 6 an arm, rigoff --
+    # touchdown 583-813 m past the threshold v 1160-2868, on the runway
+    # 5/6 v 3/6, no overrun diverts v 4/6, stops +25..+703 v +800..+7300.
+    # Still a constant; the law (aim the predicted touchdown point a
+    # measured margin past the threshold) replaces it.
+    TOUCHDOWN_AIM_M: float = 1200.0
     # **The approach's aim nearer, the cone's left alone** (metres; 0 =
     # off).  Flown 2026-10-05 on the rigoff cone saves with
     # FLARE_ALIGN_ALT_M=30: every save that missed missed *long* -- they
