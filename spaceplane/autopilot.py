@@ -3067,6 +3067,22 @@ class Autopilot:
                     or self.plan_heat > cfg.DEORBIT_LATEST_HEAT_MAX:
                 why["heat"] = why.get("heat", 0) + 1
                 return None
+            # ... and leaves the glide room to correct: the window it can
+            # still reach at least ``DEORBIT_LATEST_WINDOW_SHARE`` of the
+            # first window's (the latest that merely solved left 12 km of
+            # 298, LOG13177-13196).
+            span = getattr(self.env, "window_span", None)
+            width = None if span is None else span[1] - span[0]
+            first = getattr(self, "plan_first_width", None)
+            if width is None:
+                why["window"] = why.get("window", 0) + 1
+                return None
+            if first is None:
+                self.plan_width = width
+            elif width < cfg.DEORBIT_LATEST_WINDOW_SHARE * first:
+                why["window"] = why.get("window", 0) + 1
+                return None
+            self.plan_width = width
         if not self.burn_affordable(dv):
             why["dv"] = why.get("dv", 0) + 1
             return None
@@ -3114,6 +3130,7 @@ class Autopilot:
     def plan_start(self, snap):
         self.plan = None
         self.plan_latest = None
+        self.plan_first_width = None
         self.plan_refusals = {}
         self.plan_warped_to = None
         if self.side_reach is None:
@@ -3215,6 +3232,8 @@ class Autopilot:
                     self.plan_scan = None
                     # From the scan's own step, which solved too (the
                     # bisection only moved the first hit earlier).
+                    self.plan_first_width = getattr(self, "plan_width",
+                                                    None)
                     first = (scan["t"], scan["r"], scan["v"], hit,
                              self.side_check, None)
                     self.plan_latest = dict(
@@ -3682,6 +3701,25 @@ class Autopilot:
         self._deorbit_prev_tick_ut = self._deorbit_tick_ut
         self._deorbit_tick_ut = snap.ut
         misaligned = align > self.cfg.DEORBIT_ALIGN_DEG
+        # **The runaway guard before anything can return early**, timed
+        # from the first burning tick, not from phase entry (the phase
+        # spends minutes in orbit waiting for a pass).  Below,
+        # a misaligned nose returns while the stop test has not counted a
+        # tick -- and after a 165 m/s burn in 3 s the nose was off and the
+        # remaining-dv model still owed, so the phase held DEORBIT,
+        # retrograde, into the atmosphere and broke up (LOG13182, 13187,
+        # 13191: the guard sat after the return and never ran).
+        if (self.deorbit_since is not None and snap.ut - self.deorbit_since
+                > self.cfg.DEORBIT_MAX_BURN_S):
+            self.set_throttle(0.0)
+            self.restore_thrust_limits()
+            self.sas_release(snap.ut)
+            self.cutoff_state = (snap.ut, snap.position, snap.velocity,
+                                 snap.mass)
+            self.enter(COAST if self.cfg.DRAIN else DRAIN, snap.ut,
+                       "burn guard at %.0f s (aligned %s)"
+                       % (self.cfg.DEORBIT_MAX_BURN_S, not misaligned))
+            return
         if misaligned:
             self.set_throttle(0.0)
             # **Not once the burn has reached its dv.**  The stop test below
@@ -3763,17 +3801,6 @@ class Autopilot:
                           if progress is None else "%+.0f m" % progress,
                           owed, self.deorbit_dv or 0.0,
                           self.deorbit_burned, self.deorbit_modelled))
-            return
-        # From the first burning tick, not from phase entry: the phase spends
-        # minutes in orbit waiting for a pass, and counting that against the
-        # runaway guard expires it before the engine has ever been lit.
-        if snap.ut - (self.deorbit_since or snap.ut) \
-                > self.cfg.DEORBIT_MAX_BURN_S:
-            self.set_throttle(0.0)
-            self.restore_thrust_limits()
-            self.enter(COAST if self.cfg.DRAIN else DRAIN, snap.ut,
-                       "burn guard at %.0f s"
-                       % self.cfg.DEORBIT_MAX_BURN_S)
             return
         if misaligned:
             return
@@ -6106,7 +6133,12 @@ class Autopilot:
             if decel is not None and speed > 5.0:
                 stop = speed * speed / (2.0 * max(0.2, decel))
                 left = float(self.cfg.RUNWAY_LENGTH_M) - down
-                if stop > left:
+                # ``ROLLOUT_DIVERT_SETTLE_S``: not on the deceleration of the
+                # first seconds, unless already past the end.
+                settled = (self.touchdown_ut is None or snap.ut
+                           - self.touchdown_ut
+                           >= float(self.cfg.ROLLOUT_DIVERT_SETTLE_S))
+                if stop > left and (settled or left <= 0.0):
                     self.divert_north(snap, "overrun: stopping in %.0f m "
                                             "with %.0f m of tarmac left at "
                                             "%.0f m/s" % (stop, left, speed))

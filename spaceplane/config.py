@@ -218,6 +218,7 @@ class Config:
     # alpha floor.
     HAC_ENVELOPE: bool = False
     HAC_ENVELOPE_BLEED_MARGIN: float = 0.5
+    HAC_ENVELOPE_SURPLUS_M: float = 3000.0
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,
@@ -1477,6 +1478,13 @@ class Config:
     # end.  Latched; ``guidance.north_side`` finds north off the pole.
     ABORT_NORTH: bool = True  # default 2026-10-11 (the user; farm-unflown, sim 8/8)
     ABORT_NORTH_OFFSET_M: float = 150.0
+    # **Not on the first seconds' deceleration** (``Autopilot.fly_rollout``):
+    # braking grows as the wing unloads onto the wheels, and the divert
+    # latched on the first tick's estimate -- predicted 942 m with 931 left
+    # (LOG13150), stopped in ~540 with ~390 to spare, on the grass 150 m
+    # north.  Of 48 flights on 2026-10-20 ~60% diverted, nearly all by under
+    # 20 m.  Past the end, it diverts at once.
+    ROLLOUT_DIVERT_SETTLE_S: float = 3.0
     ABORT_SHORT_M: float = 30.0
     # Late, because the gear costs 19% of the glide ratio (see GATE_ALT_M)
     # and 800 m is still 25 seconds of descent to deploy in.
@@ -1963,6 +1971,11 @@ class Config:
     DEORBIT_LATEST: bool = False
     DEORBIT_LATEST_HEAT_MAX: float = 650.0
     DEORBIT_LATEST_MARGIN_S: float = 60.0
+    # The latest burn that merely solves leaves the glide almost nothing:
+    # 12 km of window against 298 at the first (LOG13177-13196, latest
+    # limited by the reserve at 162 m/s), and 4 of 6 were lost.  A burn is
+    # only taken while its window is at least this share of the first's.
+    DEORBIT_LATEST_WINDOW_SHARE: float = 0.4
     DEORBIT_PLAN: bool = True
     DEORBIT_PLAN_STEP_S: float = 60.0
     DEORBIT_PLAN_RESOLVE_S: float = 8.0

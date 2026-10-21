@@ -2183,8 +2183,17 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
         trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
     if getattr(cfg, "HAC_ENVELOPE", False):
-        target = max(target, cone_envelope(env, cfg, stall, height, total,
-                                           radius, gravity, cone_ld))
+        # Only as fast as the surplus pays for: flying fast is flying at a
+        # lower L/D, and with no surplus it is flying short (envelope v1,
+        # env-1020: 3/6 short by 2.5-9.4 km).  The share of the envelope's
+        # excess taken grows with the path the height can pay for beyond
+        # the plan, over ``HAC_ENVELOPE_SURPLUS_M``.
+        quick = cone_envelope(env, cfg, stall, height, total, radius,
+                              gravity, cone_ld)
+        share = 0.0 if short else vec.clamp(
+            surplus / max(1.0, float(cfg.HAC_ENVELOPE_SURPLUS_M)), 0.0, 1.0)
+        if quick > target:
+            target += share * (quick - target)
     # ``HAC_SPEED_ERR_MAX_MS``: the speed error the law acts on is
     # clamped, so a cone entered far below its target accelerates a few
     # degrees under trim instead of pushing over to the alpha floor --
@@ -2636,6 +2645,7 @@ def deorbit_window(env, r, v, mass, cfg, end, gate):
         corners.append(trajectory.forward_arc(env, r, v, prediction.position))
     env.window_heating = tuple(heats)
     shortest, longest = min(corners), max(corners)
+    env.window_span = (shortest, longest)
     return shortest, longest, trajectory.forward_arc(env, r, v, gate)
 
 
