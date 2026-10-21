@@ -52,8 +52,6 @@ def taem_target(env, cfg):
     # The old constant true airspeed even under ``HAC_SPEED_Q``: the glide's
     # delivery is not what that flag measures.
     speed = cfg.HAC_SPEED_FACTOR * cfg.APPROACH_FACTOR * stall
-    if getattr(cfg, "HAC_FAST_TAEM", False):
-        speed = cone_speed(env, cfg, stall, cfg.HAC_ALT_M)
     g = env.mu / (env.equatorial_radius ** 2)
     return cfg.HAC_ALT_M + speed * speed / (2.0 * g) + cfg.GLIDE_TAEM_MARGIN_M
 

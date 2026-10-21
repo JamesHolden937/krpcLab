@@ -204,11 +204,6 @@ class Config:
     HAC_FAST_MACH_MAX: float = 0.85
     HAC_FAST_BLEED: float = 3.0
     HAC_FAST_ALPHA_MIN_DEG: float = -5.0
-    # ``guidance.taem_target`` priced at the speed the cone is entered at
-    # (``cone_speed`` at ``HAC_ALT_M``) rather than the old constant true
-    # airspeed: the glide hands over more energy, so less of it is thrown
-    # away at 40 deg of alpha with the RCS open below Mach 1.5.
-    HAC_FAST_TAEM: bool = False
     # **The fast cone as an envelope, not a number** (the user, 2026-10-20:
     # "don't target a specific number ... let everything before it go as
     # fast as it can while still retaining steering capability and
