@@ -30,11 +30,17 @@ don't fly `qs_stackorb`; 500 km saves out until 80 km is reliable.
   bankrcs-1021 high 4/10 v 1/9.
 - Deleted: `HAC_TRIM_AT_TARGET` (30/47 v 31/47).  No flags open.
 
-**Where it stands (on the runway, latest batches):** base 5/6, inc 6/6
-(orbits-1021); ecc 9/9 + 6/8 + 7/9; **high 4/9, 4/10** -- the blocker.
-Burn->stop 1150-1250 s on ecc/high, ~1100 on base.
+**Where it stands (on the runway, latest batches, all on coast RCS):**
+base 8/12, inc 7/12 (base-1021); ecc 9/9 + 6/8 + 7/9; **high 4/9,
+4/10**.  No entry departures anywhere now.  Burn->stop ~1090-1160 s on
+base, 1105-1210 inc, 1150-1250 ecc/high.
 
-**The blocker -- high orbit, energy-poor arrivals:** with clean entries
+**The blocker -- the glide's hand-over energy, both ways:** base-1021's
+misses are cone arrivals at 420-440 m/s that roll out 3.4-6.4 km high
+and overrun 1-16 km (LOG13636, 13646, 13648, 13655), plus energy-short
+cones; the terminal glide's 14.1 km target is missed in both directions
+now that entries are clean (they used to dump energy departing).
+**High orbit, energy-poor arrivals:** with clean entries
 the high glide banks -46..-56 at Mach 7, predicts on aim through Mach 5,
 then from Mach 4.5 its own predicted cone entry sits at the 12.07 km
 floor against the 14.14 km target and it arrives at 12 km and 157-197 m/s
@@ -51,8 +57,10 @@ window); the departing entries used to hide it.
    split by the bank flown above Mach 5).  If the model can't be fixed,
    derive the latest burn's window floor from that error rather than
    re-fitting `DEORBIT_LATEST_WINDOW_SHARE`.
-3. Re-fly base and inc on the new defaults (coast RCS changes every
-   entry).
+3. The terminal glide's energy at the cone (both sides): why the
+   cone-entry energy solve below Mach 4.5 lets 430 m/s arrivals through
+   -- check its prediction against the flown energy at the handover over
+   base-1021 and coastrcs/bankrcs-1021 (`conesum.py`).
 4. Spurious short diverts: one in ~24 remains (LOG13462: 105 m "short"
    at 102 m/s, touched down mid-runway).
 5. Goal 2: rollout braking (~1.3-2 m/s^2, wheels only), a touchdown-aim

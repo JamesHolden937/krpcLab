@@ -2942,3 +2942,9 @@ fwd-1020.
 
 Batches: orbits-, orbits2-, orbits3-, trim-, trim2-, coastrcs-,
 bankrcs-1021.
+- base-1021 (base, inc, 12 each, all new defaults): **8/12, 7/12** on the
+  runway, no entry departures (glide sideslip <=29).  Misses: cone
+  arrivals at 420-440 m/s rolling out 3.4-6.4 km high and overrunning,
+  and energy-short cones -- the terminal glide's hand-over energy now
+  scatters both ways with clean entries.  Burn->stop 1087-1160 base,
+  1105-1212 inc.
