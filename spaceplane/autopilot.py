@@ -973,7 +973,16 @@ class Autopilot:
             return
         rd = getattr(self, "roll_damper", None)
         swung = None
-        if rd is not None:
+        gate = float(getattr(self.cfg, "ROLL_DAMPER_SLIP_GATE_DEG", 0.0)
+                     or 0.0)
+        if rd is not None and gate > 0.0 \
+                and abs(snap.sideslip or 0.0) > gate:
+            # ``ROLL_DAMPER_SLIP_GATE_DEG``: swings with this much sideslip
+            # are the airframe departing, not the loop over-driving it --
+            # answer at full speed, never slower.
+            rd.tp = rd.floor
+            roll = rd.tp
+        elif rd is not None:
             swung = rd.update(snap.ut, bank_deg, flown_bank(snap))
             roll = rd.tp
         else:

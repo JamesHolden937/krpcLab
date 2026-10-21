@@ -2828,7 +2828,15 @@ class Config:
     # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
     # capped at 180).  0 leaves kRPC's 15/20.
     ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
-    ROLL_DAMPER_GROWTH: float = 1.1
+    # **Not slower into a departure** (the user, 2026-10-20: "why don't you
+    # make the script respond faster?").  The damper slows roll and yaw
+    # when bank swings grow about a steady command -- right for a loop that
+    # over-drives the Dutch roll, wrong for an airframe going away: the
+    # stack orbiter's departure (LOG13145) took roll and yaw from 5.3 to
+    # 18.9 s while sideslip sat at -17 deg with the inputs at 0.2-0.3.
+    # Past this much sideslip the damper is held at its floor (fastest).
+    # 0 = off.
+    ROLL_DAMPER_SLIP_GATE_DEG: float = 0.0
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA
