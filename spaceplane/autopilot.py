@@ -2842,6 +2842,10 @@ class Autopilot:
                 and self.plan is not None
                 and snap.ut + lead < self.plan["ut"]):
             # ``DEORBIT_LATEST``: it solves already, but later is closer.
+            # A hold begun before the plan points at a node for now;
+            # ``preorient`` takes it again on the plan's node in the lead.
+            if self.sas_hold and not self.plan_leading(snap.ut):
+                self.sas_release(snap.ut)
             self.panel.set_start_label("latest burn in %.0f s"
                                        % (self.plan["ut"] - snap.ut - lead))
             return
@@ -3093,6 +3097,15 @@ class Autopilot:
                 why["window"] = why.get("window", 0) + 1
                 return None
             self.plan_width = width
+            # ... and is no dearer than a surface periapsis, the bound the
+            # first window's scan holds too: past it the entry is all but
+            # vertical, and from the high orbit the walk took 75.6 m/s
+            # against 74.5 and missed by 75 km either way on a 24 km
+            # window (orbits-1021, LOG13398-13417).
+            cheap = getattr(self, "plan_walk_cheap", None)
+            if (first is not None and cheap is not None and dv > cheap):
+                why["dear"] = why.get("dear", 0) + 1
+                return None
         if not self.burn_affordable(dv):
             why["dv"] = why.get("dv", 0) + 1
             return None
@@ -3142,6 +3155,7 @@ class Autopilot:
         self.plan_latest = None
         self.plan_first_width = None
         self.plan_first_heat = None
+        self.plan_walk_cheap = None
         self.plan_refusals = {}
         self.plan_warped_to = None
         if self.side_reach is None:
@@ -3246,6 +3260,7 @@ class Autopilot:
                     self.plan_first_width = getattr(self, "plan_width",
                                                     None)
                     self.plan_first_heat = getattr(self, "plan_heat", None)
+                    self.plan_walk_cheap = scan["cheap"]
                     first = (scan["t"], scan["r"], scan["v"], hit,
                              self.side_check, None)
                     self.plan_latest = dict(
@@ -3386,6 +3401,13 @@ class Autopilot:
                     return False
                 self.plan_start(snap)
             self.plan_advance(snap)
+            if self.plan is None and getattr(self, "plan_latest", None):
+                # ``DEORBIT_LATEST``: the first hit starts the walk; the live
+                # search must not take that hit meanwhile (it held SAS on a
+                # node for now, then waited the walk's 950 s on it).
+                self.set_throttle(0.0)
+                self.panel.set_start_label("planning: latest burn")
+                return True
             if self.plan is None:
                 if self.plan_scan is None:
                     return False        # nothing found: the old wait
