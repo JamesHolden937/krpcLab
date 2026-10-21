@@ -2828,15 +2828,6 @@ class Config:
     # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
     # capped at 180).  0 leaves kRPC's 15/20.
     ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
-    # **Not slower into a departure** (the user, 2026-10-20: "why don't you
-    # make the script respond faster?").  The damper slows roll and yaw
-    # when bank swings grow about a steady command -- right for a loop that
-    # over-drives the Dutch roll, wrong for an airframe going away: the
-    # stack orbiter's departure (LOG13145) took roll and yaw from 5.3 to
-    # 18.9 s while sideslip sat at -17 deg with the inputs at 0.2-0.3.
-    # Past this much sideslip the damper is held at its floor (fastest).
-    # 0 = off.
-    ROLL_DAMPER_SLIP_GATE_DEG: float = 0.0
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
@@ -2904,6 +2895,12 @@ class Config:
     # relay settles).  ``RCS_Q_MAX_PA`` still shuts it.  Replaces the
     # glide's Mach floor and the no-RCS-below-the-glide rule (unflown; the
     # user tests live).  See ``common.rcs``.
+    # **Held open from GLIDE through FLARE** (below ``RCS_Q_MAX_PA``):
+    # the relay toggles the torque kRPC tunes on (yaw 18.9 <-> 5.3 s on
+    # every toggle, LOG13145), and on the aft-CoM stack orbiter the yaw
+    # authority is the thrusters' 279 kN m against the fins' 141.  Off =
+    # the saturation/error relay below.
+    RCS_HOLD_IN_AIR: bool = False
     RCS_SAT_INPUT: float = 0.95
     RCS_SAT_ON_S: float = 0.5
     RCS_SAT_CLOSING_FRACTION: float = 0.2

@@ -973,16 +973,7 @@ class Autopilot:
             return
         rd = getattr(self, "roll_damper", None)
         swung = None
-        gate = float(getattr(self.cfg, "ROLL_DAMPER_SLIP_GATE_DEG", 0.0)
-                     or 0.0)
-        if rd is not None and gate > 0.0 \
-                and abs(getattr(snap, "sideslip", 0.0) or 0.0) > gate:
-            # ``ROLL_DAMPER_SLIP_GATE_DEG``: swings with this much sideslip
-            # are the airframe departing, not the loop over-driving it --
-            # answer at full speed, never slower.
-            rd.tp = rd.floor
-            roll = rd.tp
-        elif rd is not None:
+        if rd is not None:
             swung = rd.update(snap.ut, bank_deg, flown_bank(snap))
             roll = rd.tp
         else:
@@ -2503,6 +2494,17 @@ class Autopilot:
         input's saturation rather than on the pointing error alone
         (``RCS_SAT_*``).
         """
+        if (air and permitted and snap is not None
+                and getattr(self.cfg, "RCS_HOLD_IN_AIR", False)
+                and snap.dynamic_pressure < self.cfg.RCS_Q_MAX_PA):
+            # ``RCS_HOLD_IN_AIR``: open, steadily -- kRPC re-derives its
+            # gains from the torque available, which counts the thrusters
+            # only while the valve is open, so a relay swings them.
+            if not self.rcs.on:
+                self._apply_rcs(True)
+                self.rcs.on = True
+            self.rcs_on = True
+            return
         self.rcs.update(snap.ut if snap is not None else 0.0, permitted,
                         self.valve_error(snap),
                         None if snap is None else snap.dynamic_pressure,
