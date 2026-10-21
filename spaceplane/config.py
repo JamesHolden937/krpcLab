@@ -219,6 +219,19 @@ class Config:
     HAC_ENVELOPE: bool = False
     HAC_ENVELOPE_BLEED_MARGIN: float = 0.5
     HAC_ENVELOPE_SURPLUS_M: float = 3000.0
+    # **The cone's speed from its energy** (``guidance.cone_energy_speed``;
+    # the user, 2026-10-20: "find another way to derive glide speed that
+    # would work well for all craft ... just make it not exceed a certain
+    # negative alpha to control speed").  The fastest speed whose own L/D
+    # spends the energy above the gate over the tightest circle it can hold
+    # at that speed; the cap is the speed the alpha floor
+    # (``HAC_FAST_ALPHA_MIN_DEG``) can still carry the weight at, so no Mach
+    # cap and no multiplier.  The margin keeps that share of the energy for
+    # the solve (the rest goes to the brakes, which close the loop).
+    # Wants ``ALPHA_NEGATIVE_BINS`` (without it the floor's lift is read
+    # mirrored, high, and the cap comes out low).
+    HAC_ENERGY_SPEED: bool = False
+    HAC_ENERGY_SPEED_MARGIN: float = 0.9
     # **An inner loop on lift** (``Autopilot.lift_loop``): offset the
     # commanded alpha until the measured lift matches what the table
     # promised the law.  The landing's table is untrimmed (shuttle 0.73x,

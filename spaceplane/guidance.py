@@ -1944,6 +1944,71 @@ def cone_envelope(env, cfg, stall, height, path, radius, gravity, cone_ld):
     return min(turn, bleed)
 
 
+def cone_energy_speed(env, cfg, end, r, side, height, floor_alt, energy,
+                      mass, gravity, ld_scale, low):
+    """``HAC_ENERGY_SPEED``: the fastest speed the cone's energy pays for.
+
+    Flying faster costs L/D, so of all the speeds there is one whose glide
+    ratio spends exactly ``energy`` (metres of energy height above the
+    gate, times ``HAC_ENERGY_SPEED_MARGIN``) over the shortest circle the
+    vehicle can hold at that speed (``hac_hold_radius``) -- faster lands
+    short, slower leaves surplus for the brakes and laps to throw away.
+    The ratio is the vehicle's own (``_hac_planned_ld`` off the swept
+    table, times the measured ``ld_scale``).  Capped where the lift at
+    ``HAC_FAST_ALPHA_MIN_DEG`` still carries the weight -- the airframe's
+    own top speed at that floor; no Mach number.  ``low`` when even
+    ``low`` cannot be paid for; ``None`` when the table cannot answer."""
+    if energy <= 0.0 or low <= 1.0 or mass <= 0.0:
+        return None
+    g = gravity if gravity > 0.0 else 9.81
+    scale = ld_scale or 1.0
+    budget = energy * float(cfg.HAC_ENERGY_SPEED_MARGIN)
+
+    def pays(speed):
+        radius = vec.clamp(hac_hold_radius(cfg, speed, g),
+                           cfg.HAC_RADIUS_MIN_M, cfg.HAC_RADIUS_MAX_M)
+        d, angle, exit_angle = hac_state(env, cfg, end, r, side, radius)[:3]
+        path, turn, _ = hac_path(cfg, d, angle, exit_angle, side, radius)
+        share = vec.clamp(radius * turn / max(1.0, path), 0.0, 1.0)
+        ld = _hac_planned_ld(env, cfg, speed, height, mass, g, radius, share)
+        if ld is None:
+            return None
+        return ld * scale * budget - path
+
+    # The floor's own top speed: lift at the floor alpha = weight.
+    cap = 4.0 * low
+    try:
+        rho = env.density(height)
+        speed = low
+        for _ in range(3):
+            cla, _ = env.coefficients(float(cfg.HAC_FAST_ALPHA_MIN_DEG),
+                                      speed, height)
+            if cla <= 0.0 or rho <= 0.0:
+                break
+            speed = math.sqrt(2.0 * mass * g / (rho * cla))
+        else:
+            cap = min(cap, max(low, speed))
+    except Exception:                                       # noqa: BLE001
+        pass
+    first = pays(low)
+    if first is None:
+        return None
+    if first < 0.0:
+        return low
+    top = pays(cap)
+    if top is not None and top >= 0.0:
+        return cap
+    lo, hi = low, cap
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        got = pays(mid)
+        if got is not None and got >= 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
 def hac(env, cfg, end, r, v, mass, gravity, height, side,
         previous=None, max_step=None, weave=0.0, roll_rate=None,
         ld_scale=None, weave_ok=True):
@@ -2182,6 +2247,19 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     if trim is None:
         trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
+    if getattr(cfg, "HAC_ENERGY_SPEED", False) and not short:
+        # The fastest the energy pays for, never past what the vehicle can
+        # still bleed to the gate's speed (``cone_envelope``'s bleed term;
+        # its turn term is inside the energy solve already).
+        energy = height + excess_height - floor_alt
+        quick = cone_energy_speed(env, cfg, end, r, side, height, floor_alt,
+                                  energy, mass, gravity, ld_scale, target)
+        bleed = cone_envelope(env, cfg, stall, height, total,
+                              cfg.HAC_RADIUS_MAX_M * 1e3, gravity, cone_ld)
+        if quick is not None:
+            if bleed > 0.0:
+                quick = min(quick, bleed)
+            target = max(target, quick)
     if getattr(cfg, "HAC_ENVELOPE", False):
         # Only as fast as the surplus pays for: flying fast is flying at a
         # lower L/D, and with no surplus it is flying short (envelope v1,
@@ -2206,7 +2284,8 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     alpha = trim + cfg.HAC_SPEED_KP * error
     floor = cfg.ALPHA_MIN_DEG
     if (float(getattr(cfg, "HAC_FAST_FACTOR", 0.0) or 0.0) > 1.0
-            or getattr(cfg, "HAC_ENVELOPE", False)):
+            or getattr(cfg, "HAC_ENVELOPE", False)
+            or getattr(cfg, "HAC_ENERGY_SPEED", False)):
         floor = min(floor, float(cfg.HAC_FAST_ALPHA_MIN_DEG))
     alpha = vec.clamp(alpha, floor, cfg.HAC_ALPHA_MAX_DEG)
 

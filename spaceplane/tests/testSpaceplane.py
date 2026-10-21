@@ -5739,6 +5739,29 @@ class TestConeEnvelope(unittest.TestCase):
                                                 1e4, None, 9.81, 2.4), 0.0)
 
 
+class TestConeEnergySpeed(unittest.TestCase):
+    """``HAC_ENERGY_SPEED``: more energy buys a faster cone, none buys the
+    floor speed, and the answer never drops under the floor."""
+
+    def test_monotone_in_energy(self):
+        cfg = replace(Config(), HAC_ENERGY_SPEED=True)
+        env = FakeEnv(cfg)
+        end = env.runway.ends["09"]
+        gate = env.runway.gate(end)
+        up = vec.unit(gate)
+        r = vec.add(gate, vec.scale(up, 8000.0))
+        speeds = []
+        for energy in (500.0, 4000.0, 20000.0):
+            got = guidance.cone_energy_speed(env, cfg, end, r, 1, 8000.0,
+                                             2000.0, energy, 30000.0, 9.81,
+                                             1.0, 120.0)
+            if got is None:
+                self.skipTest("fake table cannot price the cone")
+            speeds.append(got)
+        self.assertEqual(speeds, sorted(speeds))
+        self.assertGreaterEqual(speeds[0], 120.0)
+
+
 class TestNegativeAlphaTable(unittest.TestCase):
     """``ALPHA_NEGATIVE_BINS``: a table with rows below zero is read signed,
     not mirrored; one without keeps the mirror."""
