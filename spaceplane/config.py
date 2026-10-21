@@ -2741,6 +2741,14 @@ class Config:
     # roll and yaw input's torque.  Pitch +1 is nose-up, which is raw -x
     # (measured 2026-10-21); roll and yaw: see the journal's measurement.
     SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, 1.0, 1.0)
+    # **The stall is the trimmed lift** (``Autopilot.trimmed_lift``): the
+    # most lift the vehicle can hold at Mach 0.25 with its pitching moment
+    # cancelled by its own surfaces within their travel, measured in vacuum
+    # with the surface sweep, in place of ``airframe.MARGIN``'s flat 0.70.
+    # An alpha counts as trimmed when the moment left is under this share.
+    STALL_TRIMMED: bool = False
+    STALL_TRIMMED_ALT_M: float = 200.0
+    STALL_TRIMMED_TOL: float = 0.02
 
     # -- the loop ----------------------------------------------------------
     TICK_S: float = 0.1

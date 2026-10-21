@@ -74,13 +74,22 @@ class Airframe:
                 "at %.0f deg and %.1f m/s"
                 % (self.stall_speed, self.max_cla,
                    100.0 * (1.0 - self.discount),
-                   "measured off this vehicle" if self.measured_discount
+                   "trimmed on this vehicle's own surfaces"
+                   if self.measured_discount
                    else "from MARGIN, nothing measured yet",
                    self.best_ld, self.best_alpha, self.best_speed))
 
 
-def measure(env, mass, gravity, altitude=0.0):
+def measure(env, mass, gravity, altitude=0.0, trimmed_cla=None):
     """Read the subsonic polar out of ``env`` and reduce it to four numbers.
+
+    ``trimmed_cla`` (``STALL_TRIMMED``): the most lift the vehicle can make
+    *with its pitching moment trimmed out* by its own surfaces
+    (``Autopilot.measure_surfaces``).  When given, it is the stall's lift
+    and ``MARGIN`` is not used: the table is probed with every surface at
+    neutral, so its peak is lift the vehicle can only hold if nothing has
+    to trim it, and ``MARGIN`` was one airframe's ratio standing in for
+    that calculation.
 
     ``mass`` is the mass the *landing* is flown at -- the drained one -- not
     whatever is aboard now: the stall speed of a vehicle carrying 2.8 t of
@@ -115,11 +124,15 @@ def measure(env, mass, gravity, altitude=0.0):
     alpha, ratio, cla = best
     weight = mass * gravity
     discount = MARGIN
+    measured = False
+    if trimmed_cla is not None and trimmed_cla > 0.0:
+        discount = trimmed_cla / peak
+        measured = True
     stall = math.sqrt(2.0 * weight / (rho * peak * discount))
     glide = math.sqrt(2.0 * weight / (rho * cla))
     return Airframe(stall_speed=stall, best_ld=ratio, best_alpha=alpha,
                     best_speed=glide, max_cla=peak, discount=discount,
-                    measured_discount=False,
+                    measured_discount=measured,
                     stall_alpha=peak_alpha)
 
 

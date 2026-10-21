@@ -2700,8 +2700,11 @@ class Autopilot:
         """
         mass = snap.mass
         try:
-            measured = airframe.measure(self.env, mass,
-                                        self.surface_gravity)
+            measured = airframe.measure(
+                self.env, mass, self.surface_gravity,
+                trimmed_cla=(getattr(self, "_trimmed_cla", None)
+                             if getattr(self.cfg, "STALL_TRIMMED", False)
+                             else None))
         except Exception as exc:                            # noqa: BLE001
             self.airframe = airframe.Airframe()
             self.logbook.event(snap.ut, "airframe: could not be read (%r)"
@@ -6618,9 +6621,10 @@ class Autopilot:
                 and self.state in (GLIDE, HAC, APPROACH, FLARE))
 
     def _probe_torques(self, states):
-        """The aerodynamic torque per unit q, in body components
-        ``(right, nose, belly)``, at each synthetic ``(alt, speed, alpha)``
-        state, the attitude and surfaces as they are now -- one batch."""
+        """``(torque, lift)`` per unit q at each synthetic ``(alt, speed,
+        alpha)`` state, the attitude and surfaces as they are now, in one
+        batch: the torque in body components ``(right, nose, belly)``, the
+        lift along the pitch plane's normal (``ClA``)."""
         env = self.env
         nose, dorsal = env._axes()
         if nose is None:
@@ -6645,11 +6649,16 @@ class Autopilot:
         got = krpcbatch.ask(self.conn, calls,
                             batched=getattr(self.cfg, "RPC_BATCH", False))
         out = []
-        for w, q in zip(got, qs):
+        for w, q, (_, _, alpha_deg) in zip(got, qs, states):
             if w is None or q <= 0.0:
                 out.append(None)
-            else:
-                out.append(tuple(c / q for c in allocate.body(w[1], axes)))
+                continue
+            a = math.radians(alpha_deg)
+            flow = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
+                                    vec.scale(dorsal, math.sin(a))))
+            lift_dir = vec.unit(vec.project_out(dorsal, flow))
+            out.append((tuple(c / q for c in allocate.body(w[1], axes)),
+                        vec.dot(w[0], lift_dir) / q))
         return out
 
     def measure_surfaces(self, snap):
@@ -6667,7 +6676,8 @@ class Autopilot:
         elevons, elevons and rudders, ruddervators -- whatever the craft
         has, measured.  ~2 game-s per surface, which only the vacuum can
         afford."""
-        if not getattr(self.cfg, "SURFACE_OWN", False) or getattr(
+        if not (getattr(self.cfg, "SURFACE_OWN", False)
+                or getattr(self.cfg, "STALL_TRIMMED", False)) or getattr(
                 self, "_surfaces_measured", False) or not self.env.ready():
             return
         try:
@@ -6690,6 +6700,15 @@ class Autopilot:
                         mach * env.speed_of_sound(alt))
             rows.append((mach, alt, speed))
         states = [(alt, speed, a) for _, alt, speed in rows for a in alphas]
+        # ``STALL_TRIMMED``'s sweep: every positive alpha of the table at
+        # the landing's air, the same air ``airframe.measure`` reads.
+        trim_alt = float(self.cfg.STALL_TRIMMED_ALT_M)
+        trim_speed = max(float(self.cfg.PROBE_SPEED_FLOOR),
+                         airframe.SEA_LEVEL_MACH
+                         * env.speed_of_sound(trim_alt))
+        trim_alphas = [a for a in env._alphas if a >= 0.0]
+        trim_states = [(trim_alt, trim_speed, a) for a in trim_alphas]
+        n_main = len(states)
         settle = float(self.cfg.AIRBRAKE_MEASURE_SETTLE_S)
         neutral = 0.003     # exactly 0 freezes a surface (canard_trim)
         try:
@@ -6697,26 +6716,36 @@ class Autopilot:
             for cs in surfaces:
                 cs.deflection_override = True
                 cs.deflection = neutral
-            found = []
+            self.settle_game(settle)
+            base = self._probe_torques(trim_states)
+            found, trim_cols = [], []
             for cs in surfaces:
                 got = {}
                 for d in (1.0, -1.0):
                     cs.deflection = d
                     self.settle_game(settle)
-                    got[d] = self._probe_torques(states)
+                    got[d] = self._probe_torques(states + trim_states)
                 cs.deflection = neutral
                 if not got[1.0] or not got[-1.0]:
                     continue
+
+                def half(a, b):
+                    if a is None or b is None:
+                        return None
+                    return (vec.scale(vec.sub(a[0], b[0]), 0.5),
+                            0.5 * (a[1] - b[1]))
                 table = []
                 for k in range(len(rows)):
                     row = []
                     for j in range(len(alphas)):
-                        a = got[1.0][k * len(alphas) + j]
-                        b = got[-1.0][k * len(alphas) + j]
-                        row.append(None if a is None or b is None else
-                                   vec.scale(vec.sub(a, b), 0.5))
+                        h = half(got[1.0][k * len(alphas) + j],
+                                 got[-1.0][k * len(alphas) + j])
+                        row.append(None if h is None else h[0])
                     table.append(row)
                 found.append((cs, table))
+                trim_cols.append([half(got[1.0][n_main + j],
+                                       got[-1.0][n_main + j])
+                                  for j in range(len(trim_alphas))])
             for cs in surfaces:
                 cs.deflection_override = False
         except Exception as exc:                        # noqa: BLE001
@@ -6726,7 +6755,9 @@ class Autopilot:
             return
         self._surface_machs = tuple(r[0] for r in rows)
         self._surface_alphas = alphas
-        self._surfaces = found
+        self._surfaces = found if getattr(self.cfg, "SURFACE_OWN", False) \
+            else []
+        self.trimmed_lift(snap, trim_alphas, base, trim_cols)
         self._surface_defl = [0.0] * len(found)
         for cs, table in found:
             try:
@@ -6743,6 +6774,53 @@ class Autopilot:
                 snap.ut, "surface %s at (%+.1f, %+.1f, %+.1f): m^3 per unit "
                          "(right/nose/belly) at alpha %g: %s"
                 % (title, x, y, z, alphas[0], "  ".join(cells)))
+
+    def trimmed_lift(self, snap, alphas, base, cols):
+        """``STALL_TRIMMED``: the most lift the vehicle can hold with its
+        pitching moment trimmed out by its own surfaces, in the landing's
+        air -- the stall's lift, measured instead of ``MARGIN``.
+
+        At each alpha the surfaces are allocated (``allocate.solve``, each
+        within its travel) to cancel the airframe's moment on all three
+        axes; the alpha counts only if the moment is cancelled, and the
+        lift it yields includes what those deflections add or take away.
+        The table's peak is lift at neutral surfaces, which a vehicle with
+        a moment to trim never flies: the twin-fin shuttle's cone flies
+        ~139 m^2 against a table of ~300."""
+        rows = []
+        best = None
+        for j, alpha in enumerate(alphas):
+            if base is None or base[j] is None:
+                continue
+            moment, lift = base[j]
+            columns, dlift = [], []
+            for c in cols:
+                if c[j] is None:
+                    columns.append((0.0, 0.0, 0.0))
+                    dlift.append(0.0)
+                else:
+                    columns.append(c[j][0])
+                    dlift.append(c[j][1])
+            n = len(columns)
+            steps, made = allocate.solve(columns, vec.scale(moment, -1.0),
+                                         [-1.0] * n, [1.0] * n, reg=1e-6)
+            left = vec.norm(vec.add(moment, made))
+            ok = left <= float(self.cfg.STALL_TRIMMED_TOL) * max(
+                1.0, vec.norm(moment))
+            held = lift + sum(s * dl for s, dl in zip(steps, dlift))
+            rows.append("%g:%.0f%s" % (alpha, held, "" if ok else "x"))
+            if ok and (best is None or held > best[1]):
+                best = (alpha, held)
+        self._trimmed_cla = best[1] if best else None
+        self.logbook.event(
+            snap.ut, "trimmed lift (ClA, m^2) at Mach %.2f by alpha, x = "
+                     "cannot be trimmed: %s -> max %s"
+            % (airframe.SEA_LEVEL_MACH, " ".join(rows) or "-",
+               "%.1f at %g deg" % (best[1], best[0]) if best else "none"))
+        if best and getattr(self.cfg, "STALL_TRIMMED", False):
+            # Re-read the airframe on the trimmed lift; the landing's own
+            # reading (``landing=True``) takes it the same way.
+            self.report_airframe(snap)
 
     def surface_columns(self, mach, alpha_deg, q_dyn):
         """Each measured surface's torque per unit deflection (N m, body

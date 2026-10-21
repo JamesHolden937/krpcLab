@@ -120,3 +120,34 @@ class TestOwnAttitude(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTrimmedLift(unittest.TestCase):
+    def run_trim(self, base, cols):
+        cfg = Config()
+        seen = {}
+        s = SimpleNamespace(cfg=cfg, logbook=SimpleNamespace(
+            event=lambda ut, text: seen.setdefault("line", text)))
+        ap.Autopilot.trimmed_lift(s, None if False else
+                                  SimpleNamespace(ut=0.0), [10.0, 20.0, 30.0],
+                                  base, cols)
+        return s._trimmed_cla, seen["line"]
+
+    def test_trim_costs_lift_and_an_untrimmable_alpha_does_not_count(self):
+        # Nose-down moment growing with alpha (raw +x); one aft elevon whose
+        # +1 is nose-up (-x, 10 m^3) and spoils 5 m^2 of lift.
+        base = [((4.0, 0.0, 0.0), 100.0), ((8.0, 0.0, 0.0), 150.0),
+                ((20.0, 0.0, 0.0), 190.0)]
+        cols = [[((-10.0, 0.0, 0.0), -5.0)] * 3]
+        cla, line = self.run_trim(base, cols)
+        # 20 deg: 0.8 of travel, 150 - 4 = 146; 30 deg needs 2.0: refused.
+        self.assertAlmostEqual(cla, 146.0, places=3)
+        self.assertIn("30:", line)
+        self.assertIn("x", line.split("30:")[1].split()[0])
+
+    def test_a_neutral_craft_keeps_its_table_lift(self):
+        base = [((0.0, 0.0, 0.0), 100.0), ((0.0, 0.0, 0.0), 150.0),
+                ((0.0, 0.0, 0.0), 190.0)]
+        cols = [[((-10.0, 0.0, 0.0), -5.0)] * 3]
+        cla, _ = self.run_trim(base, cols)
+        self.assertAlmostEqual(cla, 190.0, places=6)
