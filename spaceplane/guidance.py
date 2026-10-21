@@ -1251,7 +1251,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # the threshold slows toward best glide and stretches; judged at the
     # approach's 4.2 the divert fired 140-320 m of height "short" at
     # h=1400-1800 on four flights that all touched down past the threshold
-    # (orbits2-1021, LOG13427, 13431, 13438, 13440).
+    # (orbits2-1021, LOG13427, 13429, 13431, 13440).
     reach_ld = clean_ld
     if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
         reach_ld = max(clean_ld, airframe.glide_ld(env, cfg))

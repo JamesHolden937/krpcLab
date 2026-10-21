@@ -5071,7 +5071,8 @@ class TestTheThresholdReachIsOnTheCleanRatio(unittest.TestCase):
 
     def test_the_source_divides_by_the_clean_ratio(self):
         src = inspect.getsource(guidance.approach)
-        self.assertIn("to_threshold / max(0.1, clean_ld)", src)
+        self.assertIn("reach_ld = clean_ld", src)
+        self.assertIn("to_threshold / max(0.1, reach_ld)", src)
 
 
 class TestTheFlareDoorIsOneTheVehicleCanArrestFrom(unittest.TestCase):
