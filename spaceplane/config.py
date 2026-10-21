@@ -2738,9 +2738,11 @@ class Config:
     SURFACE_OWN_MAX_STEP: float = 0.5    # deflection per tick
     SURFACE_OWN_REG: float = 1e-3        # allocation damping, scale-free
     # The raw body-axis sense (right, nose, belly) of a positive pitch,
-    # roll and yaw input's torque.  Pitch +1 is nose-up, which is raw -x
-    # (measured 2026-10-21); roll and yaw: see the journal's measurement.
-    SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, 1.0, 1.0)
+    # roll and yaw input's torque, each about its own axis.  Measured in
+    # vacuum on qs_cargo_rigoff (2026-10-21, rate change after 1 s at +1):
+    # pitch -0.021 about right, roll -0.055 about nose, yaw -0.021 about
+    # belly -- all negative.
+    SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, -1.0, -1.0)
     # **The stall is the trimmed lift** (``Autopilot.trimmed_lift``): the
     # most lift the vehicle can hold at Mach 0.25 with its pitching moment
     # cancelled by its own surfaces within their travel, measured in vacuum
