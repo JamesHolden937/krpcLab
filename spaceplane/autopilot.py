@@ -6518,6 +6518,7 @@ class Autopilot:
         # vehicle, so it belongs where the state is authoritative.
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
+        self.measure_canards(snap)
         self.retune_attitude(snap)
         handler(snap)
         self.pitch_assist(snap)
@@ -6585,7 +6586,7 @@ class Autopilot:
             # input becomes the trim the flare/rollout law decays from.
             self._pitch_owned_on = False
             self._own_ttp()
-            self._pitch_assist = getattr(self, "_pitch_assist_sent", 0.0)
+            self.release_canards(snap)
             self.logbook.event(snap.ut, "pitch handed back to kRPC in %s"
                                % self.state)
         if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
@@ -6613,9 +6614,99 @@ class Autopilot:
                 pass
 
     def pitch_owned(self):
-        """``PITCH_OWN``: the client flies the pitch axis, GLIDE to FLARE."""
-        return bool(getattr(self.cfg, "PITCH_OWN", False)) and self.state in (
-            GLIDE, HAC, APPROACH, FLARE)
+        """``PITCH_OWN``: the client flies the pitch axis, GLIDE to FLARE,
+        on a canard pair whose power was measured (``measure_canards``)."""
+        return (bool(getattr(self.cfg, "PITCH_OWN", False))
+                and bool(getattr(self, "_canard_power", None))
+                and self.state in (GLIDE, HAC, APPROACH, FLARE))
+
+    def measure_canards(self, snap):
+        """``PITCH_OWN``: the canards' pitching moment per unit deflection,
+        per Mach row, once, in vacuum before the burn.
+
+        **Client control inputs do not reach the vessel while kRPC's
+        autopilot is engaged** (measured on qs_shuttle2_gate: client pitch
+        -0.5, 0 and +0.5 gave the same alpha and kRPC's read-back), so the
+        pitch the client can own is a surface it overrides directly -- the
+        canard pair, as ``CANARD_TRIM`` drives it.  Each Mach row's
+        synthetic airflow is probed with the canards at +1 and -1; the
+        weaker side, per unit q (m^3), is their power.  Blocks ~2 s of game
+        time, which only the vacuum can afford."""
+        if not getattr(self.cfg, "PITCH_OWN", False) or getattr(
+                self, "_canards_measured", False) or not self.env.ready():
+            return
+        try:
+            if self.conn.krpc.paused:
+                return
+        except Exception:                               # noqa: BLE001
+            pass
+        self._canards_measured = True
+        self._canard_power = []
+        if snap.dynamic_pressure > 1.0:
+            self.logbook.event(snap.ut, "canard power: engaged in the air "
+                                        "(q=%.0f Pa) -- not measured, pitch "
+                                        "stays on kRPC" % snap.dynamic_pressure)
+            return
+        pair = getattr(self, "_canards", None)
+        if pair is None:
+            pair = self._canards = self._find_canards(snap)
+        if not pair:
+            return
+        env = self.env
+        rows = []
+        for mach, alt in zip(env._machs, env._probe_alt):
+            speed = max(float(self.cfg.PROBE_SPEED_FLOOR),
+                        mach * env.speed_of_sound(alt))
+            alpha = float(self.cfg.PITCH_OWN_PROBE_ALPHA_DEG) if mach >= 1.0 \
+                else float(self.cfg.PITCH_OWN_PROBE_ALPHA_SUB_DEG)
+            rows.append((mach, alt, speed, alpha))
+        got = {}
+        try:
+            for d in (0.003, 1.0, -1.0):
+                for cs in pair:
+                    cs.deflection_override = True
+                    cs.deflection = d
+                self.settle_game(float(self.cfg.AIRBRAKE_MEASURE_SETTLE_S))
+                got[d] = [self._probe_wrench(alt, speed, alpha)
+                          for _, alt, speed, alpha in rows]
+            for cs in pair:
+                cs.deflection = 0.003
+                cs.deflection_override = False
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(snap.ut, "canard power: failed (%s: %s) -- "
+                               "pitch stays on kRPC" % (type(exc).__name__,
+                                                        exc))
+            return
+        power = []
+        for k, (mach, _, _, alpha) in enumerate(rows):
+            try:
+                zero, plus, minus = (got[0.003][k][1], got[1.0][k][1],
+                                     got[-1.0][k][1])
+            except (TypeError, IndexError):
+                continue
+            # ``_probe_wrench``'s CmA is the raw torque about +x, which is
+            # nose-down; the canards' +1 is nose-up.
+            side = min(zero - plus, minus - zero)
+            if side > 0.0:
+                power.append((mach, side))
+        self._canard_power = power
+        self.logbook.event(snap.ut, "canard power (m^3 per unit, nose-up): %s"
+                           % (" ".join("M%.1f:%.1f" % mp for mp in power)
+                              or "none measured -- pitch stays on kRPC"))
+
+    def canard_power(self, mach):
+        """The measured canard power at ``mach`` (m^3 per unit), linear
+        between rows and held at the ends; ``None`` when unmeasured."""
+        rows = getattr(self, "_canard_power", None)
+        if not rows:
+            return None
+        if mach <= rows[0][0]:
+            return rows[0][1]
+        for (m0, p0), (m1, p1) in zip(rows, rows[1:]):
+            if mach <= m1:
+                f = (mach - m0) / (m1 - m0) if m1 > m0 else 0.0
+                return p0 + f * (p1 - p0)
+        return rows[-1][1]
 
     def _owned_ttp(self, want):
         """kRPC's ``time_to_peak`` with pitch slowed to
@@ -6654,39 +6745,43 @@ class Autopilot:
         return vec.unit(flat)
 
     def own_pitch(self, snap, error):
-        """``PITCH_OWN``: the pitch input by incremental dynamic inversion.
+        """``PITCH_OWN``: the canards fly pitch by incremental dynamic
+        inversion on the game's live aerodynamic moment.
 
-        kRPC's attitude controller is tuned for a pure inertia (gains from
-        the moment of inertia and the available torque only) and closes a
-        rate loop with an integrator, so it cannot see an airframe's
-        pitching moment and it cancels any faster client input as a
-        disturbance.  The cargo shuttle (``qs_cargo_rigoff``) is divergent
-        between ~10 and ~28 deg hypersonically and limit-cycled through that
-        band on 12/12 (rot-cargo-1021); a stiffness term added on top of
-        kRPC was fought back to zero total input (rot-aug-1021, 6/6 lost).
-
-        So the axis is owned.  Each tick the game is asked for the
-        aerodynamic moment at the vehicle's actual state -- CoM, surface
-        deflection, Mach, body rates (``simulate_aerodynamic_wrench_at``)
-        -- and the input moves by what turns it into the moment the target
+        kRPC's attitude controller is tuned for a pure inertia and cannot
+        see an airframe's pitching moment, and client inputs do not reach a
+        vessel it flies.  The cargo shuttle (``qs_cargo_rigoff``) is
+        divergent between ~10 and ~28 deg hypersonically and limit-cycled
+        through that band on 12/12 (rot-cargo-1021).  So kRPC's pitch is
+        slowed to ~0 gain (``_owned_ttp``) and given no pitch error
+        (``krpc_nose``), and the canards -- overridden, which kRPC does
+        respect -- carry the axis.  Each tick the game is asked for the
+        aerodynamic moment at the vehicle's actual state (CoM, every
+        surface's deflection including the canards', Mach, body rates), and
+        the canards move by what turns it into the moment the target
         response needs:
 
             qdot_d = w^2 e - 2 zeta w q          (e: pitch error, q: rate)
-            u     += (I qdot_d - M_now) / M_delta
+            delta += (I qdot_d - M_now) / (P(Mach) q_dyn)
 
-        with ``M_now`` the aero moment plus RCS at the present input and
-        ``M_delta`` the surfaces' pitch torque per unit input (plus RCS
-        while the valve is open).  Nothing about the airframe's stability is
-        modelled: stable, neutral and divergent craft are the same law.
-        Raw torque about +x is nose-down (``tools/stiffprobe.py``); +pitch
-        input is nose-up and ``(w x nose).roof`` the nose-up rate, both
-        measured in game."""
+        with P the canards' measured power (``measure_canards``).  Nothing
+        about the airframe's stability is modelled: stable, neutral and
+        divergent craft are the same law.  Raw torque about +x is
+        nose-down (``tools/stiffprobe.py``); ``(w x nose).roof`` is the
+        nose-up rate, measured in game."""
         cfg = self.cfg
+        pair = getattr(self, "_canards", None) or []
         if not getattr(self, "_pitch_owned_on", False):
             self._pitch_owned_on = True
             self._own_ttp()
+            self._own_defl = 0.0
+            try:
+                for cs in pair:
+                    cs.deflection_override = True
+            except Exception:                           # noqa: BLE001
+                pass
             self.logbook.event(
-                snap.ut, "pitch owned by the client in %s (w %.2f rad/s, "
+                snap.ut, "pitch owned on the canards in %s (w %.2f rad/s, "
                          "zeta %.2f; kRPC pitch time_to_peak %.0f s)"
                 % (self.state, float(cfg.PITCH_OWN_W_RAD_S),
                    float(cfg.PITCH_OWN_ZETA),
@@ -6697,47 +6792,73 @@ class Autopilot:
         omega = getattr(snap, "angular_velocity", ())
         roof = getattr(snap, "roof", ())
         nose = getattr(snap, "nose", ())
+        q_dyn = snap.dynamic_pressure
         if error is None or len(right) != 3 or len(rot) != 4 \
-                or len(omega) != 3 or len(roof) != 3 or len(nose) != 3:
+                or len(omega) != 3 or len(roof) != 3 or len(nose) != 3 \
+                or q_dyn < float(cfg.PITCH_OWN_MIN_Q_PA):
+            return
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                               # noqa: BLE001
+            return
+        power = self.canard_power(mach)
+        if not power:
             return
         cache = getattr(self, "_own_cache", None)
         if cache is None or snap.ut < cache[0] or snap.ut - cache[0] >= float(
                 cfg.PITCH_OWN_REFRESH_S):
             try:
                 inertia = float(self.vessel.moment_of_inertia[0])
-                surf = abs(float(
-                    self.vessel.available_control_surface_torque[0][0]))
-                rcs_t = abs(float(self.vessel.available_rcs_torque[0][0]))
             except Exception:                           # noqa: BLE001
                 return
-            cache = self._own_cache = (snap.ut, inertia, surf, rcs_t)
-        _, inertia, surf, rcs_t = cache
+            cache = self._own_cache = (snap.ut, inertia)
+        inertia = cache[1]
         try:
             _, torque = self.env.flight.simulate_aerodynamic_wrench_at(
                 self.env.body, tuple(snap.position), tuple(snap.velocity),
                 tuple(rot), tuple(omega), snap.ut)
         except Exception:                               # noqa: BLE001
             return
-        valve = bool(getattr(self.rcs, "on", False))
-        total = float(getattr(snap, "pitch_input", 0.0) or 0.0)
-        m_aero = -vec.dot(torque, right)
-        m_now = m_aero + (rcs_t * total if valve else 0.0)
-        authority = surf + (rcs_t if valve else 0.0)
+        m_now = -vec.dot(torque, right)
         rate = vec.dot(vec.cross(omega, nose), roof)
         w = float(cfg.PITCH_OWN_W_RAD_S)
         zeta = float(cfg.PITCH_OWN_ZETA)
-        e = math.radians(error)
-        want = inertia * (w * w * e - 2.0 * zeta * w * rate)
-        if authority <= 1.0:
-            return
-        du = (want - m_now) / authority
-        target = vec.clamp(total + du, -1.0, 1.0)
-        sent = getattr(self, "_pitch_assist_sent", 0.0)
-        # kRPC's residual pitch output is the read-back less our own.
-        self._send_pitch(target - (total - sent))
-        self._pitch_assist = getattr(self, "_pitch_assist_sent", 0.0)
-        self._own_line = (math.degrees(rate), m_aero / 1000.0,
-                          authority / 1000.0, du)
+        want = inertia * (w * w * math.radians(error)
+                          - 2.0 * zeta * w * rate)
+        step = (want - m_now) / (power * q_dyn)
+        hi = 1.0
+        try:
+            # The canards' own stall, as ``canard_trim`` caps it.
+            hi = max(0.0, min(1.0, (float(cfg.CANARD_TRIM_LOCAL_MAX_DEG)
+                                    - max(0.0, float(snap.krpc_aoa)))
+                              / 37.5))
+        except (TypeError, ValueError):
+            pass
+        defl = vec.clamp(self._own_defl + step, -1.0, hi)
+        cmd = float(cfg.CANARD_TRIM_SIGN) * defl
+        if abs(cmd) < 0.003:
+            cmd = 0.003     # exactly 0 freezes the surface (canard_trim)
+        if abs(cmd - getattr(self, "_own_sent", 1e9)) > 0.004:
+            try:
+                for cs in pair:
+                    cs.deflection = cmd
+                self._own_sent = cmd
+            except Exception:                           # noqa: BLE001
+                return
+        self._own_defl = defl
+        self._own_line = (math.degrees(rate), m_now / 1000.0,
+                          power * q_dyn / 1000.0, defl)
+
+    def release_canards(self, snap):
+        """Hand the canards back to kRPC (``PITCH_OWN`` leaving the air)."""
+        try:
+            for cs in getattr(self, "_canards", None) or []:
+                cs.deflection = 0.003
+                cs.deflection_override = False
+        except Exception:                               # noqa: BLE001
+            pass
 
     def glide_pitch_offload(self, snap):
         """``GLIDE_PITCH_OFFLOAD``: carry the glide's *standing* pitch input
@@ -6877,7 +6998,8 @@ class Autopilot:
         """``CANARD_TRIM``: carry the standing pitch moment on the canards,
         driven directly, so neither kRPC's integrators nor the elevons' travel
         hold it (config).  Every other surface stays on kRPC."""
-        if not getattr(self.cfg, "CANARD_TRIM", False):
+        if not getattr(self.cfg, "CANARD_TRIM", False) or getattr(
+                self.cfg, "PITCH_OWN", False):
             return
         pair = getattr(self, "_canards", None)
         if pair is None:
@@ -7462,8 +7584,8 @@ def compact_line(state, snap, run):
         "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
                                 getattr(snap, "roll_input", 0.0) or 0.0),
         ] + ([] if getattr(run, "_own_line", None) is None else [
-        # ``PITCH_OWN``: nose-up rate deg/s, the aero moment and the pitch
-        # authority (kN m), and the input step the inversion took.
+        # ``PITCH_OWN``: nose-up rate deg/s, the live aero moment and the
+        # canards' authority (kN m), and the canard deflection.
         "own=%+5.1f/%+6.0f/%5.0f/%+5.2f" % run._own_line,
         ]) + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
         # ``CANARD_TRIM``: the canards' commanded trim (fraction of travel,

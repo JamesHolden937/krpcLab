@@ -2720,16 +2720,22 @@ class Config:
     # 0 lights at the impulsive point.
     DEORBIT_BURN_LEAD_SHARE: float = 0.5
     GLIDE_TICK_S: float = 1.0
-    # **The client owns the pitch axis** (``Autopilot.own_pitch``),
-    # GLIDE to FLARE, by incremental dynamic inversion on the game's own
-    # live aerodynamic moment; kRPC keeps roll and yaw.  w and zeta are the
-    # response asked of every airframe; the tick has to be well inside 1/w.
+    # **The client owns the pitch axis on the canards**
+    # (``Autopilot.own_pitch``), GLIDE to FLARE, by incremental dynamic
+    # inversion on the game's own live aerodynamic moment; kRPC keeps roll
+    # and yaw.  Client control inputs never reach a vessel kRPC is flying,
+    # so the canards are overridden directly.  w and zeta are the response
+    # asked of every airframe; the tick has to be well inside 1/w.  The
+    # canards' power is probed in vacuum at these angles of attack.
     PITCH_OWN: bool = False
     PITCH_OWN_W_RAD_S: float = 0.8
     PITCH_OWN_ZETA: float = 0.8
     PITCH_OWN_TICK_S: float = 0.2        # the glide's tick while owning
     PITCH_OWN_KRPC_TTP_S: float = 60.0   # kRPC's pitch tune, ~0 gain
-    PITCH_OWN_REFRESH_S: float = 1.0     # inertia and torques, re-read
+    PITCH_OWN_REFRESH_S: float = 1.0     # inertia, re-read
+    PITCH_OWN_MIN_Q_PA: float = 20.0
+    PITCH_OWN_PROBE_ALPHA_DEG: float = 20.0
+    PITCH_OWN_PROBE_ALPHA_SUB_DEG: float = 10.0
 
     # -- the loop ----------------------------------------------------------
     TICK_S: float = 0.1
