@@ -68,6 +68,18 @@ alternative is keeping kRPC for roll/yaw and owning only pitch by
 override of pitch-only surfaces -- but that fails a craft with one set of
 elevons (the user's point).
 
+**Is the unstable band flyable?** Yes, once a controller owns pitch: the
+divergence is mild (e-fold ~5 s at Mach 5, slower at lower q) against
+canard power ~36 m^3/unit (band swing ~13 m^3), and stepbench's pitch axis
+already settles.  A cheaper interim: keep the glide's alpha out of the band
+(>= ~28 deg hypersonically, stable there) -- not general, but would fly the
+cargo craft.  The user's last instruction was to continue on roll; the
+next step was logging INDI internals per tick on the bench (want / in hand
+/ allocated per axis) to see why roll spins.
+
+**Not done at wrap-up:** the how-it-works PDF was not rewritten for
+`VACUUM_SURFACE_HOLD` (the only default that changed behaviour, cosmetic).
+
 **Also new:** `STALL_TRIMMED` (off, unflown) -- the stall from the most
 lift the vehicle can hold trimmed by its own surfaces, replacing
 `airframe.MARGIN` 0.70.  Its sweep says the shuttle trims only to 2 deg at
