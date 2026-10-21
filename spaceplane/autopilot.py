@@ -6531,24 +6531,11 @@ class Autopilot:
             vec.dot(vec.unit(nose), vec.unit(roof)), -1.0, 1.0)))
 
     def pitch_assist(self, snap):
-        """``PITCH_ASSIST``: a manual pitch input, integrated on the pitch
-        pointing error, added to kRPC's attitude controller (kRPC sums the
-        two).
-
-        kRPC's loop leaves a standing pitch error against the airframe's
-        restoring moment that grows with dynamic pressure; its integral runs
-        on a clock scaled to an available torque the surfaces do not deliver.
-        This is the missing integral, on **the error kRPC's own loop is
-        closing** -- the commanded nose against the roof -- so the two share
-        one zero (integrated on commanded minus kRPC's signed alpha instead,
-        it chased a 2 deg difference between that angle and the nose kRPC
-        was holding, and the two integrators wound each other to +-1, sim
-        LOG4680).  Errors inside ``PITCH_ASSIST_DEADBAND_DEG`` are kRPC's
-        attenuation band and are left to it (integrating them wound the trim
-        to +1 against kRPC's -0.8, LOG4695).  Rate: the error past the band
-        over ``PITCH_ASSIST_FULL_DEG * pitch time_to_peak``, held while the
-        total input is saturated the same way.  HAC, APPROACH and FLARE; it
-        decays over the same time in ROLLOUT and is zero elsewhere."""
+        """Each tick's attitude hook: logs the pitch pointing error and,
+        under ``SURFACE_OWN``, flies the attitude (``own_attitude``) or
+        hands it back to kRPC when the owned phases end.  (Client pitch
+        inputs never reach a vessel kRPC is flying, so there is no manual
+        trim to add on top of kRPC.)"""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
         if self.surfaces_owned():
@@ -6556,29 +6543,6 @@ class Autopilot:
             return
         if getattr(self, "_surfaces_on", False):
             self.release_surfaces(snap)
-        if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
-                self.state == GLIDE or (getattr(self, "_offload_live", False)
-                                        and self.state not in (FLARE,
-                                                               ROLLOUT))):
-            self.glide_pitch_offload(snap)
-            return
-        if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
-            self.flare_pitch_p(snap, error)
-            return
-        return
-
-    def _send_pitch(self, value):
-        """The client's pitch input; kRPC sums it with its own output.
-        Sent only when it moves, and once more on the way to zero, so an
-        idle trim costs no calls."""
-        value = vec.clamp(value, -1.0, 1.0)
-        sent = getattr(self, "_pitch_assist_sent", 0.0)
-        if abs(value - sent) > 0.002 or (value == 0.0 and sent):
-            try:
-                self.control.pitch = value
-                self._pitch_assist_sent = value
-            except Exception:                           # noqa: BLE001
-                pass
 
     def hold_vacuum_surfaces(self, snap):
         """``VACUUM_SURFACE_HOLD``: every control surface at neutral while
@@ -7007,73 +6971,6 @@ class Autopilot:
         self.logbook.event(snap.ut, "attitude handed back to kRPC in %s"
                            % self.state)
 
-    def glide_pitch_offload(self, snap):
-        """``GLIDE_PITCH_OFFLOAD``: carry the glide's *standing* pitch input
-        as a manual body-frame trim, so kRPC's loop keeps only the transient.
-
-        Holding 36 deg at 2-4 kPa takes the shuttle's whole pitch input, and
-        kRPC holds it in its integrators -- which run in a roll-invariant
-        frame (``kspSim/attitude.py``, from kRPC 0.6.0's
-        ``AttitudeController``) and are mapped back to the body through the
-        roll it has accumulated.  At the bank reversal near 38 km the long
-        arrivals of rot-lapstack-1006 drop from +1.0 of pitch to +0.4 and
-        stay there for 30 s against a 8-12 deg pitch error, with 8-10 deg of
-        sideslip, while the on-profile flights recover: the shape of a
-        wound-up pitch integral swung partly onto yaw.  A trim the client
-        sets is applied in the body frame, which a roll cannot rotate.
-
-        The law is the autopilot's trim offload: the trim moves toward the
-        total input the vessel is getting (kRPC's read-back is the sum) over
-        ``GLIDE_PITCH_OFFLOAD_TAU_S`` (0 = the pitch axis's own
-        time_to_peak), so kRPC's share decays to the transient and the
-        two loops share one zero.  Only while the roll is settled -- during a
-        reversal the total is kRPC's transient, not the airframe's moment.
-        After GLIDE it bleeds off over the same time and kRPC takes the
-        moment back."""
-        trim = getattr(self, "_pitch_assist", 0.0)
-        last = getattr(self, "_pitch_assist_ut", None)
-        self._pitch_assist_ut = snap.ut
-        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
-        tau = float(getattr(self.cfg, "GLIDE_PITCH_OFFLOAD_TAU_S", 0.0)) or (
-            self._tuned_peak[0] if getattr(self, "_tuned_peak", None)
-            else (getattr(self, "_static_peak", None) or (20.0,))[0])
-        k = min(1.0, dt / max(1.0, tau))
-        mach = None
-        floor = float(getattr(self.cfg, "GLIDE_PITCH_OFFLOAD_MIN_MACH", 0.0))
-        if floor > 0.0:
-            try:
-                mach = self.env.mach(vec.norm(snap.velocity),
-                                     vec.norm(snap.position)
-                                     - self.env.equatorial_radius)
-            except Exception:                           # noqa: BLE001
-                mach = None
-        if self.state == GLIDE and (mach is None or mach >= floor):
-            self._offload_live = True
-            total = getattr(snap, "pitch_input", None)
-            flown = flown_bank(snap)
-            cmd_bank = float(getattr(self, "commanded_bank", 0.0) or 0.0)
-            # A saturated read-back says "at least this much", not what the
-            # airframe needs: chasing it pinned the trim at 1.0 and left kRPC
-            # no nose-down authority -- 15 of 15 such flights departed at Mach
-            # 3-4 and arrived 1.4-17 km short; the 9 whose trim stayed at
-            # 0.59-0.90 all arrived within 1.7 km (rot-offload-1007).
-            settled = (total is not None and abs(float(total)) < 0.98
-                       and not math.isnan(flown)
-                       and abs(flown - cmd_bank)
-                       <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG)
-                       and snap.dynamic_pressure
-                       > self.cfg.LIFT_LOOP_MIN_Q_PA)
-            if settled:
-                cap = float(self.cfg.GLIDE_PITCH_OFFLOAD_MAX)
-                trim = vec.clamp(trim + k * (float(total) - trim), -cap, cap)
-        else:
-            trim -= trim * k
-            if abs(trim) < 0.005:
-                trim = 0.0
-                self._offload_live = False
-        self._send_pitch(trim)
-        self._pitch_assist = trim
-
     def fuel_to_nose(self, snap):
         """``FUEL_TO_NOSE``: once, on the first COAST tick, pump every
         propellant's tanks into its forward-most one (as much as it holds).
@@ -7272,32 +7169,6 @@ class Autopilot:
                 if ok else "no forward mirrored pair (%d forward) -- off"
                 % len(fwd)))
         return [f[0] for f in fwd] if ok else []
-
-    def flare_pitch_p(self, snap, error):
-        """``FLARE_PITCH_P``: manual pitch input proportional to the pitch
-        pointing error, FLARE only -- kRPC sums it with its own output.
-
-        The flare commands 7-12 deg and flies 2-3 at a flat +0.24-0.4 of
-        kRPC's input (LOG4927); the oscillation mitigation is not why
-        (rot-oscoff-1003), and a stiffer kRPC tune departs (rot-pfloor2-1003).
-        A proportional term has nothing to wind up, which is what sank
-        ``PITCH_ASSIST``.  Positive is nose-up: kRPC's own input is positive
-        on the same error.  Capped at ``FLARE_PITCH_P_MAX``; decays over
-        ``ROLLOUT_RAMP_S`` in ROLLOUT, zero elsewhere."""
-        trim = getattr(self, "_pitch_assist", 0.0)
-        last = getattr(self, "_pitch_assist_ut", None)
-        self._pitch_assist_ut = snap.ut
-        dt = 0.0 if last is None else max(0.0, min(1.0, snap.ut - last))
-        if self.state == FLARE and error is not None:
-            cap = float(self.cfg.FLARE_PITCH_P_MAX)
-            trim = vec.clamp(float(self.cfg.FLARE_PITCH_P) * error, -cap, cap)
-        elif self.state == ROLLOUT:
-            trim -= trim * min(1.0, dt / max(0.1, float(
-                self.cfg.ROLLOUT_RAMP_S)))
-        else:
-            trim = 0.0
-        self._send_pitch(trim)
-        self._pitch_assist = trim
 
     def retune_attitude(self, snap):
         """``ATTITUDE_TIME_TO_PEAK_LIVE``: follow the torque the air provides.

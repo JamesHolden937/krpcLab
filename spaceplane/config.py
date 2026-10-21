@@ -219,10 +219,6 @@ class Config:
     # old craft 1.34x subsonically); a 1.6 g pull-up arrived at ~1.1 g and
     # the cone's climb never happened (LOG3065-3066).  Cone and approach
     # only; the flare has its own sink loop and a tail-strike cap.
-    # Manual pitch input per degree of pitch pointing error in the FLARE,
-    # summed with kRPC's (0 = off).  See ``Autopilot.flare_pitch_p``.
-    FLARE_PITCH_P: float = 0.08  # default 2026-10-03: the landing stack, rot-orbit2-1003
-    FLARE_PITCH_P_MAX: float = 0.5
     # **Trim on the canards, by moving them ourselves** (``Autopilot.
     # canard_trim``).  Trimming through control travel is this airframe's
     # largest drag: full nose-up input at alpha 5, 90 m/s costs 34% of the
@@ -271,23 +267,6 @@ class Config:
     ALPHA_TRIM_SLIP_TOL_DEG: float = 15.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
     LIFT_LOOP_MIN_Q_PA: float = 500.0
-    # ``Autopilot.glide_pitch_offload``: carry the glide's standing pitch
-    # input as a body-frame manual trim, so kRPC's roll-invariant integrators
-    # hold only the transient and a bank reversal has no wound-up pitch to
-    # swing onto yaw (rot-lapstack-1006: long arrivals sit at +0.4 of pitch,
-    # 8-12 deg short, for 30 s after the 38 km reversal).  TAU 0 = the pitch
-    # axis's time_to_peak.  Off until flown.
-    GLIDE_PITCH_OFFLOAD: bool = True  # default 2026-10-09
-    GLIDE_PITCH_OFFLOAD_TAU_S: float = 0.0
-    # The share of pitch authority the trim may take; the rest is kRPC's
-    # headroom for transients (at 1.0 the trim pinned the elevons nose-up,
-    # rot-offload-1007).  A fraction of authority, not a tuned angle.
-    GLIDE_PITCH_OFFLOAD_MAX: float = 0.6  # default 2026-10-09 (was 0.8)
-    # Offload only above this Mach, bleeding off below (0 = the whole
-    # glide).  The reversal it cures is at Mach 5-4; with the trim held
-    # through Mach 2.5-1.2 the arrivals were on position but 2 km low
-    # (rot-offload2-1007).
-    GLIDE_PITCH_OFFLOAD_MIN_MACH: float = 3.0  # default 2026-10-09 (was 0)
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
     # **A load-factor cap on the cone's alpha** (LOG9641: entered at 441
