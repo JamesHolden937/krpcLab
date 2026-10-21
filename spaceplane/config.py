@@ -2720,22 +2720,27 @@ class Config:
     # 0 lights at the impulsive point.
     DEORBIT_BURN_LEAD_SHARE: float = 0.5
     GLIDE_TICK_S: float = 1.0
-    # **The client owns the pitch axis on the canards**
-    # (``Autopilot.own_pitch``), GLIDE to FLARE, by incremental dynamic
-    # inversion on the game's own live aerodynamic moment; kRPC keeps roll
-    # and yaw.  Client control inputs never reach a vessel kRPC is flying,
-    # so the canards are overridden directly.  w and zeta are the response
-    # asked of every airframe; the tick has to be well inside 1/w.  The
-    # canards' power is probed in vacuum at these angles of attack.
-    PITCH_OWN: bool = False
-    PITCH_OWN_W_RAD_S: float = 0.8
-    PITCH_OWN_ZETA: float = 0.8
-    PITCH_OWN_TICK_S: float = 0.2        # the glide's tick while owning
-    PITCH_OWN_KRPC_TTP_S: float = 60.0   # kRPC's pitch tune, ~0 gain
-    PITCH_OWN_REFRESH_S: float = 1.0     # inertia, re-read
-    PITCH_OWN_MIN_Q_PA: float = 20.0
-    PITCH_OWN_PROBE_ALPHA_DEG: float = 20.0
-    PITCH_OWN_PROBE_ALPHA_SUB_DEG: float = 10.0
+    # **The client owns the attitude** (``Autopilot.own_attitude``),
+    # GLIDE to FLARE: kRPC disengaged, every control surface overridden
+    # and allocated by its own measured moment per unit deflection
+    # (``measure_surfaces``, in vacuum before the burn), the RCS as three
+    # more actuators while the valve is open, all by incremental dynamic
+    # inversion on the game's live aerodynamic moment.  Client control
+    # inputs never reach a vessel kRPC is flying, so it is all or nothing.
+    # w (pitch, roll, yaw) and zeta are the response asked of every
+    # airframe; the tick has to be well inside 1/w.
+    SURFACE_OWN: bool = False
+    SURFACE_OWN_W_RAD_S: tuple = (0.8, 1.2, 0.8)
+    SURFACE_OWN_ZETA: float = 0.8
+    SURFACE_OWN_TICK_S: float = 0.2      # the glide's tick while owning
+    SURFACE_OWN_REFRESH_S: float = 1.0   # inertia and RCS torque, re-read
+    SURFACE_OWN_PROBE_ALPHAS: tuple = (10.0, 30.0)
+    SURFACE_OWN_MAX_STEP: float = 0.5    # deflection per tick
+    SURFACE_OWN_REG: float = 1e-3        # allocation damping, scale-free
+    # The raw body-axis sense (right, nose, belly) of a positive pitch,
+    # roll and yaw input's torque.  Pitch +1 is nose-up, which is raw -x
+    # (measured 2026-10-21); roll and yaw: see the journal's measurement.
+    SURFACE_OWN_RCS_SIGNS: tuple = (-1.0, 1.0, 1.0)
 
     # -- the loop ----------------------------------------------------------
     TICK_S: float = 0.1

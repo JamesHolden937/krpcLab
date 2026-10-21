@@ -73,7 +73,7 @@ class Snapshot:
     # a shuttle turning at a fifth of its commanded bank looked like it was
     # banked 40 degrees for a minute.  Empty when kRPC could not answer.
     roof: tuple = ()
-    # ``PITCH_OWN``'s inputs: the wing axis (the vessel's +x), the
+    # ``SURFACE_OWN``'s inputs: the wing axis (the vessel's +x), the
     # attitude quaternion and the body rates, all in the body's rotating
     # frame -- what the live aerodynamic probe and the pitch rate need.
     right: tuple = ()
@@ -173,7 +173,7 @@ class Telemetry:
         except Exception:                                   # noqa: BLE001
             self.roof = None
         self.right = self.rotation = self.angular_velocity = None
-        if getattr(cfg, "PITCH_OWN", False):
+        if getattr(cfg, "SURFACE_OWN", False):
             try:
                 self.right = stream(sc.transform_direction, (1.0, 0.0, 0.0),
                                     vessel.reference_frame, frame)
