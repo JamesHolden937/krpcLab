@@ -30,7 +30,6 @@ that carry lit engines.  The upper stage's engines are the ones left, lit
 now or lit by that same staging.
 """
 
-import argparse
 import math
 import sys
 import time
@@ -40,11 +39,12 @@ import krpc
 
 from common import vec
 from common.idle import IdleGimbals, VacuumSurfaces
+from common import cli
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from common.rpccount import RpcCounter
 from boosterland.engines import allocate, group_engines
-from boosterland.gui import ControlPanel
+from common.panel import ACCENT_BOOSTER, ControlPanel
 from . import attitude, budget, turnshape
 from .config import Config, apply_overrides, defaults_fingerprint
 
@@ -325,7 +325,8 @@ class Ascent:
         logbook.event(ut, "pad: lat %.6f lon %.6f r=%.1f rho=%.3f p=%.3f atm"
                       % (bcfg.PAD_LAT, bcfg.PAD_LON, vec.norm(self.pad), rho,
                          self.pad_pressure))
-        self.gui = ControlPanel(conn, title="ASCENT", start_label="START ASCENT")
+        self.gui = ControlPanel(conn, "ASCENT", "START ASCENT",
+                                ACCENT_BOOSTER)
         self.loop_rate = LoopRate()
         self.rpc = None
         # Nozzles and fins still while they can do nothing: no thrust, no
@@ -1120,18 +1121,10 @@ def run(conn, cfg, log, autostart=False, booster_set=(), wait=None):
 
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--address", default="127.0.0.1")
-    parser.add_argument("--rpc-port", type=int, default=50000)
-    parser.add_argument("--stream-port", type=int, default=50001)
-    parser.add_argument("--name", default="ascent")
-    parser.add_argument("--set", action="append", default=[],
-                        metavar="FIELD=VALUE")
+    parser = cli.parser("ascent", __doc__.splitlines()[0])
     parser.add_argument("--booster-set", action="append", default=[],
                         metavar="FIELD=VALUE",
                         help="a boosterland Config override for the landing")
-    parser.add_argument("--autostart", action="store_true",
-                        help="do not wait for the panel's START button")
     return parser.parse_args(argv)
 
 
@@ -1141,9 +1134,7 @@ def main(argv=None):
     log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
     status = 0
     try:
-        conn = krpc.connect(name=args.name, address=args.address,
-                            rpc_port=args.rpc_port,
-                            stream_port=args.stream_port)
+        conn = cli.connect(args)
         _, reason = run(conn, cfg, log, args.autostart, args.booster_set)
         if reason.startswith("error"):
             status = 1

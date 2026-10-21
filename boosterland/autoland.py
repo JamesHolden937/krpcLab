@@ -13,7 +13,6 @@ go stale.  The script never prints: telemetry goes to ``logs/LOG<n>`` and to
 the in-game panel.
 """
 
-import argparse
 import math
 import sys
 import time
@@ -27,8 +26,12 @@ from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
 from .engines import allocate, group_engines
 from .environment import Environment
-from .gui import ControlPanel, telemetry_lines
+from common.panel import ACCENT_BOOSTER, ControlPanel
+from .gui import telemetry_lines
 from common.idle import IdleGimbals
+from common.krpcpilot import (  # noqa: F401
+    set_autopilot_attitude, set_autopilot_engaged)
+from common import cli
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
@@ -42,57 +45,6 @@ CORRECTION = "CORRECTION"
 LANDING_BURN = "LANDING_BURN"
 TOUCHDOWN = "TOUCHDOWN"
 
-
-def set_autopilot_attitude(autopilot, direction, up=None, roll=0.0):
-    """Command a nose direction and, when asked, the roll about it.
-
-    ``set_direction_and_up`` is the singularity-free form and the one to use;
-    older kRPC servers have only ``up_reference``/``target_roll``, and older
-    ones than that no roll control at all.  Fall back rather than fail: a
-    booster that holds its nose and drifts in roll still lands.
-    """
-    autopilot.target_direction = tuple(direction)
-    if up is None:
-        try:
-            autopilot.target_roll = float("nan")     # damp the rate only
-        except AttributeError:
-            pass
-        return
-    try:
-        autopilot.set_direction_and_up(tuple(direction), tuple(up), roll)
-        return
-    except AttributeError:
-        pass
-    try:
-        autopilot.up_reference = tuple(up)
-        autopilot.target_roll = roll
-    except AttributeError:
-        pass
-
-
-def set_autopilot_engaged(autopilot, engaged):
-    """Engage or disengage, returning the exception instead of raising it.
-
-    kRPC has used both an ``engaged`` property and engage/disengage(), which
-    is the AttributeError below.  The outer catch is for KSP itself: engaging
-    the autopilot makes kRPC total up the vessel's available torque, and
-    ``ModuleGimbal.GetPotentialTorque`` throws ``IndexOutOfRange`` on an
-    engine whose gimbal is not initialised yet -- which is exactly when this
-    script connects, moments after staging.  LOG10 died there on the first
-    tick after START, before the throttle had ever been touched.
-
-    So it is reported, not raised.  Losing the attitude command is bad;
-    losing the flight because the game was not ready to answer a question is
-    worse, and the answer changes a second later.  The caller retries.
-    """
-    try:
-        try:
-            autopilot.engaged = engaged
-        except AttributeError:
-            (autopilot.engage if engaged else autopilot.disengage)()
-        return None
-    except Exception as exc:            # noqa: BLE001 -- KSP-side failure
-        return exc
 
 
 AIRBRAKE_MODULE = "ModuleAeroSurface"   # the stock airbrake's part module
@@ -340,7 +292,8 @@ class Autoland:
                                    logbook)
         self.proximity = ProximityScan(conn, self.vessel, self.frame, cfg,
                                        logbook)
-        self.gui = ControlPanel(conn)
+        self.gui = ControlPanel(conn, "BOOSTERLAND", "START AUTOLAND",
+                                ACCENT_BOOSTER)
 
         self.state = STANDBY
         self.autostart = False   # --autostart: STANDBY acts as if START was pressed
@@ -2361,18 +2314,9 @@ def diag_line(snap, run):
 
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(
-        prog="boosterland", add_help=True,
-        description="Boostback and land a KSP booster on the KSC pad.")
-    parser.add_argument("--address", default="127.0.0.1")
-    parser.add_argument("--rpc-port", type=int, default=50000)
-    parser.add_argument("--stream-port", type=int, default=50001)
-    parser.add_argument("--name", default="boosterland")
-    parser.add_argument("--set", action="append", default=[], metavar="K=V",
-                        help="override a Config field, repeatable")
-    parser.add_argument("--autostart", action="store_true",
-                        help="do not wait for the panel's START button")
-    return parser.parse_args(argv)
+    return cli.parser("boosterland",
+                      "Boostback and land a KSP booster on the KSC pad."
+                      ).parse_args(argv)
 
 
 def main(argv=None):
@@ -2383,9 +2327,7 @@ def main(argv=None):
     status = 0
     reason = "shutdown"
     try:
-        conn = krpc.connect(name=args.name, address=args.address,
-                            rpc_port=args.rpc_port,
-                            stream_port=args.stream_port)
+        conn = cli.connect(args)
         run = Autoland(conn, cfg, log)
         run.autostart = args.autostart
         if args.autostart:

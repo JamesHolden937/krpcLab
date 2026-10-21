@@ -195,7 +195,7 @@ spaceplane.autopilot   phase machine, the only kRPC-aware control code
   |-- trajectory.py    RK4 propagator; gravity, drag, lift, rotating terms
   |-- guidance.py      the glide solve, the approach, the flare, the deorbit
   |-- telemetry.py     per-tick values through streams
-  `-- gui.py           in-game panel
+  `-- (panel)          common.panel.ControlPanel
 ```
 
 ```

@@ -588,7 +588,7 @@ class TestConfig(unittest.TestCase):
         self.assertIn("ALPHA_MAX_DEG=28.0", differences(cfg))
 
     def test_an_unknown_field_raises(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(KeyError):
             apply_overrides(Config(), ["NO_SUCH_FIELD=1"])
 
 

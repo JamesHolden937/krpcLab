@@ -37,12 +37,6 @@ from common import vec                             # noqa: E402
 from spaceplane.config import Config                    # noqa: E402
 
 
-def ports(instance):
-    if instance is None:
-        return None, None
-    base = os.path.join(ROOT, "testInstances", "ksp" + str(instance))
-    return (int(open(os.path.join(base, ".rpc_port")).read()),
-            int(open(os.path.join(base, ".stream_port")).read()))
 
 
 # Game time from a save's UT to the autopilot's first tick in the game's
@@ -192,7 +186,7 @@ def clock_is_running(rpc, stream, seconds=3.0):
 
 
 def fly(args, index):
-    rpc, stream = ports(args.instance)
+    rpc, stream = paths.ports(args.instance)
     before = log_names()
     tsdir = ts.instance_dir(args.instance, rpc)
     ceiling = None

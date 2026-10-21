@@ -6,8 +6,9 @@ control logic.  Override any of them from the command line, e.g.::
     ./run.sh --set BOOSTBACK_TOLERANCE_M=250 --set LOG_INTERVAL_UT=1
 """
 
-import hashlib
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
+
+from common.config import apply_overrides, differences, fingerprint  # noqa: F401
 
 
 @dataclass
@@ -748,35 +749,6 @@ class Config:
 
 
 def defaults_fingerprint():
-    """A short hash of every default in ``Config``.
-
-    The config line lists differences from the defaults, which says nothing
-    when a default itself moves between two batches; the fingerprint names
-    the baseline.  Two logs with different fingerprints are not the same
-    experiment, however alike their difference lists look.
-    """
-    base = Config()
-    text = ";".join("%s=%r" % (f.name, getattr(base, f.name))
-                    for f in sorted(fields(base), key=lambda f: f.name))
-    return hashlib.sha1(text.encode()).hexdigest()[:8]
-
-
-def apply_overrides(cfg, pairs):
-    """Apply ``NAME=value`` strings to ``cfg`` in place, coercing types."""
-    types = {f.name: f.type for f in fields(cfg)}
-    for pair in pairs:
-        name, _, raw = pair.partition("=")
-        name = name.strip()
-        if name not in types:
-            raise KeyError("unknown config field: %s" % name)
-        current = getattr(cfg, name)
-        if isinstance(current, bool):
-            value = raw.strip().lower() in ("1", "true", "yes", "on")
-        elif isinstance(current, int):
-            value = int(raw)
-        elif isinstance(current, float):
-            value = float(raw)
-        else:
-            value = raw
-        setattr(cfg, name, value)
-    return cfg
+    """A short hash of every default in this ``Config``
+    (``common.config.fingerprint``)."""
+    return fingerprint(Config)

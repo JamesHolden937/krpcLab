@@ -17,7 +17,6 @@ the terminal reaches the flying child too (same process group); the launcher
 waits for it to hand the vessel back before it removes its own panel.
 """
 
-import argparse
 import os
 import re
 import subprocess
@@ -25,6 +24,8 @@ import sys
 import time
 
 import krpc
+
+from common import cli
 
 from common import panel, paths
 
@@ -161,26 +162,20 @@ def hide(window):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(
-        description="In-game launcher for the krpcLab autopilots.")
-    p.add_argument("--address", default=None)
-    p.add_argument("--rpc-port", type=int, default=None)
-    p.add_argument("--stream-port", type=int, default=None)
-    return p.parse_args(argv)
+    return cli.parser("krpclab", "In-game launcher for the krpcLab "
+                      "autopilots.", pilot=False).parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     kwargs = {"name": "krpcLab launcher"}
     forward = []
+    kwargs.update(cli.connect_kwargs(args, kwargs.get("name")))
     if args.address:
-        kwargs["address"] = args.address
         forward += ["--address", args.address]
     if args.rpc_port:
-        kwargs["rpc_port"] = args.rpc_port
         forward += ["--rpc-port", str(args.rpc_port)]
     if args.stream_port:
-        kwargs["stream_port"] = args.stream_port
         forward += ["--stream-port", str(args.stream_port)]
 
     conn = krpc.connect(**kwargs)

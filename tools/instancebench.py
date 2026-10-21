@@ -47,15 +47,11 @@ paths.use_venv()
 from common import timescale as ts                                  # noqa: E402
 
 
-def ports(instance):
-    base = os.path.join(ROOT, "testInstances", "ksp" + str(instance))
-    return (int(open(os.path.join(base, ".rpc_port")).read()),
-            int(open(os.path.join(base, ".stream_port")).read()))
 
 
 def load(instance, save):
     import krpc
-    rpc, stream = ports(instance)
+    rpc, stream = paths.ports(instance)
     for _ in range(40):
         try:
             conn = krpc.connect(name="instancebench", rpc_port=rpc,

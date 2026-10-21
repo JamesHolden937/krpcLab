@@ -27,6 +27,9 @@ BLACK = (0.0, 0.0, 0.0)
 TEXT = (0.85, 0.85, 0.85)
 DIM = (0.5, 0.5, 0.5)
 FRAME = (0.85, 0.0, 0.0)
+# Each autopilot's title colour.
+ACCENT_BOOSTER = (1.0, 0.75, 0.2)
+ACCENT_SPACEPLANE = (0.4, 0.8, 1.0)
 
 BORDER = 5           # frame width, canvas units (2 px at 1280x720)
 RADIUS = 16          # outer corner radius, canvas units
@@ -91,3 +94,80 @@ def window(conn):
     _rounded(conn, panel, WIDTH - 2 * BORDER, HEIGHT - 2 * BORDER,
              RADIUS - BORDER, BLACK)
     return panel
+
+
+class ControlPanel:
+    """START and TERMINATE under a title in the autopilot's ``accent``
+    colour, and a body of telemetry lines.  Button presses are read through
+    kRPC streams (cheap polling) and the ``clicked`` flag is reset here, as
+    in the kRPC user-interface tutorial."""
+
+    WIDTH = WIDTH
+    HEIGHT = HEIGHT
+
+    def __init__(self, conn, title, start_label, accent):
+        self.conn = conn
+        self.ui = conn.ui
+        self.panel = window(conn)
+
+        self.title = self.panel.add_text(title)
+        self.title.rect_transform.position = (0, self.HEIGHT / 2 - 25)
+        self.title.rect_transform.size = (self.WIDTH - 20, 24)
+        self.title.size = 16
+        self.title.color = accent
+        self.title.alignment = self.ui.TextAnchor.middle_center
+
+        self.body = self.panel.add_text("standing by")
+        self.body.rect_transform.position = (0, 20)
+        self.body.rect_transform.size = (self.WIDTH - 24, self.HEIGHT - 130)
+        self.body.size = 13
+        self.body.color = TEXT
+        self.body.alignment = self.ui.TextAnchor.upper_left
+
+        self.start_button = self.panel.add_button(start_label)
+        self.start_button.rect_transform.position = (0, -self.HEIGHT / 2 + 60)
+        self.start_button.rect_transform.size = (self.WIDTH - 40, 32)
+
+        self.stop_button = self.panel.add_button("TERMINATE SCRIPT")
+        self.stop_button.rect_transform.position = (0, -self.HEIGHT / 2 + 24)
+        self.stop_button.rect_transform.size = (self.WIDTH - 40, 32)
+
+        self._start_clicked = conn.add_stream(
+            getattr, self.start_button, "clicked")
+        self._stop_clicked = conn.add_stream(
+            getattr, self.stop_button, "clicked")
+
+    # -- input -------------------------------------------------------------
+    def start_pressed(self):
+        if self._start_clicked():
+            self.start_button.clicked = False
+            return True
+        return False
+
+    def terminate_pressed(self):
+        if self._stop_clicked():
+            self.stop_button.clicked = False
+            return True
+        return False
+
+    def hide_start(self):
+        """``--autostart``: the flight is already running, so no START."""
+        self.start_button.visible = False
+
+    def set_start_label(self, text):
+        self.start_button.text.content = text
+
+    # -- output ------------------------------------------------------------
+    def update(self, lines):
+        self.body.content = "\n".join(lines)
+
+    def close(self):
+        for stream in (self._start_clicked, self._stop_clicked):
+            try:
+                stream.remove()
+            except Exception:                       # noqa: BLE001
+                pass
+        try:
+            self.panel.remove()
+        except Exception:                           # noqa: BLE001
+            pass

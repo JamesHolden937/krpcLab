@@ -4,8 +4,9 @@ it has just enough left to come home.
     ./run.sh --pilot ascent --set ORBIT_ALT_M=90000
 """
 
-import hashlib
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
+
+from common.config import apply_overrides, differences, fingerprint  # noqa: F401
 
 
 @dataclass
@@ -137,29 +138,6 @@ class Config:
 
 
 def defaults_fingerprint():
-    """A short hash of every default in ``Config`` (see boosterland's)."""
-    base = Config()
-    text = ";".join("%s=%r" % (f.name, getattr(base, f.name))
-                    for f in sorted(fields(base), key=lambda f: f.name))
-    return hashlib.sha1(text.encode()).hexdigest()[:8]
-
-
-def apply_overrides(cfg, pairs):
-    """Apply ``NAME=value`` strings to ``cfg`` in place, coercing types."""
-    types = {f.name: f.type for f in fields(cfg)}
-    for pair in pairs:
-        name, _, raw = pair.partition("=")
-        name = name.strip()
-        if name not in types:
-            raise KeyError("unknown config field: %s" % name)
-        current = getattr(cfg, name)
-        if isinstance(current, bool):
-            value = raw.strip().lower() in ("1", "true", "yes", "on")
-        elif isinstance(current, int):
-            value = int(raw)
-        elif isinstance(current, float):
-            value = float(raw)
-        else:
-            value = raw
-        setattr(cfg, name, value)
-    return cfg
+    """A short hash of every default in this ``Config``
+    (``common.config.fingerprint``)."""
+    return fingerprint(Config)

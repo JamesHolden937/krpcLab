@@ -20,7 +20,6 @@ to fail in the recoverable direction.
 **Nothing prints.**  stdout and stderr are for crashes before the logbook
 opens.  Everything else goes to ``logs/LOG<n>`` and the in-game panel.
 """
-import argparse
 import math
 import os
 import sys
@@ -31,6 +30,9 @@ import krpc
 
 from common import krpcbatch, rcs, vec
 from common.idle import VacuumSurfaces
+from common.krpcpilot import (  # noqa: F401
+    set_autopilot_attitude, set_autopilot_engaged)
+from common import cli
 from common.logbook import Logbook
 from common.pacing import LoopRate, ScaleGovernor, sleeper
 from common.rpccount import RpcCounter
@@ -40,7 +42,7 @@ from . import allocate, guidance, rollrate, trajectory
 from .config import (Config, apply_overrides, defaults_fingerprint,
                       differences)
 from .environment import Environment
-from .gui import ControlPanel
+from common.panel import ACCENT_SPACEPLANE, ControlPanel
 from .telemetry import Telemetry
 from .trajectory import Steer
 
@@ -312,52 +314,6 @@ def ungate_roll(cfg, autopilot, logbook=None, ut=0.0):
     return True
 
 
-def set_autopilot_attitude(autopilot, direction, up=None, roll=0.0):
-    """Command a nose direction and the vector to roll the roof toward.
-
-    ``set_direction_and_up`` is the singularity-free form; older servers have
-    only ``up_reference``/``target_roll``, and older ones no roll control.
-    Fall back rather than fail.  Roll matters more here than on a booster:
-    bank *is* the control, so a vehicle that will not hold a commanded roll
-    has no cross-track authority at all.
-    """
-    autopilot.target_direction = tuple(direction)
-    if up is None:
-        try:
-            autopilot.target_roll = float("nan")
-        except AttributeError:
-            pass
-        return
-    try:
-        autopilot.set_direction_and_up(tuple(direction), tuple(up), roll)
-        return
-    except AttributeError:
-        pass
-    try:
-        autopilot.up_reference = tuple(up)
-        autopilot.target_roll = roll
-    except AttributeError:
-        pass
-
-
-def set_autopilot_engaged(autopilot, engaged):
-    """Engage or disengage, returning the exception instead of raising it.
-
-    Engaging makes kRPC total up the vessel's available torque, and KSP can
-    throw out of that while modules are still settling -- which is exactly
-    when a script connects.  boosterland lost a whole flight to it (failure
-    7) on the first tick after START.  So it is reported, not raised, and the
-    caller retries every tick until it takes.
-    """
-    try:
-        try:
-            autopilot.engaged = engaged
-        except AttributeError:
-            (autopilot.engage if engaged else autopilot.disengage)()
-        return None
-    except Exception as exc:                            # noqa: BLE001
-        return exc
-
 
 class Autopilot:
     def __init__(self, conn, cfg, logbook):
@@ -403,7 +359,8 @@ class Autopilot:
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
-        self.panel = ControlPanel(conn)
+        self.panel = ControlPanel(conn, "SPACEPLANE", "START DEORBIT",
+                                  ACCENT_SPACEPLANE)
 
         self.state = STANDBY
         self.state_since = ut
@@ -7955,14 +7912,8 @@ def panel_lines(state, snap, run):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(description="Deorbit and land a spaceplane.")
-    p.add_argument("--address", default=None)
-    p.add_argument("--rpc-port", type=int, default=None)
-    p.add_argument("--stream-port", type=int, default=None)
-    p.add_argument("--set", action="append", default=[], metavar="FIELD=VALUE")
-    p.add_argument("--autostart", action="store_true",
-                   help="do not wait for the panel's START button")
-    return p.parse_args(argv)
+    return cli.parser("spaceplane", "Deorbit and land a spaceplane."
+                      ).parse_args(argv)
 
 
 def main(argv=None):
@@ -7971,13 +7922,7 @@ def main(argv=None):
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     directory = (cfg.LOG_DIR if os.path.isabs(cfg.LOG_DIR)
                  else os.path.join(here, cfg.LOG_DIR))
-    kwargs = {"name": "spaceplane"}
-    if args.address:
-        kwargs["address"] = args.address
-    if args.rpc_port:
-        kwargs["rpc_port"] = args.rpc_port
-    if args.stream_port:
-        kwargs["stream_port"] = args.stream_port
+    kwargs = cli.connect_kwargs(args)
 
     with Logbook(directory, cfg.LOG_INTERVAL_UT) as logbook:
         run = None

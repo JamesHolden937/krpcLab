@@ -11,8 +11,9 @@ The aerodynamic numbers here are *measured*, not guessed --
 measurement is quoted next to it, because the next vehicle will have different
 ones and there has to be a way to tell a measurement from a guess.
 """
-import hashlib
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
+
+from common.config import apply_overrides, differences, fingerprint  # noqa: F401
 
 
 @dataclass
@@ -3014,56 +3015,7 @@ class Config:
     RUNWAY_ALT_OFFSET_M: float = 0.0
 
 
-def apply_overrides(cfg, overrides):
-    """``--set FIELD=VALUE``, with type coercion.  Unknown fields raise."""
-    kinds = {f.name: f.type for f in fields(cfg)}
-    for item in overrides:
-        name, _, raw = item.partition("=")
-        name = name.strip()
-        if name not in kinds:
-            raise SystemExit("unknown config field %r" % name)
-        current = getattr(cfg, name)
-        if isinstance(current, bool):
-            value = raw.strip().lower() in ("1", "true", "yes", "on")
-        elif isinstance(current, int) and not isinstance(current, bool):
-            value = int(raw)
-        elif isinstance(current, tuple):
-            value = tuple(float(x) for x in raw.split(","))
-        elif isinstance(current, str):
-            value = raw
-        else:
-            value = float(raw)
-        setattr(cfg, name, value)
-    return cfg
-
-
 def defaults_fingerprint():
-    """A short hash of every default in this ``Config``.
-
-    **The config line is a list of differences, which makes it silent about
-    the thing the differences are measured against.**  Change a default
-    between two batches and the logs of both say the same thing while the
-    flights differ -- measured, and it cost a session's analysis: eighteen
-    flights flown with ``GLIDE_RESERVE_ON`` defaulted to ``True`` were
-    indistinguishable in the log from the controls they were being compared
-    with, and the comparison drawn from them was backwards.
-
-    So the line carries the fingerprint of the whole default set as well.
-    Two logs with different fingerprints are not the same experiment, however
-    identical their difference lists look.
-    """
-    base = Config()
-    text = ";".join("%s=%r" % (f.name, getattr(base, f.name))
-                    for f in sorted(fields(base), key=lambda f: f.name))
-    return hashlib.sha1(text.encode()).hexdigest()[:8]
-
-
-def differences(cfg):
-    """The fields that differ from the defaults, for the log's config line."""
-    base = Config()
-    out = []
-    for f in fields(cfg):
-        mine, theirs = getattr(cfg, f.name), getattr(base, f.name)
-        if mine != theirs:
-            out.append("%s=%s" % (f.name, mine))
-    return out
+    """A short hash of every default in this ``Config``
+    (``common.config.fingerprint``)."""
+    return fingerprint(Config)

@@ -30,7 +30,6 @@ game's save folder on this machine: it is found by the file the first
     python -m boosterland.fmrs --save FMRS/FMRS_save_1   # only this one
 """
 
-import argparse
 import glob
 import os
 import sys
@@ -40,12 +39,13 @@ import uuid
 import krpc
 
 from common import paths, vec
+from common import cli
 from common.logbook import Logbook
 from common.pacing import sleeper
 from common.sfs import FLYING, Save
 from boosterland.autoland import Autoland
 from boosterland.config import Config, apply_overrides
-from boosterland.gui import ControlPanel
+from common.panel import ACCENT_BOOSTER, ControlPanel
 
 SAVES = ["FMRS/FMRS_save_%d" % n for n in range(10)]
 MAIN = "krpclab_main"                 # the main mission, in the save folder
@@ -60,8 +60,7 @@ JUMP_LABEL = "JUMP BACK TO MAIN MISSION"
 
 
 def connect(args, name):
-    return krpc.connect(name=name, address=args.address,
-                        rpc_port=args.rpc_port, stream_port=args.stream_port)
+    return cli.connect(args, name)
 
 
 # -- the save folder --------------------------------------------------------
@@ -232,7 +231,7 @@ def offer_jump_back(args, save_dir, booster_id, reason, log):
     """Show JUMP BACK TO MAIN MISSION until it or TERMINATE is pressed;
     on JUMP, merge the booster into the main mission and load it."""
     conn = connect(args, args.name)
-    gui = ControlPanel(conn, title="BOOSTERLAND", start_label=JUMP_LABEL)
+    gui = ControlPanel(conn, "BOOSTERLAND", JUMP_LABEL, ACCENT_BOOSTER)
     try:
         gui.update(["booster: %s" % reason, "",
                     "JUMP BACK loads the main mission",
@@ -260,14 +259,10 @@ def offer_jump_back(args, save_dir, booster_id, reason, log):
 
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(
-        prog="fmrs", description="Load FMRS's separation save, fly the "
+    parser = cli.parser(
+        "boosterland-fmrs", "Load FMRS's separation save, fly the "
         "dropped booster home with boosterland, then offer to jump back to "
         "the main mission with the booster where it came down.")
-    parser.add_argument("--address", default="127.0.0.1")
-    parser.add_argument("--rpc-port", type=int, default=50000)
-    parser.add_argument("--stream-port", type=int, default=50001)
-    parser.add_argument("--name", default="boosterland-fmrs")
     parser.add_argument("--save", default=None,
                         help="save to fly, relative to the save folder "
                         "(default: the first FMRS_save_<n> with a booster "
@@ -275,10 +270,6 @@ def parse_args(argv):
     parser.add_argument("--save-dir", default=None,
                         help="the game's save folder (default: found by "
                         "saving the main mission and looking for it)")
-    parser.add_argument("--set", action="append", default=[], metavar="K=V",
-                        help="override a boosterland Config field")
-    parser.add_argument("--autostart", action="store_true",
-                        help="accepted for the launcher; this always starts")
     return parser.parse_args(argv)
 
 

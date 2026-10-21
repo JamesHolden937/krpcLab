@@ -18,6 +18,7 @@ import math
 from dataclasses import dataclass
 
 from common import vec
+from common.geo import gravity_at, surface_distance  # noqa: F401
 
 
 @dataclass
@@ -32,9 +33,6 @@ class Prediction:
     profile: tuple = ()      # (speed, altitude) along the way down
 
 
-def gravity_at(env, r):
-    d = vec.norm(r)
-    return vec.scale(r, -env.mu / (d * d * d))
 
 
 def drag_lookup(env, drag_area=None, scale=1.0):
@@ -480,11 +478,6 @@ def miss_vector(env, prediction):
     return vec.sub(prediction.position, env.target)
 
 
-def surface_distance(env, a, b):
-    """Great-circle distance between two points at pad radius."""
-    ua, ub = vec.unit(a), vec.unit(b)
-    c = max(-1.0, min(1.0, vec.dot(ua, ub)))
-    return math.acos(c) * env.target_radius
 
 
 def miss_axes(target, from_position):

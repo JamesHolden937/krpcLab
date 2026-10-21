@@ -15,7 +15,7 @@ run.sh --pilot booster -> boosterland.autoland (phase machine, the only kRPC-awa
             |-- telemetry.py    every per-tick value, via kRPC streams
             |-- trajectory.py   local propagator + landing prediction
             |-- guidance.py     steering/throttle laws (pure functions)
-            |-- gui.py          in-game panel, START / TERMINATE buttons
+            |-- gui.py          telemetry block for the panel (common.panel.ControlPanel)
             `-- common/logbook.py  numbered log files, ut-gated (shared)
 ```
 

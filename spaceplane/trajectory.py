@@ -27,6 +27,7 @@ import math
 from dataclasses import dataclass
 
 from common import vec
+from common.geo import gravity_at, surface_distance  # noqa: F401
 from . import airframe
 
 
@@ -440,9 +441,6 @@ def plateau_edge(env, frac, speed, altitude):
     return out
 
 
-def gravity_at(env, r):
-    d = vec.norm(r)
-    return vec.scale(r, -env.mu / (d * d * d))
 
 
 def lift_frame(r, v):
@@ -996,11 +994,6 @@ def forward_arc(env, r, v, target):
     return angle * env.target_radius
 
 
-def surface_distance(env, a, b):
-    """Great-circle distance between two points at the body's surface."""
-    ua, ub = vec.unit(a), vec.unit(b)
-    dot = vec.clamp(vec.dot(ua, ub), -1.0, 1.0)
-    return env.target_radius * math.acos(dot)
 
 
 def coast(env, r, v, mass, seconds, dt=10.0):
