@@ -2837,6 +2837,7 @@ class Config:
     # Past this much sideslip the damper is held at its floor (fastest).
     # 0 = off.
     ROLL_DAMPER_SLIP_GATE_DEG: float = 0.0
+    ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
     ATTITUDE_AIR_SMOOTH_S: float = 5.0      # game-seconds, the surface EMA

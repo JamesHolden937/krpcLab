@@ -976,7 +976,7 @@ class Autopilot:
         gate = float(getattr(self.cfg, "ROLL_DAMPER_SLIP_GATE_DEG", 0.0)
                      or 0.0)
         if rd is not None and gate > 0.0 \
-                and abs(snap.sideslip or 0.0) > gate:
+                and abs(getattr(snap, "sideslip", 0.0) or 0.0) > gate:
             # ``ROLL_DAMPER_SLIP_GATE_DEG``: swings with this much sideslip
             # are the airframe departing, not the loop over-driving it --
             # answer at full speed, never slower.
