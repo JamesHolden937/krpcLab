@@ -2720,20 +2720,16 @@ class Config:
     # 0 lights at the impulsive point.
     DEORBIT_BURN_LEAD_SHARE: float = 0.5
     GLIDE_TICK_S: float = 1.0
-    # **Pitch stability augmentation** (``Autopilot.pitch_stiff_aug``).
-    # The aero sweep probes the pitching moment beside lift and drag, and
-    # wherever the airframe is softer than ``-I w^2`` the deficit is added
-    # as pitch input on the alpha error.  A stiffer airframe gets nothing.
-    # w 0.2 rad/s sits at the twin-fin shuttle's own hypersonic figure
-    # (0.17 at Mach 7, q 200; 0.4 at Mach 5 -- stiffprobe.py, LOG13675).
-    PITCH_STIFF_AUG: bool = False
-    PITCH_AUG_W_RAD_S: float = 0.2
-    PITCH_AUG_MAX_GAIN: float = 3.0      # input per radian of alpha error
-    PITCH_AUG_MAX_INPUT: float = 0.6
-    PITCH_AUG_MIN_Q_PA: float = 50.0
-    PITCH_AUG_SLOPE_SPAN_DEG: float = 5.0
-    PITCH_AUG_REFRESH_S: float = 1.0     # inertia and surface torque, re-read
-    PITCH_AUG_TICK_S: float = 0.25       # the glide's tick while augmenting
+    # **The client owns the pitch axis** (``Autopilot.own_pitch``),
+    # GLIDE to FLARE, by incremental dynamic inversion on the game's own
+    # live aerodynamic moment; kRPC keeps roll and yaw.  w and zeta are the
+    # response asked of every airframe; the tick has to be well inside 1/w.
+    PITCH_OWN: bool = False
+    PITCH_OWN_W_RAD_S: float = 0.8
+    PITCH_OWN_ZETA: float = 0.8
+    PITCH_OWN_TICK_S: float = 0.2        # the glide's tick while owning
+    PITCH_OWN_KRPC_TTP_S: float = 60.0   # kRPC's pitch tune, ~0 gain
+    PITCH_OWN_REFRESH_S: float = 1.0     # inertia and torques, re-read
 
     # -- the loop ----------------------------------------------------------
     TICK_S: float = 0.1

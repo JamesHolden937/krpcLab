@@ -310,27 +310,6 @@ def ungate_roll(cfg, autopilot, logbook=None, ut=0.0):
     return True
 
 
-def stiff_aug(cfg, m_alpha, inertia, surf, alpha_deg, commanded_deg):
-    """``PITCH_STIFF_AUG``'s law, pure: ``(gain per rad, pitch input)``.
-
-    ``m_alpha`` is the airframe's stiffness, N m per radian, nose-up
-    positive (negative restores).  The target stiffness is ``-I w^2``; the
-    deficit over it, divided by the surfaces' pitch torque per unit input,
-    is the gain on the alpha error -- zero for an airframe already stiffer,
-    capped at ``PITCH_AUG_MAX_GAIN``.  The input is nose-up positive and
-    capped at ``PITCH_AUG_MAX_INPUT``."""
-    if surf <= 0.0 or inertia <= 0.0:
-        return 0.0, 0.0
-    target = -inertia * float(cfg.PITCH_AUG_W_RAD_S) ** 2
-    deficit = m_alpha - target
-    if deficit <= 0.0:
-        return 0.0, 0.0
-    gain = min(float(cfg.PITCH_AUG_MAX_GAIN), deficit / surf)
-    cap = float(cfg.PITCH_AUG_MAX_INPUT)
-    u = vec.clamp(-gain * math.radians(alpha_deg - commanded_deg), -cap, cap)
-    return gain, u
-
-
 def set_autopilot_attitude(autopilot, direction, up=None, roll=0.0):
     """Command a nose direction and the vector to roll the roof toward.
 
@@ -913,7 +892,8 @@ class Autopilot:
             # the bank the guidance asked for is untouched.
             nose = vec.unit(vec.quat_rotate(
                 vec.quat_axis_angle(lift, math.radians(slip)), nose))
-        set_autopilot_attitude(self.autopilot, nose, lift)
+        set_autopilot_attitude(self.autopilot, self.krpc_nose(nose, snap),
+                               lift)
         self.commanded_nose = nose
         self._aim_frame = (vhat, tilt, lift, slip, alpha_deg)
         self.commanded_alpha = alpha_deg
@@ -1012,7 +992,7 @@ class Autopilot:
             return
         want = (have[0], roll, yaw)
         try:
-            self.autopilot.time_to_peak = want
+            self.autopilot.time_to_peak = self._owned_ttp(want)
         except Exception:                               # noqa: BLE001
             return
         self._tuned_peak = want
@@ -1312,7 +1292,7 @@ class Autopilot:
         alpha = math.radians(pitch_deg)
         nose = vec.unit(vec.add(vec.scale(along, math.cos(alpha)),
                                 vec.scale(up, math.sin(alpha))))
-        set_autopilot_attitude(self.autopilot, nose, up)
+        set_autopilot_attitude(self.autopilot, self.krpc_nose(nose, snap), up)
         self.commanded_nose = nose
         self.commanded_alpha = alpha_deg
         self.commanded_bank = 0.0
@@ -6597,7 +6577,17 @@ class Autopilot:
         decays over the same time in ROLLOUT and is zero elsewhere."""
         error = self.pitch_error(snap)
         self._pitch_assist_err = error
-        self._pitch_aug = self.pitch_stiff_aug(snap)
+        if self.pitch_owned():
+            self.own_pitch(snap, error)
+            return
+        if getattr(self, "_pitch_owned_on", False):
+            # Handing pitch back: kRPC's tune returns, and the client's last
+            # input becomes the trim the flare/rollout law decays from.
+            self._pitch_owned_on = False
+            self._own_ttp()
+            self._pitch_assist = getattr(self, "_pitch_assist_sent", 0.0)
+            self.logbook.event(snap.ut, "pitch handed back to kRPC in %s"
+                               % self.state)
         if getattr(self.cfg, "GLIDE_PITCH_OFFLOAD", False) and (
                 self.state == GLIDE or (getattr(self, "_offload_live", False)
                                         and self.state not in (FLARE,
@@ -6607,16 +6597,13 @@ class Autopilot:
         if float(getattr(self.cfg, "FLARE_PITCH_P", 0.0)) > 0.0:
             self.flare_pitch_p(snap, error)
             return
-        if getattr(self.cfg, "PITCH_STIFF_AUG", False):
-            self._send_pitch(0.0)
         return
 
-    def _send_pitch(self, trim):
-        """The client's pitch input: a trim plus ``PITCH_STIFF_AUG``'s term.
-
-        kRPC sums this with its own output.  Sent only when it moves, and
-        once more on the way to zero, so an idle trim costs no calls."""
-        value = vec.clamp(trim + getattr(self, "_pitch_aug", 0.0), -1.0, 1.0)
+    def _send_pitch(self, value):
+        """The client's pitch input; kRPC sums it with its own output.
+        Sent only when it moves, and once more on the way to zero, so an
+        idle trim costs no calls."""
+        value = vec.clamp(value, -1.0, 1.0)
         sent = getattr(self, "_pitch_assist_sent", 0.0)
         if abs(value - sent) > 0.002 or (value == 0.0 and sent):
             try:
@@ -6625,67 +6612,132 @@ class Autopilot:
             except Exception:                           # noqa: BLE001
                 pass
 
-    def pitch_stiff_aug(self, snap):
-        """``PITCH_STIFF_AUG``: top the airframe's pitch stiffness up to
-        ``PITCH_AUG_W_RAD_S``, as a pitch input on the alpha error.
+    def pitch_owned(self):
+        """``PITCH_OWN``: the client flies the pitch axis, GLIDE to FLARE."""
+        return bool(getattr(self.cfg, "PITCH_OWN", False)) and self.state in (
+            GLIDE, HAC, APPROACH, FLARE)
 
-        kRPC's attitude controller is tuned for a pure inertia -- its gains
-        come from the moment of inertia and the available torque alone -- so
-        it relies on the airframe's own restoring moment and cannot see a
-        pitch-up band.  The cargo shuttle (``qs_cargo_rigoff``) has one:
-        its moment table is stable below 10 deg and above ~28, divergent
-        between (e-fold ~5 s at Mach 5), and every glide limit-cycled through
-        it 10-45 deg over its command (rot-cargo-1021, 12/12 lost).
+    def _owned_ttp(self, want):
+        """kRPC's ``time_to_peak`` with pitch slowed to
+        ``PITCH_OWN_KRPC_TTP_S`` while the client owns the axis, so its
+        auto-tuned pitch gains are ~0 and it neither drives nor fights it."""
+        if getattr(self, "_pitch_owned_on", False):
+            return (float(self.cfg.PITCH_OWN_KRPC_TTP_S),) + tuple(want[1:])
+        return tuple(want)
 
-        The stiffness is the swept moment table's slope at the flown alpha
-        and Mach, times q (``Environment.pitch_stiffness``); the target is
-        ``-I w^2`` with ``I`` the pitch moment of inertia.  A stiffer
-        airframe gets nothing, so a stable craft flies as before; a softer
-        one gets the deficit, divided by the surfaces' pitch torque per unit
-        input, as the gain on (alpha - commanded).  Returns the input."""
-        self._aug_k = 0.0
-        if not getattr(self.cfg, "PITCH_STIFF_AUG", False) or self.state \
-                not in (GLIDE, HAC, APPROACH, FLARE):
-            return 0.0
-        q = snap.dynamic_pressure
-        if q < float(self.cfg.PITCH_AUG_MIN_Q_PA):
-            return 0.0
+    def _own_ttp(self):
+        """Re-apply kRPC's present tune through ``_owned_ttp``."""
+        want = (getattr(self, "_tuned_peak", None)
+                or getattr(self, "_static_peak", None))
+        if not want:
+            return
         try:
-            mach = self.env.mach(vec.norm(snap.velocity),
-                                 vec.norm(snap.position)
-                                 - self.env.equatorial_radius)
+            self.autopilot.time_to_peak = self._owned_ttp(want)
         except Exception:                               # noqa: BLE001
-            return 0.0
-        alpha = float(snap.krpc_aoa)
-        slope = self.env.pitch_stiffness(alpha, mach)
-        if slope is None:
-            return 0.0
-        cache = getattr(self, "_aug_cache", None)
-        if cache is None or snap.ut - cache[0] >= float(
-                self.cfg.PITCH_AUG_REFRESH_S) or snap.ut < cache[0]:
+            pass
+
+    def krpc_nose(self, nose, snap):
+        """The nose kRPC is given.  While the client owns pitch it is the
+        command with its pitch-plane component removed (projected onto the
+        plane of the vessel's nose and wings), so kRPC sees the yaw error
+        and none of the pitch one -- its pitch and yaw share one joint
+        profile, and a pitch error it may not act on would slow its yaw."""
+        if not self.pitch_owned():
+            return nose
+        roof = getattr(snap, "roof", None)
+        if not roof or len(roof) != 3:
+            return nose
+        roof = vec.unit(roof)
+        flat = vec.sub(nose, vec.scale(roof, vec.dot(nose, roof)))
+        if vec.norm(flat) < 0.2:
+            return nose
+        return vec.unit(flat)
+
+    def own_pitch(self, snap, error):
+        """``PITCH_OWN``: the pitch input by incremental dynamic inversion.
+
+        kRPC's attitude controller is tuned for a pure inertia (gains from
+        the moment of inertia and the available torque only) and closes a
+        rate loop with an integrator, so it cannot see an airframe's
+        pitching moment and it cancels any faster client input as a
+        disturbance.  The cargo shuttle (``qs_cargo_rigoff``) is divergent
+        between ~10 and ~28 deg hypersonically and limit-cycled through that
+        band on 12/12 (rot-cargo-1021); a stiffness term added on top of
+        kRPC was fought back to zero total input (rot-aug-1021, 6/6 lost).
+
+        So the axis is owned.  Each tick the game is asked for the
+        aerodynamic moment at the vehicle's actual state -- CoM, surface
+        deflection, Mach, body rates (``simulate_aerodynamic_wrench_at``)
+        -- and the input moves by what turns it into the moment the target
+        response needs:
+
+            qdot_d = w^2 e - 2 zeta w q          (e: pitch error, q: rate)
+            u     += (I qdot_d - M_now) / M_delta
+
+        with ``M_now`` the aero moment plus RCS at the present input and
+        ``M_delta`` the surfaces' pitch torque per unit input (plus RCS
+        while the valve is open).  Nothing about the airframe's stability is
+        modelled: stable, neutral and divergent craft are the same law.
+        Raw torque about +x is nose-down (``tools/stiffprobe.py``); +pitch
+        input is nose-up and ``(w x nose).roof`` the nose-up rate, both
+        measured in game."""
+        cfg = self.cfg
+        if not getattr(self, "_pitch_owned_on", False):
+            self._pitch_owned_on = True
+            self._own_ttp()
+            self.logbook.event(
+                snap.ut, "pitch owned by the client in %s (w %.2f rad/s, "
+                         "zeta %.2f; kRPC pitch time_to_peak %.0f s)"
+                % (self.state, float(cfg.PITCH_OWN_W_RAD_S),
+                   float(cfg.PITCH_OWN_ZETA),
+                   float(cfg.PITCH_OWN_KRPC_TTP_S)))
+        self._own_line = None
+        right = getattr(snap, "right", ())
+        rot = getattr(snap, "rotation", ())
+        omega = getattr(snap, "angular_velocity", ())
+        roof = getattr(snap, "roof", ())
+        nose = getattr(snap, "nose", ())
+        if error is None or len(right) != 3 or len(rot) != 4 \
+                or len(omega) != 3 or len(roof) != 3 or len(nose) != 3:
+            return
+        cache = getattr(self, "_own_cache", None)
+        if cache is None or snap.ut < cache[0] or snap.ut - cache[0] >= float(
+                cfg.PITCH_OWN_REFRESH_S):
             try:
                 inertia = float(self.vessel.moment_of_inertia[0])
                 surf = abs(float(
                     self.vessel.available_control_surface_torque[0][0]))
+                rcs_t = abs(float(self.vessel.available_rcs_torque[0][0]))
             except Exception:                           # noqa: BLE001
-                return 0.0
-            cache = self._aug_cache = (snap.ut, inertia, surf)
-        _, inertia, surf = cache
-        gain, u = stiff_aug(self.cfg, slope * q, inertia, surf, alpha,
-                            float(self.commanded_alpha))
-        self._aug_k = gain
-        engaged = gain > 0.0
-        if engaged != getattr(self, "_aug_logged", False):
-            self._aug_logged = engaged
-            self.logbook.event(
-                snap.ut, "pitch augmentation %s at Mach %.1f alpha %.1f: "
-                         "stiffness %+.0f kN m/rad (target %+.0f), surfaces "
-                         "%.0f kN m -> gain %.2f per rad"
-                % ("on" if engaged else "off", mach, alpha,
-                   slope * q / 1000.0,
-                   -inertia * float(self.cfg.PITCH_AUG_W_RAD_S) ** 2
-                   / 1000.0, surf / 1000.0, gain))
-        return u
+                return
+            cache = self._own_cache = (snap.ut, inertia, surf, rcs_t)
+        _, inertia, surf, rcs_t = cache
+        try:
+            _, torque = self.env.flight.simulate_aerodynamic_wrench_at(
+                self.env.body, tuple(snap.position), tuple(snap.velocity),
+                tuple(rot), tuple(omega), snap.ut)
+        except Exception:                               # noqa: BLE001
+            return
+        valve = bool(getattr(self.rcs, "on", False))
+        total = float(getattr(snap, "pitch_input", 0.0) or 0.0)
+        m_aero = -vec.dot(torque, right)
+        m_now = m_aero + (rcs_t * total if valve else 0.0)
+        authority = surf + (rcs_t if valve else 0.0)
+        rate = vec.dot(vec.cross(omega, nose), roof)
+        w = float(cfg.PITCH_OWN_W_RAD_S)
+        zeta = float(cfg.PITCH_OWN_ZETA)
+        e = math.radians(error)
+        want = inertia * (w * w * e - 2.0 * zeta * w * rate)
+        if authority <= 1.0:
+            return
+        du = (want - m_now) / authority
+        target = vec.clamp(total + du, -1.0, 1.0)
+        sent = getattr(self, "_pitch_assist_sent", 0.0)
+        # kRPC's residual pitch output is the read-back less our own.
+        self._send_pitch(target - (total - sent))
+        self._pitch_assist = getattr(self, "_pitch_assist_sent", 0.0)
+        self._own_line = (math.degrees(rate), m_aero / 1000.0,
+                          authority / 1000.0, du)
 
     def glide_pitch_offload(self, snap):
         """``GLIDE_PITCH_OFFLOAD``: carry the glide's *standing* pitch input
@@ -7064,7 +7116,7 @@ class Autopilot:
         lateral = self._tuned_peak if self._tuned_peak else static
         want = (pitch, lateral[1], lateral[2])
         try:
-            self.autopilot.time_to_peak = want
+            self.autopilot.time_to_peak = self._owned_ttp(want)
         except Exception:                               # noqa: BLE001
             return
         self._tuned_peak = want
@@ -7196,11 +7248,11 @@ class Autopilot:
                 interval = self.cfg.ORBIT_TICK_S
             elif self.state == GLIDE:
                 interval = self.cfg.GLIDE_TICK_S
-                # An augmented pitch axis is a sampled loop on the alpha
-                # error; at the glide's 1 s it would lag the mode it damps.
-                if getattr(self, "_aug_k", 0.0) > 0.0:
+                # An owned pitch axis is a sampled loop; at the glide's 1 s
+                # it would lag the mode it holds.
+                if self.pitch_owned():
                     interval = min(interval,
-                                   float(self.cfg.PITCH_AUG_TICK_S))
+                                   float(self.cfg.PITCH_OWN_TICK_S))
             else:
                 interval = self.cfg.TICK_S
             ut = snap.ut if snap is not None else self.conn.space_center.ut
@@ -7409,10 +7461,10 @@ def compact_line(state, snap, run):
         # read-back as ``pin=``'s first number).
         "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
                                 getattr(snap, "roll_input", 0.0) or 0.0),
-        ] + ([] if not getattr(run.cfg, "PITCH_STIFF_AUG", False) else [
-        # ``PITCH_STIFF_AUG``: the gain (per rad) and the input it sent.
-        "aug=%4.2f/%+5.2f" % (getattr(run, "_aug_k", 0.0),
-                              getattr(run, "_pitch_aug", 0.0)),
+        ] + ([] if getattr(run, "_own_line", None) is None else [
+        # ``PITCH_OWN``: nose-up rate deg/s, the aero moment and the pitch
+        # authority (kN m), and the input step the inversion took.
+        "own=%+5.1f/%+6.0f/%5.0f/%+5.2f" % run._own_line,
         ]) + ([] if not getattr(run.cfg, "CANARD_TRIM", False) else [
         # ``CANARD_TRIM``: the canards' commanded trim (fraction of travel,
         # + nose-up) and the low-passed summed pitch input it closes on.

@@ -73,6 +73,12 @@ class Snapshot:
     # a shuttle turning at a fifth of its commanded bank looked like it was
     # banked 40 degrees for a minute.  Empty when kRPC could not answer.
     roof: tuple = ()
+    # ``PITCH_OWN``'s inputs: the wing axis (the vessel's +x), the
+    # attitude quaternion and the body rates, all in the body's rotating
+    # frame -- what the live aerodynamic probe and the pitch rate need.
+    right: tuple = ()
+    rotation: tuple = ()
+    angular_velocity: tuple = ()
     # -- what the air actually did, read from the game rather than inferred.
     # ``aero_force`` is the whole aerodynamic force in the body's rotating
     # frame, so a ``Cl*A``/``Cd*A`` taken from it is the *measured* polar at
@@ -166,6 +172,15 @@ class Telemetry:
                                vessel.reference_frame, frame)
         except Exception:                                   # noqa: BLE001
             self.roof = None
+        self.right = self.rotation = self.angular_velocity = None
+        if getattr(cfg, "PITCH_OWN", False):
+            try:
+                self.right = stream(sc.transform_direction, (1.0, 0.0, 0.0),
+                                    vessel.reference_frame, frame)
+                self.rotation = stream(vessel.rotation, frame)
+                self.angular_velocity = stream(vessel.angular_velocity, frame)
+            except Exception:                               # noqa: BLE001
+                self.right = self.rotation = self.angular_velocity = None
         self.mass = stream(getattr, vessel, "mass")
         self.surface_altitude = stream(getattr, flight, "surface_altitude")
         self.mean_altitude = stream(getattr, flight, "mean_altitude")
@@ -358,6 +373,13 @@ class Telemetry:
         snap._cfg = self.cfg
         snap.runway_above_datum = self.runway_above_datum
         snap.nose = nose
+        for name in ("right", "rotation", "angular_velocity"):
+            read = getattr(self, name)
+            if read is not None:
+                try:
+                    setattr(snap, name, tuple(read()))
+                except Exception:                           # noqa: BLE001
+                    pass
         return snap
 
     @staticmethod
