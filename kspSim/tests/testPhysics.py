@@ -554,7 +554,9 @@ class TestFastClient(unittest.TestCase):
             try:
                 for k in range(4):
                     v = sample(t, k)
-                    if isinstance(t, EnumerationType) and v is None:
+                    # krpc 0.7: a null is the call's is_null, never an
+                    # encoded value (Encoder.encode refuses None).
+                    if v is None:
                         continue
                     ref = oenc(v, t)
                     self.assertEqual(fastclient.encoder(t, oenc)(v), ref, (t, v))

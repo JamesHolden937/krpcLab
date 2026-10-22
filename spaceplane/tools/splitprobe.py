@@ -28,6 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, ROOT)
 
 from common import paths  # noqa: E402
+from common import partmodule  # noqa: E402
 
 paths.use_venv()
 
@@ -41,7 +42,7 @@ def fins(vessel):
     for p in vessel.parts.all:
         if "Tail Fin" in p.title:
             for m in p.modules:
-                if "ControlSurface" in m.name and m.has_field("Deploy Angle"):
+                if "ControlSurface" in m.name and partmodule.has_field(m, "Deploy Angle"):
                     out.append((p, m))
                     break
     return out
@@ -49,15 +50,15 @@ def fins(vessel):
 
 def set_fins(conn, fin_list, angle, settle):
     for p, m in fin_list:
-        m.set_field_float("Deploy Angle", float(angle))
+        partmodule.set_field_float(m, "Deploy Angle", float(angle))
         try:
             p.control_surface.deployed = angle != 0.0
         except Exception:                                   # noqa: BLE001
             for e in ("Deploy", "Retract"):
-                if m.has_event(e) and (angle != 0.0) == (e == "Deploy"):
-                    m.trigger_event(e)
+                if partmodule.has_event(m, e) and (angle != 0.0) == (e == "Deploy"):
+                    partmodule.trigger_event(m, e)
     time.sleep(settle)
-    return [m.get_field("Deploy Angle") for _, m in fin_list]
+    return [partmodule.get_field(m, "Deploy Angle") for _, m in fin_list]
 
 
 def main():

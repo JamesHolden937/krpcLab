@@ -5,6 +5,7 @@ import math, os, sys, time
 sys.path.insert(0, "/home/holden/krpcLab")
 import krpc
 from common import vec
+from common import partmodule  # noqa: E402
 
 inst = sys.argv[1] if len(sys.argv) > 1 else "0"
 save = sys.argv[2] if len(sys.argv) > 2 else "qs_s2_hac0"
@@ -78,7 +79,7 @@ for r in base:
 for name, members in [(k, g) for k, g in groups.items() if k == ONLY]:
     for ang in (15.0, -15.0):
         for cs, m in members:
-            m.set_field_float("Deploy Angle", ang)
+            partmodule.set_field_float(m, "Deploy Angle", ang)
             cs.deployed = True
         settle()
         rows = measure()

@@ -20,6 +20,8 @@ from collections import defaultdict
 import krpc
 
 here = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(here))
+from common import partmodule  # noqa: E402
 n = sys.argv[1]
 base = os.path.join(here, "ksp%s" % n)
 rpc = int(open(os.path.join(base, ".rpc_port")).read())
@@ -63,9 +65,9 @@ for name, parts in sorted(seen.items()):
     for m in p.modules:
         fields, events, actions = {}, [], []
         try:
-            fields = dict(m.fields)
-            events = list(m.events)
-            actions = list(m.actions)
+            fields = dict(partmodule.fields(m))
+            events = list(partmodule.events(m))
+            actions = list(partmodule.actions(m))
         except Exception as e:  # noqa: BLE001
             print("  [%s] unreadable: %s" % (m.name, type(e).__name__))
             continue

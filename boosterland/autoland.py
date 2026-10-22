@@ -21,6 +21,7 @@ from dataclasses import fields
 import krpc
 
 from common import vec
+from common import partmodule  # noqa: E402
 from . import gearcache, guidance, trajectory
 from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
@@ -55,10 +56,10 @@ def set_airbrake_angle(vessel, angle):
     angles = []
     for surface in vessel.parts.control_surfaces:
         for m in surface.part.modules:
-            if m.name == AIRBRAKE_MODULE and m.has_field("Deploy Angle"):
+            if m.name == AIRBRAKE_MODULE and partmodule.has_field(m, "Deploy Angle"):
                 try:
-                    m.set_field_float("Deploy Angle", float(angle))
-                    angles.append(m.get_field("Deploy Angle"))
+                    partmodule.set_field_float(m, "Deploy Angle", float(angle))
+                    angles.append(partmodule.get_field(m, "Deploy Angle"))
                 except Exception:       # noqa: BLE001 -- KSP-side failure
                     angles.append("refused")
     return angles
@@ -120,10 +121,10 @@ def prepare_vehicle(vessel, cfg):
                            if m.name == AIRBRAKE_MODULE), None)
             if module is None:
                 continue
-            if module.has_field("Deploy Angle"):
-                module.set_field_float("Deploy Angle",
+            if partmodule.has_field(module, "Deploy Angle"):
+                partmodule.set_field_float(module, "Deploy Angle",
                                        float(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
-                angles.append(module.get_field("Deploy Angle"))
+                angles.append(partmodule.get_field(module, "Deploy Angle"))
             # Deployed, but *not* made pitch/yaw control surfaces: an
             # airbrake that steers modulates its own deployment, so the drag
             # curve probed during the flip is not the one the coast flies.

@@ -22,6 +22,7 @@ Read-only: it reports, it does not deploy anything.
 import sys
 sys.path.insert(0, "..")
 import krpc
+from common import partmodule  # noqa: E402
 
 rpc, stream = int(sys.argv[1]), int(sys.argv[2])
 conn = krpc.connect(name="ctrlsrf", address="127.0.0.1",
@@ -98,11 +99,11 @@ for part in vessel.parts.all:
         if "ControlSurface" not in m.name and "Aero" not in m.name:
             continue
         try:
-            fields = m.fields
+            fields = partmodule.fields(m)
         except Exception:                                   # noqa: BLE001
             fields = {}
         try:
-            actions = m.actions
+            actions = partmodule.actions(m)
         except Exception:                                   # noqa: BLE001
             actions = []
         print("     %s" % m.name)

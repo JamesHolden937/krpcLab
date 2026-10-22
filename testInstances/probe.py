@@ -16,10 +16,10 @@ conn = krpc.connect(name="probe", address="127.0.0.1",
                     rpc_port=rpc, stream_port=stream)
 print("connected; server version", conn.krpc.get_status().version)
 try:
-    scene = conn.krpc.current_game_scene
+    scene = conn.krpc.game_scene
     print("scene:", scene)
 except Exception as exc:
-    print("current_game_scene failed:", exc)
+    print("game_scene failed:", exc)
     scene = None
 try:
     conn.space_center.load("quicksave")

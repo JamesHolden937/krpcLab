@@ -29,6 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, ROOT)
 
 from common import paths  # noqa: E402
+from common import partmodule  # noqa: E402
 
 paths.use_venv()
 
@@ -46,7 +47,7 @@ def surfaces(vessel):
     out = []
     for p in vessel.parts.all:
         for m in p.modules:
-            if "ControlSurface" in m.name and m.has_field("Deploy Angle"):
+            if "ControlSurface" in m.name and partmodule.has_field(m, "Deploy Angle"):
                 out.append((p, m))
                 break
     return out
@@ -102,7 +103,7 @@ def main():
     rows = []
     try:
         for p, m in surf:
-            m.set_field_float("Deploy Angle", 0.0)
+            partmodule.set_field_float(m, "Deploy Angle", 0.0)
             p.control_surface.deployed = False
         time.sleep(args.settle)
         ref = {s[0]: probe(*s[1:]) for s in states}
@@ -113,10 +114,10 @@ def main():
         for i, (p, m) in enumerate(surf):
             pos = tuple(round(x, 2) for x in p.position(v.reference_frame))
             for sign in (1.0, -1.0):
-                m.set_field_float("Deploy Angle", sign * args.angle)
+                partmodule.set_field_float(m, "Deploy Angle", sign * args.angle)
                 p.control_surface.deployed = True
                 time.sleep(args.settle)
-                got = m.get_field("Deploy Angle")
+                got = partmodule.get_field(m, "Deploy Angle")
                 for label, alt, spd, al in states:
                     r = ref[label]
                     d = [a - b for a, b in zip(probe(alt, spd, al), r)]
@@ -125,13 +126,13 @@ def main():
                           "%+6.2f dClA %+6.2f pitch %+7.1f yaw %+7.1f roll %+7.1f"
                           % (i, p.title, pos[0], pos[1], sign * args.angle, got,
                              label, d[0], d[1], d[2], d[3], d[4]))
-                m.set_field_float("Deploy Angle", 0.0)
+                partmodule.set_field_float(m, "Deploy Angle", 0.0)
                 p.control_surface.deployed = False
                 time.sleep(args.settle)
     finally:
         for p, m in surfaces(v):
             try:
-                m.set_field_float("Deploy Angle", 0.0)
+                partmodule.set_field_float(m, "Deploy Angle", 0.0)
                 p.control_surface.deployed = False
             except Exception:                               # noqa: BLE001
                 pass

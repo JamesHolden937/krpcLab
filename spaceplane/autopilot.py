@@ -29,6 +29,7 @@ from types import SimpleNamespace
 import krpc
 
 from common import krpcbatch, rcs, vec
+from common import partmodule  # noqa: E402
 from common.idle import VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged)
@@ -1597,8 +1598,8 @@ class Autopilot:
         for module in modules:
             for action in ("Lock Gimbal", "LockAction"):
                 try:
-                    if action in module.actions:
-                        module.set_action(action, True)
+                    if action in partmodule.actions(module):
+                        partmodule.set_action(module, action, True)
                         locked += 1
                         break
                 except Exception:                       # noqa: BLE001
@@ -1912,8 +1913,8 @@ class Autopilot:
             try:
                 for module in surface.key.part.modules:
                     if ("ControlSurface" in module.name
-                            and module.has_field("Deploy Angle")):
-                        readback.append(module.get_field("Deploy Angle"))
+                            and partmodule.has_field(module, "Deploy Angle")):
+                        readback.append(partmodule.get_field(module, "Deploy Angle"))
             except Exception:                           # noqa: BLE001
                 continue
         self.logbook.event(
@@ -2045,19 +2046,19 @@ class Autopilot:
             for module in wheel.part.modules:
                 if module.name != "ModuleWheelSuspension":
                     continue
-                if not any("spring" in n.lower() for n in module.fields):
-                    for event in module.events:
+                if not any("spring" in n.lower() for n in partmodule.fields(module)):
+                    for event in partmodule.events(module):
                         if "spring" in event.lower() and "auto" in event.lower():
-                            module.trigger_event(event)
-                fields = list(module.fields)
+                            partmodule.trigger_event(module, event)
+                fields = list(partmodule.fields(module))
                 for want, value in (("spring", spring), ("damper", damper)):
                     if value <= 0.0:
                         continue
                     for name in fields:
                         if want in name.lower():
-                            module.set_field_float(name, value)
+                            partmodule.set_field_float(module, name, value)
                 return "suspension %s" % ", ".join(
-                    "%s %s" % (k, v) for k, v in module.fields.items())
+                    "%s %s" % (k, v) for k, v in partmodule.fields(module).items())
         except Exception as exc:                        # noqa: BLE001
             return "suspension not set (%s)" % exc
         return "no suspension module"
@@ -2069,21 +2070,21 @@ class Autopilot:
                 if module.name != "ModuleWheelBase":
                     continue
                 def friction_field():
-                    for name in module.fields:
+                    for name in partmodule.fields(module):
                         if "friction" in name.lower():
                             return name
                     return None
                 field = friction_field()
                 if field is None:
-                    for event in module.events:
+                    for event in partmodule.events(module):
                         if "friction" in event.lower():
-                            module.trigger_event(event)
+                            partmodule.trigger_event(module, event)
                             break
                     field = friction_field()
                 if field is None:
                     return "friction: no manual field"
-                module.set_field_float(field, float(target))
-                return "friction %s" % module.fields.get(field, "?")
+                partmodule.set_field_float(module, field, float(target))
+                return "friction %s" % partmodule.fields(module).get(field, "?")
         except Exception as exc:                        # noqa: BLE001
             return "friction: failed (%s)" % exc
         return "friction: no ModuleWheelBase"
@@ -2152,11 +2153,11 @@ class Autopilot:
         them cannot say which one a mass discrepancy came from.
         """
         try:
-            fields = dict(module.fields)
+            fields = dict(partmodule.fields(module))
         except Exception:                               # noqa: BLE001
             fields = {}
         try:
-            actions = list(module.actions)
+            actions = list(partmodule.actions(module))
         except Exception:                               # noqa: BLE001
             actions = []
         self.logbook.event(0.0, "drain module %d fields: %r" % (index, fields))
@@ -2244,8 +2245,8 @@ class Autopilot:
         try:
             for module in surface.key.part.modules:
                 if ("ControlSurface" in module.name
-                        and module.has_field("Deploy Angle")):
-                    module.set_field_float("Deploy Angle", float(angle))
+                        and partmodule.has_field(module, "Deploy Angle")):
+                    partmodule.set_field_float(module, "Deploy Angle", float(angle))
             surface.key.deployed = bool(out)
             return True
         except Exception:                               # noqa: BLE001
@@ -2436,8 +2437,8 @@ class Autopilot:
                 for module in surface.key.part.modules:
                     if "ControlSurface" not in module.name:
                         continue
-                    if module.has_field("Deploy Angle"):
-                        module.set_field_float("Deploy Angle", float(angle))
+                    if partmodule.has_field(module, "Deploy Angle"):
+                        partmodule.set_field_float(module, "Deploy Angle", float(angle))
                 surface.key.deployed = bool(out)
                 done += 1
             except Exception:                           # noqa: BLE001
@@ -4322,7 +4323,7 @@ class Autopilot:
         right by luck.
         """
         try:
-            if str(module.get_field("Drain Mode")).strip().lower() == "true":
+            if str(partmodule.get_field(module, "Drain Mode")).strip().lower() == "true":
                 return True
         except Exception:                               # noqa: BLE001
             pass
@@ -4331,7 +4332,7 @@ class Autopilot:
         # Last resort, and only because the read above says it is False: a
         # toggle applied to an unknown state is how you turn it *off*.
         try:
-            module.set_action("Toggle Resource Drain mode", True)
+            partmodule.set_action(module, "Toggle Resource Drain mode", True)
             return True
         except Exception:                               # noqa: BLE001
             return False
@@ -4363,7 +4364,7 @@ class Autopilot:
         # setting that is only ever right by luck.**
         self._drain_whole_vessel(module)
         try:
-            available = list(module.actions)
+            available = list(partmodule.actions(module))
         except Exception:                               # noqa: BLE001
             available = []
         for action in ("Drain", "StartResourceDrainAction",
@@ -4371,7 +4372,7 @@ class Autopilot:
             if action not in available:
                 continue
             try:
-                module.set_action(action, True)
+                partmodule.set_action(module, action, True)
                 return True
             except Exception:                           # noqa: BLE001
                 continue
@@ -4389,14 +4390,14 @@ class Autopilot:
         # "Stop Draining" is an action and an action is *triggered*, so it is
         # set True; the field is the fallback and takes the state itself.
         try:
-            available = list(module.actions)
+            available = list(partmodule.actions(module))
         except Exception:                               # noqa: BLE001
             available = []
         for action in ("Stop Draining", "StopResourceDrainAction"):
             if action not in available:
                 continue
             try:
-                module.set_action(action, True)
+                partmodule.set_action(module, action, True)
                 return True
             except Exception:                           # noqa: BLE001
                 continue
@@ -4405,7 +4406,7 @@ class Autopilot:
                 return True
         if "Toggle Draining" in available:
             try:
-                module.set_action("Toggle Draining", True)
+                partmodule.set_action(module, "Toggle Draining", True)
                 return True
             except Exception:                           # noqa: BLE001
                 pass

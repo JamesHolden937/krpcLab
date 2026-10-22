@@ -74,14 +74,14 @@ class Stack:
         if stage < 0:
             raise RuntimeError("the lit engines are never decoupled: no booster")
         self.stage = stage
-        self.parts = list(vessel.parts.in_decouple_stage(stage))
+        self.parts = list(vessel.decouple_stage_at(stage).parts)
         ids = {p for p in self.parts}
         self.engines = [e for e in engines if e.part in ids
                         and any(n in e.propellant_names for n in PROPELLANTS)]
         self.upper = [e for e in engines if e.part not in ids
                       and (e.active or e.part.stage == stage)]
         self.density = {n: sc.Resources.density(n) for n in PROPELLANTS}
-        self.resources = vessel.resources_in_decouple_stage(stage, False)
+        self.resources = vessel.decouple_stage_at(stage).resources(False)
         prop = self.propellant()
         self.mass0 = sum(p.mass for p in self.parts)
         self.prop0 = prop
@@ -586,7 +586,7 @@ class Ascent:
                 return
             nxt = self.control.current_stage - 1
             if nxt < 0 or any(p.decoupler is not None
-                              for p in self.vessel.parts.in_stage(nxt)):
+                              for p in self.vessel.stage_at(nxt).parts):
                 if waited > self.cfg.LAUNCH_TIMEOUT_S:
                     raise RuntimeError("lit for %.0f s and still on the pad"
                                        % waited)
@@ -599,7 +599,7 @@ class Ascent:
         nxt = self.control.current_stage - 1
         if not lit and (nxt < 0 or any(
                 p.decoupler is not None
-                for p in self.vessel.parts.in_stage(nxt))):
+                for p in self.vessel.stage_at(nxt).parts)):
             raise RuntimeError("the next stage decouples before any engine "
                                "is lit")
         # No throttle write: kRPC re-applies a throttle a client has set on
