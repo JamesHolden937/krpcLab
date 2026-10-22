@@ -10177,7 +10177,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = True
 					usesMirrorDeploy = True
@@ -10430,7 +10430,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = False
 					usesMirrorDeploy = True
@@ -10831,7 +10831,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = False
 					usesMirrorDeploy = True
@@ -11076,7 +11076,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = True
 					usesMirrorDeploy = True
@@ -12239,7 +12239,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = False
 					usesMirrorDeploy = True
@@ -12492,7 +12492,7 @@ GAME
 				}
 				MODULE
 				{
-					name = SyncModuleControlSurface
+					name = ModuleControlSurface
 					isEnabled = True
 					mirrorDeploy = True
 					usesMirrorDeploy = True

@@ -23,6 +23,11 @@ models.
 point somewhere else. The install is only ever read.
 
 **The mods in it.** These are the mods the reference saves were flown with.
+**AtmosphereAutopilot was removed on 2026-10-21** (farm and live): its
+`SyncModuleControlSurface` moves an overridden surface at 2 x |command| /s
+and freezes it at 0, so small deflections were unreachable.  The reference
+saves were renamed to stock `ModuleControlSurface` -- without that, every
+surface loads at authority limiter 100 instead of the saved 150.
 The craft depend on them for mass, drag and control-surface behaviour, so
 leaving one out gives you a different vehicle (see the trap below). Get them
 from CKAN or from each mod's own release page:
@@ -32,7 +37,6 @@ from CKAN or from each mod's own release page:
 | kRPC | **0.6.0** | the server. `requirements.txt` pins the client to match |
 | ModuleManager | 4.2.3 | |
 | ReStock | 1.5.1 | rewrites mesh, drag cube and mass on most stock parts. **Not cosmetic** |
-| AtmosphereAutopilot | 1.6.1 | replaces the control-surface PartModule |
 | PersistentThrust (+ Navigator) | 1.7.5 | replaces the engine PartModule |
 | FullAutoStrut | | adds struts to the vessel |
 | AxisGroupController | | |

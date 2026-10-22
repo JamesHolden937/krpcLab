@@ -57,3 +57,4 @@ lowThrust/mod/**/*.dll
 
 # boosterland: leg deploy times timed in flight (delete to re-time)
 boosterland/data/
+testInstances/disabledMods/
