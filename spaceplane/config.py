@@ -2713,11 +2713,13 @@ class Config:
     # handed back above OFF (``Autopilot.hold_vacuum_surfaces``): no moment
     # to be had, and fins flapping in orbit look broken.
     # kRPC 0.7's structural-wobble mitigations (notch/low-pass on the rate
-    # feedback, bandwidth floor, feedforward cut, output smoothing) left at
-    # kRPC's automatic default.  False turns them off: on 0.7 the glide's
-    # sideslip swung 53 deg p-p against 13-20 on 0.6 (LOG13824 v
-    # LOG13797/13801/13802/13806, qs_shuttle2_rigoff).
-    KRPC_WOBBLE_MITIGATION: bool = True
+    # feedback, bandwidth floor, feedforward cut, output smoothing) at
+    # kRPC's automatic default (True) or off.  **Off** (default 2026-10-21):
+    # they read the shuttle's aerodynamic lateral oscillation as structural
+    # wobble -- rot-wobble-1021, qs_shuttle2_rigoff, 6 each: off 5/6 on the
+    # runway, 0 lost, glide sideslip p-p median ~19 (worst 38); on 2/6, 3
+    # destroyed, ~27 (worst 61).  0.6, which had none: 4/4, 13-20.
+    KRPC_WOBBLE_MITIGATION: bool = False  # default 2026-10-21
     VACUUM_SURFACE_HOLD: bool = True
     VACUUM_SURFACE_ON_Q_PA: float = 10.0
     VACUUM_SURFACE_OFF_Q_PA: float = 20.0
