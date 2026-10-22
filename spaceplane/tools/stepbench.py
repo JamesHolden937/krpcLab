@@ -87,17 +87,31 @@ def step_summary(label, rows, hold):
     return "%-10s %s" % (label, " | ".join(line))
 
 
-def krpc_steps(conn, sc, cfg, book, say, args):
-    """The same steps flown by kRPC's autopilot as the pilot engages and
-    tunes it -- the attitude loop every default flight uses."""
-    sc.load(args.air)
-    time.sleep(1.0)
-    run = ap.Autopilot(conn, cfg, book)
-    run.state = ap.HAC
+def load_paused(conn, sc, save):
+    """Load ``save`` and pause at once.  A load does not pause the game, and
+    the twin-fin shuttle left uncontrolled pitches up from 52 to 87 deg in
+    5 game-s and departs at 120 deg/s: a bench that engages a second later
+    measures the recovery from that, not a step response."""
+    sc.load(save)
+    try:
+        conn.krpc.paused = True
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def unpause(conn):
     try:
         conn.krpc.paused = False
     except Exception:                                   # noqa: BLE001
         pass
+
+
+def krpc_steps(conn, sc, cfg, book, say, args):
+    """The same steps flown by kRPC's autopilot as the pilot engages and
+    tunes it -- the attitude loop every default flight uses."""
+    load_paused(conn, sc, args.air)
+    run = ap.Autopilot(conn, cfg, book)
+    run.state = ap.HAC
     snap = run.telemetry.sample(run.env)
     base = allocate.body_axes(snap.right, snap.nose, snap.roof)
     ap.set_autopilot_attitude(run.autopilot, base[1],
@@ -105,6 +119,7 @@ def krpc_steps(conn, sc, cfg, book, say, args):
     run.engage_autopilot(snap.ut)
     if args.rcs:
         run.control.rcs = True
+    unpause(conn)
     say("air (kRPC): q %.0f Pa, alpha %.1f, time_to_peak %s, gains p %s "
         "r %s y %s" % (snap.dynamic_pressure, snap.krpc_aoa,
                        tuple(round(x, 2) for x in
@@ -284,8 +299,7 @@ def main():
     machs, alphas = run._surface_machs, run._surface_alphas
 
     # 2. the same craft in the air
-    sc.load(args.air)
-    time.sleep(1.0)
+    load_paused(conn, sc, args.air)
     run = ap.Autopilot(conn, cfg, book)
     frame = run.vessel.parts.root.reference_frame
     mapped, laws = [], []
