@@ -32,7 +32,7 @@ from common import krpcbatch, rcs, vec
 from common import partmodule  # noqa: E402
 from common.idle import VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
-    set_autopilot_attitude, set_autopilot_engaged)
+    set_autopilot_attitude, set_autopilot_engaged, vessel_gone)
 from common import cli
 from common.logbook import Logbook
 from common.pacing import LoopRate, ScaleGovernor, sleeper
@@ -8140,6 +8140,12 @@ def main(argv=None):
             if run is not None:
                 run.shutdown("interrupted")
         except Exception as exc:                        # noqa: BLE001
+            if vessel_gone(exc) and run is not None:
+                # kRPC 0.7 raises on the first call after the vessel is gone.
+                logbook.event(run.last_ut or 0.0,
+                              "vessel lost: kRPC reports it destroyed")
+                run.shutdown("destroyed in %s" % run.state)
+                return 0
             logbook.event(0.0, "FATAL %s: %s" % (type(exc).__name__, exc))
             import traceback
             logbook.event(0.0, traceback.format_exc())

@@ -54,3 +54,12 @@ def set_autopilot_attitude(autopilot, direction, up=None, roll=0.0):
         autopilot.target_roll = roll
     except AttributeError:
         pass
+
+
+def vessel_gone(exc):
+    """Is ``exc`` kRPC saying the vessel no longer exists?  0.7 raises
+    ``ObjectDestroyedException`` on the next call after a vessel is
+    destroyed (0.6 froze its streams instead), so a crash ends the flight
+    with that exception rather than with the pilot's own destroyed check.
+    By name: the class lives in a generated service module."""
+    return type(exc).__name__ == "ObjectDestroyedException"

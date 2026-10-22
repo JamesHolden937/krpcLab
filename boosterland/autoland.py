@@ -22,6 +22,7 @@ import krpc
 
 from common import vec
 from common import partmodule  # noqa: E402
+from common.krpcpilot import vessel_gone
 from . import gearcache, guidance, trajectory
 from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
@@ -2018,6 +2019,7 @@ class Autoland:
         cfg = self.cfg
         last = self.last_sample
         self.last_sample = (snap.position, snap.mass)
+        self.last_snap = snap
         if last is None:
             return False
         if (last[1] > 0.0
@@ -2346,9 +2348,17 @@ def main(argv=None):
     except KeyboardInterrupt:
         reason = "interrupted (SIGINT)"
     except Exception as exc:
-        log.event(0.0, "FATAL %r" % exc)
-        reason = "error: %r" % exc
-        status = 1
+        last = getattr(run, "last_snap", None)
+        if vessel_gone(exc) and last is not None:
+            # kRPC 0.7 raises on the first call after the vessel is gone.
+            log.event(last.ut, "vessel lost: kRPC reports it destroyed")
+            reason = ("destroyed %.0f m from pad, alt=%.0f spd=%.1f"
+                      % (run.pad_distance(last), last.landing_height,
+                         last.speed))
+        else:
+            log.event(0.0, "FATAL %r" % exc)
+            reason = "error: %r" % exc
+            status = 1
     finally:
         if run is not None:
             run.shutdown(reason)
