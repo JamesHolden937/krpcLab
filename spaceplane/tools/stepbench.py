@@ -47,6 +47,104 @@ def rotate_axes(axes, axis_index, deg):
     return tuple(vec.quat_rotate(q, a) for a in axes)
 
 
+def plan_steps(snap, base, args):
+    """Hold, then a step about each body axis and back, then a bank about
+    the airflow and back."""
+    names = ("pitch", "roll", "yaw")
+    # Nose-up is a rotation about -right; roll and yaw about +nose/+belly.
+    senses = (-1.0, 1.0, 1.0)
+    plan = [("hold", base)]
+    for k in range(3):
+        plan.append(("%s %+g" % (names[k], args.deg),
+                     rotate_axes(base, k, senses[k] * args.deg)))
+        plan.append(("back", base))
+    flow = vec.unit(snap.velocity)
+    q = vec.quat_axis_angle(flow, math.radians(args.deg))
+    plan.append(("bank %+g" % args.deg,
+                 tuple(vec.quat_rotate(q, a) for a in base)))
+    plan.append(("back", base))
+    return plan
+
+
+def step_summary(label, rows, hold):
+    names = ("pitch", "roll", "yaw")
+    line = []
+    for k in range(3):
+        e = [r[1][k] for r in rows]
+        first = abs(e[0])
+        peak = max(abs(x) for x in e)
+        over = 0.0
+        if first > 0.5:
+            sign = 1.0 if e[0] > 0 else -1.0
+            over = max(0.0, -min(sign * x for x in e)) / first
+        t10 = next((r[0] for r in rows
+                    if abs(r[1][k]) <= 0.1 * max(first, 0.5)), None)
+        tail = [r[1][k] for r in rows if r[0] >= hold - 1.0]
+        line.append("%s %.1f->%.1f peak %.1f over %.0f%% t10 %s"
+                    % (names[k], e[0], sum(tail) / max(1, len(tail)),
+                       peak, 100 * over,
+                       "%.1f" % t10 if t10 is not None else "-"))
+    return "%-10s %s" % (label, " | ".join(line))
+
+
+def krpc_steps(conn, sc, cfg, book, say, args):
+    """The same steps flown by kRPC's autopilot as the pilot engages and
+    tunes it -- the attitude loop every default flight uses."""
+    sc.load(args.air)
+    time.sleep(1.0)
+    run = ap.Autopilot(conn, cfg, book)
+    run.state = ap.HAC
+    try:
+        conn.krpc.paused = False
+    except Exception:                                   # noqa: BLE001
+        pass
+    snap = run.telemetry.sample(run.env)
+    base = allocate.body_axes(snap.right, snap.nose, snap.roof)
+    ap.set_autopilot_attitude(run.autopilot, base[1],
+                              vec.scale(base[2], -1.0))
+    run.engage_autopilot(snap.ut)
+    if args.rcs:
+        run.control.rcs = True
+    say("air (kRPC): q %.0f Pa, alpha %.1f, time_to_peak %s, gains p %s "
+        "r %s y %s" % (snap.dynamic_pressure, snap.krpc_aoa,
+                       tuple(round(x, 2) for x in
+                             run.autopilot.time_to_peak),
+                       tuple(round(x, 1) for x in
+                             run.autopilot.pitch_pid_gains),
+                       tuple(round(x, 1) for x in
+                             run.autopilot.roll_pid_gains),
+                       tuple(round(x, 1) for x in
+                             run.autopilot.yaw_pid_gains)))
+    summary = []
+    for label, target in plan_steps(snap, base, args):
+        ap.set_autopilot_attitude(run.autopilot, target[1],
+                                  vec.scale(target[2], -1.0))
+        start = sc.ut
+        rows = []
+        while sc.ut - start < args.hold:
+            snap = run.telemetry.sample(run.env)
+            axes = allocate.body_axes(snap.right, snap.nose, snap.roof)
+            err = tuple(math.degrees(e) for e in allocate.body(
+                allocate.attitude_error(axes, target), axes))
+            rate = tuple(math.degrees(r) for r in allocate.body(
+                snap.angular_velocity, axes))
+            rows.append((snap.ut - start, err))
+            say("%-10s t=%5.2f err=%+6.2f/%+6.2f/%+6.2f rate=%+6.1f/%+6.1f/"
+                "%+6.1f q=%.0f a=%.1f slip=%+.1f in=%+.2f/%+.2f/%+.2f"
+                % ((label, snap.ut - start) + err + rate
+                   + (snap.dynamic_pressure, snap.krpc_aoa, snap.sideslip,
+                      snap.pitch_input or 0.0, snap.roll_input or 0.0,
+                      snap.yaw_input or 0.0)))
+            wake = snap.ut + args.tick
+            while sc.ut < wake:
+                time.sleep(0.005)
+        if rows:
+            summary.append(step_summary(label, rows, args.hold))
+    for line in summary:
+        say("step " + line)
+    book.close()
+
+
 def identify(sc, run, say, args):
     """Open loop, kRPC off, every surface at neutral: each surface in turn
     to ``--pulse`` for 0.4 game-s and back, logging every tick's measured
@@ -134,6 +232,9 @@ def main():
                    help="open loop: pulse each surface alone and compare "
                         "the moment it makes with its measured column")
     p.add_argument("--pulse", type=float, default=0.5)
+    p.add_argument("--krpc", action="store_true",
+                   help="kRPC's autopilot flies the steps, tuned as the "
+                        "pilot tunes it (engage_autopilot): no sweep")
     p.add_argument("--rcs", action="store_true",
                    help="RCS on and the valve held open, as a flight's "
                         "relay does when it fires")
@@ -141,6 +242,8 @@ def main():
     p.add_argument("--only", type=int, action="append", default=[],
                    help="identify only these surface indices")
     args = p.parse_args()
+    # SURFACE_OWN opens the body-axis streams; with no surface measured
+    # (--krpc never sweeps) the client never takes the attitude.
     cfg = apply_overrides(Config(), ["SURFACE_OWN=1"] + args.set)
     rpc, stream = paths.ports(args.instance)
     conn = krpc.connect(name="stepbench", rpc_port=rpc, stream_port=stream)
@@ -153,6 +256,8 @@ def main():
     say("stepbench: orbit %s, air %s, steps %.1f deg x %.1f s, tick %.2f, "
         "set %s" % (args.orbit, args.air, args.deg, args.hold, args.tick,
                     " ".join(args.set) or "-"))
+    if args.krpc:
+        return krpc_steps(conn, sc, cfg, book, say, args)
     # 1. the vacuum sweep, on the pilot's own code
     sc.load(args.orbit)
     time.sleep(2.0)
