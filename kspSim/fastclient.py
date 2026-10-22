@@ -2,7 +2,7 @@
 
 The autopilots run under PyPy against the simulator (``--pypy``) because
 their propagators are several times faster there, but PyPy has no C
-protobuf: krpc 0.6.0's client builds every request, argument and response
+protobuf: krpc's client builds every request, argument and response
 through protobuf's pure-Python runtime and reads each response's length
 prefix a byte at a time behind a ``select``.  A qs_entry flight makes
 ~18,000 ``SimulateAerodynamicForceAt`` calls at 0.42 ms each from PyPy
@@ -143,7 +143,8 @@ def _read_frame(sock):
 
 
 def _parse_response(buf):
-    """Response bytes -> (error bytes or None, [(error bytes or None, value)])."""
+    """Response bytes -> (error bytes or None, [(error bytes or None, value)]);
+    a result the server marked null (krpc 0.7 ``is_null``) has value None."""
     error, results = None, []
     pos, end = 0, len(buf)
     while pos < end:
@@ -154,17 +155,21 @@ def _parse_response(buf):
         if tag == 0x0A:
             error = chunk
         elif tag == 0x12:
-            e, v = None, b""
+            e, v, null = None, b"", False
             p, m = 0, len(chunk)
             while p < m:
                 t, p = fastpb.read_varint(chunk, p)
+                if t == 0x18:                   # is_null: a varint, not a length
+                    flag, p = fastpb.read_varint(chunk, p)
+                    null = bool(flag)
+                    continue
                 k, p = fastpb.read_varint(chunk, p)
                 if t == 0x0A:
                     e = chunk[p:p + k]
                 elif t == 0x12:
                     v = chunk[p:p + k]
                 p += k
-            results.append((e, v))
+            results.append((e, None if null else v))
     return error, results
 
 
@@ -205,6 +210,11 @@ def install():
         for i, (value, typ) in enumerate(zip(args, param_types)):
             if isinstance(value, DefaultArgument):
                 continue
+            if value is None:
+                # krpc 0.7: a null argument is the position and is_null=1
+                arg = (b"\x08" + fastpb.varint(i) if i else b"") + b"\x18\x01"
+                body.append(fastpb._ld(3, arg))
+                continue
             if not isinstance(value, typ.python_type):
                 try:
                     value = self._types.coerce_to(value, typ)
@@ -220,7 +230,14 @@ def install():
 
     _CALL_BYTES.append(call_bytes)
 
-    def _invoke(self, service, procedure, args, param_names, param_types, return_type):
+    orig_invoke = kclient.Client._invoke
+
+    def _invoke(self, service, procedure, args, param_types, return_type):
+        if service == "KRPC":
+            # Streams, events and the service list: the client keeps its
+            # own books on these replies (krpc 0.7 ``_note_stream_id``).
+            return orig_invoke(self, service, procedure, args, param_types,
+                               return_type)
         request = fastpb._ld(1, call_bytes(self, service, procedure, args, param_types))
         conn = self._rpc_connection
         with self._rpc_connection_lock:
@@ -233,7 +250,7 @@ def install():
         if err is not None:
             raise self._build_error(KRPC.Error.FromString(err))
         result = None
-        if return_type is not None:
+        if return_type is not None and value is not None:
             result = Decoder.decode(self, value, return_type)
             if isinstance(result, KRPC.Event):
                 result = Event(self, result)

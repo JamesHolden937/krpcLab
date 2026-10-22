@@ -34,7 +34,7 @@ def batch(conn, calls):
         # yields each call's service, procedure, arguments and types.
         parts = []
 
-        def capture(service, procedure, args, _names, param_types, _ret):
+        def capture(service, procedure, args, param_types, _ret):
             parts.append(fast._CALL_BYTES[0](
                 conn, service, procedure, args, param_types))
         conn._build_call = capture
@@ -66,11 +66,12 @@ def batch(conn, calls):
     else:
         if response.HasField("error"):
             raise conn._build_error(response.error)
-        pairs = [(r.error if r.HasField("error") else None, r.value)
+        pairs = [(r.error if r.HasField("error") else None,
+                  None if r.is_null else r.value)
                  for r in response.results]
     out = []
     for (err, value), typ in zip(pairs, types):
-        if err is not None or typ is None:
+        if err is not None or typ is None or value is None:
             out.append(None)
         else:
             out.append(Decoder.decode(conn, value, typ))
