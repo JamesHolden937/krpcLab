@@ -1,121 +1,83 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-21 evening: spaceplane -- kRPC 0.7 and stock surfaces (both farm-wide); SURFACE_OWN's actuator found (fingerprint `56d5a616`)
+## 2026-10-22 night: spaceplane -- slew factor 1.0 on kRPC 0.7 (promoted); pointing deadband refuted; the approach cannot turn (fingerprint `9eec0e1f`)
 
-Committed and pushed.  Farm stopped at wrap-up (the user called it to
-hand over; context was full).  Journal: "Evening,
-2026-10-21".  **Two plant changes today, farm and live alike** (the user
-removed AtmosphereAutopilot and installed kRPC 0.7.0 on the live game):
+Committed and pushed. The farm was stopped at wrap-up. Journal: "Night, 2026-10-21/22".
+The plant is still the 2026-10-21 one: AtmosphereAutopilot removed, stock surfaces, kRPC 0.7.0 on the farm and live.
+The rename of `ModuleControlSurface` in the user's live saves is still the user's job; they were told on 2026-10-21.
 
-1. **AtmosphereAutopilot removed** (`testInstances/disabledMods/`, can go
-   back).  Its `SyncModuleControlSurface` moved an *overridden* surface at
-   2 x |command| /s and froze it at exactly 0 (decompiled with `ikdasm`),
-   so 0.003 -- this code's "neutral" -- never moved a surface.  **Saves:**
-   the module name in every reference save renamed to stock
-   `ModuleControlSurface`; without that every surface loads at authority
-   limiter 100 instead of the saved 150 (verified on ksp0).  The 13
-   gitignored saves' originals are in `disabledMods/savesBeforeRename/`.
-   **The user's live saves need the same rename** (or the limiter reset to
-   150 in the part menu) -- told them.
-2. **kRPC 0.7.0** on base + all clones (0.6.0 kept in `disabledMods/`),
-   client 0.7.0 in `.venv` and `.venv-pypy`, pins bumped.  Ported:
-   `kspSim/fastclient.py` and `common/krpcbatch.py` (client internals,
-   `is_null`); every removed `Module` call through **`common/partmodule.py`**
-   (fields/events/actions by part-menu name, cached `PartField`s);
-   ascent's staging on `Vessel.stage_at`/`decouple_stage_at`; panel colours
-   as `StdLib.ColorRGBA` (`common.panel.rgba` -- a tuple stopped every
-   pilot at its panel); `ObjectDestroyedException` ends a flight as
-   destroyed (`common.krpcpilot.vessel_gone`); boosterland's
-   `ROLL_THRESHOLD_DEG` on `roll_start_angle`/`roll_engage_angle`
-   (`roll_threshold` is gone; its setter had failed silently).  Suite 685
-   OK; smoke: ascent to 81 x 79, booster down 222 m out (fell over),
-   spaceplane flies.  **kspSim cannot be used** until its server speaks
-   0.7 (protocol version handshake, renumbered KRPC procedures) and its
-   `attitude.py` is the 0.7 controller.
+**stepbench fixed (8fbbadb): pause on load, engage, then unpause.**
+`sc.load` does not pause the game, and the uncontrolled twin-fin departs within 5 s (pitch 52 -> 87, 120 deg/s).
+Every twin-fin bench before this measured that recovery, so the 2026-10-21 bench numbers are void.
+`qs_s2_e42` and `qs_cargo_e42` are now in `saves/` (61041d0); before that they were only on ksp0/ksp1.
 
-**kRPC 0.7's attitude controller is new** (oscillation detection, notch /
-low-pass rate filters, bandwidth floor, feedforward cut, output smoothing,
-0.5 s soft start, target smoothing).  **`KRPC_WOBBLE_MITIGATION` (default
-off, promoted):** the mitigations read the shuttle's aerodynamic lateral
-motion as structural wobble.  rot-wobble-1021 (qs_shuttle2_rigoff, 6
-each): off 5/6 on the runway, 0 lost, glide sideslip p-p median ~19 (worst
-38); on 2/6, 3 destroyed, ~27 (worst 61).  0.6: 4/4, 13-20.  Booster and
-ascent still run kRPC's defaults (unmeasured; the booster *is* flexible).
+**`ATTITUDE_SLEW_FACTOR` 1.91 -> 1.0, promoted (4bee240).**
+- Bench, Mach 6, 5 deg steps (LOG13891-13896):
+  - 1.91 is sluggish, with standing errors of 2-7 deg.
+  - 1.0 settles to about 0.5 deg.
+  - 0.5 diverges.
+- slew-1021 (4 orbits, about 6 flights an arm):
+  - Intact on the runway: 14/23 at 1.0 against 7/23 at 1.91.
+  - Airborne breakups: 1 against 5.
 
-**Baseline on 0.7 + stock surfaces** (rot-base07-1021, 6 each, defaults
-`56d5a616`): inc 2/6 intact on the runway (+2 on it but broken up), ecc 3/6
-(+1), high 3/6 (+1), rigoff 5/6 (rot-wobble arm1); cargo 0/6 (42-230 km
-short, as on 0.6).  Worse than this morning on inc/ecc (7/12, 9/9 on 0.6 +
-AA).  **Touchdown breakups on the runway: 4 of 24** -- new; read
-`KSP.log` for the parts first (failure: wing/gear?).  Derived tables and
-the per-axis `time_to_peak` (slew x1.91) were fitted on the old plant:
-re-take them (`conesum`, `conepolar`, `landsum`) before tuning anything.
+**`KRPC_POINTING_DEADBAND_DEG`: flown and deleted (2ceb50e).**
+The flag set kRPC's `pitch_yaw_attenuation_angle` (1 deg) lower.
+The hypothesis: the approach re-aims every 0.1 s, a turn moves the target about 0.17 deg per tick, and that is inside the deadband.
+- dead-1022 (`logs/rot-dead-1022-c*.txt`, LOG13960-14005):
+  - The log confirms the flag was applied.
+  - Intact: 16/23 at 0.1 deg against 17/23 for the default.
+  - Turn ratio: -0.16 on both arms.
+  - Approach |xt| median: 228 m against 180 m.
+- Result: null, so the flag was deleted.
 
-**`SURFACE_OWN` (off; the user's mixer)** -- the roll "spin" was the
-actuator, not the law.  Now: the sweep neutralises on the input path
-(kRPC/SAS off for it), measures each surface's moment at -1/-0.5/0/0.5/1
-(stall makes the curve turn back; the odd half alone had drag yaw
-backwards), times two travels to tell the travel law (stock: ~1.04
-units/s constant; AA: 2 x |cmd|), and measures RCS per input and per sign
-with the gyroscopic term removed (`measure_rcs`; the cargo craft's RCS is
-asymmetric and its roll input makes pitch).  `own_attitude` models each
-surface's actual deflection and adds the INDI increment to it
-(`allocate.actuator_step`/`actuator_command`).  **Bench (stepbench):**
-settles every axis on the glide save and at Mach 6 on both craft
-(cargo: pitch and bank settle at alpha 40, roll loose).  **In flight it
-fails on energy, not attitude:** rot-stock-1021 (0.6, stock surfaces) 0/5,
-cargo 168-228 km short, twin-fin 144-191 km short.  Next: read one of
-those logs (LOG13798/13799/13803/13804/13807) -- what alpha the glide flew
-against its command, whether the vacuum sweep (now ~60 game-s, kRPC off)
-upset the deorbit, and whether `commanded_nose` is what the glide means.
+**Where it stands (defaults `9eec0e1f`, from orbit, stock surfaces):**
+- dead-1022 default arm, intact on the runway:
+  - rigoff 6/6
+  - inc 4/6
+  - ecc 5/6
+  - high 2/5
+- Cargo has not been flown on 0.7 since it went 0/6 at 42-230 km short.
 
-**stepbench** (`spaceplane/tools/stepbench.py`): `--air` save, `--rcs`,
-`--identify` (open-loop pulses; free-drift noise swamps them), a bank step
-about the airflow.  Bench saves: `qs_s2_rigoff0` (12.7 km glide; loads
-rolling at 200 deg/s), new `qs_cargo_e42` and `qs_s2_e42` (42 km, Mach 6,
-from entrysave -- `--low` must be below `--alt`).  `qs_shuttle2_gate`
-dives into the ground in 22 s: not a bench save.
+**The blocker: the approach cannot turn.**
+- Heading rate as a fraction of the coordinated-turn rate g tan(bank)/v, banked > 5 deg:
+  - 0.6 + AA: 0.82-0.94.
+  - 0.7 at slew 1.91: 0.83-0.97.
+  - 0.7 at slew 1.0: 0.14 to -0.16.
+- Yaw input is about -0.44 against the bank, and the nose sits 0.5 deg out of the turn.
+- The approach hands the flare 200-400 m of cross-track (|xt| median 180-375 m against 14-39 m on 0.6 + AA).
+- The losses are touchdowns 80-190 m off the runway; the elevons and RCS blocks break first in KSP.log.
+- The pointing deadband was the obvious kRPC mechanism, and it is refuted.
+- Next: log kRPC's target direction and its error on the approach every tick. That tells apart two cases:
+  - the pilot commands a nose off the turn (`aim`/`aim_runway` pointing at the velocity or the runway while banked);
+  - kRPC fails to follow a target it was given.
+- Also check the yaw `time_to_peak` the approach assigns at 1.0 (`yaw_time_to_peak`, `ATTITUDE_YAW_WITH_ROLL`/`BY_ALPHA`). At 1.91 the ratio was fine.
+- Scratchpad tools for this (`turn.py`, `apx2.py`, `tab.py`) were not kept. The turn ratio is heading rate / (g tan(bank)/v) over APPROACH ticks with |bank| > 5.
 
-**kRPC attitude tuning on 0.7 -- the open question (stepbench `--krpc`,
-committed 9b486b7: kRPC flies the steps with the pilot's own
-`engage_autopilot` tuning).**  The glide's lost flights all swing 48-75
-deg of sideslip p-p with bank-swing damper events, mitigation off or on, so
-suspect the gains: `time_to_peak` = `ATTITUDE_SLEW_FACTOR` 1.91 x
-sqrt(I/tau) was fitted to 0.6's controller.  Bench so far (5 deg steps x
-6 s, `--hold 6 --rcs`):
-- `qs_s2_rigoff0`, factor 1.91 (LOG13863): time_to_peak (19.2, 5.3,
-  19.6), gains p 4.5/15 r 0.3/1.1 y 42/143 -- **it cannot hold**: roll
-  ran to 54 deg in the hold, pitch error drifted to -28.
-- `qs_s2_e42`, factor 1.0 (LOG13865): time_to_peak (10, 2.8, 10.2) --
-  holds most steps (pitch/roll t10 1.4-6 s) but the bank step-back blew up
-  (pitch +11, roll -20).
-- `qs_s2_e42` at 1.91 and 0.5 (LOG13864/13866) stalled after loading --
-  no data; the rigoff runs at 1.0/0.5 were never flown.  Re-run the set
-  on a freshly restarted farm, one save per instance, and compare
-  like with like before flying anything.
+**Invalid now:**
+- The cone saves `qs_s2_hac0-5` were taken on the AA plant. savefly from them landed 0/24, 0.5-13 km off.
+- Retake them (from an orbit flight on the current defaults) before any landing work uses them.
+- The derived tables (`conesum`, `conepolar`, `landsum`) are not re-taken yet.
 
-**How-it-works PDF is stale -- rewrite it first next wrap-up:** it still
-describes `GLIDE_PITCH_OFFLOAD` (deleted) under "Pitch trim", says
-nothing of `KRPC_WOBBLE_MITIGATION` under "Attitude", and carries
-fingerprint `cb0ae1d4` (now `56d5a616`).  Not done this session for want
-of context; the page has to be rebuilt with its figures.
+**Bench saves:**
+- `qs_s2_e42_0..5` are 6 rigoff entries at Mach 6, made this session.
+- They exist **only on the instances** (one per instance), not in `saves/`, so `syncSaves.sh push` leaves them alone.
+- `qs_s2_e42` / `qs_cargo_e42` are the reference bench saves.
 
-Also: `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` deleted (inert under an
-engaged kRPC).  `VACUUM_SURFACE_HOLD` and `canard_trim` still send 0.003 as
-"neutral" -- on stock surfaces that is a real 0.1 deg command now, fine.
+**Next, in order:**
+1. The approach turn diagnosis above.
+2. Retake `qs_s2_hac*`.
+3. Re-take `conesum`/`conepolar`/`landsum`.
+4. The high orbit (2/5).
+5. Cargo on 0.7.
+6. `SURFACE_OWN`'s energy loss in flight. Read LOG13798/13799/13803/13804/13807: the glide's alpha against its command, and whether the vacuum sweep upset the deorbit.
+7. kspSim on 0.7 (protocol handshake, renumbered procedures, the new attitude model). Until then it cannot screen.
+8. Wobble mitigation on the booster.
 
-**Next, in order:** (1) finish the 0.7 attitude-tuning bench above, then
-fly the winner against the defaults (rigoff, then inc/ecc/high) and
-promote or delete; (2) re-take the derived tables (`conesum`,
-`conepolar`, `landsum`) on the new plant; (3) the how-it-works PDF; (4)
-`SURFACE_OWN`'s energy loss in flight; (5) kspSim on 0.7; (6) wobble
-mitigation on the booster; (7) touchdown breakups (4/24 -- low priority
-unless KSP.log shows a wing or tail strike).
-
-**Traps paid:** `entrysave --low` defaults to 52 km (empty window under a
-42 km `--alt`); a scripted sed missed 46 CRLF saves; 13 saves are
-gitignored, so git cannot undo an edit to them; the farm's ModuleManager
-cache must be deleted when a mod that patches parts leaves.
+**Traps paid:**
+- A save load does not pause the game. Load paused, engage, then unpause, or the bench measures a departure.
+- A bench save that is on two instances fails on four. Put it in `saves/` and push it.
+- Swap reached 20.6 GB after 4 cycles, and ksp4 stopped answering for two arms. Restart before every comparison.
+- `chromium` is not on PATH on this machine. Print the PDF with `~/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome --headless --no-pdf-header-footer --print-to-pdf=...`.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 

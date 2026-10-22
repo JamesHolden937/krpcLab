@@ -48,15 +48,34 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-21 evening, fingerprint `56d5a616`)
+## Where it stands (2026-10-22 night, fingerprint `9eec0e1f`)
 
-**The plant changed twice on 2026-10-21:** AtmosphereAutopilot removed
-(stock control surfaces; saves renamed so the limiter loads at 150) and
-kRPC 0.7.0 (a new attitude controller; `KRPC_WOBBLE_MITIGATION` off).
-Baseline on that (6 each): rigoff 5/6, inc 2/6, ecc 3/6, high 3/6 on the
-runway intact, 4/24 broke up on the runway at touchdown; cargo 0/6.  Every
-derived table and the attitude tuning below predate it -- re-take them.
-The rest of this section is the morning's state on the old plant.
+The plant has been the same since 2026-10-21: AtmosphereAutopilot removed (stock surfaces), kRPC 0.7.0, and `KRPC_WOBBLE_MITIGATION` off.
+
+`ATTITUDE_SLEW_FACTOR` is 1.0, retuned for 0.7's controller. slew-1021 measured 14/23 intact on the runway against 7/23 at 1.91.
+
+dead-1022 default arm, intact on the runway:
+- rigoff 6/6
+- inc 4/6
+- ecc 5/6
+- high 2/5
+
+**Blocker: the approach cannot turn.** Its heading rate is about 0.14 to -0.16 of a coordinated turn (0.82-0.97 on 0.6 + AA, or at 1.91). It hands the flare 200-400 m of cross-track, and the losses are touchdowns beside the runway.
+
+kRPC's pointing deadband is refuted as the cause (dead-1022). Next: log kRPC's target and error on the approach.
+
+The cone saves `qs_s2_hac*` and every derived table predate the plant change. Retake them.
+
+## Earlier (2026-10-21 evening, fingerprint `56d5a616`)
+
+Baseline on the new plant at slew 1.91 (6 each), intact on the runway:
+- rigoff 5/6
+- inc 2/6
+- ecc 3/6
+- high 3/6
+- cargo 0/6
+
+4/24 broke up on the runway at touchdown.
 
 ## Earlier (2026-10-21 morning, fingerprint `fb9a9b61`)
 
@@ -112,7 +131,7 @@ low-speed rollouts that ran off the edge.
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md): the inc glide energy deficit; then `docs/spaceplane/constantsAudit.md` top-down.
+The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaking the cone saves and derived tables; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 
