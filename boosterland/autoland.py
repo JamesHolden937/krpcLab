@@ -655,10 +655,18 @@ class Autoland:
             try:
                 # kRPC controls roll only while the pointing error is under
                 # this; above it the roll input is zero and roll drifts.
-                self.autopilot.roll_threshold = float(
-                    self.cfg.ROLL_THRESHOLD_DEG)
-            except Exception:           # noqa: BLE001 -- older kRPC
-                pass
+                # kRPC 0.7 replaced ``roll_threshold`` by a blend: none
+                # above ``roll_start_angle``, full below
+                # ``roll_engage_angle`` (start set first, so the pair is
+                # never inverted mid-change).
+                limit = float(self.cfg.ROLL_THRESHOLD_DEG)
+                start = min(180.0, limit + 5.0)
+                self.autopilot.roll_start_angle = start
+                self.autopilot.roll_engage_angle = min(limit, start - 1.0)
+            except Exception as exc:    # noqa: BLE001
+                self.log.event(snap.ut, "could not set kRPC's roll gate "
+                               "(%r): roll drops above 20 deg of pointing "
+                               "error" % exc)
             self.aim(snap.direction, snap)   # hold attitude, but stop the roll
             self.engage_autopilot(snap.ut)
             self.gui.set_start_label("RUNNING")

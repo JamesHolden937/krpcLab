@@ -34,7 +34,7 @@ from CKAN or from each mod's own release page:
 
 | mod | version | why |
 |---|---|---|
-| kRPC | **0.6.0** | the server. `requirements.txt` pins the client to match |
+| kRPC | **0.7.0** | the server. `requirements.txt` pins the client to match |
 | ModuleManager | 4.2.3 | |
 | ReStock | 1.5.1 | rewrites mesh, drag cube and mass on most stock parts. **Not cosmetic** |
 | PersistentThrust (+ Navigator) | 1.7.5 | replaces the engine PartModule |
