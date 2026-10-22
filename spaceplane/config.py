@@ -2720,16 +2720,6 @@ class Config:
     # runway, 0 lost, glide sideslip p-p median ~19 (worst 38); on 2/6, 3
     # destroyed, ~27 (worst 61).  0.6, which had none: 4/4, 13-20.
     KRPC_WOBBLE_MITIGATION: bool = False  # default 2026-10-21
-    # **kRPC's pointing deadband, degrees** (``pitch_yaw_attenuation_angle``;
-    # 0 leaves kRPC's 1.0).  Below it the rate kRPC asks for ramps to zero,
-    # and each target is an attitude to stop at -- so a turn re-aimed every
-    # 0.1 s moves the target ~0.2 deg a tick, inside the deadband, and the
-    # yaw loop brakes the nose against the turn.  slew-1021, APPROACH,
-    # 250-1200 m, banked > 5 deg: at ATTITUDE_SLEW_FACTOR 1.0 the heading
-    # turned 0.14 of a coordinated turn (1.91: 0.83), yaw input -0.44
-    # against the bank, nose 0.5 deg out of the turn, cross-track median
-    # 218 m at the flare (0.6 + AA: 14-39).
-    KRPC_POINTING_DEADBAND_DEG: float = 0.0
     VACUUM_SURFACE_HOLD: bool = True
     VACUUM_SURFACE_ON_Q_PA: float = 10.0
     VACUUM_SURFACE_OFF_Q_PA: float = 20.0

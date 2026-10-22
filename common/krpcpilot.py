@@ -65,26 +65,6 @@ def vessel_gone(exc):
     return type(exc).__name__ == "ObjectDestroyedException"
 
 
-def pointing_deadband(autopilot, deg, log=None, ut=0.0):
-    """kRPC's pitch/yaw pointing deadband (``pitch_yaw_attenuation_angle``,
-    default 1 deg): at or above it the rate profile asks for full rate,
-    below it the asked rate ramps to zero at half the angle.  Each target is
-    an attitude to *stop* at, so a target that moves less than the deadband
-    per tick -- a steady turn re-aimed every 0.1 s -- is held still and the
-    nose is braked against the turn.  ``deg`` <= 0 leaves kRPC's value."""
-    if deg is None or deg <= 0.0:
-        return False
-    try:
-        autopilot.pitch_yaw_attenuation_angle = float(deg)
-    except Exception as exc:                                # noqa: BLE001
-        if log is not None:
-            log.event(ut, "kRPC pointing deadband not set (%r)" % (exc,))
-        return False
-    if log is not None:
-        log.event(ut, "kRPC pointing deadband %.2f deg (kRPC's 1.0)" % deg)
-    return True
-
-
 def wobble_mitigation(autopilot, on, log=None, ut=0.0):
     """kRPC 0.7's structural-oscillation mitigations (bandwidth floor,
     feedforward cut, output smoothing, rate-feedback filters) to their

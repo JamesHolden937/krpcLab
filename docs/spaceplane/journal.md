@@ -3099,3 +3099,62 @@ step-back diverged (LOG13865).  The 1.91 and 0.5 runs on e42 stalled
 after loading (LOG13864/13866), and the rigoff comparison was never flown.
 The hypothesis that the slew factor fitted on 0.6 detunes 0.7's controller
 is still open; the session ended there.
+
+### Night, 2026-10-21/22: the 0.7 slew factor, and the pointing deadband
+
+**The twin-fin bench had been measuring a departure.**  A load does not
+pause the game, and the twin-fin left uncontrolled pitches up from 52 to
+87 deg in 5 game-s and then departs at 120 deg/s (probe on qs_s2_e42_0:
+alpha +30 at load, -25 a second later).  Every twin-fin stepbench before
+this (qs_s2_rigoff0 "loads rolling at 200 deg/s", qs_shuttle2_gate "dives
+into the ground", the e42 runs) measured the recovery from that.  The
+cargo save holds because it was saved with SAS on.  stepbench now pauses
+on load, engages and then unpauses.  Also: qs_s2_e42/qs_cargo_e42 had
+never reached `saves/` (only ksp0/ksp1), which is why the e42 runs
+"stalled" -- they failed to load.  Fresh twin-fin 42 km saves
+qs_s2_e42_0..5 are on each instance only (taken from six default rigoff
+flights, 3/6 intact on the runway).
+
+**`ATTITUDE_SLEW_FACTOR` 1.91 -> 1.0 (promoted).**  Bench, Mach 6, 5 deg
+steps x 6 s (LOG13891-13896, two saves per value, repeatable to 0.1 deg):
+1.91 (time_to_peak 19/5.3/19.5) stable but sluggish, standing pitch error
+-1.5..-7, yaw -3..-6; 1.0 (10/2.8/10.2) settles to ~0.5 except -1.9
+after the pitch step; 0.5 diverges (roll to 57 deg -- the lost-flight
+signature).  Flown (slew-1021, 4 orbits, ~6 an arm): 1.0 14/23 intact on
+the runway v 7/23; airborne destruction 1 v 5; inc 4/6 v 0/6, ecc 5/6 v
+2/6, rigoff 4/6 v 4/5, high 1/5 v 1/6.
+
+**What 1.0 broke: the approach cannot turn.**  The remaining 1.0 losses
+are touchdowns 80-190 m off the runway (elevons and RCS blocks explode
+first in KSP.log), and the approach hands the flare 300-400 m of
+cross-track.  The approach on 0.7 + stock flies |xt| median 222-375 m at
+250-1200 m (0.6 + AA: 14-39) with 6-7 deg of bank that does not close it.
+Heading rate over the coordinated-turn rate g tan(bank)/v, banked > 5 deg:
+0.6 + AA 0.82-0.94; 0.7 at 1.91 0.83-0.97; **0.7 at 1.0 0.14**, yaw input
+-0.44 against the bank, nose 0.5 deg out of the turn.  Mechanism: kRPC
+aims each target as an attitude to stop at, and below
+`pitch_yaw_attenuation_angle` (1 deg) the rate it asks ramps to zero at
+half that.  The approach re-aims every 0.1 s, and a 1.7 deg/s turn moves
+the target 0.17 deg a tick -- inside the deadband -- so the yaw loop
+brakes the nose; the stiffer the loop, the harder.
+
+**`KRPC_POINTING_DEADBAND_DEG` (flag, default 0 = kRPC's 1.0).**  Bench at
+0.25 and 0.1: no limit cycle, steps as at 1.0.  Cone saves (rot-dead-1022.txt,
+savefly, 12 an arm): turn ratio 0.06 -> 0.45 at 0.25; **but 0/24 landed on
+either arm, 0.5-13 km off** -- the qs_s2_hac* saves were taken on the AA
+plant and no longer describe the vehicle (orbit flights land on the
+runway).  Retake them before using them again.
+
+**Orbit batch, deleted.**  dead-1022 (4 orbits x 4 cycles, interleaved,
+LOG13960-14005; the log confirms "kRPC pointing deadband 0.10" on every
+flag flight): 0.1 deg 16/23 intact v default 17/23 (rigoff 5/6 v 6/6, inc
+6/6 v 4/6, ecc 3/6 v 5/6, high 2/5 v 2/5).  Turn ratio -0.16 on **both**
+arms, approach |xt| median 228 v 180 m.  The deadband is not what holds
+the approach out of its turn (the knob moved the bench and the cone saves'
+ratio, and moved nothing from orbit); flag and `krpcpilot.pointing_deadband`
+deleted.  The approach turn defect stands, mechanism unknown.  Next: log
+kRPC's target and error directions on the approach to see whether yaw is
+being commanded against the bank or kRPC is failing a command it was
+given.  Farm note: ksp4 refused connections for the last two arms of a
+cycle and swap reached 20.6 GB by the end; restart before the next
+comparison.
