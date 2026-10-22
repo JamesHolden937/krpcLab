@@ -2839,7 +2839,13 @@ class Config:
     # aircraft and nothing yet about the next.  It predicts 22.6 s for the
     # shuttle, against a flown bracket where 3.0 could not point the vehicle
     # and 6, 9 and 12 all could; the top of that range is untested.
-    ATTITUDE_SLEW_FACTOR: float = 1.91
+    # **1.0 since 2026-10-22, on kRPC 0.7** (default 2026-10-22): 1.91 was
+    # fitted to 0.6's controller.  On 0.7, stepbench at Mach 6 (qs_s2_e42_*,
+    # LOG13891-13896): 1.91 holds 5 deg steps sluggishly with standing
+    # errors of 2-7 deg, 1.0 settles to ~0.5, 0.5 diverges (roll to 57 deg).
+    # Flown, slew-1021 (6 an arm, four orbits): 1.0 14/23 intact on the
+    # runway v 7/23, airborne breakups 1 v 5.
+    ATTITUDE_SLEW_FACTOR: float = 1.0
     # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
     # The derivation above handed it (pitch, yaw, roll), so the shuttle has
     # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the
