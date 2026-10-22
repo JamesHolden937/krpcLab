@@ -66,14 +66,14 @@ class LauncherPanel:
         title.rect_transform.position = (0, top - 25)
         title.rect_transform.size = (panel.WIDTH - 20, 24)
         title.size = 16
-        title.color = (0.6, 1.0, 0.6)
+        title.color = panel.rgba((0.6, 1.0, 0.6))
         title.alignment = self.ui.TextAnchor.middle_center
 
         self.status = self.panel.add_text("choose an autopilot")
         self.status.rect_transform.position = (0, top - 70)
         self.status.rect_transform.size = (panel.WIDTH - 24, 52)
         self.status.size = 12
-        self.status.color = panel.TEXT
+        self.status.color = panel.rgba(panel.TEXT)
         self.status.alignment = self.ui.TextAnchor.upper_center
 
         self.buttons = []

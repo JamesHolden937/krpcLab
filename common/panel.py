@@ -47,13 +47,25 @@ CIRCLE_DIAMETER = 0.43
 CIRCLE_DROP = 0.045
 
 
+def rgba(color):
+    """A text colour as the server takes it: kRPC 0.7 wants a
+    ``StdLib.ColorRGBA`` structure (an RGB tuple is refused); 0.6 and the
+    offline fakes take the tuple."""
+    try:
+        from krpc.services.stdlib import ColorRGBA
+    except ImportError:
+        return tuple(color)
+    c = tuple(float(x) for x in color)
+    return ColorRGBA(*(c + (1.0,) * (4 - len(c))))
+
+
 def _text(conn, panel, content, size, position, rect, color):
     text = panel.add_text(content)
     text.rect_transform.size = rect
     text.rect_transform.position = position
     text.size = size
     text.line_spacing = 1.0
-    text.color = color
+    text.color = rgba(color)
     text.alignment = conn.ui.TextAnchor.middle_center
     return text
 
@@ -114,14 +126,14 @@ class ControlPanel:
         self.title.rect_transform.position = (0, self.HEIGHT / 2 - 25)
         self.title.rect_transform.size = (self.WIDTH - 20, 24)
         self.title.size = 16
-        self.title.color = accent
+        self.title.color = rgba(accent)
         self.title.alignment = self.ui.TextAnchor.middle_center
 
         self.body = self.panel.add_text("standing by")
         self.body.rect_transform.position = (0, 20)
         self.body.rect_transform.size = (self.WIDTH - 24, self.HEIGHT - 130)
         self.body.size = 13
-        self.body.color = TEXT
+        self.body.color = rgba(TEXT)
         self.body.alignment = self.ui.TextAnchor.upper_left
 
         self.start_button = self.panel.add_button(start_label)
