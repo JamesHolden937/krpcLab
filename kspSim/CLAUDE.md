@@ -8,6 +8,11 @@ A Python stand-in for the game that speaks the kRPC wire protocol, so the
 (probe, part configs, the save) and every law is **checked against the game
 frame by frame** (flight tests). Journal: `docs/kspSim/journal.md`.
 
+**Not usable since 2026-10-21:** the farm and client are kRPC 0.7.0; this
+server speaks 0.6 (no protocol-version handshake, 0.6 procedure ids, no
+`is_null`) and `attitude.py` is 0.6's controller.  Port both before
+screening anything here.
+
 **Rule (root CLAUDE.md "measure in game"):** the sim is for screening and
 volume. Nothing is promoted on sim evidence alone; confirm on the farm.
 
@@ -127,7 +132,7 @@ A qs_entry flight (~900 game s): **~30 s wall** with `--pypy`, the server
 under PyPy and the fast client; 8 at once in ~65 s. The autopilot's own
 propagator is ~84% of its time -- that is the floor. Setup:
 `./kspSim/tools/pypysetup.sh` (`.pypy/` portable PyPy, `.venv-pypy/` with
-krpc 0.6.0 and `kspsim_fastclient.pth`, all git-ignored). The .pth patches
+krpc 0.7.0 and `kspsim_fastclient.pth`, all git-ignored). The .pth patches
 krpc's client (`fastclient.py`: same bytes, 1.6x faster calls);
 `KSPSIM_FASTCLIENT=0` turns it off. Models are parsed once per server
 process (two cached).

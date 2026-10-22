@@ -164,7 +164,7 @@ under PyPy** when `.venv-pypy` exists (`kspSim/tools/pypysetup.sh`): `run.sh`,
 the launcher's autopilots, every tool through `common.paths.use_venv`, and
 the farm harnesses. `KRPCLAB_CPYTHON=1` (or `--cpython` / `PYPY=0` on the
 harnesses) falls back to `.venv`, which `run.sh` creates on first use (`krpc`
-pinned to the server mod's 0.6.0) and runs by path. The flight runs in the foreground, so Ctrl-C reaches it and it hands
+pinned to the server mod's 0.7.0) and runs by path. The flight runs in the foreground, so Ctrl-C reaches it and it hands
 the vessel back. `--set FIELD=VALUE` overrides a field of `Config` with type
 coercion; unknown fields raise. No linter or formatter is configured. Tests
 need no third-party packages.

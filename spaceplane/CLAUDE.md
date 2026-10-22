@@ -48,7 +48,17 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-21 morning, fingerprint `fb9a9b61`)
+## Where it stands (2026-10-21 evening, fingerprint `56d5a616`)
+
+**The plant changed twice on 2026-10-21:** AtmosphereAutopilot removed
+(stock control surfaces; saves renamed so the limiter loads at 150) and
+kRPC 0.7.0 (a new attitude controller; `KRPC_WOBBLE_MITIGATION` off).
+Baseline on that (6 each): rigoff 5/6, inc 2/6, ecc 3/6, high 3/6 on the
+runway intact, 4/24 broke up on the runway at touchdown; cargo 0/6.  Every
+derived table and the attitude tuning below predate it -- re-take them.
+The rest of this section is the morning's state on the old plant.
+
+## Earlier (2026-10-21 morning, fingerprint `fb9a9b61`)
 
 **The user's goals:** fly craft with minimum stability margin, and the
 shortest reliable time from deorbit burn to an intact stop.  Burn->stop

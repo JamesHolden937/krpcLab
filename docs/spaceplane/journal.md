@@ -2995,3 +2995,95 @@ Spliced onto `qs_shuttle2_rigoff`'s orbit as `saves/qs_cargo_rigoff`.
 
 Batches: rot-cargo-, rot-aug-, rot-own-, rot-canown- (partial),
 rot-sown-, rot-sown2-, rot-sownnr-1021; bench LOG13755-13759.
+
+## Evening, 2026-10-21: SURFACE_OWN's roll was the actuator, not the law
+
+**The overridden surfaces never did what they were told.**  kRPC's
+`ControlSurface.deflection` writes AtmosphereAutopilot's *deploy angle*;
+its `SyncModuleControlSurface.CtrlSurfaceUpdate` (disassembled with
+`ikdasm`; no .NET runtime for ilspy) moves a deployed surface by
+`deflection += deployAngle * clamp(+-1 - deflection/deployAngle, 2*dt)`:
+**twice the commanded angle per second**.  So a command of 0.1 creeps at
+0.2 units/s, 0.003 (this code's "neutral" everywhere) at 0.006 units/s,
+and exactly 0 freezes the surface.  Measured (vacuum probe, ksp0): from
++1, a 0.5 command arrives in 0.5 s, 0.1 is still 70% away after 4 s,
+0.003 has not moved at all.  Consequences:
+
+- every `SURFACE_OWN` flight so far (rot-sown*, -1021) flew surfaces that
+  stuck wherever they were whenever the allocator asked for a small
+  deflection -- the roll that "spun while the law asked to decelerate"
+  (LOG13759/13761: wanted +124..+241 kN m, measured -109..-146) was this;
+- `measure_surfaces` reset each surface to 0.003 after its +-1 probes, so
+  every surface measured later saw the earlier ones still deflected;
+- `VACUUM_SURFACE_HOLD`'s 0.003 reaches neutral only after ~170 s
+  (harmless on a 470 s coast); `canard_trim`'s small trims move slowly.
+
+**What changed (`SURFACE_OWN`, still off by default):**
+- The sweep neutralises through the input path (override off, kRPC and
+  SAS let go, inputs zeroed), measures each surface's moment at -1, -0.5,
+  0, +0.5, +1 (`allocate.CURVE_D`) -- the odd half alone had the outboard
+  elevons' and canards' yaw backwards (drag yaw is even), and at alpha a
+  full deflection (25 deg x the 150% limiter) stalls the surface, so the
+  curve turns back -- and times two travels to tell the law: every
+  surface on both craft reads **2.00 x |command| /s** (LOG13768).
+- `own_attitude` models each surface's deflection by that law
+  (`allocate.actuator_step`), adds the INDI increment to the modelled
+  deflection averaged over the last tick (the one the measured
+  acceleration came from), bounds it by what the surface can reach in a
+  tick, and drives it there with `allocate.actuator_command` (a larger
+  command the same way when the target is small; exactly 0 to hold).
+- RCS measured in vacuum per input and per sign, gyroscopic term removed
+  (`measure_rcs`).  Twin-fin shuttle: pitch -17, roll -12 (+9 pitch), yaw
+  -40 (+4 roll) kN m per unit -- ~6-10% of kRPC's
+  `available_rcs_torque` (290/43/290).  The cargo craft's RCS is
+  asymmetric and its roll input makes **pitch** (+15 / -40 kN m), no
+  roll: its thrusters sit for a CoM ~3 m further forward.
+- Probe alphas -10..40 (the bench sat at -10 and 40, outside 10/30).
+- `stepbench.py`: `--identify` (open-loop pulses; too noisy in free
+  flight to judge B), `--rcs`, a bank step about the airflow (a body roll
+  at 40 deg of alpha is sideslip the airframe fights), `M=` per tick.
+
+**Bench, after (5 deg steps, t10 = time to 10%):**
+- `qs_s2_rigoff0` (twin-fin, 12.7 km glide, alpha 24, LOG13770/13778):
+  loads rolling at 200 deg/s -- stopped in 1.5 s; pitch t10 3.3, bank
+  t10 1.5-1.7 at 21-33% overshoot.
+- `qs_s2_e42` (twin-fin, 42 km Mach 6, LOG13780, RCS): every axis
+  settles, overshoot <= 9%, t10 2-4 s.
+- `qs_cargo_e42` (cargo, 42 km Mach 6, alpha 40, the band kRPC lost
+  12/12 in): pitch settles both ways (t10 3.4-4); bank settles; roll
+  loose (+-5-10 deg) -- no RCS roll, little surface roll at q 1.6 kPa
+  (LOG13777, 13781-13783).
+- `qs_shuttle2_gate` dives into the ground 22 s after load -- not a bench
+  save.  New saves: `qs_cargo_e42`, `qs_s2_e42` (entrysave needs
+  `--low` below `--alt`; its default 52 km made an empty window).
+
+Also: `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` deleted (inert under an
+engaged kRPC autopilot; rot-offload-1007's 15/15 departures with the trim
+at 1.0 were the trim following a saturated read-back, not causing it).
+Defaults fingerprint after the deletion `173cd8e7`.
+
+**Then the plant changed twice (the user's calls, farm and live):**
+
+- **AtmosphereAutopilot removed.**  First farm flights of `SURFACE_OWN` with
+  the actuator model, still on AA (rot-sown3-1021, stopped after round 0):
+  cargo 3/3 intact 4.7-39.7 km short (defaults: 12/12 lost), twin-fin
+  70-232 km short.  Saves renamed `SyncModuleControlSurface` ->
+  `ModuleControlSurface` (else the limiter loads at 100, not 150).  Stock
+  travel measures ~1.04 units/s constant on every surface; the bench
+  settles as before (LOG13795).  rot-stock-1021 (kRPC 0.6, stock, round 0
+  of 2 before the upgrade): defaults twin-fin **4/4 on the runway**
+  (156-244 m); defaults cargo 0/3; `SURFACE_OWN` 0/5, cargo 168-228 km and
+  twin-fin 144-191 km short -- energy, not attitude (unread).
+- **kRPC 0.7.0** (ported: see HANDOFF).  Its attitude controller adds
+  structural-oscillation mitigations.  First 0.7 flight (LOG13824):
+  sideslip p-p 53 deg against 13-20 on the four 0.6 flights of the same
+  save; 4 bank-swing damper events, 46 km short, destroyed.
+  **`KRPC_WOBBLE_MITIGATION`** (rot-wobble-1021, 6 each): off 5/6 on the
+  runway, 0 lost, slip p-p ~19 (worst 38); on 2/6, 3 destroyed, ~27
+  (worst 61).  **Promoted off.**
+- **0.7 baseline** (rot-base07-1021, defaults `56d5a616`, 6 each): inc 2/6
+  intact on the runway (+2 broke up on it), ecc 3/6 (+1), high 3/6 (+1),
+  cargo 0/6 (42-230 km short).  Touchdown breakups 4/24 are new.
+
+Batches: rot-sown3- (partial), rot-stock- (partial), rot-wobble-,
+rot-base07-1021; bench LOG13761-13795.

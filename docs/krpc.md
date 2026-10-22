@@ -2,7 +2,7 @@
 
 Signatures and behaviours that differ from older tutorials, for both projects.
 
-Docs (v0.6.0): <https://krpc.github.io/krpc/latest/python/api/>. Look up
+Docs (v0.7.0; the farm and live game run 0.7.0 since 2026-10-21 -- `common/partmodule.py` for module fields/events/actions, `StdLib.ColorRGBA` for UI colours, `ObjectDestroyedException` for a destroyed vessel): <https://krpc.github.io/krpc/latest/python/api/>. Look up
 anything uncertain — several signatures differ from older tutorials.
 
 - **`Flight` reports the achieved aerodynamic force and the air it was made

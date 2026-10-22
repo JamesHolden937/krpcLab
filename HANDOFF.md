@@ -1,110 +1,108 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-21 afternoon: spaceplane -- the user's cargo craft; client-owned attitude (unsolved); shared code moved to common/ (fingerprint `c95f1067`)
+## 2026-10-21 evening: spaceplane -- kRPC 0.7 and stock surfaces (both farm-wide); SURFACE_OWN's actuator found (fingerprint `56d5a616`)
 
-Committed (not yet pushed).  Farm up; sleep inhibitor held.  Journal:
-"Afternoon, 2026-10-21".  The morning's state (base 8/12, inc 7/12, ecc
-9/9, high 4/9-10) is unchanged on the defaults: nothing below changed a
-default that flies.
+Committed and pushed.  Farm stopped at wrap-up.  Journal: "Evening,
+2026-10-21".  **Two plant changes today, farm and live alike** (the user
+removed AtmosphereAutopilot and installed kRPC 0.7.0 on the live game):
 
-**The user's craft** (`saves/qs_cargo_rigoff`: "Cargo Shuttle Test" on
-`qs_shuttle2_rigoff`'s orbit -- OKTO2 probe nose instead of the Mk1-3 pod,
-no reaction wheel, 29.3 t, CoM ~3 m aft relative to the wings):
-**12/12 lost on the defaults** (rot-cargo-1021), 80-277 km short: the
-glide flies 10-45 deg *over* its alpha command.  `tools/stiffprobe.py`
-(LOG13675): its hypersonic pitching moment is **divergent between ~10 and
-~28 deg** (e-fold ~5 s at Mach 5), stable either side; the twin-fin
-shuttle is stable everywhere and ~5x stiffer.  The alpha ceiling learner
-reads the swings as "cannot hold" and lowers the command into the band.
+1. **AtmosphereAutopilot removed** (`testInstances/disabledMods/`, can go
+   back).  Its `SyncModuleControlSurface` moved an *overridden* surface at
+   2 x |command| /s and froze it at exactly 0 (decompiled with `ikdasm`),
+   so 0.003 -- this code's "neutral" -- never moved a surface.  **Saves:**
+   the module name in every reference save renamed to stock
+   `ModuleControlSurface`; without that every surface loads at authority
+   limiter 100 instead of the saved 150 (verified on ksp0).  The 13
+   gitignored saves' originals are in `disabledMods/savesBeforeRename/`.
+   **The user's live saves need the same rename** (or the limiter reset to
+   150 in the part menu) -- told them.
+2. **kRPC 0.7.0** on base + all clones (0.6.0 kept in `disabledMods/`),
+   client 0.7.0 in `.venv` and `.venv-pypy`, pins bumped.  Ported:
+   `kspSim/fastclient.py` and `common/krpcbatch.py` (client internals,
+   `is_null`); every removed `Module` call through **`common/partmodule.py`**
+   (fields/events/actions by part-menu name, cached `PartField`s);
+   ascent's staging on `Vessel.stage_at`/`decouple_stage_at`; panel colours
+   as `StdLib.ColorRGBA` (`common.panel.rgba` -- a tuple stopped every
+   pilot at its panel); `ObjectDestroyedException` ends a flight as
+   destroyed (`common.krpcpilot.vessel_gone`); boosterland's
+   `ROLL_THRESHOLD_DEG` on `roll_start_angle`/`roll_engage_angle`
+   (`roll_threshold` is gone; its setter had failed silently).  Suite 685
+   OK; smoke: ascent to 81 x 79, booster down 222 m out (fell over),
+   spaceplane flies.  **kspSim cannot be used** until its server speaks
+   0.7 (protocol version handshake, renumbered KRPC procedures) and its
+   `attitude.py` is the 0.7 controller.
 
-**Found, project-wide: client control inputs never reach a vessel kRPC's
-autopilot is flying** (qs_shuttle2_gate, kRPC engaged: client pitch -0.5 /
-0 / +0.5 gave the same alpha and read-back; LOG of 13:24).  So the
-defaults `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` have **never acted** --
-every result credited to them was something else.  Delete them (inert:
-no flight changes).  What *does* reach the vessel under kRPC:
-`ControlSurface.deflection_override` (how `CANARD_TRIM` works).
+**kRPC 0.7's attitude controller is new** (oscillation detection, notch /
+low-pass rate filters, bandwidth floor, feedforward cut, output smoothing,
+0.5 s soft start, target smoothing).  **`KRPC_WOBBLE_MITIGATION` (default
+off, promoted):** the mitigations read the shuttle's aerodynamic lateral
+motion as structural wobble.  rot-wobble-1021 (qs_shuttle2_rigoff, 6
+each): off 5/6 on the runway, 0 lost, glide sideslip p-p median ~19 (worst
+38); on 2/6, 3 destroyed, ~27 (worst 61).  0.6: 4/4, 13-20.  Booster and
+ascent still run kRPC's defaults (unmeasured; the booster *is* flexible).
 
-**Tried this session, all on qs_cargo_rigoff + qs_shuttle2_rigoff (6+6):**
-- `PITCH_STIFF_AUG` (stiffness term added to client pitch): inert by the
-  above (rot-aug-1021, cargo 0/6).  Deleted.
-- `PITCH_OWN` on control.pitch: inert; its only effect was kRPC's pitch
-  tune at 60 s -- pitch uncontrolled; shuttle 6/6 on the runway but 5/6
-  broke up (rot-own-1021).  Then on the canards (override): cargo 0/3,
-  shuttle 2/2 splashed 28-43 km long (rot-canown-1021, ksp3 froze at load
-  -- the harness has no timeout).  Deleted.
-- **`SURFACE_OWN` (off, kept: the user's direction)** -- kRPC disengaged,
-  every surface's 3-axis moment per unit deflection measured in vacuum
-  (`measure_surfaces`, per Mach row, alpha 10/30), INDI, bounded
-  allocation over all surfaces (+ RCS, `SURFACE_OWN_RCS`)
-  (`spaceplane/allocate.py`).  On the probe's moment: shuttle 1/6 near the
-  runway, standing -14 deg pitch below Mach 5 (rot-sown-1021).  On
-  measured angular acceleration: 0/6 + 0/6, roll/yaw oscillating
-  (rot-sown2-1021).  Without RCS: worse, 0/12 (rot-sownnr-1021).
-- **Signs are all verified in game** (LOG13751-13754, air, kRPC off):
-  probed torque and measured angular acceleration agree on all three body
-  axes; +pitch input nose-up; RCS inputs -1 on each own axis (but yaw RCS
-  makes ~6x more roll than yaw on the shuttle -- the diagonal RCS model is
-  wrong).
-- **`tools/stepbench.py`** (the method change): vacuum sweep on the orbit
-  save, the same craft on `qs_shuttle2_gate` (surfaces mapped by
-  root-relative position), steps about each axis, ~1 min.  LOG13755-13759:
-  pitch and yaw settle with `SURFACE_OWN_ACCEL_LP=1`,
-  `SURFACE_OWN_MAX_STEP=0.08`; **roll spins** (30-85 deg/s, error pinned
-  at the measure's 57 deg ceiling) while the law asks to decelerate.
+**Baseline on 0.7 + stock surfaces** (rot-base07-1021, 6 each, defaults
+`56d5a616`): inc 2/6 intact on the runway (+2 on it but broken up), ecc 3/6
+(+1), high 3/6 (+1), rigoff 5/6 (rot-wobble arm1); cargo 0/6 (42-230 km
+short, as on 0.6).  Worse than this morning on inc/ecc (7/12, 9/9 on 0.6 +
+AA).  **Touchdown breakups on the runway: 4 of 24** -- new; read
+`KSP.log` for the parts first (failure: wing/gear?).  Derived tables and
+the per-axis `time_to_peak` (slew x1.91) were fitted on the old plant:
+re-take them (`conesum`, `conepolar`, `landsum`) before tuning anything.
 
-**The blocker:** the owned roll axis.  Roll inertia ~1e5 against ~1.2e6
-pitch/yaw, elevon roll comes with large pitch and adverse yaw, and the
-measured-acceleration INDI is unsynchronised (u not filtered like
-omega-dot; surfaces have travel rate).  Next, on the bench, in order:
-(1) synchronise u and omega-dot (same filter, the command that produced
-the measured acceleration); (2) model the surface actuator (rate limit,
-probe the travel time); (3) roll about the velocity vector rather than
-the nose at alpha (failure 99: at alpha a body roll is sideslip); (4) RCS
-as measured 3-vectors.  Only fly the farm when stepbench settles all three
-axes, and fly it from an entry save as well (stepbench is subsonic only;
-make one with `entrysave.py`).  If the bench cannot be made to settle, the
-alternative is keeping kRPC for roll/yaw and owning only pitch by
-override of pitch-only surfaces -- but that fails a craft with one set of
-elevons (the user's point).
+**`SURFACE_OWN` (off; the user's mixer)** -- the roll "spin" was the
+actuator, not the law.  Now: the sweep neutralises on the input path
+(kRPC/SAS off for it), measures each surface's moment at -1/-0.5/0/0.5/1
+(stall makes the curve turn back; the odd half alone had drag yaw
+backwards), times two travels to tell the travel law (stock: ~1.04
+units/s constant; AA: 2 x |cmd|), and measures RCS per input and per sign
+with the gyroscopic term removed (`measure_rcs`; the cargo craft's RCS is
+asymmetric and its roll input makes pitch).  `own_attitude` models each
+surface's actual deflection and adds the INDI increment to it
+(`allocate.actuator_step`/`actuator_command`).  **Bench (stepbench):**
+settles every axis on the glide save and at Mach 6 on both craft
+(cargo: pitch and bank settle at alpha 40, roll loose).  **In flight it
+fails on energy, not attitude:** rot-stock-1021 (0.6, stock surfaces) 0/5,
+cargo 168-228 km short, twin-fin 144-191 km short.  Next: read one of
+those logs (LOG13798/13799/13803/13804/13807) -- what alpha the glide flew
+against its command, whether the vacuum sweep (now ~60 game-s, kRPC off)
+upset the deorbit, and whether `commanded_nose` is what the glide means.
 
-**Is the unstable band flyable?** Yes, once a controller owns pitch: the
-divergence is mild (e-fold ~5 s at Mach 5, slower at lower q) against
-canard power ~36 m^3/unit (band swing ~13 m^3), and stepbench's pitch axis
-already settles.  A cheaper interim: keep the glide's alpha out of the band
-(>= ~28 deg hypersonically, stable there) -- not general, but would fly the
-cargo craft.  The user's last instruction was to continue on roll; the
-next step was logging INDI internals per tick on the bench (want / in hand
-/ allocated per axis) to see why roll spins.
+**stepbench** (`spaceplane/tools/stepbench.py`): `--air` save, `--rcs`,
+`--identify` (open-loop pulses; free-drift noise swamps them), a bank step
+about the airflow.  Bench saves: `qs_s2_rigoff0` (12.7 km glide; loads
+rolling at 200 deg/s), new `qs_cargo_e42` and `qs_s2_e42` (42 km, Mach 6,
+from entrysave -- `--low` must be below `--alt`).  `qs_shuttle2_gate`
+dives into the ground in 22 s: not a bench save.
 
-**Not done at wrap-up:** the how-it-works PDF was not rewritten for
-`VACUUM_SURFACE_HOLD` (the only default that changed behaviour, cosmetic).
+Also: `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` deleted (inert under an
+engaged kRPC).  `VACUUM_SURFACE_HOLD` and `canard_trim` still send 0.003 as
+"neutral" -- on stock surfaces that is a real 0.1 deg command now, fine.
+How-it-works PDF **not** rewritten this session (SURFACE_OWN is off; the
+defaults' only behaviour change is the wobble flag) -- do it next wrap-up.
 
-**Also new:** `STALL_TRIMMED` (off, unflown) -- the stall from the most
-lift the vehicle can hold trimmed by its own surfaces, replacing
-`airframe.MARGIN` 0.70.  Its sweep says the shuttle trims only to 2 deg at
-Mach 0.25 while it flies the cone at ~12: the vacuum surface measure
-(+-1 averaged) understates nonlinear surfaces (canards: +1 27 m^3, -1 149).
-Fix the measure (each side separately) before flying it; then the
-approach multipliers (2.25 etc., fitted on the old MARGIN stall) need
-converting -- the user wants the landing speeds derived, not constant.
-`VACUUM_SURFACE_HOLD` (default): surfaces neutral below 10 Pa.
+**Next, in order:** (1) the touchdown breakups (KSP.log, 4/24); (2)
+re-take the derived tables and re-check the per-axis attitude tuning on
+0.7 (the slew x1.91 time_to_peak was fitted to 0.6's controller); (3)
+`SURFACE_OWN`'s energy loss in flight; (4) kspSim on 0.7; (5) wobble
+mitigation on the booster.
 
-**Shared code (user request):** `common/config.py` (`--set`,
-fingerprint -- hashes unchanged), `common/cli.py` (standard flags +
-connect, five parsers), `common/panel.ControlPanel`, `common/krpcpilot.py`
-(engage/aim kRPC), `common/geo.py`, `common/idle.py` (gimbals locked with
-no thrust in boosterland/ascent, surfaces held in vacuum).  `kspSim/vec`
-stays separate on purpose.
-
-**Traps paid:** `pkill -f` in a waiter matches its own command line
-(exit 144 -- the batch was fine); a frozen instance hangs `rotfly.sh`
-forever (wrap batches in `timeout`); worktree test runs resolve kspSim/
-root tests to the main tree (the PyPy .pth) -- run by module with
-`PYTHONPATH=$PWD`; vessel-frame part positions move with the CoM between
-saves (map by the root part's frame).
+**Traps paid:** `entrysave --low` defaults to 52 km (empty window under a
+42 km `--alt`); a scripted sed missed 46 CRLF saves; 13 saves are
+gitignored, so git cannot undo an edit to them; the farm's ModuleManager
+cache must be deleted when a mod that patches parts leaves.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
+
+**2026-10-21 (farm-wide, see the spaceplane section):** kRPC 0.7.0 and
+AtmosphereAutopilot removed.  Boosterland ported: `ROLL_THRESHOLD_DEG` now
+sets `roll_start_angle`/`roll_engage_angle` (0.7 removed `roll_threshold`);
+`ObjectDestroyedException` ends a flight as destroyed; module calls via
+`common.partmodule`.  One smoke flight on qs_heavy: down 222 m out, fell
+over.  kRPC 0.7's wobble mitigation is left at its default here
+(unmeasured).  Re-fly the baseline before comparing anything to the
+numbers below.
+
 
 **`boosterland/fmrs.py`, launcher button "BOOSTBACK FROM FMRS SAVE"**
 (`./run.sh --pilot fmrs`), reworked 2026-10-20 at the user's request:
@@ -263,6 +261,13 @@ first TOUCHDOWN `pad=`, stood from `max=`, gear-to-contact seconds,
 burn-entry mass; KSP.log CollisionSpy matched to flights by wall clock.
 
 ## 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
+
+**2026-10-21 (farm-wide, see the spaceplane section):** kRPC 0.7.0;
+ascent's staging on `Vessel.stage_at`/`decouple_stage_at` (0.7 removed
+`Parts.in_stage`/`in_decouple_stage`/`resources_in_decouple_stage`).  One
+smoke flight (qs_stack): 81 x 79 km.  KRPC.MechJeb 0.8.1 still loads under
+0.7.
+
 
 All committed and pushed. Farm stopped. The user stopped the session and
 will fly the current defaults live themselves (no re-fly asked for).
