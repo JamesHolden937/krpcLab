@@ -32,7 +32,8 @@ from common import krpcbatch, rcs, vec
 from common import partmodule  # noqa: E402
 from common.idle import VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
-    set_autopilot_attitude, set_autopilot_engaged, vessel_gone)
+    set_autopilot_attitude, set_autopilot_engaged, vessel_gone,
+    wobble_mitigation)
 from common import cli
 from common.logbook import Logbook
 from common.pacing import LoopRate, ScaleGovernor, sleeper
@@ -773,6 +774,9 @@ class Autopilot:
                                          self.logbook, ut, None)
             self._axes_switched = False
             tune_autopilot(self.autopilot, peak, self.logbook, ut)
+            wobble_mitigation(self.autopilot,
+                              bool(self.cfg.KRPC_WOBBLE_MITIGATION),
+                              self.logbook, ut)
             ungate_roll(self.cfg, self.autopilot, self.logbook, ut)
             self._tuned_peak = (tuple(peak) if isinstance(peak, (tuple, list))
                                 else (peak, peak, peak))

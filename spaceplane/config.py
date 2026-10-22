@@ -2712,6 +2712,12 @@ class Config:
     # Control surfaces held at neutral below ON Pa of dynamic pressure and
     # handed back above OFF (``Autopilot.hold_vacuum_surfaces``): no moment
     # to be had, and fins flapping in orbit look broken.
+    # kRPC 0.7's structural-wobble mitigations (notch/low-pass on the rate
+    # feedback, bandwidth floor, feedforward cut, output smoothing) left at
+    # kRPC's automatic default.  False turns them off: on 0.7 the glide's
+    # sideslip swung 53 deg p-p against 13-20 on 0.6 (LOG13824 v
+    # LOG13797/13801/13802/13806, qs_shuttle2_rigoff).
+    KRPC_WOBBLE_MITIGATION: bool = True
     VACUUM_SURFACE_HOLD: bool = True
     VACUUM_SURFACE_ON_Q_PA: float = 10.0
     VACUUM_SURFACE_OFF_Q_PA: float = 20.0

@@ -63,3 +63,27 @@ def vessel_gone(exc):
     with that exception rather than with the pilot's own destroyed check.
     By name: the class lives in a generated service module."""
     return type(exc).__name__ == "ObjectDestroyedException"
+
+
+def wobble_mitigation(autopilot, on, log=None, ut=0.0):
+    """kRPC 0.7's structural-oscillation mitigations (bandwidth floor,
+    feedforward cut, output smoothing, rate-feedback filters) to their
+    automatic default (``on``) or off.  They exist for a flexible vessel's
+    wobble; whether they mistake an airframe's aerodynamic oscillation for
+    one is what turning them off measures.  A server without them (0.6) is
+    left alone and says so."""
+    names = ("oscillation_bandwidth_floor_mode", "oscillation_feedforward_mode",
+             "oscillation_output_filter_mode", "pitch_yaw_rate_filter_mode",
+             "roll_rate_filter_mode")
+    try:
+        for name in names:
+            enum = type(getattr(autopilot, name))
+            setattr(autopilot, name, enum.automatic if on else enum.off)
+    except Exception as exc:                                # noqa: BLE001
+        if log is not None:
+            log.event(ut, "kRPC wobble mitigation not set (%r)" % (exc,))
+        return False
+    if log is not None:
+        log.event(ut, "kRPC wobble mitigation %s"
+                  % ("automatic (kRPC's default)" if on else "off"))
+    return True
