@@ -2,7 +2,8 @@
 
 ## 2026-10-21 evening: spaceplane -- kRPC 0.7 and stock surfaces (both farm-wide); SURFACE_OWN's actuator found (fingerprint `56d5a616`)
 
-Committed and pushed.  Farm stopped at wrap-up.  Journal: "Evening,
+Committed and pushed.  Farm stopped at wrap-up (the user called it to
+hand over; context was full).  Journal: "Evening,
 2026-10-21".  **Two plant changes today, farm and live alike** (the user
 removed AtmosphereAutopilot and installed kRPC 0.7.0 on the live game):
 
@@ -75,17 +76,41 @@ rolling at 200 deg/s), new `qs_cargo_e42` and `qs_s2_e42` (42 km, Mach 6,
 from entrysave -- `--low` must be below `--alt`).  `qs_shuttle2_gate`
 dives into the ground in 22 s: not a bench save.
 
+**kRPC attitude tuning on 0.7 -- the open question (stepbench `--krpc`,
+committed 9b486b7: kRPC flies the steps with the pilot's own
+`engage_autopilot` tuning).**  The glide's lost flights all swing 48-75
+deg of sideslip p-p with bank-swing damper events, mitigation off or on, so
+suspect the gains: `time_to_peak` = `ATTITUDE_SLEW_FACTOR` 1.91 x
+sqrt(I/tau) was fitted to 0.6's controller.  Bench so far (5 deg steps x
+6 s, `--hold 6 --rcs`):
+- `qs_s2_rigoff0`, factor 1.91 (LOG13863): time_to_peak (19.2, 5.3,
+  19.6), gains p 4.5/15 r 0.3/1.1 y 42/143 -- **it cannot hold**: roll
+  ran to 54 deg in the hold, pitch error drifted to -28.
+- `qs_s2_e42`, factor 1.0 (LOG13865): time_to_peak (10, 2.8, 10.2) --
+  holds most steps (pitch/roll t10 1.4-6 s) but the bank step-back blew up
+  (pitch +11, roll -20).
+- `qs_s2_e42` at 1.91 and 0.5 (LOG13864/13866) stalled after loading --
+  no data; the rigoff runs at 1.0/0.5 were never flown.  Re-run the set
+  on a freshly restarted farm, one save per instance, and compare
+  like with like before flying anything.
+
+**How-it-works PDF is stale -- rewrite it first next wrap-up:** it still
+describes `GLIDE_PITCH_OFFLOAD` (deleted) under "Pitch trim", says
+nothing of `KRPC_WOBBLE_MITIGATION` under "Attitude", and carries
+fingerprint `cb0ae1d4` (now `56d5a616`).  Not done this session for want
+of context; the page has to be rebuilt with its figures.
+
 Also: `GLIDE_PITCH_OFFLOAD` and `FLARE_PITCH_P` deleted (inert under an
 engaged kRPC).  `VACUUM_SURFACE_HOLD` and `canard_trim` still send 0.003 as
 "neutral" -- on stock surfaces that is a real 0.1 deg command now, fine.
-How-it-works PDF **not** rewritten this session (SURFACE_OWN is off; the
-defaults' only behaviour change is the wobble flag) -- do it next wrap-up.
 
-**Next, in order:** (1) the touchdown breakups (KSP.log, 4/24); (2)
-re-take the derived tables and re-check the per-axis attitude tuning on
-0.7 (the slew x1.91 time_to_peak was fitted to 0.6's controller); (3)
-`SURFACE_OWN`'s energy loss in flight; (4) kspSim on 0.7; (5) wobble
-mitigation on the booster.
+**Next, in order:** (1) finish the 0.7 attitude-tuning bench above, then
+fly the winner against the defaults (rigoff, then inc/ecc/high) and
+promote or delete; (2) re-take the derived tables (`conesum`,
+`conepolar`, `landsum`) on the new plant; (3) the how-it-works PDF; (4)
+`SURFACE_OWN`'s energy loss in flight; (5) kspSim on 0.7; (6) wobble
+mitigation on the booster; (7) touchdown breakups (4/24 -- low priority
+unless KSP.log shows a wing or tail strike).
 
 **Traps paid:** `entrysave --low` defaults to 52 km (empty window under a
 42 km `--alt`); a scripted sed missed 46 CRLF saves; 13 saves are

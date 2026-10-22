@@ -3087,3 +3087,15 @@ Defaults fingerprint after the deletion `173cd8e7`.
 
 Batches: rot-sown3- (partial), rot-stock- (partial), rot-wobble-,
 rot-base07-1021; bench LOG13761-13795.
+
+### Late evening, 2026-10-21: kRPC 0.7 attitude bench (incomplete)
+
+`stepbench.py --krpc` lets kRPC fly the step set with the pilot's own
+tuning.  On `qs_s2_rigoff0` the default `ATTITUDE_SLEW_FACTOR` 1.91
+(time_to_peak 19.2/5.3/19.6) could not hold attitude: roll ran to 54 deg
+in the 6 s hold and pitch error drifted to -28 (LOG13863).  On `qs_s2_e42`,
+factor 1.0 (time_to_peak 10/2.8/10.2) held most steps, but the bank
+step-back diverged (LOG13865).  The 1.91 and 0.5 runs on e42 stalled
+after loading (LOG13864/13866), and the rigoff comparison was never flown.
+The hypothesis that the slew factor fitted on 0.6 detunes 0.7's controller
+is still open; the session ended there.
