@@ -7495,7 +7495,9 @@ class Autopilot:
         # on the defaults, ``logs/pairfly-shuttle-pitchair.txt``.  The glide
         # was already pointing (alpha error -0.5, sd 3); the dive this is for
         # happens below Mach 1, in the cone and on final.
-        if self.state not in (HAC, APPROACH, FLARE):
+        if self.state not in (HAC, APPROACH, FLARE) and not (
+                self.state == GLIDE
+                and getattr(self.cfg, "ATTITUDE_PITCH_AIR_GLIDE", False)):
             return
         last = getattr(self, "_air_ut", None)
         dt = 0.0 if last is None else max(0.0, snap.ut - last)

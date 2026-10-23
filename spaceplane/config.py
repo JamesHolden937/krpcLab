@@ -2896,6 +2896,12 @@ class Config:
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
     ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
+    # ``ATTITUDE_PITCH_AIR`` in the GLIDE too.  The static pitch tune is
+    # sqrt(I / wheels) -- 9.7 s on the aft-CoM stack orbiter, 11.8 on the
+    # shuttle -- and an airframe with no pitch stability of its own is held
+    # by nothing but that loop: rot-unst-1022's stackorb flew alpha 6 deg
+    # over its command at Mach 4 and departed in sideslip (LOG14024).
+    ATTITUDE_PITCH_AIR_GLIDE: bool = False
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
