@@ -894,19 +894,39 @@ class Autopilot:
             self._vac_own_done = True
             return
         if not owning:
+            # After the warp's release, not before: the rails freeze the
+            # attitude anyway, and the turn has the last minutes of vacuum.
+            altitude = vec.norm(snap.position) - self.env.equatorial_radius
+            if altitude > (self.env.atmosphere_depth
+                           + float(cfg.COAST_WARP_STOP_M) + 1000.0):
+                return
+            if getattr(self, "_vac_b", None) is None:
+                self._vac_own_done = True
+                self.logbook.event(snap.ut, "vacuum own: no input matrix "
+                                   "-- kRPC keeps the coast")
+                return
             set_autopilot_engaged(self.autopilot, False)
             self.autopilot_engaged = False
             self._vac_own = True
-            if not self.vacuum_measure(snap):
-                self.vacuum_release(snap, "no input matrix")
-                self._vac_own_done = True
-                return
+            self.logbook.event(snap.ut, "vacuum own: the client flies the "
+                               "coast (pointing %.1f deg off)"
+                               % self.pointing_error(snap))
         s = self.telemetry.sample(self.env)
         want_nose = getattr(self, "commanded_nose", None)
         want_up = getattr(self, "commanded_up", None)
         if want_nose is None or want_up is None or not s.right \
                 or not s.angular_velocity:
             return
+        # **Nose first.**  Roll is the weak axis (the cargo shuttle: 0.008
+        # rad/s^2 against 0.018 in pitch) and a coast can start ~190 deg
+        # out in bank; asked together, the roll saturated the inputs and
+        # the shared scale-down starved the pitch (alpha 126 -> 103 in two
+        # minutes, LOG14138).  So the roof is held where it is until the
+        # nose is within ``VACUUM_OWN_NOSE_FIRST_DEG``.
+        off = math.degrees(math.acos(vec.clamp(vec.dot(
+            vec.unit(s.nose), vec.unit(want_nose)), -1.0, 1.0)))
+        if off > float(cfg.VACUUM_OWN_NOSE_FIRST_DEG):
+            want_up = s.roof
         got = vacuumown.error_and_rate(s.right, s.nose, s.roof,
                                        s.angular_velocity, want_nose,
                                        want_up)
@@ -927,6 +947,33 @@ class Autopilot:
             return
         self._vac_line = "vown=%+5.1f/%+5.1f/%+5.1f u=%+.2f/%+.2f/%+.2f" % (
             tuple(math.degrees(x) for x in error) + tuple(u))
+
+    def measure_vacuum_matrix(self, snap):
+        """``VACUUM_OWN``'s B, once, in orbit before the burn with the
+        vessel at rest (measured at the coast's start, still turning off
+        the burn, the yaw and roll columns came out near parallel and the
+        inversion steered the wrong way, LOG14126)."""
+        if not getattr(self.cfg, "VACUUM_OWN", False) or getattr(
+                self, "_vac_measured", False) or self.state not in (
+                DRAIN, DEORBIT) or snap.dynamic_pressure > 1.0 \
+                or getattr(self, "warp_factor", 0):
+            return
+        try:
+            if self.conn.krpc.paused:
+                return
+        except Exception:                               # noqa: BLE001
+            pass
+        self._vac_measured = True
+        set_autopilot_engaged(self.autopilot, False)
+        self.autopilot_engaged = False
+        try:
+            ok = self.vacuum_measure(snap)
+        finally:
+            self.engage_autopilot(snap.ut)
+        if not ok:
+            self._vac_b = None
+            self.logbook.event(snap.ut, "vacuum own: input matrix not "
+                               "measured -- kRPC will fly the coast")
 
     def vacuum_measure(self, snap):
         """B for ``vacuum_own``: each input pulsed +1 then -1 for
@@ -6663,6 +6710,7 @@ class Autopilot:
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
         self.measure_surfaces(snap)
+        self.measure_vacuum_matrix(snap)
         self.retune_attitude(snap)
         handler(snap)
         self.pitch_assist(snap)

@@ -2939,6 +2939,7 @@ class Config:
     VACUUM_OWN_TAU_S: float = 1.0       # rate error -> acceleration
     VACUUM_OWN_SHARE: float = 0.5       # of each axis's authority, to stop
     VACUUM_OWN_W_MAX: float = 0.2       # rad/s
+    VACUUM_OWN_NOSE_FIRST_DEG: float = 15.0
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
