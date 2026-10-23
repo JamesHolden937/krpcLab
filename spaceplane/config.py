@@ -2940,6 +2940,11 @@ class Config:
     VACUUM_OWN_SHARE: float = 0.5       # of each axis's authority, to stop
     VACUUM_OWN_W_MAX: float = 0.2       # rad/s
     VACUUM_OWN_NOSE_FIRST_DEG: float = 15.0
+    # The turn before the warp: done when within these, or given up after
+    # the time (the warp then goes and the post-warp coast finishes it).
+    VACUUM_OWN_SETTLED_DEG: float = 3.0
+    VACUUM_OWN_SETTLED_RATE_DEG_S: float = 0.3
+    VACUUM_OWN_PRETURN_MAX_S: float = 300.0
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the

@@ -877,9 +877,19 @@ class Autopilot:
         self.damp_roll(snap, bank_deg, alpha_deg)
 
     def vacuum_own(self, snap):
-        """``VACUUM_OWN``: fly the coast's commanded attitude on the
-        measured input matrix (``vacuumown``) with kRPC disengaged, from
-        the end of the warp until the air arrives; then hand back."""
+        """``VACUUM_OWN``: fly the coast on the measured input matrix
+        (``vacuumown``) with kRPC disengaged until the air arrives.
+
+        **Turn before the warp, not after it** (the user, 2026-10-22).  The
+        vacuum turn is slow on a craft like the cargo shuttle (~2 minutes
+        for 150 deg) and the post-warp coast is about that long, so it met
+        the air 75-125 deg off.  Straight after the burn the entry attitude
+        is computed for the predicted state at the atmosphere's edge, the
+        vehicle turns to it with all the coast's time, and only then is the
+        warp let go -- rails warp holds the attitude.  After the warp the
+        coast's own commanded attitude is flown (the planet's ~7 deg of
+        rotation meanwhile is corrected there), then kRPC takes over at
+        ``VACUUM_OWN_Q_PA``."""
         cfg = self.cfg
         if not getattr(cfg, "VACUUM_OWN", False) or getattr(
                 self, "_vac_own_done", False):
@@ -894,12 +904,6 @@ class Autopilot:
             self._vac_own_done = True
             return
         if not owning:
-            # After the warp's release, not before: the rails freeze the
-            # attitude anyway, and the turn has the last minutes of vacuum.
-            altitude = vec.norm(snap.position) - self.env.equatorial_radius
-            if altitude > (self.env.atmosphere_depth
-                           + float(cfg.COAST_WARP_STOP_M) + 1000.0):
-                return
             if getattr(self, "_vac_b", None) is None:
                 self._vac_own_done = True
                 self.logbook.event(snap.ut, "vacuum own: no input matrix "
@@ -908,14 +912,24 @@ class Autopilot:
             set_autopilot_engaged(self.autopilot, False)
             self.autopilot_engaged = False
             self._vac_own = True
+            self._vac_preturn = self.entry_attitude(snap)
+            self._vac_preturn_ut = snap.ut
             self.logbook.event(snap.ut, "vacuum own: the client flies the "
-                               "coast (pointing %.1f deg off)"
-                               % self.pointing_error(snap))
+                               "coast (pointing %.1f deg off)%s"
+                               % (self.pointing_error(snap),
+                                  "" if self._vac_preturn is None else
+                                  ", turning to the entry attitude before "
+                                  "the warp"))
         s = self.telemetry.sample(self.env)
-        want_nose = getattr(self, "commanded_nose", None)
-        want_up = getattr(self, "commanded_up", None)
-        if want_nose is None or want_up is None or not s.right \
-                or not s.angular_velocity:
+        if not s.right or not s.angular_velocity:
+            return
+        pre = getattr(self, "_vac_preturn", None)
+        if pre is not None:
+            want_nose, want_up = pre
+        else:
+            want_nose = getattr(self, "commanded_nose", None)
+            want_up = getattr(self, "commanded_up", None)
+        if want_nose is None or want_up is None:
             return
         # **Nose first.**  Roll is the weak axis (the cargo shuttle: 0.008
         # rad/s^2 against 0.018 in pitch) and a coast can start ~190 deg
@@ -933,6 +947,28 @@ class Autopilot:
         if got is None:
             return
         error, rate = got
+        if pre is not None:
+            settled = (math.degrees(vec.norm(error))
+                       < float(cfg.VACUUM_OWN_SETTLED_DEG)
+                       and math.degrees(vec.norm(rate))
+                       < float(cfg.VACUUM_OWN_SETTLED_RATE_DEG_S))
+            late = (snap.ut - self._vac_preturn_ut
+                    > float(cfg.VACUUM_OWN_PRETURN_MAX_S))
+            if settled or late:
+                self._vac_preturn = None
+                self.logbook.event(snap.ut, "vacuum own: entry attitude %s "
+                                   "after %.0f s (%.1f deg off, %.2f deg/s) "
+                                   "-- the warp may go" % (
+                                       "held" if settled else "NOT reached",
+                                       snap.ut - self._vac_preturn_ut,
+                                       math.degrees(vec.norm(error)),
+                                       math.degrees(vec.norm(rate))))
+                try:
+                    for name in vacuumown.INPUTS:
+                        setattr(self.control, name, 0.0)
+                except Exception:                       # noqa: BLE001
+                    pass
+                return
         u = vacuumown.command(self._vac_b, self._vac_authority, error, rate,
                               float(cfg.VACUUM_OWN_TAU_S),
                               float(cfg.VACUUM_OWN_SHARE),
@@ -947,6 +983,47 @@ class Autopilot:
             return
         self._vac_line = "vown=%+5.1f/%+5.1f/%+5.1f u=%+.2f/%+.2f/%+.2f" % (
             tuple(math.degrees(x) for x in error) + tuple(u))
+
+    def vacuum_preturning(self):
+        """``VACUUM_OWN`` is still turning to the entry attitude: hold the
+        warp."""
+        if not getattr(self.cfg, "VACUUM_OWN", False) or getattr(
+                self, "_vac_own_done", False):
+            return False
+        if not getattr(self, "_vac_own", False):
+            # ``coast_warp`` runs before ``vacuum_own`` in the coast's tick:
+            # with a matrix in hand, the first tick must not warp.
+            return getattr(self, "_vac_b", None) is not None
+        return getattr(self, "_vac_preturn", None) is not None
+
+    def entry_attitude(self, snap):
+        """``(nose, roof)`` of the coast's entry attitude at the predicted
+        state where the orbit meets the atmosphere: the coast's angle of
+        attack above that velocity, rolled to its bank.  ``None`` when the
+        arc does not reach the air within the warp horizon."""
+        r, v = snap.position, snap.velocity
+        radius = self.env.equatorial_radius + self.env.atmosphere_depth
+        step = float(self.cfg.COAST_WARP_TO_STEP_S)
+        t = 0.0
+        while vec.norm(r) > radius:
+            if t >= self.cfg.COAST_WARP_TO_HORIZON_S:
+                return None
+            r, v = trajectory.coast(self.env, r, v, snap.mass, step, step)
+            t += step
+        alpha = math.radians(min(self.cfg.ENTRY_ALPHA_DEG, self.alpha_ceiling))
+        bank = getattr(self, "_coast_bank", None)
+        if bank is None:
+            bank = float(self.cfg.SOLVE_BANK_MIN_DEG)
+        lift = trajectory.lift_direction(r, v, bank)
+        if lift is None:
+            return None
+        vhat = vec.unit(v)
+        nose = vec.unit(vec.add(vec.scale(vhat, math.cos(alpha)),
+                                vec.scale(lift, math.sin(alpha))))
+        self.logbook.event(snap.ut, "vacuum own: entry attitude for the "
+                           "atmosphere's edge in %.0f s: alpha %.0f, bank %+.0f"
+                           % (t, math.degrees(alpha), bank))
+        return nose, lift
 
     def measure_vacuum_matrix(self, snap):
         """``VACUUM_OWN``'s B, once, in orbit before the burn with the
@@ -5136,7 +5213,7 @@ class Autopilot:
         here.  Failure 11 is the version of that lesson this project has
         already paid for.
         """
-        if not self.cfg.COAST_WARP:
+        if not self.cfg.COAST_WARP or self.vacuum_preturning():
             return
         altitude = vec.norm(snap.position) - self.env.equatorial_radius
         release = altitude <= (self.env.atmosphere_depth
