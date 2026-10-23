@@ -7855,6 +7855,26 @@ def flown_bank(snap):
         return float("nan")
 
 
+def pointing_errors(run, snap):
+    """``(yaw, roll)`` of the commanded attitude against the flown one, deg;
+    nan when either is unknown."""
+    try:
+        nose = vec.unit(snap.nose)
+        roof = vec.unit(snap.roof)
+        right = vec.unit(vec.cross(nose, vec.scale(roof, -1.0)))
+        want = run.commanded_nose
+        up = run.commanded_up
+        if want is None or up is None:
+            return float("nan"), float("nan")
+        yaw = math.degrees(math.asin(vec.clamp(
+            vec.dot(vec.unit(want), right), -1.0, 1.0)))
+        up = vec.project_out(up, nose)
+        roll = math.degrees(math.atan2(vec.dot(up, right), vec.dot(up, roof)))
+        return yaw, roll
+    except Exception:                                   # noqa: BLE001
+        return float("nan"), float("nan")
+
+
 def force_bank(snap):
     """``(bank, side_g)`` of the aero force perpendicular to the wind,
     in ``flown_bank``'s sense; ``(nan, nan)`` when it cannot be read."""
@@ -7961,6 +7981,10 @@ def compact_line(state, snap, run):
         # and its sideways part in g: a roof banked with the force not is
         # side force (slip, rudder) cancelling the turn.
         "fbk=%+5.1f/%+5.2f" % force_bank(snap),
+        # The yaw and roll errors kRPC is handed, deg: the commanded nose
+        # toward the body's right, and the commanded roof about the nose
+        # (positive = roll right wanted).
+        "yerr=%+5.1f/%+5.1f" % pointing_errors(run, snap),
         "cla=%5.1f" % cla,
         "cda=%5.1f" % cda,
         "dec=%5.2f" % (cda * q / mass),
