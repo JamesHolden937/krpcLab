@@ -74,7 +74,7 @@ def main(argv=None):
     nose0 = sc.transform_direction((0, 1, 0), vref, frame)
     roof0 = sc.transform_direction((0, 0, -1), vref, frame)
     ap.set_direction_and_up(nose0, roof0, 0.0)
-    ap.engage()
+    ap.engaged = True
     t0 = sc.ut
     while sc.ut - t0 < 3.0:
         time.sleep(0.05)
@@ -134,7 +134,7 @@ def main(argv=None):
                               worst_after, err))
         print("      " + "  ".join("%.0fs:%.0f(%+.1f/%+.1f/%+.1f)" % x
                                    for x in trace))
-    ap.disengage()
+    ap.engaged = False
     conn.close()
 
 

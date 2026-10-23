@@ -2925,6 +2925,20 @@ class Config:
     # it in the coast stirred pitch, and it met the air at alpha 85 against
     # 22 commanded (rot-unst-1022, LOG14023: 0/3, 43-236 km short).
     COAST_ROLL_FREE_Q_PA: float = 0.0
+    # **The coast flown on the measured input matrix** (``vacuumown``): out
+    # of warp and below ``VACUUM_OWN_Q_PA`` the client disengages kRPC,
+    # measures each input's body angular acceleration with +-1 pulses of
+    # ``VACUUM_OWN_PULSE_S`` and steers the entry attitude by B's inverse;
+    # kRPC is handed back at the dynamic pressure.  For a craft whose RCS
+    # inputs cross-couple (the cargo shuttle: yaw makes more pitch than yaw,
+    # roll mostly pitch and yaw), which kRPC cannot point in vacuum.
+    VACUUM_OWN: bool = False
+    VACUUM_OWN_Q_PA: float = 150.0
+    VACUUM_OWN_PULSE_S: float = 1.0
+    VACUUM_OWN_TICK_S: float = 0.1
+    VACUUM_OWN_TAU_S: float = 1.0       # rate error -> acceleration
+    VACUUM_OWN_SHARE: float = 0.5       # of each axis's authority, to stop
+    VACUUM_OWN_W_MAX: float = 0.2       # rad/s
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the

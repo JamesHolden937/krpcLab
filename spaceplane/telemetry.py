@@ -173,7 +173,8 @@ class Telemetry:
         except Exception:                                   # noqa: BLE001
             self.roof = None
         self.right = self.rotation = self.angular_velocity = None
-        if getattr(cfg, "SURFACE_OWN", False):
+        if getattr(cfg, "SURFACE_OWN", False) or getattr(
+                cfg, "VACUUM_OWN", False):
             try:
                 self.right = stream(sc.transform_direction, (1.0, 0.0, 0.0),
                                     vessel.reference_frame, frame)
