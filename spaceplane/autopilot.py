@@ -831,6 +831,7 @@ class Autopilot:
                 COAST, GLIDE, APPROACH, FLARE):
             alpha_deg = float(self.cfg.BROADSIDE_PROBE_DEG)
         bank_deg = self.bank_probe(bank_deg, snap)
+        bank_deg = self.roll_free_bank(bank_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
@@ -874,6 +875,31 @@ class Autopilot:
             rr.update(snap.ut, bank_deg, flown_bank(snap),
                       getattr(snap, "sideslip", None))
         self.damp_roll(snap, bank_deg, alpha_deg)
+
+    def roll_free_bank(self, bank_deg, snap):
+        """``COAST_ROLL_FREE_Q_PA``: in thin air the bank the vehicle already
+        flies, so the nose tilts toward its own roof and kRPC asks no roll;
+        the commanded bank once the air can roll it."""
+        limit = float(getattr(self.cfg, "COAST_ROLL_FREE_Q_PA", 0.0))
+        if limit <= 0.0 or self.state not in (COAST, GLIDE):
+            return bank_deg
+        if snap.dynamic_pressure >= limit:
+            if getattr(self, "_roll_free", False):
+                self._roll_free = False
+                self.logbook.event(snap.ut, "roll free ends at q=%.0f Pa: "
+                                   "bank %+.0f flown -> %+.0f commanded"
+                                   % (snap.dynamic_pressure,
+                                      flown_bank(snap), bank_deg))
+            return bank_deg
+        flown = flown_bank(snap)
+        if math.isnan(flown):
+            return bank_deg
+        if not getattr(self, "_roll_free", False) and not getattr(
+                self, "_roll_free_done", False):
+            self._roll_free = self._roll_free_done = True
+            self.logbook.event(snap.ut, "roll free below q=%.0f Pa: nose "
+                               "toward the roof at bank %+.0f" % (limit, flown))
+        return flown
 
     def bank_probe(self, bank_deg, snap):
         """``GLIDE_BANK_PROBE_DEG``: hold one bank from COAST through GLIDE

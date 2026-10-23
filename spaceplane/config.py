@@ -2902,6 +2902,14 @@ class Config:
     # by nothing but that loop: rot-unst-1022's stackorb flew alpha 6 deg
     # over its command at Mach 4 and departed in sideslip (LOG14024).
     ATTITUDE_PITCH_AIR_GLIDE: bool = False
+    # Below this dynamic pressure (Pa) the coast and glide aim the nose
+    # alpha above the wind *toward the roof the vehicle already has* and ask
+    # for no roll; at and above it the commanded bank as usual.  0 = off.
+    # For an airframe that cannot roll in vacuum: the cargo shuttle has no
+    # wheel and its RCS roll input makes pitch, so every bank kRPC asked of
+    # it in the coast stirred pitch, and it met the air at alpha 85 against
+    # 22 commanded (rot-unst-1022, LOG14023: 0/3, 43-236 km short).
+    COAST_ROLL_FREE_Q_PA: float = 0.0
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the
