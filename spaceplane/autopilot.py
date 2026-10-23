@@ -7827,6 +7827,21 @@ def flown_bank(snap):
         return float("nan")
 
 
+def force_bank(snap):
+    """``(bank, side_g)`` of the aero force perpendicular to the wind,
+    in ``flown_bank``'s sense; ``(nan, nan)`` when it cannot be read."""
+    try:
+        up_perp, side = trajectory.lift_frame(snap.position, snap.velocity)
+        if up_perp is None or len(snap.aero_force) != 3:
+            return float("nan"), float("nan")
+        lift = vec.project_out(snap.aero_force, vec.unit(snap.velocity))
+        sideways = vec.dot(lift, side)
+        return (math.degrees(math.atan2(sideways, vec.dot(lift, up_perp))),
+                sideways / max(1.0, snap.mass * 9.81))
+    except Exception:                                   # noqa: BLE001
+        return float("nan"), float("nan")
+
+
 def measured_coefficients(snap):
     """``(Cl*A, Cd*A)`` the vehicle actually flew, from the reported force.
 
@@ -7914,6 +7929,10 @@ def compact_line(state, snap, run):
         # (``trajectory.lift_frame``), so ``bank=`` and ``bnk=`` compare
         # directly.  ``nan`` when there is no roof or no airflow.
         "bnk=%+5.1f" % flown_bank(snap),
+        # The bank of the *aero force* about the wind, in ``bnk=``'s sense,
+        # and its sideways part in g: a roof banked with the force not is
+        # side force (slip, rudder) cancelling the turn.
+        "fbk=%+5.1f/%+5.2f" % force_bank(snap),
         "cla=%5.1f" % cla,
         "cda=%5.1f" % cda,
         "dec=%5.2f" % (cda * q / mass),
