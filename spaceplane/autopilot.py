@@ -7855,6 +7855,21 @@ def flown_bank(snap):
         return float("nan")
 
 
+def krpc_errors(run):
+    """kRPC's ``(pitch_error, heading_error, roll_error)``, from the cone on;
+    nan elsewhere or when it will not say."""
+    nan = (float("nan"),) * 3
+    if run.state not in (HAC, APPROACH, FLARE) or not getattr(
+            run, "autopilot_engaged", False):
+        return nan
+    try:
+        ap = run.autopilot
+        return (float(ap.pitch_error), float(ap.heading_error),
+                float(ap.roll_error))
+    except Exception:                                   # noqa: BLE001
+        return nan
+
+
 def pointing_errors(run, snap):
     """``(yaw, roll)`` of the commanded attitude against the flown one, deg;
     nan when either is unknown."""
@@ -7985,6 +8000,9 @@ def compact_line(state, snap, run):
         # toward the body's right, and the commanded roof about the nose
         # (positive = roll right wanted).
         "yerr=%+5.1f/%+5.1f" % pointing_errors(run, snap),
+        # kRPC's own pitch / heading / roll errors, deg, as it reports them
+        # (three calls a line, from the cone on).
+        "kerr=%+5.1f/%+5.1f/%+5.1f" % krpc_errors(run),
         "cla=%5.1f" % cla,
         "cda=%5.1f" % cda,
         "dec=%5.2f" % (cda * q / mass),
