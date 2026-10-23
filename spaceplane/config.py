@@ -2853,6 +2853,10 @@ class Config:
     # LOG14049); on the approach saves 1.91 lined up on the centreline 3/4
     # against 1/4 (sf-app-1022), while 1.0 is the better glide (slew-1021).
     APPROACH_SLEW_FACTOR: float = 0.0
+    # ... and in the cone (HAC) as well: the approach-only factor turned at
+    # 0.26-0.95 of coordinated against 0.75-0.90 for the factor everywhere,
+    # the difference being the cone the saves start in (sf-asf2-1022).
+    APPROACH_SLEW_IN_HAC: bool = False
     # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
     # The derivation above handed it (pitch, yaw, roll), so the shuttle has
     # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the

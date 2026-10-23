@@ -1020,8 +1020,10 @@ class Autopilot:
         APPROACH and FLARE, else 1: the lateral axes' scale."""
         factor = float(getattr(self.cfg, "APPROACH_SLEW_FACTOR", 0.0))
         base = float(self.cfg.ATTITUDE_SLEW_FACTOR)
-        if factor <= 0.0 or base <= 0.0 or self.state not in (APPROACH,
-                                                               FLARE):
+        states = (APPROACH, FLARE) + (
+            (HAC,) if getattr(self.cfg, "APPROACH_SLEW_IN_HAC", False)
+            else ())
+        if factor <= 0.0 or base <= 0.0 or self.state not in states:
             return 1.0
         return factor / base
 
