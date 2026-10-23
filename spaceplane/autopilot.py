@@ -1017,7 +1017,7 @@ class Autopilot:
 
     def peak_scale(self):
         """``APPROACH_SLEW_FACTOR`` over ``ATTITUDE_SLEW_FACTOR`` in
-        APPROACH and FLARE, else 1."""
+        APPROACH and FLARE, else 1: the lateral axes' scale."""
         factor = float(getattr(self.cfg, "APPROACH_SLEW_FACTOR", 0.0))
         base = float(self.cfg.ATTITUDE_SLEW_FACTOR)
         if factor <= 0.0 or base <= 0.0 or self.state not in (APPROACH,
@@ -1025,19 +1025,25 @@ class Autopilot:
             return 1.0
         return factor / base
 
+    @staticmethod
+    def scaled_peak(want, scale):
+        """Roll and yaw scaled; pitch is the flare's and stays (scaled with
+        the rest, the approach saves landed 0.7-1.6 km short, sf-asf-1022)."""
+        return (want[0], want[1] * scale, want[2] * scale)
+
     def assign_peak(self, want, ut):
         """Hand kRPC ``want`` (the tune before ``peak_scale``) scaled for
         the phase; False if it refused."""
         scale = self.peak_scale()
         try:
-            self.autopilot.time_to_peak = tuple(w * scale for w in want)
+            self.autopilot.time_to_peak = self.scaled_peak(want, scale)
         except Exception:                               # noqa: BLE001
             return False
         if scale != getattr(self, "_peak_scale", 1.0):
             self.logbook.event(ut, "attitude time_to_peak x%.2f in %s -> "
                                "(%.1f, %.1f, %.1f) s as applied" % (
                                    (scale, self.state)
-                                   + tuple(w * scale for w in want)))
+                                   + self.scaled_peak(want, scale)))
         self._peak_scale = scale
         return True
 

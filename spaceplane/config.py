@@ -2846,9 +2846,9 @@ class Config:
     # Flown, slew-1021 (6 an arm, four orbits): 1.0 14/23 intact on the
     # runway v 7/23, airborne breakups 1 v 5.
     ATTITUDE_SLEW_FACTOR: float = 1.0
-    # The slew factor APPROACH and FLARE fly (0 = ``ATTITUDE_SLEW_FACTOR``):
-    # every axis's time_to_peak scaled by this over that from the approach
-    # on.  At 1.0 the approach's yaw holds 2 deg of slip against a 10-18 deg
+    # The slew factor APPROACH and FLARE fly on roll and yaw (0 =
+    # ``ATTITUDE_SLEW_FACTOR``): their time_to_peak scaled by this over that
+    # from the approach on; pitch keeps its own tune.  At 1.0 the approach's yaw holds 2 deg of slip against a 10-18 deg
     # bank and the heading does not move (aero force banked 1-3 deg,
     # LOG14049); on the approach saves 1.91 lined up on the centreline 3/4
     # against 1/4 (sf-app-1022), while 1.0 is the better glide (slew-1021).
