@@ -48,7 +48,18 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-22 night, fingerprint `9eec0e1f`)
+## Where it stands (2026-10-22 evening, fingerprint `fe76eb15`)
+
+**The user's goal now: neutral/unstable craft (fwdwing09, stackorb without ballast, the cargo shuttle) to the runway reliably.**
+
+- **The approach's turn:** kRPC's yaw cancels the bank's lift (`fbk=`, `yerr=`). `APPROACH_SLEW_FACTOR` 1.91 in cone+approach (default) restored the turn in one batch but not the next. The factor multiplies the roll damper's state; derive a fixed lateral tune instead.
+- **The approach dive** (60-95 m/s sink at the flare door) is the other loss mode.
+- **Cargo:** kRPC cannot point it in vacuum (cross-coupled RCS). `VACUUM_OWN` flies the coast on a measured input matrix, turning before the warp. Off by default and unflown in that form.
+- `ATTITUDE_PITCH_AIR_GLIDE` is promising on the low-margin craft, unproven.
+
+Root HANDOFF.md has the numbers.
+
+## Earlier (2026-10-22 night, fingerprint `9eec0e1f`)
 
 The plant has been the same since 2026-10-21: AtmosphereAutopilot removed (stock surfaces), kRPC 0.7.0, and `KRPC_WOBBLE_MITIGATION` off.
 

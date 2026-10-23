@@ -3158,3 +3158,24 @@ being commanded against the bank or kRPC is failing a command it was
 given.  Farm note: ksp4 refused connections for the last two arms of a
 cycle and swap reached 20.6 GB by the end; restart before the next
 comparison.
+
+## Evening, 2026-10-22: the approach's turn, low-margin craft, the cargo shuttle's vacuum attitude
+
+The user's goal: fly neutral/unstable craft to the runway reliably, soon.
+
+- **Baseline on 0.7 defaults** (rot-unst-1022, 3 an arm, intact on the runway): shuttle2 2/3, fwdwing 3/3, fwdwing09 2/3, stackorb (no ballast) 1/3, stackorb 1/3, cargo 0/3.
+- **The approach's turn.** New log fields `fbk=` (aero force bank / side g) and `yerr=` (errors handed to kRPC). The roof is banked 10-19 deg, the force 1-3 deg; yaw input -0.5..-0.7 against the bank with 1-2 deg of slip cancels the horizontal lift (LOG14049, 14054, 14056).
+  - Approach saves `qs_s2_app0-3`. Turn ratio: 1.0 0.07-0.16, global 1.91 0.75-0.90, cone+approach 1.91 0.77-0.90, 3.0 lost lateral control. With pitch scaled too, 4/6 were destroyed.
+  - `APPROACH_SLEW_FACTOR` 1.91 + `APPROACH_SLEW_IN_HAC` promoted (rot-asf-1022: 0.77 v 0.27, door |xt| 41-154 v 246 m).
+  - Not reproduced in rot-vown-1022 (0.14-0.23): the factor multiplies the roll damper's state.
+- **Approach dive** (flare door at 430-700 m, sink 60-95 m/s) is the other loss mode; not worked yet.
+- **`ATTITUDE_PITCH_AIR_GLIDE`**: the stackorb departed on the glide's static 9.7 s pitch loop (LOG14024). With the flag, fwdwing09 went 5/5 near or on the runway and stackorb 2/5. Unproven.
+- **Cargo shuttle.** kRPC cannot point it in vacuum (`tools/vacbench.py`: outputs about 0 with a 90 deg error; gains x4 no change). Ruled out: CommNet, wheels, control point.
+  - Its RCS cross-couples (pre-burn B: roll makes about as much yaw as roll; post-burn: yaw made more pitch than yaw). `tools/rcsGeometry.py`: pure roll is possible at ±4.3 kN m against ±17.8 pitch/yaw.
+  - `VACUUM_OWN`: the client flies the coast on the measured B inverted.
+  - B measured at the coast's start was near-singular (LOG14126); measured before the burn it is clean.
+  - Nose-first roof hold (LOG14138).
+  - Then the user's proposal: the entry attitude for the atmosphere's edge, turned to before the warp. Unflown (rot-pre-1022 killed at the user's request).
+  - `COAST_ROLL_FREE_Q_PA`: cargo 0/5.
+
+Batches: rot-unst-, rot-pag-, rot-app- (saves), sf-app-, sf-asf-, sf-asf2-, sf-asf3-, rot-asf-, rot-vown-, rot-vown2-, rot-pre- (killed), all -1022.
