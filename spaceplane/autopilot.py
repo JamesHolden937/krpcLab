@@ -983,13 +983,12 @@ class Autopilot:
         def moved(want, had, home):
             return (abs(want - had) > frac * had
                     or (want == home and had != home))
-        if not (moved(roll, have[1], rd.floor if rd else roll)
+        rescale = self.peak_scale() != getattr(self, "_peak_scale", 1.0)
+        if not (rescale or moved(roll, have[1], rd.floor if rd else roll)
                 or moved(yaw, have[2], static[2])):
             return
         want = (have[0], roll, yaw)
-        try:
-            self.autopilot.time_to_peak = want
-        except Exception:                               # noqa: BLE001
+        if not self.assign_peak(want, snap.ut):
             return
         self._tuned_peak = want
         if swung is not None:
@@ -1015,6 +1014,32 @@ class Autopilot:
                        else float("nan"), roll,
                        ", rcs open" if self.rcs_yaw_now() is not None
                        else ""))
+
+    def peak_scale(self):
+        """``APPROACH_SLEW_FACTOR`` over ``ATTITUDE_SLEW_FACTOR`` in
+        APPROACH and FLARE, else 1."""
+        factor = float(getattr(self.cfg, "APPROACH_SLEW_FACTOR", 0.0))
+        base = float(self.cfg.ATTITUDE_SLEW_FACTOR)
+        if factor <= 0.0 or base <= 0.0 or self.state not in (APPROACH,
+                                                               FLARE):
+            return 1.0
+        return factor / base
+
+    def assign_peak(self, want, ut):
+        """Hand kRPC ``want`` (the tune before ``peak_scale``) scaled for
+        the phase; False if it refused."""
+        scale = self.peak_scale()
+        try:
+            self.autopilot.time_to_peak = tuple(w * scale for w in want)
+        except Exception:                               # noqa: BLE001
+            return False
+        if scale != getattr(self, "_peak_scale", 1.0):
+            self.logbook.event(ut, "attitude time_to_peak x%.2f in %s -> "
+                               "(%.1f, %.1f, %.1f) s as applied" % (
+                                   (scale, self.state)
+                                   + tuple(w * scale for w in want)))
+        self._peak_scale = scale
+        return True
 
     def rcs_yaw_now(self, ut=0.0):
         """The thrusters-counted yaw figure while it applies, else ``None``:
@@ -7565,9 +7590,7 @@ class Autopilot:
         self._retune_ut = snap.ut
         lateral = self._tuned_peak if self._tuned_peak else static
         want = (pitch, lateral[1], lateral[2])
-        try:
-            self.autopilot.time_to_peak = want
-        except Exception:                               # noqa: BLE001
+        if not self.assign_peak(want, snap.ut):
             return
         self._tuned_peak = want
         self.attitude_settle_s = pitch

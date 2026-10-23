@@ -2846,6 +2846,13 @@ class Config:
     # Flown, slew-1021 (6 an arm, four orbits): 1.0 14/23 intact on the
     # runway v 7/23, airborne breakups 1 v 5.
     ATTITUDE_SLEW_FACTOR: float = 1.0
+    # The slew factor APPROACH and FLARE fly (0 = ``ATTITUDE_SLEW_FACTOR``):
+    # every axis's time_to_peak scaled by this over that from the approach
+    # on.  At 1.0 the approach's yaw holds 2 deg of slip against a 10-18 deg
+    # bank and the heading does not move (aero force banked 1-3 deg,
+    # LOG14049); on the approach saves 1.91 lined up on the centreline 3/4
+    # against 1/4 (sf-app-1022), while 1.0 is the better glide (slew-1021).
+    APPROACH_SLEW_FACTOR: float = 0.0
     # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
     # The derivation above handed it (pitch, yaw, roll), so the shuttle has
     # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the
