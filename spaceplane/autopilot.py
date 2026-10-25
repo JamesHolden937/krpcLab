@@ -542,9 +542,39 @@ class Autopilot:
         self.logbook.event(ut, "%s -> %s%s" % (self.state, state,
                                                (" " + note) if note else ""))
         self.log_roll_rate(ut)
+        leaving = self.state
         self.state = state
         self.state_since = ut
         self.log_authority(ut)
+        if (state == APPROACH and leaving == HAC
+                and getattr(self.cfg, "APPROACH_REENGAGE", False)):
+            self.reset_attitude_integrators(ut)
+
+    def reset_attitude_integrators(self, ut):
+        """``APPROACH_REENGAGE``: disengage and re-engage kRPC, which resets
+        its PID integrators, then hand it back the phase's tune.  Logs the
+        standing inputs it held before."""
+        if not getattr(self, "autopilot_engaged", False):
+            return
+        try:
+            c = self.vessel.control
+            before = "%+.2f/%+.2f/%+.2f" % (c.pitch, c.roll, c.yaw)
+        except Exception:                               # noqa: BLE001
+            before = "?"
+        error = set_autopilot_engaged(self.autopilot, False)
+        if error is None:
+            error = set_autopilot_engaged(self.autopilot, True)
+        if error is not None:
+            # ``engage_autopilot`` retries, from the static tune.
+            self.autopilot_engaged = False
+            self.logbook.event(ut, "re-engage FAILED (%r); retrying" % error)
+            return
+        tuned = getattr(self, "_tuned_peak", None)
+        if tuned:
+            self.assign_peak(tuned, ut)
+        self.logbook.event(ut, "kRPC re-engaged in %s: integrators reset "
+                           "(pitch/roll/yaw inputs were %s)"
+                           % (self.state, before))
 
     def derive_hac_aim(self, snap):
         """``HAC_AIM_DERIVED``: set the entry aim's ratio once, off the table,
