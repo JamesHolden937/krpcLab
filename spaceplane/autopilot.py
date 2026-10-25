@@ -396,6 +396,7 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
+        self.env.trim_floor = trajectory.TrimFloor(cfg)
         # ``GLIDE_TAEM_ENERGY`` / ``_ALPHA``: set by the glide below
         # ``GLIDE_TAEM_MACH``, ``None`` everywhere else.
         self.env.taem = None
@@ -863,6 +864,8 @@ class Autopilot:
         bank_deg = self.bank_probe(bank_deg, snap)
         bank_deg = self.roll_free_bank(bank_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
+        if self.state == GLIDE:
+            alpha_deg = self.trim_floor_alpha(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
             return
@@ -905,6 +908,21 @@ class Autopilot:
             rr.update(snap.ut, bank_deg, flown_bank(snap),
                       getattr(snap, "sideslip", None))
         self.damp_roll(snap, bank_deg, alpha_deg)
+
+    def trim_floor_alpha(self, alpha_deg, snap):
+        """``TRIM_FLOOR``: no lower than the learned floor plus its margin;
+        logs the floor each time it starts or stops binding."""
+        floor = getattr(self.env, "trim_floor", None)
+        low = floor.limit(self.snap_mach(snap)) if floor else None
+        binding = low is not None and alpha_deg < low
+        if binding != getattr(self, "_trim_floor_binding", False):
+            self._trim_floor_binding = binding
+            self.logbook.event(snap.ut, "trim floor %s: %.1f deg against "
+                               "%.1f commanded (learned %s)" % (
+                                   "binds" if binding else "released",
+                                   low if low is not None else float("nan"),
+                                   alpha_deg, floor.summary()))
+        return max(alpha_deg, low) if binding else alpha_deg
 
     def vacuum_own(self, snap):
         """``VACUUM_OWN``: fly the coast on the measured input matrix
@@ -1807,6 +1825,10 @@ class Autopilot:
                 self.env.holdable.observe(self.commanded_alpha,
                                           snap.alpha_actual,
                                           snap.dynamic_pressure, mach)
+                if self.state == GLIDE:
+                    self.env.trim_floor.observe(
+                        self.commanded_alpha, snap.alpha_actual,
+                        getattr(snap, "pitch_input", None), mach)
         if self.commanded_alpha <= self.cfg.ALPHA_MIN_DEG + 1.0:
             return
         error = self.commanded_alpha - snap.alpha_actual
@@ -6581,6 +6603,11 @@ class Autopilot:
             return
         if summary:
             self.logbook.event(ut, "holdable alpha, learned: %s" % summary)
+        floor = getattr(self.env, "trim_floor", None)
+        if floor is not None and floor.summary():
+            self.logbook.event(ut, "trim floor, learned (flag %s): %s" % (
+                "on" if getattr(self.cfg, "TRIM_FLOOR", False) else "off",
+                floor.summary()))
         # And what the airframe really made against what the table said --
         # printed whether or not it was applied, so a flight flown with the
         # trim off still measures it.  A number nothing reads back cannot be
