@@ -44,6 +44,10 @@ STATES = [("M7", 55000.0, 2050.0), ("M5", 40000.0, 1550.0),
           ("M0.8", 12000.0, 240.0), ("cone", 6000.0, 150.0),
           ("final", 1000.0, 110.0)]
 
+# The alpha each state is flown at, for the sideslip sweep.
+YAW_ALPHA = {"M7": 35.0, "M5": 35.0, "M3": 25.0, "M1.5": 15.0,
+             "M0.8": 10.0, "cone": 8.0, "final": 8.0}
+
 
 def pump_to_nose(sc, vessel):
     """Every propellant's tanks into its forward-most one, as far as it holds."""
@@ -78,6 +82,10 @@ def main():
     ap.add_argument("--alphas", default="-5,0,5,10,15,20,25,30,35,40,45,50")
     ap.add_argument("--settle", type=float, default=1.5)
     ap.add_argument("--no-pump", action="store_true")
+    ap.add_argument("--yaw", action="store_true",
+                    help="also sweep sideslip at each state's alpha: the "
+                    "yaw and roll moments per unit q against beta")
+    ap.add_argument("--betas", default="-8,-4,0,4,8")
     args = ap.parse_args()
     base = os.path.join(ROOT, "testInstances", "ksp%s" % args.instance)
     conn = krpc.connect(name="stiffprobe", address="127.0.0.1",
@@ -118,16 +126,23 @@ def main():
             return body.atmospheric_density_at_position(
                 tuple(vec.scale(up, body.equatorial_radius + alt)), frame)
 
-        def probe(alt, speed, alpha):
+        def probe(alt, speed, alpha, beta=0.0):
             a = math.radians(alpha)
             d = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
                                  vec.scale(dorsal, math.sin(a))))
+            if beta:
+                b = math.radians(beta)
+                d = vec.unit(vec.add(vec.scale(d, math.cos(b)),
+                                     vec.scale(right, math.sin(b))))
             pos = tuple(vec.scale(up, body.equatorial_radius + alt))
             force, torque = flight.simulate_aerodynamic_wrench_at(
                 body, pos, tuple(vec.scale(d, speed)), rot,
                 (0.0, 0.0, 0.0), sc.ut)
             q = 0.5 * rho(alt) * speed * speed
             lift = vec.unit(vec.project_out(dorsal, d))
+            if beta:
+                return (vec.dot(torque, dorsal) / q,
+                        vec.dot(torque, nose) / q, q)
             return vec.dot(force, lift) / q, vec.dot(torque, right) / q, q
 
         rows = {}
@@ -179,6 +194,22 @@ def main():
             if not trims:
                 log("        no trim in the sweep (moment one sign: %s)"
                       % ("nose-up" if m[0] > 0 else "nose-down"))
+        if args.yaw:
+            betas = [float(b) for b in args.betas.split(",")]
+            # Raw torques, signs as the game reports them: compare
+            # airframes (fins forward must flatten the yaw slope) before
+            # reading a sign as stable or unstable.
+            for label, alt, speed in STATES:
+                a = YAW_ALPHA[label]
+                r = [probe(alt, speed, a, b) for b in betas]
+                n = [x[0] for x in r]
+                l = [x[1] for x in r]
+                span = betas[-1] - betas[0]
+                log("  %-5s alpha %2.0f  CnA(raw) %s  slope %+.2f m^3/deg"
+                    "  ClA_roll(raw) slope %+.2f m^3/deg"
+                    % (label, a, " ".join("%g:%+.1f" % (b, x)
+                                          for b, x in zip(betas, n)),
+                       (n[-1] - n[0]) / span, (l[-1] - l[0]) / span))
     book.close()
     conn.close()
 

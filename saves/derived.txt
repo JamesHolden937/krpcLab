@@ -18,3 +18,13 @@ qs_shuttle2_retro_rigoff    qs_shuttle2_rigoff  --normal 1133.8 --prograde -4231
 qs_shuttle2_e500_rigoff     qs_shuttle2_rigoff  --prograde 248.0
 qs_shuttle2_e500i45_rigoff  qs_shuttle2_rigoff  --normal 1778.8 --prograde -488.7
 qs_shuttle2_i90_rigoff      qs_shuttle2_rigoff  --normal 2267.6 --prograde -2267.6
+# The low-margin family: the twin-fin shuttle's wings moved forward
+# (stiffprobe LOG14153/14154: cone pitch slope -25.6 m^3/deg stock, -3.1 at
+# 4.0 m, divergent below ~25 deg alpha at 5.0 m; yaw stays stable).
+qs_shuttle2_fwdwing12_rigoff qs_shuttle2_rigoff --wing-forward 1.2
+qs_shuttle2_fwdwing15_rigoff qs_shuttle2_rigoff --wing-forward 1.5
+qs_shuttle2_fwdwing18_rigoff qs_shuttle2_rigoff --wing-forward 1.8
+qs_shuttle2_fwdwing30_rigoff qs_shuttle2_rigoff --wing-forward 3.0
+qs_shuttle2_fwdwing40_rigoff qs_shuttle2_rigoff --wing-forward 4.0
+qs_shuttle2_fwdwing45_rigoff qs_shuttle2_rigoff --wing-forward 4.5
+qs_shuttle2_fwdwing50_rigoff qs_shuttle2_rigoff --wing-forward 5.0

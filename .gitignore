@@ -58,3 +58,10 @@ lowThrust/mod/**/*.dll
 # boosterland: leg deploy times timed in flight (delete to re-time)
 boosterland/data/
 testInstances/disabledMods/
+saves/qs_shuttle2_fwdwing12_rigoff.sfs
+saves/qs_shuttle2_fwdwing15_rigoff.sfs
+saves/qs_shuttle2_fwdwing18_rigoff.sfs
+saves/qs_shuttle2_fwdwing30_rigoff.sfs
+saves/qs_shuttle2_fwdwing40_rigoff.sfs
+saves/qs_shuttle2_fwdwing45_rigoff.sfs
+saves/qs_shuttle2_fwdwing50_rigoff.sfs

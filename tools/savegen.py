@@ -239,6 +239,9 @@ def main(argv=None):
     p.add_argument("--prograde", type=float, default=0.0, metavar="M_S")
     p.add_argument("--normal", type=float, default=0.0, metavar="M_S")
     p.add_argument("--radial", type=float, default=0.0, metavar="M_S")
+    p.add_argument("--wing-forward", type=float, default=0.0, metavar="M",
+                   help="also move a shuttle's delta wings (and what hangs "
+                   "on them) forward by M metres: spaceplane/tools/wingshift.py")
     p.add_argument("--list", action="store_true",
                    help="print the source state and exit")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
@@ -276,7 +279,15 @@ def main(argv=None):
         raise SystemExit("element round-trip failed: dr=%.3f m dv=%.4f m/s"
                          % (_norm(_sub(r2, r)), _norm(_sub(v2b, v2))))
 
-    write_elements(lines, lo, hi, el2)
+    if args.prograde or args.normal or args.radial:
+        write_elements(lines, lo, hi, el2)
+    if args.wing_forward:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "spaceplane", "tools"))
+        from wingshift import shift_lines
+        lines, moved = shift_lines(lines, args.wing_forward)
+        if not moved:
+            raise SystemExit("--wing-forward: no shuttle delta wing found")
     dst = os.path.join(args.save_dir, args.out + ".sfs")
     with open(dst, "w") as fh:
         fh.writelines(lines)
