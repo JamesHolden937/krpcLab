@@ -610,68 +610,6 @@ class Holdable:
             10.0 ** (i / float(per)), v[0], v[1]) for i, v in trusted)
 
 
-class TrimFloor:
-    """The *lowest* angle of attack the airframe holds, learned in flight.
-
-    ``Holdable``'s mirror (``Config.TRIM_FLOOR``).  A vehicle whose
-    trim sits above its command flies nose-high of it with the pitch input
-    on the nose-down rail; that tick is a sample of the floor at this Mach,
-    and the lowest such sample is kept (a reversal throws alpha *up* for a
-    second; the floor is not that).  A tick tracking its command with the
-    input clear of the rail says the floor is at most the command.  Binned by
-    Mach, because with both moments proportional to q the trim alpha is a
-    function of the airflow's shape, not its pressure.  No evidence within
-    ``TRIM_FLOOR_REACH_MACH``: ``None``.
-    """
-
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.bins = {}                  # bin index -> [floor, samples]
-
-    def _bin(self, mach):
-        return int(math.floor(mach / float(self.cfg.TRIM_FLOOR_MACH_BIN)))
-
-    def observe(self, commanded, achieved, pitch_input, mach):
-        if mach is None or pitch_input is None or commanded <= 0.0:
-            return
-        sat = float(self.cfg.TRIM_FLOOR_INPUT)
-        index = self._bin(mach)
-        current = self.bins.get(index)
-        over = achieved - commanded
-        if pitch_input <= -sat and over > float(self.cfg.HOLDABLE_SATURATED_DEG):
-            if current is None:
-                self.bins[index] = [achieved, 1]
-            else:
-                current[0] = min(current[0], achieved)
-                current[1] += 1
-        elif current is not None and abs(over) < float(
-                self.cfg.HOLDABLE_SATURATED_DEG) and pitch_input > -sat:
-            current[0] = min(current[0], commanded)
-            current[1] += 1
-
-    def limit(self, mach):
-        """The floor at this Mach plus the margin, or ``None``."""
-        if mach is None or not getattr(self.cfg, "TRIM_FLOOR", False):
-            return None
-        trusted = [(i, v[0]) for i, v in self.bins.items()
-                   if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES)]
-        if not trusted:
-            return None
-        index = self._bin(mach)
-        reach = float(self.cfg.TRIM_FLOOR_REACH_MACH) / float(
-            self.cfg.TRIM_FLOOR_MACH_BIN)
-        near = min(trusted, key=lambda t: abs(t[0] - index))
-        if abs(near[0] - index) > reach:
-            return None
-        return near[1] + float(self.cfg.TRIM_FLOOR_MARGIN_DEG)
-
-    def summary(self):
-        per = float(self.cfg.TRIM_FLOOR_MACH_BIN)
-        return " ".join("M%.1f:%.1f/%d" % (i * per, v[0], v[1]) for i, v in
-                        sorted(self.bins.items())
-                        if v[1] >= int(self.cfg.HOLDABLE_MIN_SAMPLES))
-
-
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """Clamp a commanded angle to what the airframe has shown it can hold.
 
@@ -747,11 +685,6 @@ def acceleration(env, r, v, mass, steer):
                                        getattr(env, "holdable", None)
                                        or getattr(steer, "holdable", None),
                                        env, speed / env.speed_of_sound(altitude))
-                floor = getattr(env, "trim_floor", None)
-                if floor is not None:
-                    low = floor.limit(speed / env.speed_of_sound(altitude))
-                    if low is not None:
-                        alpha = max(alpha, low)
                 alpha = tracked_alpha(steer.cfg, alpha, q,
                                       getattr(steer, "tracked", False))
                 # ``GLIDE_TAEM_ALPHA``: the alpha the vehicle is flying,

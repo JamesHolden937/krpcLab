@@ -1063,23 +1063,6 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **The learned trim floor** (flag, 2026-10-25): the mirror of
-    # ``Holdable``.  With the wings 3-5 m forward the shuttle trims at
-    # ~35-40 deg hypersonically, the glide commands 22-29, kRPC's pitch
-    # input runs to -0.7..-1.0 (nose-down saturated) and the next bank
-    # reversal departs it (fw-1025: LOG14154-14158, Mach ~5, alpha to 128).
-    # The stock shuttle sits at the other rail (+0.6..+0.96).  Per Mach bin,
-    # the lowest alpha flown while the pitch input is at or past
-    # -TRIM_FLOOR_INPUT is the floor; the glide's command (``aim``) and the
-    # propagator both fly ``max(alpha, floor + TRIM_FLOOR_MARGIN_DEG)``, so
-    # the solve plans the drag the airframe will make and kRPC is not left
-    # on its rail.  Tracking ticks with the input clear lower a bin to the
-    # command.  No evidence: no floor.
-    TRIM_FLOOR: bool = False
-    TRIM_FLOOR_INPUT: float = 0.5           # |pitch input| that counts as saturated: the 3 m craft ran 3-11 deg over at -0.4..-0.6 (fw-1025)
-    TRIM_FLOOR_MARGIN_DEG: float = 3.0      # command this far above the floor
-    TRIM_FLOOR_MACH_BIN: float = 0.5
-    TRIM_FLOOR_REACH_MACH: float = 1.5      # nearest bin used this far away
 
     # -- the ceiling, measured by a probe instead of inferred in flight ----
 
