@@ -1076,7 +1076,7 @@ class Config:
     # on its rail.  Tracking ticks with the input clear lower a bin to the
     # command.  No evidence: no floor.
     TRIM_FLOOR: bool = False
-    TRIM_FLOOR_INPUT: float = 0.8           # |pitch input| that counts as saturated
+    TRIM_FLOOR_INPUT: float = 0.5           # |pitch input| that counts as saturated: the 3 m craft ran 3-11 deg over at -0.4..-0.6 (fw-1025)
     TRIM_FLOOR_MARGIN_DEG: float = 3.0      # command this far above the floor
     TRIM_FLOOR_MACH_BIN: float = 0.5
     TRIM_FLOOR_REACH_MACH: float = 1.5      # nearest bin used this far away
