@@ -48,14 +48,18 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-22 evening, fingerprint `fe76eb15`)
+## Where it stands (2026-10-25, fingerprint `FP_PLACEHOLDER`)
 
-**The user's goal now: neutral/unstable craft (fwdwing09, stackorb without ballast, the cargo shuttle) to the runway reliably.**
+**The user's goal: neutral/unstable craft to the runway reliably.** The cargo shuttle is dropped (inherently problematic). The test family is the shuttle with its wings moved forward: `savegen.py --wing-forward M`, saves `qs_shuttle2_fwdwingNN_rigoff`.
 
-- **The approach's turn:** kRPC's yaw cancels the bank's lift (`fbk=`, `yerr=`). `APPROACH_SLEW_FACTOR` 1.91 in cone+approach (default) restored the turn in one batch but not the next. The factor multiplies the roll damper's state; derive a fixed lateral tune instead.
-- **The approach dive** (60-95 m/s sink at the flare door) is the other loss mode.
-- **Cargo:** kRPC cannot point it in vacuum (cross-coupled RCS). `VACUUM_OWN` flies the coast on a measured input matrix, turning before the warp. Off by default and unflown in that form.
-- `ATTITUDE_PITCH_AIR_GLIDE` is promising on the low-margin craft, unproven.
+- **Defaults land through 1.5 m forward** (stock 7-8/8, 1.2 m 6/8, 1.5 m 8/8 on the runway). **1.8 m: 5/16.** 3 m and beyond: 0.
+- Stability is set by the **drained** airframe, which has a much more aft CoM than the orbital save. At 3 m it is statically unstable hypersonically; at 4 m the elevons cannot hold it at any alpha.
+- The fins move with the wing, so yaw stiffness falls too (1.8 m: -20%).
+- **1.8 m loss modes:**
+  - a hypersonic lateral limit cycle (slip +-17, roll input saturated);
+  - a transonic pitch oscillation (alpha 12-46 on +-0.2 input; the static pitch loop is too slow there).
+- **The approach turns:** `APPROACH_REENGAGE` (default) resets kRPC's integrators at the cone's exit. Turn ratio median 0.88 against 0.16.
+- The cone saves `qs_s2_hac*` are stale (overshoot 5-14 km): retake them.
 
 Root HANDOFF.md has the numbers.
 
