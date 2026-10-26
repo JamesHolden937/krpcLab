@@ -3201,4 +3201,7 @@ The user: forget the cargo shuttle; shift the wings on the normal craft.
 - **Where the defaults stop** (lim-1025, 8 each): **1.2 m 6/8** on the runway (one glide departure, one crash 6.7 km short), **1.5 m 8/8** within 1.9 km, **1.8 m 2/8** (4 glide departures at Mach 4.7-5.1, two 10 km short, one 21 km). The 1.8 m departures are a lateral limit cycle at alpha ~28: slip +-17 alternating every ~2 s with roll input +-1, pitch input ~0 (LOG14290/14298/14303). The roll damper ran to its ceiling (10.3 s, yaw tied to it) and the swing continued.
 - **Yaw stiffness by alpha** (stiffprobe `--yaw-alphas`, orbital saves, LOG14312-14315): at M5, 10/20/30 deg: stock 4.1/4.5/6.6, 1.5 m 3.4/3.8/5.3, 1.8 m 3.3/3.7/5.0, 3 m 2.7/3.1/3.9 m^3/deg. Roll slope unchanged. The fins move with the wing, so the family loses directional stiffness with pitch margin.
 
-Batches: fw-, tf-, rot-pag-, tb-, rev-, band-, lim-1025.
+- **The roll damper off** (`ROLL_DAMPER_GROWTH=100`; damp-, damp2-1025, 8 flights per arm per batch): 1.8 m hypersonic glide departures 0/8 in the first batch, 4/8 in the second (4/16 together against 7/16 on the defaults -- the first batch was luck); **1.5 m 5/8 departures (3 recovered) against 1/8 on the defaults**; stock 8/8 near the runway, no departures. Refuted: the damper stays.
+- **The 1.8 m transonic departures** (Mach 1.4-2.6, ~20 km, near wings level): alpha swings 12-46 deg on +-0.2 of pitch input, then slip -- the static pitch loop (~10 s) too slow for the unstable short period at that q. Unworked.
+
+Batches: fw-, tf-, rot-pag-, tb-, rev-, band-, lim-, damp-, damp2-1025.
