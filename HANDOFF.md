@@ -1,78 +1,63 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-22 evening: spaceplane -- the approach's turn and the low-margin craft; the cargo shuttle's vacuum attitude (fingerprint `fe76eb15`)
+## 2026-10-25: spaceplane -- the wings-forward family; APPROACH_REENGAGE promoted (fingerprint `e27d6af3`)
 
-Committed and pushed. The farm is stopped; the user is testing live. The last batch (rot-pre-1022, cargo `VACUUM_OWN` with the pre-warp turn) was **killed in flight at the user's request: unread, no result**. The how-it-works PDF is **not** updated for this session (it lacks `APPROACH_SLEW_FACTOR` and `VACUUM_OWN`). Journal: "Evening, 2026-10-22".
+Committed and pushed. The farm is stopped. Journal: "Session, 2026-10-25".
 
-**The user's goal (restated):** reliably fly neutral and unstable craft (aft CoM, low margin, the cargo shuttle) down to the runway, as soon as possible. Stable craft must keep working but matter less.
+**The user's direction:** forget the cargo shuttle, it is inherently problematic. Make unstable craft by moving the wings forward on the normal shuttle.
 
-**Baseline on kRPC 0.7 defaults (rot-unst-1022, 3 an arm, intact on the runway):**
-- shuttle2 2/3, fwdwing (0.6 m) 3/3, fwdwing09 2/3 (it was 0/6 on the AA plant);
-- stackorb with `FUEL_TO_NOSE=False` 1/3, stackorb default 1/3;
-- cargo 0/3, 43-236 km short.
+**The family.** `tools/savegen.py --wing-forward M` (`spaceplane/tools/wingshift.py`) moves `wingShuttleDelta` and everything on it: elevons, **fins** and mains. The derived saves are `qs_shuttle2_fwdwing{12,15,18,30,40,45,50}_rigoff` (`saves/derived.txt`, gitignored; `syncSaves.sh` builds them).
 
-**1. The approach can't turn. Mechanism found, fix promoted, still inconsistent.**
-- New log fields:
-  - `fbk=`: the bank and sideways g of the aero force about the wind.
-  - `yerr=`: the yaw/roll errors handed to kRPC.
-  - `kerr=`: kRPC's own errors. It reads nan, unfixed.
-- LOG14049: roof banked +17-19 deg, aero force +1-3 deg, sideways 0.02-0.05 g. Yaw input -0.5..-0.7 against the bank and 1-2 deg of slip cancel the horizontal lift, so the heading holds for 30-60 s.
-- LOG14054/56 show kRPC yawing *against* a +2.5 deg yaw error.
-- This loss mode drives the stackorb into the SPH (it touches down 100-170 m north of the centreline) and puts the shuttles beside the runway.
-- Approach saves `qs_s2_app0-3` (`saves/`, untracked, now added) were taken at 3.5 km. Fly them with `SAVE=qs_s2_app spaceplane/tools/savefly.sh`; app4/5 on ksp4/5 are copies of app2/3. **app3 is a bad state** (both arms 3-8 km short): ignore it and its copy.
-- Single outcomes from these saves are noisy; the same save and arm went intact one round and broke up the next. Judge by turn ratio (heading rate / g tan(bank)/v, banked > 5 deg) and door cross-track. The scratchpad reader was `xt.py`; rebuild it from that definition.
-- Turn ratio on the saves:
-  - slew 1.0: 0.07-0.16
-  - global 1.91: 0.75-0.90
-  - approach-only 1.91: 0.26-0.95
-  - cone + approach 1.91: 0.77-0.90
-  - 3.0: lost lateral control
-- Scaling pitch too wrecked the flare (sf-asf-1022, 4/6 destroyed), so pitch is excluded.
-- **Promoted: `APPROACH_SLEW_FACTOR` 1.91 + `APPROACH_SLEW_IN_HAC`** (roll/yaw time_to_peak x1.91 in HAC/APPROACH/FLARE).
-  - rot-asf-1022 from orbit (18 flights): turn ratio 0.77 v 0.27 over 30 default flights; door |xt| median 41-154 v 246 m.
-  - **But rot-vown-1022's three shuttle flights went back to 0.14-0.23.** The scale multiplies whatever roll time_to_peak the roll damper holds at HAC entry: 2.9 s on LOG14129, 9.1 on LOG14108. So the effective lateral tune varies flight to flight.
-  - Next: make the cone/approach lateral tune a fixed derived value, not damper state x factor. Better still, find why kRPC's yaw fights a moving target. My reading: its rate PI sees the turn's yaw rate as error; the stiffer gains at 1.0 have yaw Ki 15.7.
-- Second loss mode, not yet worked: **the approach dives**. Flare door at 430-700 m with sink 60-95 m/s (LOG14036, 14111, 14125), touchdown 117-146 m/s.
+**The flown airframe is the drained one.** `DRAIN_BEFORE_BURN` takes the shuttle 37.9 -> 30.7 t and moves the CoM aft, so the orbital save overstates the margin. Measured on the drained craft (vacuum wrench sweeps):
+- **3 m and 4 m are statically unstable at every hypersonic Mach.**
+- The elevons' moment shrinks as the wings go forward, because their arm shortens: stock +60..+105, 3 m +34..+63, 4 m +25..+49 m^3 per unit input.
+- At 4 m the zero-input moment (+16..+186) exceeds full elevon authority at every alpha. **No law can hold 4 m on elevons.**
+- Yaw stiffness falls with the fins forward (stiffprobe `--yaw-alphas`, M5, 10/20/30 deg): stock 4.1/4.5/6.6, 1.5 m 3.4/3.8/5.3, 1.8 m 3.3/3.7/5.0, 3 m 2.7/3.1/3.9 m^3/deg. Roll slope is unchanged.
 
-**2. Low-margin airframes.**
-- `ATTITUDE_PITCH_AIR_GLIDE` (flag, default off): the air-authority pitch tune in GLIDE too. The stackorb glided on the static 9.7 s pitch loop and departed at Mach 4 (alpha 6 over, slip to 35, LOG14024).
-- Evidence so far:
-  - fwdwing09 with both flags: 3/3 (rot-asf), then 2/2 intact but 183-198 m across (rot-vown).
-  - stackorb with both: 2/3 then 0/2 (destroyed at 70 m/s near the runway).
-  - Its turn ratio is unchanged (0.27).
-- Unproven; fly ~10 an arm before promoting or deleting.
-- `COAST_ROLL_FREE_Q_PA` (flag, 0 = off): roll-free coast. Cargo 0/5 with it; likely delete.
+**Where the defaults stop** (lim-1025 plus later, 8+ an arm, from orbit):
 
-**3. Cargo shuttle (`qs_cargo_rigoff`): 0 of ~20 today. Every loss is the vacuum turn.**
-- The coast never reaches the entry attitude, so it meets the air at 75-125 deg alpha and lands 43-330 km short. Below ~Mach 5 the surfaces fly it fine.
-- **kRPC can't point it in vacuum.**
-  - `spaceplane/tools/vacbench.py`: a 90 deg step never closes, with outputs about 0. Gains x4 changed nothing.
-  - kRPC's `diagnostic_log` was used to confirm this.
-  - Not the cause (all tested): CommNet (ground stations on: still fails), wheels (shuttle with its wheel off works), the control-point orientation.
-- **The RCS cross-couples.**
-  - In the pre-burn matrix, roll makes about as much yaw as roll. In the first post-burn test, yaw made more pitch than yaw.
-  - `spaceplane/tools/rcsGeometry.py` (per-nozzle moments, best pure moment per axis): pitch/yaw ±17.8 kN m, roll ±4.3.
-  - kRPC reports 66/13/66.
-  - Probe core, `ControlState.partial`; raw inputs work.
-- **`VACUUM_OWN` (flag, default off; `spaceplane/vacuumown.py`, tests `testVacuumOwn.py`).** The client flies the coast on a measured 3x3 input->body-acceleration matrix, B inverted with per-axis bang-bang. kRPC is disengaged until `VACUUM_OWN_Q_PA` 150.
-  - B is measured in DRAIN/DEORBIT at rest. Measured at the coast's start, it came out near-singular and steered wrongly: LOG14126, 240-330 km short.
-  - Nose first: the roof is held until the nose is within 15 deg (LOG14138: the 190 deg roll starved pitch).
-  - **The user's proposal, built, unflown:** right after the burn, compute the entry attitude for the predicted state at the atmosphere's edge, turn to it, and hold the warp until within 3 deg / 0.3 deg/s (or 300 s). Rails warp keeps the attitude. After the warp, the coast's own command is corrected, about 7 deg of planet rotation.
-  - Fly: `--set VACUUM_OWN=True` on `qs_cargo_rigoff`. It is off by default because it is unproven and would also take the shuttle's coast.
-  - Check the log for `vacuum own: entry attitude held after N s`.
+| Craft | Result |
+|---|---|
+| stock | 7-8/8 on the runway |
+| 1.2 m | 6/8 |
+| 1.5 m | 8/8 within 1.9 km (1/8 had a glide departure it recovered from) |
+| 1.8 m | 5/16 near the runway; 7/16 hypersonic glide departures |
+| 3 m and up | 0 |
+
+**How 1.8 m and 3 m are lost:**
+- Hypersonic, Mach 4.7-6: a lateral limit cycle. Slip swings +-17 deg every ~2 s with the roll input at +-1 and the pitch input ~0. The roll damper runs to its ceiling.
+- Transonic, Mach 1.4-2.6, ~20 km, near wings level: alpha swings 12-46 deg on +-0.2 pitch input. The static ~10 s pitch loop is too slow for the unstable short period at that q.
+
+**Flags this session:**
+
+| Flag | Measured | Outcome |
+|---|---|---|
+| `TRIM_BAND` (the user's proposal) | Pre-burn sweep of the holdable alpha band by Mach; glide and propagator clamped to it. band-1025: 3 m 0/8 even capped at ~11-21 deg (lateral departures); 4 m 0/8 | Deleted |
+| `TRIM_FLOOR` | tf-1025: 0/16 | Deleted |
+| `ATTITUDE_PITCH_AIR_GLIDE` | rot-pag-1025: 0/10 | Deleted |
+| `BANK_ACCEL_SHARE` 0.15 | rev-1025: 0/24 | Null (constant unchanged) |
+| Roll damper off (`ROLL_DAMPER_GROWTH=100`) | damp-, damp2-1025: 1.8 m 4/16 v 7/16; **1.5 m 5/8 departures v 1/8** | Refuted; the damper stays |
+| **`APPROACH_REENGAGE` -> default** | kRPC re-engaged at HAC -> APPROACH, integrators reset. sav-reeng-1025 on qs_s2_hac0-5: turn ratio median 0.88 (0.67-1.03, n=9) v 0.16 (0.04-1.11, n=11) | Promoted |
+
+- The approach's turn is still bimodal on stock with an identical applied tune. The roll damper's state is **not** the cause; the integrators were.
+- From-orbit confirmation on the new defaults: conf-1025 (CONF_PLACEHOLDER).
+- `cmt=` in GLIDE telemetry: the aero pitching moment at the flown state, per q, every `TRIM_PROBE_S`. Steady flight balances it with the input at ~100 m^3/unit.
+
+**Blocker:** the wings-forward craft past ~1.5 m lose lateral control hypersonically and pitch control transonically. Elevon authority itself runs out by 4 m.
 
 **Next, in order:**
-1. The user's live result.
-2. Cargo with `VACUUM_OWN` (pre-warp turn).
-3. The cone/approach lateral tune as a derived constant, not damper x factor.
-4. The approach dive.
-5. `ATTITUDE_PITCH_AIR_GLIDE` to ~10 an arm on stackorb/fwdwing09.
-6. Then the old list: retake the derived tables, the high orbit, the PDF.
+1. 1.8 m transonic: a pitch loop fast enough for the unstable short period (an air-authority pitch tune *below Mach 3 only*, not the whole glide that rot-pag tested).
+2. 1.8 m hypersonic lateral cycle: yaw needs more authority or a faster loop as Cn_beta drops. Try RCS yaw held open in the glide on low-stiffness craft, or a yaw tune derived from the measured yaw stiffness.
+3. Retake the cone saves `qs_s2_hac*`: every flight off them overshoots 5-14 km into the sea, on both arms.
+4. The approach dive; `VACUUM_OWN` / `COAST_ROLL_FREE_Q_PA` (cargo-only flags: delete them now the cargo shuttle is dropped).
 
 **Traps paid this session:**
-- Editing the main tree while a batch flies. Twice: round 0 had already imported, so no harm. Use the worktree `.wt-turn` (branch `turn-diag`, merged).
-- A bench save started mid-HAC differs every load.
-- kRPC's `autopilot.engage()` doesn't exist on 0.7: use `engaged = True`.
+- **First-batch luck.** Damper-off went 0/8 on 1.8 m and then 4/8. Never promote from one 8-flight batch against a baseline from another day.
+- The orbital save's stability is not the flown airframe's: sweep after the drain (COAST), or at the predicted post-burn CoM.
+- kRPC 0.7 has no `auto_pilot.disengage()`: set `engaged = False`. Client inputs are ignored while it is engaged.
+- A vacuum moment sweep must hold the surfaces at neutral (`deflection_override`) and settle first, or it reads kRPC's deflection.
+- `multirot` rotates the arm labels per cycle: join to `SAVE_NAME`/`config:` per log.
+- Build in a worktree while a batch flies (`.wt-<name>`). Docs-only commits on main mid-batch are harmless.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
