@@ -981,6 +981,18 @@ class Autopilot:
         ``TRIM_BAND_STATES`` Mach, in vacuum, and from it the trim band
         (``Config.TRIM_BAND``).  Logged whether or not the flag is on."""
         env = self.env
+        # **The zero-input moment needs the surfaces at zero.**  Entering
+        # DEORBIT the hold has only just been re-applied after the brake
+        # probe, so the first version swept at whatever kRPC had them at
+        # (3 m forward: -11..+89 there against +6..+98 in COAST, LOG14216).
+        held = getattr(self, "vacuum_surfaces", None)
+        try:
+            for cs in self.vessel.parts.control_surfaces:
+                cs.deflection_override = True
+                cs.deflection = VacuumSurfaces.NEUTRAL
+            self.settle_game(float(self.cfg.TRIM_BAND_SETTLE_S))
+        except Exception:                               # noqa: BLE001
+            pass
         try:
             nose, dorsal = env._axes()
             if nose is None:
@@ -1024,6 +1036,13 @@ class Autopilot:
             self.logbook.event(ut, "trim sweep: FAILED (%s: %s)"
                                % (type(exc).__name__, exc))
             return
+        finally:
+            if held is None or not held.held:
+                try:
+                    for cs in self.vessel.parts.control_surfaces:
+                        cs.deflection_override = False
+                except Exception:                       # noqa: BLE001
+                    pass
         env.trim_band = trajectory.TrimBand(self.cfg, rows)
         self.logbook.event(ut, "trim sweep (%s, CoM shift %+.2f m along the "
                            "nose; flag %s): trim alpha by Mach, CmA nose-up+ "
