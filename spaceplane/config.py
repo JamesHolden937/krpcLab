@@ -1063,35 +1063,6 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **The holdable band, computed before the burn** (flag, 2026-10-25;
-    # the user's proposal).  In vacuum, from ``simulate_aerodynamic_wrench_at``
-    # at each Mach of the glide: the zero-input pitching moment over alpha
-    # (surfaces held neutral) and the moment a full pitch input adds (kRPC
-    # released for the sweep, ``control.pitch`` +1).  The band is the run of
-    # alphas whose zero-input moment the elevons cancel with at most
-    # ``TRIM_BAND_INPUT`` of their travel, the rest kept for manoeuvre; the
-    # glide's command and the propagator are clamped to it.  Swept entering
-    # DEORBIT at the predicted post-burn CoM (so the deorbit plans the drag)
-    # and again in COAST at the real one (moments only; the control power is
-    # kept).  The drained shuttle with its wings 3-4 m forward is unstable
-    # at every hypersonic Mach, its nose-up moment growing with alpha, and
-    # departs when alpha creeps up on 50-100% nose-down input (fw-, tb-1025):
-    # its band is a ceiling.  Validated in flight: ``cmt=`` at steady
-    # ticks is balanced by the input at ~100 m^3 per unit (tb-1025).
-    TRIM_BAND: bool = False
-    TRIM_BAND_INPUT: float = 0.5
-    TRIM_BAND_ALPHAS: tuple = (5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0,
-                               40.0, 45.0, 50.0, 55.0)
-    # (Mach, altitude m) the sweep is taken at: the glide's corridor.
-    TRIM_BAND_STATES: tuple = ((7.0, 55000.0), (6.0, 48000.0),
-                               (5.0, 40000.0), (4.0, 33000.0),
-                               (3.0, 27000.0), (2.0, 20000.0),
-                               (1.2, 14000.0))
-    # Estimated deorbit dv for the pre-burn CoM, m/s (the burns run 55-65);
-    # the COAST sweep replaces the band with the measured state.
-    TRIM_BAND_BURN_DV: float = 60.0
-    TRIM_BAND_COAST_SETTLE_S: float = 10.0
-    TRIM_BAND_SETTLE_S: float = 1.0         # surfaces to neutral before the sweep
     # In GLIDE, the aero moment at the flown state (surfaces as deflected)
     # every this many game seconds, logged as ``cmt=``: steady flight must
     # read ~0, which says whether the probe is the flown moment (0 = off).

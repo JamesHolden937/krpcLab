@@ -610,78 +610,6 @@ class Holdable:
             10.0 ** (i / float(per)), v[0], v[1]) for i, v in trusted)
 
 
-class TrimBand:
-    """The angles of attack the elevons can hold, by Mach
-    (``Config.TRIM_BAND``).
-
-    ``rows`` is ``[(mach, lo, hi)]`` from ``holdable_span``; either edge may
-    be ``None`` (the sweep's own end -- no limit known there).  ``limits``
-    interpolates each edge between the Mach rows that have it and holds the
-    nearest row's beyond them; ``(None, None)`` with no rows or the flag off.
-    """
-
-    def __init__(self, cfg, rows):
-        self.cfg = cfg
-        self.rows = sorted(rows)
-
-    def _edge(self, mach, k):
-        pts = [(r[0], r[k]) for r in self.rows if r[k] is not None]
-        if not pts:
-            return None
-        if mach <= pts[0][0]:
-            return pts[0][1]
-        if mach >= pts[-1][0]:
-            return pts[-1][1]
-        for (m0, v0), (m1, v1) in zip(pts, pts[1:]):
-            if m0 <= mach <= m1:
-                f = (mach - m0) / (m1 - m0) if m1 > m0 else 0.0
-                return v0 + f * (v1 - v0)
-        return None
-
-    def limits(self, mach):
-        if mach is None or not self.rows or not getattr(
-                self.cfg, "TRIM_BAND", False):
-            return None, None
-        return self._edge(mach, 1), self._edge(mach, 2)
-
-    def clamp(self, alpha, mach):
-        lo, hi = self.limits(mach)
-        if hi is not None:
-            alpha = min(alpha, hi)
-        if lo is not None:
-            alpha = max(alpha, lo)
-        return alpha
-
-
-def holdable_span(alphas, moments, control, share):
-    """``(lo, hi)``: the run of ``alphas`` where the zero-input moment is
-    within ``share`` of the control's moment (both nose-up positive, per
-    unit q), edges interpolated.  The run kept is the one with the most
-    margin to spare.  An edge at the sweep's end is ``None`` (no limit
-    known); ``(None, None)`` when nothing in the sweep is holdable."""
-    slack = [share * abs(c) - abs(m) for m, c in zip(moments, control)]
-    runs, cur = [], []
-    for k, s in enumerate(slack):
-        if s >= 0.0:
-            cur.append(k)
-        elif cur:
-            runs.append(cur)
-            cur = []
-    if cur:
-        runs.append(cur)
-    if not runs:
-        return None, None
-    best = max(runs, key=lambda r: max(slack[k] for k in r))
-
-    def edge(inside, outside):
-        si, so = slack[inside], slack[outside]
-        f = si / (si - so) if si != so else 0.0
-        return alphas[inside] + f * (alphas[outside] - alphas[inside])
-    lo = None if best[0] == 0 else edge(best[0], best[0] - 1)
-    hi = None if best[-1] == len(alphas) - 1 else edge(best[-1], best[-1] + 1)
-    return lo, hi
-
-
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """Clamp a commanded angle to what the airframe has shown it can hold.
 
@@ -757,10 +685,6 @@ def acceleration(env, r, v, mass, steer):
                                        getattr(env, "holdable", None)
                                        or getattr(steer, "holdable", None),
                                        env, speed / env.speed_of_sound(altitude))
-                band = getattr(env, "trim_band", None)
-                if band is not None:
-                    alpha = band.clamp(
-                        alpha, speed / env.speed_of_sound(altitude))
                 alpha = tracked_alpha(steer.cfg, alpha, q,
                                       getattr(steer, "tracked", False))
                 # ``GLIDE_TAEM_ALPHA``: the alpha the vehicle is flying,
