@@ -86,6 +86,9 @@ def main():
                     help="also sweep sideslip at each state's alpha: the "
                     "yaw and roll moments per unit q against beta")
     ap.add_argument("--betas", default="-8,-4,0,4,8")
+    ap.add_argument("--yaw-alphas", default="",
+                    help="comma list: sweep sideslip at each of these "
+                    "alphas at every state instead of the state's own")
     args = ap.parse_args()
     base = os.path.join(ROOT, "testInstances", "ksp%s" % args.instance)
     conn = krpc.connect(name="stiffprobe", address="127.0.0.1",
@@ -199,8 +202,10 @@ def main():
             # Raw torques, signs as the game reports them: compare
             # airframes (fins forward must flatten the yaw slope) before
             # reading a sign as stable or unstable.
-            for label, alt, speed in STATES:
-                a = YAW_ALPHA[label]
+            yaw_alphas = [float(a) for a in args.yaw_alphas.split(",") if a]
+            for label, alt, speed, a in [
+                    (lb, al, sp, a) for lb, al, sp in STATES
+                    for a in (yaw_alphas or [YAW_ALPHA[lb]])]:
                 r = [probe(alt, speed, a, b) for b in betas]
                 n = [x[0] for x in r]
                 l = [x[1] for x in r]
