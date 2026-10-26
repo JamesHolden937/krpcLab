@@ -610,6 +610,46 @@ class Holdable:
             10.0 ** (i / float(per)), v[0], v[1]) for i, v in trusted)
 
 
+class TrimBand:
+    """The airframe's zero-input trim alpha by Mach (``Config.TRIM_BAND``).
+
+    ``rows`` is ``[(mach, trim_deg or None)]``; ``floor`` interpolates the
+    trim between the Mach rows that have one and subtracts
+    ``TRIM_BAND_BELOW_DEG``.  ``None`` where no row brackets or touches
+    the Mach (a missing answer is not a floor of zero).
+    """
+
+    def __init__(self, cfg, rows):
+        self.cfg = cfg
+        self.rows = sorted((m, t) for m, t in rows if t is not None)
+
+    def floor(self, mach):
+        if mach is None or not self.rows or not getattr(
+                self.cfg, "TRIM_BAND", False):
+            return None
+        below = float(self.cfg.TRIM_BAND_BELOW_DEG)
+        if mach <= self.rows[0][0]:
+            return self.rows[0][1] - below
+        if mach >= self.rows[-1][0]:
+            return self.rows[-1][1] - below
+        for (m0, t0), (m1, t1) in zip(self.rows, self.rows[1:]):
+            if m0 <= mach <= m1:
+                f = (mach - m0) / (m1 - m0) if m1 > m0 else 0.0
+                return t0 + f * (t1 - t0) - below
+        return None
+
+
+def trim_crossing(alphas, moments):
+    """The alpha where a nose-up-positive moment crosses from + to -
+    (a stable trim), linearly interpolated; ``None`` if it never does."""
+    for k in range(len(alphas) - 1):
+        m0, m1 = moments[k], moments[k + 1]
+        if m0 > 0.0 >= m1:
+            f = m0 / (m0 - m1)
+            return alphas[k] + f * (alphas[k + 1] - alphas[k])
+    return None
+
+
 def holdable_alpha(cfg, alpha, q, holdable=None, env=None, mach=None):
     """Clamp a commanded angle to what the airframe has shown it can hold.
 
@@ -685,6 +725,11 @@ def acceleration(env, r, v, mass, steer):
                                        getattr(env, "holdable", None)
                                        or getattr(steer, "holdable", None),
                                        env, speed / env.speed_of_sound(altitude))
+                band = getattr(env, "trim_band", None)
+                if band is not None:
+                    low = band.floor(speed / env.speed_of_sound(altitude))
+                    if low is not None:
+                        alpha = max(alpha, low)
                 alpha = tracked_alpha(steer.cfg, alpha, q,
                                       getattr(steer, "tracked", False))
                 # ``GLIDE_TAEM_ALPHA``: the alpha the vehicle is flying,
