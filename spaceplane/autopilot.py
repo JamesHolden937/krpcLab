@@ -911,19 +911,22 @@ class Autopilot:
         self.damp_roll(snap, bank_deg, alpha_deg)
 
     def trim_band_alpha(self, alpha_deg, snap):
-        """``TRIM_BAND``: no lower than the airframe's trim less
-        ``TRIM_BAND_BELOW_DEG``; logs each start and end of binding."""
+        """``TRIM_BAND``: the command clamped to the holdable band; logs
+        each start and end of binding."""
         band = getattr(self.env, "trim_band", None)
-        low = band.floor(self.snap_mach(snap)) if band is not None else None
-        binding = low is not None and alpha_deg < low
+        mach = self.snap_mach(snap)
+        out = band.clamp(alpha_deg, mach) if band is not None else alpha_deg
+        binding = abs(out - alpha_deg) > 0.05
         if binding != getattr(self, "_trim_band_binding", False):
             self._trim_band_binding = binding
-            self.logbook.event(snap.ut, "trim band %s: floor %s against %.1f "
-                               "commanded at Mach %.1f" % (
+            lo, hi = band.limits(mach) if band is not None else (None, None)
+            self.logbook.event(snap.ut, "trim band %s: %.1f -> %.1f at Mach "
+                               "%.1f (band %s..%s)" % (
                                    "binds" if binding else "released",
-                                   "%.1f" % low if low is not None else "-",
-                                   alpha_deg, self.snap_mach(snap) or 0.0))
-        return max(alpha_deg, low) if binding else alpha_deg
+                                   alpha_deg, out, mach or 0.0,
+                                   "%.1f" % lo if lo is not None else "-",
+                                   "%.1f" % hi if hi is not None else "-"))
+        return out
 
     def predicted_com_shift(self):
         """Where the CoM will be once the burn has spent
@@ -1008,30 +1011,49 @@ class Autopilot:
                 if local is not None:
                     shift = sc.transform_direction(
                         tuple(local), self.vessel.reference_frame, env.frame)
+            alphas = [float(a) for a in self.cfg.TRIM_BAND_ALPHAS]
+
+            def sweep():
+                out = []
+                for mach, alt in self.cfg.TRIM_BAND_STATES:
+                    speed = mach * env.speed_of_sound(alt)
+                    q = 0.5 * env.density(alt) * speed * speed
+                    pos = tuple(vec.scale(up, env.equatorial_radius + alt))
+                    row = []
+                    for a_deg in alphas:
+                        a = math.radians(a_deg)
+                        d = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
+                                             vec.scale(dorsal, math.sin(a))))
+                        force, torque = \
+                            env.flight.simulate_aerodynamic_wrench_at(
+                                env.body, pos, tuple(vec.scale(d, speed)),
+                                rot, (0.0, 0.0, 0.0), sc.ut)
+                        # About the CoM to come: tau_c = tau_0 - c x F.
+                        torque = vec.sub(torque, vec.cross(shift, force))
+                        # Raw torque about +right is nose-down (stiffprobe;
+                        # confirmed in flight by cmt= against the input).
+                        row.append(-vec.dot(torque, right) / q)
+                    out.append(row)
+                return out
+            neutral = sweep()
+            control = getattr(self, "_trim_control", None)
+            if control is None:
+                control = self.sweep_control(sweep)
+                self._trim_control = control
             rows = []
             text = []
-            alphas = [float(a) for a in self.cfg.TRIM_BAND_ALPHAS]
-            for mach, alt in self.cfg.TRIM_BAND_STATES:
-                speed = mach * env.speed_of_sound(alt)
-                q = 0.5 * env.density(alt) * speed * speed
-                pos = tuple(vec.scale(up, env.equatorial_radius + alt))
-                moments = []
-                for a_deg in alphas:
-                    a = math.radians(a_deg)
-                    d = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
-                                         vec.scale(dorsal, math.sin(a))))
-                    force, torque = env.flight.simulate_aerodynamic_wrench_at(
-                        env.body, pos, tuple(vec.scale(d, speed)), rot,
-                        (0.0, 0.0, 0.0), sc.ut)
-                    # About the CoM to come: tau_c = tau_0 - c x F.
-                    torque = vec.sub(torque, vec.cross(shift, force))
-                    # Raw torque about +right is nose-down (stiffprobe).
-                    moments.append(-vec.dot(torque, right) / q)
-                trim = trajectory.trim_crossing(alphas, moments)
-                rows.append((mach, trim))
-                text.append("M%.1f:%s[%s]" % (
-                    mach, "%.1f" % trim if trim is not None else "-",
-                    " ".join("%+.0f" % m for m in moments)))
+            share = float(self.cfg.TRIM_BAND_INPUT)
+            for (mach, _), m0, c in zip(self.cfg.TRIM_BAND_STATES, neutral,
+                                        control or [None] * len(neutral)):
+                lo = hi = None
+                if c is not None:
+                    lo, hi = trajectory.holdable_span(alphas, m0, c, share)
+                rows.append((mach, lo, hi))
+                text.append("M%.1f:%s..%s[%s|%s]" % (
+                    mach, "%.0f" % lo if lo is not None else "-",
+                    "%.0f" % hi if hi is not None else "-",
+                    " ".join("%+.0f" % m for m in m0),
+                    " ".join("%+.0f" % x for x in c) if c else "no control"))
         except Exception as exc:                        # noqa: BLE001
             self.logbook.event(ut, "trim sweep: FAILED (%s: %s)"
                                % (type(exc).__name__, exc))
@@ -1045,14 +1067,52 @@ class Autopilot:
                     pass
         env.trim_band = trajectory.TrimBand(self.cfg, rows)
         self.logbook.event(ut, "trim sweep (%s, CoM shift %+.2f m along the "
-                           "nose; flag %s): trim alpha by Mach, CmA nose-up+ "
-                           "over %s deg: %s" % (
+                           "nose; flag %s): holdable band by Mach "
+                           "[zero-input CmA | full pitch input's CmA, "
+                           "nose-up+] over %s deg: %s" % (
                                "predicted post-burn" if predicted else "as is",
                                vec.dot(shift, nose),
                                "on" if getattr(self.cfg, "TRIM_BAND", False)
                                else "off",
                                "/".join("%g" % a for a in alphas),
                                "  ".join(text)))
+
+    def sweep_control(self, sweep):
+        """The moment a full nose-up pitch input adds, per Mach and alpha:
+        kRPC released and the surfaces freed, ``control.pitch`` +1, swept,
+        and everything handed back.  ``None`` (no band) if it fails or the
+        input reads as nose-down everywhere."""
+        try:
+            for cs in self.vessel.parts.control_surfaces:
+                cs.deflection_override = False
+            set_autopilot_engaged(self.autopilot, False)
+            self.autopilot_engaged = False
+            self.control.pitch = 1.0
+            self.settle_game(float(self.cfg.TRIM_BAND_SETTLE_S))
+            full = sweep()
+            self.control.pitch = 0.0
+            for cs in self.vessel.parts.control_surfaces:
+                cs.deflection_override = True
+                cs.deflection = VacuumSurfaces.NEUTRAL
+            self.settle_game(float(self.cfg.TRIM_BAND_SETTLE_S))
+            zero = sweep()
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(0.0, "trim sweep: control not measured (%s)"
+                               % type(exc).__name__)
+            return None
+        finally:
+            try:
+                self.control.pitch = 0.0
+            except Exception:                           # noqa: BLE001
+                pass
+            self.engage_autopilot(self.conn.space_center.ut)
+        control = [[f - z for f, z in zip(fr, zr)]
+                   for fr, zr in zip(full, zero)]
+        if sum(sum(r) for r in control) <= 0.0:
+            self.logbook.event(0.0, "trim sweep: a nose-up input reads "
+                               "nose-down -- no band")
+            return None
+        return control
 
     def probe_flown_moment(self, snap):
         """``TRIM_PROBE_S``: the aero pitching moment at the flown state,

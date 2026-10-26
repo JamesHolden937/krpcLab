@@ -1063,20 +1063,23 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **The trim band, computed before the burn** (flag, 2026-10-25; the
-    # user's proposal).  With the wings 3-5 m forward the shuttle wants
-    # ~35-40 deg hypersonically, the glide commands 22-29 on 30-75% of its
-    # nose-down authority, and the first bank reversal departs it (fw-1025,
-    # tf-1025: 0/40).  So the airframe's own zero-input trim is computed
-    # from ``simulate_aerodynamic_wrench_at`` in vacuum: on entering
-    # DEORBIT (at the CoM the burn and ``FUEL_TO_NOSE`` will leave, so the
-    # deorbit's own search plans the drag), and again in COAST once the
-    # pump has run (the real CoM).  Per Mach, the alpha where the
-    # zero-input moment crosses nose-up -> nose-down is the natural trim;
-    # the glide's command and the propagator fly no lower than trim minus
-    # ``TRIM_BAND_BELOW_DEG``.  No crossing in the sweep: no floor there.
+    # **The holdable band, computed before the burn** (flag, 2026-10-25;
+    # the user's proposal).  In vacuum, from ``simulate_aerodynamic_wrench_at``
+    # at each Mach of the glide: the zero-input pitching moment over alpha
+    # (surfaces held neutral) and the moment a full pitch input adds (kRPC
+    # released for the sweep, ``control.pitch`` +1).  The band is the run of
+    # alphas whose zero-input moment the elevons cancel with at most
+    # ``TRIM_BAND_INPUT`` of their travel, the rest kept for manoeuvre; the
+    # glide's command and the propagator are clamped to it.  Swept entering
+    # DEORBIT at the predicted post-burn CoM (so the deorbit plans the drag)
+    # and again in COAST at the real one (moments only; the control power is
+    # kept).  The drained shuttle with its wings 3-4 m forward is unstable
+    # at every hypersonic Mach, its nose-up moment growing with alpha, and
+    # departs when alpha creeps up on 50-100% nose-down input (fw-, tb-1025):
+    # its band is a ceiling.  Validated in flight: ``cmt=`` at steady
+    # ticks is balanced by the input at ~100 m^3 per unit (tb-1025).
     TRIM_BAND: bool = False
-    TRIM_BAND_BELOW_DEG: float = 4.0
+    TRIM_BAND_INPUT: float = 0.5
     TRIM_BAND_ALPHAS: tuple = (5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0,
                                40.0, 45.0, 50.0, 55.0)
     # (Mach, altitude m) the sweep is taken at: the glide's corridor.
