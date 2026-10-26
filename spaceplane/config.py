@@ -2865,7 +2865,7 @@ class Config:
     # coordinated turn against 0.27 over this session's 30 default flights,
     # flare-door cross-track median 41-154 m against 246.
     APPROACH_SLEW_IN_HAC: bool = True     # default 2026-10-22
-    # **Re-engage kRPC at the cone's exit** (flag, 2026-10-25): its PID
+    # **Re-engage kRPC at the cone's exit** (2026-10-25): its PID
     # integrators are reset, so the approach starts with no stored moment.
     # The approach's turn is bimodal per flight -- the aero force's bank
     # over the roof's 0.1-0.2 or ~1.0, with the same applied tune (r5.5
@@ -2876,7 +2876,10 @@ class Config:
     # -0.05): the integrators live in a frame a spiral twists (failure 99's
     # neighbour, memory "kRPC integrators twist"), and the rudder's side
     # force then cancels the bank's lift.
-    APPROACH_REENGAGE: bool = False
+    # Promoted (sav-reeng-1025, the cone saves, 12 an arm): turn ratio
+    # 0.67-1.03 (median 0.88, 9 flights turning >= 10 ticks) against
+    # 0.04-1.11 (median 0.16; 6 of 11 under 0.2) without.
+    APPROACH_REENGAGE: bool = True        # default 2026-10-25
     # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
     # The derivation above handed it (pitch, yaw, roll), so the shuttle has
     # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the
