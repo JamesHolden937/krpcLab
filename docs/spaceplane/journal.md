@@ -3179,3 +3179,19 @@ The user's goal: fly neutral/unstable craft to the runway reliably, soon.
   - `COAST_ROLL_FREE_Q_PA`: cargo 0/5.
 
 Batches: rot-unst-, rot-pag-, rot-app- (saves), sf-app-, sf-asf-, sf-asf2-, sf-asf3-, rot-asf-, rot-vown-, rot-vown2-, rot-pre- (killed), all -1022.
+
+## Session, 2026-10-25: the low-margin family -- wings moved forward, and what the flown airframe really is
+
+The user: forget the cargo shuttle; shift the wings on the normal craft.
+
+- **The family.** `spaceplane/tools/wingshift.py` / `tools/savegen.py --wing-forward M` move every `wingShuttleDelta` and what hangs on it (elevons, fins, mains); derived saves `qs_shuttle2_fwdwingNN_rigoff`, 1.2-5.0 m (`saves/derived.txt`). Mains stay aft of the CoM to 5 m (1.2 m aft there, 5.75 stock).
+- **stiffprobe on the orbital saves** (LOG14151/14153/14154; `--yaw` added): cone pitch slope 0-10 deg -25.6 m^3/deg stock, -15.5 at 1.8 m, -8.7 at 3, -3.1 at 4, divergent at low alpha at 5. Yaw stays stable throughout (M7 8.5 -> 4.6 at 3 m -> 1.9 at 5).
+- **Baseline fw-1025 (3/4/5 m, defaults): 0/24**, all 77-206 km short. Every one departs in GLIDE at Mach 4-7 (27-49 km) with the pitch input -0.4..-1.0 and alpha 1-11 deg over the command beforehand; the trigger is the **first bank reversal** (slip -10..-15 there, then alpha away).
+- **`TRIM_FLOOR`** (learned lowest holdable alpha, mirror of `Holdable`): tf-1025 3/4 m 0/16; it never bound before the departure and learned its floors (50-97 deg) from the departure. Deleted. Stock with it 6/8 intact on the runway.
+- **`ATTITUDE_PITCH_AIR_GLIDE`** on 3/4 m (rot-pag-1025): 0/10. Pitch did retune to 4.1 s; still departed at the reversal.
+- **The user's proposal, `TRIM_BAND`** (flag): the zero-input pitch trim by Mach swept in vacuum with `simulate_aerodynamic_wrench_at` entering DEORBIT (at the predicted post-burn CoM, so the deorbit plans the drag) and again in COAST after the pump; glide and propagator fly no lower than trim - 4. The sweep logs on every flight; `cmt=` logs the moment at the flown state in GLIDE every 5 s.
+- **The flown airframe is not the orbital save.** DRAIN_BEFORE_BURN takes the shuttle 37.9 -> 30.7 t and moves the CoM aft. The COAST sweep (real CoM, surfaces neutral): stock stable but far less so than the save (M5 -24..-126 v -50..-393 over 5-50 deg); **3 m and 4 m statically unstable at every hypersonic Mach** (3 m M5 +6 at 5 deg rising to +98 at 55). No natural trim exists for them, so `TRIM_BAND` cannot bind there. The DEORBIT sweep first read kRPC's deflection (the hold had just been re-applied); fixed to hold surfaces neutral and settle.
+- **Reading of the departure:** a pitch-divergent airframe held by kRPC, yaw at a static 11.7 s against roll 2.9 s, yaw stiffness down ~45% with the fins forward -- a fast reversal at 30 deg alpha makes sideslip the yaw loop cannot follow, and the pitch saturates. Next: gentler reversals (`BANK_ACCEL_SHARE`).
+- **The approach's turn** (from the 2026-10-22 logs): bimodal per flight (aero force bank / roof bank ~0.1-0.2 or ~1.0) with identical applied tunes -- the derived-tune hypothesis is wrong. Bad flights carry a standing yaw input -0.3..-0.5 at ~0 yaw error; the cone-exit yaw input does not predict it cleanly. `APPROACH_REENGAGE` (flag, unflown) resets kRPC's integrators at the cone's exit.
+
+Batches: fw-, tf-, rot-pag-, tb-1025.
