@@ -1088,6 +1088,7 @@ class Config:
     # the COAST sweep replaces the band with the measured state.
     TRIM_BAND_BURN_DV: float = 60.0
     TRIM_BAND_COAST_SETTLE_S: float = 10.0
+    TRIM_BAND_SETTLE_S: float = 1.0         # surfaces to neutral before the sweep
     # In GLIDE, the aero moment at the flown state (surfaces as deflected)
     # every this many game seconds, logged as ``cmt=``: steady flight must
     # read ~0, which says whether the probe is the flown moment (0 = off).
