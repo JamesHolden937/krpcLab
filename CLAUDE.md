@@ -22,9 +22,15 @@ waiter that prints the summary when the batch finishes (`ROT DONE`), end the
 turn, and do nothing with the batch until that notification arrives. Don't
 poll, don't chain wait calls, don't read mid-flight logs: it wastes tokens,
 and part-batch data (one round, half the arms, a flight still in the glide)
-gets misread as a result. Waiting on the batch is not idling: develop
-the next change in a git worktree (`git worktree add .wt-<name>`; the
-batch runs the main tree, which stays frozen) and merge after it ends.
+gets misread as a result. **Never sit waiting for a batch (or a save, a
+probe, a single flight) to finish before doing the next piece of work**
+(the user, 2026-10-25): look at what you will do next anyway -- the
+next flag, the tool to read the result, the fix for the failure you
+already see -- and build it now, in a git worktree (`git worktree add
+.wt-<name>`; the batch runs the main tree, which stays frozen), merging
+after the batch ends. Idle instances are work too: fly the next
+question on them. Ending the turn to wait is for when there is truly
+nothing to build.
 **Every time you stop to wait, tell the user
 roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
 from the previous batch's round length times the rounds left.
