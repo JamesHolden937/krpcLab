@@ -1063,23 +1063,35 @@ class Config:
     HOLDABLE_MIN_SAMPLES: int = 4           # before a bin is trusted
     HOLDABLE_MIN_Q: float = 500.0           # below this the air holds nothing back
     HOLDABLE_MARGIN_DEG: float = 1.0        # believe the vehicle by this much
-    # **The learned trim floor** (flag, 2026-10-25): the mirror of
-    # ``Holdable``.  With the wings 3-5 m forward the shuttle trims at
-    # ~35-40 deg hypersonically, the glide commands 22-29, kRPC's pitch
-    # input runs to -0.7..-1.0 (nose-down saturated) and the next bank
-    # reversal departs it (fw-1025: LOG14154-14158, Mach ~5, alpha to 128).
-    # The stock shuttle sits at the other rail (+0.6..+0.96).  Per Mach bin,
-    # the lowest alpha flown while the pitch input is at or past
-    # -TRIM_FLOOR_INPUT is the floor; the glide's command (``aim``) and the
-    # propagator both fly ``max(alpha, floor + TRIM_FLOOR_MARGIN_DEG)``, so
-    # the solve plans the drag the airframe will make and kRPC is not left
-    # on its rail.  Tracking ticks with the input clear lower a bin to the
-    # command.  No evidence: no floor.
-    TRIM_FLOOR: bool = False
-    TRIM_FLOOR_INPUT: float = 0.5           # |pitch input| that counts as saturated: the 3 m craft ran 3-11 deg over at -0.4..-0.6 (fw-1025)
-    TRIM_FLOOR_MARGIN_DEG: float = 3.0      # command this far above the floor
-    TRIM_FLOOR_MACH_BIN: float = 0.5
-    TRIM_FLOOR_REACH_MACH: float = 1.5      # nearest bin used this far away
+    # **The trim band, computed before the burn** (flag, 2026-10-25; the
+    # user's proposal).  With the wings 3-5 m forward the shuttle wants
+    # ~35-40 deg hypersonically, the glide commands 22-29 on 30-75% of its
+    # nose-down authority, and the first bank reversal departs it (fw-1025,
+    # tf-1025: 0/40).  So the airframe's own zero-input trim is computed
+    # from ``simulate_aerodynamic_wrench_at`` in vacuum: on entering
+    # DEORBIT (at the CoM the burn and ``FUEL_TO_NOSE`` will leave, so the
+    # deorbit's own search plans the drag), and again in COAST once the
+    # pump has run (the real CoM).  Per Mach, the alpha where the
+    # zero-input moment crosses nose-up -> nose-down is the natural trim;
+    # the glide's command and the propagator fly no lower than trim minus
+    # ``TRIM_BAND_BELOW_DEG``.  No crossing in the sweep: no floor there.
+    TRIM_BAND: bool = False
+    TRIM_BAND_BELOW_DEG: float = 4.0
+    TRIM_BAND_ALPHAS: tuple = (5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0,
+                               40.0, 45.0, 50.0, 55.0)
+    # (Mach, altitude m) the sweep is taken at: the glide's corridor.
+    TRIM_BAND_STATES: tuple = ((7.0, 55000.0), (6.0, 48000.0),
+                               (5.0, 40000.0), (4.0, 33000.0),
+                               (3.0, 27000.0), (2.0, 20000.0),
+                               (1.2, 14000.0))
+    # Estimated deorbit dv for the pre-burn CoM, m/s (the burns run 55-65);
+    # the COAST sweep replaces the band with the measured state.
+    TRIM_BAND_BURN_DV: float = 60.0
+    TRIM_BAND_COAST_SETTLE_S: float = 10.0
+    # In GLIDE, the aero moment at the flown state (surfaces as deflected)
+    # every this many game seconds, logged as ``cmt=``: steady flight must
+    # read ~0, which says whether the probe is the flown moment (0 = off).
+    TRIM_PROBE_S: float = 5.0
 
     # -- the ceiling, measured by a probe instead of inferred in flight ----
 

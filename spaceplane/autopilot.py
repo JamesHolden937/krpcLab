@@ -396,7 +396,6 @@ class Autopilot:
         # propagation sees it without being handed it.  See
         # ``trajectory.Holdable``: it starts knowing nothing and says so.
         self.env.holdable = trajectory.Holdable(cfg)
-        self.env.trim_floor = trajectory.TrimFloor(cfg)
         # ``GLIDE_TAEM_ENERGY`` / ``_ALPHA``: set by the glide below
         # ``GLIDE_TAEM_MACH``, ``None`` everywhere else.
         self.env.taem = None
@@ -547,6 +546,8 @@ class Autopilot:
         self.state = state
         self.state_since = ut
         self.log_authority(ut)
+        if state == DEORBIT:
+            self.sweep_trim(ut, predicted=True)
         if (state == APPROACH and leaving == HAC
                 and getattr(self.cfg, "APPROACH_REENGAGE", False)):
             self.reset_attitude_integrators(ut)
@@ -865,7 +866,7 @@ class Autopilot:
         bank_deg = self.roll_free_bank(bank_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
         if self.state == GLIDE:
-            alpha_deg = self.trim_floor_alpha(alpha_deg, snap)
+            alpha_deg = self.trim_band_alpha(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
             return
@@ -909,20 +910,155 @@ class Autopilot:
                       getattr(snap, "sideslip", None))
         self.damp_roll(snap, bank_deg, alpha_deg)
 
-    def trim_floor_alpha(self, alpha_deg, snap):
-        """``TRIM_FLOOR``: no lower than the learned floor plus its margin;
-        logs the floor each time it starts or stops binding."""
-        floor = getattr(self.env, "trim_floor", None)
-        low = floor.limit(self.snap_mach(snap)) if floor else None
+    def trim_band_alpha(self, alpha_deg, snap):
+        """``TRIM_BAND``: no lower than the airframe's trim less
+        ``TRIM_BAND_BELOW_DEG``; logs each start and end of binding."""
+        band = getattr(self.env, "trim_band", None)
+        low = band.floor(self.snap_mach(snap)) if band is not None else None
         binding = low is not None and alpha_deg < low
-        if binding != getattr(self, "_trim_floor_binding", False):
-            self._trim_floor_binding = binding
-            self.logbook.event(snap.ut, "trim floor %s: %.1f deg against "
-                               "%.1f commanded (learned %s)" % (
+        if binding != getattr(self, "_trim_band_binding", False):
+            self._trim_band_binding = binding
+            self.logbook.event(snap.ut, "trim band %s: floor %s against %.1f "
+                               "commanded at Mach %.1f" % (
                                    "binds" if binding else "released",
-                                   low if low is not None else float("nan"),
-                                   alpha_deg, floor.summary()))
+                                   "%.1f" % low if low is not None else "-",
+                                   alpha_deg, self.snap_mach(snap) or 0.0))
         return max(alpha_deg, low) if binding else alpha_deg
+
+    def predicted_com_shift(self):
+        """Where the CoM will be once the burn has spent
+        ``TRIM_BAND_BURN_DV`` and ``FUEL_TO_NOSE`` has put the rest forward:
+        a displacement in the vessel frame (origin = the CoM now), metres."""
+        frame = self.vessel.reference_frame
+        props = ("LiquidFuel", "Oxidizer")
+        dry_m, dry_r = 0.0, (0.0, 0.0, 0.0)
+        tanks = []                          # (y, pos, capacity kg)
+        prop_total = 0.0
+        isp = 0.0
+        density = {}
+        for part in self.vessel.parts.all:
+            pos = tuple(part.position(frame))
+            res = part.resources
+            pm = 0.0
+            cap = 0.0
+            for name in props:
+                if res.has_resource(name):
+                    if name not in density:
+                        density[name] = float(res.density(name))
+                    pm += float(res.amount(name)) * density[name]
+                    cap += float(res.max(name)) * density[name]
+            if cap > 1.0:
+                tanks.append((pos[1], pos, cap))
+            prop_total += pm
+            m = float(part.mass) - pm
+            dry_m += m
+            dry_r = vec.add(dry_r, vec.scale(pos, m))
+            try:
+                eng = part.engine
+                if eng is not None:
+                    isp = max(isp, float(eng.vacuum_specific_impulse))
+            except Exception:                           # noqa: BLE001
+                pass
+        mass = dry_m + prop_total
+        burn = 0.0
+        if isp > 0.0:
+            burn = mass * (1.0 - math.exp(-float(self.cfg.TRIM_BAND_BURN_DV)
+                                          / (isp * 9.80665)))
+        left = max(0.0, prop_total - burn)
+        moment = dry_r
+        placed = 0.0
+        for _, pos, cap in sorted(tanks, key=lambda t: -t[0]):
+            put = min(cap, left - placed)
+            if put <= 0.0:
+                break
+            moment = vec.add(moment, vec.scale(pos, put))
+            placed += put
+        total = dry_m + placed
+        return vec.scale(moment, 1.0 / total) if total > 0.0 else None
+
+    def sweep_trim(self, ut, predicted):
+        """The zero-input pitching moment over ``TRIM_BAND_ALPHAS`` at each
+        ``TRIM_BAND_STATES`` Mach, in vacuum, and from it the trim band
+        (``Config.TRIM_BAND``).  Logged whether or not the flag is on."""
+        env = self.env
+        try:
+            nose, dorsal = env._axes()
+            if nose is None:
+                return
+            sc = self.conn.space_center
+            right = vec.unit(sc.transform_direction(
+                (1.0, 0.0, 0.0), self.vessel.reference_frame, env.frame))
+            rot = tuple(self.vessel.rotation(env.frame))
+            up = vec.unit(self.vessel.position(env.frame))
+            shift = (0.0, 0.0, 0.0)
+            if predicted:
+                local = self.predicted_com_shift()
+                if local is not None:
+                    shift = sc.transform_direction(
+                        tuple(local), self.vessel.reference_frame, env.frame)
+            rows = []
+            text = []
+            alphas = [float(a) for a in self.cfg.TRIM_BAND_ALPHAS]
+            for mach, alt in self.cfg.TRIM_BAND_STATES:
+                speed = mach * env.speed_of_sound(alt)
+                q = 0.5 * env.density(alt) * speed * speed
+                pos = tuple(vec.scale(up, env.equatorial_radius + alt))
+                moments = []
+                for a_deg in alphas:
+                    a = math.radians(a_deg)
+                    d = vec.unit(vec.sub(vec.scale(nose, math.cos(a)),
+                                         vec.scale(dorsal, math.sin(a))))
+                    force, torque = env.flight.simulate_aerodynamic_wrench_at(
+                        env.body, pos, tuple(vec.scale(d, speed)), rot,
+                        (0.0, 0.0, 0.0), sc.ut)
+                    # About the CoM to come: tau_c = tau_0 - c x F.
+                    torque = vec.sub(torque, vec.cross(shift, force))
+                    # Raw torque about +right is nose-down (stiffprobe).
+                    moments.append(-vec.dot(torque, right) / q)
+                trim = trajectory.trim_crossing(alphas, moments)
+                rows.append((mach, trim))
+                text.append("M%.1f:%s[%s]" % (
+                    mach, "%.1f" % trim if trim is not None else "-",
+                    " ".join("%+.0f" % m for m in moments)))
+        except Exception as exc:                        # noqa: BLE001
+            self.logbook.event(ut, "trim sweep: FAILED (%s: %s)"
+                               % (type(exc).__name__, exc))
+            return
+        env.trim_band = trajectory.TrimBand(self.cfg, rows)
+        self.logbook.event(ut, "trim sweep (%s, CoM shift %+.2f m along the "
+                           "nose; flag %s): trim alpha by Mach, CmA nose-up+ "
+                           "over %s deg: %s" % (
+                               "predicted post-burn" if predicted else "as is",
+                               vec.dot(shift, nose),
+                               "on" if getattr(self.cfg, "TRIM_BAND", False)
+                               else "off",
+                               "/".join("%g" % a for a in alphas),
+                               "  ".join(text)))
+
+    def probe_flown_moment(self, snap):
+        """``TRIM_PROBE_S``: the aero pitching moment at the flown state,
+        nose-up positive per unit q -- ~0 when the vehicle is steady."""
+        every = float(getattr(self.cfg, "TRIM_PROBE_S", 0.0) or 0.0)
+        if every <= 0.0 or snap.dynamic_pressure < 50.0:
+            return
+        last = getattr(self, "_cmt_ut", None)
+        if last is not None and snap.ut - last < every:
+            return
+        self._cmt_ut = snap.ut
+        try:
+            env = self.env
+            sc = self.conn.space_center
+            # Read here, not streamed: three calls every few seconds.
+            right = sc.transform_direction(
+                (1.0, 0.0, 0.0), self.vessel.reference_frame, env.frame)
+            force, torque = env.flight.simulate_aerodynamic_wrench_at(
+                env.body, tuple(snap.position), tuple(snap.velocity),
+                tuple(self.vessel.rotation(env.frame)),
+                tuple(self.vessel.angular_velocity(env.frame)), sc.ut)
+            self._cmt = -vec.dot(torque, vec.unit(right)) \
+                / snap.dynamic_pressure
+        except Exception:                               # noqa: BLE001
+            self._cmt = None
 
     def vacuum_own(self, snap):
         """``VACUUM_OWN``: fly the coast on the measured input matrix
@@ -1825,10 +1961,6 @@ class Autopilot:
                 self.env.holdable.observe(self.commanded_alpha,
                                           snap.alpha_actual,
                                           snap.dynamic_pressure, mach)
-                if self.state == GLIDE:
-                    self.env.trim_floor.observe(
-                        self.commanded_alpha, snap.alpha_actual,
-                        getattr(snap, "pitch_input", None), mach)
         if self.commanded_alpha <= self.cfg.ALPHA_MIN_DEG + 1.0:
             return
         error = self.commanded_alpha - snap.alpha_actual
@@ -5148,6 +5280,12 @@ class Autopilot:
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
         self.fuel_to_nose(snap)
+        if (not getattr(self, "_trim_swept_coast", False)
+                and snap.dynamic_pressure < 1.0
+                and snap.ut - (self.state_since or snap.ut)
+                >= float(self.cfg.TRIM_BAND_COAST_SETTLE_S)):
+            self._trim_swept_coast = True
+            self.sweep_trim(snap.ut, predicted=False)
         # ``COAST_RCS_TURN``: the valve's error relay, as in the burn.  The
         # warp holds the burn's retrograde attitude to ~70 km and the turn
         # to the entry attitude (up to ~155 deg) then has under a minute;
@@ -6603,11 +6741,6 @@ class Autopilot:
             return
         if summary:
             self.logbook.event(ut, "holdable alpha, learned: %s" % summary)
-        floor = getattr(self.env, "trim_floor", None)
-        if floor is not None and floor.summary():
-            self.logbook.event(ut, "trim floor, learned (flag %s): %s" % (
-                "on" if getattr(self.cfg, "TRIM_FLOOR", False) else "off",
-                floor.summary()))
         # And what the airframe really made against what the table said --
         # printed whether or not it was applied, so a flight flown with the
         # trim off still measures it.  A number nothing reads back cannot be
@@ -6848,6 +6981,8 @@ class Autopilot:
         self.retune_attitude(snap)
         handler(snap)
         self.pitch_assist(snap)
+        if self.state == GLIDE:
+            self.probe_flown_moment(snap)
         self.canard_trim(snap)
         # **Wherever the table happens to become ready.**  The first version
         # reported from STANDBY, which ``--autostart`` leaves on the tick
@@ -8282,6 +8417,8 @@ def compact_line(state, snap, run):
                          else getattr(run, "_lift_delta", 0.0))
                         + getattr(run, "_alpha_trim", 0.0)),
         "slip=%+5.1f" % snap.sideslip,
+        "cmt=%s" % ("%+6.1f" % run._cmt if getattr(run, "_cmt", None)
+                    is not None else "   -  "),
         "pin=%+5.2f/%+5.2f/%+4.1f" % (
             getattr(snap, "pitch_input", 0.0) or 0.0,
             getattr(run, "_pitch_assist", 0.0),
