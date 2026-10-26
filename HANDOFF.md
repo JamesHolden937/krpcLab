@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-25: spaceplane -- the wings-forward family; APPROACH_REENGAGE promoted (fingerprint `e27d6af3`)
+## 2026-10-25: spaceplane -- the wings-forward family; APPROACH_REENGAGE promoted (fingerprint `66612c16`)
 
 Committed and pushed. The farm is stopped. Journal: "Session, 2026-10-25".
 
@@ -37,10 +37,12 @@ Committed and pushed. The farm is stopped. Journal: "Session, 2026-10-25".
 | `ATTITUDE_PITCH_AIR_GLIDE` | rot-pag-1025: 0/10 | Deleted |
 | `BANK_ACCEL_SHARE` 0.15 | rev-1025: 0/24 | Null (constant unchanged) |
 | Roll damper off (`ROLL_DAMPER_GROWTH=100`) | damp-, damp2-1025: 1.8 m 4/16 v 7/16; **1.5 m 5/8 departures v 1/8** | Refuted; the damper stays |
+| `VACUUM_OWN`, `COAST_ROLL_FREE_Q_PA` | Cargo-only; the cargo shuttle is dropped | Deleted |
 | **`APPROACH_REENGAGE` -> default** | kRPC re-engaged at HAC -> APPROACH, integrators reset. sav-reeng-1025 on qs_s2_hac0-5: turn ratio median 0.88 (0.67-1.03, n=9) v 0.16 (0.04-1.11, n=11) | Promoted |
 
 - The approach's turn is still bimodal on stock with an identical applied tune. The roll damper's state is **not** the cause; the integrators were.
-- From-orbit confirmation on the new defaults: conf-1025 (CONF_PLACEHOLDER).
+- **From-orbit confirmation on the new defaults** (conf-1025: stock, 1.2 m and 1.5 m, 4 each): the turn ratio was 0.74-1.19 on all 11 flights that reached the approach. 8/12 stopped near the runway. 3 broke up ~1.1 km short at 55-62 m/s after entering the flare door at 216-313 m with 32-46 m/s of sink (the approach dive). The dive rate is unchanged by re-engage (5/11 against 20/38 without), so it is the old loss mode. One 1.5 m flight was lost in the glide.
+- The flare-door cross-track now sits at +19..+269 m: the vehicle turns, but finishes right of the line.
 - `cmt=` in GLIDE telemetry: the aero pitching moment at the flown state, per q, every `TRIM_PROBE_S`. Steady flight balances it with the input at ~100 m^3/unit.
 
 **Blocker:** the wings-forward craft past ~1.5 m lose lateral control hypersonically and pitch control transonically. Elevon authority itself runs out by 4 m.
@@ -49,7 +51,8 @@ Committed and pushed. The farm is stopped. Journal: "Session, 2026-10-25".
 1. 1.8 m transonic: a pitch loop fast enough for the unstable short period (an air-authority pitch tune *below Mach 3 only*, not the whole glide that rot-pag tested).
 2. 1.8 m hypersonic lateral cycle: yaw needs more authority or a faster loop as Cn_beta drops. Try RCS yaw held open in the glide on low-stiffness craft, or a yaw tune derived from the measured yaw stiffness.
 3. Retake the cone saves `qs_s2_hac*`: every flight off them overshoots 5-14 km into the sea, on both arms.
-4. The approach dive; `VACUUM_OWN` / `COAST_ROLL_FREE_Q_PA` (cargo-only flags: delete them now the cargo shuttle is dropped).
+4. **The approach dive.** About half of all flights reach the flare door above 200 m or sinking faster than 30 m/s, and the stock landing losses come from it. For the stable craft it is arguably first.
+5. The positive flare-door cross-track, now that the approach turns.
 
 **Traps paid this session:**
 - **First-batch luck.** Damper-off went 0/8 on 1.8 m and then 4/8. Never promote from one 8-flight batch against a baseline from another day.

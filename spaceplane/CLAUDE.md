@@ -48,7 +48,7 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-25, fingerprint `FP_PLACEHOLDER`)
+## Where it stands (2026-10-25, fingerprint `66612c16`)
 
 **The user's goal: neutral/unstable craft to the runway reliably.** The cargo shuttle is dropped (inherently problematic). The test family is the shuttle with its wings moved forward: `savegen.py --wing-forward M`, saves `qs_shuttle2_fwdwingNN_rigoff`.
 
