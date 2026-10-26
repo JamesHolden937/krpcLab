@@ -40,7 +40,7 @@ from common.pacing import LoopRate, ScaleGovernor, sleeper
 from common.rpccount import RpcCounter
 from . import airbrake as airbrake_mod
 from . import airframe
-from . import allocate, guidance, rollrate, trajectory, vacuumown
+from . import allocate, guidance, rollrate, trajectory
 from .config import (Config, apply_overrides, defaults_fingerprint,
                       differences)
 from .environment import Environment
@@ -861,7 +861,6 @@ class Autopilot:
                 COAST, GLIDE, APPROACH, FLARE):
             alpha_deg = float(self.cfg.BROADSIDE_PROBE_DEG)
         bank_deg = self.bank_probe(bank_deg, snap)
-        bank_deg = self.roll_free_bank(bank_deg, snap)
         alpha_deg = self.alpha_trim_loop(alpha_deg, snap)
         v = snap.velocity
         if vec.norm(v) < 1.0:
@@ -930,260 +929,6 @@ class Autopilot:
                 / snap.dynamic_pressure
         except Exception:                               # noqa: BLE001
             self._cmt = None
-
-    def vacuum_own(self, snap):
-        """``VACUUM_OWN``: fly the coast on the measured input matrix
-        (``vacuumown``) with kRPC disengaged until the air arrives.
-
-        **Turn before the warp, not after it** (the user, 2026-10-22).  The
-        vacuum turn is slow on a craft like the cargo shuttle (~2 minutes
-        for 150 deg) and the post-warp coast is about that long, so it met
-        the air 75-125 deg off.  Straight after the burn the entry attitude
-        is computed for the predicted state at the atmosphere's edge, the
-        vehicle turns to it with all the coast's time, and only then is the
-        warp let go -- rails warp holds the attitude.  After the warp the
-        coast's own commanded attitude is flown (the planet's ~7 deg of
-        rotation meanwhile is corrected there), then kRPC takes over at
-        ``VACUUM_OWN_Q_PA``."""
-        cfg = self.cfg
-        if not getattr(cfg, "VACUUM_OWN", False) or getattr(
-                self, "_vac_own_done", False):
-            return
-        if getattr(self, "warp_factor", 0):
-            return
-        owning = getattr(self, "_vac_own", False)
-        if snap.dynamic_pressure >= float(cfg.VACUUM_OWN_Q_PA) \
-                or self.state != COAST:
-            if owning:
-                self.vacuum_release(snap, "q=%.0f Pa" % snap.dynamic_pressure)
-            self._vac_own_done = True
-            return
-        if not owning:
-            if getattr(self, "_vac_b", None) is None:
-                self._vac_own_done = True
-                self.logbook.event(snap.ut, "vacuum own: no input matrix "
-                                   "-- kRPC keeps the coast")
-                return
-            set_autopilot_engaged(self.autopilot, False)
-            self.autopilot_engaged = False
-            self._vac_own = True
-            self._vac_preturn = self.entry_attitude(snap)
-            self._vac_preturn_ut = snap.ut
-            self.logbook.event(snap.ut, "vacuum own: the client flies the "
-                               "coast (pointing %.1f deg off)%s"
-                               % (self.pointing_error(snap),
-                                  "" if self._vac_preturn is None else
-                                  ", turning to the entry attitude before "
-                                  "the warp"))
-        s = self.telemetry.sample(self.env)
-        if not s.right or not s.angular_velocity:
-            return
-        pre = getattr(self, "_vac_preturn", None)
-        if pre is not None:
-            want_nose, want_up = pre
-        else:
-            want_nose = getattr(self, "commanded_nose", None)
-            want_up = getattr(self, "commanded_up", None)
-        if want_nose is None or want_up is None:
-            return
-        # **Nose first.**  Roll is the weak axis (the cargo shuttle: 0.008
-        # rad/s^2 against 0.018 in pitch) and a coast can start ~190 deg
-        # out in bank; asked together, the roll saturated the inputs and
-        # the shared scale-down starved the pitch (alpha 126 -> 103 in two
-        # minutes, LOG14138).  So the roof is held where it is until the
-        # nose is within ``VACUUM_OWN_NOSE_FIRST_DEG``.
-        off = math.degrees(math.acos(vec.clamp(vec.dot(
-            vec.unit(s.nose), vec.unit(want_nose)), -1.0, 1.0)))
-        if off > float(cfg.VACUUM_OWN_NOSE_FIRST_DEG):
-            want_up = s.roof
-        got = vacuumown.error_and_rate(s.right, s.nose, s.roof,
-                                       s.angular_velocity, want_nose,
-                                       want_up)
-        if got is None:
-            return
-        error, rate = got
-        if pre is not None:
-            settled = (math.degrees(vec.norm(error))
-                       < float(cfg.VACUUM_OWN_SETTLED_DEG)
-                       and math.degrees(vec.norm(rate))
-                       < float(cfg.VACUUM_OWN_SETTLED_RATE_DEG_S))
-            late = (snap.ut - self._vac_preturn_ut
-                    > float(cfg.VACUUM_OWN_PRETURN_MAX_S))
-            if settled or late:
-                self._vac_preturn = None
-                self.logbook.event(snap.ut, "vacuum own: entry attitude %s "
-                                   "after %.0f s (%.1f deg off, %.2f deg/s) "
-                                   "-- the warp may go" % (
-                                       "held" if settled else "NOT reached",
-                                       snap.ut - self._vac_preturn_ut,
-                                       math.degrees(vec.norm(error)),
-                                       math.degrees(vec.norm(rate))))
-                try:
-                    for name in vacuumown.INPUTS:
-                        setattr(self.control, name, 0.0)
-                except Exception:                       # noqa: BLE001
-                    pass
-                return
-        u = vacuumown.command(self._vac_b, self._vac_authority, error, rate,
-                              float(cfg.VACUUM_OWN_TAU_S),
-                              float(cfg.VACUUM_OWN_SHARE),
-                              float(cfg.VACUUM_OWN_W_MAX))
-        try:
-            # The coast's valve is a relay on kRPC's pointing; owned, it
-            # stays open (this tick's ``set_rcs`` ran before this).
-            self.control.rcs = True
-            for name, x in zip(vacuumown.INPUTS, u):
-                setattr(self.control, name, float(x))
-        except Exception:                               # noqa: BLE001
-            return
-        self._vac_line = "vown=%+5.1f/%+5.1f/%+5.1f u=%+.2f/%+.2f/%+.2f" % (
-            tuple(math.degrees(x) for x in error) + tuple(u))
-
-    def vacuum_preturning(self):
-        """``VACUUM_OWN`` is still turning to the entry attitude: hold the
-        warp."""
-        if not getattr(self.cfg, "VACUUM_OWN", False) or getattr(
-                self, "_vac_own_done", False):
-            return False
-        if not getattr(self, "_vac_own", False):
-            # ``coast_warp`` runs before ``vacuum_own`` in the coast's tick:
-            # with a matrix in hand, the first tick must not warp.
-            return getattr(self, "_vac_b", None) is not None
-        return getattr(self, "_vac_preturn", None) is not None
-
-    def entry_attitude(self, snap):
-        """``(nose, roof)`` of the coast's entry attitude at the predicted
-        state where the orbit meets the atmosphere: the coast's angle of
-        attack above that velocity, rolled to its bank.  ``None`` when the
-        arc does not reach the air within the warp horizon."""
-        r, v = snap.position, snap.velocity
-        radius = self.env.equatorial_radius + self.env.atmosphere_depth
-        step = float(self.cfg.COAST_WARP_TO_STEP_S)
-        t = 0.0
-        while vec.norm(r) > radius:
-            if t >= self.cfg.COAST_WARP_TO_HORIZON_S:
-                return None
-            r, v = trajectory.coast(self.env, r, v, snap.mass, step, step)
-            t += step
-        alpha = math.radians(min(self.cfg.ENTRY_ALPHA_DEG, self.alpha_ceiling))
-        bank = getattr(self, "_coast_bank", None)
-        if bank is None:
-            bank = float(self.cfg.SOLVE_BANK_MIN_DEG)
-        lift = trajectory.lift_direction(r, v, bank)
-        if lift is None:
-            return None
-        vhat = vec.unit(v)
-        nose = vec.unit(vec.add(vec.scale(vhat, math.cos(alpha)),
-                                vec.scale(lift, math.sin(alpha))))
-        self.logbook.event(snap.ut, "vacuum own: entry attitude for the "
-                           "atmosphere's edge in %.0f s: alpha %.0f, bank %+.0f"
-                           % (t, math.degrees(alpha), bank))
-        return nose, lift
-
-    def measure_vacuum_matrix(self, snap):
-        """``VACUUM_OWN``'s B, once, in orbit before the burn with the
-        vessel at rest (measured at the coast's start, still turning off
-        the burn, the yaw and roll columns came out near parallel and the
-        inversion steered the wrong way, LOG14126)."""
-        if not getattr(self.cfg, "VACUUM_OWN", False) or getattr(
-                self, "_vac_measured", False) or self.state not in (
-                DRAIN, DEORBIT) or snap.dynamic_pressure > 1.0 \
-                or getattr(self, "warp_factor", 0):
-            return
-        try:
-            if self.conn.krpc.paused:
-                return
-        except Exception:                               # noqa: BLE001
-            pass
-        self._vac_measured = True
-        set_autopilot_engaged(self.autopilot, False)
-        self.autopilot_engaged = False
-        try:
-            ok = self.vacuum_measure(snap)
-        finally:
-            self.engage_autopilot(snap.ut)
-        if not ok:
-            self._vac_b = None
-            self.logbook.event(snap.ut, "vacuum own: input matrix not "
-                               "measured -- kRPC will fly the coast")
-
-    def vacuum_measure(self, snap):
-        """B for ``vacuum_own``: each input pulsed +1 then -1 for
-        ``VACUUM_OWN_PULSE_S`` of game time, the body rate read before and
-        after each."""
-        pulse = float(self.cfg.VACUUM_OWN_PULSE_S)
-
-        def rate():
-            s = self.telemetry.sample(self.env)
-            axes = allocate.body_axes(s.right, s.nose, s.roof)
-            return s.ut, allocate.body(s.angular_velocity, axes)
-        plus, minus = [], []
-        try:
-            self.control.rcs = True
-            for name in vacuumown.INPUTS:
-                for sign, store in ((1.0, plus), (-1.0, minus)):
-                    t0, w0 = rate()
-                    setattr(self.control, name, sign)
-                    self.settle_game(pulse)
-                    t1, w1 = rate()
-                    setattr(self.control, name, 0.0)
-                    if t1 <= t0:
-                        return False
-                    store.append(vec.scale(vec.sub(w1, w0),
-                                           pulse / (t1 - t0)))
-        except Exception:                               # noqa: BLE001
-            return False
-        b = vacuumown.matrix(plus, minus, pulse)
-        authority = vacuumown.axis_authority(b) if b else None
-        if not b or not authority or min(authority) <= 0.0:
-            return False
-        self._vac_b, self._vac_authority = b, authority
-        self.logbook.event(snap.ut, "vacuum own: B rad/s^2 per input "
-                           "(right/nose/belly) %s; authority %s" % (
-                               "  ".join("%s %s" % (n, "/".join(
-                                   "%+.4f" % x for x in c))
-                                   for n, c in zip(vacuumown.INPUTS, b)),
-                               "/".join("%.4f" % a for a in authority)))
-        return True
-
-    def vacuum_release(self, snap, why):
-        """Zero the inputs and give the attitude back to kRPC."""
-        try:
-            for name in vacuumown.INPUTS:
-                setattr(self.control, name, 0.0)
-        except Exception:                               # noqa: BLE001
-            pass
-        self._vac_own = False
-        self._vac_line = None
-        self.engage_autopilot(snap.ut)
-        self.logbook.event(snap.ut, "vacuum own: kRPC flies again (%s), "
-                           "pointing %.1f deg off" % (
-                               why, self.pointing_error(snap)))
-
-    def roll_free_bank(self, bank_deg, snap):
-        """``COAST_ROLL_FREE_Q_PA``: in thin air the bank the vehicle already
-        flies, so the nose tilts toward its own roof and kRPC asks no roll;
-        the commanded bank once the air can roll it."""
-        limit = float(getattr(self.cfg, "COAST_ROLL_FREE_Q_PA", 0.0))
-        if limit <= 0.0 or self.state not in (COAST, GLIDE):
-            return bank_deg
-        if snap.dynamic_pressure >= limit:
-            if getattr(self, "_roll_free", False):
-                self._roll_free = False
-                self.logbook.event(snap.ut, "roll free ends at q=%.0f Pa: "
-                                   "bank %+.0f flown -> %+.0f commanded"
-                                   % (snap.dynamic_pressure,
-                                      flown_bank(snap), bank_deg))
-            return bank_deg
-        flown = flown_bank(snap)
-        if math.isnan(flown):
-            return bank_deg
-        if not getattr(self, "_roll_free", False) and not getattr(
-                self, "_roll_free_done", False):
-            self._roll_free = self._roll_free_done = True
-            self.logbook.event(snap.ut, "roll free below q=%.0f Pa: nose "
-                               "toward the roof at bank %+.0f" % (limit, flown))
-        return flown
 
     def bank_probe(self, bank_deg, snap):
         """``GLIDE_BANK_PROBE_DEG``: hold one bank from COAST through GLIDE
@@ -5195,7 +4940,6 @@ class Autopilot:
                                         self.cfg.SOLVE_BANK_MIN_DEG)
         self._coast_bank = bank
         self.aim(alpha, bank, snap)
-        self.vacuum_own(snap)
         # Seed the glide's solve from what the coast is actually holding.
         # ``aim`` records the command for the log; ``self.steer`` is what
         # ``run_glide`` inverts around, so leaving it at bank 0 would hand the
@@ -5268,7 +5012,7 @@ class Autopilot:
         here.  Failure 11 is the version of that lesson this project has
         already paid for.
         """
-        if not self.cfg.COAST_WARP or self.vacuum_preturning():
+        if not self.cfg.COAST_WARP:
             return
         altitude = vec.norm(snap.position) - self.env.equatorial_radius
         release = altitude <= (self.env.atmosphere_depth
@@ -6820,8 +6564,7 @@ class Autopilot:
             self.finish("terminated from the panel")
             return snap
         if self.state != STANDBY and not self.sas_hold and not getattr(
-                self, "_surfaces_on", False) and not getattr(
-                self, "_vac_own", False):
+                self, "_surfaces_on", False):
             self.engage_autopilot(snap.ut)
         if self.grounded_early(snap):
             return snap
@@ -6842,7 +6585,6 @@ class Autopilot:
         self.run_flap_probe(snap)
         self.measure_flap_brake(snap)
         self.measure_surfaces(snap)
-        self.measure_vacuum_matrix(snap)
         self.retune_attitude(snap)
         handler(snap)
         self.pitch_assist(snap)
@@ -8020,9 +7762,6 @@ class Autopilot:
                 interval = self.cfg.TICK_S
             elif self.state in (STANDBY, DEORBIT, DRAIN, COAST):
                 interval = self.cfg.ORBIT_TICK_S
-                if getattr(self, "_vac_own", False):
-                    interval = min(interval,
-                                   float(self.cfg.VACUUM_OWN_TICK_S))
             elif self.state == GLIDE:
                 interval = self.cfg.GLIDE_TICK_S
                 # An owned pitch axis is a sampled loop; at the glide's 1 s
@@ -8290,8 +8029,7 @@ def compact_line(state, snap, run):
         # read-back as ``pin=``'s first number).
         "yrin=%+5.2f/%+5.2f" % (getattr(snap, "yaw_input", 0.0) or 0.0,
                                 getattr(snap, "roll_input", 0.0) or 0.0),
-        ] + ([] if getattr(run, "_vac_line", None) is None
-             else [run._vac_line]) + (
+        ] + (
             [] if getattr(run, "_own_line", None) is None else [
         # ``SURFACE_OWN``: the attitude error and the body rates, deg and
         # deg/s about (right, nose, belly), and the largest deflection.

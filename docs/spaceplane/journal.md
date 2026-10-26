@@ -3204,4 +3204,8 @@ The user: forget the cargo shuttle; shift the wings on the normal craft.
 - **The roll damper off** (`ROLL_DAMPER_GROWTH=100`; damp-, damp2-1025, 8 flights per arm per batch): 1.8 m hypersonic glide departures 0/8 in the first batch, 4/8 in the second (4/16 together against 7/16 on the defaults -- the first batch was luck); **1.5 m 5/8 departures (3 recovered) against 1/8 on the defaults**; stock 8/8 near the runway, no departures. Refuted: the damper stays.
 - **The 1.8 m transonic departures** (Mach 1.4-2.6, ~20 km, near wings level): alpha swings 12-46 deg on +-0.2 of pitch input, then slip -- the static pitch loop (~10 s) too slow for the unstable short period at that q. Unworked.
 
-Batches: fw-, tf-, rot-pag-, tb-, rev-, band-, lim-, damp-, damp2-1025.
+- **The approach's turn is not the damper.** Over this session's orbital flights the stock shuttle with an identical HAC tune (roll 5.3-5.5, yaw 7.4) still splits, |turn ratio| 0.25-0.38 or 0.85-1.12.
+- **`APPROACH_REENGAGE` promoted** (sav-reeng-1025, qs_s2_hac0-5, 12 an arm). Over flights that turned for at least 10 ticks, turn ratio was 0.67-1.03 (median 0.88, n=9) with it, against 0.04-1.11 (median 0.16, 6 of 11 under 0.2) without. Landings off these saves overshoot 5-14 km on both arms: the saves predate the plant change.
+- **Deleted, the cargo shuttle being dropped:** `VACUUM_OWN` (`vacuumown.py`; the pre-warp turn never flew) and `COAST_ROLL_FREE_Q_PA` (cargo 0/5).
+
+Batches: fw-, tf-, rot-pag-, tb-, rev-, band-, lim-, damp-, damp2-, conf-1025; sav-reeng-1025.
