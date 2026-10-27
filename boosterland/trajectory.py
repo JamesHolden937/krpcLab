@@ -143,10 +143,10 @@ def landing_burn_state(env, r, v, max_accel, cfg, height=None, miss=0.0):
 
     ``miss`` buys an early start, in proportion to how far off the prediction
     is, so a burn that would otherwise begin at the last possible metre has
-    time left to translate.  ``LANDING_DIVERT_LEAD`` defaults to 0 because the
-    landing burn no longer translates: with ``LANDING_MAX_TILT_DEG`` at 0 it
-    thrusts straight retrograde, so an early trigger buys nothing and only
-    moves the phase change away from the moment the engines light.  LOG7 showed
+    time left to translate.  ``LANDING_DIVERT_LEAD`` defaults to 0: the burn's
+    divert (``LANDING_MAX_TILT_DEG``, ``terminal_command``) works inside the
+    burn the trigger already gives it, and an early trigger only moves the
+    phase change away from the moment the engines light.  LOG7 showed
     what that costs in legibility -- LANDING_BURN was announced at 2272 m and
     the throttle then sat at zero for eight seconds and 1900 m of fall.  Raise
     it alongside the tilt if the divert is ever re-enabled.
@@ -384,9 +384,9 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # then exactly where boostback and CORRECTION aimed.  A suicide burn
         # is only a minute long, so integrating it costs a couple of hundred
         # steps and removes the guess.
-        # No ``steer`` here, deliberately.  The landing burn holds straight
-        # anti-velocity -- ``LANDING_MAX_TILT_DEG`` is 0 since failure 5 --
-        # so the vehicle makes no lift during it, and a propagation that
+        # No ``steer`` here, deliberately.  The landing burn flies within
+        # ``LANDING_MAX_TILT_DEG`` of retrograde, close enough that the
+        # vehicle makes little lift during it, and a propagation that
         # flew the coast's angle of attack on down through the burn would be
         # predicting a wing nobody is flying.  Left in, it costs the whole
         # benefit on a short coast: the 60 km entry state predicted a miss of

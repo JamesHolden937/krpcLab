@@ -2778,7 +2778,7 @@ class Autopilot:
         # carry it.
         self.env.best_alpha = measured.best_alpha
         # ``stall_speed`` and ``best_ld`` ride along for the same reason and
-        # are read back by ``airframe.stall`` / ``airframe.glide_ld``.  Until
+        # are read back by ``airframe.stall`` and the cone's reach.  Until
         # this line they were measured, printed, compared against the
         # configured constants -- and discarded.
         self.env.stall_speed = measured.stall_speed

@@ -475,12 +475,6 @@ class TerminalCommand:
     demand: float       # lateral acceleration the law wants, m/s^2
 
 
-def terminal_attitude(env, r, v, height, time_to_land, thrust_accel, cfg):
-    """Just the direction; see :func:`terminal_command`."""
-    return terminal_command(env, r, v, height, time_to_land,
-                            thrust_accel, cfg).direction
-
-
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                      zem=None, tilt_budget_deg=None):
     """The burn's command, stood up for the last ``LANDING_UPRIGHT_ALT_M``.
@@ -706,27 +700,6 @@ def within_cone(direction, axis, max_deg):
         return a
     t = math.radians(max_deg)
     return vec.unit(vec.add(vec.scale(a, math.cos(t)), vec.scale(side, math.sin(t))))
-
-
-def landing_attitude(env, r, v, prediction, cfg):
-    """Thrust straight anti-velocity.
-
-    ``LANDING_MAX_TILT_DEG`` defaults to 0, i.e. pure retrograde, because
-    tilting off it during the landing burn made things worse in every way
-    (LOG7).  A tilt of 20 deg spent nine seconds trying to close a 1190 m miss,
-    closed 36 m of it, and put the booster on the ground doing 10 m/s
-    *sideways* -- the thrust it diverted was thrust it needed to stop with, and
-    the lateral velocity it built up had nothing left to cancel it.  Retrograde
-    thrust cancels horizontal velocity as a side effect of stopping, which is
-    the behaviour that keeps the vehicle on its legs.
-
-    The miss is boostback's and CORRECTION's job; by the landing burn there are
-    seconds left and no authority to spare.  Raise the tilt to re-enable the
-    divert if a vehicle ever has the margin for it.
-    """
-    return _tilt_from_retrograde(env, r, v, miss_vector(env, prediction),
-                                 cfg.LANDING_MAX_TILT_DEG,
-                                 cfg.LANDING_DIVERT_GAIN)
 
 
 @dataclass

@@ -483,17 +483,6 @@ class TestGuidance(unittest.TestCase):
         self.assertLess(solution.throttle, 1.0)
         self.assertGreaterEqual(solution.throttle, cfg.BOOSTBACK_MIN_THROTTLE)
 
-    def test_landing_attitude_is_mostly_retrograde(self):
-        env = FakeEnv()
-        cfg = Config()
-        r, v = state_above_pad(2000.0, (0.0, 0.0, -50.0))
-        v = (-200.0, 0.0, -50.0)
-        prediction = trajectory.predict_landing(env, r, v, 4e4, 25.0, cfg)
-        aim = guidance.landing_attitude(env, r, v, prediction, cfg)
-        retrograde = vec.unit(vec.scale(v, -1.0))
-        self.assertLessEqual(vec.angle_between(aim, retrograde),
-                             cfg.LANDING_MAX_TILT_DEG + 1e-6)
-
     def test_the_propagator_and_the_control_loop_share_one_throttle_law(self):
         """``guidance.landing_throttle`` is a wrapper, not a second opinion.
 
@@ -599,7 +588,8 @@ class TestGuidance(unittest.TestCase):
         r = state_above_pad(500.0)[0]
         drift = 25.0
         v = (-200.0, 0.0, drift)
-        aim = guidance.terminal_attitude(env, r, v, 500.0, 8.0, 25.0, cfg)
+        aim = guidance.terminal_command(env, r, v, 500.0, 8.0, 25.0,
+                                        cfg).direction
         up = vec.unit(r)
         # The sideways part of the command opposes the sideways motion.
         sideways = vec.project_out(aim, up)
@@ -620,15 +610,16 @@ class TestGuidance(unittest.TestCase):
         cfg = Config()
         r = state_above_pad(cfg.LANDING_DIVERT_MIN_ALT_M - 1.0)[0]
         v = (-20.0, 0.0, 5.0)
-        aim = guidance.terminal_attitude(
-            env, r, v, cfg.LANDING_DIVERT_MIN_ALT_M - 1.0, 0.0, 25.0, cfg)
+        aim = guidance.terminal_command(
+            env, r, v, cfg.LANDING_DIVERT_MIN_ALT_M - 1.0, 0.0, 25.0,
+            cfg).direction
         # Within the cone round vertical, whatever retrograde does: it
         # swings to the horizontal as the descent stops (LOG10237).
         self.assertLessEqual(vec.angle_between(aim, vec.unit(r)),
                              cfg.LANDING_MAX_TILT_DEG + 1e-6)
         # And well above it, a zero time-to-go must not produce a wild command.
-        high = guidance.terminal_attitude(env, state_above_pad(2000.0)[0],
-                                          v, 2000.0, 0.0, 25.0, cfg)
+        high = guidance.terminal_command(env, state_above_pad(2000.0)[0],
+                                         v, 2000.0, 0.0, 25.0, cfg).direction
         self.assertLessEqual(
             vec.angle_between(high, vec.unit(vec.scale(v, -1.0))),
             cfg.LANDING_MAX_TILT_DEG + 1e-6)
@@ -640,7 +631,8 @@ class TestGuidance(unittest.TestCase):
         cfg.LANDING_TERMINAL_GUIDANCE = False
         r = state_above_pad(3000.0)[0]
         v = (-200.0, 0.0, 30.0)
-        aim = guidance.terminal_attitude(env, r, v, 3000.0, 10.0, 25.0, cfg)
+        aim = guidance.terminal_command(env, r, v, 3000.0, 10.0, 25.0,
+                                        cfg).direction
         self.assertLess(
             vec.angle_between(aim, vec.unit(vec.scale(v, -1.0))), 1e-6)
 

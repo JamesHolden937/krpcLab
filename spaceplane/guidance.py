@@ -1256,8 +1256,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # the same ratio (dE/ds = D/L).  The four diverts were at 150-155 m/s
     # against a 93 m/s best glide -- some 720 m of height uncounted.  The
     # table's own numbers (``env.best_ld`` / ``best_speed``, re-read at the
-    # landing mass): ``airframe.glide_ld`` with a ``cfg`` is the configured
-    # 4.2, and the first cut of this read that and changed nothing.
+    # landing mass), not the configured ``APPROACH_BEST_LD``: the first cut
+    # of this read that and changed nothing.
     reach_ld = clean_ld
     energy = height
     if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
@@ -1348,21 +1348,6 @@ def hac_cost(env, cfg, end, r, v, side, radius=None):
         cx, cy = vec.dot(track, along), vec.dot(track, across)
         swing = abs(math.atan2(cx * wy - cy * wx, cx * wx + cy * wy))
     return path + radius * swing
-
-
-def hac_available(env, cfg, speed, height, mass, gravity):
-    """The path the cone can afford from here: ``guidance.hac``'s own
-    budget (height plus speed over the gate's target, at ``cone_ld``),
-    without the ladder.  ``None`` when the airframe cannot say."""
-    stall = airframe.stall(env, cfg)
-    if stall is None:
-        return None
-    ratio = airframe.cone_ld(env, cfg, speed, height, mass, gravity)
-    excess = 0.0
-    if gravity > 0.0:
-        final = cone_speed(env, cfg, stall, cfg.GATE_ALT_M)
-        excess = max(0.0, (speed * speed - final * final) / (2.0 * gravity))
-    return max(0.0, height + excess - cfg.GATE_ALT_M) * ratio
 
 
 def hac_choose(env, cfg, runway, r, v, mass=None, gravity=9.81,

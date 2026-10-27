@@ -1831,7 +1831,7 @@ class Autoland:
         prediction = self.predict(snap, powered=True)
         # Throttle first: the steering law has to know how much acceleration
         # it is actually going to get, not how much the vehicle could make at
-        # full thrust -- see guidance.terminal_attitude.
+        # full thrust -- see guidance.terminal_command.
         command = guidance.landing_throttle(self.env, snap.position,
                                             snap.velocity, snap.max_accel,
                                             self.cfg,

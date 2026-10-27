@@ -560,7 +560,7 @@ class Config:
     LANDING_HVEL_TOL: float = 0.3           # lateral speed that counts as nulled
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
                                             # vertical for the last few m
-    LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_attitude
+    LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_command
     LANDING_DIVERT_MIN_ACCEL: float = 1.0   # thrust needed before steering means anything
     LANDING_DIVERT_MIN_THROTTLE: float = 0.0    # 0: see run_landing_burn, it hovers
     LANDING_DIVERT_DEMAND_M_S2: float = 1.0     # lateral demand worth lighting it for

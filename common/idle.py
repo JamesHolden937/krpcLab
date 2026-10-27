@@ -21,11 +21,6 @@ class IdleGimbals:
         self.engines = None
         self.locked = None
 
-    def rescan(self):
-        """Forget the engine list (after staging)."""
-        self.engines = None
-        self.locked = None
-
     def update(self, firing):
         want = not firing
         if want == self.locked:

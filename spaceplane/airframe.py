@@ -188,17 +188,6 @@ def stall(env, cfg):
     return at_mass(env, got)
 
 
-def glide_ld(env, cfg):
-    """Best glide ratio -- path per metre of height, flown at ``best_alpha``.
-
-    This is the *straight* glide.  The cone flies a banked turn and faster
-    than best glide, and both cost path per metre of height; ``turning_ld``
-    is that number and it is derived from this one rather than configured
-    beside it.  Failure 19's shape: one constant standing in for two things.
-    """
-    return _derived(env, cfg, "best_ld", cfg.APPROACH_BEST_LD)
-
-
 # What ``turning_ld``'s arithmetic has to be divided by to become a number
 # the cone can *plan* with.
 #

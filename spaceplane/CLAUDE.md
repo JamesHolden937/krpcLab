@@ -108,8 +108,7 @@ base 5/6, inc 6/6, ecc 22/26 -- **high 8/19 is the blocker**: clean
 entries bank -55 at Mach 7 and the propagator over-predicts range there,
 so the glide arrives at 12 km and ~180 m/s.  Score landings by the
 `DOWN:` line and by each log's own save/`config:` (arm labels slip when
-an instance dies).  `airframe.glide_ld(env, cfg)` returns the *constant*;
-the table's numbers are `env.best_ld`/`best_speed`.  The low-margin test
+an instance dies).  The table's best glide is `env.best_ld`/`best_speed`.  The low-margin test
 airframe is `qs_shuttle2_fwdwing_rigoff`; `qs_stackorb` is not flown.
 
 ## Earlier (2026-10-21 night, fingerprint `cb0ae1d4`)
