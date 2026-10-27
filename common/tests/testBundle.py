@@ -140,6 +140,36 @@ class TestTheRenamer(unittest.TestCase):
         self.assertIn("def same(self):", out)
         self.run_both(src, "(A(3).get(), A.same(4))")
 
+    def test_a_nested_def_is_a_local(self):
+        src = ("def f(n):\n"
+               "    def helper(x):\n        return x * 2\n"
+               "    def recurse(x):\n        return x and recurse(x - 1) + 1\n"
+               "    return helper(n) + recurse(n)\n")
+        out = pyminify.minify(src)
+        self.assertNotIn("helper", out)
+        self.assertIn("recurse", out)
+        self.run_both(src, "f(3)")
+
+    def test_module_names_move_only_when_nothing_outside_names_them(self):
+        src = ("LIMIT = 4\n"
+               "class Holder:\n"
+               "    def __init__(self, v):\n        self._value = v\n"
+               "    def _double(self):\n        return self._value * 2\n"
+               "    def total(self):\n        return self._double() + LIMIT\n"
+               "def helper(x):\n    return Holder(x).total()\n"
+               "def public(x):\n    return helper(x) + len('helper')\n")
+        out = pyminify.minify(src, outside={"public"})
+        self.assertIn("def public(", out)
+        self.assertIn("helper", out)  # read in a string: kept
+        self.assertNotIn("LIMIT", out)
+        self.assertNotIn("Holder", out)
+        self.assertNotIn("_double", out)
+        before, after = {}, {}
+        exec(src, before)
+        exec(out, after)
+        self.assertEqual(before["public"](3), after["public"](3))
+        self.assertEqual(pyminify.minify(src).count("LIMIT"), 2)
+
     def test_names_count_up(self):
         self.assertEqual([pyminify.names(i) for i in (0, 25, 26, 27, 701)],
                          ["a", "z", "aa", "ab", "zz"])

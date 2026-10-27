@@ -81,15 +81,55 @@ def collect(packages):
     return modules
 
 
+# Files whose words cannot name code: prose, saves, craft, binaries.
+NOT_CODE = (".md", ".pdf", ".sfs", ".craft", ".loadmeta", ".bin", ".u8",
+            ".png", ".jpg", ".svg")
+
+
+def outsiders(modules):
+    """``name -> every identifier some other tracked file mentions``: what
+    ``pyminify`` must not rename in that module, since a test, a tool, a
+    shell script or another module may reach it by name."""
+    try:
+        listed = subprocess.run(["git", "ls-files"], cwd=ROOT, check=True,
+                                capture_output=True, text=True).stdout.split()
+    except (OSError, subprocess.CalledProcessError):
+        raise SystemExit("bundle: git ls-files failed; cannot tell which "
+                         "names other files use")
+    words = {}
+    for rel in listed:
+        if rel.endswith(NOT_CODE):
+            continue
+        try:
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+                words[rel] = set(pyminify.WORD.findall(handle.read()))
+        except (OSError, UnicodeDecodeError):
+            continue
+    every = {}
+    for found in words.values():
+        for w in found:
+            every[w] = every.get(w, 0) + 1
+    out = {}
+    for name, (is_package, _) in modules.items():
+        rel = name.replace(".", "/") + ("/__init__.py" if is_package else ".py")
+        own = words.get(rel, set())
+        out[name] = {w for w, n in every.items() if n - (w in own) > 0}
+    return out
+
+
 def stripped(modules):
     """``collect``'s modules with comments and docstrings removed, every
-    function's locals renamed a, b, ... (``pyminify``), builtins read through
+    function's locals and nested functions renamed a, b, ..., and every
+    module name and private attribute no other file mentions
+    (``pyminify``), builtins read through
     one-letter aliases (``pyalias``) and the whitespace squeezed out
     (``pycompact``): what the bundle carries.  Each raises
     rather than change a program."""
+    outside = outsiders(modules)
     try:
         return {name: (is_package, compacted(name, pyalias.alias(
-                    pyminify.minify(pystrip.strip(source, name), name), name)))
+                    pyminify.minify(pystrip.strip(source, name), name,
+                                    outside[name]), name)))
                 for name, (is_package, source) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyalias.AliasError) as exc:

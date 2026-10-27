@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Rename every function's local variables to a, b, ..., z, aa, ab, ...,
-and every method's ``self`` to ``s``.
+"""Rename every function's local variables and nested functions to a, b,
+..., z, aa, ab, ..., every method's ``self`` to ``s``, and every
+module-level function nothing outside its module names.
 
     ./tools/pyminify.py module.py           # the renamed source on stdout
 
@@ -18,6 +19,16 @@ itself and nothing outside it can see.  Left alone:
 
 A comprehension's own targets are its own scope and keep their names.  New
 names never collide with any name the function or anything inside it uses.
+A nested ``def`` is a local like any other (and, like one, keeps its name
+if a nested scope -- itself included -- reads it).
+
+``minify(source, name, outside)`` also renames a module-level function when
+``outside`` (every identifier any *other* file mentions) lacks its name and
+the module binds that name nowhere else, never reads it as an attribute,
+in a string or an f-string, and never calls ``globals``/``vars``/``eval``/
+``exec``.  Without ``outside`` (the command line) module names stay.  The
+module pass runs first and is proven on its own; the local pass then sees
+the new names and avoids them.
 
 **Checked against the parser.**  The result must parse to exactly the
 original tree with the same renaming applied to its ``Name`` nodes, or
@@ -28,12 +39,15 @@ original tree with the same renaming applied to its ``Name`` nodes, or
 import ast
 import builtins
 import keyword
+import re
 import sys
 
 FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
 SCOPES = FUNCS + (ast.Lambda, ast.ClassDef)
 COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 DYNAMIC = {"locals", "vars", "eval", "exec", "dir"}
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+DEF = re.compile(r"(?:async\s+)?(?:def|class)\s+")
 # ``SELF`` is what a method's ``self`` becomes, so no local may take it.
 SELF = "s"
 RESERVED = (set(keyword.kwlist) | set(getattr(keyword, "softkwlist", ()))
@@ -124,7 +138,9 @@ def _plan(func):
                              if isinstance(m, ast.Name)}
                 excluded |= {m.arg for m in ast.walk(part)
                              if isinstance(m, ast.arg)}
-            if not isinstance(n, ast.Lambda):
+            if isinstance(n, FUNCS):
+                bound.add(n.name)
+            elif isinstance(n, ast.ClassDef):
                 excluded.add(n.name)
     rename = sorted(bound - excluded)
     if not rename:
@@ -132,8 +148,9 @@ def _plan(func):
     # The most used names get the shortest replacements.
     count = {}
     for n in own:
-        if isinstance(n, ast.Name) and n.id in rename:
-            count[n.id] = count.get(n.id, 0) + 1
+        k = n.id if isinstance(n, ast.Name) else getattr(n, "name", None)
+        if k in rename:
+            count[k] = count.get(k, 0) + 1
     rename.sort(key=lambda k: (-count.get(k, 0), k))
     taken = used | RESERVED
     plan, i = {}, 0
@@ -160,6 +177,9 @@ def _apply(tree):
 
         def visit(node, shadow):
             if isinstance(node, SCOPES) and node is not func:
+                if (isinstance(node, FUNCS) and node.name in plan
+                        and node.name not in shadow):
+                    edits.append((node, plan[node.name]))
                 outer = list(getattr(node, "decorator_list", []))
                 if isinstance(node, ast.ClassDef):
                     outer += node.bases + [k.value for k in node.keywords]
@@ -238,16 +258,173 @@ def _self_edits(tree):
     return edits
 
 
+def _module_edits(tree, outside):
+    """``[(node, new)]`` renaming what only this module can name: its
+    functions, classes and variables bound once at the top level, and its
+    private ``_attributes`` (methods included).  See the module docstring
+    for what is refused."""
+    if outside is None:
+        return []
+    every = list(ast.walk(tree))
+    called = [n for n in every if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Name)]
+    if any(n.func.id in DYNAMIC | {"globals"} for n in called):
+        return []
+    # An attribute named at run time could be any of them.
+    dynamic_attr = any(
+        n.func.id in ("getattr", "hasattr", "setattr", "delattr")
+        and not (len(n.args) > 1 and isinstance(n.args[1], ast.Constant))
+        for n in called)
+    top = {}            # name -> its one top-level binding node
+    binds = {}          # name -> how many bindings, any scope
+    class_level = {}    # name -> class-body bindings (def or Name)
+    reads, attrs, idents, refused = {}, {}, set(), set()
+
+    def bind(k):
+        binds[k] = binds.get(k, 0) + 1
+        idents.add(k)
+
+    for stmt in tree.body:
+        if isinstance(stmt, FUNCS + (ast.ClassDef,)):
+            top[stmt.name] = stmt
+            if isinstance(stmt, ast.ClassDef) and any(
+                    _ident_of(x).endswith(("Error", "Exception", "Warning"))
+                    for x in stmt.bases):
+                refused.add(stmt.name)  # a log prints its __name__
+        elif isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            targets = stmt.targets if isinstance(stmt, ast.Assign) \
+                else [stmt.target]
+            for t in targets:
+                for m in [t] + (list(t.elts) if isinstance(t, ast.Tuple)
+                                else []):
+                    if isinstance(m, ast.Name):
+                        top[m.id] = m
+    for cls in every:
+        if isinstance(cls, ast.ClassDef):
+            for stmt in cls.body:
+                if isinstance(stmt, FUNCS + (ast.ClassDef,)):
+                    class_level.setdefault(stmt.name, []).append(stmt)
+                elif isinstance(stmt, ast.Assign):
+                    for t in stmt.targets:
+                        if isinstance(t, ast.Name):
+                            class_level.setdefault(t.id, []).append(t)
+    in_class = {id(x) for v in class_level.values() for x in v}
+    for n in every:
+        if isinstance(n, ast.Name):
+            idents.add(n.id)
+            if isinstance(n.ctx, ast.Load):
+                reads.setdefault(n.id, []).append(n)
+            elif id(n) not in in_class:
+                bind(n.id)
+        elif isinstance(n, ast.arg):
+            bind(n.arg)
+            refused.add(n.arg)
+        elif isinstance(n, FUNCS + (ast.ClassDef,)):
+            if id(n) not in in_class:
+                bind(n.name)
+            idents.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            for al in n.names:
+                idents |= set(al.name.split("."))
+                refused.add((al.asname or al.name).split(".")[0])
+                if al.asname:
+                    idents.add(al.asname)
+        elif isinstance(n, (ast.Global, ast.Nonlocal)):
+            refused |= set(n.names)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            refused.add(n.name)
+        elif isinstance(n, ast.Attribute):
+            idents.add(n.attr)
+            attrs.setdefault(n.attr, []).append(n)
+        elif isinstance(n, ast.keyword) and n.arg:
+            idents.add(n.arg)
+            refused.add(n.arg)
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+            words = set(WORD.findall(n.value))
+            idents |= words
+            refused |= words
+        elif isinstance(n, ast.JoinedStr):
+            refused |= {m.id for m in ast.walk(n) if isinstance(m, ast.Name)}
+        elif isinstance(n, (ast.MatchAs, ast.MatchStar)) and n.name:
+            refused.add(n.name)
+
+    def dunder(k):
+        return k.startswith("__")
+
+    plain = [k for k, node in top.items()
+             if binds.get(k) == 1 and k not in refused and k not in outside
+             and k not in class_level and not dunder(k)]
+    # Private, and defined here: a class binds it or something assigns it,
+    # so it is not a library's (``_replace``, ``os._exit``).
+    stored = {n.attr for n in every if isinstance(n, ast.Attribute)
+              and not isinstance(n.ctx, ast.Load)}
+    private = [] if dynamic_attr else [
+        k for k in set(attrs) | set(class_level)
+        if k.startswith("_") and not dunder(k) and not k.endswith("_")
+        and (k in class_level or k in stored) and k not in refused
+        and k not in outside and k not in binds and k not in reads]
+    count = {k: len(reads.get(k, ())) + 1 for k in plain}
+    count.update({k: len(attrs.get(k, ())) + len(class_level.get(k, ()))
+                  for k in private})
+    rename = sorted(count, key=lambda k: (-count[k], k))
+    taken = idents | RESERVED
+    edits, i = [], 0
+    for old in rename:
+        while names(i) in taken:
+            i += 1
+        new = names(i)
+        i += 1
+        if len(new) >= len(old):
+            continue
+        if old in private:
+            edits += [(n, new) for n in attrs.get(old, ())]
+            edits += [(n, new) for n in class_level.get(old, ())]
+        else:
+            edits += [(top[old], new)] + [(n, new) for n in reads.get(old, ())]
+    return edits
+
+
+def _ident_of(node):
+    """The last name in a dotted expression, or ''."""
+    if isinstance(node, ast.Name):
+        return node.id
+    return node.attr if isinstance(node, ast.Attribute) else ""
+
+
 def _ident(node):
-    return node.id if isinstance(node, ast.Name) else node.arg
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return node.arg if isinstance(node, ast.arg) else node.name
 
 
-def minify(source, name="<source>"):
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as exc:
-        raise MinifyError("%s does not parse: %s" % (name, exc)) from None
-    edits = _apply(tree) + _self_edits(tree)
+def _key(node):
+    return (type(node), node.lineno, node.col_offset,
+            node.end_lineno, node.end_col_offset)
+
+
+def _start(node, lines, starts, source):
+    """Offset of ``node``'s identifier in the source."""
+    if isinstance(node, ast.Attribute):
+        row, col_b = node.end_lineno, node.end_col_offset
+        text = lines[row - 1]
+        col = len(text.encode("utf-8")[:col_b].decode("utf-8"))
+        return starts[row] + col - len(node.attr)
+    row = node.lineno
+    text = lines[row - 1]
+    col = len(text.encode("utf-8")[:node.col_offset].decode("utf-8"))
+    a = starts[row] + col
+    if isinstance(node, FUNCS + (ast.ClassDef,)):
+        m = DEF.match(text, col)
+        a = starts[row] + m.end() if m else a
+    return a
+
+
+def _rewrite(source, edits, name):
+    """``source`` with ``edits`` applied, proven against the parser."""
+    if not edits:
+        return source
     lines = source.splitlines(keepends=True)
     starts = [0, 0]
     for line in lines:
@@ -255,26 +432,24 @@ def minify(source, name="<source>"):
     spans = []
     for node, new in edits:
         old = _ident(node)
-        row = node.lineno
-        text = lines[row - 1]
-        col = len(text.encode("utf-8")[:node.col_offset].decode("utf-8"))
-        a = starts[row] + col
+        a = _start(node, lines, starts, source)
         if source[a:a + len(old)] != old:
-            raise MinifyError("%s: %s is not at line %d col %d"
-                              % (name, old, row, col))
+            raise MinifyError("%s: %s is not at line %d"
+                              % (name, old, node.lineno))
         spans.append((a, a + len(old), new))
     out = source
     for a, b, new in sorted(set(spans), reverse=True):
         out = out[:a] + new + out[b:]
     # The proof of the text edit: the original tree, renamed in the tree.
     want = ast.parse(source)
-    by_pos = {(type(n), n.lineno, n.col_offset): new for n, new in edits}
+    by_pos = {_key(n): new for n, new in edits}
+    field = {ast.Name: "id", ast.arg: "arg", ast.Attribute: "attr"}
     for node in ast.walk(want):
-        if isinstance(node, (ast.Name, ast.arg)):
-            new = by_pos.get((type(node), node.lineno, node.col_offset))
+        if isinstance(node, (ast.Name, ast.arg, ast.Attribute, ast.ClassDef)
+                      + FUNCS):
+            new = by_pos.get(_key(node))
             if new is not None:
-                setattr(node, "id" if isinstance(node, ast.Name) else "arg",
-                        new)
+                setattr(node, field.get(type(node), "name"), new)
     try:
         got = ast.parse(out)
     except SyntaxError as exc:
@@ -283,6 +458,16 @@ def minify(source, name="<source>"):
     if ast.dump(got) != ast.dump(want):
         raise MinifyError("%s: renamed source is a different program" % name)
     return out
+
+
+def minify(source, name="<source>", outside=None):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise MinifyError("%s does not parse: %s" % (name, exc)) from None
+    source = _rewrite(source, _module_edits(tree, outside), name)
+    tree = ast.parse(source)
+    return _rewrite(source, _apply(tree) + _self_edits(tree), name)
 
 
 def main(argv=None):
