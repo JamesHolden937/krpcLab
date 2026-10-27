@@ -24,6 +24,9 @@ ss -ltn 2>/dev/null | grep -q ":$RPC" || {
 cd "$PROJ"
 # Use the project venv's interpreter, the way run.sh does: krpc is installed
 # there, not system-wide, and quickfly.py's shebang picks up system python.
-PY_BIN="$PROJ/.venv/bin/python"
+# PyPy where it exists, like everything else (quickfly flies the bundle under
+# it either way; --cpython opts the flight out).
+PY_BIN="$PROJ/.venv-pypy/bin/python"
+[ -x "$PY_BIN" ] || PY_BIN="$PROJ/.venv/bin/python"
 [ -x "$PY_BIN" ] || { echo "no venv at $PY_BIN -- run ./run.sh once to create it" >&2; exit 1; }
 exec "$PY_BIN" boosterland/tools/quickfly.py --rpc-port "$RPC" --stream-port "$STREAM" "$@"

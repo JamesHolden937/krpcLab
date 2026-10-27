@@ -2343,6 +2343,14 @@ def main(argv=None):
         run.autostart = args.autostart
         if args.autostart:
             run.gui.hide_start()
+            # **A harness hands over a paused game** (``quickfly.py``) so the
+            # booster does not fall while this process starts: the first
+            # tick commands on the state the save recorded, then time moves.
+            run.tick()
+            if conn.krpc.paused:
+                conn.krpc.paused = False
+                log.event(conn.space_center.ut,
+                          "unpaused: engaged on the state the save recorded")
         run.run()
         reason = run.exit_reason or "complete"
     except KeyboardInterrupt:

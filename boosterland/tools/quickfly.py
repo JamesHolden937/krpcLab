@@ -15,8 +15,11 @@ rather than guessed.
     ./boosterland/tools/quickfly.py --compare CORRECTION_ENTER_M=300,1200
 
 Each run loads `--save` (default "quicksave", the post-separation state at
-UT 2843.5), presses START itself, flies to touchdown or `--timeout`, and
-records where the booster ended up.  Logs land in `logs/` as usual.
+UT 2843.5), pauses it, and flies the booster from the single-file bundle
+(``--tree``: the modules) with ``--autostart`` in a child process, which
+engages on the paused state and unpauses.  It flies to touchdown or
+`--timeout`, and the harness records where the booster ended up.  Logs land
+in `logs/` as usual.
 
 This LOADS A SAVE, which discards whatever is currently in the game.
 """
@@ -25,7 +28,6 @@ import os
 import argparse
 import re
 import statistics
-import subprocess
 import sys
 import time
 
@@ -36,12 +38,11 @@ paths.use_venv()
 
 import krpc
 
-from boosterland.autoland import Autoland
-from boosterland.config import Config, apply_overrides
-from common.logbook import Logbook
-from common.pacing import sleeper
+from boosterland.config import Config
 
 from common import timescale as ts
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import farmflight  # noqa: E402
 
 SETTLE_TIMEOUT_S = 90.0
 SETTLE_POLL_S = 0.5      # game time keeps running while we wait, so poll fast
@@ -50,6 +51,8 @@ DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d
 # Fallback, and the number that is always right: the last telemetry line's own
 # great-circle distance from the pad.
 LAST_PAD = re.compile(r"^\[.*\bpad=\s*([\d.]+).*$", re.M)
+SHUTDOWN = re.compile(r"shutdown: (.*)")
+CORRECTION = re.compile(r"-> CORRECTION\b")
 
 
 def connect(args, name):
@@ -132,8 +135,19 @@ def fly_once(args, overrides):
     if args.timescale is not None:
         ts.write(tsdir, args.timescale)
     conn, ut0, speed0 = load_save(args)
-    hold_for(conn, args.delay)
-    cfg = apply_overrides(Config(), overrides)
+    try:
+        hold_for(conn, args.delay)
+        # **Paused here, where START used to be pressed**: the flight is a
+        # child process now (the bundle flies, as everywhere), and the
+        # booster would fall for as long as it takes to start.  Its first
+        # tick engages on this state and unpauses (``autoland.main``).
+        conn.krpc.paused = True
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    overrides = list(overrides)
     # Off 1x, the loop has to be paced on the game clock or the control rate
     # the vehicle sees falls by exactly the speedup factor.  An explicit
     # --set LOOP_PACING_GAME_TIME=... still wins: this is a default, not a
@@ -141,56 +155,38 @@ def fly_once(args, overrides):
     # against.
     if (args.timescale not in (None, "off")
             and not any(o.startswith("LOOP_PACING_GAME_TIME") for o in overrides)):
-        cfg.LOOP_PACING_GAME_TIME = True
+        overrides.append("LOOP_PACING_GAME_TIME=True")
     wall0 = time.time()
-    log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
-    run = None
-    reason = "complete"
-    # Set before the try, not inside it.  Anything that threw before the
-    # landing position was read used to raise UnboundLocalError out of the
-    # result dict below, which replaced the real traceback with a useless one
-    # -- six failed cells of a sweep reported a name error instead of saying
-    # what had actually gone wrong.
+    path, timed_out = farmflight.fly(args, "boosterland",
+                                     "boosterland.autoland", overrides,
+                                     args.timeout,
+                                     ports=(args.rpc_port, args.stream_port))
     where = None
     try:
-        run = Autoland(conn, cfg, log)
-        run.gui.start_pressed = lambda: True    # no one is at the keyboard
-        deadline = time.time() + args.timeout
-        # Paced the same way Autoland.run() is: in game seconds when the game
-        # is not at 1x.  quickfly drives tick() itself, so a pacer added only
-        # to Autoland.run() would not be in this path at all -- which is the
-        # path every measurement actually flies.
-        wait = sleeper(cfg, lambda: conn.space_center.ut, conn)
-        while not run.finished and time.time() < deadline:
-            snap = run.tick()
-            wait(cfg.LOOP_SLEEP_S,
-                 snap.ut if snap is not None else conn.space_center.ut)
+        conn = connect(args, "quickfly-report")
         try:
-            fl = conn.space_center.active_vessel.flight(
-                conn.space_center.active_vessel.orbit.body.reference_frame)
+            vessel = conn.space_center.active_vessel
+            fl = vessel.flight(vessel.orbit.body.reference_frame)
             where = (fl.latitude, fl.longitude)
-        except Exception:
-            where = None
-        if run.finished:
-            reason = run.exit_reason or "complete"
-        else:
-            reason = "TIMEOUT after %.0fs" % args.timeout
-    except KeyboardInterrupt:
-        reason = "interrupted"
-        raise
-    except Exception as exc:
-        log.event(0.0, "FATAL %r" % exc)
-        reason = "error: %r" % exc
-    finally:
-        if run is not None:
-            run.shutdown(reason)
-        log.close()
+        finally:
+            conn.close()
+    except Exception:
+        where = None
 
-    body = open(log.path).read()
+    body = ""
+    if path and not path.startswith("?"):
+        with open(path, errors="replace") as fh:
+            body = fh.read()
+    shut = SHUTDOWN.findall(body)
+    if timed_out:
+        reason = "TIMEOUT after %.0fs" % args.timeout
+    else:
+        reason = shut[-1] if shut else "(no shutdown line)"
     hit = DONE.search(body)
-    result = {"log": log.path, "ut0": ut0, "speed0": speed0, "reason": reason,
-              "corrections": getattr(run, "corrections", -1),
-              "offset": _offset(where, cfg),
+    result = {"log": path or "-", "ut0": ut0, "speed0": speed0,
+              "reason": reason,
+              "corrections": len(CORRECTION.findall(body)),
+              "offset": _offset(where, Config()),
               "wall": time.time() - wall0,
               # What the game ACHIEVED, not what it was told.  Asking for 4x
               # on a main thread that can sustain 1.6x gets 1.6x, and the two
@@ -271,7 +267,9 @@ def main(argv=None):
     p.add_argument("--compare", metavar="FIELD=A,B[,C]",
                    help="fly --runs flights at each value of FIELD and "
                         "print the groups side by side")
+    farmflight.add_arguments(p)
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
+    farmflight.install_reaper()
 
     groups = [("default", args.set)]
     if args.delays:

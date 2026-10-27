@@ -20,9 +20,6 @@ survivable.
 import argparse
 import math
 import os
-import re
-import signal
-import subprocess
 import sys
 import time
 
@@ -35,6 +32,9 @@ import krpc                                             # noqa: E402
 from common import timescale as ts                                  # noqa: E402
 from common import vec                             # noqa: E402
 from spaceplane.config import Config                    # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import farmflight                                       # noqa: E402
+from farmflight import claim_log, log_names            # noqa: E402
 
 
 
@@ -42,53 +42,6 @@ from spaceplane.config import Config                    # noqa: E402
 # Game time from a save's UT to the autopilot's first tick in the game's
 # governed load (load, 1 s clock check, pause): 1.14-1.16 s, LOG3380/3381.
 SIM_START_LAG_S = 1.15
-
-_LIVE = []
-
-
-def _install_reaper():
-    """Reap the flight on SIGTERM and SIGINT, not just on the normal path.
-
-    A ``finally`` is not enough: Python's default SIGTERM handling exits
-    without unwinding, so ``pkill -f quickglide.py`` left the autopilot --
-    a *child* process -- flying.  Measured, two abandoned batches left eight
-    of them alive on four instances.  See the note at ``Popen``.
-    """
-    def handler(signum, frame):                         # noqa: ARG001
-        for process in list(_LIVE):
-            _reap(process)
-        raise SystemExit(128 + signum)
-    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        try:
-            signal.signal(signum, handler)
-        except Exception:                               # noqa: BLE001
-            pass
-
-
-def _reap(process):
-    """Make sure no autopilot outlives the harness that started it.
-
-    Signals the whole process group, because the flight is a child and an
-    orphaned child keeps flying the vessel -- see the note at ``Popen``.
-    Idempotent and silent: called on the normal path as well as on the
-    timeout, and on the way out of an interrupt.
-    """
-    if process.poll() is not None:
-        return
-    for signaller, wait in ((signal.SIGTERM, 20.0), (signal.SIGKILL, 5.0)):
-        try:
-            os.killpg(os.getpgid(process.pid), signaller)
-        except Exception:                               # noqa: BLE001
-            try:
-                process.kill()
-            except Exception:                           # noqa: BLE001
-                pass
-        try:
-            process.wait(timeout=wait)
-            return
-        except Exception:                               # noqa: BLE001
-            continue
-
 
 def connect(name, rpc, stream, tries=40):
     last = None
@@ -268,29 +221,7 @@ def fly(args, index):
             "Restart the\n  instance, or pass --timescale off."
             % (tsdir, args.timescale))
 
-    # ``--pypy``: the same flight software under PyPy (``.venv-pypy``, see
-    # kspSim/CLAUDE.md), whose propagator runs several times faster.  On a
-    # simulated instance that is wall time saved; the governor still makes
-    # every tick's interval be served.
-    # **PyPy is the default** wherever ``.venv-pypy`` exists (2026-10-02):
-    # the farm's numbers are measured with it.  ``--cpython`` opts out.
-    pypy = (args.pypy or not args.cpython) and os.path.exists(
-        os.path.join(ROOT, ".venv-pypy", "bin", "python"))
-    venv = ".venv-pypy" if pypy else ".venv"
-    command = [os.path.join(ROOT, venv, "bin", "python"), "-m",
-               "spaceplane.autopilot", "--autostart"]
     overrides = list(args.set)
-    # **The single-file bundle flies, as everywhere** (``tools/bundle.py``,
-    # rebuilt first if a source changed); ``--tree`` flies the modules.
-    if not args.tree:
-        sys.path.insert(0, os.path.join(ROOT, "tools"))
-        import bundle
-        path = os.path.abspath(args.bundle) if args.bundle else bundle.ensure()
-        command[1:3] = [path, "--pilot", "spaceplane"]
-        if not any(o.startswith("LOG_DIR") for o in overrides):
-            overrides.append("LOG_DIR=%s" % os.path.join(ROOT, "logs"))
-    if rpc:
-        command += ["--rpc-port", str(rpc), "--stream-port", str(stream)]
     # The log's config line is the only record of what flew, and the save is
     # half of that.  An explicit --set still wins.
     if not any(o.startswith("SAVE_NAME") for o in overrides):
@@ -316,44 +247,13 @@ def fly(args, index):
         overrides.append("TIMESCALE_GOVERNOR=%s"
                          % os.path.join(tsdir, "timescale.txt"))
         overrides.append("TIMESCALE_GOVERNOR_MAX=%.4f" % (ceiling or 8.0))
-    for item in overrides:
-        command += ["--set", item]
-    started = time.time()
-    # **Not DEVNULL.**  Nothing prints in normal operation (CLAUDE.md), so the
-    # only thing that ever reaches these two streams is a crash before the
-    # logbook opened or a traceback out of the control loop -- and discarding
-    # them turns "the autopilot died at 2.5 km" into a log that simply stops
-    # mid-glide with no shutdown line and a vessel the game reports as 0.00 t.
-    # ``run.sh --pilot spaceplane`` appends to the same file; so does this.
+    argv = farmflight.command(args, "spaceplane", "spaceplane.autopilot",
+                              overrides)
+    if rpc:
+        argv += ["--rpc-port", str(rpc), "--stream-port", str(stream)]
     launched = time.time()
-    errors = open(os.path.join(ROOT, "logs", "stderr.log"), "a")
-    try:
-        # **Its own process group, so killing this harness kills the flight.**
-        # The autopilot is a *child*, and ``pkill -f quickglide.py`` matches
-        # only the parent: the child goes on flying, still connected, still
-        # commanding the vessel. Measured on 2026-09-16, two killed batches
-        # left **eight** autopilots alive on four instances -- three of them
-        # on one port -- fighting each other over one aircraft. What that
-        # produces is not a crash, it is plausible telemetry: a batch started
-        # afterwards read +30, +42 and +61 km against a +2.7 km baseline and
-        # looked exactly like a regression in the change under test, and
-        # another logged ``APPROACH`` at 80 km and Mach 7.
-        process = subprocess.Popen(command, cwd=ROOT,
-                                   stdout=errors, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
-        _LIVE.append(process)
-    finally:
-        errors.close()
-    try:
-        while process.poll() is None and time.time() - started < args.timeout:
-            time.sleep(0.1 if sim else 2.0)
-    finally:
-        _reap(process)
-        if process in _LIVE:
-            _LIVE.remove(process)
-    timed_out = process.poll() is None
-    if timed_out:
-        _reap(process)
+    timed_out = farmflight.wait(farmflight.launch(argv), args.timeout,
+                                0.1 if sim else 2.0)
 
     conn = connect("quickglide-report", rpc, stream)
     cfg = Config()
@@ -391,60 +291,6 @@ def fly(args, index):
             "log": log, "timeout": timed_out}
 
 
-def log_names():
-    directory = os.path.join(ROOT, "logs")
-    return set(n for n in os.listdir(directory)
-               if n.startswith("LOG") and n[3:].isdigit())
-
-
-def claim_log(before, launched):
-    """Which log this flight wrote, given the ones that existed before it.
-
-    **"The highest-numbered log" is wrong the moment two instances fly at
-    once**, which is the only way this harness is worth running: it returns
-    whichever instance happened to open a log last, so a sweep attributes one
-    instance's trace to another instance's result.  ``Logbook`` itself claims
-    its number atomically (``O_CREAT | O_EXCL``) and is not the problem --
-    the number is claimed correctly and then read back by the wrong rule.
-
-    So diff against a snapshot taken before the launch, and where several
-    flights started together, take the one whose file appeared soonest after
-    *this* subprocess did.  If that still cannot separate them, say so with
-    the candidates rather than name one: a sweep that quietly cites the wrong
-    log is worse than one that admits it does not know which.
-    """
-    directory = os.path.join(ROOT, "logs")
-    fresh = sorted(log_names() - before, key=lambda n: int(n[3:]))
-    if not fresh:
-        return None
-    if len(fresh) == 1:
-        return os.path.join(directory, fresh[0])
-    timed = sorted((abs(opened_at(os.path.join(directory, n)) - launched), n)
-                   for n in fresh)
-    if len(timed) > 1 and timed[1][0] - timed[0][0] < 1.0:
-        return "?" + "|".join(n for _, n in timed[:3])
-    return os.path.join(directory, timed[0][1])
-
-
-def opened_at(path):
-    """When the log was opened, from its own first line.
-
-    **Not the mtime**, which is what this used first: a log still being
-    written has an mtime of *now*, so every candidate looked equally recent
-    and the tiebreak reported an ambiguity that was not there.  The header
-    line is written once and never moves.
-    """
-    try:
-        with open(path, errors="replace") as fh:
-            m = re.search(r"opened (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)",
-                          fh.readline())
-        if m:
-            return time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))
-    except OSError:
-        pass
-    return float("inf")
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("-n", type=int, default=1)
@@ -452,15 +298,7 @@ def main():
     p.add_argument("--instance", default=None)
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
-    p.add_argument("--bundle", default=None, metavar="FILE",
-                   help="fly this bundle (default: dist/krpcLab.py, rebuilt "
-                        "if stale)")
-    p.add_argument("--tree", action="store_true",
-                   help="fly the modules in the tree, not the bundle")
-    p.add_argument("--pypy", action="store_true",
-                   help="run the autopilot under PyPy (.venv-pypy; the default)")
-    p.add_argument("--cpython", action="store_true",
-                   help="run the autopilot under CPython (.venv) instead")
+    farmflight.add_arguments(p)
     p.add_argument("--timescale", default=None, metavar="SPEC",
                    help="off | max | a multiplier such as 4.0; on a farm "
                         "instance the default is 20, the governor's ceiling")
@@ -478,7 +316,7 @@ def main():
     # left at 1x.
     if args.timescale is None and args.instance is not None:
         args.timescale = "20"
-    _install_reaper()
+    farmflight.install_reaper()
 
     results = []
     for i in range(1, args.n + 1):

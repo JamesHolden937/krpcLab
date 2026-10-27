@@ -5,7 +5,8 @@
     ./ascent/tools/stackfly.py --instance 2 --save qs_stack_half --set RESERVE_FRACTION=0.1
 
 Loads ``--save`` (default ``qs_stack``, the stack on the pad), runs
-``ascent.autopilot`` in this process with autostart, and prints one line per
+the ascent from the single-file bundle (``--tree``: the modules) with
+autostart in a child process, and prints one line per
 flight: where it separated, what the model reserved for the booster, and
 what the booster landed with (boosterland's log, named in the ascent's).
 
@@ -25,10 +26,9 @@ paths.use_venv()
 
 import krpc  # noqa: E402
 
-from ascent import autopilot  # noqa: E402
-from ascent.config import Config, apply_overrides  # noqa: E402
 from common import timescale as ts  # noqa: E402
-from common.logbook import Logbook  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import farmflight  # noqa: E402
 
 SETTLE_TIMEOUT_S = 120.0
 
@@ -127,20 +127,28 @@ def fly_once(args):
     if args.timescale is not None:
         ts.write(tsdir, args.timescale)
     conn = load_save(args)
-    cfg = apply_overrides(Config(), args.set)
-    if args.timescale not in (None, "off"):
-        cfg.LOOP_PACING_GAME_TIME = True
-    log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
     try:
-        autopilot.run(conn, cfg, log, autostart=True,
-                      booster_set=args.booster_set)
-    finally:
-        log.close()
-        try:
-            conn.close()
-        except Exception:               # noqa: BLE001
-            pass
-    return summarise(log.path)
+        conn.close()
+    except Exception:               # noqa: BLE001
+        pass
+    overrides = list(args.set)
+    if (args.timescale not in (None, "off")
+            and not any(o.startswith("LOOP_PACING_GAME_TIME")
+                        for o in overrides)):
+        overrides.append("LOOP_PACING_GAME_TIME=True")
+    extra = []
+    for item in args.booster_set:
+        extra += ["--booster-set", item]
+    path, timed_out = farmflight.fly(
+        args, "ascent", "ascent.autopilot", overrides, args.timeout,
+        ports=(args.rpc_port, args.stream_port), extra=extra)
+    if not path or path.startswith("?"):
+        return {"log": path or "-", "end": "TIMEOUT" if timed_out
+                else "no log of its own"}
+    out = summarise(path)
+    if timed_out:
+        out["end"] = "TIMEOUT after %.0fs" % args.timeout
+    return out
 
 
 def fmt(r):
@@ -164,7 +172,11 @@ def main(argv=None):
     p.add_argument("--set", action="append", default=[])
     p.add_argument("--booster-set", action="append", default=[])
     p.add_argument("--timescale", default=None)
+    p.add_argument("--timeout", type=float, default=3600.0,
+                   help="wall-clock seconds before a flight is abandoned")
+    farmflight.add_arguments(p)
     args = p.parse_args(argv)
+    farmflight.install_reaper()
     args.rpc_port, args.stream_port = instance_ports(args.instance)
     for i in range(args.n):
         r = fly_once(args)

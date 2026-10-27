@@ -25,7 +25,7 @@ already paid for:
 - **It prints the table after every round, not at the end.**  A batch watched
   only at its end is a batch whose first bad flight is discovered an hour
   late, and the standard error is what says whether to keep flying.
-- **Launches are staggered.**  ``quickglide.claim_log`` separates concurrent
+- **Launches are staggered.**  ``farmflight.claim_log`` separates concurrent
   flights by when their logs were opened and reports ``?LOG1|LOG2`` when it
   cannot; a few seconds between launches keeps the attribution unambiguous.
 
