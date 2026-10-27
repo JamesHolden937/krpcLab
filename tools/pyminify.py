@@ -45,7 +45,10 @@ class MinifyError(ValueError):
 
 
 def names(index):
-    """a .. z, aa .. az, ba .. -- the index-th short name."""
+    """a .. z, aa .. az, ba .. -- the index-th short name.  Lowercase only:
+    the capitals are ``pyalias``'s, and a local that took one would cost a
+    module-wide alias its single letter (measured: 52 letters made the
+    bundle 2 kB larger)."""
     letters = "abcdefghijklmnopqrstuvwxyz"
     out = ""
     index += 1
