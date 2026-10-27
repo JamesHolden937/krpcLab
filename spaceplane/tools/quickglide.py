@@ -279,9 +279,15 @@ def fly(args, index):
     venv = ".venv-pypy" if pypy else ".venv"
     command = [os.path.join(ROOT, venv, "bin", "python"), "-m",
                "spaceplane.autopilot", "--autostart"]
+    overrides = list(args.set)
+    # ``--bundle``: fly ``tools/bundle.py``'s single file instead of the
+    # tree, logging here like any other flight.
+    if args.bundle:
+        command[1:3] = [os.path.abspath(args.bundle), "--pilot", "spaceplane"]
+        if not any(o.startswith("LOG_DIR") for o in overrides):
+            overrides.append("LOG_DIR=%s" % os.path.join(ROOT, "logs"))
     if rpc:
         command += ["--rpc-port", str(rpc), "--stream-port", str(stream)]
-    overrides = list(args.set)
     # The log's config line is the only record of what flew, and the save is
     # half of that.  An explicit --set still wins.
     if not any(o.startswith("SAVE_NAME") for o in overrides):
@@ -443,6 +449,8 @@ def main():
     p.add_argument("--instance", default=None)
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
+    p.add_argument("--bundle", default=None, metavar="FILE",
+                   help="fly tools/bundle.py's single file, not the tree")
     p.add_argument("--pypy", action="store_true",
                    help="run the autopilot under PyPy (.venv-pypy; the default)")
     p.add_argument("--cpython", action="store_true",
