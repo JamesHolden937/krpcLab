@@ -134,13 +134,15 @@ def outsiders(modules):
         if rel in bundled:
             continue
         beyond |= found
-        if rel.endswith(".sh") or "." not in os.path.basename(rel):
+        script = rel.endswith(".sh") or "." not in os.path.basename(rel)
+        if script:
             beyond_other |= found   # a script can run Python
         if rel.endswith(".py"):
             with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
                 callers.append(handle.read())
-        else:
-            # Only Python inlined in a script can pass a keyword: name=.
+        elif script:
+            # Only Python inlined in a script can pass a keyword: name=
+            # (the mod's C# assigns names too, and runs no Python).
             with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
                 keywords |= set(ASSIGNED.findall(handle.read()))
     every = {}
@@ -564,6 +566,9 @@ def suite(path):
     """Every bundled package's offline tests with the bundle's modules in
     place of the tree's: the tests come from the tree, everything they test
     from ``path``.  What proves the renaming kept every program the same."""
+    if os.path.dirname(os.path.abspath(path)) == ROOT:
+        raise SystemExit("bundle: a suite bundle in the root would load the "
+                         "tree's modules as its own; write it elsewhere")
     probe = """import os, sys, types, unittest
 sys.path.insert(0, {root!r})
 import runpy

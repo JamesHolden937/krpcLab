@@ -159,9 +159,9 @@ The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaki
   deg of alpha a body roll *is* sideslip. Roll flies the derived 4.8 s.
   Tune the lateral axes together and fly any change on the farm first.
 - **kRPC holds standing moments in integrators that a spiral twists.** The
-  glide's pitch is offloaded to a body-frame trim (`GLIDE_PITCH_OFFLOAD`)
-  and the cone's standing trim lives on the canards (`CANARD_TRIM`); keep
-  standing moments out of kRPC.
+  cone's standing trim lives on the canards (`CANARD_TRIM`); keep standing
+  moments out of kRPC.  Client pitch/roll/yaw do nothing while kRPC's
+  autopilot is engaged, so a trim has to go on a surface's deflection.
 - **Below Mach 3 the shuttle holds 0.57-0.75 of the ~40 deg the glide
   commands**, so the glide over-delivers cone energy; `HOLDABLE_PRIOR` by
   Mach fixed the prediction and was null on landings (deleted).
@@ -173,8 +173,8 @@ The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaki
 - **The control surfaces are live on every axis.** KSP's `Pitch=False` is
   the *ignore* flag.
 - **Laws, not constants, on final**: `APPROACH_SPEED_PATH` (the descent
-  that holds the speed, two-sided), `FLARE_SINK_TRACK`,
-  `AIM_RUNWAY_TRUE_ALPHA`.
+  that holds the speed, two-sided), the flare's sink tracking, and
+  `Autopilot.aim_runway` (the nose down the runway, not the airflow).
 - **The time scale serves the control interval.** `TIMESCALE_GOVERNOR`
   holds each phase to what its loop can serve; every log ends with a `loop
   rate` line -- read it before comparing two logs.
@@ -207,7 +207,8 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 2026-10-18, unflown or never re-flown: `HAC_SHORT_POLAR`, `AIRBRAKE_CACHE`,
 `GROUND_SPOILER_ON_NOSE`; 2026-10-20: `HAC_FAST_FACTOR`, `HAC_FAST_TAEM`,
 `HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
-`ROLLOUT_DIVERT_SETTLE_S`; 2026-10-26: `FUEL_TO_NOSE` (the user: slightly
+`ROLLOUT_DIVERT_SETTLE_S`; 2026-10-21: `GLIDE_PITCH_OFFLOAD` (client
+pitch never reaches a vessel kRPC flies); 2026-10-26: `FUEL_TO_NOSE` (the user: slightly
 tail-heavy craft now fly; the propellant stays where the craft put it).
 
 ## Commands

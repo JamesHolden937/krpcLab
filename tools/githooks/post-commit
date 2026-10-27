@@ -11,7 +11,10 @@ rm -f .git-bundle-error.log
 # Not beside the farm: the suite on top of six instances is killed by
 # memory pressure (CLAUDE.md).
 pgrep -f KSP_x64.exe >/dev/null 2>&1 && exit 0
-( "$PY" tools/bundle.py --suite --no-selftest --quiet -o .git-bundle-suite.py \
+# Outside the tree: a bundle's modules sit beside it, and beside one in the
+# root they would be the tree's own files.
+T=$(mktemp -d) || exit 0
+( "$PY" tools/bundle.py --suite --no-selftest --quiet -o "$T/krpcLab.py" \
       >/dev/null 2>.git-bundle-error.log && rm -f .git-bundle-error.log
-  rm -f .git-bundle-suite.py .git-bundle-suite.py.lock ) </dev/null >/dev/null 2>&1 &
+  rm -rf "$T" ) </dev/null >/dev/null 2>&1 &
 exit 0
