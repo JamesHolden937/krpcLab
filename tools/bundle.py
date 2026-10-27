@@ -87,9 +87,10 @@ NOT_CODE = (".md", ".pdf", ".sfs", ".craft", ".loadmeta", ".bin", ".u8",
 
 
 def outsiders(modules):
-    """``name -> every identifier some other tracked file mentions``: what
-    ``pyminify`` must not rename in that module, since a test, a tool, a
-    shell script or another module may reach it by name."""
+    """``(name -> every identifier some other tracked file mentions, every
+    identifier a file outside the bundle mentions)``: what ``pyminify`` must
+    not rename in that module, and in any, since a test, a tool, a shell
+    script or another module may reach it by name."""
     try:
         listed = subprocess.run(["git", "ls-files"], cwd=ROOT, check=True,
                                 capture_output=True, text=True).stdout.split()
@@ -105,6 +106,13 @@ def outsiders(modules):
                 words[rel] = set(pyminify.WORD.findall(handle.read()))
         except (OSError, UnicodeDecodeError):
             continue
+    bundled = {name.replace(".", "/") + ("/__init__.py" if is_package
+                                         else ".py")
+               for name, (is_package, _) in modules.items()}
+    beyond = set()
+    for rel, found in words.items():
+        if rel not in bundled:
+            beyond |= found
     every = {}
     for found in words.values():
         for w in found:
@@ -114,7 +122,86 @@ def outsiders(modules):
         rel = name.replace(".", "/") + ("/__init__.py" if is_package else ".py")
         own = words.get(rel, set())
         out[name] = {w for w, n in every.items() if n - (w in own) > 0}
-    return out
+    return out, beyond
+
+
+# Where kRPC's service definitions are: the farm's game, else the live one.
+KRPC_DEFINITIONS = [os.path.join(ROOT, "testInstances", "base", "GameData",
+                                 "kRPC"),
+                    os.path.expanduser("~/Kerbal Space Program/GameData/kRPC")]
+
+
+def _snake(word):
+    return "".join("_" + c.lower() if c.isupper() and i else c.lower()
+                   for i, c in enumerate(word))
+
+
+def foreign(sources):
+    """``(names, complete)``: every attribute name an object we did not
+    write may carry -- kRPC's services (from the game's ``KRPC*.json``, in
+    the client's snake_case), the ``krpc`` client's classes, and every class
+    of every module the sources import, the standard library's included.
+    ``complete`` is False when no service definitions were found: then only
+    private attributes may be renamed."""
+    import ast
+    import importlib
+    import json
+    out = set()
+
+    def members(obj):
+        for k in dir(obj):
+            out.add(k)
+            try:
+                v = getattr(obj, k)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(v, type):
+                out.update(dir(v))
+
+    for t in (object, int, float, complex, str, bytes, list, dict, tuple, set,
+              frozenset, type, BaseException, Exception, KeyError,
+              property, staticmethod, classmethod):
+        members(t)
+    wanted = {"io", "threading", "logging", "socketserver", "collections",
+              "collections.abc", "enum", "dataclasses", "krpc", "krpc.client",
+              "krpc.stream", "krpc.event", "krpc.types", "krpc.service"}
+    for source in sources:
+        for n in ast.walk(ast.parse(source)):
+            if isinstance(n, ast.Import):
+                wanted |= {al.name for al in n.names}
+            elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
+                wanted.add(n.module)
+    for mod in sorted(wanted):
+        try:
+            members(importlib.import_module(mod))
+        except Exception:  # noqa: BLE001  (our own packages, absent extras)
+            continue
+    complete = False
+    for directory in KRPC_DEFINITIONS:
+        if not os.path.isdir(directory):
+            continue
+        for entry in sorted(os.listdir(directory)):
+            if not entry.endswith(".json"):
+                continue
+            with open(os.path.join(directory, entry), encoding="utf-8") as h:
+                text = json.load(h)
+
+            def walk(v):
+                if isinstance(v, dict):
+                    for k, x in v.items():
+                        if k != "documentation":
+                            out.update(_snake(p) for p in k.split("_"))
+                            walk(x)
+                elif isinstance(v, list):
+                    for x in v:
+                        walk(x)
+                elif isinstance(v, str):
+                    out.update(_snake(p) for p in v.split("_"))
+            walk(text)
+            complete = True
+        if complete:
+            break
+    return out, complete
 
 
 def stripped(modules):
@@ -125,12 +212,17 @@ def stripped(modules):
     one-letter aliases (``pyalias``) and the whitespace squeezed out
     (``pycompact``): what the bundle carries.  Each raises
     rather than change a program."""
-    outside = outsiders(modules)
+    outside, beyond = outsiders(modules)
     try:
+        bare = {name: pystrip.strip(source, name)
+                for name, (_, source) in modules.items()}
+        names, complete = foreign(bare.values())
+        attributes = pyminify.attribute_plan(
+            bare, beyond, names, private_only=not complete)
         return {name: (is_package, compacted(name, pyalias.alias(
-                    pyminify.minify(pystrip.strip(source, name), name,
-                                    outside[name]), name)))
-                for name, (is_package, source) in modules.items()}
+                    pyminify.minify(bare[name], name, outside[name],
+                                    attributes), name)))
+                for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyalias.AliasError) as exc:
         raise SystemExit("cannot strip: %s" % exc)

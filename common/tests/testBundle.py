@@ -150,7 +150,7 @@ class TestTheRenamer(unittest.TestCase):
         self.assertIn("recurse", out)
         self.run_both(src, "f(3)")
 
-    def test_module_names_move_only_when_nothing_outside_names_them(self):
+    def test_names_move_only_when_nothing_outside_names_them(self):
         src = ("LIMIT = 4\n"
                "class Holder:\n"
                "    def __init__(self, v):\n        self._value = v\n"
@@ -158,8 +158,11 @@ class TestTheRenamer(unittest.TestCase):
                "    def total(self):\n        return self._double() + LIMIT\n"
                "def helper(x):\n    return Holder(x).total()\n"
                "def public(x):\n    return helper(x) + len('helper')\n")
-        out = pyminify.minify(src, outside={"public"})
+        plan = pyminify.attribute_plan({"m": src}, {"public"}, {"total"})
+        self.assertEqual(set(plan), {"_value", "_double"})
+        out = pyminify.minify(src, outside={"public"}, attributes=plan)
         self.assertIn("def public(", out)
+        self.assertIn(".total()", out)  # foreign: kept
         self.assertIn("helper", out)  # read in a string: kept
         self.assertNotIn("LIMIT", out)
         self.assertNotIn("Holder", out)
@@ -169,6 +172,22 @@ class TestTheRenamer(unittest.TestCase):
         exec(out, after)
         self.assertEqual(before["public"](3), after["public"](3))
         self.assertEqual(pyminify.minify(src).count("LIMIT"), 2)
+
+    def test_a_keyword_or_a_field_keeps_an_attribute(self):
+        src = ("from types import SimpleNamespace\n"
+               "class A:\n"
+               "    width: int = 1\n"
+               "    def __init__(self):\n"
+               "        self.ut = 1\n        self.width = 2\n"
+               "        self.depth = 3\n"
+               "    def read(self, x):\n        return x.ut + self.depth\n"
+               "def f():\n    return A().read(SimpleNamespace(ut=4))\n")
+        plan = pyminify.attribute_plan({"m": src}, set(), {"read"})
+        self.assertEqual(set(plan), {"depth"})
+        before, after = {}, {}
+        exec(src, before)
+        exec(pyminify.minify(src, outside=set(), attributes=plan), after)
+        self.assertEqual(before["f"](), after["f"]())
 
     def test_names_count_up(self):
         self.assertEqual([pyminify.names(i) for i in (0, 25, 26, 27, 701)],

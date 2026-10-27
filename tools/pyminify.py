@@ -22,13 +22,15 @@ names never collide with any name the function or anything inside it uses.
 A nested ``def`` is a local like any other (and, like one, keeps its name
 if a nested scope -- itself included -- reads it).
 
-``minify(source, name, outside)`` also renames a module-level function when
-``outside`` (every identifier any *other* file mentions) lacks its name and
-the module binds that name nowhere else, never reads it as an attribute,
-in a string or an f-string, and never calls ``globals``/``vars``/``eval``/
-``exec``.  Without ``outside`` (the command line) module names stay.  The
-module pass runs first and is proven on its own; the local pass then sees
-the new names and avoids them.
+``minify(source, name, outside)`` also renames a module-level function,
+class or variable when ``outside`` (every identifier any *other* file
+mentions) lacks its name and the module binds that name nowhere else, never
+reads it in a string or an f-string, and never calls ``globals``/``vars``/
+``eval``/``exec``.  ``minify(..., attributes=attribute_plan(...))`` renames
+attributes, planned once over every module shipped together (see
+``attribute_plan``).  Without them (the command line) only locals move.
+The passes run attributes, module names, locals, each proven on its own;
+each later pass sees the earlier names and avoids them.
 
 **Checked against the parser.**  The result must parse to exactly the
 original tree with the same renaming applied to its ``Name`` nodes, or
@@ -260,9 +262,8 @@ def _self_edits(tree):
 
 def _module_edits(tree, outside):
     """``[(node, new)]`` renaming what only this module can name: its
-    functions, classes and variables bound once at the top level, and its
-    private ``_attributes`` (methods included).  See the module docstring
-    for what is refused."""
+    functions, classes and variables bound once at the top level.  See the
+    module docstring for what is refused."""
     if outside is None:
         return []
     every = list(ast.walk(tree))
@@ -270,15 +271,10 @@ def _module_edits(tree, outside):
               and isinstance(n.func, ast.Name)]
     if any(n.func.id in DYNAMIC | {"globals"} for n in called):
         return []
-    # An attribute named at run time could be any of them.
-    dynamic_attr = any(
-        n.func.id in ("getattr", "hasattr", "setattr", "delattr")
-        and not (len(n.args) > 1 and isinstance(n.args[1], ast.Constant))
-        for n in called)
     top = {}            # name -> its one top-level binding node
     binds = {}          # name -> how many bindings, any scope
     class_level = {}    # name -> class-body bindings (def or Name)
-    reads, attrs, idents, refused = {}, {}, set(), set()
+    reads, idents, refused = {}, set(), set()
 
     def bind(k):
         binds[k] = binds.get(k, 0) + 1
@@ -335,7 +331,6 @@ def _module_edits(tree, outside):
             refused.add(n.name)
         elif isinstance(n, ast.Attribute):
             idents.add(n.attr)
-            attrs.setdefault(n.attr, []).append(n)
         elif isinstance(n, ast.keyword) and n.arg:
             idents.add(n.arg)
             refused.add(n.arg)
@@ -354,18 +349,7 @@ def _module_edits(tree, outside):
     plain = [k for k, node in top.items()
              if binds.get(k) == 1 and k not in refused and k not in outside
              and k not in class_level and not dunder(k)]
-    # Private, and defined here: a class binds it or something assigns it,
-    # so it is not a library's (``_replace``, ``os._exit``).
-    stored = {n.attr for n in every if isinstance(n, ast.Attribute)
-              and not isinstance(n.ctx, ast.Load)}
-    private = [] if dynamic_attr else [
-        k for k in set(attrs) | set(class_level)
-        if k.startswith("_") and not dunder(k) and not k.endswith("_")
-        and (k in class_level or k in stored) and k not in refused
-        and k not in outside and k not in binds and k not in reads]
     count = {k: len(reads.get(k, ())) + 1 for k in plain}
-    count.update({k: len(attrs.get(k, ())) + len(class_level.get(k, ()))
-                  for k in private})
     rename = sorted(count, key=lambda k: (-count[k], k))
     taken = idents | RESERVED
     edits, i = [], 0
@@ -374,13 +358,129 @@ def _module_edits(tree, outside):
             i += 1
         new = names(i)
         i += 1
-        if len(new) >= len(old):
-            continue
-        if old in private:
-            edits += [(n, new) for n in attrs.get(old, ())]
-            edits += [(n, new) for n in class_level.get(old, ())]
-        else:
+        if len(new) < len(old):
             edits += [(top[old], new)] + [(n, new) for n in reads.get(old, ())]
+    return edits
+
+
+def _class_body(cls):
+    """Nodes directly in ``cls``'s own scope (not inside its methods)."""
+    stack = list(cls.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, SCOPES):
+            outer = list(getattr(node, "decorator_list", []))
+            if isinstance(node, ast.ClassDef):
+                outer += node.bases + [k.value for k in node.keywords]
+            else:
+                outer += node.args.defaults + [
+                    d for d in node.args.kw_defaults if d]
+            stack.extend(outer)
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _class_bindings(cls):
+    """``cls``'s methods and nested classes, and the ``Name`` targets of
+    its plain assignments: what an attribute rename renames in its body."""
+    out = []
+    for stmt in cls.body:
+        if isinstance(stmt, FUNCS + (ast.ClassDef,)):
+            out.append(stmt)
+        elif isinstance(stmt, ast.Assign):
+            out += [t for t in stmt.targets if isinstance(t, ast.Name)]
+    return out
+
+
+def attribute_plan(sources, outside, foreign, private_only=False):
+    """``{old: new}`` for attributes every module in ``sources`` (``name ->
+    source``) renames together.  An attribute is renamed only if a class
+    here defines it -- a method, a class-body assignment, or a store on
+    ``self`` -- and it is not:
+
+    - named by ``outside`` (any other file) or ``foreign`` (the attribute
+      names of kRPC's services, its client and the standard library), so
+      no object we did not write is reached under a new name;
+    - a dataclass/NamedTuple field (annotated in a class body), a keyword
+      argument anywhere (``SimpleNamespace(ut=...)``), a word in any string
+      (``getattr(x, "name")``), read inside an f-string, a top-level name
+      of any module (``module.name``), or read as a plain name in a class
+      body (``@name.setter``);
+    - a dunder or ``_sunder_``; or, with ``private_only``, public.
+
+    New names are no identifier any source, ``outside`` or ``foreign``
+    uses."""
+    trees = {k: ast.parse(v) for k, v in sources.items()}
+    defined, refused, count, idents = set(), set(), {}, set()
+    for name, tree in trees.items():
+        refused |= set(name.split("."))
+        idents |= set(WORD.findall(sources[name]))
+        for stmt in tree.body:
+            if isinstance(stmt, FUNCS + (ast.ClassDef,)):
+                refused.add(stmt.name)
+            elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+                refused |= {(al.asname or al.name).split(".")[0]
+                            for al in stmt.names}
+            for n in ast.walk(stmt) if not isinstance(
+                    stmt, FUNCS + (ast.ClassDef,)) else ():
+                if isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+                    refused.add(n.id)
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute):
+                count[n.attr] = count.get(n.attr, 0) + 1
+                if isinstance(n.value, ast.Name) and n.value.id == "self" \
+                        and not isinstance(n.ctx, ast.Load):
+                    defined.add(n.attr)
+            elif isinstance(n, ast.keyword) and n.arg:
+                refused.add(n.arg)
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                refused |= set(WORD.findall(n.value))
+            elif isinstance(n, ast.JoinedStr):
+                refused |= {m.attr for m in ast.walk(n)
+                            if isinstance(m, ast.Attribute)}
+            elif isinstance(n, ast.ClassDef):
+                bound = _class_bindings(n)
+                for b in bound:
+                    k = _ident(b)
+                    defined.add(k)
+                    count[k] = count.get(k, 0) + 1
+                ids = {id(b) for b in bound}
+                for m in _class_body(n):
+                    if isinstance(m, ast.Name) and id(m) not in ids:
+                        refused.add(m.id)
+                    elif isinstance(m, ast.AnnAssign) and isinstance(
+                            m.target, ast.Name):
+                        refused.add(m.target.id)
+    rename = sorted(
+        k for k in defined
+        if k not in refused and k not in outside and k not in foreign
+        and not k.startswith("__") and not (k.startswith("_")
+                                            and k.endswith("_"))
+        and (k.startswith("_") or not private_only))
+    rename.sort(key=lambda k: (-count.get(k, 0), k))
+    taken = idents | set(outside) | set(foreign) | RESERVED
+    plan, i = {}, 0
+    for old in rename:
+        while names(i) in taken:
+            i += 1
+        new = names(i)
+        i += 1
+        if len(new) < len(old):
+            plan[old] = new
+    return plan
+
+
+def _attribute_edits(tree, plan):
+    """``[(node, new)]`` for ``attribute_plan``'s renames in one module."""
+    if not plan:
+        return []
+    edits = [(n, plan[n.attr]) for n in ast.walk(tree)
+             if isinstance(n, ast.Attribute) and n.attr in plan]
+    for cls in ast.walk(tree):
+        if isinstance(cls, ast.ClassDef):
+            edits += [(b, plan[_ident(b)]) for b in _class_bindings(cls)
+                      if _ident(b) in plan]
     return edits
 
 
@@ -460,11 +560,15 @@ def _rewrite(source, edits, name):
     return out
 
 
-def minify(source, name="<source>", outside=None):
+def minify(source, name="<source>", outside=None, attributes=None):
+    """``attributes`` is ``attribute_plan``'s, made over every module this
+    one ships with."""
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise MinifyError("%s does not parse: %s" % (name, exc)) from None
+    source = _rewrite(source, _attribute_edits(tree, attributes), name)
+    tree = ast.parse(source)
     source = _rewrite(source, _module_edits(tree, outside), name)
     tree = ast.parse(source)
     return _rewrite(source, _apply(tree) + _self_edits(tree), name)
