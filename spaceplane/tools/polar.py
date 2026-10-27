@@ -25,6 +25,7 @@ of where it is pointed and not of what it was asked for.
 """
 import argparse
 import glob
+import math
 import os
 import re
 import sys
@@ -107,8 +108,7 @@ def main():
         return 1
     print("\nbest glide L/D %.2f at %d deg, %.1f m/s at sea level and %.0f kg"
           % (best[1], best[0], best[3], args.mass))
-    print("glide angle %.1f deg" % __import__("math").degrees(
-        __import__("math").atan(1.0 / best[1])))
+    print("glide angle %.1f deg" % math.degrees(math.atan(1.0 / best[1])))
     return 0
 
 

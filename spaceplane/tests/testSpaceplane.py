@@ -3009,7 +3009,9 @@ class TestTheGateIsMovedInNotUp(unittest.TestCase):
         """The coupling that made lifting it expensive, stated where someone
         tempted to lift it again will see it."""
         source = inspect.getsource(guidance.deorbit_window)
-        self.assertIn("target_radius=vec.norm(gate)", source)
+        # A pattern, not the text: a word of a test's string keeps that
+        # name unrenamed in every bundled module (tools/bundle.py).
+        self.assertRegex(source, r"target_radius=\w+\.norm\(gate\)")
 
     def test_the_approach_ld_is_the_one_it_flies_not_best_glide(self):
         """**The ratio flown to the wheels, bounded by the polar above it.**

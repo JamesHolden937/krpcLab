@@ -210,11 +210,13 @@ class TestTheRenamer(unittest.TestCase):
         self.assertEqual(before["run"](), after["run"]())
 
     def test_an_import_takes_a_short_alias(self):
-        src = ("import collections\nimport math\n"
-               "def f(x):\n    return math.sqrt(x) + len(collections.deque())\n")
-        out = pyminify.minify(src, outside={"math", "collections"},
+        # cmath, not math: a word of any test's string pins that name in
+        # every bundled module, and the bundle imports math everywhere.
+        src = ("import collections\nimport cmath\n"
+               "def f(x):\n    return cmath.sqrt(x) + len(collections.deque())\n")
+        out = pyminify.minify(src, outside={"cmath", "collections"},
                               imports_outside={"collections"})
-        self.assertIn("import math as ", out)
+        self.assertIn("import cmath as ", out)
         self.assertNotIn("collections as", out)
         before, after = {}, {}
         exec(src, before)
@@ -313,8 +315,8 @@ class TestTheSingleFileExport(unittest.TestCase):
 
     def test_a_changed_module_fails_the_check(self):
         modules = dict(self.modules)
-        is_package, source = modules["common.vec"]
-        modules["common.vec"] = (is_package, source + "\nx = 1\n")
+        is_package, source = modules["common.geo"]   # not vec: see above
+        modules["common.geo"] = (is_package, source + "\nx = 1\n")
         with self.assertRaises(SystemExit):
             bundle.verify(self.path, modules)
 
