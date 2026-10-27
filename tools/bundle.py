@@ -49,6 +49,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pyalias  # noqa: E402
 import pycompact  # noqa: E402
 import pyminify  # noqa: E402
 import pystrip  # noqa: E402
@@ -82,14 +83,16 @@ def collect(packages):
 
 def stripped(modules):
     """``collect``'s modules with comments and docstrings removed, every
-    function's locals renamed a, b, ... (``pyminify``) and the whitespace
-    squeezed out (``pycompact``): what the bundle carries.  Each raises
+    function's locals renamed a, b, ... (``pyminify``), builtins read through
+    one-letter aliases (``pyalias``) and the whitespace squeezed out
+    (``pycompact``): what the bundle carries.  Each raises
     rather than change a program."""
     try:
-        return {name: (is_package, compacted(name, pyminify.minify(
-                    pystrip.strip(source, name), name)))
+        return {name: (is_package, compacted(name, pyalias.alias(
+                    pyminify.minify(pystrip.strip(source, name), name), name)))
                 for name, (is_package, source) in modules.items()}
-    except (pystrip.StripError, pyminify.MinifyError) as exc:
+    except (pystrip.StripError, pyminify.MinifyError,
+            pyalias.AliasError) as exc:
         raise SystemExit("cannot strip: %s" % exc)
 
 
@@ -311,7 +314,7 @@ DEFAULT = os.path.join(ROOT, "dist", NAME)
 def sources():
     """Every file the bundle is made from, the bundler included."""
     files = [os.path.abspath(m.__file__) for m in (
-        sys.modules[__name__], pystrip, pyminify, pycompact)]
+        sys.modules[__name__], pystrip, pyminify, pyalias, pycompact)]
     for package in PACKAGES:
         directory = os.path.join(ROOT, package)
         files += [os.path.join(directory, e) for e in os.listdir(directory)

@@ -12,6 +12,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bundle    # noqa: E402
+import pyalias   # noqa: E402
 import pycompact  # noqa: E402
 import pyminify  # noqa: E402
 import pystrip   # noqa: E402
@@ -178,6 +179,25 @@ class TestTheCompactor(unittest.TestCase):
     def test_fstrings_survive_exactly(self):
         src = 'def f(x):\n    return f"{{x}} {x!r:>5} {\'a\'}"\n'
         self.same(src, "f(3)")
+
+
+class TestTheAliaser(unittest.TestCase):
+    """Builtins read through one letter, where nothing rebinds them."""
+
+    def test_aliases_save_and_behave(self):
+        src = ("def f(o):\n    return [getattr(o, 'real', 0), getattr(o, 'imag', 0),"
+               " getattr(o, 'x', 1), getattr(o, 'y', 2)]\n")
+        out = pyalias.alias(src)
+        self.assertTrue(out.startswith("A=getattr\n"))
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        self.assertEqual(a["f"](3), b["f"](3))
+
+    def test_a_rebound_builtin_and_super_are_left(self):
+        src = ("len = 3\nclass K(object):\n    def m(self):\n"
+               "        return super().__init__, len, len, len, len\n")
+        self.assertEqual(pyalias.alias(src), src)
 
 
 class TestTheSingleFileExport(unittest.TestCase):
