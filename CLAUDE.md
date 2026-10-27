@@ -136,7 +136,7 @@ rather than a stored plan.
 .venv-pypy/bin/python -m unittest      # every offline test, no KSP needed: 19 s (CPython: 131)
 .venv-pypy/bin/python -m unittest boosterland.tests.testFlightSim   # one module
 
-./tools/bundle.py plane                # one runnable file -> dist/ (or: booster)
+./tools/bundle.py                      # every autopilot in one file, comments stripped -> dist/krpcLab.py
 ./tools/savegen.py -o hot --prograde 60   # a different entry state, written to a save
 ./tools/timescale.py 0 max             # an instance as fast as it will sustain
 ./tools/instancebench.py 0 --quant 0.05,0.1   # how fast, and which ceiling binds

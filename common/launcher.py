@@ -131,6 +131,10 @@ def fly(module, connection_args, started):
     """
     before = log_names()
     command = [sys.executable, "-m", module, "--autostart"] + connection_args
+    # Run from ``tools/bundle.py``'s single file, the modules live in it.
+    bundle = os.environ.get("KRPCLAB_BUNDLE")
+    if bundle:
+        command[1:2] = [bundle, "-m"]
     child = subprocess.Popen(command, cwd=paths.ROOT)
     handover = None
     try:
