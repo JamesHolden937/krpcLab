@@ -2208,17 +2208,6 @@ class Config:
     # the surface, so the steeper burns a high orbit takes still fit.
     DRAIN_RESERVE_PERIAPSIS_M: float = 0.0
     DRAIN_RESERVE_MARGIN: float = 1.25
-    # **The propellant left after the burn is ballast, and it belongs in the
-    # nose** (``Autopilot.fuel_to_nose``): on the first COAST tick every
-    # LF/Ox tank is pumped into the forward-most.  The stack's orbiter
-    # reaches orbit with ~0.9 t spread over three tanks, its CoM 0.63 m aft
-    # of the twin-fin shuttle's (whose reserve sits in the nose adapter),
-    # and departs laterally at Mach 2-5 on 10 of 12 flights
-    # (rot-stackorb-1020); pumping recovers 0.32 m of that.  A no-op on
-    # ``qs_shuttle2``.  **Default 2026-10-20**, rot-nose-1020 (qs_stackorb,
-    # 6 an arm): glide sideslip max 9-15 deg v 17-56, 0/6 departures v 3/6
-    # (those 15-43 km short); every pumped flight reached the field.
-    FUEL_TO_NOSE: bool = True
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and

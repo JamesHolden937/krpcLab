@@ -4895,7 +4895,6 @@ class Autopilot:
             self.interface_logged = True
             self.log_interface_prediction(snap)
         self.log_cutoff_drift(snap)
-        self.fuel_to_nose(snap)
         # ``COAST_RCS_TURN``: the valve's error relay, as in the burn.  The
         # warp holds the burn's retrograde attitude to ~70 km and the turn
         # to the entry attitude (up to ~155 deg) then has under a minute;
@@ -7342,73 +7341,6 @@ class Autopilot:
         self._surfaces_on = False
         self.logbook.event(snap.ut, "attitude handed back to kRPC in %s"
                            % self.state)
-
-    def fuel_to_nose(self, snap):
-        """``FUEL_TO_NOSE``: once, on the first COAST tick, pump every
-        propellant's tanks into its forward-most one (as much as it holds).
-
-        The burn is over and the propellant left is ballast, and **the
-        shuttle needs its ballast forward**: an aft CoM trims the
-        hypersonic glide degrees above the command and departs laterally
-        (`qs_stackorb`, the stack's orbiter, 10 of 12 departed with its
-        last 0.9 t spread over three tanks).  A craft whose propellant
-        already sits in the nose tank (`qs_shuttle2`) is left as it was."""
-        if (not getattr(self.cfg, "FUEL_TO_NOSE", False)
-                or getattr(self, "_fuel_to_nose_done", False)):
-            return
-        self._fuel_to_nose_done = True
-        tanks = self._trim_tanks()
-        moved = []
-        try:
-            xfer = self.conn.space_center.ResourceTransfer
-            for name, row in tanks.items():
-                _, nose, cap = row[-1]
-                room = cap - float(nose.resources.amount(name))
-                for _, part, _ in row[:-1]:
-                    have = float(part.resources.amount(name))
-                    amount = min(have, room)
-                    if amount <= 0.5:
-                        continue
-                    xfer.start(part, nose, name, amount)
-                    room -= amount
-                    moved.append("%.0f %s" % (amount, name))
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(snap.ut, "fuel to nose: failed (%s: %s)"
-                               % (type(exc).__name__, exc))
-            return
-        self.logbook.event(snap.ut, "fuel to nose: %s" % (
-            ", ".join(moved) or "nothing to move"))
-
-    def _trim_tanks(self):
-        """Every tank of each propellant, by station along the vessel's
-        long axis (+ forward), read once: ``{resource: [(y, part, max)]}``
-        sorted aft to forward.  Only resources held in two or more parts
-        can be moved."""
-        tanks = {}
-        try:
-            frame = self.vessel.reference_frame
-            for part in self.vessel.parts.all:
-                res = part.resources
-                for name in ("LiquidFuel", "Oxidizer", "MonoPropellant"):
-                    if not res.has_resource(name):
-                        continue
-                    cap = float(res.max(name))
-                    if cap > 1.0:
-                        tanks.setdefault(name, []).append(
-                            (float(part.position(frame)[1]), part, cap))
-        except Exception as exc:                        # noqa: BLE001
-            self.logbook.event(0.0, "propellant trim: no tanks (%s)"
-                               % type(exc).__name__)
-            return {}
-        # Monopropellant feeds the RCS; it stays where the craft put it.
-        tanks.pop("MonoPropellant", None)
-        tanks = {k: sorted(v, key=lambda t: t[0]) for k, v in tanks.items()
-                 if len(v) >= 2 and v and max(t[0] for t in v)
-                 - min(t[0] for t in v) > 1.0}
-        self.logbook.event(0.0, "propellant trim tanks: %s" % "; ".join(
-            "%s %s" % (k, " ".join("%+.1f/%.0f" % (y, c) for y, _, c in v))
-            for k, v in tanks.items()) or "none")
-        return tanks
 
     def canard_trim(self, snap):
         """``CANARD_TRIM``: carry the standing pitch moment on the canards,

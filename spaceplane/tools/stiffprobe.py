@@ -3,9 +3,9 @@
 
 Writes a ``logs/LOG<n>`` like every flight; nothing prints.
 
-Loads each save (in vacuum, where deflecting a surface costs nothing), pumps
-its propellant into the forward-most tank of each kind as ``FUEL_TO_NOSE``
-does on the first COAST tick (``--no-pump`` leaves it), and probes
+Loads each save (in vacuum, where deflecting a surface costs nothing), leaves
+its propellant where the craft carries it, as the autopilot does (``--pump``
+moves it into the forward-most tank of each kind first), and probes
 ``simulate_aerodynamic_wrench_at`` over an alpha sweep at the glide's and the
 cone's states.  Per state it reports the pitching moment per unit q
 (``CmA``, m^3) against alpha, then:
@@ -81,7 +81,7 @@ def main():
     ap.add_argument("saves", nargs="*", default=["qs_shuttle2_rigoff"])
     ap.add_argument("--alphas", default="-5,0,5,10,15,20,25,30,35,40,45,50")
     ap.add_argument("--settle", type=float, default=1.5)
-    ap.add_argument("--no-pump", action="store_true")
+    ap.add_argument("--pump", action="store_true")
     ap.add_argument("--yaw", action="store_true",
                     help="also sweep sideslip at each state's alpha: the "
                     "yaw and roll moments per unit q against beta")
@@ -98,7 +98,7 @@ def main():
     alphas = [float(a) for a in args.alphas.split(",")]
     book = Logbook(os.path.join(ROOT, "logs"), 0.0)
     book.event(sc.ut, "stiffprobe: instance %s, saves %s, pump %s" % (
-        args.instance, " ".join(args.saves), not args.no_pump))
+        args.instance, " ".join(args.saves), args.pump))
 
     def log(text):
         book.event(sc.ut, text)
@@ -110,7 +110,7 @@ def main():
         except Exception:                                   # noqa: BLE001
             pass
         v = sc.active_vessel
-        moved = [] if args.no_pump else pump_to_nose(sc, v)
+        moved = pump_to_nose(sc, v) if args.pump else []
         body = v.orbit.body
         frame = body.reference_frame
         tf = sc.transform_direction

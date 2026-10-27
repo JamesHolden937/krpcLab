@@ -150,13 +150,6 @@ The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaki
 
 ## Standing facts (each paid for; the journal has the evidence)
 
-- **The propellant left after the burn is the shuttle's ballast and must
-  sit in the nose** (`FUEL_TO_NOSE`, 2026-10-20).  The stack's orbiter
-  (`qs_stackorb`, same parts as `qs_shuttle2`) arrives with its last 0.9 t
-  spread over three tanks, CoM 0.63 m aft, and departed laterally on
-  10/12 (both live tumbles' signature: alpha over the command, bank
-  swings growing, slip to 70); pumped, 0/6.  Any new craft or orbit that
-  burns its nose tank dry before entry is that airframe.
 - **The shuttle trims at ~22 deg hypersonically** (lowa-1012): commanding
   16-18 at Mach 4-5 flies ~22 and leaks into yaw (slip > 10 on 22% of
   ticks v 9%); a 10-20 deg plan went 3/12 v 11/12.  Heat is not what
@@ -211,7 +204,8 @@ journal and `git log`): `HOLDABLE_PRIOR`/`_BY_MACH`, `COAST_TRIM`, `PITCH_P_CONE
 2026-10-18, unflown or never re-flown: `HAC_SHORT_POLAR`, `AIRBRAKE_CACHE`,
 `GROUND_SPOILER_ON_NOSE`; 2026-10-20: `HAC_FAST_FACTOR`, `HAC_FAST_TAEM`,
 `HAC_ENVELOPE`, `ROLL_DAMPER_SLIP_GATE_DEG`, `RCS_HOLD_IN_AIR`,
-`ROLLOUT_DIVERT_SETTLE_S`.
+`ROLLOUT_DIVERT_SETTLE_S`; 2026-10-26: `FUEL_TO_NOSE` (the user: slightly
+tail-heavy craft now fly; the propellant stays where the craft put it).
 
 ## Commands
 
