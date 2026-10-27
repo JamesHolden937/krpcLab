@@ -2208,6 +2208,16 @@ class Config:
     # the surface, so the steeper burns a high orbit takes still fit.
     DRAIN_RESERVE_PERIAPSIS_M: float = 0.0
     DRAIN_RESERVE_MARGIN: float = 1.25
+    # **The reserve the burn did not spend is dumped** (the user,
+    # 2026-10-26: "drain leftover propellant" -- slightly tail-heavy craft
+    # fly now, so it is no longer worth carrying as nose ballast).  On the
+    # first GLIDE tick, not after the burn: the valve kicks the vehicle
+    # (3-9 m/s for a full drain, failure 61), and from GLIDE on every tick
+    # re-propagates from the state it is in, so the kick is a disturbance
+    # the closed loop answers instead of an error the coast carries to the
+    # ground.  Valves close at ``DRAIN_REMAINING_UNITS`` or after
+    # ``DRAIN_TIMEOUT_S`` game seconds.
+    DRAIN_LEFTOVER: bool = True
 
     # -- the aerodynamic table ---------------------------------------------
     # Cl*A and Cd*A against (alpha, Mach), both probed.  Two dimensions and

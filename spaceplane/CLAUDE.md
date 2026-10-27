@@ -179,7 +179,10 @@ The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaki
   holds each phase to what its loop can serve; every log ends with a `loop
   rate` line -- read it before comparing two logs.
 - **The deorbit aim is geared down 6.4:1** (a knob's gain before a null).
-- **`DRAIN_BEFORE_BURN`** (failure 61) closed the generality gap.
+- **`DRAIN_BEFORE_BURN`** (failure 61) closed the generality gap.  The
+  reserve the burn leaves is dumped on the first GLIDE tick
+  (`DRAIN_LEFTOVER`, the user 2026-10-26), where the closed loop absorbs
+  the valve's kick.
 - **Touchdown breakups are not a priority** unless a wing/tail strike or a
   genuinely hard arrival (the user, 2026-10-08). `KSP.log` on the farm
   names every exploded part.

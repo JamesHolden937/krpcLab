@@ -4522,6 +4522,43 @@ class Autopilot:
                            % ("closed" if closed == total
                               else "WOULD NOT CLOSE", closed, total))
 
+    def drain_leftover(self, snap):
+        """``DRAIN_LEFTOVER``: from the first GLIDE tick, every valve open
+        until the propellant the burn left is gone, then closed -- in the
+        air, where each tick re-propagates from the kicked state."""
+        if (not getattr(self.cfg, "DRAIN_LEFTOVER", False)
+                or getattr(self, "_leftover_done", False)
+                or self.state not in (GLIDE, HAC, APPROACH, FLARE, ROLLOUT)):
+            return
+        left = self.snap_usable(snap)
+        floor = float(self.cfg.DRAIN_REMAINING_UNITS)
+        opened = getattr(self, "_leftover_opened", None)
+        if opened is None:
+            if left <= floor or not self.drain_modules:
+                self._leftover_done = True
+                self.logbook.event(snap.ut, "leftover drain: %s" % (
+                    "nothing left" if left <= floor
+                    else "no valve, %.1f units stay aboard" % left))
+                return
+            self._leftover_opened = snap.ut
+            n = sum(1 for module in self.drain_modules
+                    if self._open_one_drain(module))
+            self.logbook.event(snap.ut, "leftover drain started (%d of %d "
+                               "valves), %.1f units aboard, mass %.3f t"
+                               % (n, len(self.drain_modules), left,
+                                  snap.mass / 1000.0))
+            if n == 0:
+                self._leftover_done = True
+            return
+        if (left <= floor
+                or snap.ut - opened > float(self.cfg.DRAIN_TIMEOUT_S)):
+            self._leftover_done = True
+            self.stop_drain(snap)
+            self.logbook.event(snap.ut, "leftover drained in %.1f s, mass "
+                               "now %.3f t, %.1f units left"
+                               % (snap.ut - opened, snap.mass / 1000.0,
+                                  left))
+
     def run_drain(self, snap):
         """Dump the propellant, and wait for it to actually be gone.
 
@@ -4543,8 +4580,8 @@ class Autopilot:
         remaining = self.snap_usable(snap)
         # **Which drain this is.**  With ``DRAIN_BEFORE_BURN`` the phase runs
         # once, before the deorbit, and stops at a reserve the burn can spend;
-        # the leftover then stays aboard for the entry rather than being
-        # dumped where nothing can answer for the impulse.
+        # the leftover is dumped in the glide (``drain_leftover``), not here
+        # where nothing can answer for the impulse.
         pre = self.deorbit_dv is None
         floor = (self.drain_reserve_units(snap) if pre
                  else float(self.cfg.DRAIN_REMAINING_UNITS))
@@ -6651,6 +6688,7 @@ class Autopilot:
         self.measure_surfaces(snap)
         self.retune_attitude(snap)
         handler(snap)
+        self.drain_leftover(snap)
         self.pitch_assist(snap)
         if self.state == GLIDE:
             self.probe_flown_moment(snap)

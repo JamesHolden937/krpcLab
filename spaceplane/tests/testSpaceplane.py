@@ -5770,3 +5770,46 @@ class TestTickHold(unittest.TestCase):
         ap.tick()
         ap.tick()
         self.assertEqual(calls, ["refused", "work", "work"])
+
+
+class TestDrainLeftover(unittest.TestCase):
+    """``DRAIN_LEFTOVER``: valves open on the first air tick, close once the
+    tank is down to the floor; nothing in vacuum, nothing twice."""
+
+    def _ap(self, state):
+        events = []
+        ap = object.__new__(autopilot_module.Autopilot)
+        ap.cfg = SimpleNamespace(DRAIN_LEFTOVER=True, DRAIN_REMAINING_UNITS=0.5,
+                                 DRAIN_TIMEOUT_S=90.0,
+                                 DRAIN_RESOURCES=("LiquidFuel", "Oxidizer"))
+        ap.state = state
+        ap.drain_modules = ["valve"]
+        ap.logbook = SimpleNamespace(event=lambda ut, text: events.append(text))
+        ap._open_one_drain = lambda m: events.append("open") or True
+        ap.stop_drain = lambda snap: events.append("close")
+        ap.usable_units = lambda amounts: sum(amounts.values())
+        return ap, events
+
+    @staticmethod
+    def _snap(ut, units):
+        return SimpleNamespace(ut=ut, liquid_fuel=units * 0.45,
+                               oxidizer=units * 0.55, mass=30000.0)
+
+    def test_opens_in_the_glide_and_closes_when_dry(self):
+        ap, events = self._ap(autopilot_module.COAST)
+        ap.drain_leftover(self._snap(0.0, 380.0))
+        self.assertEqual(events, [])
+        ap.state = autopilot_module.GLIDE
+        ap.drain_leftover(self._snap(1.0, 380.0))
+        ap.drain_leftover(self._snap(2.0, 150.0))
+        ap.drain_leftover(self._snap(3.0, 0.0))
+        ap.drain_leftover(self._snap(4.0, 0.0))
+        self.assertEqual([e for e in events if e in ("open", "close")],
+                         ["open", "close"])
+
+    def test_dry_tank_opens_nothing(self):
+        ap, events = self._ap(autopilot_module.GLIDE)
+        ap.drain_leftover(self._snap(1.0, 0.2))
+        ap.drain_leftover(self._snap(2.0, 0.2))
+        self.assertNotIn("open", events)
+        self.assertEqual(len(events), 1)
