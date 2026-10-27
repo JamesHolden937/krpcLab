@@ -103,7 +103,8 @@ def compacted(name, source):
 
 # The bundle is plain text: a ``#!`` line, this loader (compacted like
 # everything else), then ``_P``, one raw string holding every module as
-# ``name \x1f is_package \x1f source``, joined by ``\x1e``.  Not compressed:
+# ``name `is_package` source``, joined by ``$`` -- two printable characters
+# no compacted source contains (``payload`` refuses one that does).  Not compressed:
 # unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
 # over the sources: packages get a ``__path__`` so relative imports
 # resolve, each module a ``__file__`` beside the bundle, and ``get_source``
@@ -143,8 +144,8 @@ def _main(a):
             del r[i:i+d];break
     sys.argv=[Z]+r;return importlib.import_module(m).main(r)
 """
-TAIL = r"""for e in _P.split("\x1e"):
-    n,k,c=e.split("\x1f",2);S[n]=(k=="1",c)
+TAIL = r"""for e in _P.split("$"):
+    n,k,c=e.split("`",2);S[n]=(k=="1",c)
 sys.meta_path.insert(0,_B())
 if __name__=="__main__":sys.exit(_main(sys.argv[1:]))
 """
@@ -164,6 +165,7 @@ def pilots():
 
 
 DELIMITER = "\x27" * 3
+RECORD, FIELD = "$", "`"       # as ``TAIL`` splits them
 
 
 def payload(modules):
@@ -171,12 +173,13 @@ def payload(modules):
     parts = []
     for name in sorted(modules):
         is_package, source = modules[name]
-        if "\x1e" in source or "\x1f" in source or DELIMITER in source:
-            raise SystemExit("%s contains a separator the bundle's raw "
-                             "string cannot carry" % name)
-        parts.append("%s\x1f%d\x1f%s" % (name, is_package, source))
+        if RECORD in source or FIELD in source or DELIMITER in source:
+            raise SystemExit("%s contains %r, %r or %r, which separate the "
+                             "bundle's modules: pick other separators"
+                             % (name, RECORD, FIELD, DELIMITER))
+        parts.append("%s%s%d%s%s" % (name, FIELD, is_package, FIELD, source))
     # Ends in the last module's newline, so no backslash meets the quotes.
-    return "\x1e".join(parts)
+    return RECORD.join(parts)
 
 
 def unpack(path):
@@ -193,8 +196,8 @@ def unpack(path):
     if blob is None:
         raise SystemExit("bundle has no _P")
     modules = {}
-    for entry in blob.split("\x1e"):
-        name, kind, source = entry.split("\x1f", 2)
+    for entry in blob.split(RECORD):
+        name, kind, source = entry.split(FIELD, 2)
         modules[name] = (kind == "1", source)
     return modules, text[:text.index("_P=r")]
 
@@ -227,6 +230,11 @@ def verify(path, modules):
         text = handle.read()
     if not text.startswith(SHEBANG):
         raise SystemExit("bundle does not start with its #! line")
+    hidden = [c for c in set(text) if c != "\n" and (
+        ord(c) < 32 or 127 <= ord(c) < 160)]
+    if hidden:
+        raise SystemExit("bundle carries control characters %r, which "
+                         "editors show as boxes" % sorted(hidden))
     seen, loader = unpack(path)
     for module, (is_package, source) in modules.items():
         got = seen.get(module)
