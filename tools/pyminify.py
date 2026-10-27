@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Rename every function's local variables to a, b, ..., z, aa, ab, ...
+"""Rename every function's local variables to a, b, ..., z, aa, ab, ...,
+and every method's ``self`` to ``s``.
 
     ./tools/pyminify.py module.py           # the renamed source on stdout
 
@@ -33,8 +34,10 @@ FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
 SCOPES = FUNCS + (ast.Lambda, ast.ClassDef)
 COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 DYNAMIC = {"locals", "vars", "eval", "exec", "dir"}
+# ``SELF`` is what a method's ``self`` becomes, so no local may take it.
+SELF = "s"
 RESERVED = (set(keyword.kwlist) | set(getattr(keyword, "softkwlist", ()))
-            | set(dir(builtins)) | {"_", "self", "cls"})
+            | set(dir(builtins)) | {"_", "self", "cls", SELF})
 
 
 class MinifyError(ValueError):
@@ -186,37 +189,89 @@ def _apply(tree):
     return edits
 
 
+def _self_edits(tree):
+    """``[(node, new)]`` renaming each method's ``self`` to ``SELF``: the
+    parameter (an ``ast.arg``) and every ``Name`` that reads it, nested
+    functions and lambdas included.  Nobody passes ``self`` by keyword.  A
+    method is left alone if anything in it already uses ``SELF``, if a
+    nested scope binds ``self`` again, if ``self`` appears in an f-string,
+    or if it is a ``staticmethod``."""
+    edits = []
+    for cls in ast.walk(tree):
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for func in cls.body:
+            if not isinstance(func, FUNCS):
+                continue
+            if any(getattr(d, "id", "") == "staticmethod"
+                   for d in func.decorator_list):
+                continue
+            first = (func.args.posonlyargs + func.args.args)[:1]
+            if not first or first[0].arg != "self":
+                continue
+            inner = [n for stmt in func.body for n in ast.walk(stmt)]
+            inner += [n for d in func.args.defaults + func.args.kw_defaults
+                      if d for n in ast.walk(d)]
+            if any((isinstance(n, ast.Name) and n.id == SELF)
+                   or (isinstance(n, ast.arg) and n.arg in (SELF, "self"))
+                   or (isinstance(n, SCOPES) and n.name == SELF
+                       if not isinstance(n, ast.Lambda) else False)
+                   or (isinstance(n, ast.Name) and n.id == "self"
+                       and not isinstance(n.ctx, ast.Load))
+                   for n in inner):
+                continue
+            if any(isinstance(m, ast.Name) and m.id == "self"
+                   for n in inner if isinstance(n, ast.JoinedStr)
+                   for m in ast.walk(n)):
+                continue
+            # Defaults are evaluated outside the method: a ``self`` there is
+            # the enclosing scope's, so not this one's to rename.
+            outside = {id(n) for d in func.args.defaults + func.args.kw_defaults
+                       if d for n in ast.walk(d)}
+            edits.append((first[0], SELF))
+            edits += [(n, SELF) for n in inner
+                      if isinstance(n, ast.Name) and n.id == "self"
+                      and id(n) not in outside]
+    return edits
+
+
+def _ident(node):
+    return node.id if isinstance(node, ast.Name) else node.arg
+
+
 def minify(source, name="<source>"):
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise MinifyError("%s does not parse: %s" % (name, exc)) from None
-    edits = _apply(tree)
+    edits = _apply(tree) + _self_edits(tree)
     lines = source.splitlines(keepends=True)
     starts = [0, 0]
     for line in lines:
         starts.append(starts[-1] + len(line))
     spans = []
     for node, new in edits:
+        old = _ident(node)
         row = node.lineno
         text = lines[row - 1]
         col = len(text.encode("utf-8")[:node.col_offset].decode("utf-8"))
         a = starts[row] + col
-        if source[a:a + len(node.id)] != node.id:
+        if source[a:a + len(old)] != old:
             raise MinifyError("%s: %s is not at line %d col %d"
-                              % (name, node.id, row, col))
-        spans.append((a, a + len(node.id), new))
+                              % (name, old, row, col))
+        spans.append((a, a + len(old), new))
     out = source
     for a, b, new in sorted(set(spans), reverse=True):
         out = out[:a] + new + out[b:]
     # The proof of the text edit: the original tree, renamed in the tree.
     want = ast.parse(source)
-    by_pos = {(n.lineno, n.col_offset): new for n, new in edits}
+    by_pos = {(type(n), n.lineno, n.col_offset): new for n, new in edits}
     for node in ast.walk(want):
-        if isinstance(node, ast.Name):
-            new = by_pos.get((node.lineno, node.col_offset))
+        if isinstance(node, (ast.Name, ast.arg)):
+            new = by_pos.get((type(node), node.lineno, node.col_offset))
             if new is not None:
-                node.id = new
+                setattr(node, "id" if isinstance(node, ast.Name) else "arg",
+                        new)
     try:
         got = ast.parse(out)
     except SyntaxError as exc:

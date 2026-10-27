@@ -8,7 +8,9 @@ onto its first, a space between two tokens only where they would otherwise
 run together, consecutive simple statements joined with ``;``, and a block
 whose body is simple statements put on its header's line (``if x:return``).
 Comments must already be gone (``pystrip``); strings, f-strings included,
-are copied from the source exactly.
+are copied from the source exactly; adjacent plain string literals are
+joined (``"a" "b"`` -> ``"ab"``) and float literals take their shortest
+spelling (``0.5`` -> ``.5``, ``1e-05`` -> ``1e-5``).
 
 **Checked against the parser**: the result must parse to the identical tree
 or ``compact`` raises.
@@ -81,8 +83,65 @@ def _lines(source):
     return out
 
 
+def _plain(text):
+    """The value of a plain (not f-, not bytes) string literal, else None."""
+    prefix = text[:len(text) - len(text.lstrip("rRuUbBfFtT"))].lower()
+    if any(c in prefix for c in "bft"):
+        return None
+    try:
+        value = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _number(text):
+    """The shortest spelling of a float literal (``0.5`` -> ``.5``,
+    ``1.0`` -> ``1.``, ``0.00001`` -> ``1e-5``); ints and complex as they are."""
+    lower = text.lower()
+    if lower.endswith("j") or lower.startswith("0x") or lower.startswith(
+            "0o") or lower.startswith("0b") or not ("." in lower or "e" in lower):
+        return text
+    value = float(text.replace("_", ""))
+    best = text
+    r = repr(value)
+    for cand in (r, r[:-1] if r.endswith(".0") else r,
+                 r[1:] if r.startswith("0.") else r):
+        if cand and float(cand) == value and ("." in cand or "e" in cand) \
+                and len(cand) < len(best):
+            best = cand
+    # Exponent forms: 1e-05 -> 1e-5, 1000000.0 -> 1e6.
+    for digits in range(1, 18):
+        cand = ("%." + str(digits) + "g") % value
+        cand = cand.replace("e-0", "e-").replace("e+0", "e").replace("e+", "e")
+        if "." not in cand and "e" not in cand:
+            continue
+        if float(cand) == value and len(cand) < len(best):
+            best = cand
+            break
+    return best
+
+
+def _merge(tokens):
+    """Adjacent plain string literals become one (``"a" "b"`` -> ``"ab"``),
+    numbers their shortest spelling."""
+    out = []
+    for kind, s in tokens:
+        if kind == tokenize.NUMBER:
+            s = _number(s)
+        elif (kind == tokenize.STRING and out and out[-1][0] == tokenize.STRING
+              and _plain(out[-1][1]) is not None and _plain(s) is not None):
+            joined = repr(_plain(out[-1][1]) + _plain(s))
+            if len(joined) < len(out[-1][1]) + len(s) + 1:
+                out[-1] = (kind, joined)
+                continue
+        out.append((kind, s))
+    return out
+
+
 def _join(tokens):
     """One logical line's tokens with only the spaces that are needed."""
+    tokens = _merge(tokens)
     text = ""
     prev = None
     for kind, s in tokens:

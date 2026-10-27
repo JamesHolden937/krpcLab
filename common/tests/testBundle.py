@@ -129,6 +129,16 @@ class TestTheRenamer(unittest.TestCase):
         self.assertIn("height", out)
         self.run_both(src, "(f(), g())")
 
+    def test_self_becomes_s(self):
+        src = ("class A:\n"
+               "    def __init__(self, v):\n        self.v = v\n"
+               "    def get(self):\n        return (lambda: self.v)()\n"
+               "    @staticmethod\n    def same(self):\n        return self\n")
+        out = pyminify.minify(src)
+        self.assertIn("def get(s):", out)
+        self.assertIn("def same(self):", out)
+        self.run_both(src, "(A(3).get(), A.same(4))")
+
     def test_names_count_up(self):
         self.assertEqual([pyminify.names(i) for i in (0, 25, 26, 27, 701)],
                          ["a", "z", "aa", "ab", "zz"])
@@ -156,6 +166,14 @@ class TestTheCompactor(unittest.TestCase):
         src = ('def f(x):\n    r = 1 if x else 2\n    s = r .real\n'
                '    t = 1 .real\n    u = "a" """b"""\n    return r, s, t, u\n')
         self.same(src, "f(0)")
+
+    def test_literals_take_their_shortest_spelling(self):
+        self.assertEqual(pycompact.compact('x = ("a "\n     "b")\ny = 0.5\n'),
+                         "x=('a b');y=.5\n")
+        for t in ("1.0", "0.00001", "1000000.0", "3.14159", "0x1F", "10"):
+            self.assertEqual(float(pycompact._number(t)) if "x" not in t
+                             else int(t, 16), float(t) if "x" not in t
+                             else int(t, 16))
 
     def test_fstrings_survive_exactly(self):
         src = 'def f(x):\n    return f"{{x}} {x!r:>5} {\'a\'}"\n'
