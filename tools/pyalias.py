@@ -8,7 +8,8 @@ reads each of those builtins through its alias, where that saves bytes.  A
 builtin is aliased only if nothing in the module binds its name (so every
 read of it is the builtin), and never ``super`` (the zero-argument form
 needs its own name) or one of the builtins that read the calling scope.
-Reads inside f-strings and annotations keep the builtin's name.  Alias
+Reads inside f-strings, and inside annotations a module postpones, keep
+the builtin's name.  Alias
 names are capitals no part of the module uses.
 
 **Proven**: delete the alias line from the result, put the builtins' names
@@ -49,11 +50,20 @@ def _bound(tree):
 
 
 def _skipped(tree):
-    """ids of Name nodes inside f-strings and annotations."""
+    """ids of Name nodes inside f-strings, and inside annotations when the
+    module postpones them (``from __future__ import annotations``: then they
+    are text some later reader resolves).  An evaluated annotation is an
+    ordinary read, made after the alias line -- a dataclass field's type is
+    the same object either way."""
+    postponed = any(isinstance(n, ast.ImportFrom) and n.module == "__future__"
+                    and any(a.name == "annotations" for a in n.names)
+                    for n in tree.body)
     roots = []
     for n in ast.walk(tree):
         if isinstance(n, ast.JoinedStr):
             roots.append(n)
+        elif not postponed:
+            continue
         elif isinstance(n, ast.arg) and n.annotation is not None:
             roots.append(n.annotation)
         elif isinstance(n, ast.AnnAssign):

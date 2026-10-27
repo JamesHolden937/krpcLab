@@ -615,12 +615,26 @@ def minify(source, name="<source>", outside=None, attributes=None,
     return _rewrite(source, _apply(tree, free) + _self_edits(tree), name)
 
 
+# Callees whose keywords stay their own: attributes of the namespace made,
+# or ``Thread``'s parameters.  They reach a function of ours only through a
+# namespace splatted back out (``f(**vars(ns))``, ``f(**ns.__dict__)``).
+OWN_KEYWORDS = {"SimpleNamespace", "Thread"}
+
+
+def _splats_a_namespace(call):
+    return any(k.arg is None and (
+        (isinstance(k.value, ast.Call) and _ident_of(k.value.func) == "vars")
+        or (isinstance(k.value, ast.Attribute)
+            and k.value.attr == "__dict__")) for k in call.keywords)
+
+
 def free_parameters(sources, outside, callers=()):
     """``(function name, parameter)`` pairs no call can pass by keyword.  A
     keyword at a call to a function the sources define (by its last name:
     ``f(...)``, ``x.f(...)``) pins that parameter in every function so
-    named; one at any other call (``partial``, ``SimpleNamespace``, a name
-    some variable or attribute also holds) pins it everywhere, as does a
+    named; one at any other call (``partial``, ``dict``, a name some
+    variable or attribute also holds) pins it everywhere -- ``OWN_KEYWORDS``
+    excepted while no namespace is splatted into a function -- as does a
     word of a string that can become a dict key (``f(**{"name": ...})``)
     or of ``outside``.  ``callers`` (the tests) pin the same way but
     have no parameters of their own to free.  ``*args``/``**kwargs`` always move; a
@@ -644,6 +658,10 @@ def free_parameters(sources, outside, callers=()):
     known = defined - held - classes
     # A call to a class reaches only ``__init__``, whose parameters stay.
     constructors = classes - held - defined
+    if not any(isinstance(n, ast.Call) and _splats_a_namespace(n)
+               and _ident_of(n.func) not in constructors | OWN_KEYWORDS
+               for tree in every for n in ast.walk(tree)):
+        constructors |= OWN_KEYWORDS - held - defined
     everywhere, pinned = set(outside), set()
     for tree in every:
         # Only a string that can become a dict key reaches ``f(**d)``.

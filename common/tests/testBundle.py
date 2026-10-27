@@ -199,7 +199,10 @@ class TestTheRenamer(unittest.TestCase):
         free = pyminify.free_parameters([src], set())
         self.assertIn(("area", "width"), free)
         self.assertNotIn(("area", "height"), free)   # area(height=...)
-        self.assertNotIn(("volume", "depth"), free)  # SimpleNamespace(depth=)
+        self.assertIn(("volume", "depth"), free)  # SimpleNamespace's own
+        splat = src + "def again():\n    return volume(1, **vars(ns(2)))\n"
+        self.assertNotIn(("volume", "depth"),
+                         pyminify.free_parameters([splat], set()))
         out = pyminify.minify(src, outside={"run", "area", "volume", "ns"},
                               free=free)
         self.assertIn("height", out)
@@ -280,6 +283,23 @@ class TestTheAliaser(unittest.TestCase):
     def test_a_rebound_builtin_and_super_are_left(self):
         src = ("len = 3\nclass K(object):\n    def m(self):\n"
                "        return super().__init__, len, len, len, len\n")
+        self.assertEqual(pyalias.alias(src), src)
+
+    def test_a_dataclass_keeps_its_field_types(self):
+        src = ("from dataclasses import dataclass, fields\n@dataclass\n"
+               "class C:\n" + "".join("    X%d: float = 1.0\n" % i
+                                       for i in range(6)))
+        out = pyalias.alias(src)
+        self.assertIn("X0: A = 1.0", out)
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        self.assertEqual([f.type for f in b["fields"](b["C"])],
+                         [float] * 6)
+
+    def test_postponed_annotations_are_left(self):
+        src = ("from __future__ import annotations\n"
+               + "".join("X%d: float = 1.0\n" % i for i in range(6)))
         self.assertEqual(pyalias.alias(src), src)
 
 
