@@ -12,6 +12,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bundle    # noqa: E402
+import pyminify  # noqa: E402
 import pystrip   # noqa: E402
 
 
@@ -74,6 +75,62 @@ class TestTheStripper(unittest.TestCase):
                 pystrip.strip("x = 1  # c\n")
         finally:
             pystrip._without_docstrings = original
+
+
+class TestTheRenamer(unittest.TestCase):
+    """Locals become a, b, ...; nothing anyone outside can see moves."""
+
+    def run_both(self, src, call):
+        before, after = {}, {}
+        exec(src, before)
+        exec(pyminify.minify(src), after)
+        self.assertEqual(eval(call, before), eval(call, after))
+
+    def test_locals_shrink_and_params_stay(self):
+        src = ("def f(speed, height=2):\n"
+               "    total = speed + height\n"
+               "    doubled = total * 2\n"
+               "    return doubled\n")
+        out = pyminify.minify(src)
+        self.assertIn("def f(speed, height=2):", out)
+        self.assertNotIn("total", out)
+        self.run_both(src, "f(3, height=4)")
+
+    def test_a_closure_keeps_its_name(self):
+        src = ("def f():\n"
+               "    kept = 5\n"
+               "    gone = 1\n"
+               "    return (lambda: kept)() + gone\n")
+        out = pyminify.minify(src)
+        self.assertIn("kept", out)
+        self.assertNotIn("gone", out)
+        self.run_both(src, "f()")
+
+    def test_no_new_name_hides_a_global(self):
+        src = ("a = 10\n"
+               "def f():\n"
+               "    local = 1\n"
+               "    return local + a\n")
+        self.run_both(src, "f()")
+
+    def test_comprehension_targets_shadow(self):
+        src = ("def f():\n"
+               "    value = 3\n"
+               "    out = [value + i for i in range(value)]\n"
+               "    return out, [x for x in out]\n")
+        self.run_both(src, "f()")
+
+    def test_fstrings_and_dynamic_scopes_are_left_alone(self):
+        src = ("def f():\n    width = 4\n    return f'{width}'\n"
+               "def g():\n    height = 2\n    return locals()\n")
+        out = pyminify.minify(src)
+        self.assertIn("width", out)
+        self.assertIn("height", out)
+        self.run_both(src, "(f(), g())")
+
+    def test_names_count_up(self):
+        self.assertEqual([pyminify.names(i) for i in (0, 25, 26, 27, 701)],
+                         ["a", "z", "aa", "ab", "zz"])
 
 
 class TestTheSingleFileExport(unittest.TestCase):

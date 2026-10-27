@@ -66,3 +66,5 @@ saves/qs_shuttle2_fwdwing40_rigoff.sfs
 saves/qs_shuttle2_fwdwing45_rigoff.sfs
 saves/qs_shuttle2_fwdwing50_rigoff.sfs
 .git-bundle-error.log
+.git-bundle-suite.py
+.git-bundle-suite.py.lock

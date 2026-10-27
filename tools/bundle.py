@@ -47,6 +47,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pyminify  # noqa: E402
 import pystrip  # noqa: E402
 
 # Every package an autopilot in ``common.launcher.PILOTS`` imports.
@@ -77,12 +78,14 @@ def collect(packages):
 
 
 def stripped(modules):
-    """``collect``'s modules with comments and docstrings removed: what the
-    bundle carries.  ``pystrip`` raises rather than change a program."""
+    """``collect``'s modules with comments and docstrings removed and every
+    function's locals renamed a, b, ... (``pyminify``): what the bundle
+    carries.  Both raise rather than change a program."""
     try:
-        return {name: (is_package, pystrip.strip(source, name))
+        return {name: (is_package, pyminify.minify(
+                    pystrip.strip(source, name), name))
                 for name, (is_package, source) in modules.items()}
-    except pystrip.StripError as exc:
+    except (pystrip.StripError, pyminify.MinifyError) as exc:
         raise SystemExit("cannot strip: %s" % exc)
 
 
@@ -128,8 +131,10 @@ class _Bundled(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         module.__file__ = os.path.join(
             _HERE, *(parts + ["__init__.py"] if is_package
                      else parts[:-1] + [parts[-1] + ".py"]))
-        exec(compile(source, "<bundled %s>" % module.__name__, "exec"),
-             module.__dict__)
+        exec(compile(source, module.__file__, "exec"), module.__dict__)
+
+    def get_source(self, name):
+        return self.modules[name][1]
 
 
 def _install():
@@ -344,6 +349,62 @@ def ensure(out=DEFAULT):
     return out
 
 
+def suite(path):
+    """Every bundled package's offline tests with the bundle's modules in
+    place of the tree's: the tests come from the tree, everything they test
+    from ``path``.  What proves the renaming kept every program the same."""
+    probe = """import os, sys, types, unittest
+sys.path.insert(0, {root!r})
+source = open({path!r}, encoding='utf-8').read()
+space = {{'__name__': 'bundled', '__file__': {path!r}}}
+exec(compile(source, {path!r}, 'exec'), space)
+import importlib
+for pkg in {packages!r}:
+    mod = importlib.import_module(pkg)
+    mod.__path__.append(os.path.join({root!r}, pkg))
+    assert mod.__file__.startswith(os.path.dirname({path!r})), mod.__file__
+tests = unittest.TestSuite(
+    unittest.defaultTestLoader.discover(os.path.join({root!r}, pkg, 'tests'),
+                                        top_level_dir={root!r})
+    for pkg in {packages!r} if os.path.isdir(os.path.join({root!r}, pkg, 'tests')))
+result = unittest.TextTestRunner(verbosity=0).run(tests)
+for pkg in {packages!r}:
+    for name, mod in list(sys.modules.items()):
+        if (name == pkg or name.startswith(pkg + '.')) and '.tests' not in name:
+            f = getattr(mod, '__file__', '') or ''
+            assert not f.startswith({root!r} + os.sep + pkg), (
+                name + ' came from the tree')
+import inspect
+text_tests, real = [], []
+for test, trace in result.failures + result.errors:
+    try:
+        body = inspect.getsource(type(test))
+    except (OSError, TypeError):
+        body = ''
+    reads_source = any(k in body for k in ('getsource', '__file__', 'open('))
+    (text_tests if reads_source else real).append(test.id())
+for name in real:
+    print('REAL FAILURE', name)
+sys.stderr.write('%d tests, %d behaviour failures, %d source-text tests '
+                 'excused\\n' % (result.testsRun, len(real), len(text_tests)))
+sys.exit(1 if real else 0)
+""".format(root=ROOT, path=path, packages=PACKAGES)
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tmp:
+        tmp.write(probe)
+        probe_path = tmp.name
+    try:
+        done = subprocess.run([sys.executable, probe_path], cwd=ROOT,
+                              capture_output=True, text=True,
+                              env=dict(os.environ, KRPCLAB_BUNDLE_SUITE="1"))
+    finally:
+        os.unlink(probe_path)
+    tail = (done.stderr.strip().splitlines() or ["?"])
+    if done.returncode != 0:
+        sys.stderr.write(done.stdout + done.stderr)
+        raise SystemExit("the suite fails against the bundle")
+    return "suite ok against the bundle: " + " ".join(tail[-3:])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-o", "--out", default=None,
@@ -353,6 +414,8 @@ def main(argv=None):
     parser.add_argument("--if-stale", action="store_true",
                         help="only if a source is newer than the bundle")
     parser.add_argument("-q", "--quiet", action="store_true")
+    parser.add_argument("--suite", action="store_true",
+                        help="also run every offline test against the bundle")
     args = parser.parse_args(argv)
 
     out = os.path.abspath(args.out or DEFAULT)
@@ -361,6 +424,8 @@ def main(argv=None):
             print("%s  up to date" % out)
         return 0
     out, count, note = write(out, test=not args.no_selftest)
+    if args.suite:
+        note = (note + "  " if note else "") + suite(out)
     if not args.quiet:
         print("%s  %d modules  %.0f kB%s" % (
             out, count, os.path.getsize(out) / 1024.0,
