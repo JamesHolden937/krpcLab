@@ -33,9 +33,10 @@ vec`` keeps working because the package modules are real packages with a
 bundle, so paths derived from it land beside the file.
 
 Nobody reads the file -- the tree is the readable copy -- so it is as small
-as it can be made: comments and docstrings stripped (``pystrip``), locals
-renamed (``pyminify``), whitespace squeezed (``pycompact``), each proven by
-the parser.  Not compressed: unpacking would cost every start.
+as it can be made: comments and docstrings stripped (``pystrip``), every
+name nothing outside the bundle can reach renamed (``pyminify``; ``outsiders``
+and ``foreign`` say what can), builtins aliased (``pyalias``), whitespace
+squeezed (``pycompact``), each proven by the parser.  Not compressed: unpacking would cost every start.
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
