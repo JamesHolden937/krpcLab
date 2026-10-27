@@ -189,6 +189,38 @@ class TestTheRenamer(unittest.TestCase):
         exec(pyminify.minify(src, outside=set(), attributes=plan), after)
         self.assertEqual(before["f"](), after["f"]())
 
+    def test_a_parameter_moves_unless_some_call_names_it(self):
+        src = ("from types import SimpleNamespace\n"
+               "def area(width, height):\n    return width * height\n"
+               "def volume(width, depth):\n    return width * depth\n"
+               "def ns(depth):\n    return SimpleNamespace(depth=depth)\n"
+               "def run():\n"
+               "    return area(2, height=3) + volume(4, 5) + ns(1).depth\n")
+        free = pyminify.free_parameters([src], set())
+        self.assertIn(("area", "width"), free)
+        self.assertNotIn(("area", "height"), free)   # area(height=...)
+        self.assertNotIn(("volume", "depth"), free)  # SimpleNamespace(depth=)
+        out = pyminify.minify(src, outside={"run", "area", "volume", "ns"},
+                              free=free)
+        self.assertIn("height", out)
+        self.assertNotIn("def area(width", out)
+        before, after = {}, {}
+        exec(src, before)
+        exec(out, after)
+        self.assertEqual(before["run"](), after["run"]())
+
+    def test_an_import_takes_a_short_alias(self):
+        src = ("import collections\nimport math\n"
+               "def f(x):\n    return math.sqrt(x) + len(collections.deque())\n")
+        out = pyminify.minify(src, outside={"math", "collections"},
+                              imports_outside={"collections"})
+        self.assertIn("import math as ", out)
+        self.assertNotIn("collections as", out)
+        before, after = {}, {}
+        exec(src, before)
+        exec(out, after)
+        self.assertEqual(before["f"](4), after["f"](4))
+
     def test_names_count_up(self):
         self.assertEqual([pyminify.names(i) for i in (0, 25, 26, 27, 701)],
                          ["a", "z", "aa", "ab", "zz"])

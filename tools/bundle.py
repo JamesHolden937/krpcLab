@@ -42,7 +42,9 @@ ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
 carried: they belong to the tree.
 """
 import argparse
+import ast
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -81,6 +83,7 @@ def collect(packages):
     return modules
 
 
+ASSIGNED = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)")
 # Files whose words cannot name code: prose, saves, craft, binaries.
 NOT_CODE = (".md", ".pdf", ".sfs", ".craft", ".loadmeta", ".bin", ".u8",
             ".png", ".jpg", ".svg")
@@ -88,31 +91,57 @@ NOT_CODE = (".md", ".pdf", ".sfs", ".craft", ".loadmeta", ".bin", ".u8",
 
 def outsiders(modules):
     """``(name -> every identifier some other tracked file mentions, every
-    identifier a file outside the bundle mentions)``: what ``pyminify`` must
-    not rename in that module, and in any, since a test, a tool, a shell
-    script or another module may reach it by name."""
+    identifier a file outside the bundle mentions, every word of the shell
+    scripts among them, every ``name=`` in those that are not Python, and the Python ones'
+    sources -- which
+    ``pyminify.free_parameters`` reads for the calls they make)``: what ``pyminify`` must
+    not rename in that module, and in any, since a test, a shell script or
+    another module may reach it by name.  Python outside the bundled
+    packages and their tests is not read (see below)."""
     try:
         listed = subprocess.run(["git", "ls-files"], cwd=ROOT, check=True,
                                 capture_output=True, text=True).stdout.split()
     except (OSError, subprocess.CalledProcessError):
         raise SystemExit("bundle: git ls-files failed; cannot tell which "
                          "names other files use")
+    bundled = {name.replace(".", "/") + ("/__init__.py" if is_package
+                                         else ".py")
+               for name, (is_package, _) in modules.items()}
+    tests = [rel for rel in listed if "/tests/" in rel and rel.endswith(".py")]
+    tested = set()
+    for rel in tests:
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+            tested |= set(pyminify.WORD.findall(handle.read()))
     words = {}
     for rel in listed:
         if rel.endswith(NOT_CODE):
+            continue
+        # A tool imports the tree, never the bundle, so its names do not
+        # bind it -- unless a test imports the tool: under ``--suite`` that
+        # tool then reads the bundle.
+        stem = os.path.splitext(os.path.basename(rel))[0]
+        if (rel.endswith(".py") and rel not in bundled and rel not in tests
+                and stem not in tested):
             continue
         try:
             with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
                 words[rel] = set(pyminify.WORD.findall(handle.read()))
         except (OSError, UnicodeDecodeError):
             continue
-    bundled = {name.replace(".", "/") + ("/__init__.py" if is_package
-                                         else ".py")
-               for name, (is_package, _) in modules.items()}
-    beyond = set()
+    beyond, beyond_other, keywords, callers = set(), set(), set(), []
     for rel, found in words.items():
-        if rel not in bundled:
-            beyond |= found
+        if rel in bundled:
+            continue
+        beyond |= found
+        if rel.endswith(".sh") or "." not in os.path.basename(rel):
+            beyond_other |= found   # a script can run Python
+        if rel.endswith(".py"):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+                callers.append(handle.read())
+        else:
+            # Only Python inlined in a script can pass a keyword: name=.
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+                keywords |= set(ASSIGNED.findall(handle.read()))
     every = {}
     for found in words.values():
         for w in found:
@@ -122,7 +151,7 @@ def outsiders(modules):
         rel = name.replace(".", "/") + ("/__init__.py" if is_package else ".py")
         own = words.get(rel, set())
         out[name] = {w for w, n in every.items() if n - (w in own) > 0}
-    return out, beyond
+    return out, beyond, beyond_other, keywords, callers
 
 
 # Where kRPC's service definitions are: the farm's game, else the live one.
@@ -143,7 +172,6 @@ def foreign(sources):
     of every module the sources import, the standard library's included.
     ``complete`` is False when no service definitions were found: then only
     private attributes may be renamed."""
-    import ast
     import importlib
     import json
     out = set()
@@ -212,16 +240,49 @@ def stripped(modules):
     one-letter aliases (``pyalias``) and the whitespace squeezed out
     (``pycompact``): what the bundle carries.  Each raises
     rather than change a program."""
-    outside, beyond = outsiders(modules)
+    outside, beyond, beyond_other, keywords, callers = outsiders(modules)
     try:
         bare = {name: pystrip.strip(source, name)
                 for name, (_, source) in modules.items()}
         names, complete = foreign(bare.values())
         attributes = pyminify.attribute_plan(
             bare, beyond, names, private_only=not complete)
+        free = pyminify.free_parameters(bare.values(), keywords,
+                                         callers)
+        # What can reach ``module.name``: an attribute read, a ``from module``
+        # import or a string (``mock.patch("m.name")``, not a docstring) in
+        # any Python, and any word of a shell script.
+        reached, imported = set(beyond_other), {}
+        sources = [(name, source) for name, source in bare.items()]
+        sources += [(None, source) for source in callers]
+        for importer, source in sources:
+            tree = ast.parse(source)
+            docs = {id(n.value) for n in ast.walk(tree)
+                    if isinstance(n, ast.Expr)}
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Attribute):
+                    reached.add(n.attr)
+                elif isinstance(n, ast.ImportFrom):
+                    origin = n.module or ""
+                    if n.level and importer:
+                        base = importer.split(".")
+                        if not modules[importer][0]:
+                            base = base[:-1]
+                        base = base[:len(base) - n.level + 1]
+                        origin = ".".join(base + ([origin] if origin else []))
+                    names = {al.name for al in n.names}
+                    if "*" in names:
+                        raise SystemExit("bundle: %s star-imports %s"
+                                         % (importer, origin))
+                    imported.setdefault(origin, set()).update(names)
+                elif (isinstance(n, ast.Constant) and isinstance(n.value, str)
+                      and id(n) not in docs):
+                    reached |= set(pyminify.WORD.findall(n.value))
         return {name: (is_package, compacted(name, pyalias.alias(
                     pyminify.minify(bare[name], name, outside[name],
-                                    attributes), name)))
+                                    attributes, free,
+                                    reached | imported.get(name, set())),
+                    name)))
                 for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyalias.AliasError) as exc:

@@ -3,12 +3,15 @@
 ..., z, aa, ab, ..., every method's ``self`` to ``s``, and every
 module-level function nothing outside its module names.
 
+Parameters stay (a caller may pass them by keyword) unless ``free`` lists
+them: ``free_parameters`` over every module shipped together.
+
     ./tools/pyminify.py module.py           # the renamed source on stdout
 
 ``minify(source)`` renames, per function, the names the function binds
 itself and nothing outside it can see.  Left alone:
 
-- parameters (a caller may pass them by keyword), module and class names
+- parameters not in ``free``, module and class names
   (other modules and ``--set`` reach them), attributes, keyword arguments;
 - a name bound by ``import``, ``except ... as``, ``global``/``nonlocal``, or a
   ``match`` pattern (the function is skipped);
@@ -23,7 +26,7 @@ A nested ``def`` is a local like any other (and, like one, keeps its name
 if a nested scope -- itself included -- reads it).
 
 ``minify(source, name, outside)`` also renames a module-level function,
-class or variable when ``outside`` (every identifier any *other* file
+class, variable or import (``import math as a``) when ``outside`` (every identifier any *other* file
 mentions) lacks its name and the module binds that name nowhere else, never
 reads it in a string or an f-string, and never calls ``globals``/``vars``/
 ``eval``/``exec``.  ``minify(..., attributes=attribute_plan(...))`` renames
@@ -94,8 +97,10 @@ def _own_nodes(func):
         stack.extend(ast.iter_child_nodes(node))
 
 
-def _plan(func):
-    """``{old: new}`` for one function, or ``{}``."""
+def _plan(func, free=frozenset()):
+    """``{old: new}`` for one function, or ``{}``.  ``free`` holds the
+    ``(function, parameter)`` pairs no caller can pass by keyword; those
+    move like locals."""
     own = list(_own_nodes(func))
     every = [n for n in ast.walk(func)]
     used = {n.id for n in every if isinstance(n, ast.Name)}
@@ -118,8 +123,13 @@ def _plan(func):
             for g in n.generators:
                 comp_targets |= {t.id for t in ast.walk(g.target)
                                  if isinstance(t, ast.Name)}
-    bound = set()
-    excluded = set(params) | comp_targets
+    movable = set()
+    if not (func.name.startswith("__") and func.name.endswith("__")):
+        movable = {p for p in params if (func.name, p) in free} - {
+            "self", "cls"}
+        movable |= {v.arg for v in (a.vararg, a.kwarg) if v}
+    bound = set(movable)
+    excluded = (set(params) - movable) | comp_targets
     for n in own:
         if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
             bound.add(n.id)
@@ -166,16 +176,20 @@ def _plan(func):
     return plan
 
 
-def _apply(tree):
+def _apply(tree, free=frozenset()):
     """``[(node, new)]`` for every ``Name`` to rename, innermost function's
     plan first, comprehension targets shadowing it."""
     edits = []
     for func in ast.walk(tree):
         if not isinstance(func, FUNCS):
             continue
-        plan = _plan(func)
+        plan = _plan(func, free)
         if not plan:
             continue
+        a = func.args
+        edits += [(x, plan[x.arg]) for x in a.posonlyargs + a.args
+                  + a.kwonlyargs + [v for v in (a.vararg, a.kwarg) if v]
+                  if x.arg in plan]
 
         def visit(node, shadow):
             if isinstance(node, SCOPES) and node is not func:
@@ -260,7 +274,7 @@ def _self_edits(tree):
     return edits
 
 
-def _module_edits(tree, outside):
+def _module_edits(tree, outside, imports_outside=None):
     """``[(node, new)]`` renaming what only this module can name: its
     functions, classes and variables bound once at the top level.  See the
     module docstring for what is refused."""
@@ -280,7 +294,16 @@ def _module_edits(tree, outside):
         binds[k] = binds.get(k, 0) + 1
         idents.add(k)
 
+    top_aliases = set()
     for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)) and not (
+                isinstance(stmt, ast.ImportFrom)
+                and stmt.module == "__future__"):
+            for al in stmt.names:
+                k = al.asname or al.name
+                if "." not in k and k != "*":
+                    top[k] = al
+                    top_aliases.add(id(al))
         if isinstance(stmt, FUNCS + (ast.ClassDef,)):
             top[stmt.name] = stmt
             if isinstance(stmt, ast.ClassDef) and any(
@@ -322,7 +345,11 @@ def _module_edits(tree, outside):
         elif isinstance(n, (ast.Import, ast.ImportFrom)):
             for al in n.names:
                 idents |= set(al.name.split("."))
-                refused.add((al.asname or al.name).split(".")[0])
+                k = (al.asname or al.name).split(".")[0]
+                if id(al) in top_aliases:
+                    bind(k)
+                else:
+                    refused.add(k)
                 if al.asname:
                     idents.add(al.asname)
         elif isinstance(n, (ast.Global, ast.Nonlocal)):
@@ -346,8 +373,12 @@ def _module_edits(tree, outside):
     def dunder(k):
         return k.startswith("__")
 
+    # An import is reached from outside only as ``module.name`` or
+    # ``from module import name``: ``imports_outside`` says which can be.
     plain = [k for k, node in top.items()
-             if binds.get(k) == 1 and k not in refused and k not in outside
+             if binds.get(k) == 1 and k not in refused
+             and k not in (imports_outside if id(node) in top_aliases
+                           and imports_outside is not None else outside)
              and k not in class_level and not dunder(k)]
     count = {k: len(reads.get(k, ())) + 1 for k in plain}
     rename = sorted(count, key=lambda k: (-count[k], k))
@@ -492,6 +523,8 @@ def _ident_of(node):
 
 
 def _ident(node):
+    if isinstance(node, ast.alias):
+        return node.asname or node.name
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -506,11 +539,12 @@ def _key(node):
 
 def _start(node, lines, starts, source):
     """Offset of ``node``'s identifier in the source."""
-    if isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute) or (isinstance(node, ast.alias)
+                                           and node.asname):
         row, col_b = node.end_lineno, node.end_col_offset
         text = lines[row - 1]
         col = len(text.encode("utf-8")[:col_b].decode("utf-8"))
-        return starts[row] + col - len(node.attr)
+        return starts[row] + col - len(_ident(node))
     row = node.lineno
     text = lines[row - 1]
     col = len(text.encode("utf-8")[:node.col_offset].decode("utf-8"))
@@ -536,6 +570,8 @@ def _rewrite(source, edits, name):
         if source[a:a + len(old)] != old:
             raise MinifyError("%s: %s is not at line %d"
                               % (name, old, node.lineno))
+        if isinstance(node, ast.alias) and not node.asname:
+            new = "%s as %s" % (old, new)   # import x -> import x as a
         spans.append((a, a + len(old), new))
     out = source
     for a, b, new in sorted(set(spans), reverse=True):
@@ -543,10 +579,11 @@ def _rewrite(source, edits, name):
     # The proof of the text edit: the original tree, renamed in the tree.
     want = ast.parse(source)
     by_pos = {_key(n): new for n, new in edits}
-    field = {ast.Name: "id", ast.arg: "arg", ast.Attribute: "attr"}
+    field = {ast.Name: "id", ast.arg: "arg", ast.Attribute: "attr",
+             ast.alias: "asname"}
     for node in ast.walk(want):
-        if isinstance(node, (ast.Name, ast.arg, ast.Attribute, ast.ClassDef)
-                      + FUNCS):
+        if isinstance(node, (ast.Name, ast.arg, ast.Attribute, ast.ClassDef,
+                             ast.alias) + FUNCS):
             new = by_pos.get(_key(node))
             if new is not None:
                 setattr(node, field.get(type(node), "name"), new)
@@ -560,18 +597,86 @@ def _rewrite(source, edits, name):
     return out
 
 
-def minify(source, name="<source>", outside=None, attributes=None):
+def minify(source, name="<source>", outside=None, attributes=None,
+           free=frozenset(), imports_outside=None):
     """``attributes`` is ``attribute_plan``'s, made over every module this
-    one ships with."""
+    one ships with; ``free``, ``free_parameters``'; ``imports_outside``,
+    every name some module reads as an attribute or imports by name, and
+    every word outside the bundle."""
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise MinifyError("%s does not parse: %s" % (name, exc)) from None
     source = _rewrite(source, _attribute_edits(tree, attributes), name)
     tree = ast.parse(source)
-    source = _rewrite(source, _module_edits(tree, outside), name)
+    source = _rewrite(source, _module_edits(tree, outside, imports_outside),
+                      name)
     tree = ast.parse(source)
-    return _rewrite(source, _apply(tree) + _self_edits(tree), name)
+    return _rewrite(source, _apply(tree, free) + _self_edits(tree), name)
+
+
+def free_parameters(sources, outside, callers=()):
+    """``(function name, parameter)`` pairs no call can pass by keyword.  A
+    keyword at a call to a function the sources define (by its last name:
+    ``f(...)``, ``x.f(...)``) pins that parameter in every function so
+    named; one at any other call (``partial``, ``SimpleNamespace``, a name
+    some variable or attribute also holds) pins it everywhere, as does a
+    word of a string that can become a dict key (``f(**{"name": ...})``)
+    or of ``outside``.  ``callers`` (the tests) pin the same way but
+    have no parameters of their own to free.  ``*args``/``**kwargs`` always move; a
+    dunder's parameters never do."""
+    trees = [ast.parse(source) for source in sources]
+    every = trees + [ast.parse(source) for source in callers]
+    defined, classes, held = set(), set(), set()
+    for tree in every:
+        for n in ast.walk(tree):
+            if isinstance(n, FUNCS):
+                defined.add(n.name)
+            elif isinstance(n, ast.ClassDef):
+                classes.add(n.name)
+            elif isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+                held.add(n.id)
+            elif isinstance(n, ast.Attribute) and not isinstance(
+                    n.ctx, ast.Load):
+                held.add(n.attr)
+            elif isinstance(n, ast.arg):
+                held.add(n.arg)
+    known = defined - held - classes
+    # A call to a class reaches only ``__init__``, whose parameters stay.
+    constructors = classes - held - defined
+    everywhere, pinned = set(outside), set()
+    for tree in every:
+        # Only a string that can become a dict key reaches ``f(**d)``.
+        keys = {id(k) for n in ast.walk(tree) if isinstance(n, ast.Dict)
+                for k in n.keys if k is not None}
+        keys |= {id(m) for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and _ident_of(n.func) in ("dict", "fromkeys", "zip")
+                 for a in n.args for m in ast.walk(a)}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call):
+                callee = _ident_of(n.func)
+                if callee in constructors:
+                    continue
+                for k in n.keywords:
+                    if k.arg is None:   # f(**kw): any of f's
+                        pinned.add((callee, "*"))
+                    elif callee in known:
+                        pinned.add((callee, k.arg))
+                    else:
+                        everywhere.add(k.arg)
+            elif (isinstance(n, ast.Constant) and isinstance(n.value, str)
+                  and id(n) in keys):
+                everywhere |= set(WORD.findall(n.value))
+    out = set()
+    for tree in trees:
+        for f in ast.walk(tree):
+            if isinstance(f, FUNCS):
+                a = f.args
+                for x in a.posonlyargs + a.args + a.kwonlyargs:
+                    if x.arg not in everywhere and not pinned & {
+                            (f.name, x.arg), (f.name, "*")}:
+                        out.add((f.name, x.arg))
+    return frozenset(out)
 
 
 def main(argv=None):
