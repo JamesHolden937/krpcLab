@@ -1121,7 +1121,8 @@ def run(conn, cfg, log, autostart=False, booster_set=(), wait=None):
 
 
 def parse_args(argv):
-    parser = cli.parser("ascent", __doc__.splitlines()[0])
+    parser = cli.parser("ascent", "MechJeb ascent, with the booster dropped "
+                        "when it can just get home.")
     parser.add_argument("--booster-set", action="append", default=[],
                         metavar="FIELD=VALUE",
                         help="a boosterland Config override for the landing")

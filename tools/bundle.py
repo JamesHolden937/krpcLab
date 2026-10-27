@@ -220,6 +220,7 @@ def verify(path, modules):
     Each source is compared byte for byte: a claim nothing checks is the
     kind this project keeps paying for.
     """
+    import ast
     import io
     import tokenize
     with open(path, encoding="utf-8") as handle:
@@ -246,6 +247,9 @@ def verify(path, modules):
         if any(t.type == tokenize.COMMENT for t in tokenize.generate_tokens(
                 io.StringIO(source).readline)):
             raise SystemExit("%s carries a comment" % name)
+        if pystrip._docstring_nodes(ast.parse(source), keep_read=False):
+            raise SystemExit("%s carries a docstring (does it read "
+                             "__doc__?)" % name)
     return len(seen)
 
 

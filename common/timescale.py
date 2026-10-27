@@ -133,8 +133,9 @@ def describe(st):
                st.get("fixed_dt", 0.0)))
 
 
-def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__,
+def main(argv=None, description=None):
+    """The command line (``tools/timescale.py``, which passes its help)."""
+    p = argparse.ArgumentParser(description=description,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("instance", help="instance number, or a path")
     p.add_argument("spec", nargs="?", default=None,

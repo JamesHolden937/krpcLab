@@ -49,12 +49,12 @@ def _class_body_reads_doc(tree):
     return False
 
 
-def _docstring_nodes(tree):
+def _docstring_nodes(tree, keep_read=True):
     """``(node, alone)`` for every docstring: the ``Expr`` holding it, and
     whether it is its body's only statement (which then needs a ``pass``).
     A module that reads ``__doc__`` keeps its own (``--help`` text)."""
     found = []
-    keep_module = _reads_doc([tree])
+    keep_module = keep_read and _reads_doc([tree])
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
                                  ast.AsyncFunctionDef)):
