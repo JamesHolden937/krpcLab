@@ -12,7 +12,9 @@
 # PILOTS in common/launcher.py.  Every other flag goes to the autopilot (or the
 # launcher) unchanged.
 #
-# Creates .venv on first use and runs .venv/bin/python by path -- never
+# Runs dist/krpcLab.py, the single-file bundle of every autopilot, rebuilt
+# first if any source changed.  Creates .venv on first use and runs
+# .venv/bin/python by path -- never
 # sourced, so there is nothing to deactivate.  Nothing prints: stdout and
 # stderr go to logs/stderr.log, which only ever holds crashes from before a
 # logbook opened.  The flight runs in the foreground, so Ctrl-C reaches it
@@ -59,15 +61,23 @@ if [ -n "$pilot" ]; then
 print(module_for(sys.argv[1]) or '')" "$pilot")
     [ -n "$module" ] || { echo "unknown pilot: $pilot" >&2; exit 2; }
     what="$pilot"
+    args=(--pilot "$pilot" "${args[@]}")
 else
-    module="common.launcher"
     what="launcher"
 fi
+
+# **Everything flies the single-file bundle** (tools/bundle.py), rebuilt
+# here when any source is newer than it, so what flies is what would be
+# copied to another machine.  The post-commit hook rebuilds it too; point
+# git at it once per clone.
+[ -n "$(git config core.hooksPath 2>/dev/null)" ] \
+    || git config core.hooksPath tools/githooks 2>/dev/null
+"$PY" tools/bundle.py --if-stale --quiet || { echo "bundle failed" >&2; exit 1; }
 
 mkdir -p logs
 before=$(ls -1 logs 2>/dev/null | grep -c '^LOG[0-9]*$')
 echo "running $what - use the in-game panel; Ctrl-C to stop"
-"$PY" -m "$module" "${args[@]}" >>logs/stderr.log 2>&1
+"$PY" dist/krpcLab.py "${args[@]}" >>logs/stderr.log 2>&1
 status=$?
 
 # Log numbers only grow, so the new ones sort last.

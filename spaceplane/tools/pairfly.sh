@@ -75,13 +75,13 @@ cleanup() {
   echo "interrupted -- killing this batch's flights" >&2
   pkill -9 -P $$ 2>/dev/null
   pkill -9 -f 'quickglide\.py --save' 2>/dev/null
-  pkill -9 -f '\-m spaceplane\.autopilot' 2>/dev/null
+  pkill -9 -f '\-m spaceplane\.autopilot|krpcLab\.py --pilot spaceplane' 2>/dev/null
   wait 2>/dev/null
   exit 130
 }
 trap cleanup INT TERM
 
-stale=$(ps -eo args | grep -c -- '-m spaceplane\.autopilot' || true)
+stale=$(ps -eo args | grep -cE -- '-m spaceplane\.autopilot|krpcLab\.py --pilot spaceplane' || true)
 if [ "${stale:-0}" -gt 1 ]; then
   echo "refusing to start: $stale autopilot(s) already flying." >&2
   echo "  pkill -9 -f spaceplane.autopilot" >&2

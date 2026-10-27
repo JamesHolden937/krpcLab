@@ -280,10 +280,13 @@ def fly(args, index):
     command = [os.path.join(ROOT, venv, "bin", "python"), "-m",
                "spaceplane.autopilot", "--autostart"]
     overrides = list(args.set)
-    # ``--bundle``: fly ``tools/bundle.py``'s single file instead of the
-    # tree, logging here like any other flight.
-    if args.bundle:
-        command[1:3] = [os.path.abspath(args.bundle), "--pilot", "spaceplane"]
+    # **The single-file bundle flies, as everywhere** (``tools/bundle.py``,
+    # rebuilt first if a source changed); ``--tree`` flies the modules.
+    if not args.tree:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import bundle
+        path = os.path.abspath(args.bundle) if args.bundle else bundle.ensure()
+        command[1:3] = [path, "--pilot", "spaceplane"]
         if not any(o.startswith("LOG_DIR") for o in overrides):
             overrides.append("LOG_DIR=%s" % os.path.join(ROOT, "logs"))
     if rpc:
@@ -450,7 +453,10 @@ def main():
     p.add_argument("--timeout", type=float, default=3600.0)
     p.add_argument("--set", action="append", default=[])
     p.add_argument("--bundle", default=None, metavar="FILE",
-                   help="fly tools/bundle.py's single file, not the tree")
+                   help="fly this bundle (default: dist/krpcLab.py, rebuilt "
+                        "if stale)")
+    p.add_argument("--tree", action="store_true",
+                   help="fly the modules in the tree, not the bundle")
     p.add_argument("--pypy", action="store_true",
                    help="run the autopilot under PyPy (.venv-pypy; the default)")
     p.add_argument("--cpython", action="store_true",

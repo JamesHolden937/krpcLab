@@ -50,9 +50,13 @@ def one(instance, overrides, samples, timeout):
     port = 50100 + 2 * instance
     before = {n for n in os.listdir(os.path.join(ROOT, "logs"))
               if n.startswith("LOG")}
-    cmd = [os.path.join(ROOT, ".venv/bin/python"), "-m", "spaceplane.autopilot",
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import bundle
+    cmd = [os.path.join(ROOT, ".venv/bin/python"), bundle.ensure(),
+           "--pilot", "spaceplane",
            "--autostart", "--rpc-port", str(port), "--stream-port", str(port + 1),
-           "--set", "LOOP_PACING_GAME_TIME=True"]
+           "--set", "LOOP_PACING_GAME_TIME=True",
+           "--set", "LOG_DIR=%s" % os.path.join(ROOT, "logs")]
     for item in overrides:
         cmd += ["--set", item]
     loader = [os.path.join(ROOT, ".venv/bin/python"), "-c",

@@ -48,7 +48,7 @@ for pp in "${parts[@]}"; do [ -n "$pp" ] && args+=(--set "$pp"); done
 # Matched on the *shape* of the process -- python running the module -- and
 # not on the bare module name, which any shell that mentions it in its own
 # command line also matches.
-stale=$(ps -eo args | grep -c -- '-m spaceplane\.autopilot' || true)
+stale=$(ps -eo args | grep -cE -- '-m spaceplane\.autopilot|krpcLab\.py --pilot spaceplane' || true)
 if [ "${stale:-0}" -gt 0 ]; then
   echo "refusing to start: $stale autopilot(s) already flying." >&2
   echo "A killed batch leaves its flight running and the next batch reads" >&2

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Rebuild and selftest dist/krpcLab.py (tools/bundle.py) after every commit.
+# A failure is reported, never blocks: the commit has already happened.
+cd "$(git rev-parse --show-toplevel)" || exit 0
+python3 tools/bundle.py --quiet >/dev/null 2>.git-bundle-error.log \
+    && rm -f .git-bundle-error.log \
+    || echo "post-commit: bundle FAILED -- see $(pwd)/.git-bundle-error.log" >&2
+exit 0

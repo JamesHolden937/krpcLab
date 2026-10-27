@@ -5,7 +5,7 @@
 set -u
 # Each save is pinned to one instance, so every arm sees every save -- rotfly.sh
 # with more arms than instances flies only some of them (rot-flarep2-1003).
-busy=$(ps -eo args | grep -cE '^[^ ]*python[^ ]* (spaceplane/tools/quickglide|-m spaceplane\.autopilot)')
+busy=$(ps -eo args | grep -cE '^[^ ]*python[^ ]* (spaceplane/tools/quickglide|-m spaceplane\.autopilot|[^ ]*krpcLab\.py --pilot spaceplane)')
 if [ "$busy" -gt 0 ]; then echo "refusing: $busy flight process(es) already running" >&2; exit 1; fi
 R=$1; OUT=$2; shift 2; ARMS=("$@"); NA=${#ARMS[@]}
 cd "$(dirname "$0")/../.."

@@ -163,6 +163,8 @@ cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 G
 ./stop.sh                              # stop them all (and the watchdog)
 ```
 
+**Every autopilot flies from `dist/krpcLab.py`**, the single-file bundle (`tools/bundle.py`, comments stripped): `run.sh`, the launcher's buttons and the farm harnesses rebuild it when a source is newer and run it, and the `post-commit` hook in `tools/githooks` rebuilds it on every commit (`run.sh` sets `core.hooksPath`). `quickglide.py --tree` flies the modules instead.
+
 Tools are run from the root. Each puts the root on `sys.path` itself and
 re-executes under the project venv if the interpreter has no `krpc`, so
 `./spaceplane/tools/quickglide.py` works from any shell. **Everything runs
@@ -179,7 +181,7 @@ need no third-party packages.
 ## The farm
 
 **Three things make a farm batch a lie, and none of them announce it.**
-`pgrep -af spaceplane.autopilot` should show exactly one per busy instance --
+`pgrep -af 'krpcLab.py --pilot spaceplane'` should show exactly one per busy instance --
 the harness runs the flight as a *child*, so a killed batch used to leave it
 flying (fixed, but check). `testInstances/syncSaves.sh check` should say every
 instance matches `saves/` -- each clone keeps its own quicksaves and they drift

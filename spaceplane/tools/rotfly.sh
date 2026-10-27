@@ -6,7 +6,7 @@
 # ceiling: the governor holds each phase to what its control interval allows,
 # and the `loop rate` line at the end of every log says whether it did.
 set -u
-busy=$(ps -eo args | grep -cE '^[^ ]*python[^ ]* (spaceplane/tools/quickglide|-m spaceplane\.autopilot)')
+busy=$(ps -eo args | grep -cE '^[^ ]*python[^ ]* (spaceplane/tools/quickglide|-m spaceplane\.autopilot|[^ ]*krpcLab\.py --pilot spaceplane)')
 if [ "$busy" -gt 0 ]; then echo "refusing: $busy flight process(es) already running" >&2; exit 1; fi
 INST=($1); R=$2; OUT=$3; TREE=$4; shift 4; ARMS=("$@"); NA=${#ARMS[@]}
 cd "$TREE"

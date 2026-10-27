@@ -7,7 +7,14 @@ removed (``tools/pystrip.py``, which proves each one parses to the same
 program), with an importer in front of them.
 
     ./tools/bundle.py                         # -> dist/krpcLab.py
+    ./tools/bundle.py --if-stale -q           # ... only if a source changed
     ./tools/bundle.py -o /tmp/fly.py          # -> /tmp/fly.py
+
+**Everything flies the bundle.**  ``run.sh``, the launcher's buttons and the
+farm harnesses run ``dist/krpcLab.py``, each calling ``ensure`` first so an
+edited source rebuilds it; the ``post-commit`` hook in ``tools/githooks``
+rebuilds and selftests it on every commit (``run.sh`` points git at that
+directory).
     python3 dist/krpcLab.py                   # the in-game launcher
     python3 dist/krpcLab.py --pilot spaceplane --set LOG_INTERVAL_UT=1
 
@@ -343,25 +350,84 @@ print('selftest ok: %d pilots, %d modules loaded'
     return done.stdout.strip()
 
 
+DEFAULT = os.path.join(ROOT, "dist", NAME)
+
+
+def sources():
+    """Every file the bundle is made from, the bundler included."""
+    files = [os.path.abspath(__file__), os.path.abspath(pystrip.__file__)]
+    for package in PACKAGES:
+        directory = os.path.join(ROOT, package)
+        files += [os.path.join(directory, e) for e in os.listdir(directory)
+                  if e.endswith(".py")]
+    return files
+
+
+def stale(out=DEFAULT):
+    """Is ``out`` missing or older than any file it is made from?"""
+    try:
+        built = os.path.getmtime(out)
+    except OSError:
+        return True
+    return any(os.path.getmtime(f) > built for f in sources())
+
+
+def write(out=DEFAULT, test=True):
+    """Build, write atomically, read back and (``test``) selftest.
+
+    Under a lock: a farm batch starts six harnesses at once, and each one
+    asks for a fresh bundle."""
+    import fcntl
+    out = os.path.abspath(out)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out + ".lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        body, _, count = build()
+        tmp = "%s.%d.tmp" % (out, os.getpid())
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        os.chmod(tmp, 0o755)
+        try:
+            verify(tmp, stripped(collect(PACKAGES)))
+            note = selftest(tmp) if test else ""
+        except BaseException:
+            os.unlink(tmp)
+            raise
+        # Renamed into place, so a flight starting now reads the old file
+        # or the new one, never half of one.
+        os.replace(tmp, out)
+    return out, count, note
+
+
+def ensure(out=DEFAULT):
+    """The bundle's path, rebuilt first if any source is newer: what every
+    launcher flies, so an uncommitted edit flies too."""
+    if stale(out):
+        write(out, test=False)
+    return out
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-o", "--out", default=None,
                         help="output file (default: dist/%s)" % NAME)
     parser.add_argument("--no-selftest", action="store_true",
                         help="skip running the result to check it works")
+    parser.add_argument("--if-stale", action="store_true",
+                        help="only if a source is newer than the bundle")
+    parser.add_argument("-q", "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
-    body, name, count = build()
-    out = os.path.abspath(args.out or os.path.join(ROOT, "dist", name))
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as handle:
-        handle.write(body)
-    os.chmod(out, 0o755)
-
-    verify(out, stripped(collect(PACKAGES)))
-    note = "" if args.no_selftest else "  " + selftest(out)
-    print("%s  %d modules  %.0f kB%s"
-          % (out, count, os.path.getsize(out) / 1024.0, note))
+    out = os.path.abspath(args.out or DEFAULT)
+    if args.if_stale and not stale(out):
+        if not args.quiet:
+            print("%s  up to date" % out)
+        return 0
+    out, count, note = write(out, test=not args.no_selftest)
+    if not args.quiet:
+        print("%s  %d modules  %.0f kB%s" % (
+            out, count, os.path.getsize(out) / 1024.0,
+            "  " + note if note else ""))
     return 0
 
 
