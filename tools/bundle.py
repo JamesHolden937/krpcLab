@@ -35,7 +35,7 @@ bundle, so paths derived from it land beside the file.
 Nobody reads the file -- the tree is the readable copy -- so it is as small
 as it can be made: comments and docstrings stripped (``pystrip``), locals
 renamed (``pyminify``), whitespace squeezed (``pycompact``), each proven by
-the parser, and the result LZMA-compressed inside a zipapp (``LOADER``).
+the parser.  Not compressed: unpacking would cost every start.
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
@@ -101,24 +101,21 @@ def compacted(name, source):
         raise SystemExit("cannot compact: %s" % exc)
 
 
-# The bundle is a zipapp: a ``#!`` line, then a zip holding ``__main__.py``
-# (this loader, compacted like everything else) and ``p``, every module in
-# one LZMA stream, ``name \0 is_package \0 source`` joined by ``\1``.  Python
-# runs a zip file directly, whatever it is called, so ``python3 krpcLab.py``
-# works; the compressed bytes sit in it raw, a quarter smaller than any text
-# encoding of them.  ``_B`` is a ``sys.meta_path`` finder over the sources:
-# packages get a ``__path__`` so relative imports resolve, each module a
-# ``__file__`` beside the bundle, and ``get_source`` serves tracebacks and
-# ``inspect``.  ``_main`` is ``run.sh``: ``--pilot NAME`` or ``-m MODULE``
-# runs that module's ``main``, nothing runs the launcher, and
-# ``KRPCLAB_BUNDLE`` tells the launcher's buttons to start each autopilot
-# from this same file.
-LOADER = r"""import importlib.abc as A,importlib.machinery as M,lzma,os,sys,zipfile
-Z=os.path.dirname(os.path.abspath(__file__))
+# The bundle is plain text: a ``#!`` line, this loader (compacted like
+# everything else), then ``_P``, one raw string holding every module as
+# ``name \x1f is_package \x1f source``, joined by ``\x1e``.  Not compressed:
+# unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
+# over the sources: packages get a ``__path__`` so relative imports
+# resolve, each module a ``__file__`` beside the bundle, and ``get_source``
+# serves tracebacks and ``inspect``.  ``_main`` is ``run.sh``: ``--pilot
+# NAME`` or ``-m MODULE`` runs that module's ``main``, nothing runs the
+# launcher, and ``KRPCLAB_BUNDLE`` tells the launcher's buttons to start
+# each autopilot from this same file.  ``_P`` is assigned at the end, so
+# the loader's functions read it only once it exists.
+LOADER = r"""import importlib.abc as A,importlib.machinery as M,os,sys
+Z=os.path.abspath(globals().get("__file__") or sys.argv[0])
 H=os.path.dirname(Z)
 S={}
-for e in lzma.decompress(zipfile.ZipFile(Z).read("p")).decode().split("\1"):
-    n,k,c=e.split("\0",2);S[n]=(k=="1",c)
 class _B(A.MetaPathFinder,A.Loader):
     def find_spec(s,n,p=None,t=None):
         if n not in S:return None
@@ -131,7 +128,6 @@ class _B(A.MetaPathFinder,A.Loader):
         m.__file__=os.path.join(H,*(q+["__init__.py"] if k else q[:-1]+[q[-1]+".py"]))
         exec(compile(c,m.__file__,"exec"),m.__dict__)
     def get_source(s,n):return S[n][1]
-sys.meta_path.insert(0,_B())
 def _main(a):
     import importlib
     from common import launcher
@@ -146,9 +142,13 @@ def _main(a):
             if m is None:sys.stderr.write("unknown pilot: %s\n"%v);return 2
             del r[i:i+d];break
     sys.argv=[Z]+r;return importlib.import_module(m).main(r)
+"""
+TAIL = r"""for e in _P.split("\x1e"):
+    n,k,c=e.split("\x1f",2);S[n]=(k=="1",c)
+sys.meta_path.insert(0,_B())
 if __name__=="__main__":sys.exit(_main(sys.argv[1:]))
 """
-SHEBANG = b"#!/usr/bin/env python3\n"
+SHEBANG = "#!/usr/bin/env python3\n"
 
 
 def pilots():
@@ -163,54 +163,53 @@ def pilots():
     raise SystemExit("no PILOTS in common/launcher.py")
 
 
+DELIMITER = "\x27" * 3
+
+
 def payload(modules):
-    """Every module in one LZMA stream (the format ``LOADER`` reads)."""
-    import lzma
+    """Every module in one string, in the format ``TAIL`` splits."""
     parts = []
     for name in sorted(modules):
         is_package, source = modules[name]
-        if "\0" in source or "\1" in source:
-            raise SystemExit("%s contains a separator byte" % name)
-        parts.append("%s\0%d\0%s" % (name, is_package, source))
-    return lzma.compress("\1".join(parts).encode("utf-8"),
-                         preset=9 | lzma.PRESET_EXTREME)
+        if "\x1e" in source or "\x1f" in source or DELIMITER in source:
+            raise SystemExit("%s contains a separator the bundle's raw "
+                             "string cannot carry" % name)
+        parts.append("%s\x1f%d\x1f%s" % (name, is_package, source))
+    # Ends in the last module's newline, so no backslash meets the quotes.
+    return "\x1e".join(parts)
 
 
 def unpack(path):
-    """``{name: (is_package, source)}`` and the loader, read back out of a
-    written bundle the way the loader reads them."""
-    import lzma
-    import zipfile
-    with zipfile.ZipFile(path) as archive:
-        loader = archive.read("__main__.py").decode("utf-8")
-        data = lzma.decompress(archive.read("p")).decode("utf-8")
+    """``{name: (is_package, source)}`` and the loader's text, read back out
+    of a written bundle the way the loader reads them."""
+    import ast
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    blob = None
+    for node in ast.parse(text).body:
+        if (isinstance(node, ast.Assign)
+                and getattr(node.targets[0], "id", "") == "_P"):
+            blob = node.value.value
+    if blob is None:
+        raise SystemExit("bundle has no _P")
     modules = {}
-    for entry in data.split("\1"):
-        name, kind, source = entry.split("\0", 2)
+    for entry in blob.split("\x1e"):
+        name, kind, source = entry.split("\x1f", 2)
         modules[name] = (kind == "1", source)
-    return modules, loader
+    return modules, text[:text.index("_P=r")]
 
 
 def build():
-    """The bundle's bytes, its file name and its module count."""
-    import io
-    import zipfile
+    """The bundle's text, its file name and its module count."""
     modules = stripped(collect(PACKAGES))
     for name, module in pilots():
         if module not in modules:
             raise SystemExit("pilot %s needs %s, which no bundled package "
                              "has: add its package to PACKAGES"
                              % (name, module))
-    buf = io.BytesIO()
-    buf.write(SHEBANG)
-    with zipfile.ZipFile(buf, "w") as archive:
-        # Fixed timestamps: the same sources give the same bytes.
-        main = zipfile.ZipInfo("__main__.py", (1980, 1, 1, 0, 0, 0))
-        main.compress_type = zipfile.ZIP_DEFLATED
-        archive.writestr(main, compacted("__main__", LOADER), compresslevel=9)
-        archive.writestr(zipfile.ZipInfo("p", (1980, 1, 1, 0, 0, 0)),
-                         payload(modules))
-    return buf.getvalue(), NAME, len(modules)
+    body = (SHEBANG + compacted("loader", LOADER) + "_P=r" + DELIMITER
+            + payload(modules) + DELIMITER + "\n" + compacted("tail", TAIL))
+    return body, NAME, len(modules)
 
 
 def verify(path, modules):
@@ -223,9 +222,10 @@ def verify(path, modules):
     """
     import io
     import tokenize
-    with open(path, "rb") as handle:
-        if not handle.read(len(SHEBANG)) == SHEBANG:
-            raise SystemExit("bundle does not start with its #! line")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    if not text.startswith(SHEBANG):
+        raise SystemExit("bundle does not start with its #! line")
     seen, loader = unpack(path)
     for module, (is_package, source) in modules.items():
         got = seen.get(module)
@@ -237,8 +237,12 @@ def verify(path, modules):
     if extra:
         raise SystemExit("bundle carries modules that are not in the tree: %s"
                          % ", ".join(sorted(extra)))
-    for name, source in [("__main__", loader)] + [
-            (n, src) for n, (_, src) in seen.items()]:
+    comments = [t for t in tokenize.generate_tokens(io.StringIO(text).readline)
+                if t.type == tokenize.COMMENT and t.start != (1, 0)]
+    if comments:
+        raise SystemExit("bundle carries a comment at line %d"
+                         % comments[0].start[0])
+    for name, (_, source) in seen.items():
         if any(t.type == tokenize.COMMENT for t in tokenize.generate_tokens(
                 io.StringIO(source).readline)):
             raise SystemExit("%s carries a comment" % name)
@@ -324,7 +328,7 @@ def write(out=DEFAULT, test=True):
         fcntl.flock(lock, fcntl.LOCK_EX)
         body, _, count = build()
         tmp = "%s.%d.tmp" % (out, os.getpid())
-        with open(tmp, "wb") as handle:
+        with open(tmp, "w", encoding="utf-8") as handle:
             handle.write(body)
         os.chmod(tmp, 0o755)
         try:

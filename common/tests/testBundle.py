@@ -171,7 +171,7 @@ class TestTheSingleFileExport(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         body, name, cls.count = bundle.build()
         cls.path = os.path.join(cls.tmp.name, name)
-        with open(cls.path, "wb") as handle:
+        with open(cls.path, "w", encoding="utf-8") as handle:
             handle.write(body)
         cls.modules = bundle.stripped(bundle.collect(bundle.PACKAGES))
 
@@ -205,14 +205,15 @@ class TestTheSingleFileExport(unittest.TestCase):
         for name, (_, source) in modules.items():
             compile(source, name, "exec")
 
-    def test_it_is_a_runnable_zip_behind_its_shebang(self):
-        import zipfile
-        with open(self.path, "rb") as handle:
-            self.assertTrue(handle.read().startswith(bundle.SHEBANG))
-        self.assertTrue(zipfile.is_zipfile(self.path))
+    def test_it_is_plain_text_behind_its_shebang(self):
+        with open(self.path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertTrue(text.startswith(bundle.SHEBANG))
+        compile(text, self.path, "exec")
 
     def test_the_same_sources_give_the_same_bytes(self):
-        self.assertEqual(bundle.build()[0], open(self.path, "rb").read())
+        self.assertEqual(bundle.build()[0],
+                         open(self.path, encoding="utf-8").read())
 
 
 if __name__ == "__main__":
