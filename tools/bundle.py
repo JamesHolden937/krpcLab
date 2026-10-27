@@ -32,8 +32,10 @@ vec`` keeps working because the package modules are real packages with a
 ``__path__``, and each module's ``__file__`` is where it would sit beside the
 bundle, so paths derived from it land beside the file.
 
-The sources travel as one dict of string literals (``repr``), so the file
-carries no comment at all -- nobody reads it; the tree is the readable copy.
+Nobody reads the file -- the tree is the readable copy -- so it is as small
+as it can be made: comments and docstrings stripped (``pystrip``), locals
+renamed (``pyminify``), whitespace squeezed (``pycompact``), each proven by
+the parser, and the result LZMA-compressed inside a zipapp (``LOADER``).
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
@@ -47,6 +49,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pycompact  # noqa: E402
 import pyminify  # noqa: E402
 import pystrip  # noqa: E402
 
@@ -78,107 +81,74 @@ def collect(packages):
 
 
 def stripped(modules):
-    """``collect``'s modules with comments and docstrings removed and every
-    function's locals renamed a, b, ... (``pyminify``): what the bundle
-    carries.  Both raise rather than change a program."""
+    """``collect``'s modules with comments and docstrings removed, every
+    function's locals renamed a, b, ... (``pyminify``) and the whitespace
+    squeezed out (``pycompact``): what the bundle carries.  Each raises
+    rather than change a program."""
     try:
-        return {name: (is_package, pyminify.minify(
-                    pystrip.strip(source, name), name))
+        return {name: (is_package, compacted(name, pyminify.minify(
+                    pystrip.strip(source, name), name)))
                 for name, (is_package, source) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError) as exc:
         raise SystemExit("cannot strip: %s" % exc)
 
 
-# The bundle's own code, carried uncommented like the modules it serves
-# (and not %-formatted).  ``_Bundled`` is a ``sys.meta_path`` finder over
-# ``_SOURCES``, ``{name: (is_package, source)}``:
-# packages get a ``__path__`` so relative imports resolve, and each module a
-# ``__file__`` beside the bundle.  ``_main`` (in ``EPILOGUE``) is ``run.sh``:
-# ``--pilot NAME`` or ``-m MODULE`` runs that module's ``main``, nothing runs
-# the launcher, and ``KRPCLAB_BUNDLE`` tells the launcher's buttons to start
-# each autopilot from this same file.
-PREAMBLE = '''#!/usr/bin/env python3
-import importlib.abc
-import importlib.machinery
-import os
-import sys
-
-_HERE = os.path.dirname(os.path.abspath(
-    globals().get("__file__") or sys.argv[0]))
+def compacted(name, source):
+    """``pycompact``, raising ``SystemExit`` like the other two."""
+    try:
+        return pycompact.compact(source, name)
+    except pycompact.CompactError as exc:
+        raise SystemExit("cannot compact: %s" % exc)
 
 
-class _Bundled(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-
-    def __init__(self, modules):
-        self.modules = modules
-
-    def find_spec(self, name, path=None, target=None):
-        if name not in self.modules:
-            return None
-        is_package, _ = self.modules[name]
-        spec = importlib.machinery.ModuleSpec(name, self,
-                                              is_package=is_package)
-        if is_package:
-            spec.submodule_search_locations = []
-        return spec
-
-    def create_module(self, spec):
-        return None
-
-    def exec_module(self, module):
-        is_package, source = self.modules[module.__name__]
-        parts = module.__name__.split(".")
-        module.__file__ = os.path.join(
-            _HERE, *(parts + ["__init__.py"] if is_package
-                     else parts[:-1] + [parts[-1] + ".py"]))
-        exec(compile(source, module.__file__, "exec"), module.__dict__)
-
-    def get_source(self, name):
-        return self.modules[name][1]
-
-
-def _install():
-    finder = _Bundled(_SOURCES)
-    sys.meta_path.insert(0, finder)
-    return finder
-
-
-'''
-
-EPILOGUE = '''
-
-_install()
-
-
-def _main(argv):
+# The bundle is a zipapp: a ``#!`` line, then a zip holding ``__main__.py``
+# (this loader, compacted like everything else) and ``p``, every module in
+# one LZMA stream, ``name \0 is_package \0 source`` joined by ``\1``.  Python
+# runs a zip file directly, whatever it is called, so ``python3 krpcLab.py``
+# works; the compressed bytes sit in it raw, a quarter smaller than any text
+# encoding of them.  ``_B`` is a ``sys.meta_path`` finder over the sources:
+# packages get a ``__path__`` so relative imports resolve, each module a
+# ``__file__`` beside the bundle, and ``get_source`` serves tracebacks and
+# ``inspect``.  ``_main`` is ``run.sh``: ``--pilot NAME`` or ``-m MODULE``
+# runs that module's ``main``, nothing runs the launcher, and
+# ``KRPCLAB_BUNDLE`` tells the launcher's buttons to start each autopilot
+# from this same file.
+LOADER = r"""import importlib.abc as A,importlib.machinery as M,lzma,os,sys,zipfile
+Z=os.path.dirname(os.path.abspath(__file__))
+H=os.path.dirname(Z)
+S={}
+for e in lzma.decompress(zipfile.ZipFile(Z).read("p")).decode().split("\1"):
+    n,k,c=e.split("\0",2);S[n]=(k=="1",c)
+class _B(A.MetaPathFinder,A.Loader):
+    def find_spec(s,n,p=None,t=None):
+        if n not in S:return None
+        x=M.ModuleSpec(n,s,is_package=S[n][0])
+        if S[n][0]:x.submodule_search_locations=[]
+        return x
+    def create_module(s,x):return None
+    def exec_module(s,m):
+        k,c=S[m.__name__];q=m.__name__.split(".")
+        m.__file__=os.path.join(H,*(q+["__init__.py"] if k else q[:-1]+[q[-1]+".py"]))
+        exec(compile(c,m.__file__,"exec"),m.__dict__)
+    def get_source(s,n):return S[n][1]
+sys.meta_path.insert(0,_B())
+def _main(a):
     import importlib
     from common import launcher
-    os.environ["KRPCLAB_BUNDLE"] = os.path.join(_HERE, os.path.basename(
-        globals().get("__file__") or sys.argv[0]))
-    module, rest = "common.launcher", list(argv)
-    for flag in ("--pilot", "-m"):
-        for i, arg in enumerate(rest):
-            value = None
-            if arg == flag and i + 1 < len(rest):
-                value, drop = rest[i + 1], 2
-            elif arg.startswith(flag + "="):
-                value, drop = arg.split("=", 1)[1], 1
-            if value is None:
-                continue
-            module = (launcher.module_for(value) if flag == "--pilot"
-                      else value)
-            if module is None:
-                sys.stderr.write("unknown pilot: %s\\n" % value)
-                return 2
-            del rest[i:i + drop]
-            break
-    sys.argv = [sys.argv[0]] + rest
-    return importlib.import_module(module).main(rest)
-
-
-if __name__ == "__main__":
-    sys.exit(_main(sys.argv[1:]))
-'''
+    os.environ["KRPCLAB_BUNDLE"]=Z;m,r="common.launcher",list(a)
+    for f in("--pilot","-m"):
+        for i,g in enumerate(r):
+            v=None
+            if g==f and i+1<len(r):v,d=r[i+1],2
+            elif g.startswith(f+"="):v,d=g.split("=",1)[1],1
+            if v is None:continue
+            m=launcher.module_for(v) if f=="--pilot" else v
+            if m is None:sys.stderr.write("unknown pilot: %s\n"%v);return 2
+            del r[i:i+d];break
+    sys.argv=[Z]+r;return importlib.import_module(m).main(r)
+if __name__=="__main__":sys.exit(_main(sys.argv[1:]))
+"""
+SHEBANG = b"#!/usr/bin/env python3\n"
 
 
 def pilots():
@@ -193,57 +163,85 @@ def pilots():
     raise SystemExit("no PILOTS in common/launcher.py")
 
 
+def payload(modules):
+    """Every module in one LZMA stream (the format ``LOADER`` reads)."""
+    import lzma
+    parts = []
+    for name in sorted(modules):
+        is_package, source = modules[name]
+        if "\0" in source or "\1" in source:
+            raise SystemExit("%s contains a separator byte" % name)
+        parts.append("%s\0%d\0%s" % (name, is_package, source))
+    return lzma.compress("\1".join(parts).encode("utf-8"),
+                         preset=9 | lzma.PRESET_EXTREME)
+
+
+def unpack(path):
+    """``{name: (is_package, source)}`` and the loader, read back out of a
+    written bundle the way the loader reads them."""
+    import lzma
+    import zipfile
+    with zipfile.ZipFile(path) as archive:
+        loader = archive.read("__main__.py").decode("utf-8")
+        data = lzma.decompress(archive.read("p")).decode("utf-8")
+    modules = {}
+    for entry in data.split("\1"):
+        name, kind, source = entry.split("\0", 2)
+        modules[name] = (kind == "1", source)
+    return modules, loader
+
+
 def build():
+    """The bundle's bytes, its file name and its module count."""
+    import io
+    import zipfile
     modules = stripped(collect(PACKAGES))
     for name, module in pilots():
         if module not in modules:
             raise SystemExit("pilot %s needs %s, which no bundled package "
                              "has: add its package to PACKAGES"
                              % (name, module))
-    lines = ["_SOURCES = {"]
-    for name in sorted(modules):
-        is_package, source = modules[name]
-        lines.append("    %r: (%r, %r)," % (name, is_package, source))
-    lines.append("}")
-    body = PREAMBLE + "\n".join(lines) + "\n" + EPILOGUE
-    return body, NAME, len(modules)
+    buf = io.BytesIO()
+    buf.write(SHEBANG)
+    with zipfile.ZipFile(buf, "w") as archive:
+        # Fixed timestamps: the same sources give the same bytes.
+        main = zipfile.ZipInfo("__main__.py", (1980, 1, 1, 0, 0, 0))
+        main.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(main, compacted("__main__", LOADER), compresslevel=9)
+        archive.writestr(zipfile.ZipInfo("p", (1980, 1, 1, 0, 0, 0)),
+                         payload(modules))
+    return buf.getvalue(), NAME, len(modules)
 
 
 def verify(path, modules):
-    """Read the written file back and check every module came out intact,
-    and that the file carries no comment but its ``#!`` line.
+    """Read the written bundle back and check every module came out intact
+    and no comment went in.
 
     ``modules`` is what was meant to go in (``stripped(collect(...))``).
     Each source is compared byte for byte: a claim nothing checks is the
     kind this project keeps paying for.
     """
-    import ast
     import io
     import tokenize
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
-    seen = None
-    for node in ast.parse(text).body:
-        if (isinstance(node, ast.Assign)
-                and getattr(node.targets[0], "id", "") == "_SOURCES"):
-            seen = ast.literal_eval(node.value)
-    if seen is None:
-        raise SystemExit("bundle has no _SOURCES")
-    for module, (_, source) in modules.items():
+    with open(path, "rb") as handle:
+        if not handle.read(len(SHEBANG)) == SHEBANG:
+            raise SystemExit("bundle does not start with its #! line")
+    seen, loader = unpack(path)
+    for module, (is_package, source) in modules.items():
         got = seen.get(module)
         if got is None:
             raise SystemExit("%s is missing from the bundle" % module)
-        if got[1] != source:
+        if got != (is_package, source):
             raise SystemExit("%s came out of the bundle changed" % module)
     extra = set(seen) - set(modules)
     if extra:
         raise SystemExit("bundle carries modules that are not in the tree: %s"
                          % ", ".join(sorted(extra)))
-    comments = [t for t in tokenize.generate_tokens(io.StringIO(text).readline)
-                if t.type == tokenize.COMMENT and t.start != (1, 0)]
-    if comments:
-        raise SystemExit("bundle carries a comment at line %d"
-                         % comments[0].start[0])
+    for name, source in [("__main__", loader)] + [
+            (n, src) for n, (_, src) in seen.items()]:
+        if any(t.type == tokenize.COMMENT for t in tokenize.generate_tokens(
+                io.StringIO(source).readline)):
+            raise SystemExit("%s carries a comment" % name)
     return len(seen)
 
 
@@ -258,9 +256,8 @@ def selftest(path):
     probe = """import io, os, sys, types, contextlib
 sys.modules['krpc'] = types.ModuleType('krpc')
 sys.argv = [{path!r}]
-source = open({path!r}, encoding='utf-8').read()
-space = {{'__name__': 'bundled', '__file__': {path!r}}}
-exec(compile(source, {path!r}, 'exec'), space)
+import runpy
+space = runpy.run_path({path!r}, run_name='bundled')
 from common import launcher, paths
 assert paths.ROOT == os.path.dirname({path!r}), paths.ROOT
 for _, name, module in launcher.PILOTS:
@@ -297,7 +294,8 @@ DEFAULT = os.path.join(ROOT, "dist", NAME)
 
 def sources():
     """Every file the bundle is made from, the bundler included."""
-    files = [os.path.abspath(__file__), os.path.abspath(pystrip.__file__)]
+    files = [os.path.abspath(m.__file__) for m in (
+        sys.modules[__name__], pystrip, pyminify, pycompact)]
     for package in PACKAGES:
         directory = os.path.join(ROOT, package)
         files += [os.path.join(directory, e) for e in os.listdir(directory)
@@ -326,7 +324,7 @@ def write(out=DEFAULT, test=True):
         fcntl.flock(lock, fcntl.LOCK_EX)
         body, _, count = build()
         tmp = "%s.%d.tmp" % (out, os.getpid())
-        with open(tmp, "w", encoding="utf-8") as handle:
+        with open(tmp, "wb") as handle:
             handle.write(body)
         os.chmod(tmp, 0o755)
         try:
@@ -355,9 +353,8 @@ def suite(path):
     from ``path``.  What proves the renaming kept every program the same."""
     probe = """import os, sys, types, unittest
 sys.path.insert(0, {root!r})
-source = open({path!r}, encoding='utf-8').read()
-space = {{'__name__': 'bundled', '__file__': {path!r}}}
-exec(compile(source, {path!r}, 'exec'), space)
+import runpy
+runpy.run_path({path!r}, run_name='bundled')
 import importlib
 for pkg in {packages!r}:
     mod = importlib.import_module(pkg)

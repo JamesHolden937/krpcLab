@@ -12,6 +12,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bundle    # noqa: E402
+import pycompact  # noqa: E402
 import pyminify  # noqa: E402
 import pystrip   # noqa: E402
 
@@ -133,6 +134,34 @@ class TestTheRenamer(unittest.TestCase):
                          ["a", "z", "aa", "ab", "zz"])
 
 
+class TestTheCompactor(unittest.TestCase):
+    """Fewest bytes, same tree."""
+
+    def same(self, src, call):
+        before, after = {}, {}
+        exec(src, before)
+        exec(pycompact.compact(src), after)
+        self.assertEqual(eval(call, before), eval(call, after))
+
+    def test_indent_brackets_and_spaces(self):
+        src = ("def f(a,\n      b):\n    if a:\n        return [a,\n"
+               "                b]\n    return b\n")
+        self.assertEqual(pycompact.compact(src),
+                         "def f(a,b):\n if a:return[a,b]\n return b\n")
+
+    def test_simple_statements_share_a_line(self):
+        self.assertEqual(pycompact.compact("x = 1\ny = 2\n"), "x=1;y=2\n")
+
+    def test_tokens_that_would_fuse_keep_their_space(self):
+        src = ('def f(x):\n    r = 1 if x else 2\n    s = r .real\n'
+               '    t = 1 .real\n    u = "a" """b"""\n    return r, s, t, u\n')
+        self.same(src, "f(0)")
+
+    def test_fstrings_survive_exactly(self):
+        src = 'def f(x):\n    return f"{{x}} {x!r:>5} {\'a\'}"\n'
+        self.same(src, "f(3)")
+
+
 class TestTheSingleFileExport(unittest.TestCase):
     """The file someone copies to another machine is the software this
     repository tested, less its comments, with every autopilot in it."""
@@ -142,7 +171,7 @@ class TestTheSingleFileExport(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         body, name, cls.count = bundle.build()
         cls.path = os.path.join(cls.tmp.name, name)
-        with open(cls.path, "w", encoding="utf-8") as handle:
+        with open(cls.path, "wb") as handle:
             handle.write(body)
         cls.modules = bundle.stripped(bundle.collect(bundle.PACKAGES))
 
@@ -170,9 +199,20 @@ class TestTheSingleFileExport(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bundle.verify(self.path, modules)
 
-    def test_the_bundle_compiles(self):
-        with open(self.path, encoding="utf-8") as handle:
-            compile(handle.read(), self.path, "exec")
+    def test_the_loader_and_every_module_compile(self):
+        modules, loader = bundle.unpack(self.path)
+        compile(loader, "__main__", "exec")
+        for name, (_, source) in modules.items():
+            compile(source, name, "exec")
+
+    def test_it_is_a_runnable_zip_behind_its_shebang(self):
+        import zipfile
+        with open(self.path, "rb") as handle:
+            self.assertTrue(handle.read().startswith(bundle.SHEBANG))
+        self.assertTrue(zipfile.is_zipfile(self.path))
+
+    def test_the_same_sources_give_the_same_bytes(self):
+        self.assertEqual(bundle.build()[0], open(self.path, "rb").read())
 
 
 if __name__ == "__main__":
