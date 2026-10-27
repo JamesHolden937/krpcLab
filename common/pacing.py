@@ -303,6 +303,43 @@ class LoopRate:
         return "loop rate, game-s per tick / wall-s of work: " + " ".join(bits)
 
 
+class Latency:
+    """How stale a command is when it lands: per tick, the game time from
+    the tick the telemetry describes to the tick the command is executed on,
+    the wall time the loop spent between, and the distance the vehicle
+    flew meanwhile (speed x game time).  Written at shutdown beside
+    ``LoopRate``.
+
+    The command's tick is read with one call made right after the tick's
+    last command: calls on one connection are executed in order, so its
+    answer is the tick the commands went out on, or a later one."""
+
+    def __init__(self):
+        self.phases = {}            # phase -> [(game_s, wall_s, metres)]
+
+    def sample(self, phase, game_s, wall_s, metres):
+        self.phases.setdefault(phase, []).append((game_s, wall_s, metres))
+
+    @staticmethod
+    def _quantiles(values):
+        values = sorted(values)
+        n = len(values)
+        return (values[n // 2], values[min(n - 1, int(0.9 * n))], values[-1])
+
+    def report(self):
+        bits = []
+        for phase, rows in self.phases.items():
+            g = self._quantiles([r[0] for r in rows])
+            w = self._quantiles([r[1] for r in rows])
+            m = self._quantiles([r[2] for r in rows])
+            bits.append("%s n=%d game %.0f/%.0f/%.0f ms wall %.0f/%.0f/%.0f ms"
+                        " %.1f/%.1f/%.1f m"
+                        % ((phase, len(rows)) + tuple(1000.0 * x for x in g)
+                           + tuple(1000.0 * x for x in w) + m))
+        return ("latency, telemetry tick to command tick (median/p90/max): "
+                + " | ".join(bits))
+
+
 def _blend(old, new, forget):
     if old is None:
         return new

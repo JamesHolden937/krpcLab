@@ -36,7 +36,7 @@ from common.krpcpilot import (  # noqa: F401
     wobble_mitigation)
 from common import cli
 from common.logbook import Logbook
-from common.pacing import LoopRate, ScaleGovernor, sleeper
+from common.pacing import Latency, LoopRate, ScaleGovernor, sleeper
 from common.rpccount import RpcCounter
 from . import airbrake as airbrake_mod
 from . import airframe
@@ -370,6 +370,7 @@ class Autopilot:
         # What the control loop is achieving, per phase.  Written at shutdown
         # so that every log says which controller flew it -- see failure 63.
         self.loop_rate = LoopRate()
+        self.latency = Latency()
         self.rpc = None             # common.rpccount.RpcCounter, set by main
         self.running = True
         self.finished_reason = None
@@ -6553,7 +6554,71 @@ class Autopilot:
                        self._mach_text(snap), snap.parts_now))
         return True
 
+    # The phases ``TICK_HOLD`` holds: the ones that command at TICK_S in air.
+    HELD = (GLIDE, HAC, APPROACH, FLARE, ROLLOUT)
+
+    def hold_tick(self):
+        """``TICK_HOLD``: hold the game on its current physics tick and read
+        the state in it.  False when not held (off, a phase that is not
+        held, or a server without ``HoldTick``, which is then not asked
+        again)."""
+        if (not getattr(self.cfg, "TICK_HOLD", False)
+                or self.state not in self.HELD
+                or getattr(self, "_hold_refused", False)):
+            return False
+        try:
+            self.conn.krpc.hold_tick()
+        except Exception as exc:                        # noqa: BLE001
+            self._hold_refused = True
+            self.logbook.event(self.last_ut or 0.0, "tick hold refused "
+                               "(%s): flying on streams" % type(exc).__name__)
+            return False
+        self._held = True
+        try:
+            self.telemetry.refresh(getattr(self.cfg, "RPC_BATCH", True))
+        except Exception:                               # noqa: BLE001
+            self.telemetry.unfreeze()
+        return True
+
+    def release_tick(self):
+        """Let the game move on from a tick ``hold_tick`` held; nothing if
+        none is held."""
+        if not getattr(self, "_held", False):
+            return
+        self._held = False
+        self.telemetry.unfreeze()
+        try:
+            self.conn.krpc.release_tick()
+        except Exception:                               # noqa: BLE001
+            pass
+
+    def commands_sent(self, snap):
+        """The tick's last command has gone out: measure how stale it was
+        (``common.pacing.Latency``), then release a held tick so the
+        bookkeeping after it runs with the game moving."""
+        started = getattr(self, "_tick_wall", None)
+        try:
+            ut = self.conn.space_center.ut
+        except Exception:                               # noqa: BLE001
+            ut = None
+        if (ut is not None and started is not None
+                and not getattr(self, "warp_factor", 0)):
+            game = ut - snap.ut
+            if 0.0 <= game < 10.0:
+                self.latency.sample(self.state, game,
+                                    time.monotonic() - started,
+                                    game * vec.norm(snap.velocity))
+        self.release_tick()
+
     def tick(self):
+        self._tick_wall = time.monotonic()
+        self.hold_tick()
+        try:
+            return self._tick()
+        finally:
+            self.release_tick()
+
+    def _tick(self):
         snap = self.telemetry.sample(self.env)
         self.last_ut = snap.ut
         # The pitch response every guidance call can read (``flare_door``
@@ -6590,6 +6655,7 @@ class Autopilot:
         if self.state == GLIDE:
             self.probe_flown_moment(snap)
         self.canard_trim(snap)
+        self.commands_sent(snap)
         # **Wherever the table happens to become ready.**  The first version
         # reported from STANDBY, which ``--autostart`` leaves on the tick
         # before the sweep finishes -- so on every harness flight, which is
@@ -6980,6 +7046,7 @@ class Autopilot:
         """The probe's moment at one synthetic ``state`` while a surface
         just commanded to a new deflection travels there: ``[(game seconds
         since the command, moment per q), ...]`` over ~2 game-s."""
+        self.release_tick()
         try:
             t0 = self.conn.space_center.ut
         except Exception:                               # noqa: BLE001
@@ -7754,6 +7821,7 @@ class Autopilot:
         wait is on ``ut``.  A clock that does not move (a paused game) falls
         back to the old wall sleep rather than hanging.
         """
+        self.release_tick()             # a held tick never reaches it
         governor = getattr(self, "governor", None)
         if governor is not None:
             governor.hold_ceiling()
@@ -7806,6 +7874,7 @@ class Autopilot:
             pass
         try:
             self.logbook.event(self.last_ut or 0.0, self.loop_rate.report())
+            self.logbook.event(self.last_ut or 0.0, self.latency.report())
         except Exception:                               # noqa: BLE001
             pass
         if self.rpc is not None:

@@ -2788,6 +2788,16 @@ class Config:
     # the bit (measured on ksp0, CPython and PyPy).  The row refresh was every
     # HAC tick's peak, and the governor serves the peak.  False: one at a time.
     RPC_BATCH: bool = True
+    # **Read, compute and command on one physics tick** (kRPC 0.7's
+    # ``HoldTick``): the game waits on the tick it is in while the loop reads
+    # the state (one batch, ``Telemetry.refresh``), propagates and sends its
+    # commands, and moves on at ``ReleaseTick`` -- so the command is executed
+    # on the tick its telemetry describes, where otherwise every call made
+    # after a few ms of computing waits for the server's next frame.  Held
+    # only in the atmospheric phases (GLIDE to ROLLOUT); a wait for game time
+    # (``settle_game``) releases it first.  The ``latency`` line at the end
+    # of every log measures what it buys.
+    TICK_HOLD: bool = False
     # How often to count the parts still attached.  Polled, not streamed:
     # ``parts.all`` is a list transfer and this loop does not carry those.
     # Seconds is plenty -- a breakup takes seconds, and what the log needs is
