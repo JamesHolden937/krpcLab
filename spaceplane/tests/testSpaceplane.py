@@ -5713,65 +5713,6 @@ class TestPeakHeating(unittest.TestCase):
         self.assertIsNone(traj.peak_heating(Env(), []))
 
 
-class TestTickHold(unittest.TestCase):
-    """``TICK_HOLD``: the atmospheric phases read, compute and command on
-    one held physics tick, released after the last command and always
-    released even when the tick fails; other phases are never held."""
-
-    def _ap(self, state, on=True):
-        calls = []
-        ap = object.__new__(autopilot_module.Autopilot)
-        ap.cfg = SimpleNamespace(TICK_HOLD=on, RPC_BATCH=True)
-        ap.state = state
-        ap.last_ut = 0.0
-        ap.logbook = SimpleNamespace(event=lambda *a: None)
-        ap.conn = SimpleNamespace(krpc=SimpleNamespace(
-            hold_tick=lambda: calls.append("hold"),
-            release_tick=lambda: calls.append("release")))
-        ap.telemetry = SimpleNamespace(
-            refresh=lambda batched: calls.append("refresh"),
-            unfreeze=lambda: calls.append("unfreeze"))
-        return ap, calls
-
-    def test_held_phase_reads_in_the_hold_and_releases_once(self):
-        ap, calls = self._ap(autopilot_module.HAC)
-        ap._tick = lambda: (calls.append("work"), ap.release_tick(),
-                            calls.append("after"))
-        ap.tick()
-        self.assertEqual(calls, ["hold", "refresh", "work", "unfreeze",
-                                 "release", "after"])
-
-    def test_released_when_the_tick_fails(self):
-        ap, calls = self._ap(autopilot_module.APPROACH)
-
-        def boom():
-            raise RuntimeError("x")
-        ap._tick = boom
-        with self.assertRaises(RuntimeError):
-            ap.tick()
-        self.assertEqual(calls[-1], "release")
-
-    def test_not_held_off_or_outside_the_air(self):
-        for state, on in ((autopilot_module.COAST, True),
-                          (autopilot_module.HAC, False)):
-            ap, calls = self._ap(state, on)
-            ap._tick = lambda: calls.append("work")
-            ap.tick()
-            self.assertEqual(calls, ["work"])
-
-    def test_a_server_without_hold_is_asked_once(self):
-        ap, calls = self._ap(autopilot_module.GLIDE)
-
-        def refuse():
-            calls.append("refused")
-            raise RuntimeError("no such procedure")
-        ap.conn.krpc.hold_tick = refuse
-        ap._tick = lambda: calls.append("work")
-        ap.tick()
-        ap.tick()
-        self.assertEqual(calls, ["refused", "work", "work"])
-
-
 class TestDrainLeftover(unittest.TestCase):
     """``DRAIN_LEFTOVER``: valves open on the first air tick, close once the
     tank is down to the floor; nothing in vacuum, nothing twice."""

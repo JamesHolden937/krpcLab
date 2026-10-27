@@ -8,29 +8,7 @@ import math
 
 from dataclasses import dataclass
 
-from common import krpcbatch, vec
-
-_STREAMED = object()
-
-
-class _Read:
-    """One streamed quantity -- or, on a tick held by ``TICK_HOLD``, the
-    value read in that tick (``Telemetry.refresh``).  A stream carries the
-    state of the last tick the server published, and while a tick is held
-    the server publishes nothing; the batch is the held tick's own state."""
-
-    __slots__ = ("stream", "call", "value")
-
-    def __init__(self, stream, call):
-        self.stream, self.call, self.value = stream, call, _STREAMED
-
-    def __call__(self):
-        if self.value is not _STREAMED:
-            return self.value
-        return self.stream()
-
-    def remove(self):
-        self.stream.remove()
+from common import vec
 
 
 @dataclass
@@ -180,14 +158,9 @@ class Telemetry:
         sc = conn.space_center
         flight = vessel.flight(frame)
 
-        # Every stream but the skin temperatures, which no command reads.
-        self._fresh = []
-
-        def stream(*args, fresh=True):
-            s = _Read(conn.add_stream(*args), (args[0], args[1:]))
+        def stream(*args):
+            s = conn.add_stream(*args)
             self.streams.append(s)
-            if fresh:
-                self._fresh.append(s)
             return s
 
         self.ut = stream(getattr, sc, "ut")
@@ -278,8 +251,7 @@ class Telemetry:
                 limit = float(part.max_skin_temperature)
                 if limit > 0.0:
                     self.skin.append((stream(getattr, part,
-                                             "skin_temperature",
-                                             fresh=False), limit,
+                                             "skin_temperature"), limit,
                                       part.title))
         except Exception:                                   # noqa: BLE001
             self.skin = []
@@ -439,19 +411,6 @@ class Telemetry:
             return float(read())
         except Exception:                               # noqa: BLE001
             return 0.0
-
-    def refresh(self, batched=True):
-        """``TICK_HOLD``: read every control stream's quantity now, in one
-        request, so the next ``sample`` is the held tick's state."""
-        got = krpcbatch.ask(self.conn, [r.call for r in self._fresh],
-                            batched=batched)
-        for read, value in zip(self._fresh, got):
-            read.value = _STREAMED if value is None else value
-
-    def unfreeze(self):
-        """Back to the streams once the held tick is released."""
-        for read in self._fresh:
-            read.value = _STREAMED
 
     def _amount(self, name):
         try:

@@ -13,6 +13,12 @@ to whatever ``phase`` the loop last set.  ``report()`` is one log line.
 
 import time
 
+# The procedures that are an attitude command: the first of them in a tick
+# ends what ``before_report`` counts.
+COMMANDS = ("AutoPilot_set_Target", "AutoPilot_SetDirectionAndUp",
+            "ControlSurface_set_Deflection", "Control_set_Pitch",
+            "Control_set_Roll", "Control_set_Yaw")
+
 
 class RpcCounter:
     def __init__(self, top=6):
@@ -25,6 +31,11 @@ class RpcCounter:
         self._last = None       # (phase, monotonic, ut) of the last tick
         self._this = {}         # procedure -> count, this tick only
         self.slow = {}          # phase -> [(busy, ut, rpc wall, {proc: n})], worst first
+        # Calls made in a tick before its first attitude command: each is a
+        # round trip the command waits behind (latency, not just cost).
+        self.before = {}        # phase -> {procedure: count}
+        self.before_wall = {}   # phase -> wall s in them
+        self._commanded = False
 
     def install(self, conn):
         inner = conn._invoke
@@ -40,6 +51,15 @@ class RpcCounter:
                 row[1] += time.monotonic() - started
                 self._this[procedure] = self._this.get(procedure, 0) + 1
                 self._this_wall += time.monotonic() - started
+                if not self._commanded:
+                    if procedure.startswith(COMMANDS):
+                        self._commanded = True
+                    else:
+                        b = self.before.setdefault(self.phase, {})
+                        b[procedure] = b.get(procedure, 0) + 1
+                        self.before_wall[self.phase] = (
+                            self.before_wall.get(self.phase, 0.0)
+                            + time.monotonic() - started)
         conn._invoke = invoke
         conn._rpc_counter = self
         return self
@@ -85,6 +105,7 @@ class RpcCounter:
         self._last = (phase, now, ut)
         self._this = {}
         self._this_wall = 0.0
+        self._commanded = False
         self.phase = phase
         self.ticks[phase] = self.ticks.get(phase, 0) + 1
 
@@ -94,6 +115,19 @@ class RpcCounter:
         return "wall per phase (wall s / game s = speed): total %.0fs " % total + " ".join(
             "%s %.0f/%.0f=%.1fx" % (p, r[0], r[1], r[1] / r[0] if r[0] else 0.0)
             for p, r in self.span.items())
+
+    def before_report(self):
+        """Per phase, the calls a tick makes before its first attitude
+        command, per tick: what the command waits behind."""
+        bits = []
+        for phase, procs in self.before.items():
+            n = max(1, self.ticks.get(phase, 0))
+            worst = sorted(procs.items(), key=lambda kv: -kv[1])[:self.top]
+            bits.append("%s %.1f/tick %.1fms [%s]" % (
+                phase, sum(procs.values()) / n,
+                1000.0 * self.before_wall.get(phase, 0.0) / n,
+                " ".join("%s:%.1f" % (p, c / n) for p, c in worst)))
+        return "rpc before the command (calls, wall): " + " | ".join(bits)
 
     def report(self):
         bits = []

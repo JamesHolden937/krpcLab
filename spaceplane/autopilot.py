@@ -1145,13 +1145,13 @@ class Autopilot:
                     # ``BANK_ACCEL_NO_RCS``: the authority the roll can
                     # count on, not whatever the valve has open this second
                     # -- kRPC's total includes RCS only while it is on.
-                    wheel = self.vessel.available_reaction_wheel_torque[0]
-                    surf = self.vessel.available_control_surface_torque[0]
+                    wheel = self.vessel_value("available_reaction_wheel_torque")[0]
+                    surf = self.vessel_value("available_control_surface_torque")[0]
                     torque = tuple(abs(a) + abs(b)
                                    for a, b in zip(wheel, surf))
                 else:
-                    torque = self.vessel.available_torque[0]
-                inertia = self.vessel.moment_of_inertia
+                    torque = self.vessel_value("available_torque")[0]
+                inertia = self.vessel_value("moment_of_inertia")
             except Exception:                           # noqa: BLE001
                 torque = inertia = None
             if torque is not None:
@@ -6591,48 +6591,27 @@ class Autopilot:
                        self._mach_text(snap), snap.parts_now))
         return True
 
-    # The phases ``TICK_HOLD`` holds: the ones that command at TICK_S in air.
-    HELD = (GLIDE, HAC, APPROACH, FLARE, ROLLOUT)
-
-    def hold_tick(self):
-        """``TICK_HOLD``: hold the game on its current physics tick and read
-        the state in it.  False when not held (off, a phase that is not
-        held, or a server without ``HoldTick``, which is then not asked
-        again)."""
-        if (not getattr(self.cfg, "TICK_HOLD", False)
-                or self.state not in self.HELD
-                or getattr(self, "_hold_refused", False)):
-            return False
-        try:
-            self.conn.krpc.hold_tick()
-        except Exception as exc:                        # noqa: BLE001
-            self._hold_refused = True
-            self.logbook.event(self.last_ut or 0.0, "tick hold refused "
-                               "(%s): flying on streams" % type(exc).__name__)
-            return False
-        self._held = True
-        try:
-            self.telemetry.refresh(getattr(self.cfg, "RPC_BATCH", True))
-        except Exception:                               # noqa: BLE001
-            self.telemetry.unfreeze()
-        return True
-
-    def release_tick(self):
-        """Let the game move on from a tick ``hold_tick`` held; nothing if
-        none is held."""
-        if not getattr(self, "_held", False):
-            return
-        self._held = False
-        self.telemetry.unfreeze()
-        try:
-            self.conn.krpc.release_tick()
-        except Exception:                               # noqa: BLE001
-            pass
+    def vessel_value(self, name):
+        """A vessel property read every tick, from a stream opened on first
+        use: a call made mid-tick waits for the server's next frame, and the
+        attitude command waits behind it.  A direct read where streams are
+        not available (the offline fakes)."""
+        streams = self.__dict__.setdefault("_vessel_streams", {})
+        read = streams.get(name)
+        if read is None:
+            try:
+                read = self.conn.add_stream(getattr, self.vessel, name)
+                self.telemetry.streams.append(read)
+            except Exception:                           # noqa: BLE001
+                read = False
+            streams[name] = read
+        if read is False:
+            return getattr(self.vessel, name)
+        return read()
 
     def commands_sent(self, snap):
         """The tick's last command has gone out: measure how stale it was
-        (``common.pacing.Latency``), then release a held tick so the
-        bookkeeping after it runs with the game moving."""
+        (``common.pacing.Latency``)."""
         started = getattr(self, "_tick_wall", None)
         try:
             ut = self.conn.space_center.ut
@@ -6645,17 +6624,9 @@ class Autopilot:
                 self.latency.sample(self.state, game,
                                     time.monotonic() - started,
                                     game * vec.norm(snap.velocity))
-        self.release_tick()
 
     def tick(self):
         self._tick_wall = time.monotonic()
-        self.hold_tick()
-        try:
-            return self._tick()
-        finally:
-            self.release_tick()
-
-    def _tick(self):
         snap = self.telemetry.sample(self.env)
         self.last_ut = snap.ut
         # The pitch response every guidance call can read (``flare_door``
@@ -7084,7 +7055,6 @@ class Autopilot:
         """The probe's moment at one synthetic ``state`` while a surface
         just commanded to a new deflection travels there: ``[(game seconds
         since the command, moment per q), ...]`` over ~2 game-s."""
-        self.release_tick()
         try:
             t0 = self.conn.space_center.ut
         except Exception:                               # noqa: BLE001
@@ -7628,9 +7598,9 @@ class Autopilot:
         dt = 0.0 if last is None else max(0.0, snap.ut - last)
         self._air_ut = snap.ut
         try:
-            surf = abs(self.vessel.available_control_surface_torque[0][0])
-            wheel = abs(self.vessel.available_reaction_wheel_torque[0][0])
-            inertia = self.vessel.moment_of_inertia[0]
+            surf = abs(self.vessel_value("available_control_surface_torque")[0][0])
+            wheel = abs(self.vessel_value("available_reaction_wheel_torque")[0][0])
+            inertia = self.vessel_value("moment_of_inertia")[0]
         except Exception:                               # noqa: BLE001
             return
         tau = max(0.1, float(self.cfg.ATTITUDE_AIR_SMOOTH_S))
@@ -7859,7 +7829,6 @@ class Autopilot:
         wait is on ``ut``.  A clock that does not move (a paused game) falls
         back to the old wall sleep rather than hanging.
         """
-        self.release_tick()             # a held tick never reaches it
         governor = getattr(self, "governor", None)
         if governor is not None:
             governor.hold_ceiling()
@@ -7917,6 +7886,7 @@ class Autopilot:
             pass
         if self.rpc is not None:
             self.logbook.event(self.last_ut or 0.0, self.rpc.report())
+            self.logbook.event(self.last_ut or 0.0, self.rpc.before_report())
             self.logbook.event(self.last_ut or 0.0, self.rpc.wall_report())
             self.logbook.event(self.last_ut or 0.0, self.rpc.slow_report())
         """Hand back to the player, deliberately, rather than try to save it."""
