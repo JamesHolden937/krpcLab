@@ -2922,9 +2922,10 @@ class Config:
     # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
     # capped at 180).  0 leaves kRPC's 15/20.
     ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
-    # In GLIDE roll's time_to_peak is floored at yaw's static figure, always
-    # (the user, 2026-10-27: "if yaw can't keep up then just slow the
-    # roll"; ``Autopilot.damp_roll``).
+    # In GLIDE roll's time_to_peak is floored at this share of yaw's static
+    # figure (the user, 2026-10-27: "if yaw can't keep up then just slow
+    # the roll"; ``Autopilot.damp_roll``).  0 lets roll run free.
+    GLIDE_ROLL_YAW_SHARE: float = 1.0
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0

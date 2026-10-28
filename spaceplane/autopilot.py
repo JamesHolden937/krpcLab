@@ -1013,7 +1013,7 @@ class Autopilot:
         # swing roll's gains too.
         # The user's proposal; rywfam-1028 / rollyaw-1027.
         if self.state == GLIDE:
-            roll = max(roll, static[2])
+            roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
         yaw = yaw_time_to_peak(self.cfg, roll, static[2], alpha_deg,
                                self.rcs_yaw_now(snap.ut))
         have = self._tuned_peak
