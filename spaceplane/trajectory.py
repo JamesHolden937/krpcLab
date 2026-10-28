@@ -24,7 +24,7 @@ which is the thing that makes energy management possible at all: raising the
 nose brakes.
 """
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from common import vec
 from common.geo import gravity_at, surface_distance  # noqa: F401
@@ -78,6 +78,7 @@ class Prediction:
     handover_met: bool = False
     handover_state: object = None
     closest: float = 0.0       # horizontal distance to the gate there
+    flips: int = 0             # reversals the planned lean flew
     profile: tuple = ()        # (speed, altitude) along the way down
     min_altitude: float = 0.0
     skipped: bool = False      # went into the air and came back out of it
@@ -133,6 +134,9 @@ class Steer:
     cfg: object = None          # set to enable the arrival-speed cap
     mass: float = 0.0
     reversing: bool = True      # predict the mean of a reversing entry
+    # ``GLIDE_ONE_REVERSAL``: ``(L/D, arrival speed, floor band)`` -- the
+    # lean is flown, and reversed where ``lean_sign`` says (``predict``).
+    plan: object = None
     holdable: object = None     # the learned alpha ceiling, if any
     # Fly ``ALPHA_TRACKING`` (``tracked_alpha``): only the deorbit window's
     # two corners, which nothing solves against.
@@ -837,8 +841,10 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
             interface_position=(() if iface_r is None else tuple(iface_r)),
             interface_velocity=(() if iface_v is None else tuple(iface_v)),
             interface_time=(0.0 if iface_t is None else iface_t),
-            entry_time=(0.0 if air_t is None else air_t))
+            entry_time=(0.0 if air_t is None else air_t),
+            flips=flips)
 
+    flips = 0
     entry_r = entry_v = None
     iface_r = iface_v = iface_t = None
     air_r = air_v = air_t = None
@@ -911,11 +917,62 @@ def predict(env, r0, v0, mass, cfg, steer=None, gate=None, end=None,
         if descending and altitude < env.atmosphere_depth:
             profile.append((speed, altitude))
 
+        if (steer.plan is not None and gate is not None and steer.bank
+                and altitude < env.atmosphere_depth):
+            sign = 1.0 if steer.bank > 0.0 else -1.0
+            if lean_sign(r, v, gate, sign, reversal_band(
+                    cfg, steer.plan, speed, steer.bank)) != sign:
+                steer = replace(steer, bank=-steer.bank)
+                flips += 1
         r, v = _step(env, r, v, mass, dt, cfg, steer)
         t += dt
         steps += 1
 
     return answer(r, v, t, steps, False, False)
+
+
+def reversal_band(cfg, plan, speed, bank):
+    """``GLIDE_ONE_REVERSAL``'s azimuth band, degrees: the heading the lean
+    can still turn the track through before the arrival.
+
+    In a glide the lateral lift turns the track at ``L sin(bank) / (m v)``
+    and the drag spends speed at ``D / m``, so per unit of speed spent the
+    heading moves ``(L/D) sin(bank) / v``: the turn left is
+    ``(L/D) sin|bank| ln(v / v_end)``.  Held until the azimuth error on the
+    far side reaches that, one reversal swings the track back onto the
+    bearing as the speed runs out.  ``ONE_REVERSAL_SHARE`` of it, capped at
+    ``ONE_REVERSAL_MAX_DEG`` (the excursion costs crossrange and range), and
+    never narrower than the azimuth band the bands would use.
+    """
+    ld, v_end, floor = plan
+    turn = 0.0
+    if speed > v_end > 0.0 and ld > 0.0:
+        turn = math.degrees(ld * math.sin(math.radians(min(abs(bank), 80.0)))
+                            * math.log(speed / v_end))
+    top = max(floor, float(cfg.ONE_REVERSAL_MAX_DEG))
+    return min(top, max(floor, float(cfg.ONE_REVERSAL_SHARE) * turn))
+
+
+def lean_sign(r, v, gate, sign, band):
+    """Hold ``sign`` while the track is within ``band`` degrees of the
+    bearing to ``gate``; past it, the lean whose lift turns toward it.
+    ``guidance._bank_sign``'s azimuth test, with no cross-track one."""
+    up = vec.unit(r)
+    track = vec.project_out(v, up)
+    toward = vec.project_out(vec.sub(gate, r), up)
+    if vec.norm(track) < 1.0 or vec.norm(toward) < 1.0:
+        return sign
+    track = vec.unit(track)
+    if vec.angle_between(track, toward) <= band:
+        return sign
+    _, side = lift_frame(r, v)
+    want = vec.project_out(toward, track)
+    if side is None or vec.norm(want) < 1e-9:
+        return sign
+    lean = vec.dot(side, vec.unit(want))
+    if abs(lean) < 1e-6:
+        return sign
+    return 1.0 if lean > 0.0 else -1.0
 
 
 def miss_components(env, end, predicted, gate, velocity=None):

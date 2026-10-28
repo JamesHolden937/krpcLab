@@ -30,7 +30,9 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     what the glide is solved on.  ``cross`` is the lateral miss at the same
     point, which the bank's sign takes.
     """
-    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass)
+    plan = getattr(env, "reverse_plan", None)
+    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
+                  reversing=plan is None, plan=plan)
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
@@ -314,8 +316,11 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
                         vec.norm(r) - env.equatorial_radius,
                         mass, env.mu / (vec.norm(r) ** 2))
     floor = min(floor, top)
+    set_reverse_plan(env, cfg, r, v, gate, alpha0, bank0)
     base = _fly(env, r, v, mass, cfg, end, gate, alpha0, bank0)
     _, flat, m0 = base
+    if flat.reached:
+        env.reverse_v_end = flat.speed
 
     if not env.ready():
         return Steer(alpha=alpha0, bank=bank0, cfg=cfg, mass=mass), flat
@@ -334,12 +339,13 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
                                         alpha0, bank0, m0, floor, top, target)
     magnitude = max(magnitude, 0.0)
 
-    sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
-    if getattr(cfg, "GLIDE_ONE_REVERSAL", False):
-        planned = one_reversal_sign(env, cfg, r, v, mass, end, gate, alpha,
-                                    magnitude, bank0)
-        if planned is not None:
-            sign = planned
+    plan = getattr(env, "reverse_plan", None)
+    if plan is not None:
+        sign = trajectory.lean_sign(
+            r, v, gate, 1.0 if bank0 >= 0.0 else -1.0,
+            trajectory.reversal_band(cfg, plan, vec.norm(v), magnitude))
+    else:
+        sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
     bank = sign * magnitude
     return verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
                     alpha0, bank0, floor, target, top)
@@ -581,6 +587,17 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     toward = vec.unit(toward)
     error = vec.angle_between(track, toward)
     distance = trajectory.surface_distance(env, r, gate)
+    deadband = azimuth_deadband(env, cfg, r, v, gate, bank0)
+    band = cross_band(cfg, distance)
+    if error <= deadband and abs(cross) <= band:
+        return sign
+    wanted = bank_toward(r, v, vec.project_out(toward, track), 1.0)
+    return wanted if wanted else sign
+
+
+def azimuth_deadband(env, cfg, r, v, gate, bank0):
+    """The azimuth error (deg) ``_bank_sign`` holds the lean through."""
+    distance = trajectory.surface_distance(env, r, gate)
     deadband = vec.clamp(cfg.AZIMUTH_DEADBAND_PER_KM * distance / 1000.0,
                          cfg.AZIMUTH_DEADBAND_MIN_DEG,
                          cfg.AZIMUTH_DEADBAND_MAX_DEG)
@@ -615,51 +632,34 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
     # whose actuator takes thirteen seconds to roll between the stops.  In
     # game it reversed on an 18-second period through the level-off and
     # overshot the 500 m band to 3.4 km on every swing.  See failure 10e.
-    band = cross_band(cfg, distance)
-    if error <= deadband and abs(cross) <= band:
-        return sign
-    wanted = bank_toward(r, v, vec.project_out(toward, track), 1.0)
-    return wanted if wanted else sign
+    return deadband
 
 
-def one_reversal_sign(env, cfg, r, v, mass, end, gate, alpha, magnitude,
-                      bank0):
-    """``GLIDE_ONE_REVERSAL``: lean across the line, reverse once, line up.
+def set_reverse_plan(env, cfg, r, v, gate, alpha, bank0):
+    """``GLIDE_ONE_REVERSAL``: what the propagator needs to fly the reversal.
 
-    Two constant-lean propagations to the gate at the solved alpha and bank
-    magnitude: the present lean held, and the other lean from now on.  The
-    held lean carries the vehicle across the centreline; the reversal comes
-    when flying the other lean from here would land on the line or short of
-    it on the near side -- later than that and one reversal cannot bring it
-    back.  It is not taken while holding would arrive within
-    ``ONE_REVERSAL_HOLD_M``, which the cone flies out, so the end of the
-    glide cannot chatter between two arcs that have converged.  After the
-    reversal the same test is the backstop: a second one only if the
-    vehicle is again carried past the line by more than that.
-
-    ``None`` -- the azimuth/cross-track bands decide -- when the bank is too
-    shallow to steer with or either arc does not reach the gate.
+    ``env.reverse_plan`` = ``(L/D, arrival speed, floor band)``, or ``None``
+    (off, or no arrival yet to measure the remaining turn against), read by
+    ``_fly`` and the sign decision so the prediction and the command fly
+    one law.  See ``trajectory.reversal_band``.
     """
-    if magnitude < float(cfg.ONE_REVERSAL_MIN_BANK_DEG):
-        return None
-    sign = 1.0 if bank0 >= 0.0 else -1.0
-    out = []
-    for lean in (sign, -sign):
-        steer = Steer(alpha=alpha, bank=lean * magnitude, cfg=cfg, mass=mass,
-                      reversing=False)
-        got = trajectory.predict(env, r, v, mass, cfg, steer=steer,
-                                 gate=gate, end=end,
-                                 target_radius=vec.norm(gate))
-        if not got.reached or got.skipped:
-            return None
-        out.append(got.cross)
-    hold, flip = out
-    if abs(hold - flip) < 1.0:
-        return None
-    drift = 1.0 if hold > flip else -1.0   # the side the present lean carries to
-    if drift * hold > float(cfg.ONE_REVERSAL_HOLD_M) and drift * flip >= 0.0:
-        return -sign
-    return sign
+    env.reverse_plan = None
+    if not getattr(cfg, "GLIDE_ONE_REVERSAL", False):
+        return
+    v_end = getattr(env, "reverse_v_end", None)
+    if not v_end:
+        return
+    speed = vec.norm(v)
+    try:
+        cla, cda = env.coefficients(alpha, speed,
+                                    vec.norm(r) - env.equatorial_radius)
+    except Exception:                                       # noqa: BLE001
+        return
+    if cda <= 0.0 or cla <= 0.0:
+        return
+    env.reverse_plan = (cla / cda, v_end,
+                        max(float(cfg.ONE_REVERSAL_FLOOR_DEG),
+                            azimuth_deadband(env, cfg, r, v, gate, bank0)))
 
 
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,

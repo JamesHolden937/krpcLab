@@ -825,15 +825,22 @@ class Config:
     # entry needs it to be. CLAUDE.md's rule about a guard whose reason no
     # longer survives inspection, running the other way: here it is a
     # *rejection* whose reason no longer survives.
-    # **One reversal** (the user, 2026-10-27): lean across the centreline,
-    # reverse once when the other lean from here would land on it, hold it
-    # to the cone.  ``guidance.one_reversal_sign``; the bands above decide
-    # only when it has no answer.  The glide reversed seven times below
-    # Mach 4 on the 0.8 deg / 1.3 km bands, overshooting each command by up
-    # to 166 deg (LOG14553).
+    # **One reversal** (the user, 2026-10-27): hold the lean across the
+    # line until the azimuth error reaches the turn the other lean can
+    # still make before the speed runs out, then reverse and let it swing
+    # the track back onto the bearing (``trajectory.reversal_band``).  The
+    # propagator flies the same lean and the same reversal, so the range
+    # solve sees the S-turn's length -- the wide bands, predicted as a
+    # straight mean, arrived 20-45 km short (band-1027).  No cross-track
+    # test.  Seven reversals below Mach 4 on the 0.8 deg / 1.3 km bands
+    # overshot their command by up to 166 deg (LOG14553).
     GLIDE_ONE_REVERSAL: bool = False
-    ONE_REVERSAL_HOLD_M: float = 2000.0     # held arrival the cone flies out
-    ONE_REVERSAL_MIN_BANK_DEG: float = 5.0  # shallower has no lateral to plan
+    ONE_REVERSAL_SHARE: float = 1.0
+    ONE_REVERSAL_MAX_DEG: float = 15.0
+    # Never narrower: as the turn left runs out near the gate the bearing
+    # swings fast and a narrow band flips the lean in the last seconds; the
+    # cone flies out what this leaves.
+    ONE_REVERSAL_FLOOR_DEG: float = 5.0
     CROSS_DEADBAND_PER_KM: float = 20.0# m of predicted cross per km to run
     CROSS_DEADBAND_MIN_M: float = 500.0     # the runway's own scale
     CROSS_DEADBAND_MAX_M: float = 40000.0
