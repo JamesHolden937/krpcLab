@@ -621,3 +621,20 @@ landed merge is covered only by `tests/testFmrs.py`.
 
 `fakeksp.Vessel` had no `moment_of_inertia`, so FLIP_THROTTLE_LAW made 20
 closed-loop tests error since 2026-10-18; added (a cylinder's inertia).
+
+## 2026-10-27: quickfly flies the bundle; a 1x load is a different booster
+
+quickfly now starts the autoland as a child from `dist/krpcLab.py`.  Pausing
+the game until the child was up landed 0.2-0.8 game-s late at 4x (a pause
+waits for frames); starting "as soon as up" was 0.5 s later under PyPy than
+CPython.  Final form: the child loads the save itself, the instance stays at
+1x through load and start-up, the first tick waits for save UT + 4.6, the
+harness raises the scale afterwards.  Start 16681.78 +-0.02 on every flight.
+
+At that UT the 1x-loaded booster has hs 699.6 m/s on every flight; the old 4x
+load gave 701.7-702.8.  Fresh farm, interleaved, 6 v 6: old harness 23, 29,
+32, 61, 139, 155 m; new (CPython) 19, 64, 69, 170, 259, 361 m, all west.  The
+earlier 6 v 6s flown on a farm at 20-22 GB of swap are discarded.  Under PyPy
+the booster serves its 0.05 s tick (~2470 coast ticks) where CPython gave
+~0.07 s (~1650); not shown to matter.
+

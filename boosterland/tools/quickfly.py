@@ -48,12 +48,12 @@ SETTLE_TIMEOUT_S = 90.0
 SETTLE_POLL_S = 0.5      # game time keeps running while we wait, so poll fast
 SIM_START_LAG_S = 5.8    # game time from the save to START in the game (LOG3094-3097)
 # Game time from the save's UT to the first tick on a real instance: where
-# the in-process harness engaged (+4.60 on ``quicksave``, 16681.78), so the
-# booster's measured history is of the same entry state.  **It is that
-# sensitive**: the tumbling booster sweeps its drag curve at its attitude on
-# the first tick, and +4.8 against +4.6 put six flights 1-432 m west where
-# the in-process ones landed 6-38 m east (2026-10-27).  The flight starts
-# up at real time to make it (see ``fly_once``): ready by +2.4.
+# the in-process harness engaged (+4.60 on ``quicksave``, 16681.78).  The
+# flight starts up at real time to make it (see ``fly_once``), and **a save
+# loaded at real time is a different booster from one loaded at 4x**: hs
+# 699.6 m/s at 16681.78, identical every flight, against 701.7-702.8 -- and
+# it lands 100-360 m west where the 4x-loaded state landed mostly within
+# 60 m (2026-10-27, HANDOFF).  The 1x state is the one a live game flies.
 START_LAG_S = 4.6
 SAVE_UT = re.compile(r"^\s*UT = ([\d.]+)", re.M)
 DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d.]+)")
