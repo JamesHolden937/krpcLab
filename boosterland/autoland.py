@@ -2330,8 +2330,10 @@ def parse_args(argv):
     p.add_argument("--load", default=None, metavar="SAVE",
                    help="load this save and fly from the moment its physics "
                         "runs (the farm harness, quickfly.py)")
-    p.add_argument("--load-delay", type=float, default=0.0, metavar="S",
-                   help="coast this many game-seconds after --load first")
+    p.add_argument("--start-ut", type=float, default=None, metavar="UT",
+                   help="take the first tick at this game time, not as soon "
+                        "as the process is up (the farm harness: the same "
+                        "entry state whatever the interpreter's start-up)")
     p.add_argument("--load-timeout", type=float, default=90.0, metavar="S",
                    help="wall-seconds to wait for the loaded save to settle")
     return p.parse_args(argv)
@@ -2339,7 +2341,7 @@ def parse_args(argv):
 
 def load_settled(args, poll=0.5):
     """``--load``: load the save and return a connection the moment the
-    booster is flying, ``--load-delay`` game-seconds later.
+    booster is flying.
 
     **In this process, not the harness's**: a harness that loaded the save
     and then started this one would have to stop the game meanwhile, and a
@@ -2364,9 +2366,6 @@ def load_settled(args, poll=0.5):
             conn = cli.connect(args)
             vessel = conn.space_center.active_vessel
             if vessel.flight(vessel.orbit.body.reference_frame).speed > 1.0:
-                target = conn.space_center.ut + args.load_delay
-                while conn.space_center.ut < target:
-                    time.sleep(0.1)
                 return conn
         except Exception:                   # noqa: BLE001 -- still loading
             pass
@@ -2390,6 +2389,18 @@ def main(argv=None):
         conn = load_settled(args) if args.load else cli.connect(args)
         run = Autoland(conn, cfg, log)
         run.autostart = args.autostart
+        if args.start_ut is not None:
+            # **The entry state is a game time, not "once we are up".**
+            # How long this process takes to start depends on the
+            # interpreter and the machine (PyPy's first pass is ~3x
+            # CPython's), and at 4x it moved the first tick 0.2-0.8
+            # game-seconds -- a different booster every flight.
+            now = conn.space_center.ut
+            while now < args.start_ut:
+                time.sleep(0.01)
+                now = conn.space_center.ut
+            log.event(now, "start held to UT %.2f (%+.2f s)"
+                      % (args.start_ut, now - args.start_ut))
         if args.autostart:
             run.gui.hide_start()
             # **A harness may hand over a paused game** (``quickfly.py`` on

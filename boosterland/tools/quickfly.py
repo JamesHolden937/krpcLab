@@ -47,6 +47,11 @@ import farmflight  # noqa: E402
 SETTLE_TIMEOUT_S = 90.0
 SETTLE_POLL_S = 0.5      # game time keeps running while we wait, so poll fast
 SIM_START_LAG_S = 5.8    # game time from the save to START in the game (LOG3094-3097)
+# Game time from the save's UT to the first tick on a real instance: past
+# the latest the flight can be up (+5.4 under PyPy at 4x, 2026-10-27), so
+# every flight engages at the same UT.
+START_LAG_S = 6.0
+SAVE_UT = re.compile(r"^\s*UT = ([\d.]+)", re.M)
 DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d.]+)")
 # Fallback, and the number that is always right: the last telemetry line's own
 # great-circle distance from the pad.
@@ -112,6 +117,18 @@ def load_save(args):
     raise RuntimeError("save %r never settled into a flyable vessel" % args.save)
 
 
+def save_ut(name):
+    """The game time the reference save was taken at (``saves/``, which
+    ``syncSaves.sh check`` keeps the instances' copies equal to), or None."""
+    try:
+        with open(os.path.join(ROOT, "saves", name + ".sfs"),
+                  errors="replace") as fh:
+            m = SAVE_UT.search(fh.read())
+        return float(m.group(1)) if m else None
+    except OSError:
+        return None
+
+
 def hold_for(conn, seconds):
     """Let the booster coast `seconds` of *game* time before starting.
 
@@ -150,12 +167,14 @@ def fly_once(args, overrides):
                 pass
     else:
         # **The flight loads the save itself** (``autoland --load``) and
-        # starts on its first settled tick, as this harness did when it ran
-        # the autoland in-process.  Loading here and pausing until the child
-        # was up started each flight 0.2-0.8 game-seconds late, by however
-        # long the pause took to land.
-        extra = ["--load", args.save, "--load-delay", str(args.delay),
-                 "--load-timeout", str(SETTLE_TIMEOUT_S)]
+        # takes its first tick at a fixed game time after the save's UT
+        # (``--start-ut``).  Loading here and pausing until the child was up
+        # started each flight 0.2-0.8 game-seconds late, by however long the
+        # pause took to land; so did starting "as soon as it is up".
+        extra = ["--load", args.save, "--load-timeout", str(SETTLE_TIMEOUT_S)]
+        start = save_ut(args.save)
+        if start is not None:
+            extra += ["--start-ut", "%.3f" % (start + START_LAG_S + args.delay)]
     overrides = list(overrides)
     # Off 1x, the loop has to be paced on the game clock or the control rate
     # the vehicle sees falls by exactly the speedup factor.  An explicit
