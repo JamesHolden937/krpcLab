@@ -252,8 +252,8 @@ def fly(args, index):
     if rpc:
         argv += ["--rpc-port", str(rpc), "--stream-port", str(stream)]
     launched = time.time()
-    timed_out = farmflight.wait(farmflight.launch(argv), args.timeout,
-                                0.1 if sim else 2.0)
+    process = farmflight.launch(argv)
+    timed_out = farmflight.wait(process, args.timeout, 0.1 if sim else 2.0)
 
     conn = connect("quickglide-report", rpc, stream)
     cfg = Config()
@@ -269,7 +269,7 @@ def fly(args, index):
         except Exception:                               # noqa: BLE001
             pass
 
-    log = claim_log(before, launched)
+    log = claim_log(before, launched, process.pid)
     distance = math.hypot(along, across)
     # **Commanded is not achieved.**  KSP's physics is single-threaded, so a
     # machine that will only sustain 1.6x answers a request for 4x with 1.6x,
