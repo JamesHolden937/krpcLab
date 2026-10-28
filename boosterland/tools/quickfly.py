@@ -47,10 +47,11 @@ import farmflight  # noqa: E402
 SETTLE_TIMEOUT_S = 90.0
 SETTLE_POLL_S = 0.5      # game time keeps running while we wait, so poll fast
 SIM_START_LAG_S = 5.8    # game time from the save to START in the game (LOG3094-3097)
-# Game time from the save's UT to the first tick on a real instance: past
-# the latest the flight can be up (+5.4 under PyPy at 4x, 2026-10-27), so
-# every flight engages at the same UT.
-START_LAG_S = 6.0
+# Game time from the save's UT to the first tick on a real instance: where
+# the in-process harness engaged (+4.6 on ``quicksave``), so the booster's
+# measured history is of the same entry state.  The flight starts up at real
+# time to make it (see ``fly_once``).
+START_LAG_S = 4.8
 SAVE_UT = re.compile(r"^\s*UT = ([\d.]+)", re.M)
 DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d.]+)")
 # Fallback, and the number that is always right: the last telemetry line's own
@@ -149,10 +150,26 @@ def hold_for(conn, seconds):
 
 def fly_once(args, overrides):
     tsdir = ts.instance_dir(args.instance, args.rpc_port)
+    sim = str(args.instance or "").startswith("sim")
+    fast = args.timescale not in (None, "off")
     if args.timescale is not None:
         ts.write(tsdir, args.timescale)
+    if fast and not sim:
+        # **Real time until the flight has engaged**: PyPy's start-up is
+        # 0.5 game-seconds at 4x and would not make START_LAG_S; at 1x it is
+        # an eighth of a second.  ``raise_scale`` puts the scale back.
+        ts.hold(tsdir)
+    raised = []
+
+    def raise_scale(path):
+        if raised or not fast or sim:
+            return
+        with open(path, errors="replace") as fh:
+            if "start held to UT" in fh.read():
+                ts.write(tsdir, args.timescale)
+                raised.append(True)
     extra = []
-    if str(args.instance or "").startswith("sim"):
+    if sim:
         # A simulated instance loads here, advances to where the game would
         # have started, and pauses at once (it has no frames to wait for);
         # the flight's first tick engages on that state and unpauses.
@@ -175,6 +192,9 @@ def fly_once(args, overrides):
         start = save_ut(args.save)
         if start is not None:
             extra += ["--start-ut", "%.3f" % (start + START_LAG_S + args.delay)]
+        elif fast:
+            ts.write(tsdir, args.timescale)     # nothing will say it started
+            raised.append(True)
     overrides = list(overrides)
     # Off 1x, the loop has to be paced on the game clock or the control rate
     # the vehicle sees falls by exactly the speedup factor.  An explicit
@@ -189,7 +209,8 @@ def fly_once(args, overrides):
                                      "boosterland.autoland", overrides,
                                      args.timeout,
                                      ports=(args.rpc_port, args.stream_port),
-                                     extra=extra)
+                                     extra=extra, poll=0.5,
+                                     on_log=raise_scale)
     where = None
     try:
         conn = connect(args, "quickfly-report")

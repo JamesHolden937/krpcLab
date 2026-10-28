@@ -136,13 +136,15 @@ def launch(argv):
     return process
 
 
-def wait(process, timeout, poll=2.0):
+def wait(process, timeout, poll=2.0, on_poll=None):
     """Wait for the flight to end or ``timeout`` wall seconds; reap it
-    either way.  True if it timed out."""
+    either way.  True if it timed out.  ``on_poll()`` runs every poll."""
     started = time.time()
     try:
         while process.poll() is None and time.time() - started < timeout:
             time.sleep(poll)
+            if on_poll is not None:
+                on_poll()
     finally:
         timed_out = process.poll() is None
         reap(process)
@@ -223,10 +225,11 @@ def opened_at(path):
 
 
 def fly(args, pilot, module, overrides, timeout, poll=2.0, ports=None,
-        extra=()):
+        extra=(), on_log=None):
     """Launch, wait, reap: ``(log path or None, timed out)``.  ``ports`` is
     ``(rpc, stream)`` or None for the default game; ``extra``, more of the
-    pilot's own arguments."""
+    pilot's own arguments; ``on_log(path)``, called every poll once the
+    flight's log exists."""
     argv = command(args, pilot, module, overrides) + list(extra)
     if ports and ports[0]:
         argv += ["--rpc-port", str(ports[0]), "--stream-port", str(ports[1])]
@@ -236,5 +239,11 @@ def fly(args, pilot, module, overrides, timeout, poll=2.0, ports=None,
     before = log_names()
     launched = time.time()
     process = launch(argv)
-    timed_out = wait(process, timeout, poll)
+
+    def watch():
+        path = claim_log(before, launched, process.pid)
+        if path and not path.startswith("?"):
+            on_log(path)
+    timed_out = wait(process, timeout, poll,
+                     watch if on_log is not None else None)
     return claim_log(before, launched, process.pid), timed_out
