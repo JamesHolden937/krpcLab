@@ -156,8 +156,13 @@ def log_names():
                if n.startswith("LOG") and n[3:].isdigit())
 
 
-def claim_log(before, launched):
+def claim_log(before, launched, pid=None):
     """Which log this flight wrote, given the ones that existed before it.
+
+    **By the process id in its header** when ``pid`` is given: exact however
+    many flights started together.  A pilot that hands over to another in
+    the same process (the ascent's booster) writes a second log; the first
+    is its own.  What follows is the fallback for a log without one.
 
     **"The highest-numbered log" is wrong the moment two instances fly at
     once**, which is the only way a farm harness is worth running: it returns
@@ -175,6 +180,10 @@ def claim_log(before, launched):
     fresh = sorted(log_names() - before, key=lambda n: int(n[3:]))
     if not fresh:
         return None
+    if pid is not None:
+        mine = [n for n in fresh if opened_by(os.path.join(LOGS, n)) == pid]
+        if mine:
+            return os.path.join(LOGS, mine[0])
     if len(fresh) == 1:
         return os.path.join(LOGS, fresh[0])
     timed = sorted((abs(opened_at(os.path.join(LOGS, n)) - launched), n)
@@ -182,6 +191,16 @@ def claim_log(before, launched):
     if len(timed) > 1 and timed[1][0] - timed[0][0] < 1.0:
         return "?" + "|".join(n for _, n in timed[:3])
     return os.path.join(LOGS, timed[0][1])
+
+
+def opened_by(path):
+    """The pid in the log's header line, or None."""
+    try:
+        with open(path, errors="replace") as fh:
+            m = re.search(r", pid (\d+)$", fh.readline().rstrip("\n"))
+        return int(m.group(1)) if m else None
+    except OSError:
+        return None
 
 
 def opened_at(path):
@@ -216,5 +235,6 @@ def fly(args, pilot, module, overrides, timeout, poll=2.0, ports=None,
         argv += ["--address", address]
     before = log_names()
     launched = time.time()
-    timed_out = wait(launch(argv), timeout, poll)
-    return claim_log(before, launched), timed_out
+    process = launch(argv)
+    timed_out = wait(process, timeout, poll)
+    return claim_log(before, launched, process.pid), timed_out

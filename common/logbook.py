@@ -16,8 +16,10 @@ class Logbook:
         self.interval_ut = float(interval_ut)
         self.path, self._fh = _open_next_log(directory)
         self._next_ut = None
-        self._fh.write("# krpcLab log, opened %s\n"
-                       % time.strftime("%Y-%m-%d %H:%M:%S"))
+        # The pid is how a harness that started this process finds its log
+        # among others opened in the same second (``farmflight.claim_log``).
+        self._fh.write("# krpcLab log, opened %s, pid %d\n"
+                       % (time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
 
     # -- writing -----------------------------------------------------------
     def event(self, ut, text):
