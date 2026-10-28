@@ -30,9 +30,7 @@ def _fly(env, r, v, mass, cfg, end, gate, alpha, bank):
     what the glide is solved on.  ``cross`` is the lateral miss at the same
     point, which the bank's sign takes.
     """
-    plan = getattr(env, "reverse_plan", None)
-    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass,
-                  reversing=plan is None, plan=plan)
+    steer = Steer(alpha=alpha, bank=bank, cfg=cfg, mass=mass)
     prediction = trajectory.predict(env, r, v, mass, cfg, steer=steer,
                                     gate=gate, end=end,
                                     target_radius=vec.norm(gate))
@@ -316,11 +314,8 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
                         vec.norm(r) - env.equatorial_radius,
                         mass, env.mu / (vec.norm(r) ** 2))
     floor = min(floor, top)
-    set_reverse_plan(env, cfg, r, v, gate, alpha0, bank0)
     base = _fly(env, r, v, mass, cfg, end, gate, alpha0, bank0)
     _, flat, m0 = base
-    if flat.reached:
-        env.reverse_v_end = flat.speed
 
     if not env.ready():
         return Steer(alpha=alpha0, bank=bank0, cfg=cfg, mass=mass), flat
@@ -339,13 +334,7 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
                                         alpha0, bank0, m0, floor, top, target)
     magnitude = max(magnitude, 0.0)
 
-    plan = getattr(env, "reverse_plan", None)
-    if plan is not None:
-        sign = trajectory.lean_sign(
-            r, v, gate, 1.0 if bank0 >= 0.0 else -1.0,
-            trajectory.reversal_band(cfg, plan, vec.norm(v), magnitude))
-    else:
-        sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
+    sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
     bank = sign * magnitude
     return verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
                     alpha0, bank0, floor, target, top)
@@ -633,33 +622,6 @@ def azimuth_deadband(env, cfg, r, v, gate, bank0):
     # game it reversed on an 18-second period through the level-off and
     # overshot the 500 m band to 3.4 km on every swing.  See failure 10e.
     return deadband
-
-
-def set_reverse_plan(env, cfg, r, v, gate, alpha, bank0):
-    """``GLIDE_ONE_REVERSAL``: what the propagator needs to fly the reversal.
-
-    ``env.reverse_plan`` = ``(L/D, arrival speed, floor band)``, or ``None``
-    (off, or no arrival yet to measure the remaining turn against), read by
-    ``_fly`` and the sign decision so the prediction and the command fly
-    one law.  See ``trajectory.reversal_band``.
-    """
-    env.reverse_plan = None
-    if not getattr(cfg, "GLIDE_ONE_REVERSAL", False):
-        return
-    v_end = getattr(env, "reverse_v_end", None)
-    if not v_end:
-        return
-    speed = vec.norm(v)
-    try:
-        cla, cda = env.coefficients(alpha, speed,
-                                    vec.norm(r) - env.equatorial_radius)
-    except Exception:                                       # noqa: BLE001
-        return
-    if cda <= 0.0 or cla <= 0.0:
-        return
-    env.reverse_plan = (cla / cda, v_end,
-                        max(float(cfg.ONE_REVERSAL_FLOOR_DEG),
-                            azimuth_deadband(env, cfg, r, v, gate, bank0)))
 
 
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
