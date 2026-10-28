@@ -825,6 +825,15 @@ class Config:
     # entry needs it to be. CLAUDE.md's rule about a guard whose reason no
     # longer survives inspection, running the other way: here it is a
     # *rejection* whose reason no longer survives.
+    # **One reversal** (the user, 2026-10-27): lean across the centreline,
+    # reverse once when the other lean from here would land on it, hold it
+    # to the cone.  ``guidance.one_reversal_sign``; the bands above decide
+    # only when it has no answer.  The glide reversed seven times below
+    # Mach 4 on the 0.8 deg / 1.3 km bands, overshooting each command by up
+    # to 166 deg (LOG14553).
+    GLIDE_ONE_REVERSAL: bool = False
+    ONE_REVERSAL_HOLD_M: float = 2000.0     # held arrival the cone flies out
+    ONE_REVERSAL_MIN_BANK_DEG: float = 5.0  # shallower has no lateral to plan
     CROSS_DEADBAND_PER_KM: float = 20.0# m of predicted cross per km to run
     CROSS_DEADBAND_MIN_M: float = 500.0     # the runway's own scale
     CROSS_DEADBAND_MAX_M: float = 40000.0
