@@ -29,9 +29,20 @@ _ORIGINAL = {}
 _CALL_BYTES = []    # [call_bytes] once installed: client, service, procedure, args, types -> bytes
 
 
+def _plain_items(typ):
+    """A collection whose items are all non-nullable: 0.7 writes a presence
+    byte before each nullable item, which only krpc's own codec knows."""
+    subs = (getattr(typ, "value_types", None)
+            or [getattr(typ, "value_type", None)])
+    return all(t is not None and not getattr(t, "nullable", False)
+               for t in subs)
+
+
 def _compile_encoder(typ, orig):
     from krpc.types import (ValueType, ClassType, EnumerationType, TupleType,
                             ListType, SetType)
+    if isinstance(typ, (TupleType, ListType, SetType)) and not _plain_items(typ):
+        return None
     import krpc.schema.KRPC_pb2 as KRPC
     if isinstance(typ, ValueType):
         code = typ.protobuf_type.code
@@ -80,6 +91,8 @@ def encoder(typ, orig):
 def _compile_decoder(typ, orig):
     from krpc.types import (ValueType, ClassType, EnumerationType, TupleType,
                             ListType, SetType)
+    if isinstance(typ, (TupleType, ListType, SetType)) and not _plain_items(typ):
+        return None
     import krpc.schema.KRPC_pb2 as KRPC
     if isinstance(typ, ValueType):
         code = typ.protobuf_type.code

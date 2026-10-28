@@ -8,10 +8,16 @@ A Python stand-in for the game that speaks the kRPC wire protocol, so the
 (probe, part configs, the save) and every law is **checked against the game
 frame by frame** (flight tests). Journal: `docs/kspSim/journal.md`.
 
-**Not usable since 2026-10-21:** the farm and client are kRPC 0.7.0; this
-server speaks 0.6 (no protocol-version handshake, 0.6 procedure ids, no
-`is_null`) and `attitude.py` is 0.6's controller.  Port both before
-screening anything here.
+**kRPC 0.7.0** (ported 2026-10-28): the protocol-version handshake, nulls
+as `is_null`, a presence byte before each nullable item in a collection,
+structures (`AxisRange`, `Wrench`, `BoundingBox`), `PartField`/`PartEvent`/
+`PartAction` for the removed `Module` field/event/action calls, and
+`AddStream(call)` starting at once.  `data/services.bin` is the 0.7
+`GetServices` answer, built from the mod's own definitions
+(`tools/services.py --json`; `--compare N` diffs it against a farm
+instance -- only the farm-only `LowThrustBridge` differs).  0.7's
+`AttitudeController` has 0.6's control law; `attitude.py` carries 0.7's
+one behavioural change (setting the target direction keeps the roll).
 
 **Rule (root CLAUDE.md "measure in game"):** the sim is for screening and
 volume. Nothing is promoted on sim evidence alone; confirm on the farm.
@@ -28,7 +34,7 @@ volume. Nothing is promoted on sim evidence alone; confirm on the farm.
 | `aero.py` | tables: base split into rest + cube drag x pseudo-Reynolds; per-surface solo tables; airbrake angle tables; damping; gear |
 | `thermal.py` | port of KSP's FlightIntegrator thermal model: drag-cube areas with stack occlusion, shock-cone occlusion, exposed/unexposed skins, conduction, convection, radiation (Sun, planet), burn-up |
 | `partcfg.py` | ModuleManager ConfigCache (patched part configs), variants (`.mu` hierarchy), drag cubes, save parsing |
-| `attitude.py` | port of kRPC 0.6.0 `AttitudeController` |
+| `attitude.py` | port of kRPC 0.7.0 `AttitudeController` |
 | `atmosphere.py`, `curves.py` | Kerbin atmosphere; KSP FloatCurve |
 | `run.py`, `restart.sh` | start instance N (ports 50200+2N, dir `testInstances/kspsimN/`); `restart.sh` uses PyPy when `.venv-pypy` exists |
 | `tests/testPhysics.py` | offline tests of each law against the number the game gave |
@@ -37,6 +43,7 @@ volume. Nothing is promoted on sim evidence alone; confirm on the farm.
 | `augment.py` | adds thruster geometry, live nozzles, part configs, drag cubes, action bindings to a model (`--offline`: no game) |
 | `flighttest.py` | scripted inputs on a save, **every frame** recorded (`--torques`, `--thermal`, `--oracle-every`); `--attach` records an autopilot flight passively |
 | `fidelity.py`, `fidsum.py`, `regimes.py` | replay a recording through the sim: one-step wrench and multi-step restarts; one line per recording; a long flight binned by Mach |
+| `services.py` | writes `data/services.bin` (`--json` from GameData, `--instance N` live, `--compare N`) |
 | `oracle.py` | the game's `simulate_aerodynamic_wrench_at` at a recording's states (table vs physics) |
 | `calibrate.py` | per-craft aero residual from flight tests, kept only where held-out recordings improve (fits against the bare tables) |
 | `thermcheck.py` | the thermal model replayed along an `observe.py` game flight, per-part skin/interior errors; `--fluxes` compares every heat flow and thermal mass term by term (needs `observe.py --fluxes`) |
@@ -125,6 +132,13 @@ different craft).
 9. A few flights per screen end the deorbit burn on its 60 s guard, coast
    another orbit and write ~600 MB of log (LOG6616, 6618, 6709; deleted).
    `simarms.sh` now times a flight out at 600 s wall.
+10. **Not simulated** (the pilot logs the refusal and flies on):
+    `ControlSurface.deflection_override` and `.deployed` (the canard trim,
+    the split brakes and every idle-surface hold -- so anything they decide
+    is not screenable here), maneuver nodes (`Control.add_node`; the deorbit
+    lines up on the SAS fallback), and the kRPC wobble-mitigation knobs
+    (default off, as on the farm).  `logs/kspsim-missing.txt` lists every
+    procedure a flight called that has no handler.
 
 ## Speed
 

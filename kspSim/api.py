@@ -1180,6 +1180,29 @@ def ap_error(w, a):
     return vec.angle_deg(nose, ap.target_direction())
 
 
+def _ap_angle_errors(w):
+    """kRPC's AutoPilot pitch/heading/roll errors, degrees: target minus
+    current on the navball (heading wrapped to +-180)."""
+    ap = _ap(w)
+    frm = w.vessel.autopilot_frame or frame(w, "body")
+    pitch, heading, up, north, east, _ = _surface_angles(w)
+    d = frm.direction_to_nr(ap.target_direction(), w)
+    tp = math.degrees(math.asin(max(-1.0, min(1.0, vec.dot(vec.unit(d), up)))))
+    th = math.degrees(math.atan2(vec.dot(d, east), vec.dot(d, north)))
+    dh = (th - heading + 180.0) % 360.0 - 180.0
+    roll = 0.0
+    if ap.roll_controlled:
+        roll = (ap.target_roll() - flight_roll(w, None) + 180.0) % 360.0 - 180.0
+    return tp - pitch, dh, roll
+
+
+for _i, _name in enumerate(("PitchError", "HeadingError", "RollError")):
+    HANDLERS[("SpaceCenter", "AutoPilot_get_" + _name)] = (
+        lambda w, a, _i=_i: _ap_angle_errors(w)[_i])
+HANDLERS[("SpaceCenter", "AutoPilot_get_SASMode")] = control_sas_mode
+HANDLERS[("SpaceCenter", "AutoPilot_set_SASMode")] = control_set_sas_mode
+
+
 @rpc("AutoPilot_get_AutoTune")
 def ap_autotune(w, a):
     return _ap(w).auto_tune

@@ -306,22 +306,19 @@ class Server:
             self.world.paused = bool(args[0])
             return None
         if p == "AddStream":
-            pc, start = args[0], args[1]
+            # 0.7: AddStream(call) only, and the stream starts at once.
+            pc = args[0]
             sid = self.next_stream
             self.next_stream += 1
             client.streams[sid] = [pc, False, None]
-            if start is None or start:
-                self._start_stream(client, sid)
+            self._start_stream(client, sid)
             return KRPC.Stream(id=sid)
-        if p == "StartStream":
-            self._start_stream(client, args[0])
-            return None
         if p == "RemoveStream":
             client.streams.pop(args[0], None)
             return None
         if p == "SetStreamRate":
             return None
-        if p == "get_CurrentGameScene":
+        if p in ("get_GameScene", "get_CurrentGameScene"):
             return 0  # SpaceCenter.GameScene.flight
         if p == "get_Clients":
             return []
