@@ -1,5 +1,37 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-10-27: spaceplane -- the stack orbiter's live departure; one reversal, slow roll (fingerprint `bf1c050e`)
+
+Committed and pushed. Farm stopped mid-batch for a reboot. Journal: "Session, 2026-10-27".
+
+**Trigger:** the user's live flight of the stack orbiter (`qs_stackorb`'s craft), LOG14553 on defaults: clean to Mach 4, then 7 bank reversals below Mach 4 with overshoots to 166 deg, then a subsonic pitch-up departure at Mach 0.85 into the HAC.
+
+**The finding:** the stack orbiter has **0.35-0.42 of `qs_shuttle2`'s yaw stiffness** at every Mach (stiffprobe --yaw, LOG14626; e.g. M3 alpha 30: 3.44 v 7.88 m^3/deg). Same parts at the same positions; its CoM sits 0.63 m aft. Below Mach 3 it limit-cycles in yaw **on a steady bank command** (yaw input +-1 every ~9 s, slip +-10-22, alpha 22-46; LOG14622). The reversals are a symptom. Fixing it on the craft (CoM forward or more fin aft) is the user's call; told them.
+
+**Flags this session:**
+
+| Flag | Measured | Outcome |
+|---|---|---|
+| Wider reversal bands (`--set` only) | band-1027, stackorb 8 an arm: fewer reversals, departures 1/8 -> 2/8 -> 5/8, cone arrivals 20-45 km short (the straight-mean predictor misses the S-turn) | Not changed |
+| `GLIDE_PITCH_AIR_MACH` | pitch-1027: departures 0/8 defaults, 2/8 at M1.5, 5/8 at M3 | Deleted |
+| **`GLIDE_ONE_REVERSAL`** (the user's idea; off) | Band = the turn the lean can still make, (L/D) sin|bank| ln(v/v_end), cap 15 deg, floor 5; the propagator flies the same lean and reversal (`Steer.plan`, `trajectory.reversal_band`/`lean_sign`). onerev-1027 stackorb 12 an arm: one reversal (Mach 4.1-4.4) on 10/12 v 5-11, but cone arrival median ~-9 km short; within 1.2 km 6/12 v 8/12. **onerev2-1027 on qs_shuttle2_rigoff, cycle 0 only (6 an arm):** intact within 1.2 km 4/6 v 3/6; one ONE flight lost 13 km out (LOG of ksp3 round 0) | Open: fly cycle 1 + more; fix the shortfall |
+| **`GLIDE_ROLL_WITH_YAW`** (the user's: "if yaw can't keep up, slow the roll"; off) | In GLIDE roll time_to_peak floored at yaw's static figure (~10 s) | **Unflown** |
+
+**Why one reversal arrives short (fixable):** while holding the lean, the honest S-turn prediction reads 10-14 km short with bank already at its 30 deg floor (`SOLVE_BANK_MIN`/`GLIDE_BANK_MIN`), and after the reversal the solve drops bank to 8-12 deg, too little turn left (predicted cross reaches -33 km; LOG14622). Try: a lower cap (fewer degrees off-bearing) or letting the glide bank floor go below 30 under the flag.
+
+**Next, in order:**
+1. Finish onerev2 on qs_shuttle2_rigoff (12+ an arm).
+2. `GLIDE_ROLL_WITH_YAW` on qs_stackorb: defaults / flag / flag + `BANK_RATE_MAX_DEG_S=5`.
+3. **The fast cone** (the user: the brakes are strong, brake late): `HAC_SPEED_FACTOR=1.3;HAC_BANK_MAX_DEG=60` v defaults on qs_shuttle2_rigoff, scored on cone-entry-to-stop time, intact stops, flare-door height/sink. Then re-measure `HAC_LD` with `conesum.py --settled` and confirm. Today's cone: 148-250 s (median ~174) from ~12 km, approach 62-117 s. Split rudder doubles approach drag (L/D 4.17 -> 1.89).
+4. Ideas for later (the user): lift-down entry (bank past 90) for a later/steeper burn or a cheaper shallow one; costs heating, pull-out at high q, no crossrange at 180. The cheap burn saves nothing on this craft (DRAIN_BEFORE_BURN dumps it).
+5. The older list still stands: 1.8 m fwdwing lateral/pitch, retake `qs_s2_hac*`, the approach dive (the stack orbiter's rollout breakups are hard arrivals, 64-136 m/s).
+
+**Traps paid:**
+- The first one-reversal version compared constant-lean arcs whose along-track misses differ by 20-84 km; their cross-tracks mean nothing. glidesim caught it.
+- Swap reaches 22-25 GB within one 2-round cycle on stackorb; multirot restarts between cycles, restart before each comparison.
+- `pkill -f multirot.sh` from a Bash call kills the calling shell (exit 144); stop.sh alone ends the batch.
+- `revsum.py` (the scratchpad scorer) is not in the repo; count reversals from `bank=` sign changes in GLIDE lines.
+
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 
 No pilot's flight laws changed.  What did:
@@ -37,68 +69,6 @@ null (the coast miss is ~180 m in both).  Logs: `logs/harness-1027/`.
 **Trap paid:** the farm reached 22 GB of swap after an hour of six-instance
 booster flights and every comparison flown on it was worthless -- restart
 between comparisons, as the farm section says.
-
-## 2026-10-25: spaceplane -- the wings-forward family; APPROACH_REENGAGE promoted (fingerprint `66612c16`)
-
-Committed and pushed. The farm is stopped. Journal: "Session, 2026-10-25".
-
-**The user's direction:** forget the cargo shuttle, it is inherently problematic. Make unstable craft by moving the wings forward on the normal shuttle.
-
-**The family.** `tools/savegen.py --wing-forward M` (`spaceplane/tools/wingshift.py`) moves `wingShuttleDelta` and everything on it: elevons, **fins** and mains. The derived saves are `qs_shuttle2_fwdwing{12,15,18,30,40,45,50}_rigoff` (`saves/derived.txt`, gitignored; `syncSaves.sh` builds them).
-
-**The flown airframe is the drained one.** `DRAIN_BEFORE_BURN` takes the shuttle 37.9 -> 30.7 t and moves the CoM aft, so the orbital save overstates the margin. Measured on the drained craft (vacuum wrench sweeps):
-- **3 m and 4 m are statically unstable at every hypersonic Mach.**
-- The elevons' moment shrinks as the wings go forward, because their arm shortens: stock +60..+105, 3 m +34..+63, 4 m +25..+49 m^3 per unit input.
-- At 4 m the zero-input moment (+16..+186) exceeds full elevon authority at every alpha. **No law can hold 4 m on elevons.**
-- Yaw stiffness falls with the fins forward (stiffprobe `--yaw-alphas`, M5, 10/20/30 deg): stock 4.1/4.5/6.6, 1.5 m 3.4/3.8/5.3, 1.8 m 3.3/3.7/5.0, 3 m 2.7/3.1/3.9 m^3/deg. Roll slope is unchanged.
-
-**Where the defaults stop** (lim-1025 plus later, 8+ an arm, from orbit):
-
-| Craft | Result |
-|---|---|
-| stock | 7-8/8 on the runway |
-| 1.2 m | 6/8 |
-| 1.5 m | 8/8 within 1.9 km (1/8 had a glide departure it recovered from) |
-| 1.8 m | 5/16 near the runway; 7/16 hypersonic glide departures |
-| 3 m and up | 0 |
-
-**How 1.8 m and 3 m are lost:**
-- Hypersonic, Mach 4.7-6: a lateral limit cycle. Slip swings +-17 deg every ~2 s with the roll input at +-1 and the pitch input ~0. The roll damper runs to its ceiling.
-- Transonic, Mach 1.4-2.6, ~20 km, near wings level: alpha swings 12-46 deg on +-0.2 pitch input. The static ~10 s pitch loop is too slow for the unstable short period at that q.
-
-**Flags this session:**
-
-| Flag | Measured | Outcome |
-|---|---|---|
-| `TRIM_BAND` (the user's proposal) | Pre-burn sweep of the holdable alpha band by Mach; glide and propagator clamped to it. band-1025: 3 m 0/8 even capped at ~11-21 deg (lateral departures); 4 m 0/8 | Deleted |
-| `TRIM_FLOOR` | tf-1025: 0/16 | Deleted |
-| `ATTITUDE_PITCH_AIR_GLIDE` | rot-pag-1025: 0/10 | Deleted |
-| `BANK_ACCEL_SHARE` 0.15 | rev-1025: 0/24 | Null (constant unchanged) |
-| Roll damper off (`ROLL_DAMPER_GROWTH=100`) | damp-, damp2-1025: 1.8 m 4/16 v 7/16; **1.5 m 5/8 departures v 1/8** | Refuted; the damper stays |
-| `VACUUM_OWN`, `COAST_ROLL_FREE_Q_PA` | Cargo-only; the cargo shuttle is dropped | Deleted |
-| **`APPROACH_REENGAGE` -> default** | kRPC re-engaged at HAC -> APPROACH, integrators reset. sav-reeng-1025 on qs_s2_hac0-5: turn ratio median 0.88 (0.67-1.03, n=9) v 0.16 (0.04-1.11, n=11) | Promoted |
-
-- The approach's turn is still bimodal on stock with an identical applied tune. The roll damper's state is **not** the cause; the integrators were.
-- **From-orbit confirmation on the new defaults** (conf-1025: stock, 1.2 m and 1.5 m, 4 each): the turn ratio was 0.74-1.19 on all 11 flights that reached the approach. 8/12 stopped near the runway. 3 broke up ~1.1 km short at 55-62 m/s after entering the flare door at 216-313 m with 32-46 m/s of sink (the approach dive). The dive rate is unchanged by re-engage (5/11 against 20/38 without), so it is the old loss mode. One 1.5 m flight was lost in the glide.
-- The flare-door cross-track now sits at +19..+269 m: the vehicle turns, but finishes right of the line.
-- `cmt=` in GLIDE telemetry: the aero pitching moment at the flown state, per q, every `TRIM_PROBE_S`. Steady flight balances it with the input at ~100 m^3/unit.
-
-**Blocker:** the wings-forward craft past ~1.5 m lose lateral control hypersonically and pitch control transonically. Elevon authority itself runs out by 4 m.
-
-**Next, in order:**
-1. 1.8 m transonic: a pitch loop fast enough for the unstable short period (an air-authority pitch tune *below Mach 3 only*, not the whole glide that rot-pag tested).
-2. 1.8 m hypersonic lateral cycle: yaw needs more authority or a faster loop as Cn_beta drops. Try RCS yaw held open in the glide on low-stiffness craft, or a yaw tune derived from the measured yaw stiffness.
-3. Retake the cone saves `qs_s2_hac*`: every flight off them overshoots 5-14 km into the sea, on both arms.
-4. **The approach dive.** About half of all flights reach the flare door above 200 m or sinking faster than 30 m/s, and the stock landing losses come from it. For the stable craft it is arguably first.
-5. The positive flare-door cross-track, now that the approach turns.
-
-**Traps paid this session:**
-- **First-batch luck.** Damper-off went 0/8 on 1.8 m and then 4/8. Never promote from one 8-flight batch against a baseline from another day.
-- The orbital save's stability is not the flown airframe's: sweep after the drain (COAST), or at the predicted post-burn CoM.
-- kRPC 0.7 has no `auto_pilot.disengage()`: set `engaged = False`. Client inputs are ignored while it is engaged.
-- A vacuum moment sweep must hold the surfaces at neutral (`deflection_override`) and settle first, or it reads kRPC's deflection.
-- `multirot` rotates the arm labels per cycle: join to `SAVE_NAME`/`config:` per log.
-- Build in a worktree while a batch flies (`.wt-<name>`). Docs-only commits on main mid-batch are harmless.
 
 ## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
 
