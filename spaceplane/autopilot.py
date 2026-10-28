@@ -34,7 +34,7 @@ from common.idle import VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged, vessel_gone,
     wobble_mitigation)
-from common import cli
+from common import cli, paths
 from common.logbook import Logbook
 from common.pacing import Latency, LoopRate, ScaleGovernor, sleeper
 from common.rpccount import RpcCounter
@@ -8257,9 +8257,8 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(argv or sys.argv[1:])
     cfg = apply_overrides(Config(), args.set)
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     directory = (cfg.LOG_DIR if os.path.isabs(cfg.LOG_DIR)
-                 else os.path.join(here, cfg.LOG_DIR))
+                 else os.path.join(paths.ROOT, cfg.LOG_DIR))
     kwargs = cli.connect_kwargs(args)
 
     with Logbook(directory, cfg.LOG_INTERVAL_UT) as logbook:

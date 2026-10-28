@@ -14,6 +14,13 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# **Flown from the bundle** (``dist/krpcLab.py``) a module's ``__file__`` sits
+# beside it, in ``dist/``, and the tree it was built from is one up -- or
+# the logs, the caches and the launcher's children all went into ``dist/``.
+# A bundle copied anywhere else keeps its own directory.
+if (os.path.basename(ROOT) == "dist" and os.path.exists(
+        os.path.join(os.path.dirname(ROOT), "common", "paths.py"))):
+    ROOT = os.path.dirname(ROOT)
 INSTANCES = os.path.join(ROOT, "testInstances")
 LOGS = os.path.join(ROOT, "logs")
 SAVES = os.path.join(ROOT, "saves")

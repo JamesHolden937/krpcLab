@@ -13,13 +13,12 @@ and replace the file atomically.
 import fcntl
 import json
 import os
-import sys
 
-# Beside the package, or beside the script when run as a ``tools/bundle.py``
-# single file, which has no ``__file__``.
-PATH = os.path.join(
-    os.path.dirname(os.path.abspath(globals().get("__file__") or sys.argv[0])),
-    "data", "gearTimes.json")
+from common import paths
+
+# In the tree's ``boosterland/data/`` whether the tree or the bundle flies
+# (``paths.ROOT``), so both read one cache.
+PATH = os.path.join(paths.ROOT, "boosterland", "data", "gearTimes.json")
 
 
 def load(path=PATH):
