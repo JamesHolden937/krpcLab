@@ -1005,15 +1005,14 @@ class Autopilot:
             roll = rd.tp
         else:
             roll = static[1]
-        # ``GLIDE_ROLL_WITH_YAW``: in the glide, never roll faster than yaw
-        # can follow on its own.  At 20-35 deg of alpha a bank change is
+        # In the glide, never roll faster than yaw can follow on its own.  At 20-35 deg of alpha a bank change is
         # sin(alpha) body yaw, and a roll tuned at 2.8-5.9 s against yaw's
         # 10 left the nose behind: the stack orbiter limit-cycled with the
         # yaw input at +-1 every ~9 s on a steady command (LOG14622).  The
         # static yaw figure, not the valve-open one, so the relay does not
         # swing roll's gains too.
-        if self.state == GLIDE and getattr(self.cfg, "GLIDE_ROLL_WITH_YAW",
-                                           False):
+        # The user's proposal; rywfam-1028 / rollyaw-1027.
+        if self.state == GLIDE:
             roll = max(roll, static[2])
         yaw = yaw_time_to_peak(self.cfg, roll, static[2], alpha_deg,
                                self.rcs_yaw_now(snap.ut))
