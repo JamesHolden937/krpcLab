@@ -335,6 +335,11 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     magnitude = max(magnitude, 0.0)
 
     sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
+    if getattr(cfg, "GLIDE_ONE_REVERSAL", False):
+        planned = one_reversal_sign(env, cfg, r, v, mass, end, gate, alpha,
+                                    magnitude, bank0)
+        if planned is not None:
+            sign = planned
     bank = sign * magnitude
     return verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
                     alpha0, bank0, floor, target, top)
@@ -615,6 +620,46 @@ def _bank_sign(env, cfg, r, v, gate, bank0, cross=0.0):
         return sign
     wanted = bank_toward(r, v, vec.project_out(toward, track), 1.0)
     return wanted if wanted else sign
+
+
+def one_reversal_sign(env, cfg, r, v, mass, end, gate, alpha, magnitude,
+                      bank0):
+    """``GLIDE_ONE_REVERSAL``: lean across the line, reverse once, line up.
+
+    Two constant-lean propagations to the gate at the solved alpha and bank
+    magnitude: the present lean held, and the other lean from now on.  The
+    held lean carries the vehicle across the centreline; the reversal comes
+    when flying the other lean from here would land on the line or short of
+    it on the near side -- later than that and one reversal cannot bring it
+    back.  It is not taken while holding would arrive within
+    ``ONE_REVERSAL_HOLD_M``, which the cone flies out, so the end of the
+    glide cannot chatter between two arcs that have converged.  After the
+    reversal the same test is the backstop: a second one only if the
+    vehicle is again carried past the line by more than that.
+
+    ``None`` -- the azimuth/cross-track bands decide -- when the bank is too
+    shallow to steer with or either arc does not reach the gate.
+    """
+    if magnitude < float(cfg.ONE_REVERSAL_MIN_BANK_DEG):
+        return None
+    sign = 1.0 if bank0 >= 0.0 else -1.0
+    out = []
+    for lean in (sign, -sign):
+        steer = Steer(alpha=alpha, bank=lean * magnitude, cfg=cfg, mass=mass,
+                      reversing=False)
+        got = trajectory.predict(env, r, v, mass, cfg, steer=steer,
+                                 gate=gate, end=end,
+                                 target_radius=vec.norm(gate))
+        if not got.reached or got.skipped:
+            return None
+        out.append(got.cross)
+    hold, flip = out
+    if abs(hold - flip) < 1.0:
+        return None
+    drift = 1.0 if hold > flip else -1.0   # the side the present lean carries to
+    if drift * hold > float(cfg.ONE_REVERSAL_HOLD_M) and drift * flip >= 0.0:
+        return -sign
+    return sign
 
 
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
