@@ -1,36 +1,32 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-27: spaceplane -- the stack orbiter's live departure; one reversal, slow roll (fingerprint `bf1c050e`)
+## 2026-10-28: spaceplane -- the slow roll promoted, one reversal deleted, the fast cone measured; kspSim on kRPC 0.7 (fingerprint `f8787c59`)
 
-Committed and pushed. Farm stopped mid-batch for a reboot. Journal: "Session, 2026-10-27".
-
-**Trigger:** the user's live flight of the stack orbiter (`qs_stackorb`'s craft), LOG14553 on defaults: clean to Mach 4, then 7 bank reversals below Mach 4 with overshoots to 166 deg, then a subsonic pitch-up departure at Mach 0.85 into the HAC.
-
-**The finding:** the stack orbiter has **0.35-0.42 of `qs_shuttle2`'s yaw stiffness** at every Mach (stiffprobe --yaw, LOG14626; e.g. M3 alpha 30: 3.44 v 7.88 m^3/deg). Same parts at the same positions; its CoM sits 0.63 m aft. Below Mach 3 it limit-cycles in yaw **on a steady bank command** (yaw input +-1 every ~9 s, slip +-10-22, alpha 22-46; LOG14622). The reversals are a symptom. Fixing it on the craft (CoM forward or more fin aft) is the user's call; told them.
+Committed and pushed; farm stopped. Journal: "Session, 2026-10-28".
 
 **Flags this session:**
 
 | Flag | Measured | Outcome |
 |---|---|---|
-| Wider reversal bands (`--set` only) | band-1027, stackorb 8 an arm: fewer reversals, departures 1/8 -> 2/8 -> 5/8, cone arrivals 20-45 km short (the straight-mean predictor misses the S-turn) | Not changed |
-| `GLIDE_PITCH_AIR_MACH` | pitch-1027: departures 0/8 defaults, 2/8 at M1.5, 5/8 at M3 | Deleted |
-| **`GLIDE_ONE_REVERSAL`** (the user's idea; off) | Band = the turn the lean can still make, (L/D) sin|bank| ln(v/v_end), cap 15 deg, floor 5; the propagator flies the same lean and reversal (`Steer.plan`, `trajectory.reversal_band`/`lean_sign`). onerev-1027 stackorb 12 an arm: one reversal (Mach 4.1-4.4) on 10/12 v 5-11, but cone arrival median ~-9 km short; within 1.2 km 6/12 v 8/12. **onerev2-1027 on qs_shuttle2_rigoff, cycle 0 only (6 an arm):** intact within 1.2 km 4/6 v 3/6; one ONE flight lost 13 km out (LOG of ksp3 round 0) | Open: fly cycle 1 + more; fix the shortfall |
-| **`GLIDE_ROLL_WITH_YAW`** (the user's: "if yaw can't keep up, slow the roll"; off) | In GLIDE roll time_to_peak floored at yaw's static figure (~10 s) | **Unflown** |
+| `GLIDE_ONE_REVERSAL` | onerev2/3-1027, qs_shuttle2_rigoff, 24 an arm: misses > 3 km 6 v 3 (four > 9 km, to -36 km) | **Deleted** |
+| `GLIDE_ROLL_WITH_YAW` (the user's "if yaw can't keep up, slow the roll") | rollyaw-1027 stackorb 8 an arm: misses > 10 km 3 -> 0, intact stops 0 -> 5 (+`BANK_RATE_MAX_DEG_S=5`: no better). rywfam-1028 12 an arm: rigoff misses > 3 km 3 -> 0 (worst +1.9 km); 1.8 m wings-forward 0/12 both arms, 30 km less short | **Default**, now the field `GLIDE_ROLL_YAW_SHARE` = 1.0 (with the flag's field just deleted the fingerprint fell back to `22189096`, the pre-flag one: LOG14553 and fastcone-1028 carry it but flew different roll laws -- fastcone-1028 is the new law) |
+| Fast cone (`--set HAC_SPEED_FACTOR=1.3;HAC_BANK_MAX_DEG=60`) | fastcone-1028, rigoff, 18 an arm: cone entry -> stop median **276 s v 313**; intact within 1.2 km 10 v 10; **lost 6 v 3**, all touchdowns short in ROLLOUT after an ordinary cone entry (h 12-13 km, 2.9-3.8 km out) -- the fast cone runs out of energy | Not adopted (constants unchanged) |
 
-**Why one reversal arrives short (fixable):** while holding the lean, the honest S-turn prediction reads 10-14 km short with bank already at its 30 deg floor (`SOLVE_BANK_MIN`/`GLIDE_BANK_MIN`), and after the reversal the solve drops bank to 8-12 deg, too little turn left (predicted cross reaches -33 km; LOG14622). Try: a lower cap (fewer degrees off-bearing) or letting the glide bank floor go below 30 under the flag.
+**Where the airframes stand (rigoff, defaults):** the shuttle ~10/18 intact within 1.2 km; its losses are short touchdowns out of the cone (3/18 at -5.6..-6.6 km). The stack orbiter flies now (5/8 intact) but its rollouts still break on hard arrivals. **The 1.8 m wings-forward shuttle regressed to 0/24**: every flight 58-129 km short, into the cone at ~12 km and 180 m/s far out, tumbling there (LOG14716); on 10-25 half landed. Suspect the 10-26 changes that move the drained CoM aft (`FUEL_TO_NOSE` deleted, `DRAIN_LEFTOVER`); not yet bisected.
+
+**kspSim:** speaks kRPC 0.7 and flies the spaceplane end to end (LOG14689, qs_shuttle2: splashed 33 km short -- not yet compared with the farm). `kspSim/tools/services.py` builds/compares `services.bin`. Not simulated: surface deflection override/deploy (canard trim, split brakes), maneuver nodes. Only the qs_shuttle2-family models exist (no rigoff/wings-forward/stackorb models: `kspSim/tools/probe.py` on a farm instance makes them).
 
 **Next, in order:**
-1. Finish onerev2 on qs_shuttle2_rigoff (12+ an arm).
-2. `GLIDE_ROLL_WITH_YAW` on qs_stackorb: defaults / flag / flag + `BANK_RATE_MAX_DEG_S=5`.
-3. **The fast cone** (the user: the brakes are strong, brake late): `HAC_SPEED_FACTOR=1.3;HAC_BANK_MAX_DEG=60` v defaults on qs_shuttle2_rigoff, scored on cone-entry-to-stop time, intact stops, flare-door height/sink. Then re-measure `HAC_LD` with `conesum.py --settled` and confirm. Today's cone: 148-250 s (median ~174) from ~12 km, approach 62-117 s. Split rudder doubles approach drag (L/D 4.17 -> 1.89).
-4. Ideas for later (the user): lift-down entry (bank past 90) for a later/steeper burn or a cheaper shallow one; costs heating, pull-out at high q, no crossrange at 180. The cheap burn saves nothing on this craft (DRAIN_BEFORE_BURN dumps it).
-5. The older list still stands: 1.8 m fwdwing lateral/pitch, retake `qs_s2_hac*`, the approach dive (the stack orbiter's rollout breakups are hard arrivals, 64-136 m/s).
+1. **The cone's short touchdowns** (the shuttle's remaining loss mode, 3/18 on defaults, 6/18 on the fast cone): `landsum.py` / `conesum.py --settled` on fastcone-1028's losses against its runway stops -- where the energy goes. A fast cone is worth having (-37 s) only once it keeps its energy.
+2. Bisect the 1.8 m wings-forward regression: `DRAIN_LEFTOVER=False` (one arm) against defaults on `qs_shuttle2_fwdwing18_rigoff`.
+3. kspSim: probe models for rigoff and stackorb, then fly the sim against fastcone-1028's defaults to see whether it follows the game now.
+4. Later (the user): lift-down entry; retake `qs_s2_hac*`; the approach dive (stackorb's hard rollouts).
 
 **Traps paid:**
-- The first one-reversal version compared constant-lean arcs whose along-track misses differ by 20-84 km; their cross-tracks mean nothing. glidesim caught it.
-- Swap reaches 22-25 GB within one 2-round cycle on stackorb; multirot restarts between cycles, restart before each comparison.
-- `pkill -f multirot.sh` from a Bash call kills the calling shell (exit 144); stop.sh alone ends the batch.
-- `revsum.py` (the scratchpad scorer) is not in the repo; count reversals from `bank=` sign changes in GLIDE lines.
+- **Deleting a promoted flag's field can return the fingerprint to an old value** whose flights flew a different law. Promote into a field (a share, a factor) or otherwise change the defaults' hash.
+- 0.7's `AddStream` takes only the call (no `start`) and `StartStream` is gone; its collections carry a presence byte before each nullable item -- the fast client's compiled codecs did not, a random signature test caught it.
+- `simfly.sh` on a save with no model fails at `Load` with "no model for save".
+- Swap still reaches ~21 GB per 2-round cycle; multirot's restart between cycles brings it back to ~9 GB.
 
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 

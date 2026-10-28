@@ -48,7 +48,11 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-25, fingerprint `66612c16`)
+## Where it stands (2026-10-28, fingerprint `f8787c59`)
+
+In the glide roll is never tuned faster than yaw's static figure (`GLIDE_ROLL_YAW_SHARE`, promoted 2026-10-28: the stack orbiter flies). The 1.8 m wings-forward shuttle has regressed to 0/24 (suspect the 10-26 CoM changes). The root HANDOFF.md has the rest.
+
+## Earlier (2026-10-25, fingerprint `66612c16`)
 
 **The user's goal: neutral/unstable craft to the runway reliably.** The cargo shuttle is dropped (inherently problematic). The test family is the shuttle with its wings moved forward: `savegen.py --wing-forward M`, saves `qs_shuttle2_fwdwingNN_rigoff`.
 
