@@ -1,7 +1,10 @@
-"""kRPC 0.6.0's auto-pilot, ported: ``AttitudeController.Update`` and its PIDs.
+"""kRPC 0.7.0's auto-pilot, ported: ``AttitudeController.Update`` and its PIDs.
 
 The source is ``service/SpaceCenter/src/AutoPilot/AttitudeController.cs`` at
-tag v0.6.0 (the installed ``KRPC.SpaceCenter.dll`` carries its symbols).  The
+tag v0.7.0.  Its control law is 0.6.0's line for line; 0.7 changed only
+``SetTargetDirection`` (keeps the target roll, #1054) and when the step runs
+(a target set during a tick is flown on that tick, #1070), which the
+lock-step already does: calls are served between physics steps.  The
 cascade is the same: a velocity profile turns the attitude error into a
 target angular velocity in the roll-invariant frame, autotuned PI loops track
 it, an analytic acceleration feed-forward and a gyroscopic term are added,
@@ -233,8 +236,11 @@ class AttitudeController:
         self.slew_pending = True
 
     def set_target_direction(self, direction):
-        self.target_rotation = from_to(UP, direction)
-        self.roll_controlled = False
+        # 0.7 (#1054): keeps the target roll, and leaves roll_controlled.
+        roll = (roll_relative_to(self.target_rotation, self.up_reference)
+                if self.roll_controlled else 0.0)
+        self.target_rotation = rotation_from_direction_up_roll(
+            direction, self.up_reference, roll)
         self.slew_pending = True
 
     def set_target_rotation(self, rotation):

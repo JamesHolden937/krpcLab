@@ -5,8 +5,11 @@ The procedure signatures come from the game itself: ``data/services.bin`` is the
 verbatim (plus the ``Sim`` service below).  So a client cannot tell the stubs
 apart, and every argument is decoded with the type the real server declared.
 
-Class instances cross the wire as uint64 ids.  ``Registry`` hands them out;
-an id of 0 is null.  Enumerations are sint32.
+Class instances cross the wire as uint64 ids.  ``Registry`` hands them out.
+Enumerations are sint32.  kRPC 0.7: a null argument or result is the
+``is_null`` flag with no value; an item of a nullable type inside a tuple,
+collection or structure carries a presence bool before its value; a
+structure is the tuple of its fields (``Service.structs`` names them).
 """
 import os
 
@@ -16,7 +19,7 @@ from krpc.decoder import Decoder
 from krpc.encoder import Encoder
 from krpc.types import (Types, ValueType, ClassType, EnumerationType,
                         MessageType, TupleType, ListType, SetType,
-                        DictionaryType)
+                        DictionaryType, StructType)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _TYPES = Types()
@@ -71,6 +74,7 @@ class Signatures:
         services.ParseFromString(raw)
         services.services.append(_sim_service())
         self.services_message = services
+        register_structs(services)
         self.procs = {}
         for svc in services.services:
             for proc in svc.procedures:
@@ -95,7 +99,7 @@ class Signatures:
         values = [None] * len(decs)
         given = 0
         for position, data in arguments:
-            values[position] = decs[position](data, registry)
+            values[position] = None if data is None else decs[position](data, registry)
             given |= 1 << position
         for i, d in enumerate(defaults):
             if d is not None and not given & (1 << i):
@@ -105,6 +109,33 @@ class Signatures:
     def encode_result(self, service, procedure, value):
         enc = self.codecs[(service, procedure)][2]
         return b"" if enc is None else enc(value)
+
+
+def register_structs(services, types=_TYPES):
+    """Give every structure type its fields, before any codec is built: a
+    field may itself be a structure another service defines."""
+    for svc in services.services:
+        for st in svc.structs:
+            typ = types.as_type(KRPC.Type(code=KRPC.Type.STRUCT,
+                                          service=svc.name, name=st.name))
+            if not typ.has_fields:
+                typ.set_fields([(f.name, types.as_type(f.type)) for f in st.fields])
+
+
+def _item_decoder(typ):
+    """``decoder`` for a value at a position inside another value."""
+    f = decoder(typ)
+    if not typ.nullable:
+        return f
+    return lambda d, reg: f(d[1:], reg) if d[0] else None
+
+
+def _item_encoder(typ):
+    """``encoder`` for a value at a position inside another value."""
+    f = encoder(typ)
+    if not typ.nullable:
+        return f
+    return lambda v: b"\x00" if v is None else b"\x01" + f(v)
 
 
 def decoder(typ):
@@ -126,14 +157,14 @@ def decoder(typ):
         if typ.python_type is KRPC.ProcedureCall:
             return lambda d, reg: fastpb.parse_call(d)
         return lambda d, reg: Decoder.decode_message(d, typ.python_type)
-    if isinstance(typ, TupleType):
-        decs = [decoder(t) for t in typ.value_types]
+    if isinstance(typ, (TupleType, StructType)):
+        decs = [_item_decoder(t) for t in _members(typ)]
         return lambda d, reg: tuple(f(i, reg) for i, f in zip(fastpb.dec_items(d), decs))
     if isinstance(typ, (ListType, SetType)):
-        f = decoder(typ.value_type)
+        f = _item_decoder(typ.value_type)
         return lambda d, reg: [f(i, reg) for i in fastpb.dec_items(d)]
     if isinstance(typ, DictionaryType):
-        fk, fv = decoder(typ.key_type), decoder(typ.value_type)
+        fk, fv = _item_decoder(typ.key_type), _item_decoder(typ.value_type)
         return lambda d, reg: {fk(k, reg): fv(v, reg) for k, v in fastpb.dec_dict(d)}
     raise TypeError("cannot decode %s" % typ)
 
@@ -168,16 +199,21 @@ def encoder(typ):
         raise TypeError("cannot encode %s" % typ)
     if isinstance(typ, MessageType):
         return lambda v: v.SerializeToString()
-    if isinstance(typ, TupleType):
-        encs = [encoder(t) for t in typ.value_types]
+    if isinstance(typ, (TupleType, StructType)):
+        encs = [_item_encoder(t) for t in _members(typ)]
         return lambda v: fastpb.enc_items([f(x) for x, f in zip(v, encs)])
     if isinstance(typ, (ListType, SetType)):
-        f = encoder(typ.value_type)
+        f = _item_encoder(typ.value_type)
         return lambda v: fastpb.enc_items([f(x) for x in v])
     if isinstance(typ, DictionaryType):
-        fk, fv = encoder(typ.key_type), encoder(typ.value_type)
+        fk, fv = _item_encoder(typ.key_type), _item_encoder(typ.value_type)
         return lambda v: fastpb.enc_dict([(fk(k), fv(v[k])) for k in sorted(v)])
     raise TypeError("cannot encode %s" % typ)
+
+
+def _members(typ):
+    """A tuple's item types or a structure's field types, in wire order."""
+    return typ.field_types if isinstance(typ, StructType) else typ.value_types
 
 
 # The reference codec, through protobuf: what ``decoder``/``encoder`` must
@@ -193,19 +229,19 @@ def decode(data, typ, registry):
         return Decoder._decode_value(data, typ)
     if isinstance(typ, MessageType):
         return Decoder.decode_message(data, typ.python_type)
-    if isinstance(typ, TupleType):
+    if isinstance(typ, (TupleType, StructType)):
         msg = KRPC.Tuple()
         msg.ParseFromString(data)
-        return tuple(decode(i, t, registry) for i, t in zip(msg.items, typ.value_types))
+        return tuple(_decode_item(i, t, registry) for i, t in zip(msg.items, _members(typ)))
     if isinstance(typ, (ListType, SetType)):
         msg = KRPC.List() if isinstance(typ, ListType) else KRPC.Set()
         msg.ParseFromString(data)
-        return [decode(i, typ.value_type, registry) for i in msg.items]
+        return [_decode_item(i, typ.value_type, registry) for i in msg.items]
     if isinstance(typ, DictionaryType):
         msg = KRPC.Dictionary()
         msg.ParseFromString(data)
-        return {decode(e.key, typ.key_type, registry):
-                decode(e.value, typ.value_type, registry) for e in msg.entries}
+        return {_decode_item(e.key, typ.key_type, registry):
+                _decode_item(e.value, typ.value_type, registry) for e in msg.entries}
     raise TypeError("cannot decode %s" % typ)
 
 
@@ -223,23 +259,35 @@ def encode(value, typ):
         return Encoder._encode_value(value, typ)
     if isinstance(typ, MessageType):
         return value.SerializeToString()
-    if isinstance(typ, TupleType):
+    if isinstance(typ, (TupleType, StructType)):
         msg = KRPC.Tuple()
-        msg.items.extend(encode(v, t) for v, t in zip(value, typ.value_types))
+        msg.items.extend(_encode_item(v, t) for v, t in zip(value, _members(typ)))
         return msg.SerializeToString()
     if isinstance(typ, ListType):
         msg = KRPC.List()
-        msg.items.extend(encode(v, typ.value_type) for v in value)
+        msg.items.extend(_encode_item(v, typ.value_type) for v in value)
         return msg.SerializeToString()
     if isinstance(typ, SetType):
         msg = KRPC.Set()
-        msg.items.extend(encode(v, typ.value_type) for v in value)
+        msg.items.extend(_encode_item(v, typ.value_type) for v in value)
         return msg.SerializeToString()
     if isinstance(typ, DictionaryType):
         msg = KRPC.Dictionary()
         for k in sorted(value):
             e = msg.entries.add()
-            e.key = encode(k, typ.key_type)
-            e.value = encode(value[k], typ.value_type)
+            e.key = _encode_item(k, typ.key_type)
+            e.value = _encode_item(value[k], typ.value_type)
         return msg.SerializeToString()
     raise TypeError("cannot encode %s" % typ)
+
+
+def _decode_item(data, typ, registry):
+    if not typ.nullable:
+        return decode(data, typ, registry)
+    return decode(data[1:], typ, registry) if data[0] else None
+
+
+def _encode_item(value, typ):
+    if not typ.nullable:
+        return encode(value, typ)
+    return b"\x00" if value is None else b"\x01" + encode(value, typ)

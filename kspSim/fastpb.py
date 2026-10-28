@@ -38,12 +38,14 @@ class Call:
 
 class Result:
     """A ProcedureResult: the encoded value, or an error
-    (service, name, description, stack_trace)."""
-    __slots__ = ("value", "error")
+    (service, name, description, stack_trace).  ``is_null`` is kRPC 0.7's
+    null: the value field left empty and the flag set."""
+    __slots__ = ("value", "error", "is_null")
 
-    def __init__(self, value=b"", error=None):
+    def __init__(self, value=b"", error=None, is_null=False):
         self.value = value
         self.error = error
+        self.is_null = is_null
 
 
 # -- varints -------------------------------------------------------------
@@ -126,7 +128,8 @@ def parse_call(buf):
 
 
 def _parse_argument(buf):
-    position, value = 0, b""
+    """(position, bytes), the bytes None for a 0.7 null (``is_null``)."""
+    position, value, null = 0, b"", False
     pos, end = 0, len(buf)
     while pos < end:
         tag, pos = read_varint(buf, pos)
@@ -137,9 +140,12 @@ def _parse_argument(buf):
             n, pos = read_varint(buf, pos)
             value = bytes(buf[pos:pos + n])
             pos += n
+        elif field == 3 and wire == 0:
+            flag, pos = read_varint(buf, pos)
+            null = bool(flag)
         else:
             pos = _skip(buf, pos, wire)
-    return position, value
+    return position, (None if null else value)
 
 
 def parse_request(buf):
@@ -166,7 +172,7 @@ def serialize_call(call):
         out.append(_ld(2, call.procedure.encode("utf-8")))
     for position, value in call.arguments:
         body = (b"\x08" + varint(position) if position else b"") + \
-            (_ld(2, value) if value else b"")
+            (b"\x18\x01" if value is None else _ld(2, value) if value else b"")
         out.append(_ld(3, body))
     if call.service_id:
         out.append(b"\x20" + varint(call.service_id))
@@ -188,6 +194,8 @@ def serialize_result(result):
     if result.error is not None:
         body = _ld(1, serialize_error(result.error))
         return body + _ld(2, result.value) if result.value else body
+    if result.is_null:
+        return b"\x18\x01"
     return _ld(2, result.value) if result.value else b""
 
 

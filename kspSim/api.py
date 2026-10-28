@@ -1088,17 +1088,6 @@ def _ap(w):
     return w.vessel.autopilot
 
 
-@rpc("AutoPilot_Engage")
-def ap_engage(w, a):
-    v = w.vessel
-    _ap(w).engage(w.t, v.available_torque(_env(w)), v.moi())
-
-
-@rpc("AutoPilot_Disengage")
-def ap_disengage(w, a):
-    _ap(w).disengage()
-
-
 @rpc("AutoPilot_get_Engaged")
 def ap_engaged(w, a):
     return _ap(w).engaged
@@ -1107,9 +1096,10 @@ def ap_engaged(w, a):
 @rpc("AutoPilot_set_Engaged")
 def ap_set_engaged(w, a, value):
     if value:
-        ap_engage(w, a)
+        v = w.vessel
+        _ap(w).engage(w.t, v.available_torque(_env(w)), v.moi())
     else:
-        ap_disengage(w, a)
+        _ap(w).disengage()
 
 
 @rpc("AutoPilot_Wait")
@@ -1208,16 +1198,6 @@ def ap_smoothing(w, a):
 @rpc("AutoPilot_set_TargetSmoothingTime")
 def ap_set_smoothing(w, a, value):
     _ap(w).target_smoothing = max(0.0, value)
-
-
-@rpc("AutoPilot_get_RollThreshold")
-def ap_roll_threshold(w, a):
-    return _ap(w).roll_start
-
-
-@rpc("AutoPilot_set_RollThreshold")
-def ap_set_roll_threshold(w, a, value):
-    _ap(w).roll_start = value
 
 
 @rpc("AutoPilot_get_RollStartAngle")
@@ -1478,41 +1458,46 @@ def module_part(w, m):
     return m.part
 
 
-@rpc("Module_get_Fields")
-def module_fields(w, m):
-    return dict(m.fields)
+def _items(m, kind):
+    """kRPC 0.7's ``Module.field_list`` / ``event_list`` / ``action_list``:
+    one handle per name, made once per module so its id is stable.  The
+    model keys a module's fields, events and actions by the name the part
+    menu shows, so ``name`` and ``gui_name`` are both that."""
+    cache = m.__dict__.setdefault("_items", {})
+    got = cache.get(kind)
+    if got is None:
+        names = m.fields if kind == "field" else m.events if kind == "event" else m.actions
+        got = cache[kind] = [Obj(module=m, name=n) for n in names]
+    return got
 
 
-@rpc("Module_get_Actions")
-def module_actions(w, m):
-    return list(m.actions)
+@rpc("Module_get_FieldList")
+def module_field_list(w, m):
+    return _items(m, "field")
 
 
-@rpc("Module_get_Events")
-def module_events(w, m):
-    return list(m.events)
+@rpc("Module_get_EventList")
+def module_event_list(w, m):
+    return _items(m, "event")
 
 
-@rpc("Module_HasField")
-def module_has_field(w, m, name):
-    return name in m.fields
+@rpc("Module_get_ActionList")
+def module_action_list(w, m):
+    return _items(m, "action")
 
 
-@rpc("Module_GetField")
-def module_get_field(w, m, name):
-    if name not in m.fields:
-        raise ValueError("no field %r" % name)
-    return str(m.fields[name])
+for _kind in ("PartField", "PartEvent", "PartAction"):
+    HANDLERS[("SpaceCenter", _kind + "_get_Module")] = lambda w, x: x.module
+    HANDLERS[("SpaceCenter", _kind + "_get_Name")] = lambda w, x: x.name
+    HANDLERS[("SpaceCenter", _kind + "_get_GuiName")] = lambda w, x: x.name
+for _kind in ("PartField", "PartEvent"):
+    HANDLERS[("SpaceCenter", _kind + "_get_Visible")] = lambda w, x: True
+HANDLERS[("SpaceCenter", "PartEvent_get_Active")] = lambda w, x: True
 
 
-@rpc("Module_HasAction")
-def module_has_action(w, m, name):
-    return name in m.actions
-
-
-@rpc("Module_HasEvent")
-def module_has_event(w, m, name):
-    return name in m.events
+@rpc("PartField_get_Value")
+def part_field_value(w, f):
+    return str(f.module.fields[f.name])
 
 
 def _set_field(w, m, name, value):
@@ -1521,15 +1506,25 @@ def _set_field(w, m, name, value):
         w.vessel.control.drain_rate = float(value)
 
 
-for _kind, _cast in (("Int", int), ("Float", float), ("String", str), ("Bool", bool)):
-    def _mk(cast):
-        def fn(w, m, name, value):
-            _set_field(w, m, name, str(cast(value)))
+def _bool(text):
+    return str(text).lower() == "true"
+
+
+for _kind, _cast in (("", str), ("Int", int), ("Float", float), ("Double", float),
+                     ("Bool", bool)):
+    def _setter(cast):
+        def fn(w, f, value):
+            _set_field(w, f.module, f.name, str(cast(value)))
         return fn
-    HANDLERS[("SpaceCenter", "Module_SetField" + _kind)] = _mk(_cast)
+
+    def _getter(cast):
+        read = _bool if cast is bool else cast
+        return lambda w, f: read(f.module.fields[f.name])
+    HANDLERS[("SpaceCenter", "PartField_set_%sValue" % _kind)] = _setter(_cast)
+    if _kind:
+        HANDLERS[("SpaceCenter", "PartField_get_%sValue" % _kind)] = _getter(_cast)
 
 
-@rpc("Module_SetAction")
 def module_set_action(w, m, name, value=True):
     """Only the actions a flight has been seen to use do anything."""
     v = w.vessel
@@ -1552,9 +1547,14 @@ def module_set_action(w, m, name, value=True):
                 e.gimbal_locked = False
 
 
-@rpc("Module_TriggerEvent")
-def module_trigger_event(w, m, name):
-    module_set_action(w, m, name, True)
+@rpc("PartAction_set_Activated")
+def part_action_activated(w, a, value):
+    module_set_action(w, a.module, a.name, value)
+
+
+@rpc("PartEvent_Trigger")
+def part_event_trigger(w, e):
+    module_set_action(w, e.module, e.name, True)
 
 
 # -- Resources -----------------------------------------------------------------

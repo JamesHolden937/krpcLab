@@ -75,6 +75,12 @@ def set_field_int(module, name, value):
     _table(module, "field")[name].int_value = int(value)
 
 
+def set_field_string(module, name, value):
+    if not _new(module):
+        return module.set_field_string(name, value)
+    _table(module, "field")[name].value = str(value)
+
+
 def events(module):
     """Names of the events the part menu offers now (re-read: an event
     shows and hides with the part's state)."""

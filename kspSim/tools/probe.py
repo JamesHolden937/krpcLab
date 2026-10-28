@@ -27,7 +27,7 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-from common import paths  # noqa: E402
+from common import partmodule, paths  # noqa: E402
 paths.use_venv()
 
 import krpc  # noqa: E402
@@ -108,9 +108,8 @@ def part_record(part, index_of, vframe):
         rec["resources"].append({"name": r.name, "amount": r.amount, "max": r.max,
                                  "density": r.density, "enabled": r.enabled})
     for m in part.modules:
-        mod = {"name": m.name, "fields": safe(lambda: dict(m.fields), {}),
-               "actions": safe(lambda: list(m.actions), []),
-               "events": safe(lambda: list(m.events), [])}
+        mod = {"name": m.name, "fields": partmodule.fields(m),
+               "actions": partmodule.actions(m), "events": partmodule.events(m)}
         rec["modules"].append(mod)
     return rec
 
@@ -584,10 +583,10 @@ def probe_aero_surfaces(args, tables, main_model):
         rec_out = {"angles": [], "tables": [], "zero": zero, "com_offset": offset}
         for ang in AERO_SURFACE_ANGLES:
             try:
-                module.set_field_float("Deploy Angle", ang)
+                partmodule.set_field_float(module, "Deploy Angle", ang)
             except Exception:                           # noqa: BLE001
                 try:
-                    module.set_field_string("Deploy Angle", str(ang))
+                    partmodule.set_field_string(module, "Deploy Angle", str(ang))
                 except Exception:                       # noqa: BLE001
                     continue
             cs.deployed = True

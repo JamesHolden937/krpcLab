@@ -417,7 +417,8 @@ class TestWireCodec(unittest.TestCase):
         on sample values of every parameter and return type."""
         from kspSim import protocol
         from krpc.types import (ClassType, EnumerationType, ValueType, TupleType,
-                                ListType, SetType, DictionaryType, MessageType)
+                                ListType, SetType, DictionaryType, MessageType,
+                                StructType)
         import krpc.schema.KRPC_pb2 as KRPC
 
         class Obj:
@@ -449,6 +450,8 @@ class TestWireCodec(unittest.TestCase):
                 return (b"", b"\x00\x01", bytes(300))[k % 3]
             if isinstance(t, TupleType):
                 return tuple(sample(x, k + i) for i, x in enumerate(t.value_types))
+            if isinstance(t, StructType):
+                return tuple(sample(x, k + i) for i, x in enumerate(t.field_types))
             if isinstance(t, (ListType, SetType)):
                 return [sample(t.value_type, k + i) for i in range(k % 3)]
             if isinstance(t, DictionaryType):
@@ -484,7 +487,7 @@ class TestFastClient(unittest.TestCase):
             from krpc.encoder import Encoder
             from krpc.types import (Types, ClassType, EnumerationType, ValueType,
                                     TupleType, ListType, SetType, DictionaryType,
-                                    MessageType)
+                                    MessageType, StructType)
         except ImportError:
             self.skipTest("krpc not installed")
         from kspSim import fastclient, protocol
@@ -502,6 +505,7 @@ class TestFastClient(unittest.TestCase):
         raw = open(os.path.join(ROOT, "kspSim", "data", "services.bin"), "rb").read()
         services = KRPC.Services()
         services.ParseFromString(raw)
+        protocol.register_structs(services, types)
         seen = []
         for svc in services.services:
             for proc in svc.procedures:
@@ -515,7 +519,8 @@ class TestFastClient(unittest.TestCase):
 
         def sample(t, k):
             if isinstance(t, ClassType):
-                return None if k % 4 == 0 else t.python_type(None, k)
+                # krpc 0.7 sends None only where the type is nullable.
+                return None if k % 4 == 0 and t.nullable else t.python_type(None, k + 1)
             if isinstance(t, EnumerationType):
                 members = list(t.python_type)
                 return members[k % len(members)] if members else None
@@ -532,6 +537,8 @@ class TestFastClient(unittest.TestCase):
                         KRPC.Type.BYTES: (b"", b"\x01", bytes(200))[k % 3]}[code]
             if isinstance(t, TupleType):
                 return tuple(sample(x, k + i) for i, x in enumerate(t.value_types))
+            if isinstance(t, StructType):
+                return t.python_type(*(sample(x, k + i) for i, x in enumerate(t.field_types)))
             if isinstance(t, ListType):
                 return [sample(t.value_type, k + i) for i in range(k % 3)]
             if isinstance(t, SetType):
@@ -543,7 +550,9 @@ class TestFastClient(unittest.TestCase):
         def with_values(t):
             if isinstance(t, EnumerationType) and t.python_type is None:
                 t.set_values(enums[(t._service_name, t._enum_name)])
-            for sub in getattr(t, "value_types", None) or [getattr(t, "value_type", None)]:
+            subs = (getattr(t, "value_types", None) or getattr(t, "field_types", None)
+                    or [getattr(t, "value_type", None)])
+            for sub in subs:
                 if sub is not None:
                     with_values(sub)
         n = 0

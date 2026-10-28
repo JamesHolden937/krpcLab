@@ -31,6 +31,8 @@ import krpc.schema.KRPC_pb2 as KRPC
 from kspSim import fastpb, protocol, wire
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# kRPC 0.7's wire protocol: the version the handshake and GetStatus report.
+PROTOCOL_VERSION = 1
 
 
 class ClientState:
@@ -255,8 +257,11 @@ class Server:
                                             call.arguments, self.registry)
                 value = handler(self.world, *args)
             if key in self.sig.procs:
-                result.value = self.sig.encode_result(call.service, call.procedure,
-                                                      self._register(value))
+                if value is None and self.sig.procs[key][2] is not None:
+                    result.is_null = True
+                else:
+                    result.value = self.sig.encode_result(call.service, call.procedure,
+                                                          self._register(value))
         except NotImplementedError as exc:
             if key not in self.missing:
                 self.missing.add(key)
@@ -290,7 +295,7 @@ class Server:
         if p == "GetServices":
             return self.sig.services_message
         if p == "GetStatus":
-            return KRPC.Status(version="0.6.0")
+            return KRPC.Status(version="0.7.0", protocol_version=PROTOCOL_VERSION)
         if p == "GetClientID":
             return client.ident
         if p == "GetClientName":
@@ -366,7 +371,8 @@ class Server:
         with self.lock:
             self.clients[client.ident] = client
         sock.sendall(wire.frame(KRPC.ConnectionResponse(
-            status=KRPC.ConnectionResponse.OK, client_identifier=client.ident)))
+            status=KRPC.ConnectionResponse.OK, client_identifier=client.ident,
+            protocol_version=PROTOCOL_VERSION)))
         reader = wire.FrameReader(sock)
         try:
             while True:
@@ -414,7 +420,8 @@ class Server:
             sock.close()
             return
         sock.sendall(wire.frame(KRPC.ConnectionResponse(
-            status=KRPC.ConnectionResponse.OK, client_identifier=client.ident)))
+            status=KRPC.ConnectionResponse.OK, client_identifier=client.ident,
+            protocol_version=PROTOCOL_VERSION)))
         client.stream_sock = sock
 
     def _listen(self, port, handler):
