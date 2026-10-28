@@ -15,9 +15,9 @@ rather than guessed.
     ./boosterland/tools/quickfly.py --compare CORRECTION_ENTER_M=300,1200
 
 Each run loads `--save` (default "quicksave", the post-separation state at
-UT 2843.5), pauses it, and flies the booster from the single-file bundle
-(``--tree``: the modules) with ``--autostart`` in a child process, which
-engages on the paused state and unpauses.  It flies to touchdown or
+UT 2843.5) and flies the booster from the single-file bundle (``--tree``:
+the modules) with ``--autostart`` in a child process: the child loads the
+save itself and engages the moment it settles.  It flies to touchdown or
 `--timeout`, and the harness records where the booster ended up.  Logs land
 in `logs/` as usual.
 
@@ -134,26 +134,28 @@ def fly_once(args, overrides):
     tsdir = ts.instance_dir(args.instance, args.rpc_port)
     if args.timescale is not None:
         ts.write(tsdir, args.timescale)
-    conn, ut0, speed0 = load_save(args)
-    try:
-        hold_for(conn, args.delay)
-        # **Paused here, where START used to be pressed**: the flight is a
-        # child process now (the bundle flies, as everywhere), and the
-        # booster would fall for as long as it takes to start.  Its first
-        # tick engages on this state and unpauses (``autoland.main``).
-        # **At real time**: a pause lands a few frames after it is asked
-        # for, and at 4x that was 0.2-0.8 game-seconds, a different start
-        # each flight.  The scale asked for applies once the child unpauses.
-        if args.timescale not in (None, "off"):
-            ts.hold(tsdir)
-        conn.krpc.paused = True
-        if args.timescale not in (None, "off"):
-            ts.write(tsdir, args.timescale)
-    finally:
+    extra = []
+    if str(args.instance or "").startswith("sim"):
+        # A simulated instance loads here, advances to where the game would
+        # have started, and pauses at once (it has no frames to wait for);
+        # the flight's first tick engages on that state and unpauses.
+        conn, _, _ = load_save(args)
         try:
-            conn.close()
-        except Exception:
-            pass
+            hold_for(conn, args.delay)
+            conn.krpc.paused = True
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    else:
+        # **The flight loads the save itself** (``autoland --load``) and
+        # starts on its first settled tick, as this harness did when it ran
+        # the autoland in-process.  Loading here and pausing until the child
+        # was up started each flight 0.2-0.8 game-seconds late, by however
+        # long the pause took to land.
+        extra = ["--load", args.save, "--load-delay", str(args.delay),
+                 "--load-timeout", str(SETTLE_TIMEOUT_S)]
     overrides = list(overrides)
     # Off 1x, the loop has to be paced on the game clock or the control rate
     # the vehicle sees falls by exactly the speedup factor.  An explicit
@@ -167,7 +169,8 @@ def fly_once(args, overrides):
     path, timed_out = farmflight.fly(args, "boosterland",
                                      "boosterland.autoland", overrides,
                                      args.timeout,
-                                     ports=(args.rpc_port, args.stream_port))
+                                     ports=(args.rpc_port, args.stream_port),
+                                     extra=extra)
     where = None
     try:
         conn = connect(args, "quickfly-report")
@@ -190,8 +193,7 @@ def fly_once(args, overrides):
     else:
         reason = shut[-1] if shut else "(no shutdown line)"
     hit = DONE.search(body)
-    result = {"log": path or "-", "ut0": ut0, "speed0": speed0,
-              "reason": reason,
+    result = {"log": path or "-", "reason": reason,
               "corrections": len(CORRECTION.findall(body)),
               "offset": _offset(where, Config()),
               "wall": time.time() - wall0,

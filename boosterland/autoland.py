@@ -2325,9 +2325,58 @@ def diag_line(snap, run):
 
 
 def parse_args(argv):
-    return cli.parser("boosterland",
-                      "Boostback and land a KSP booster on the KSC pad."
-                      ).parse_args(argv)
+    p = cli.parser("boosterland",
+                   "Boostback and land a KSP booster on the KSC pad.")
+    p.add_argument("--load", default=None, metavar="SAVE",
+                   help="load this save and fly from the moment its physics "
+                        "runs (the farm harness, quickfly.py)")
+    p.add_argument("--load-delay", type=float, default=0.0, metavar="S",
+                   help="coast this many game-seconds after --load first")
+    p.add_argument("--load-timeout", type=float, default=90.0, metavar="S",
+                   help="wall-seconds to wait for the loaded save to settle")
+    return p.parse_args(argv)
+
+
+def load_settled(args, poll=0.5):
+    """``--load``: load the save and return a connection the moment the
+    booster is flying, ``--load-delay`` game-seconds later.
+
+    **In this process, not the harness's**: a harness that loaded the save
+    and then started this one would have to stop the game meanwhile, and a
+    pause lands a few frames after it is asked for -- 0.2-0.8 game-seconds
+    at 4x, a different entry state every flight.  The load drops every
+    connection while the scene is rebuilt, so this reconnects; a speed
+    above 1 m/s is physics running, not the loading screen.
+    """
+    conn = cli.connect(args, "boosterland-loader")
+    try:
+        conn.space_center.load(args.load)
+    finally:
+        try:
+            conn.close()
+        except Exception:                   # noqa: BLE001 -- already gone
+            pass
+    deadline = time.monotonic() + args.load_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll)
+        conn = None
+        try:
+            conn = cli.connect(args)
+            vessel = conn.space_center.active_vessel
+            if vessel.flight(vessel.orbit.body.reference_frame).speed > 1.0:
+                target = conn.space_center.ut + args.load_delay
+                while conn.space_center.ut < target:
+                    time.sleep(0.1)
+                return conn
+        except Exception:                   # noqa: BLE001 -- still loading
+            pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:               # noqa: BLE001
+                pass
+    raise RuntimeError("save %r never settled into a flyable vessel"
+                       % args.load)
 
 
 def main(argv=None):
@@ -2338,14 +2387,15 @@ def main(argv=None):
     status = 0
     reason = "shutdown"
     try:
-        conn = cli.connect(args)
+        conn = load_settled(args) if args.load else cli.connect(args)
         run = Autoland(conn, cfg, log)
         run.autostart = args.autostart
         if args.autostart:
             run.gui.hide_start()
-            # **A harness hands over a paused game** (``quickfly.py``) so the
-            # booster does not fall while this process starts: the first
-            # tick commands on the state the save recorded, then time moves.
+            # **A harness may hand over a paused game** (``quickfly.py`` on
+            # a simulated instance) so the booster does not fall while this
+            # process starts: the first tick commands on the state the save
+            # recorded, then time moves.
             run.tick()
             if conn.krpc.paused:
                 conn.krpc.paused = False
