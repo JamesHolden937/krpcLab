@@ -141,7 +141,14 @@ def fly_once(args, overrides):
         # child process now (the bundle flies, as everywhere), and the
         # booster would fall for as long as it takes to start.  Its first
         # tick engages on this state and unpauses (``autoland.main``).
+        # **At real time**: a pause lands a few frames after it is asked
+        # for, and at 4x that was 0.2-0.8 game-seconds, a different start
+        # each flight.  The scale asked for applies once the child unpauses.
+        if args.timescale not in (None, "off"):
+            ts.hold(tsdir)
         conn.krpc.paused = True
+        if args.timescale not in (None, "off"):
+            ts.write(tsdir, args.timescale)
     finally:
         try:
             conn.close()
