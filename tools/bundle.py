@@ -465,7 +465,8 @@ def selftest(path):
 
     A bundler that emits a file nobody runs is a bundler that emits a broken
     file.  This flies nothing: it imports every pilot's module out of the
-    bundle, checks each has ``main``, that the paths land beside the file,
+    bundle, checks each has ``main``, that the paths land beside the file (or, in a
+    checkout's ``dist/``, in the tree above it),
     and that ``--pilot NAME --help`` gets as far as each one's arguments.
     """
     probe = """import io, os, sys, types, contextlib
@@ -474,7 +475,11 @@ sys.argv = [{path!r}]
 import runpy
 space = runpy.run_path({path!r}, run_name='bundled')
 from common import launcher, paths
-assert paths.ROOT == os.path.dirname({path!r}), paths.ROOT
+here = os.path.dirname({path!r})
+if (os.path.basename(here) == 'dist' and os.path.exists(
+        os.path.join(os.path.dirname(here), 'common', 'paths.py'))):
+    here = os.path.dirname(here)    # a checkout's dist/: the tree is the root
+assert paths.ROOT == here, paths.ROOT
 for _, name, module in launcher.PILOTS:
     mod = __import__(module, fromlist=['x'])
     assert hasattr(mod, 'main'), module + ' has no main()'
