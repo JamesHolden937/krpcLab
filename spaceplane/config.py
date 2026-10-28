@@ -2929,6 +2929,11 @@ class Config:
     # The floor under ``ATTITUDE_PITCH_AIR``'s pitch time_to_peak, seconds
     # (0 = ``ATTITUDE_TIME_TO_PEAK_S``).  See ``Autopilot.retune_pitch_air``.
     ATTITUDE_PITCH_AIR_FLOOR_S: float = 0.0
+    # ``ATTITUDE_PITCH_AIR`` in the GLIDE below this Mach (0 = off).  The
+    # whole-glide version (rot-pag-1025) was measured on the 3-4 m
+    # wings-forward craft, which the elevons cannot hold at all; the
+    # departures it was for are transonic and subsonic (LOG14024, LOG14553).
+    GLIDE_PITCH_AIR_MACH: float = 0.0
     ATTITUDE_RETUNE_S: float = 1.0          # game-seconds between checks
     ATTITUDE_RETUNE_FRAC: float = 0.15      # re-assign only past this change
     # **And it is handed back for the landing.**  3.0 s is right for the

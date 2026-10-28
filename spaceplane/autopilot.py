@@ -7592,7 +7592,12 @@ class Autopilot:
         # on the defaults, ``logs/pairfly-shuttle-pitchair.txt``.  The glide
         # was already pointing (alpha error -0.5, sd 3); the dive this is for
         # happens below Mach 1, in the cone and on final.
-        if self.state not in (HAC, APPROACH, FLARE):
+        # ``GLIDE_PITCH_AIR_MACH``: but in the glide below this Mach.  The
+        # stack orbiter pitched up past its command at Mach 0.85 on the
+        # static 9.8 s loop with the input at -0.3..-0.6 and departed
+        # (LOG14553); the eight kilometres above were the whole entry's.
+        if self.state not in (HAC, APPROACH, FLARE) and not (
+                self.state == GLIDE and self._glide_pitch_air(snap)):
             return
         last = getattr(self, "_air_ut", None)
         dt = 0.0 if last is None else max(0.0, snap.ut - last)
@@ -7647,6 +7652,18 @@ class Autopilot:
                          "(pitch %.1f, roll %.1f, yaw %.1f) s as applied"
                 % ((snap.dynamic_pressure, ema / 1000.0, wheel / 1000.0)
                    + tuple(want)))
+
+    def _glide_pitch_air(self, snap):
+        top = float(getattr(self.cfg, "GLIDE_PITCH_AIR_MACH", 0.0) or 0.0)
+        if top <= 0.0:
+            return False
+        try:
+            mach = self.env.mach(vec.norm(snap.velocity),
+                                 vec.norm(snap.position)
+                                 - self.env.equatorial_radius)
+        except Exception:                                   # noqa: BLE001
+            return False
+        return mach < top
 
     def destroyed_early(self, snap):
         """A vehicle with no parts left is not flying, whatever the phase says.
