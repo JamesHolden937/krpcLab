@@ -19,8 +19,13 @@ Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 evening". howI
 
 **Where the stack orbiter stands (defaults, live save):** cone entries ordinary; ~7/12 intact within 1.2 km on the last batch; losses are rollouts at 64-136 m/s and cone exits 1.5-2 km high that splash long. The slow-cone mush (LOG14813/14815) has not been seen under `HAC_TRIM_AT_TARGET` yet -- it did not occur in either arm of trimtgt1028.
 
+**The user's live flight on `dbdcefee` (LOG14863, read 2026-10-28 late):** intact, but 12.6 km short and 6.2 km *south*. Glide arrival good (12.0 km, long -204, cross +554). Three findings, none fixed yet:
+- **The cone could not bank.** It held +45 commanded for ~100 s and flew +3..+17, with roll input ~0.02. It turned 0.5 deg/s against 4, and left the cone at 2.0 km needing 3.9, 8.1 km out. Roll sat at 10 s x1.91 = 19 s all cone, because `HAC_ROLL_WITH_YAW` pins it to yaw's static figure. With the flag off, LOG14854 started the same (shortfall 42 deg) but the damper relaxed roll 10 -> 2.8 over 150 s. **Suspect `HAC_ROLL_WITH_YAW`; fly `=False` first.**
+- **Below Mach 3 the glide's bank command reverses every 12-30 s and the flown bank lags ~8 s and overshoots (+87 flown against -27 commanded).** Bug: `env.roll_lag_s = roll_damper.tp` (2.8 s) feeds `AZIMUTH_FLOOR_FROM_TURN`, but since `GLIDE_ROLL_YAW_SHARE` roll is applied at 10 s. The anti-chatter floor is ~3.6x too narrow (about 3 deg at Mach 3 instead of about 10). Fix: use `self.roll_lag_s()` (the applied figure). Farm logs show the same (M1-3 bank error 13-58 deg).
+- **Hypersonic wag:** after the first reversal (M6.3), a decaying ~13 s bank oscillation of +-7 deg on a steady command, carried by yaw input +-0.7..1.0 (roll input ~0.05). Both lateral axes sit at 10 s, from wheel torque at q=0, and the RCS relay toggles every 3-4 s. Typical of farm flights too (M5-7 bank error 0.8-2.9).
+
 **Next, in order:**
-1. Read the user's live flight on `dbdcefee`; then measure `HAC_ROLL_WITH_YAW` (now default) against `HAC_ROLL_WITH_YAW=False` on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
+1. Measure `HAC_ROLL_WITH_YAW` (now default) against `HAC_ROLL_WITH_YAW=False` on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
 2. Confirm `HAC_TRIM_AT_TARGET` didn't cost the shuttle: rigoff/inc/ecc/high, 12 each, against `HAC_TRIM_AT_TARGET=False`.
 3. The stack orbiter's high cone exits (turn 335-345, 1.5-2 km over) and hard rollouts.
 4. Carried from the morning: the shuttle's short touchdowns out of the cone (3/18 on defaults; `landsum.py`/`conesum.py --settled` on fastcone-1028's losses); bisect the 1.8 m wings-forward regression (`DRAIN_LEFTOVER=False` against defaults on `qs_shuttle2_fwdwing18_rigoff`); kspSim probe models for rigoff and stackorb; later, the user's lift-down entry and retaking `qs_s2_hac*`.
