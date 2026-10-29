@@ -2956,6 +2956,11 @@ class Config:
     # sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder torque)) instead of
     # yaw's wheels-only static figure.  ``Autopilot.coord_roll_floor``.
     ROLL_COORD_FLOOR: bool = False
+    # Yaw's time_to_peak from wheels + rudder at the present q, smoothed and
+    # without RCS, in GLIDE through FLARE (``Autopilot.yaw_air_peak``)
+    # instead of the vacuum wheels-only figure.  For the glide's slow
+    # lateral wag and the approach's slip.
+    YAW_AIR_TUNE: bool = False
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0

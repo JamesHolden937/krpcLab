@@ -46,5 +46,29 @@ class TestCoordRollFloor(unittest.TestCase):
         self.assertIsNone(self.floor(30.0, 30.0, 0.0))
 
 
+class TestYawAirPeak(unittest.TestCase):
+    """``YAW_AIR_TUNE``: yaw from wheels + rudder, bounded by static and floor."""
+
+    def peak(self, torque, on=True, state=None):
+        from spaceplane import autopilot as ap_mod
+        ap = ap_mod.Autopilot.__new__(ap_mod.Autopilot)
+        ap.cfg = Config()
+        ap.cfg.YAW_AIR_TUNE = on
+        ap.state = state or ap_mod.GLIDE
+        ap._bank_torque = (0.0, 0.0, torque)
+        ap._bank_inertia = (0.0, 0.0, 1.49e6)
+        return ap.yaw_air_peak(10.0)
+
+    def test_off_is_static(self):
+        self.assertEqual(self.peak(36e3, on=False), 10.0)
+
+    def test_glide_rudder_speeds_yaw(self):
+        self.assertAlmostEqual(self.peak(36e3), (1.49e6 / 36e3) ** 0.5, places=3)
+
+    def test_floor_and_static_bound(self):
+        self.assertEqual(self.peak(348e3), Config().ATTITUDE_TIME_TO_PEAK_S)
+        self.assertEqual(self.peak(5e3), 10.0)
+
+
 if __name__ == "__main__":
     unittest.main()

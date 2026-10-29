@@ -1013,6 +1013,8 @@ class Autopilot:
         if not (static and getattr(self, "autopilot_engaged", False)
                 and getattr(self, "_tuned_peak", None)):
             return
+        # ``YAW_AIR_TUNE``: yaw's figure from wheels + rudder at this q.
+        yaw_static = self.yaw_air_peak(static[2])
         rd = getattr(self, "roll_damper", None)
         swung = None
         if rd is not None:
@@ -1034,13 +1036,13 @@ class Autopilot:
             if self.state in (GLIDE, HAC, APPROACH, FLARE):
                 floor = self.coord_roll_floor(bank_deg, alpha_deg)
                 roll = max(roll, floor if floor is not None else
-                           float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
+                           float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static)
         elif self.state == GLIDE:
-            roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
+            roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static)
         elif self.state == HAC and getattr(self.cfg, "HAC_ROLL_WITH_YAW",
                                            False):
-            roll = max(roll, hac_roll_floor(self.cfg, static[2], alpha_deg))
-        yaw = yaw_time_to_peak(self.cfg, roll, static[2], alpha_deg,
+            roll = max(roll, hac_roll_floor(self.cfg, yaw_static, alpha_deg))
+        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg,
                                self.rcs_yaw_now(snap.ut))
         have = self._tuned_peak
         frac = float(self.cfg.ATTITUDE_RETUNE_FRAC)
@@ -1050,7 +1052,7 @@ class Autopilot:
                     or (want == home and had != home))
         rescale = self.peak_scale() != getattr(self, "_peak_scale", 1.0)
         if not (rescale or moved(roll, have[1], rd.floor if rd else roll)
-                or moved(yaw, have[2], static[2])):
+                or moved(yaw, have[2], yaw_static)):
             return
         want = (have[0], roll, yaw)
         if not self.assign_peak(want, snap.ut):
@@ -1079,6 +1081,32 @@ class Autopilot:
                        else float("nan"), roll,
                        ", rcs open" if self.rcs_yaw_now() is not None
                        else ""))
+
+    def yaw_air_peak(self, static_yaw):
+        """Yaw's ``time_to_peak`` under ``YAW_AIR_TUNE``, else ``static_yaw``.
+
+        The static figure is ``sqrt(I / wheels)`` taken in vacuum: 10 s on
+        the stack orbiter, against a rudder worth 2-20x the wheels once the
+        air is thick.  Yaw on that clock is too slow to damp the airframe's
+        own lateral mode -- after a reversal the glide's bank swung +-7 deg on
+        a ~13 s period with yaw input at +-0.7-1.0 (LOG14863).  So: the
+        slew factor x sqrt(I / (wheels + rudder)), on ``bank_accel``'s
+        smoothed no-RCS figure (the relayed valve must not swing it), never
+        slower than static nor faster than ``ATTITUDE_TIME_TO_PEAK_S``.
+        ``ATTITUDE_PITCH_AIR`` left yaw static because the unsmoothed,
+        RCS-counting ``ATTITUDE_TIME_TO_PEAK_LIVE`` drove the lateral mode;
+        both of those faults are answered here."""
+        if not getattr(self.cfg, "YAW_AIR_TUNE", False) or self.state not in (
+                GLIDE, HAC, APPROACH, FLARE):
+            return static_yaw
+        torque = getattr(self, "_bank_torque", None)
+        inertia = getattr(self, "_bank_inertia", None)
+        if not torque or not inertia or torque[2] <= 1.0 or inertia[2] <= 0.0:
+            return static_yaw
+        air = float(self.cfg.ATTITUDE_SLEW_FACTOR) * math.sqrt(
+            inertia[2] / torque[2])
+        return min(static_yaw, max(float(self.cfg.ATTITUDE_TIME_TO_PEAK_S),
+                                   air))
 
     def coord_roll_floor(self, bank_deg, alpha_deg):
         """``ROLL_COORD_FLOOR``: the slowest roll the rudder can still
