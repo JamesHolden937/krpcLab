@@ -3262,6 +3262,6 @@ Batches: live1028base, ctrim1028a/b, bays1028 (FATAL, no CargoBayState in 0.7), 
   - **v1, coord1028:** 8/11 landed 7-61 km short. dphi = 2|bank| collapsed mid-reversal: roll's tune swung 2.8-6.9 s. Off its 10 s pin, yaw's tune followed the RCS relay (3.7 <-> 10 s).
   - **v2, coord2-1028:** held decaying dphi, RCS yaw figure ignored. Still 6/12 reached the cone 6-27 km short (defaults 0/12). Departures below Mach 3: yaw pinned at 1.0, bank +89 against -30 commanded, then inverted. kRPC's surface torque counts the fins at full effect at 30 deg alpha, so the floor was too fast. `YAW_AIR_TUNE` (yaw tuned from wheels+rudder at q) made no difference to the M5-7 bank error and was deleted.
   - **v3, coord3-1029:** changed method from a modelled rudder to a measured one. The floor slews toward yaw's static figure as the held yaw input rises 0.5 -> 0.9. 18 an arm: landed >3 km off 1/18 against 6/18; along sd 0.75 km against 2.6 (one outlier each excluded); no departures. Cone arrivals slightly shorter (median long -0.7 against -0.3 km). **Promoted.** `HAC_ROLL_WITH_YAW`, `HAC_ROLL_YAW_REF_ALPHA_DEG`, `hac_roll_floor` and the glide's flat 10 s floor were deleted.
-- **breadth-1029** (`qs_shuttle2_rigoff`, new defaults, 12): BREADTH
+- **breadth-1029** (`qs_shuttle2_rigoff`, new defaults, 12; rerun as breadth2-1029 because multirot does not start the farm before cycle 0): 8/12 intact, 11/12 within 1.6 km, one intact 8.5 km short.
 
 Batches: rollfix1028 (stopped), coord1028, coord2-1028, coord3-1029, breadth-1029.

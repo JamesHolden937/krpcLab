@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint `FPRINT`)
+## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint ``)
 
 Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 late / 10-29". howItWorks.pdf updated.
 
@@ -23,7 +23,7 @@ Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 late / 10-29".
 | coord1028 | v1 (floor on the current 2\|bank\|) v defaults, 11 an arm | v1: 8/11 landed 7-61 km short. Roll's tune swung 2.8-6.9 s as 2\|bank\| passed zero mid-reversal, and yaw's tune followed the RCS relay |
 | coord2-1028 | defaults / v2 (held dphi, no RCS yaw) / v2+`YAW_AIR_TUNE`, 12 an arm | v2 6/12 and v2+YAW 6/12 reached the cone 6-27 km short; defaults 0/12. They departed below Mach 3 with yaw input pinned at 1.0 (bank +89 against -30 commanded, then inverted, slip 27): kRPC's surface torque counts the fins at full effect at 30 deg alpha. `YAW_AIR_TUNE`: Mach 5-7 bank error unchanged -> deleted |
 | coord3-1029 | defaults v v3 (+ yaw headroom), 18 an arm | landed >3 km off: v3 1/18, defaults 6/18. Along-track sd with one outlier each excluded: 0.75 km against 2.6. No departures. Cone arrivals slightly shorter: median long -0.7 against -0.3 km; arrivals >2 km short 7 v 3. Intact rate similar (rollout breakups at 50-105 m/s in both) -> **promoted** |
-| breadth-1029 | new defaults on `qs_shuttle2_rigoff`, 12 | BREADTH |
+| breadth-1029 | new defaults on `qs_shuttle2_rigoff`, 12 | 8/12 intact on the runway, 11/12 within 1.6 km, one intact 8.5 km short; 2 rollout breakups at 70-93 m/s. No regression seen on the twin-fin shuttle (breadth2-1029; breadth-1029 failed to connect: multirot does not start the farm before cycle 0) |
 
 **Where the stack orbiter stands:** lands within ~1 km on most flights. The losses:
 - rollout breakups at 50-105 m/s;
