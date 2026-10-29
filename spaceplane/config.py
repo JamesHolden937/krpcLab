@@ -2943,6 +2943,10 @@ class Config:
     # figure (the user, 2026-10-27: "if yaw can't keep up then just slow
     # the roll"; ``Autopilot.damp_roll``).  0 lets roll run free.
     GLIDE_ROLL_YAW_SHARE: float = 1.0
+    # **The same floor in the cone.**  The glide's alone; the cone tuned
+    # roll at 2.8 s against yaw's 10 above ~16 deg of commanded alpha and
+    # the live LOG14776 departed there (3.6 g, slip -23, yaw input -1.00).
+    HAC_ROLL_WITH_YAW: bool = False
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0

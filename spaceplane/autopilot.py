@@ -1013,7 +1013,10 @@ class Autopilot:
         # static yaw figure, not the valve-open one, so the relay does not
         # swing roll's gains too.
         # The user's proposal; rywfam-1028 / rollyaw-1027.
-        if self.state == GLIDE:
+        # ``HAC_ROLL_WITH_YAW``: the cone too -- the live LOG14776 cone
+        # departed at slip -23 with roll at 2.8 s against yaw's 10 (config).
+        if self.state == GLIDE or (self.state == HAC and getattr(
+                self.cfg, "HAC_ROLL_WITH_YAW", False)):
             roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
         yaw = yaw_time_to_peak(self.cfg, roll, static[2], alpha_deg,
                                self.rcs_yaw_now(snap.ut))
