@@ -2956,11 +2956,15 @@ class Config:
     # sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder torque)) instead of
     # yaw's wheels-only static figure.  ``Autopilot.coord_roll_floor``.
     ROLL_COORD_FLOOR: bool = False
-    # Yaw's time_to_peak from wheels + rudder at the present q, smoothed and
-    # without RCS, in GLIDE through FLARE (``Autopilot.yaw_air_peak``)
-    # instead of the vacuum wheels-only figure.  For the glide's slow
-    # lateral wag and the approach's slip.
-    YAW_AIR_TUNE: bool = False
+    # **What the rudder is actually doing.**  kRPC's surface torque counts
+    # the fins at full effect at 30 deg of alpha; flown on it the glide
+    # departed below Mach 3 with yaw input pinned at 1.0 (coord2-1028).  So
+    # under ``ROLL_COORD_FLOOR`` roll is also slowed toward yaw's static
+    # figure as the yaw input (held, decaying over
+    # ``ROLL_COORD_HEADROOM_DECAY_S``) rises from LO to HI of full deflection.
+    ROLL_COORD_HEADROOM_LO: float = 0.5
+    ROLL_COORD_HEADROOM_HI: float = 0.9
+    ROLL_COORD_HEADROOM_DECAY_S: float = 20.0
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0
