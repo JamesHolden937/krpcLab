@@ -169,6 +169,14 @@ class Config:
     # of sink and pulled 14 deg at 7 kPa to stop (LOG10017).  0 = unclamped.
     # Default 2026-10-11 (the user: smoother; unflown, they test it live).
     HAC_SPEED_ERR_MAX_MS: float = 25.0
+    # **The cone's trim is the 1 g alpha at its *target* speed, not at the
+    # speed it has.**  Below the target the 1 g alpha climbs as the speed
+    # falls, so a cone entered slow asked for more lift the slower it got:
+    # 26 deg held with pitch pinned while the speed bled 144 -> 54 m/s and
+    # the target read 125-220 (shortfall1028: LOG14813, LOG14815, out of the
+    # cone 1.8-1.9 km low).  At the target's trim a slow cone flies under
+    # 1 g and gains speed; a fast one flies over it and loses speed.
+    HAC_TRIM_AT_TARGET: bool = False
     # **The cone holds the dynamic pressure it hands over, not a true
     # airspeed** (``guidance.cone_speed``).  The target above is a constant
     # *true* airspeed, so in thin air it asks for a low *equivalent* one:
@@ -264,7 +272,7 @@ class Config:
     # the cone at 170 m/s of sink).  A shortfall with the input on the same
     # side is a standing moment, not a transient; the alpha cap above still
     # keeps the entry transient out.
-    CANARD_TRIM_SHORTFALL: bool = False
+    CANARD_TRIM_SHORTFALL: bool = True  # default 2026-10-28: shortfall1028 (qs_stackorb_live1028, 12 an arm) intact 6 v 3, rollout breakups 5 v 9, cone failures 2 v 2
     CANARD_TRIM_LP_S: float = 2.0
     CANARD_TRIM_DEADBAND: float = 0.05
     CANARD_TRIM_MAX: float = 0.6

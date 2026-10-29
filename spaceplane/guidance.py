@@ -2239,9 +2239,6 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # flown at level-flight trim descends through the circle instead of
     # round it.
     load = 1.0 / max(0.2, math.cos(math.radians(min(abs(bank), 75.0))))
-    trim = alpha_for_load(env, speed, height, mass, gravity, load)
-    if trim is None:
-        trim = cfg.GLIDE_ALPHA_DEG
     target = cone_speed(env, cfg, stall, height) * math.sqrt(load)
     energy_speed = None
     if getattr(cfg, "HAC_ENERGY_SPEED", False) and not short:
@@ -2263,6 +2260,13 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # degrees under trim instead of pushing over to the alpha floor --
     # LOG10017 entered at 159 m/s against ~245, dived to 231 m/s at 160 m/s
     # of sink and pulled 14 deg at 7 kPa to recover.  0 is unclamped.
+    # ``HAC_TRIM_AT_TARGET``: the 1 g alpha of the speed being held, not
+    # of the speed being flown (config).
+    trim = alpha_for_load(env, target if getattr(
+        cfg, "HAC_TRIM_AT_TARGET", False) else speed, height, mass, gravity,
+        load)
+    if trim is None:
+        trim = cfg.GLIDE_ALPHA_DEG
     error = speed - target
     limit = float(getattr(cfg, "HAC_SPEED_ERR_MAX_MS", 0.0) or 0.0)
     if limit > 0.0:
