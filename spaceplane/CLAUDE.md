@@ -54,7 +54,7 @@ Every cargo bay is shut at startup, before the aero sweep (`CLOSE_BAYS_ON_START`
 
 ## Earlier (2026-10-28, fingerprint `f8787c59`)
 
-In the glide roll is never tuned faster than yaw's static figure (`GLIDE_ROLL_YAW_SHARE`, promoted 2026-10-28: the stack orbiter flies). The 1.8 m wings-forward shuttle has regressed to 0/24 (suspect the 10-26 CoM changes). The root HANDOFF.md has the rest.
+In every winged phase roll is held back only as far as the rudder can coordinate the turn (`coord_roll_floor`): the floor slews toward yaw's static figure as the yaw input nears full deflection (`yaw_headroom_used`, promoted 2026-10-29, coord3-1029). The 1.8 m wings-forward shuttle has regressed to 0/24 (suspect the 10-26 CoM changes). The root HANDOFF.md has the rest.
 
 ## Earlier (2026-10-25, fingerprint `66612c16`)
 

@@ -163,47 +163,6 @@ def krpc_axes(cfg, pitch, roll, yaw, corrected=None):
     return (pitch, yaw, roll)
 
 
-def rcs_yaw_time_to_peak(cfg, inertia_yaw, wheel_yaw, rcs_yaw):
-    """``ATTITUDE_SLEW_FACTOR * sqrt(I / tau)`` on yaw with the thrusters
-    counted: the figure for yaw while the valve is open.  ``None`` when there
-    is no RCS yaw to count (or kRPC gave nothing), so a craft without
-    thrusters is untouched.  See ``ATTITUDE_YAW_WITH_RCS``."""
-    try:
-        inertia, wheel, rcs = (float(inertia_yaw), abs(float(wheel_yaw)),
-                               abs(float(rcs_yaw)))
-    except (TypeError, ValueError):
-        return None
-    if rcs <= 1.0 or inertia <= 0.0:
-        return None
-    return float(cfg.ATTITUDE_SLEW_FACTOR) * math.sqrt(inertia
-                                                       / (wheel + rcs))
-
-
-def yaw_time_to_peak(cfg, roll, static_yaw, alpha_deg, rcs_yaw=None):
-    """Yaw's ``time_to_peak`` for a given roll figure and commanded alpha.
-
-    A bank change is a rotation about the velocity: body roll and body yaw
-    in the ratio cos(alpha) : sin(alpha).  At the entry's 35-40 deg a yaw
-    axis on its wheels-only 22.6 s cannot keep up and every reversal leaves
-    sideslip (glide slip max 19-74 deg, one tumble in six, LOG3717-3728);
-    yaw on roll's figure everywhere cured that and lost the bank in the
-    cone instead, at ~20 deg of alpha below Mach 1 where the single rudder
-    is all the yaw there is (92 ticks of >60 deg bank error below Mach 2,
-    against 33).  ``ATTITUDE_YAW_BY_ALPHA`` asks yaw for the share of the
-    rotation that is yaw: roll's figure / sin(alpha), clamped between roll's
-    and yaw's own static figure -- 7.5 s at 40 deg, 12.8 at 22, static near
-    level flight.  ``ATTITUDE_YAW_WITH_ROLL`` is the unscheduled version.
-
-    ``rcs_yaw`` is the thrusters-counted figure (``rcs_yaw_time_to_peak``),
-    passed only while the valve is open under ``ATTITUDE_YAW_WITH_RCS``:
-    yaw then flies what wheels plus RCS deliver, never faster than roll and
-    never slower than its static figure.
-    """
-    if rcs_yaw is not None:
-        return max(roll, min(static_yaw, rcs_yaw))
-    return static_yaw
-
-
 def label_axes(cfg, triple):                             # noqa: ARG001
     """``"pitch a, roll b, yaw c"`` -- what kRPC *applies*.  Under the old
     order this reads the swap plainly: the shuttle's roll at 22.6 s."""
@@ -813,10 +772,6 @@ class Autopilot:
             self._tuned_peak = (tuple(peak) if isinstance(peak, (tuple, list))
                                 else (peak, peak, peak))
             self._static_peak = self._tuned_peak
-            # Read the first time the valve is open (``rcs_yaw_now``): kRPC
-            # reports no RCS torque while it is shut, and it is shut here.
-            self._rcs_yaw_peak = None
-            self._rcs_yaw_reads = 0
             # Floor: the roll the config asked for; ceiling: the
             # vehicle's slowest static axis.  Slot 1 is what kRPC
             # applies as roll in either axis order.
@@ -987,13 +942,13 @@ class Autopilot:
         return probe
 
     def damp_roll(self, snap, bank_deg, alpha_deg=None):
-        """The lateral tune, every tick: roll from ``ROLL_DAMPER``, yaw from
-        roll under ``ATTITUDE_YAW_WITH_ROLL`` or ``ATTITUDE_YAW_BY_ALPHA``.
+        """The lateral tune, every tick: roll from ``ROLL_DAMPER`` and the
+        coordinated floor; yaw at its static (wheels-only) figure -- the
+        thrusters-counted one followed the relayed valve.
 
         The damper slows roll when the bank swings about a steady command
         with growing amplitude and relaxes it back when it holds (see
-        ``rollrate.RollDamper``).  ``yaw_time_to_peak`` says how fast yaw
-        must follow.  Re-assigned only past ``ATTITUDE_RETUNE_FRAC`` -- kRPC
+        ``rollrate.RollDamper``).  Re-assigned only past ``ATTITUDE_RETUNE_FRAC`` -- kRPC
         re-derives its gains on every assignment."""
         static = getattr(self, "_static_peak", None)
         if not (static and getattr(self, "autopilot_engaged", False)
@@ -1028,7 +983,7 @@ class Autopilot:
         # Yaw ignores the valve-open figure: with roll no longer pinned at
         # yaw's 10 s it let yaw's tune follow the RCS relay, 3.7 <-> 10 s
         # every few seconds (coord1028).
-        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg)
+        yaw = yaw_static
         have = self._tuned_peak
         frac = float(self.cfg.ATTITUDE_RETUNE_FRAC)
 
@@ -1061,11 +1016,9 @@ class Autopilot:
                 self._yaw_logged = yaw
                 self.logbook.event(
                     snap.ut, "yaw time_to_peak %.1f -> %.1f s at %.0f deg "
-                             "of commanded alpha (roll %.1f%s)"
+                             "of commanded alpha (roll %.1f)"
                     % (have[2], yaw, alpha_deg if alpha_deg is not None
-                       else float("nan"), roll,
-                       ", rcs open" if self.rcs_yaw_now() is not None
-                       else ""))
+                       else float("nan"), roll))
 
     def coord_roll_floor(self, bank_deg, alpha_deg, ut=None):
         """The slowest roll the rudder can still
@@ -1153,41 +1106,10 @@ class Autopilot:
         self._peak_scale = scale
         return True
 
-    def rcs_yaw_now(self, ut=0.0):
-        """The thrusters-counted yaw figure while it applies, else ``None``:
-        ``ATTITUDE_YAW_WITH_RCS``, in GLIDE or HAC, with the valve open."""
-        if (self.state not in (GLIDE, HAC)
-                or not getattr(self.rcs, "on", False)):
-            return None
-        peak = getattr(self, "_rcs_yaw_peak", None)
-        reads = getattr(self, "_rcs_yaw_reads", 0)
-        if peak is None and reads < 10:
-            # **Only an open valve reports its torque.**  Read at engage the
-            # shuttle's 290 kN m came back as nothing -- the valve had just
-            # been shut -- and the flag flew as the defaults (LOG3764).  So
-            # it is read here, live, on the first ticks the valve is open.
-            self._rcs_yaw_reads = reads + 1
-            try:
-                peak = rcs_yaw_time_to_peak(
-                    self.cfg, self.vessel.moment_of_inertia[2],
-                    self.vessel.available_reaction_wheel_torque[0][2],
-                    self.vessel.available_rcs_torque[0][2])
-            except Exception:                           # noqa: BLE001
-                peak = None
-            self._rcs_yaw_peak = peak
-            static = getattr(self, "_static_peak", None)
-            self.logbook.event(
-                ut, "yaw with RCS: valve open, time_to_peak %s (static %s)"
-                % ("none -- no RCS yaw reported" if peak is None
-                   else "%.1f s" % peak,
-                   "%.1f" % static[2] if static else "?"))
-        return peak
-
     def reversal_under_way(self, snap):
         """The bank command leads the flown bank by more than
         ``BANK_RATE_SAT_DEG`` -- a turn the pointing error has not shown yet.
-        Only under
-        ``ATTITUDE_YAW_WITH_RCS``, only in GLIDE."""
+        Only in GLIDE."""
         if snap is None or self.state != GLIDE:
             return False
         cmd = getattr(self, "commanded_bank", None)

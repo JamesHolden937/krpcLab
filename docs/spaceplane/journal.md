@@ -3250,3 +3250,18 @@ The user flew the stack orbiter live after a full ascent (LOG14776, defaults `f8
 - **Trap paid: which `animTime` is open depends on the part.** The Mk3 bay has `closedPosition = 1`; this session first read the farm saves as bay-open. Check `ModuleCargoBay.closedPosition` before reading a deploy state.
 
 Batches: live1028base, ctrim1028a/b, bays1028 (FATAL, no CargoBayState in 0.7), bays1028b (bays still open: harness pause), bays1028c, shortfall1028, trimtgt1028.
+
+## Session, 2026-10-28 late / 10-29: roll held back only as far as the rudder can coordinate
+
+- **The user's live LOG14863 (`dbdcefee`)** landed intact, 12.6 km short and 6.2 km south. Three causes:
+  - **The cone couldn't bank.** `HAC_ROLL_WITH_YAW` pinned roll at yaw's static 10 s x1.91 = 19 s: 45 deg commanded, 3-17 flown, for 100 s.
+  - **The bank chattered below Mach 3.** `env.roll_lag_s` read the damper's 2.8 s, not the applied 10 s, so the azimuth reversal floor was ~3.6x too narrow. Fixed: it now reads `roll_lag_s()`.
+  - **A ~13 s hypersonic wag on yaw.**
+- **rollfix1028** (sin(alpha)-scaled HAC floor against off) was stopped by the user after 6 an arm. No cone bank failure in either arm.
+- **The user's law** ("hold roll back only so much that the rudder can coordinate the turn"; then "sideslip is never good", so APPROACH and FLARE too). `coord_roll_floor` = sqrt(dphi sin(alpha) I_yaw / (wheel+surface torque)).
+  - **v1, coord1028:** 8/11 landed 7-61 km short. dphi = 2|bank| collapsed mid-reversal: roll's tune swung 2.8-6.9 s. Off its 10 s pin, yaw's tune followed the RCS relay (3.7 <-> 10 s).
+  - **v2, coord2-1028:** held decaying dphi, RCS yaw figure ignored. Still 6/12 reached the cone 6-27 km short (defaults 0/12). Departures below Mach 3: yaw pinned at 1.0, bank +89 against -30 commanded, then inverted. kRPC's surface torque counts the fins at full effect at 30 deg alpha, so the floor was too fast. `YAW_AIR_TUNE` (yaw tuned from wheels+rudder at q) made no difference to the M5-7 bank error and was deleted.
+  - **v3, coord3-1029:** changed method from a modelled rudder to a measured one. The floor slews toward yaw's static figure as the held yaw input rises 0.5 -> 0.9. 18 an arm: landed >3 km off 1/18 against 6/18; along sd 0.75 km against 2.6 (one outlier each excluded); no departures. Cone arrivals slightly shorter (median long -0.7 against -0.3 km). **Promoted.** `HAC_ROLL_WITH_YAW`, `HAC_ROLL_YAW_REF_ALPHA_DEG`, `hac_roll_floor` and the glide's flat 10 s floor were deleted.
+- **breadth-1029** (`qs_shuttle2_rigoff`, new defaults, 12): BREADTH
+
+Batches: rollfix1028 (stopped), coord1028, coord2-1028, coord3-1029, breadth-1029.

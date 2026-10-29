@@ -1,44 +1,45 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-28 evening: spaceplane -- the live cone dive was an open cargo bay at the sweep; bays shut at start, the canard trim learns when short, the cone trims at its target speed (fingerprint `36bad8b6`)
+## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint `FPRINT`)
 
-Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 evening". howItWorks.pdf updated.
+Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 late / 10-29". howItWorks.pdf updated.
 
-**The live failure (LOG14776, stack orbiter after a full ascent, defaults):** out of the cone at 1991 m (needed 5282), into the ground from the flare. Cause: the ascent left the Mk3 bay open, the aero table was swept open (CdA 7.4 v 3.2 at Mach 2), and the user shut the bay by hand during the coast. Planned on twice the drag: a 31 m/s deorbit, a 40 deg glide, a cone arriving fast and long; the canard trim then froze (it learned only within 3 deg of command) while pitch sat pinned, and the cone dived out of height.
+**Started from the user's live LOG14863** (`dbdcefee`: intact, 12.6 km short, 6.2 km south). Three findings:
+- the cone couldn't bank: roll pinned at yaw's 10 s x1.91;
+- the azimuth floor read roll's 2.8 s damper figure, not the applied 10 s, so the bank chattered below Mach 3;
+- a ~13 s hypersonic wag on yaw.
 
-**Flags this session:**
+**Now the default (commit 4c7bfcd).** In GLIDE/HAC/APPROACH/FLARE, roll's time_to_peak is floored at the slowest roll the rudder can coordinate, the user's law: `coord_roll_floor` = sqrt(dphi sin(alpha) I_yaw / (wheel+surface torque, smoothed, no RCS)).
+- dphi is the largest reversal lately commanded, decaying over `ROLL_DAMPER_RECOVER_S`.
+- The floor slews toward yaw's static figure (x `GLIDE_ROLL_YAW_SHARE`) as the yaw input, held and decaying over `ROLL_COORD_HEADROOM_DECAY_S` 20 s, rises from `ROLL_COORD_HEADROOM_LO` 0.5 to `_HI` 0.9 (`yaw_headroom_used`).
+- Yaw ignores the RCS-open figure.
+- The azimuth floor reads the applied roll lag (`roll_lag_s()`, commit 3437e4a).
+- Deleted: `HAC_ROLL_WITH_YAW`, `HAC_ROLL_YAW_REF_ALPHA_DEG`, `hac_roll_floor`, the glide's flat 10 s floor, and `YAW_AIR_TUNE`.
 
-| Flag | Measured | Outcome |
+**Measured (all on `qs_stackorb_live1028`):**
+
+| batch | arms | result |
 |---|---|---|
-| `CLOSE_BAYS_ON_START` | the user: "just close bays on startup". bays1028c (6, `qs_stackorb_live1028`): bay shut before the sweep on 6/6, cone entries ordinary (12.0-12.7 km, long -0.2..-0.9 km) against 6/6 long and high (+0.4..+4.4 km, to 16 km) with the sweep bay-open | **Default** (with `CLOSE_BAYS_WAIT_S` 30) |
-| `CANARD_TRIM_SHORTFALL` | shortfall1028, 12 an arm: intact 6 v 3, rollout breakups 5 v 9, cone failures 2 v 2 | **Default** |
-| `HAC_TRIM_AT_TARGET` (the cone's 1 g trim at the target speed; the user's "approach hot then brake") | trimtgt1028, 12 an arm: intact within 1.2 km 7 v 4, lost 5 v 5, cone exits low 3 v 0 (all landed) | **Default** -- watch the low exits |
-| `HAC_ROLL_WITH_YAW` (the glide's roll floor in the cone) | not flown on the farm | **Default** at the user's request, to fly live (fingerprint `dbdcefee`) -- measure it |
+| coord1028 | v1 (floor on the current 2\|bank\|) v defaults, 11 an arm | v1: 8/11 landed 7-61 km short. Roll's tune swung 2.8-6.9 s as 2\|bank\| passed zero mid-reversal, and yaw's tune followed the RCS relay |
+| coord2-1028 | defaults / v2 (held dphi, no RCS yaw) / v2+`YAW_AIR_TUNE`, 12 an arm | v2 6/12 and v2+YAW 6/12 reached the cone 6-27 km short; defaults 0/12. They departed below Mach 3 with yaw input pinned at 1.0 (bank +89 against -30 commanded, then inverted, slip 27): kRPC's surface torque counts the fins at full effect at 30 deg alpha. `YAW_AIR_TUNE`: Mach 5-7 bank error unchanged -> deleted |
+| coord3-1029 | defaults v v3 (+ yaw headroom), 18 an arm | landed >3 km off: v3 1/18, defaults 6/18. Along-track sd with one outlier each excluded: 0.75 km against 2.6. No departures. Cone arrivals slightly shorter: median long -0.7 against -0.3 km; arrivals >2 km short 7 v 3. Intact rate similar (rollout breakups at 50-105 m/s in both) -> **promoted** |
+| breadth-1029 | new defaults on `qs_shuttle2_rigoff`, 12 | BREADTH |
 
-**New save:** `qs_stackorb_live1028` -- the live flight's orbit, UT, propellant and **open bay** (saves/README has the rebuild). With `CLOSE_BAYS_ON_START` it flies like `qs_stackorb` at that orbit. Every other reference save has its bay closed (`animTime = 1` is closed: `closedPosition = 1`).
-
-**Where the stack orbiter stands (defaults, live save):** cone entries ordinary; ~7/12 intact within 1.2 km on the last batch; losses are rollouts at 64-136 m/s and cone exits 1.5-2 km high that splash long. The slow-cone mush (LOG14813/14815) has not been seen under `HAC_TRIM_AT_TARGET` yet -- it did not occur in either arm of trimtgt1028.
-
-**The user's live flight on `dbdcefee` (LOG14863, read 2026-10-28 late):** intact, but 12.6 km short and 6.2 km *south*. Glide arrival good (12.0 km, long -204, cross +554). Three findings, none fixed yet:
-- **The cone could not bank.** It held +45 commanded for ~100 s and flew +3..+17, with roll input ~0.02. It turned 0.5 deg/s against 4, and left the cone at 2.0 km needing 3.9, 8.1 km out. Roll sat at 10 s x1.91 = 19 s all cone, because `HAC_ROLL_WITH_YAW` pins it to yaw's static figure. With the flag off, LOG14854 started the same (shortfall 42 deg) but the damper relaxed roll 10 -> 2.8 over 150 s. **Suspect `HAC_ROLL_WITH_YAW`; fly `=False` first.**
-- **Below Mach 3 the glide's bank command reverses every 12-30 s and the flown bank lags ~8 s and overshoots (+87 flown against -27 commanded).** Bug: `env.roll_lag_s = roll_damper.tp` (2.8 s) feeds `AZIMUTH_FLOOR_FROM_TURN`, but since `GLIDE_ROLL_YAW_SHARE` roll is applied at 10 s. The anti-chatter floor is ~3.6x too narrow (about 3 deg at Mach 3 instead of about 10). Fix: use `self.roll_lag_s()` (the applied figure). Farm logs show the same (M1-3 bank error 13-58 deg).
-- **Hypersonic wag:** after the first reversal (M6.3), a decaying ~13 s bank oscillation of +-7 deg on a steady command, carried by yaw input +-0.7..1.0 (roll input ~0.05). Both lateral axes sit at 10 s, from wheel torque at q=0, and the RCS relay toggles every 3-4 s. Typical of farm flights too (M5-7 bank error 0.8-2.9).
-
-**Fixed since (commits 3437e4a, e47bbbf, 7ce9ac9; defaults fingerprint `68b4eb4d`):** the azimuth floor now reads roll's applied time_to_peak (`roll_lag_s()`). `HAC_ROLL_WITH_YAW`'s floor now scales with sin(alpha) (`HAC_ROLL_YAW_REF_ALPHA_DEG` 30, `hac_roll_floor`). **`ROLL_COORD_FLOOR` (off, unflown)** is the user's law: hold roll back only as far as the rudder can coordinate, sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder)), in GLIDE/HAC/APPROACH/FLARE. When it wins, delete `HAC_ROLL_WITH_YAW`, its ref alpha and `hac_roll_floor`.
-**rollfix1028 was stopped by the user after cycle 0** (6 an arm, `qs_stackorb_live1028`, too few to judge). Defaults: within 1.7 km 6/6, intact 2, 4 rollout breakups at 59-79 m/s. `HAC_ROLL_WITH_YAW=False`: 2 splashed 2.8-3.1 km long, 1 intact, 3 breakups. No cone bank failure in either arm. **The farm stays down until the user says resume.**
+**Where the stack orbiter stands:** lands within ~1 km on most flights. The losses:
+- rollout breakups at 50-105 m/s;
+- one cone in ~18 exits ~3 km short, needing ~40 deg more bank than it flies (LOG14944 and LOG14950, one in each arm);
+- the glide reaches the cone a little shorter under v3.
 
 **Next, in order:**
-0. On resume: `ROLL_COORD_FLOOR=True` against defaults, `qs_stackorb_live1028`, 12 an arm. Read cone bank shortfall and approach/flare slip as well as landings. Then build yaw tuned from wheels + rudder at the present q (the hypersonic wag, the approach slip) as its own flag.
-1. Measure `HAC_ROLL_WITH_YAW` (now default) against `HAC_ROLL_WITH_YAW=False` on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
-2. Confirm `HAC_TRIM_AT_TARGET` didn't cost the shuttle: rigoff/inc/ecc/high, 12 each, against `HAC_TRIM_AT_TARGET=False`.
-3. The stack orbiter's high cone exits (turn 335-345, 1.5-2 km over) and hard rollouts.
-4. Carried from the morning: the shuttle's short touchdowns out of the cone (3/18 on defaults; `landsum.py`/`conesum.py --settled` on fastcone-1028's losses); bisect the 1.8 m wings-forward regression (`DRAIN_LEFTOVER=False` against defaults on `qs_shuttle2_fwdwing18_rigoff`); kspSim probe models for rigoff and stackorb; later, the user's lift-down entry and retaking `qs_s2_hac*`.
+1. The cone shortfall outliers (LOG14944, LOG14950, LOG14956): `conebank.py` medians 17-43 deg. Is roll or yaw saturated, or is the alpha simply too low to bank?
+2. v3's slightly short cone arrivals: is the glide's M1-3 bank error still costing range? (`wag.py` M1-3 median ~17 against ~15).
+3. The headroom constants 0.5/0.9/20 s are a first guess; the floor's dphi decay borrows `ROLL_DAMPER_RECOVER_S`.
+4. The items carried from 2026-10-28: confirm `HAC_TRIM_AT_TARGET` on the shuttle saves; the stack orbiter's high cone exits and hard rollouts; the shuttle's short touchdowns; the 1.8 m wings-forward bisect; kspSim probe models.
 
 **Traps paid:**
-- A part's deploy state means what its module says: the Mk3 bay's `closedPosition = 1`. Read the cfg before reading `animTime`.
-- The farm harness hands over a **paused** game (main unpauses after the first tick): anything animated at startup needs the clock run (`_close_bays` does).
-- kRPC 0.7 has no `CargoBayState`; a bay reports a `DeployableState` (`retracting`, `retracted`, ...). A startup helper that raises kills the flight before the logbook says why -- wrap it.
-- The live game's `saves/default/krpclab_main.sfs` is the orbiter as the ascent left it: a ready-made reproduction of a live flight (CRLF line ends).
+- kRPC's `available_control_surface_torque` is not the rudder's authority at high alpha: a law sized on it departed. When a law needs an authority, prefer what the control channel is measurably using (input saturation) over kRPC's figure.
+- A floor computed from the current command collapses wherever the command passes through zero (mid-reversal). Hold the largest recent demand.
+- `dbdcefee`'s live failures were also in farm logs (M1-3 bank error 13-58 deg on the defaults): read the farm's own lateral summaries (`wag.py`) before calling a live failure new.
 
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 
