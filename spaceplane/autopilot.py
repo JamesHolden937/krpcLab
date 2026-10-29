@@ -507,6 +507,7 @@ class Autopilot:
         self.flap_brake_out = False
         self.airbrake_ut = None
         self.gimbals_locked = self._lock_gimbals(ut)
+        self._close_bays(ut)
         # Fins still in vacuum (``VACUUM_SURFACE_HOLD``): nothing to fly.
         self.vacuum_surfaces = VacuumSurfaces(
             self.vessel, cfg.VACUUM_SURFACE_ON_Q_PA,
@@ -1711,6 +1712,35 @@ class Autopilot:
                                    "autopilot can engage" % (locked,
                                                              len(modules)))
         return locked
+
+    def _close_bays(self, ut):
+        """``CLOSE_BAYS_ON_START``: shut every cargo bay and wait for the
+        doors, so the aero sweep measures the airframe that flies (config)."""
+        if not getattr(self.cfg, "CLOSE_BAYS_ON_START", False):
+            return
+        try:
+            bays = list(self.vessel.parts.cargo_bays)
+        except Exception:                               # noqa: BLE001
+            return
+        shut = [b for b in bays if b.open]
+        if not shut:
+            return
+        for bay in shut:
+            try:
+                bay.open = False
+            except Exception:                           # noqa: BLE001
+                pass
+        closed = self.conn.space_center.CargoBayState.closed
+        deadline = time.time() + float(self.cfg.CLOSE_BAYS_WAIT_S)
+        left = shut
+        while left and time.time() < deadline:
+            time.sleep(0.25)
+            left = [b for b in left if b.state != closed]
+        self.logbook.event(ut, "cargo bay(s): closed %d of %d open at startup"
+                           "%s" % (len(shut) - len(left), len(shut),
+                                   "" if not left else
+                                   " -- still moving after %.0f s"
+                                   % float(self.cfg.CLOSE_BAYS_WAIT_S)))
 
     def runway_remaining(self, snap):
         """Metres of tarmac in front of the wheels, signed.

@@ -2991,6 +2991,14 @@ class Config:
 
     # -- the vehicle -------------------------------------------------------
     STARTUP_ACTION_GROUP: int = 0           # 0 = none; this craft needs none
+    # **Every cargo bay is closed at startup, before the aero sweep.**  The
+    # table is measured on the airframe as it sits, so a bay left open in
+    # orbit and closed by hand later is planned at twice the low-alpha drag
+    # it flies (live LOG14776: CdA 7.4 v 3.2 at Mach 2; a 31 m/s deorbit,
+    # the glide at 40 deg shedding the surplus, and the cone diving out of
+    # height).  Waits up to ``_WAIT_S`` wall seconds for the doors.
+    CLOSE_BAYS_ON_START: bool = True
+    CLOSE_BAYS_WAIT_S: float = 30.0
     ENABLE_RCS: bool = True
     # **In air RCS is always armed and fires on saturation** (the user,
     # 2026-10-11): from GLIDE through FLARE the valve opens when an axis's
