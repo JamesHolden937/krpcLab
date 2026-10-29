@@ -1030,7 +1030,8 @@ class Autopilot:
         # ``HAC_ROLL_WITH_YAW``: the cone too -- the live LOG14776 cone
         # departed at slip -23 with roll at 2.8 s against yaw's 10 (config).
         if getattr(self.cfg, "ROLL_COORD_FLOOR", False):
-            if self.state in (GLIDE, HAC):
+            # Every winged phase: sideslip is never good (the user).
+            if self.state in (GLIDE, HAC, APPROACH, FLARE):
                 floor = self.coord_roll_floor(bank_deg, alpha_deg)
                 roll = max(roll, floor if floor is not None else
                            float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])

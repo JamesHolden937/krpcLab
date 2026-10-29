@@ -2952,7 +2952,7 @@ class Config:
     # measured).  ``hac_roll_floor``.
     HAC_ROLL_YAW_REF_ALPHA_DEG: float = 30.0
     # **Hold roll back only as far as the rudder can coordinate the turn**
-    # (the user, 2026-10-28): roll's floor in GLIDE and HAC is
+    # (the user, 2026-10-28): roll's floor in GLIDE, HAC, APPROACH and FLARE is
     # sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder torque)) instead of
     # yaw's wheels-only static figure.  ``Autopilot.coord_roll_floor``.
     ROLL_COORD_FLOOR: bool = False
