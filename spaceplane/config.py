@@ -2947,6 +2947,10 @@ class Config:
     # roll at 2.8 s against yaw's 10 above ~16 deg of commanded alpha and
     # the live LOG14776 departed there (3.6 g, slip -23, yaw input -1.00).
     HAC_ROLL_WITH_YAW: bool = True  # default 2026-10-28 (the user, to fly live; unflown on the farm)
+    # The floor scales with the yaw share of a bank change, sin(alpha),
+    # reaching the glide's full share at this alpha (where the share was
+    # measured).  ``hac_roll_floor``.
+    HAC_ROLL_YAW_REF_ALPHA_DEG: float = 30.0
     ROLL_DAMPER_GROWTH: float = 1.1
     ROLL_DAMPER_STEP: float = 1.5
     ROLL_DAMPER_RECOVER_S: float = 120.0

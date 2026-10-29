@@ -204,6 +204,20 @@ def yaw_time_to_peak(cfg, roll, static_yaw, alpha_deg, rcs_yaw=None):
     return static_yaw
 
 
+def hac_roll_floor(cfg, static_yaw, alpha_deg):
+    """The cone's floor under roll's ``time_to_peak`` (``HAC_ROLL_WITH_YAW``):
+    the glide's ``GLIDE_ROLL_YAW_SHARE`` of yaw's static figure, scaled by
+    the yaw share of a bank change, sin(alpha), against the glide's
+    sin(``HAC_ROLL_YAW_REF_ALPHA_DEG``).  At the cone's 2-8 deg a bank is
+    almost all body roll and roll at yaw's full 10 s (19 applied) could not
+    hold it: 45 commanded, 3-17 flown for 100 s (LOG14863)."""
+    ref = math.sin(math.radians(float(cfg.HAC_ROLL_YAW_REF_ALPHA_DEG)))
+    a = abs(alpha_deg) if alpha_deg is not None else 0.0
+    share = min(1.0, math.sin(math.radians(min(a, 90.0))) / ref) \
+        if ref > 0.0 else 1.0
+    return float(cfg.GLIDE_ROLL_YAW_SHARE) * static_yaw * share
+
+
 def label_axes(cfg, triple):                             # noqa: ARG001
     """``"pitch a, roll b, yaw c"`` -- what kRPC *applies*.  Under the old
     order this reads the swap plainly: the shuttle's roll at 22.6 s."""
@@ -1015,9 +1029,11 @@ class Autopilot:
         # The user's proposal; rywfam-1028 / rollyaw-1027.
         # ``HAC_ROLL_WITH_YAW``: the cone too -- the live LOG14776 cone
         # departed at slip -23 with roll at 2.8 s against yaw's 10 (config).
-        if self.state == GLIDE or (self.state == HAC and getattr(
-                self.cfg, "HAC_ROLL_WITH_YAW", False)):
+        if self.state == GLIDE:
             roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
+        elif self.state == HAC and getattr(self.cfg, "HAC_ROLL_WITH_YAW",
+                                           False):
+            roll = max(roll, hac_roll_floor(self.cfg, static[2], alpha_deg))
         yaw = yaw_time_to_peak(self.cfg, roll, static[2], alpha_deg,
                                self.rcs_yaw_now(snap.ut))
         have = self._tuned_peak
@@ -5330,8 +5346,11 @@ class Autopilot:
         self.taem_update(snap)
         reserve = (0.0 if self.env.taem is not None else
                    guidance.glide_reserve(self.env, self.cfg, snap.position))
-        self.env.roll_lag_s = (self.roll_damper.tp
-                               if self.roll_damper is not None else None)
+        # Roll's time to peak as kRPC applies it: since
+        # ``GLIDE_ROLL_YAW_SHARE`` the damper's own figure (2.8 s) is not
+        # what flies (10), and an azimuth floor sized on 2.8 reversed every
+        # 12-30 s below Mach 3 with the bank overshooting to 87 (LOG14863).
+        self.env.roll_lag_s = self.roll_lag_s()
         self.env.spending = (self.last_miss is None
                              or self.last_miss[0] >= reserve)
         alpha0 = vec.clamp(self.steer.alpha, self.cfg.ALPHA_MIN_DEG,
