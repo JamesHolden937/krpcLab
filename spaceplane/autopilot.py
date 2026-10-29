@@ -1029,7 +1029,12 @@ class Autopilot:
         # The user's proposal; rywfam-1028 / rollyaw-1027.
         # ``HAC_ROLL_WITH_YAW``: the cone too -- the live LOG14776 cone
         # departed at slip -23 with roll at 2.8 s against yaw's 10 (config).
-        if self.state == GLIDE:
+        if getattr(self.cfg, "ROLL_COORD_FLOOR", False):
+            if self.state in (GLIDE, HAC):
+                floor = self.coord_roll_floor(bank_deg, alpha_deg)
+                roll = max(roll, floor if floor is not None else
+                           float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
+        elif self.state == GLIDE:
             roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * static[2])
         elif self.state == HAC and getattr(self.cfg, "HAC_ROLL_WITH_YAW",
                                            False):
@@ -1073,6 +1078,27 @@ class Autopilot:
                        else float("nan"), roll,
                        ", rcs open" if self.rcs_yaw_now() is not None
                        else ""))
+
+    def coord_roll_floor(self, bank_deg, alpha_deg):
+        """``ROLL_COORD_FLOOR``: the slowest roll the rudder can still
+        coordinate, or ``None`` before a torque reading.
+
+        A bank change of dphi about the velocity is dphi sin(alpha) of body
+        yaw.  Rolled at time_to_peak t, yaw must find ~dphi sin(alpha) / t^2
+        of acceleration; it has (wheels + rudder, smoothed, no RCS -- the
+        figure ``bank_accel`` keeps) / I.  So roll is held no slower than
+        sqrt(dphi sin(alpha) I / torque), dphi a full reversal of the bank
+        being flown (2 |bank|) -- not to yaw's whole wheels-only slew time,
+        which held the cone's roll at 19 s on a rudder worth 20x the
+        wheels (LOG14863).  x ``GLIDE_ROLL_YAW_SHARE``."""
+        torque = getattr(self, "_bank_torque", None)
+        inertia = getattr(self, "_bank_inertia", None)
+        if not torque or not inertia or torque[2] <= 1.0 or inertia[2] <= 0.0:
+            return None
+        dphi = 2.0 * math.radians(min(abs(bank_deg or 0.0), 90.0))
+        a = math.radians(min(abs(alpha_deg or 0.0), 90.0))
+        need = dphi * math.sin(a) * inertia[2] / torque[2]
+        return float(self.cfg.GLIDE_ROLL_YAW_SHARE) * math.sqrt(max(0.0, need))
 
     def peak_scale(self):
         """``APPROACH_SLEW_FACTOR`` over ``ATTITUDE_SLEW_FACTOR`` in
