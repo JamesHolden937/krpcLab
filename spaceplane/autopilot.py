@@ -1740,11 +1740,25 @@ class Autopilot:
                     "retracting", "closing", "extending", "opening")
             except Exception:                           # noqa: BLE001
                 return False
+        # Doors need game frames, and the farm harness hands over a paused
+        # game (``main`` unpauses after the first tick): run the clock for
+        # the wait -- seconds of orbit, before anything is planned.
+        try:
+            paused = bool(self.conn.krpc.paused)
+            if paused:
+                self.conn.krpc.paused = False
+        except Exception:                               # noqa: BLE001
+            paused = False
         deadline = time.time() + float(self.cfg.CLOSE_BAYS_WAIT_S)
         left = shut
         while left and time.time() < deadline:
             time.sleep(0.25)
             left = [b for b in left if moving(b)]
+        if paused:
+            try:
+                self.conn.krpc.paused = True
+            except Exception:                           # noqa: BLE001
+                pass
         self.logbook.event(ut, "cargo bay(s): closed %d of %d open at startup"
                            "%s" % (len(shut) - len(left), len(shut),
                                    "" if not left else
