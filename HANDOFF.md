@@ -13,14 +13,14 @@ Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 evening". howI
 | `CLOSE_BAYS_ON_START` | the user: "just close bays on startup". bays1028c (6, `qs_stackorb_live1028`): bay shut before the sweep on 6/6, cone entries ordinary (12.0-12.7 km, long -0.2..-0.9 km) against 6/6 long and high (+0.4..+4.4 km, to 16 km) with the sweep bay-open | **Default** (with `CLOSE_BAYS_WAIT_S` 30) |
 | `CANARD_TRIM_SHORTFALL` | shortfall1028, 12 an arm: intact 6 v 3, rollout breakups 5 v 9, cone failures 2 v 2 | **Default** |
 | `HAC_TRIM_AT_TARGET` (the cone's 1 g trim at the target speed; the user's "approach hot then brake") | trimtgt1028, 12 an arm: intact within 1.2 km 7 v 4, lost 5 v 5, cone exits low 3 v 0 (all landed) | **Default** -- watch the low exits |
-| `HAC_ROLL_WITH_YAW` (the glide's roll floor in the cone) | not flown; branch `conery` (pushed) | Next |
+| `HAC_ROLL_WITH_YAW` (the glide's roll floor in the cone) | not flown on the farm | **Default** at the user's request, to fly live (fingerprint `dbdcefee`) -- measure it |
 
 **New save:** `qs_stackorb_live1028` -- the live flight's orbit, UT, propellant and **open bay** (saves/README has the rebuild). With `CLOSE_BAYS_ON_START` it flies like `qs_stackorb` at that orbit. Every other reference save has its bay closed (`animTime = 1` is closed: `closedPosition = 1`).
 
 **Where the stack orbiter stands (defaults, live save):** cone entries ordinary; ~7/12 intact within 1.2 km on the last batch; losses are rollouts at 64-136 m/s and cone exits 1.5-2 km high that splash long. The slow-cone mush (LOG14813/14815) has not been seen under `HAC_TRIM_AT_TARGET` yet -- it did not occur in either arm of trimtgt1028.
 
 **Next, in order:**
-1. Fly `HAC_ROLL_WITH_YAW` (merge `conery`) on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
+1. Read the user's live flight on `dbdcefee`; then measure `HAC_ROLL_WITH_YAW` (now default) against `HAC_ROLL_WITH_YAW=False` on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
 2. Confirm `HAC_TRIM_AT_TARGET` didn't cost the shuttle: rigoff/inc/ecc/high, 12 each, against `HAC_TRIM_AT_TARGET=False`.
 3. The stack orbiter's high cone exits (turn 335-345, 1.5-2 km over) and hard rollouts.
 4. Carried from the morning: the shuttle's short touchdowns out of the cone (3/18 on defaults; `landsum.py`/`conesum.py --settled` on fastcone-1028's losses); bisect the 1.8 m wings-forward regression (`DRAIN_LEFTOVER=False` against defaults on `qs_shuttle2_fwdwing18_rigoff`); kspSim probe models for rigoff and stackorb; later, the user's lift-down entry and retaking `qs_s2_hac*`.
