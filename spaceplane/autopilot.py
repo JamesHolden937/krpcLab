@@ -1722,7 +1722,10 @@ class Autopilot:
             bays = list(self.vessel.parts.cargo_bays)
         except Exception:                               # noqa: BLE001
             return
-        shut = [b for b in bays if b.open]
+        try:
+            shut = [b for b in bays if b.open]
+        except Exception:                               # noqa: BLE001
+            return
         if not shut:
             return
         for bay in shut:
@@ -1730,12 +1733,18 @@ class Autopilot:
                 bay.open = False
             except Exception:                           # noqa: BLE001
                 pass
-        closed = self.conn.space_center.CargoBayState.closed
+        def moving(bay):
+            try:
+                # 0.7 reports a DeployableState (retracting, retracted).
+                return getattr(bay.state, "name", str(bay.state)) in (
+                    "retracting", "closing", "extending", "opening")
+            except Exception:                           # noqa: BLE001
+                return False
         deadline = time.time() + float(self.cfg.CLOSE_BAYS_WAIT_S)
         left = shut
         while left and time.time() < deadline:
             time.sleep(0.25)
-            left = [b for b in left if b.state != closed]
+            left = [b for b in left if moving(b)]
         self.logbook.event(ut, "cargo bay(s): closed %d of %d open at startup"
                            "%s" % (len(shut) - len(left), len(shut),
                                    "" if not left else
