@@ -1034,7 +1034,7 @@ class Autopilot:
         if getattr(self.cfg, "ROLL_COORD_FLOOR", False):
             # Every winged phase: sideslip is never good (the user).
             if self.state in (GLIDE, HAC, APPROACH, FLARE):
-                floor = self.coord_roll_floor(bank_deg, alpha_deg)
+                floor = self.coord_roll_floor(bank_deg, alpha_deg, snap.ut)
                 roll = max(roll, floor if floor is not None else
                            float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static)
         elif self.state == GLIDE:
@@ -1042,8 +1042,12 @@ class Autopilot:
         elif self.state == HAC and getattr(self.cfg, "HAC_ROLL_WITH_YAW",
                                            False):
             roll = max(roll, hac_roll_floor(self.cfg, yaw_static, alpha_deg))
-        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg,
-                               self.rcs_yaw_now(snap.ut))
+        # Under ``ROLL_COORD_FLOOR`` yaw ignores the valve-open figure: with
+        # roll no longer pinned at yaw's 10 s it let yaw's tune follow the
+        # RCS relay, 3.7 <-> 10 s every few seconds (coord1028).
+        rcs_yaw = (None if getattr(self.cfg, "ROLL_COORD_FLOOR", False)
+                   else self.rcs_yaw_now(snap.ut))
+        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg, rcs_yaw)
         have = self._tuned_peak
         frac = float(self.cfg.ATTITUDE_RETUNE_FRAC)
 
@@ -1108,7 +1112,7 @@ class Autopilot:
         return min(static_yaw, max(float(self.cfg.ATTITUDE_TIME_TO_PEAK_S),
                                    air))
 
-    def coord_roll_floor(self, bank_deg, alpha_deg):
+    def coord_roll_floor(self, bank_deg, alpha_deg, ut=None):
         """``ROLL_COORD_FLOOR``: the slowest roll the rudder can still
         coordinate, or ``None`` before a torque reading.
 
@@ -1125,6 +1129,19 @@ class Autopilot:
         if not torque or not inertia or torque[2] <= 1.0 or inertia[2] <= 0.0:
             return None
         dphi = 2.0 * math.radians(min(abs(bank_deg or 0.0), 90.0))
+        # **The reversal being flown, not the command passing through it.**
+        # 2 |bank| falls to zero mid-reversal, where the rudder has the most
+        # to coordinate: on the first flight of this law roll's tune swung
+        # 2.8 <-> 6.9 s every few seconds and below Mach 3 the bank error
+        # reached 30-100 deg (coord1028, 8 of 11 arrived 7-61 km short).  So
+        # the largest reversal lately commanded, decaying over
+        # ``ROLL_DAMPER_RECOVER_S``.
+        if ut is not None:
+            held, at = getattr(self, "_coord_dphi", (0.0, ut))
+            tau = max(1.0, float(self.cfg.ROLL_DAMPER_RECOVER_S))
+            held *= math.exp(-max(0.0, ut - at) / tau)
+            dphi = max(dphi, held)
+            self._coord_dphi = (dphi, ut)
         a = math.radians(min(abs(alpha_deg or 0.0), 90.0))
         need = dphi * math.sin(a) * inertia[2] / torque[2]
         return float(self.cfg.GLIDE_ROLL_YAW_SHARE) * math.sqrt(max(0.0, need))

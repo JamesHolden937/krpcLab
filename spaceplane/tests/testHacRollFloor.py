@@ -42,6 +42,16 @@ class TestCoordRollFloor(unittest.TestCase):
         # Mach 6 at q ~900 Pa: bank 27, alpha 31, ~36 kN m of yaw.
         self.assertGreater(self.floor(27.4, 31.0, 36e3), 4.0)
 
+    def test_floor_holds_through_a_reversal(self):
+        from spaceplane.autopilot import Autopilot
+        ap = Autopilot.__new__(Autopilot)
+        ap.cfg = Config()
+        ap._bank_torque = (0.0, 0.0, 36e3)
+        ap._bank_inertia = (0.0, 0.0, 1.49e6)
+        before = ap.coord_roll_floor(30.0, 30.0, 100.0)
+        mid = ap.coord_roll_floor(0.0, 30.0, 104.0)
+        self.assertGreater(mid, 0.9 * before)
+
     def test_no_reading_is_none(self):
         self.assertIsNone(self.floor(30.0, 30.0, 0.0))
 
