@@ -48,7 +48,11 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-28, fingerprint `f8787c59`)
+## Where it stands (2026-10-28 evening, fingerprint `36bad8b6`)
+
+Every cargo bay is shut at startup, before the aero sweep (`CLOSE_BAYS_ON_START`): the live stack orbiter swept with its bay open, flew it shut, and dived out of the cone. The canard trim also learns while the nose falls short the way the stick pushes (`CANARD_TRIM_SHORTFALL`), and the cone's trim is the 1 g alpha at its *target* speed (`HAC_TRIM_AT_TARGET`), so a slow cone accelerates instead of mushing. Reproduce live flights from `qs_stackorb_live1028`. The root HANDOFF.md has the numbers.
+
+## Earlier (2026-10-28, fingerprint `f8787c59`)
 
 In the glide roll is never tuned faster than yaw's static figure (`GLIDE_ROLL_YAW_SHARE`, promoted 2026-10-28: the stack orbiter flies). The 1.8 m wings-forward shuttle has regressed to 0/24 (suspect the 10-26 CoM changes). The root HANDOFF.md has the rest.
 

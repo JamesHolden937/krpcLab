@@ -1,32 +1,35 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-28: spaceplane -- the slow roll promoted, one reversal deleted, the fast cone measured; kspSim on kRPC 0.7 (fingerprint `f8787c59`)
+## 2026-10-28 evening: spaceplane -- the live cone dive was an open cargo bay at the sweep; bays shut at start, the canard trim learns when short, the cone trims at its target speed (fingerprint `36bad8b6`)
 
-Committed and pushed; farm stopped. Journal: "Session, 2026-10-28".
+Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 evening". howItWorks.pdf updated.
+
+**The live failure (LOG14776, stack orbiter after a full ascent, defaults):** out of the cone at 1991 m (needed 5282), into the ground from the flare. Cause: the ascent left the Mk3 bay open, the aero table was swept open (CdA 7.4 v 3.2 at Mach 2), and the user shut the bay by hand during the coast. Planned on twice the drag: a 31 m/s deorbit, a 40 deg glide, a cone arriving fast and long; the canard trim then froze (it learned only within 3 deg of command) while pitch sat pinned, and the cone dived out of height.
 
 **Flags this session:**
 
 | Flag | Measured | Outcome |
 |---|---|---|
-| `GLIDE_ONE_REVERSAL` | onerev2/3-1027, qs_shuttle2_rigoff, 24 an arm: misses > 3 km 6 v 3 (four > 9 km, to -36 km) | **Deleted** |
-| `GLIDE_ROLL_WITH_YAW` (the user's "if yaw can't keep up, slow the roll") | rollyaw-1027 stackorb 8 an arm: misses > 10 km 3 -> 0, intact stops 0 -> 5 (+`BANK_RATE_MAX_DEG_S=5`: no better). rywfam-1028 12 an arm: rigoff misses > 3 km 3 -> 0 (worst +1.9 km); 1.8 m wings-forward 0/12 both arms, 30 km less short | **Default**, now the field `GLIDE_ROLL_YAW_SHARE` = 1.0 (with the flag's field just deleted the fingerprint fell back to `22189096`, the pre-flag one: LOG14553 and fastcone-1028 carry it but flew different roll laws -- fastcone-1028 is the new law) |
-| Fast cone (`--set HAC_SPEED_FACTOR=1.3;HAC_BANK_MAX_DEG=60`) | fastcone-1028, rigoff, 18 an arm: cone entry -> stop median **276 s v 313**; intact within 1.2 km 10 v 10; **lost 6 v 3**, all touchdowns short in ROLLOUT after an ordinary cone entry (h 12-13 km, 2.9-3.8 km out) -- the fast cone runs out of energy | Not adopted (constants unchanged) |
+| `CLOSE_BAYS_ON_START` | the user: "just close bays on startup". bays1028c (6, `qs_stackorb_live1028`): bay shut before the sweep on 6/6, cone entries ordinary (12.0-12.7 km, long -0.2..-0.9 km) against 6/6 long and high (+0.4..+4.4 km, to 16 km) with the sweep bay-open | **Default** (with `CLOSE_BAYS_WAIT_S` 30) |
+| `CANARD_TRIM_SHORTFALL` | shortfall1028, 12 an arm: intact 6 v 3, rollout breakups 5 v 9, cone failures 2 v 2 | **Default** |
+| `HAC_TRIM_AT_TARGET` (the cone's 1 g trim at the target speed; the user's "approach hot then brake") | trimtgt1028, 12 an arm: intact within 1.2 km 7 v 4, lost 5 v 5, cone exits low 3 v 0 (all landed) | **Default** -- watch the low exits |
+| `HAC_ROLL_WITH_YAW` (the glide's roll floor in the cone) | not flown; branch `conery` (pushed) | Next |
 
-**Where the airframes stand (rigoff, defaults):** the shuttle ~10/18 intact within 1.2 km; its losses are short touchdowns out of the cone (3/18 at -5.6..-6.6 km). The stack orbiter flies now (5/8 intact) but its rollouts still break on hard arrivals. **The 1.8 m wings-forward shuttle regressed to 0/24**: every flight 58-129 km short, into the cone at ~12 km and 180 m/s far out, tumbling there (LOG14716); on 10-25 half landed. Suspect the 10-26 changes that move the drained CoM aft (`FUEL_TO_NOSE` deleted, `DRAIN_LEFTOVER`); not yet bisected.
+**New save:** `qs_stackorb_live1028` -- the live flight's orbit, UT, propellant and **open bay** (saves/README has the rebuild). With `CLOSE_BAYS_ON_START` it flies like `qs_stackorb` at that orbit. Every other reference save has its bay closed (`animTime = 1` is closed: `closedPosition = 1`).
 
-**kspSim:** speaks kRPC 0.7 and flies the spaceplane end to end (LOG14689, qs_shuttle2: splashed 33 km short -- not yet compared with the farm). `kspSim/tools/services.py` builds/compares `services.bin`. Not simulated: surface deflection override/deploy (canard trim, split brakes), maneuver nodes. Only the qs_shuttle2-family models exist (no rigoff/wings-forward/stackorb models: `kspSim/tools/probe.py` on a farm instance makes them).
+**Where the stack orbiter stands (defaults, live save):** cone entries ordinary; ~7/12 intact within 1.2 km on the last batch; losses are rollouts at 64-136 m/s and cone exits 1.5-2 km high that splash long. The slow-cone mush (LOG14813/14815) has not been seen under `HAC_TRIM_AT_TARGET` yet -- it did not occur in either arm of trimtgt1028.
 
 **Next, in order:**
-1. **The cone's short touchdowns** (the shuttle's remaining loss mode, 3/18 on defaults, 6/18 on the fast cone): `landsum.py` / `conesum.py --settled` on fastcone-1028's losses against its runway stops -- where the energy goes. A fast cone is worth having (-37 s) only once it keeps its energy.
-2. Bisect the 1.8 m wings-forward regression: `DRAIN_LEFTOVER=False` (one arm) against defaults on `qs_shuttle2_fwdwing18_rigoff`.
-3. kspSim: probe models for rigoff and stackorb, then fly the sim against fastcone-1028's defaults to see whether it follows the game now.
-4. Later (the user): lift-down entry; retake `qs_s2_hac*`; the approach dive (stackorb's hard rollouts).
+1. Fly `HAC_ROLL_WITH_YAW` (merge `conery`) on `qs_stackorb_live1028` and `qs_shuttle2_rigoff`, 12 an arm.
+2. Confirm `HAC_TRIM_AT_TARGET` didn't cost the shuttle: rigoff/inc/ecc/high, 12 each, against `HAC_TRIM_AT_TARGET=False`.
+3. The stack orbiter's high cone exits (turn 335-345, 1.5-2 km over) and hard rollouts.
+4. Carried from the morning: the shuttle's short touchdowns out of the cone (3/18 on defaults; `landsum.py`/`conesum.py --settled` on fastcone-1028's losses); bisect the 1.8 m wings-forward regression (`DRAIN_LEFTOVER=False` against defaults on `qs_shuttle2_fwdwing18_rigoff`); kspSim probe models for rigoff and stackorb; later, the user's lift-down entry and retaking `qs_s2_hac*`.
 
 **Traps paid:**
-- **Deleting a promoted flag's field can return the fingerprint to an old value** whose flights flew a different law. Promote into a field (a share, a factor) or otherwise change the defaults' hash.
-- 0.7's `AddStream` takes only the call (no `start`) and `StartStream` is gone; its collections carry a presence byte before each nullable item -- the fast client's compiled codecs did not, a random signature test caught it.
-- `simfly.sh` on a save with no model fails at `Load` with "no model for save".
-- Swap still reaches ~21 GB per 2-round cycle; multirot's restart between cycles brings it back to ~9 GB.
+- A part's deploy state means what its module says: the Mk3 bay's `closedPosition = 1`. Read the cfg before reading `animTime`.
+- The farm harness hands over a **paused** game (main unpauses after the first tick): anything animated at startup needs the clock run (`_close_bays` does).
+- kRPC 0.7 has no `CargoBayState`; a bay reports a `DeployableState` (`retracting`, `retracted`, ...). A startup helper that raises kills the flight before the logbook says why -- wrap it.
+- The live game's `saves/default/krpclab_main.sfs` is the orbiter as the ascent left it: a ready-made reproduction of a live flight (CRLF line ends).
 
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 
