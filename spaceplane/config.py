@@ -176,7 +176,7 @@ class Config:
     # the target read 125-220 (shortfall1028: LOG14813, LOG14815, out of the
     # cone 1.8-1.9 km low).  At the target's trim a slow cone flies under
     # 1 g and gains speed; a fast one flies over it and loses speed.
-    HAC_TRIM_AT_TARGET: bool = False
+    HAC_TRIM_AT_TARGET: bool = True  # default 2026-10-28: trimtgt1028 (qs_stackorb_live1028, 12 an arm) intact within 1.2 km 7 v 4, lost 5 v 5, cone exits low 3 v 0 (all three landed)
     # **The cone holds the dynamic pressure it hands over, not a true
     # airspeed** (``guidance.cone_speed``).  The target above is a constant
     # *true* airspeed, so in thin air it asks for a low *equivalent* one:
