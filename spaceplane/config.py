@@ -256,6 +256,15 @@ class Config:
     # into the flare at 52-93 m/s of sink.
     CANARD_TRIM_LOCAL_MAX_DEG: float = 28.0
     CANARD_TRIM_ALPHA_TOL_DEG: float = 3.0
+    # **Learn while the vehicle falls short in the direction it is pushed.**
+    # The tolerance above froze the trim exactly when it was needed: once
+    # engaged the canards are off kRPC, and with flown alpha 6-9 deg under
+    # the command and pitch input pinned at +1.0 the trim sat at +0.33 for
+    # the rest of the cone (live LOG14776: the stack orbiter dived out of
+    # the cone at 170 m/s of sink).  A shortfall with the input on the same
+    # side is a standing moment, not a transient; the alpha cap above still
+    # keeps the entry transient out.
+    CANARD_TRIM_SHORTFALL: bool = False
     CANARD_TRIM_LP_S: float = 2.0
     CANARD_TRIM_DEADBAND: float = 0.05
     CANARD_TRIM_MAX: float = 0.6

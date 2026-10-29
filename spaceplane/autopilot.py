@@ -7467,9 +7467,16 @@ class Autopilot:
                 cmd_alpha = float(getattr(self, "commanded_alpha", flown))
                 fb = flown_bank(snap)
                 cb = float(getattr(self, "commanded_bank", 0.0) or 0.0)
+                short = cmd_alpha - flown
+                push = self._ctrim_lp if self._ctrim_lp is not None else (
+                    float(total) if total is not None else 0.0)
                 learn = (abs(flown) < float(self.cfg.CANARD_TRIM_MAX_ALPHA_DEG)
-                         and abs(cmd_alpha - flown)
-                         <= float(self.cfg.CANARD_TRIM_ALPHA_TOL_DEG)
+                         and (abs(short)
+                              <= float(self.cfg.CANARD_TRIM_ALPHA_TOL_DEG)
+                              # Falling short the way the stick pushes is
+                              # the moment the trim exists for (config).
+                              or (getattr(self.cfg, "CANARD_TRIM_SHORTFALL",
+                                          False) and short * push > 0.0))
                          and not math.isnan(fb)
                          and abs(fb - cb)
                          <= float(self.cfg.ALPHA_TRIM_ROLL_TOL_DEG))
