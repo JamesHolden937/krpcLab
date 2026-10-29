@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint ``)
+## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint `04b7cad1`)
 
 Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 late / 10-29". howItWorks.pdf updated.
 
