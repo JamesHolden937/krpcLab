@@ -204,20 +204,6 @@ def yaw_time_to_peak(cfg, roll, static_yaw, alpha_deg, rcs_yaw=None):
     return static_yaw
 
 
-def hac_roll_floor(cfg, static_yaw, alpha_deg):
-    """The cone's floor under roll's ``time_to_peak`` (``HAC_ROLL_WITH_YAW``):
-    the glide's ``GLIDE_ROLL_YAW_SHARE`` of yaw's static figure, scaled by
-    the yaw share of a bank change, sin(alpha), against the glide's
-    sin(``HAC_ROLL_YAW_REF_ALPHA_DEG``).  At the cone's 2-8 deg a bank is
-    almost all body roll and roll at yaw's full 10 s (19 applied) could not
-    hold it: 45 commanded, 3-17 flown for 100 s (LOG14863)."""
-    ref = math.sin(math.radians(float(cfg.HAC_ROLL_YAW_REF_ALPHA_DEG)))
-    a = abs(alpha_deg) if alpha_deg is not None else 0.0
-    share = min(1.0, math.sin(math.radians(min(a, 90.0))) / ref) \
-        if ref > 0.0 else 1.0
-    return float(cfg.GLIDE_ROLL_YAW_SHARE) * static_yaw * share
-
-
 def label_axes(cfg, triple):                             # noqa: ARG001
     """``"pitch a, roll b, yaw c"`` -- what kRPC *applies*.  Under the old
     order this reads the swap plainly: the shuttle's roll at 22.6 s."""
@@ -1021,35 +1007,28 @@ class Autopilot:
             roll = rd.tp
         else:
             roll = static[1]
-        # In the glide, never roll faster than yaw can follow on its own.  At 20-35 deg of alpha a bank change is
-        # sin(alpha) body yaw, and a roll tuned at 2.8-5.9 s against yaw's
-        # 10 left the nose behind: the stack orbiter limit-cycled with the
-        # yaw input at +-1 every ~9 s on a steady command (LOG14622).  The
-        # static yaw figure, not the valve-open one, so the relay does not
-        # swing roll's gains too.
-        # The user's proposal; rywfam-1028 / rollyaw-1027.
-        # ``HAC_ROLL_WITH_YAW``: the cone too -- the live LOG14776 cone
-        # departed at slip -23 with roll at 2.8 s against yaw's 10 (config).
-        if getattr(self.cfg, "ROLL_COORD_FLOOR", False):
-            # Every winged phase: sideslip is never good (the user).
-            if self.state in (GLIDE, HAC, APPROACH, FLARE):
-                full = float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static
-                floor = self.coord_roll_floor(bank_deg, alpha_deg, snap.ut)
-                use = self.yaw_headroom_used(snap)
-                roll = max(roll, full if floor is None else
-                           floor + (full - floor) * use if full > floor
-                           else floor)
-        elif self.state == GLIDE:
-            roll = max(roll, float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static)
-        elif self.state == HAC and getattr(self.cfg, "HAC_ROLL_WITH_YAW",
-                                           False):
-            roll = max(roll, hac_roll_floor(self.cfg, yaw_static, alpha_deg))
-        # Under ``ROLL_COORD_FLOOR`` yaw ignores the valve-open figure: with
-        # roll no longer pinned at yaw's 10 s it let yaw's tune follow the
-        # RCS relay, 3.7 <-> 10 s every few seconds (coord1028).
-        rcs_yaw = (None if getattr(self.cfg, "ROLL_COORD_FLOOR", False)
-                   else self.rcs_yaw_now(snap.ut))
-        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg, rcs_yaw)
+        # **Roll held back only as far as the rudder can coordinate the
+        # turn** (the user, 2026-10-28), in every winged phase -- sideslip is
+        # never good.  At 20-35 deg of alpha a bank change is sin(alpha)
+        # body yaw: roll at 2.8 s against yaw's 10 left the nose behind
+        # (LOG14622), and roll held at yaw's whole 10 s (x1.91, 19 applied)
+        # could not bank the cone at 2-8 deg of alpha (LOG14863).  So the
+        # floor is the slowest roll the rudder's torque can follow
+        # (``coord_roll_floor``), slewed back toward yaw's static figure as
+        # the yaw input nears full deflection (``yaw_headroom_used``) -- kRPC
+        # counts the fins at full effect at 30 deg of alpha and the floor
+        # alone departed below Mach 3 (coord2-1028).  coord3-1029.
+        if self.state in (GLIDE, HAC, APPROACH, FLARE):
+            full = float(self.cfg.GLIDE_ROLL_YAW_SHARE) * yaw_static
+            floor = self.coord_roll_floor(bank_deg, alpha_deg, snap.ut)
+            use = self.yaw_headroom_used(snap)
+            roll = max(roll, full if floor is None else
+                       floor + (full - floor) * use if full > floor
+                       else floor)
+        # Yaw ignores the valve-open figure: with roll no longer pinned at
+        # yaw's 10 s it let yaw's tune follow the RCS relay, 3.7 <-> 10 s
+        # every few seconds (coord1028).
+        yaw = yaw_time_to_peak(self.cfg, roll, yaw_static, alpha_deg)
         have = self._tuned_peak
         frac = float(self.cfg.ATTITUDE_RETUNE_FRAC)
 
@@ -1089,7 +1068,7 @@ class Autopilot:
                        else ""))
 
     def coord_roll_floor(self, bank_deg, alpha_deg, ut=None):
-        """``ROLL_COORD_FLOOR``: the slowest roll the rudder can still
+        """The slowest roll the rudder can still
         coordinate, or ``None`` before a torque reading.
 
         A bank change of dphi about the velocity is dphi sin(alpha) of body

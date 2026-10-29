@@ -2939,27 +2939,18 @@ class Config:
     # which roll is fully engaged (``roll_start_angle`` is set 5 above it,
     # capped at 180).  0 leaves kRPC's 15/20.
     ATTITUDE_ROLL_ENGAGE_DEG: float = 175.0
-    # In GLIDE roll's time_to_peak is floored at this share of yaw's static
-    # figure (the user, 2026-10-27: "if yaw can't keep up then just slow
-    # the roll"; ``Autopilot.damp_roll``).  0 lets roll run free.
+    # Roll's coordinated floor is scaled by this, and slews toward this
+    # share of yaw's static figure as the rudder saturates (the user,
+    # 2026-10-27: "if yaw can't keep up then just slow the roll";
+    # ``Autopilot.damp_roll``).
     GLIDE_ROLL_YAW_SHARE: float = 1.0
-    # **The same floor in the cone.**  The glide's alone; the cone tuned
-    # roll at 2.8 s against yaw's 10 above ~16 deg of commanded alpha and
-    # the live LOG14776 departed there (3.6 g, slip -23, yaw input -1.00).
-    HAC_ROLL_WITH_YAW: bool = True  # default 2026-10-28 (the user, to fly live; unflown on the farm)
-    # The floor scales with the yaw share of a bank change, sin(alpha),
-    # reaching the glide's full share at this alpha (where the share was
-    # measured).  ``hac_roll_floor``.
-    HAC_ROLL_YAW_REF_ALPHA_DEG: float = 30.0
-    # **Hold roll back only as far as the rudder can coordinate the turn**
-    # (the user, 2026-10-28): roll's floor in GLIDE, HAC, APPROACH and FLARE is
-    # sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder torque)) instead of
-    # yaw's wheels-only static figure.  ``Autopilot.coord_roll_floor``.
-    ROLL_COORD_FLOOR: bool = False
+    # Roll's floor in GLIDE, HAC, APPROACH and FLARE is the slowest roll the
+    # rudder can coordinate, sqrt(2|bank| sin(alpha) I_yaw / (wheel + rudder
+    # torque)) (the user, 2026-10-28; ``Autopilot.coord_roll_floor``).
     # **What the rudder is actually doing.**  kRPC's surface torque counts
     # the fins at full effect at 30 deg of alpha; flown on it the glide
     # departed below Mach 3 with yaw input pinned at 1.0 (coord2-1028).  So
-    # under ``ROLL_COORD_FLOOR`` roll is also slowed toward yaw's static
+    # roll is also slowed toward yaw's static
     # figure as the yaw input (held, decaying over
     # ``ROLL_COORD_HEADROOM_DECAY_S``) rises from LO to HI of full deflection.
     ROLL_COORD_HEADROOM_LO: float = 0.5
