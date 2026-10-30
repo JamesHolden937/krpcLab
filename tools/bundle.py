@@ -35,8 +35,10 @@ bundle, so paths derived from it land beside the file.
 Nobody reads the file -- the tree is the readable copy -- so it is as small
 as it can be made: comments and docstrings stripped (``pystrip``), every
 name nothing outside the bundle can reach renamed (``pyminify``; ``outsiders``
-and ``foreign`` say what can), builtins aliased (``pyalias``), whitespace
-squeezed (``pycompact``), each proven by the parser.  Not compressed: unpacking would cost every start.
+and ``foreign`` say what can), builtins and other modules' functions
+read through one-letter aliases (``pyalias``; ``hoistable`` says which
+functions), whitespace squeezed (``pycompact``), each proven by the
+parser.  Not compressed: unpacking would cost every start.
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
@@ -240,8 +242,9 @@ def stripped(modules):
     function's locals and nested functions renamed a, b, ..., and every
     module name and private attribute no other file mentions
     (``pyminify``), builtins read through
-    one-letter aliases (``pyalias``) and the whitespace squeezed out
-    (``pycompact``): what the bundle carries.  Each raises
+    one-letter aliases (``pyalias``), as are other modules' functions where
+    ``hoistable`` allows, and the whitespace squeezed out (``pycompact``):
+    what the bundle carries.  Each raises
     rather than change a program."""
     outside, beyond, beyond_other, keywords, callers = outsiders(modules)
     try:
@@ -266,13 +269,7 @@ def stripped(modules):
                 if isinstance(n, ast.Attribute):
                     reached.add(n.attr)
                 elif isinstance(n, ast.ImportFrom):
-                    origin = n.module or ""
-                    if n.level and importer:
-                        base = importer.split(".")
-                        if not modules[importer][0]:
-                            base = base[:-1]
-                        base = base[:len(base) - n.level + 1]
-                        origin = ".".join(base + ([origin] if origin else []))
+                    origin = _origin(modules, importer, n)
                     names = {al.name for al in n.names}
                     if "*" in names:
                         raise SystemExit("bundle: %s star-imports %s"
@@ -281,15 +278,154 @@ def stripped(modules):
                 elif (isinstance(n, ast.Constant) and isinstance(n.value, str)
                       and id(n) not in docs):
                     reached |= set(pyminify.WORD.findall(n.value))
+        minified = {name: pyminify.minify(bare[name], name, outside[name],
+                                          attributes, free,
+                                          reached | imported.get(name, set()))
+                    for name in modules}
+        hoist = hoistable(modules, minified, callers, beyond_other)
         return {name: (is_package, compacted(name, pyalias.alias(
-                    pyminify.minify(bare[name], name, outside[name],
-                                    attributes, free,
-                                    reached | imported.get(name, set())),
-                    name)))
+                    minified[name], name, hoist.get(name))))
                 for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyalias.AliasError) as exc:
         raise SystemExit("cannot strip: %s" % exc)
+
+
+def _origin(modules, importer, node):
+    """The module a ``from ... import`` reads, its dots resolved against
+    ``importer`` (``None``: a file outside the bundle, read as written)."""
+    origin = node.module or ""
+    if node.level and importer:
+        base = importer.split(".")
+        if not modules[importer][0]:
+            base = base[:-1]
+        base = base[:len(base) - node.level + 1]
+        origin = ".".join(base + ([origin] if origin else []))
+    return origin
+
+
+def _imported_modules(modules, name, tree):
+    """``({bound name: module}, every module named)`` for ``name``'s
+    imports: the first only for top-level ones, the second anywhere (with
+    the packages each passes through) -- what ``hoistable`` needs to know
+    which modules ``name`` reaches while it is itself being imported."""
+    import importlib
+    import types
+    bound, named = {}, set()
+
+    def module_named(full):
+        if full in modules:
+            return True
+        parent, _, leaf = full.rpartition(".")
+        if not parent or parent.split(".")[0] in modules:
+            return False
+        try:
+            return isinstance(getattr(importlib.import_module(parent), leaf,
+                                      None), types.ModuleType)
+        except Exception:  # noqa: BLE001
+            return False
+    top = {id(st) for st in tree.body}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for al in n.names:
+                parts = al.name.split(".")
+                named |= {".".join(parts[:i + 1]) for i in range(len(parts))}
+                if id(n) in top:
+                    bound[al.asname or parts[0]] = (
+                        al.name if al.asname else parts[0])
+        elif isinstance(n, ast.ImportFrom) and n.module != "__future__":
+            origin = _origin(modules, name, n)
+            parts = origin.split(".")
+            named |= {".".join(parts[:i + 1]) for i in range(len(parts))}
+            for al in n.names:
+                full = "%s.%s" % (origin, al.name) if origin else al.name
+                if module_named(full):
+                    named.add(full)
+                    if id(n) in top:
+                        bound[al.asname or al.name] = full
+    return bound, named
+
+
+def hoistable(modules, sources, callers, script_words):
+    """``{module: {bound name: attributes}}``: the ``module.attr`` reads
+    ``pyalias`` may make once, on the line after the import, instead of at
+    every use.  That is the same object only if nothing ever rebinds it, so
+    an attribute is refused when anything stores or deletes an attribute of
+    that name, or names it in a string (``mock.patch.object(m, "attr")``,
+    ``hasattr(os, "attr")``) or a shell script.  Beyond that it must be
+
+    - of a bundled module: a function or class it defines once at its top
+      level, and that module must not import this one, even through others
+      (a cycle would read it half built);
+    - of the standard library or ``krpc``: public, and a function, class or
+      module when the bundler imports it."""
+    import importlib
+    import types
+    trees = {name: ast.parse(source) for name, source in sources.items()}
+    refused = set(script_words)
+    for tree in list(trees.values()) + [ast.parse(c) for c in callers]:
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute) and not isinstance(n.ctx,
+                                                               ast.Load):
+                refused.add(n.attr)
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                refused |= set(pyminify.WORD.findall(n.value))
+    imports = {name: _imported_modules(modules, name, tree)
+               for name, tree in trees.items()}
+    defined = {}
+    for name, tree in trees.items():
+        counts = pyalias.bind_counts(tree)
+        defined[name] = {st.name for st in tree.body
+                         if isinstance(st, (ast.FunctionDef,
+                                            ast.AsyncFunctionDef,
+                                            ast.ClassDef))
+                         and counts.get(st.name) == 1}
+
+    def reaches(start):
+        seen, stack = set(), [start]
+        while stack:
+            m = stack.pop()
+            if m in seen or m not in imports:
+                continue
+            seen.add(m)
+            stack.extend(imports[m][1])
+        return seen
+    reach = {name: reaches(name) for name in trees}
+    stdlib = set(getattr(sys, "stdlib_module_names", ())) | {"krpc"}
+    foreign_attrs = {}
+
+    def foreign(full):
+        if full not in foreign_attrs:
+            ok = set()
+            if full.split(".")[0] in stdlib:
+                try:
+                    mod = importlib.import_module(full)
+                except Exception:  # noqa: BLE001
+                    mod = None
+                for k in dir(mod) if mod else ():
+                    v = getattr(mod, k, None)
+                    if not k.startswith("_") and isinstance(v, (
+                            types.FunctionType, types.BuiltinFunctionType,
+                            type, types.ModuleType)):
+                        ok.add(k)
+            foreign_attrs[full] = ok
+        return foreign_attrs[full]
+    out = {}
+    for name in trees:
+        plan = {}
+        for local, full in imports[name][0].items():
+            if full in modules:
+                if name in reach.get(full, {name}):
+                    continue
+                attrs = defined.get(full, set())
+            else:
+                attrs = foreign(full)
+            attrs = attrs - refused
+            if attrs:
+                plan[local] = attrs
+        if plan:
+            out[name] = plan
+    return out
 
 
 def compacted(name, source):

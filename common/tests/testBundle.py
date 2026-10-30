@@ -302,6 +302,30 @@ class TestTheAliaser(unittest.TestCase):
                + "".join("X%d: float = 1.0\n" % i for i in range(6)))
         self.assertEqual(pyalias.alias(src), src)
 
+    def test_a_module_function_is_read_once_after_its_import(self):
+        src = ("import math\nX = 1\ndef f(v):\n    return [math.radians(v),"
+               " math.radians(v + 1), math.radians(v + 2), math.radians(2)]\n")
+        out = pyalias.alias(src, hoist={"math": {"radians"}})
+        self.assertTrue(out.startswith("import math\nA=math.radians\nX = 1\n"),
+                        out)
+        self.assertNotIn("math.radians(v", out)
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        self.assertEqual(a["f"](3), b["f"](3))
+        # With no hoist given, nothing moves.
+        self.assertEqual(pyalias.alias(src), src)
+
+    def test_a_rebound_module_or_an_fstring_read_is_left(self):
+        reads = "    return [math.radians(v)] * 3 + [math.radians(1)] * 3\n"
+        rebound = "import math\ndef f(v):\n    math = 3\n" + reads
+        self.assertEqual(pyalias.alias(rebound, hoist={"math": {"radians"}}),
+                         rebound)
+        fstring = ("import math\ndef f(v):\n    return [f'{math.radians(v)}',"
+                   " f'{math.radians(1)}', f'{math.radians(2)}']\n")
+        self.assertEqual(pyalias.alias(fstring, hoist={"math": {"radians"}}),
+                         fstring)
+
 
 class TestTheSingleFileExport(unittest.TestCase):
     """The file someone copies to another machine is the software this
