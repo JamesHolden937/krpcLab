@@ -363,6 +363,24 @@ class TestTheAliaser(unittest.TestCase):
         exec(out, b)
         self.assertEqual(a["f"]({"threshold": 1}), b["f"]({"threshold": 1}))
 
+    def test_a_getter_reads_an_attribute_of_anything(self):
+        src = ("def f(v, c):\n"
+               "    a = v.flight(c).mean_altitude + v.flight(c).mean_altitude\n"
+               "    return [a, v.mean_altitude, v.mean_altitude,"
+               " c.space_center.active_vessel.mean_altitude,"
+               " f'{v.mean_altitude}']\n")
+        out = pyalias.alias(src, getters={"mean_altitude", "active_vessel"})
+        self.assertTrue(out.startswith("A=lambda o:o.mean_altitude\n"), out)
+        self.assertIn("A(c.space_center.active_vessel)", out)
+        self.assertIn("f'{v.mean_altitude}'", out)
+        from types import SimpleNamespace as N
+        v = N(mean_altitude=5, flight=lambda c: N(mean_altitude=2))
+        c = N(space_center=N(active_vessel=N(mean_altitude=7)))
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        self.assertEqual(a["f"](v, c), b["f"](v, c))
+
     def test_a_module_function_is_read_once_after_its_import(self):
         src = ("import math\nX = 1\ndef f(v):\n    return [math.radians(v),"
                " math.radians(v + 1), math.radians(v + 2), math.radians(2)]\n")

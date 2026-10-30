@@ -172,12 +172,13 @@ def _snake(word):
 
 
 def foreign(sources):
-    """``(names, complete)``: every attribute name an object we did not
+    """``(names, complete, services)``: every attribute name an object we did not
     write may carry -- kRPC's services (from the game's ``KRPC*.json``, in
     the client's snake_case), the ``krpc`` client's classes, and every class
     of every module the sources import, the standard library's included.
     ``complete`` is False when no service definitions were found: then only
-    private attributes may be renamed."""
+    private attributes may be renamed.  ``services``: the names kRPC's
+    service definitions alone give."""
     import importlib
     import json
     out = set()
@@ -210,6 +211,7 @@ def foreign(sources):
             members(importlib.import_module(mod))
         except Exception:  # noqa: BLE001  (our own packages, absent extras)
             continue
+    python = set(out)
     complete = False
     for directory in KRPC_DEFINITIONS:
         if not os.path.isdir(directory):
@@ -235,7 +237,7 @@ def foreign(sources):
             complete = True
         if complete:
             break
-    return out, complete
+    return out, complete, out - python
 
 
 def stripped(modules):
@@ -251,7 +253,7 @@ def stripped(modules):
     try:
         bare = {name: pystrip.strip(source, name)
                 for name, (_, source) in modules.items()}
-        names, complete = foreign(bare.values())
+        names, complete, services = foreign(bare.values())
         attributes = pyminify.attribute_plan(
             bare, beyond, names, private_only=not complete)
         free = pyminify.free_parameters(bare.values(), keywords,
@@ -284,9 +286,10 @@ def stripped(modules):
                                           reached | imported.get(name, set()))
                     for name in modules}
         hoist = hoistable(modules, minified, callers, beyond_other)
+        gets = getters(minified, services)
         return {name: (is_package, compacted(name, pyalias.alias(
                     pyshort.shorten(minified[name], name), name,
-                    hoist.get(name))))
+                    hoist.get(name), gets)))
                 for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyshort.ShortError, pyalias.AliasError) as exc:
@@ -346,6 +349,34 @@ def _imported_modules(modules, name, tree):
                     if id(n) in top:
                         bound[al.asname or al.name] = full
     return bound, named
+
+
+def getters(sources, services):
+    """Attribute names ``pyalias`` may read through a getter (``R(o)`` for
+    ``o.reference_frame``): only names kRPC's services give and nothing of
+    ours defines -- no store, class-body binding, field, keyword argument
+    (``SimpleNamespace(mass=...)``) or module-level name -- so every such
+    read is of a remote object, whose read is a call to the game and makes
+    the getter's own call negligible."""
+    ours = set()
+    for source in sources.values():
+        tree = ast.parse(source)
+        for st in tree.body:
+            if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef,
+                               ast.ClassDef)):
+                ours.add(st.name)
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute) and not isinstance(n.ctx,
+                                                               ast.Load):
+                ours.add(n.attr)
+            elif isinstance(n, ast.keyword) and n.arg:
+                ours.add(n.arg)
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                ast.ClassDef)):
+                ours.add(n.name)
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                ours |= set(pyminify.WORD.findall(n.value))
+    return {k for k in services - ours if not k.startswith("_")}
 
 
 def hoistable(modules, sources, callers, script_words):
