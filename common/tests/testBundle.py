@@ -500,14 +500,13 @@ class TestTheSingleFileExport(unittest.TestCase):
     def test_the_dictionary_round_trips_and_shrinks(self):
         text = ("def reference_frame(position, velocity):\n"
                 "    return position, velocity, reference_frame\n") * 30
-        k, words = bundle.dictionary(text)
-        self.assertIn("reference_frame", words)
-        packed = bundle.encode(text, k, words)
-        self.assertLess(len(packed) + len(" ".join(words)), len(text))
+        k, entries = bundle.dictionary(text)
+        packed, table = bundle.encode(text, k, entries)
+        self.assertLess(len(packed) + len("\n".join(table)), len(text) / 4)
         self.assertNotIn("reference_frame", packed)
-        self.assertEqual(bundle.expand(packed, k, words), text)
+        self.assertEqual(bundle.expand(packed, k, table), text)
         # The loader's own expander says the same.
-        space = {"_A": bundle.ALPHABET, "_K": k, "_D": " ".join(words)}
+        space = {"_A": bundle.ALPHABET, "_K": k, "_D": "\n".join(table)}
         loader = bundle.LOADER[bundle.LOADER.index("def _X"):
                                bundle.LOADER.index("def _main")]
         exec(loader, space)
