@@ -57,6 +57,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pyalias  # noqa: E402
 import pycompact  # noqa: E402
 import pyminify  # noqa: E402
+import pyshort  # noqa: E402
 import pystrip  # noqa: E402
 
 # Every package an autopilot in ``common.launcher.PILOTS`` imports.
@@ -241,8 +242,8 @@ def stripped(modules):
     """``collect``'s modules with comments and docstrings removed, every
     function's locals and nested functions renamed a, b, ..., and every
     module name and private attribute no other file mentions
-    (``pyminify``), builtins read through
-    one-letter aliases (``pyalias``), as are other modules' functions where
+    (``pyminify``), statements rewritten shorter (``pyshort``), builtins
+    and repeated literals read through one-letter aliases (``pyalias``), as are other modules' functions where
     ``hoistable`` allows, and the whitespace squeezed out (``pycompact``):
     what the bundle carries.  Each raises
     rather than change a program."""
@@ -284,10 +285,11 @@ def stripped(modules):
                     for name in modules}
         hoist = hoistable(modules, minified, callers, beyond_other)
         return {name: (is_package, compacted(name, pyalias.alias(
-                    minified[name], name, hoist.get(name))))
+                    pyshort.shorten(minified[name], name), name,
+                    hoist.get(name))))
                 for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
-            pyalias.AliasError) as exc:
+            pyshort.ShortError, pyalias.AliasError) as exc:
         raise SystemExit("cannot strip: %s" % exc)
 
 
@@ -651,7 +653,8 @@ DEFAULT = os.path.join(ROOT, "dist", NAME)
 def sources():
     """Every file the bundle is made from, the bundler included."""
     files = [os.path.abspath(m.__file__) for m in (
-        sys.modules[__name__], pystrip, pyminify, pyalias, pycompact)]
+        sys.modules[__name__], pystrip, pyminify, pyshort, pyalias,
+        pycompact)]
     for package in PACKAGES:
         directory = os.path.join(ROOT, package)
         files += [os.path.join(directory, e) for e in os.listdir(directory)

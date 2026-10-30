@@ -10,7 +10,9 @@ whose body is simple statements put on its header's line (``if x:return``).
 Comments must already be gone (``pystrip``); strings, f-strings included,
 are copied from the source exactly; adjacent plain string literals are
 joined (``"a" "b"`` -> ``"ab"``) and float literals take their shortest
-spelling (``0.5`` -> ``.5``, ``1e-05`` -> ``1e-5``).
+spelling (``0.5`` -> ``.5``, ``1e-05`` -> ``1e-5``).  A tuple that is a
+whole ``return`` value, assignment side, ``for`` target or iterable, or
+subscript loses its parentheses (``return(a,b)`` -> ``return a,b``).
 
 **Checked against the parser**: the result must parse to the identical tree
 or ``compact`` raises.
@@ -168,11 +170,62 @@ def _simple(tokens):
     return tokens[0][1] not in COMPOUND and tokens[0][1] != "@"
 
 
+def _bare_tuples(source, tree):
+    """``source`` with the parentheses dropped from every tuple standing
+    where a bare one parses the same."""
+    lines = source.splitlines(keepends=True)
+    starts = [0, 0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+
+    def at(row, col_b):
+        text = lines[row - 1]
+        return starts[row] + len(text.encode("utf-8")[:col_b].decode(
+            "utf-8"))
+    close, stack = {}, []
+    for t in tokenize.generate_tokens(io.StringIO(source).readline):
+        if t.type == tokenize.OP and t.string in "([{":
+            stack.append(starts[t.start[0]] + t.start[1])
+        elif t.type == tokenize.OP and t.string in ")]}":
+            close[stack.pop()] = starts[t.start[0]] + t.start[1]
+    # Positions inside f-strings are not trusted (before 3.12).
+    inside = {id(m) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr)
+              for m in ast.walk(n)}
+    spots = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Return):
+            spots.append(n.value)
+        elif isinstance(n, ast.Assign):
+            spots += n.targets + [n.value]
+        elif isinstance(n, ast.For):
+            spots += [n.target, n.iter]
+        elif isinstance(n, ast.Subscript):
+            spots.append(n.slice)
+    cut = []
+    for n in spots:
+        if not isinstance(n, ast.Tuple) or not n.elts or id(n) in inside:
+            continue
+        a = at(n.lineno, n.col_offset)
+        b = at(n.end_lineno, n.end_col_offset) - 1
+        if source[a] == "(" and close.get(a) == b:
+            cut += [a, b]
+    for i in sorted(cut, reverse=True):
+        source = source[:i] + " " + source[i + 1:]
+    return source
+
+
 def compact(source, name="<source>"):
     try:
-        want = ast.dump(ast.parse(source))
+        tree = ast.parse(source)
+        want = ast.dump(tree)
     except SyntaxError as exc:
         raise CompactError("%s does not parse: %s" % (name, exc)) from None
+    bare = _bare_tuples(source, tree)
+    try:
+        if ast.dump(ast.parse(bare)) == want:
+            source = bare
+    except SyntaxError:
+        pass
     lines = _lines(source)
     out = []
     i = 0

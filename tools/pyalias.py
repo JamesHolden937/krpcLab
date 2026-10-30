@@ -20,6 +20,10 @@ says which can be read once at import (``hoistable``).  Only a name a lone
 top-level ``import`` binds and nothing rebinds, and never in an f-string
 or a postponed annotation.
 
+A string or number literal spelled the same way often enough is read
+through a capital too (``Q="nan"``), but never one in an f-string, a
+postponed annotation or a ``match`` pattern.
+
 **Proven**: delete the alias lines from the result, put the builtins' names
 and the attribute reads back, and the tree must be exactly the original's,
 or ``alias`` raises.
@@ -143,6 +147,9 @@ def alias(source, name="<source>", hoist=None):
     homes = _homes(tree) if hoist else {}
     # Each candidate: its reads as ``(start, end)`` spans and the text each
     # span holds; builtins by name, attributes by ``(bound name, attr)``.
+    # A constant in a ``match`` pattern must stay a literal.
+    patterns = {id(m) for n in ast.walk(tree)
+                if isinstance(n, ast.match_case) for m in ast.walk(n.pattern)}
     reads = {}
     for n in ast.walk(tree):
         if (isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
@@ -150,6 +157,13 @@ def alias(source, name="<source>", hoist=None):
                 and id(n) not in skipped):
             a = _offset(lines, starts, n.lineno, n.col_offset)
             reads.setdefault(n.id, []).append((a, a + len(n.id)))
+        elif (isinstance(n, ast.Constant) and id(n) not in skipped
+                and id(n) not in patterns
+                and type(n.value) in (str, int, float)):
+            a = _offset(lines, starts, n.lineno, n.col_offset)
+            b = _offset(lines, starts, n.end_lineno, n.end_col_offset)
+            if len(source[a:b]) > 2:
+                reads.setdefault(("@", source[a:b]), []).append((a, b))
         elif (hoist and isinstance(n, ast.Attribute)
                 and isinstance(n.ctx, ast.Load)
                 and isinstance(n.value, ast.Name)
@@ -161,7 +175,12 @@ def alias(source, name="<source>", hoist=None):
                 _offset(lines, starts, n.end_lineno, n.end_col_offset)))
 
     def text(key):
-        return key if isinstance(key, str) else "%s.%s" % key
+        if isinstance(key, str):
+            return key
+        return key[1] if key[0] == "@" else "%s.%s" % key
+
+    def headed(key):
+        return isinstance(key, str) or key[0] == "@"
     # A read spelled across lines or with spaces is not the plain text.
     reads = {k: v for k, v in reads.items()
              if all(source[a:b] == text(k) for a, b in v)}
@@ -180,18 +199,18 @@ def alias(source, name="<source>", hoist=None):
             plan[old] = free.pop(0)
     if not plan:
         return source
-    builtin = {old: new for old, new in plan.items() if isinstance(old, str)}
+    builtin = {old: new for old, new in plan.items() if headed(old)}
     spans = [(a, b, new) for old, new in plan.items() for a, b in reads[old]]
     at = _insert_at(tree)
     if builtin:
-        head = ";".join("%s=%s" % (new, old)
+        head = ";".join("%s=%s" % (new, text(old))
                         for old, new in builtin.items()) + "\n"
         where = (starts[tree.body[at].lineno] if at < len(tree.body)
                  else len(source))
         spans.append((where, where, head))
     after = {}
     for old, new in plan.items():
-        if not isinstance(old, str):
+        if not headed(old):
             after.setdefault(homes[old[0]], []).append(
                 "%s=%s" % (new, text(old)))
     for i, parts in after.items():
@@ -211,14 +230,24 @@ def alias(source, name="<source>", hoist=None):
                          % (name, exc)) from None
     back = {new: old for old, new in plan.items()}
     head_stmts = got.body[at:at + len(builtin)]
-    if not all(isinstance(s, ast.Assign) and len(s.targets) == 1
-               and back.get(s.targets[0].id) == s.value.id
-               for s in head_stmts):
+    def literal(key):
+        return ast.parse(key[1], mode="eval").body
+
+    def heads(s):
+        if not (isinstance(s, ast.Assign) and len(s.targets) == 1):
+            return False
+        old = back.get(s.targets[0].id)
+        if isinstance(old, str):
+            return getattr(s.value, "id", None) == old
+        return (old is not None and old[0] == "@"
+                and ast.dump(s.value) == ast.dump(literal(old)))
+    if not all(heads(s) for s in head_stmts):
         raise AliasError("%s: alias line not where it was put" % name)
     del got.body[at:at + len(builtin)]
     hoisted = [s for s in got.body if isinstance(s, ast.Assign)
                and len(s.targets) == 1 and isinstance(s.targets[0], ast.Name)
-               and not isinstance(back.get(s.targets[0].id, ""), str)]
+               and s.targets[0].id in back
+               and not headed(back[s.targets[0].id])]
     if len(hoisted) != len(plan) - len(builtin) or not all(
             isinstance(s.value, ast.Attribute)
             and isinstance(s.value.value, ast.Name)
@@ -236,6 +265,8 @@ def alias(source, name="<source>", hoist=None):
             if isinstance(old, str):
                 n.id = old
                 return n
+            if old[0] == "@":
+                return literal(old)
             return ast.Attribute(value=ast.Name(id=old[0], ctx=ast.Load()),
                                  attr=old[1], ctx=ast.Load())
     got = Back().visit(got)

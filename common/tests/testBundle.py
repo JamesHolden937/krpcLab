@@ -15,6 +15,7 @@ import bundle    # noqa: E402
 import pyalias   # noqa: E402
 import pycompact  # noqa: E402
 import pyminify  # noqa: E402
+import pyshort   # noqa: E402
 import pystrip   # noqa: E402
 
 
@@ -262,6 +263,15 @@ class TestTheCompactor(unittest.TestCase):
                              else int(t, 16), float(t) if "x" not in t
                              else int(t, 16))
 
+    def test_a_bare_tuple_loses_its_parentheses(self):
+        src = ("def f(d, a, b):\n    x, y = (a, b)\n"
+               "    for (i, j) in ((1, 2), (3, 4)):\n"
+               "        d[(i, j)] = (i), (j)\n    return (x, y)\n")
+        out = pycompact.compact(src)
+        self.assertIn("x,y=a,b", out)
+        self.assertIn("for i,j in(1,2),(3,4):d[i,j]=(i),(j)", out)
+        self.assertIn("return x,y", out)
+
     def test_fstrings_survive_exactly(self):
         src = 'def f(x):\n    return f"{{x}} {x!r:>5} {\'a\'}"\n'
         self.same(src, "f(3)")
@@ -287,10 +297,10 @@ class TestTheAliaser(unittest.TestCase):
 
     def test_a_dataclass_keeps_its_field_types(self):
         src = ("from dataclasses import dataclass, fields\n@dataclass\n"
-               "class C:\n" + "".join("    X%d: float = 1.0\n" % i
+               "class C:\n" + "".join("    X%d: float = %d.5\n" % (i, i)
                                        for i in range(6)))
         out = pyalias.alias(src)
-        self.assertIn("X0: A = 1.0", out)
+        self.assertIn("X0: A = 0.5", out)
         a, b = {}, {}
         exec(src, a)
         exec(out, b)
@@ -299,8 +309,22 @@ class TestTheAliaser(unittest.TestCase):
 
     def test_postponed_annotations_are_left(self):
         src = ("from __future__ import annotations\n"
-               + "".join("X%d: float = 1.0\n" % i for i in range(6)))
+               + "".join("X%d: float = %d.5\n" % (i, i) for i in range(6)))
         self.assertEqual(pyalias.alias(src), src)
+
+    def test_a_repeated_literal_is_read_through_a_capital(self):
+        src = ("def f(d):\n    return [d.get('threshold'), 'threshold',"
+               " f'{d}threshold', 'threshold', 2.5e3, 2.5e3, 2.5e3, 2.5e3]\n"
+               "def g(x):\n    match x:\n        case 'threshold':"
+               " return 1\n")
+        out = pyalias.alias(src)
+        self.assertTrue(out.startswith("A='threshold';B=2.5e3\n"), out)
+        self.assertIn("f'{d}threshold'", out)
+        self.assertIn("case 'threshold'", out)
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        self.assertEqual(a["f"]({"threshold": 1}), b["f"]({"threshold": 1}))
 
     def test_a_module_function_is_read_once_after_its_import(self):
         src = ("import math\nX = 1\ndef f(v):\n    return [math.radians(v),"
@@ -325,6 +349,46 @@ class TestTheAliaser(unittest.TestCase):
                    " f'{math.radians(1)}', f'{math.radians(2)}']\n")
         self.assertEqual(pyalias.alias(fstring, hoist={"math": {"radians"}}),
                          fstring)
+
+
+class TestTheShortener(unittest.TestCase):
+    """Statements rewritten into shorter ones that do the same."""
+
+    SRC = ("import os\nimport sys\nfrom a import b\nfrom a import c as d\n"
+           "def f(x, g, h):\n    y = g(x)\n    if y is None:\n"
+           "        return None\n    z = h(y)\n    if z:\n        return 1\n"
+           "    if x > 2:\n        return x\n    return y\n"
+           "def k(s):\n    s.a = 0\n    s.b = 0\n    s.c = 0.0\n    return s\n"
+           "class K:\n    v = 1\n    if v:\n        pass\n"
+           "if __name__ == '__main__':\n    sys.exit(f())\n")
+
+    def test_each_rewrite(self):
+        out = pyshort.shorten(self.SRC)
+        for want in ("import os,sys\n", "from a import b,c as d\n",
+                     "if (y:=g(x)) is None:\n        return\n",
+                     "if z:=h(y):", "return x if x > 2 else y",
+                     "s.a=s.b=0\n    s.c = 0.0"):
+            self.assertIn(want, out)
+        self.assertIn("    v = 1\n    if v:", out)     # no walrus in a class
+        self.assertNotIn("__main__", out)
+
+    def test_the_rewritten_functions_behave(self):
+        src = self.SRC.replace("from a import b\nfrom a import c as d\n", "")
+        a, b = {"__name__": "m"}, {"__name__": "m"}
+        exec(src, a)
+        exec(pyshort.shorten(src), b)
+        for x in (0, 1, 3):
+            for g in (lambda v: None, lambda v: v):
+                args = (x, g, lambda v: v * 2)
+                self.assertEqual(a["f"](*args), b["f"](*args))
+
+    def test_a_while_test_and_a_multiline_value(self):
+        src = ("def f(g):\n    n = g()\n    while n:\n        n = g()\n"
+               "    if n:\n        return 1\n    return ('a'\n"
+               "            'b')\n")
+        out = pyshort.shorten(src)
+        self.assertIn("n = g()\n    while n:", out)
+        self.assertIn("return 1 if n else ('a'", out)
 
 
 class TestTheSingleFileExport(unittest.TestCase):
