@@ -4388,20 +4388,62 @@ class Autopilot:
             return
         names = tuple(self.cfg.DRAIN_RESOURCES)
 
+        # **A read that failed is not an empty tank.**  Counted as 0.0 it
+        # ended the watch "at the reserve" the moment the connection dropped
+        # (LOG14991: "drain watched down to 0.0 units" on a full tank).
         def aboard():
             amounts = {}
             for name in names:
                 try:
                     amounts[name] = read.amount(name)
                 except Exception:                       # noqa: BLE001
-                    amounts[name] = 0.0
+                    return None
             return self.usable_units(amounts)
 
-        deadline = time.time() + float(self.cfg.DRAIN_TIMEOUT_S)
+        try:
+            self.panel.set_start_label("draining to %.0f units" % floor)
+        except Exception:                               # noqa: BLE001
+            pass
+        timeout = float(self.cfg.DRAIN_TIMEOUT_S)
+        probe = float(self.cfg.DRAIN_PROBE_S)
+        start = time.time()
+        deadline = start + timeout
         left = aboard()
-        while left > floor and time.time() < deadline:
+        anchor = (start, left)
+        raised = False
+        while left is not None and left > floor and time.time() < deadline:
             left = aboard()
+            now = time.time()
+            if left is None or now - anchor[0] < probe:
+                continue
+            # **A valve too slow to reach the reserve is found in seconds,
+            # not at the timeout.**  This loop blocks -- the panel, TERMINATE
+            # and the clock all wait on it -- and a heavy airframe whose
+            # valves were set to 10% drained 13 of 5120 units in the 90 s
+            # it watched, three times over (LOG14990).  So the rate is
+            # measured, the valves opened to their stop once if it is too
+            # slow, and if that is still too slow the drain is given up.
+            rate = (anchor[1] - left) / (now - anchor[0])
+            if rate > 0.0 and now + (left - floor) / rate <= deadline:
+                continue
+            if not raised:
+                raised = True
+                self.raise_drain_rate(snap)
+                anchor = (now, left)
+                continue
+            self.drain_refused = True
+            self.logbook.event(
+                snap.ut, "drain TOO SLOW: %.1f units/s, %.0f units to the "
+                         "%.0f reserve would take %s -- flying wet"
+                % (rate, left - floor, floor,
+                   "forever" if rate <= 0.0
+                   else "%.0f s" % ((left - floor) / rate)))
+            break
         self.stop_drain(snap)
+        if left is None:
+            left = self.snap_usable(snap)
+            self.logbook.event(snap.ut, "drain watch LOST ITS READ -- "
+                                        "the tank is unknown")
         # **Say what the reserve buys, not how many units it is.**  A units
         # count cannot be checked against anything; a dv can be checked
         # against the burns this vehicle actually flies (31-42 m/s here).
@@ -4420,6 +4462,25 @@ class Autopilot:
         self.logbook.event(snap.ut, "drain watched down to %.1f units "
                                     "(%.0f m/s of burn at Isp %.0f)"
                            % (left, budget, isp))
+
+    def raise_drain_rate(self, snap):
+        """Open every valve's ``Drain rate`` to its stop (100%).
+
+        A rate is a craft-file setting nothing commanded, so it is right
+        only by inheritance -- the shuttle's valves came at 20% and empty in
+        two seconds, the heavy shuttle's at 10% and empty in hours.  Raised
+        only once the watch has measured it too slow, so a fast valve keeps
+        the rate its reserve was watched at.
+        """
+        rates = []
+        for module in self.drain_modules:
+            try:
+                partmodule.set_field_float(module, "Drain rate", 100.0)
+                rates.append(partmodule.get_field(module, "Drain rate"))
+            except Exception as exc:                    # noqa: BLE001
+                rates.append("failed (%s)" % exc)
+        self.logbook.event(snap.ut, "drain too slow: Drain rate raised, "
+                                    "reads %s" % ", ".join(rates))
 
     def _set_module_field(self, module, field, value):
         """Set one module field, by whichever setter this kRPC actually has.
@@ -4668,6 +4729,9 @@ class Autopilot:
                 # dry tank, reported "0.0 units left" and flew a deorbit that
                 # died on ``burn guard at 60 s`` with no propellant.
                 self.drain_to_reserve(snap, floor)
+            return
+        if getattr(self, "drain_refused", False):
+            self.enter(after, snap.ut, "drain too slow")
             return
         # **A valve that will not drain must not hold the vehicle in orbit.**
         # ``drain_to_reserve`` is bounded by ``DRAIN_TIMEOUT_S``, but the

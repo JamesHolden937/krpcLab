@@ -2189,6 +2189,10 @@ class Config:
     # in capitals.
     DRAIN_MAX_ATTEMPTS: int = 3
     DRAIN_TIMEOUT_S: float = 90.0
+    # Wall seconds the drain watch measures the valve's rate over before
+    # projecting whether it reaches the reserve inside ``DRAIN_TIMEOUT_S``
+    # (``drain_to_reserve``).  The shuttle's valves are done in two.
+    DRAIN_PROBE_S: float = 3.0
     DRAIN_REMAINING_UNITS: float = 0.5
     DRAIN_RESERVE_UNITS: float = 40.0
     # **And 40 units was not enough, on the first entry state that asked.**

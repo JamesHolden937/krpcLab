@@ -25,6 +25,7 @@ import tempfile
 import textwrap
 import sys
 import unittest
+from unittest import mock
 import unittest.mock
 from dataclasses import replace
 from types import SimpleNamespace
@@ -5713,6 +5714,66 @@ class TestPeakHeating(unittest.TestCase):
                                         (1500.0, 30000.0)])
         self.assertAlmostEqual(got, math.sqrt(1.0e-3) * 8.0e9 / 1e6)
         self.assertIsNone(traj.peak_heating(Env(), []))
+
+
+class TestDrainTooSlow(unittest.TestCase):
+    """``drain_to_reserve`` gives up on a valve too slow for the timeout
+    after raising its rate once, and a failed read is not an empty tank."""
+
+    def _ap(self, amounts):
+        events = []
+        ap = object.__new__(autopilot_module.Autopilot)
+        ap.cfg = SimpleNamespace(DRAIN_TIMEOUT_S=90.0, DRAIN_PROBE_S=3.0,
+                                 DRAIN_RESOURCES=("LiquidFuel",),
+                                 RESOURCE_KG_PER_UNIT=5.0)
+        ap.drain_modules = ["valve"]
+        ap.logbook = SimpleNamespace(event=lambda ut, text: events.append(text))
+        ap.panel = SimpleNamespace(set_start_label=lambda text: None)
+        ap.usable_units = lambda a: sum(a.values())
+        ap.snap_usable = lambda snap: snap.liquid_fuel
+        ap.stop_drain = lambda snap: events.append("close")
+        ap.raise_drain_rate = lambda snap: events.append("raise")
+        ap.vehicle_vacuum_isp = lambda snap: 340.0
+        ap.telemetry = SimpleNamespace(
+            resources=SimpleNamespace(amount=lambda name: next(amounts)))
+        return ap, events
+
+    def _run(self, ap):
+        clock = iter(range(0, 100000))
+        snap = SimpleNamespace(ut=0.0, liquid_fuel=5000.0, oxidizer=0.0,
+                               mass=80000.0)
+        with mock.patch.object(autopilot_module.time, "time",
+                               lambda: float(next(clock))):
+            ap.drain_to_reserve(snap, 700.0)
+
+    def test_slow_valve_raises_then_gives_up(self):
+        import itertools
+        ap, events = self._ap(5000.0 - 0.2 * i for i in itertools.count())
+        self._run(ap)
+        self.assertTrue(ap.drain_refused)
+        self.assertEqual([e for e in events if e in ("raise", "close")],
+                         ["raise", "close"])
+        self.assertTrue(any("TOO SLOW" in e for e in events))
+
+    def test_raised_rate_that_suffices_drains(self):
+        import itertools
+        ap, events = self._ap(itertools.chain(
+            (5000.0 - 0.2 * i for i in range(3)),
+            (4999.0 - 200.0 * i for i in itertools.count())))
+        self._run(ap)
+        self.assertFalse(getattr(ap, "drain_refused", False))
+        self.assertIn("raise", events)
+
+    def test_lost_read_is_not_an_empty_tank(self):
+        def reads():
+            yield 5000.0
+            while True:
+                raise ConnectionError("closed")
+        ap, events = self._ap(reads())
+        self._run(ap)
+        self.assertTrue(any("LOST ITS READ" in e for e in events))
+        self.assertTrue(any("drain watched down to 5000.0" in e
+                            for e in events))
 
 
 class TestDrainLeftover(unittest.TestCase):
