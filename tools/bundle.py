@@ -38,10 +38,10 @@ name nothing outside the bundle can reach renamed (``pyminify``; ``outsiders``
 and ``foreign`` say what can), builtins and other modules' functions
 read through one-letter aliases (``pyalias``; ``hoistable`` says which
 functions), whitespace squeezed (``pycompact``), each proven by the
-parser -- and every phrase worth it written as a short code from a
-dictionary the loader expands in memory before anything compiles
-(``dictionary``), so the file is a third smaller and what runs is the
-same plain text.  Not compressed: zip is the last resort.
+parser -- and every phrase worth it written as a code of one to three
+printable characters from a dictionary the loader expands in memory before
+anything compiles (``tools/pydict.py``), so the file is half the size and
+what runs is the same plain text.  Not compressed: zip is the last resort.
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
@@ -59,6 +59,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pyalias  # noqa: E402
 import pycompact  # noqa: E402
+import pydict  # noqa: E402
 import pyminify  # noqa: E402
 import pyshort  # noqa: E402
 import pystrip  # noqa: E402
@@ -445,10 +446,12 @@ def compacted(name, source):
 # everything else), then ``_P``, one raw string holding every module as
 # ``name `is_package` source``, joined by ``$`` -- two printable characters
 # no compacted source contains (``payload`` refuses one that does) -- with
-# every phrase the dictionary ``_D`` lists written as ``&`` and a one- or
-# two-character code (``dictionary``), the phrases themselves written with
-# the codes of shorter ones; ``_X`` writes them back, in memory, before
-# anything is split or compiled, so what runs is the plain text.  Not compressed: unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
+# every phrase the dictionary ``_D`` lists written as a code of one to three
+# printable characters (``tools/pydict.py`` says which: ``_1`` the one-byte
+# codes, ``_2`` the leads of two-byte ones, ``_S`` the entries' separator,
+# ``_L`` the characters that are codes, ``_A``/``_K`` the rest); ``_X``
+# writes them back, in memory, before anything is split or compiled, so
+# what runs is the plain text.  Not compressed: unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
 # over the sources: packages get a ``__path__`` so relative imports
 # resolve, each module a ``__file__`` beside the bundle, and ``get_source``
 # serves tracebacks and ``inspect``.  ``_main`` is ``run.sh``: ``--pilot
@@ -473,14 +476,18 @@ class _B(A.MetaPathFinder,A.Loader):
         exec(compile(c,m.__file__,"exec"),m.__dict__)
     def get_source(s,n):return S[n][1]
 def _X(t):
-    a,k=_A,_K;m=dict(zip(list(a[:k])+[x+y for x in a[k:] for y in a],_D.split("\n")));f=set(a[:k]);d={}
+    import re
+    a,k=_A,_K;c=list(_1)+["&"+x for x in a[:k]]+[l+x for l in _2 for x in a]+["&"+x+y for x in a[k:] for y in a];d={};m={};h=iter(_L)
+    for q,v in zip(c,_D[:-1].split(_S)):
+        if v:m[q]=v
+        else:d[q]=next(h)
+    r=re.compile("|".join(((["[%s]"%re.escape(_1)])if _1 else[])+((["[%s]."%re.escape(_2)])if _2 else[])+["&(?:[%s]%s)"%(re.escape(a[:k]),"|[%s]."%re.escape(a[k:])if a[k:]else"")]),re.S)
     def e(s):
-        o=s.split("&");r=[o[0]]
-        for p in o[1:]:
-            n=1 if p[0] in f else 2;q=p[:n]
+        def f(g):
+            q=g.group(0)
             if q not in d:d[q]=e(m[q])
-            r.append(d[q]+p[n:])
-        return "".join(r)
+            return d[q]
+        return r.sub(f,s)
     return e(t)
 def _main(a):
     import importlib
@@ -519,17 +526,7 @@ def pilots():
 
 DELIMITER = "\x27" * 3
 RECORD, FIELD = "$", "`"       # as ``TAIL`` splits them
-ESCAPE = "&"                   # opens a dictionary code (``_X``)
-# A code's characters: printable, never the escape, a single quote
-# (three would close ``_P``) or a backslash.
-ALPHABET = "".join(c for c in map(chr, range(33, 127))
-                   if c not in ESCAPE + "\x27\\")
-# A phrase is a run of up to ``PHRASE_TOKENS`` tokens (a word, or any one
-# other character but a line break, which separates the dictionary's
-# entries).
-TOKENS = re.compile(r"[A-Za-z0-9_]+|.")
-PHRASE_TOKENS = 8
-PHRASE_CANDIDATES = 50000
+ESCAPE = pydict.ESCAPE          # opens a code (``_X``)
 
 
 def payload(modules):
@@ -548,144 +545,24 @@ def payload(modules):
     return RECORD.join(parts)
 
 
-def codes(k):
-    """Every dictionary code in order: ``k`` single characters, then two
-    for each of the rest (``_X`` builds the same list)."""
-    return list(ALPHABET[:k]) + [x + y for x in ALPHABET[k:]
-                                 for y in ALPHABET]
-
-
-def _trie(entries):
-    trie = {}
-    for e in entries:
-        node = trie
-        for ch in e:
-            node = node.setdefault(ch, {})
-        node[None] = e
-    return trie
-
-
-def _greedy(text, trie, skip=None):
-    """``text`` cut into its longest dictionary matches, left to right:
-    ``[(start, entry)]``.  ``skip``: an entry not to match (itself)."""
-    out, i, n = [], 0, len(text)
-    while i < n:
-        node, j, best = trie, i, None
-        while j < n and text[j] in node:
-            node = node[text[j]]
-            j += 1
-            hit = node.get(None)
-            if hit is not None and hit != skip:
-                best = hit
-        if best:
-            out.append((i, best))
-            i += len(best)
-        else:
-            i += 1
-    return out
-
-
-def dictionary(text):
-    """``(k, entries)``: the phrases worth a code in ``text``, most used
-    first, and how many of them get one character.  Candidates are runs of
-    tokens that repeat; ``text`` is cut into its longest matches, and any
-    phrase whose matches no longer pay for its entry is dropped, until
-    none is.  The split between one- and two-character codes is the one
-    that saves most."""
-    lines = text.split("\n")
-    count = {}
-    for line in lines:
-        toks = TOKENS.findall(line)
-        for n in range(1, PHRASE_TOKENS + 1):
-            for i in range(len(toks) - n + 1):
-                p = "".join(toks[i:i + n])
-                if 3 <= len(p) <= 60:
-                    count[p] = count.get(p, 0) + 1
-
-    def score(p):
-        return count[p] * (len(p) - 2) - len(p) - 1
-    entries = sorted((p for p in count if count[p] >= 3 and score(p) > 0),
-                     key=lambda p: (-score(p), p))[:PHRASE_CANDIDATES]
-    while True:
-        uses = {}
-        for _, e in _greedy(text, _trie(entries)):
-            uses[e] = uses.get(e, 0) + 1
-        keep = [e for e in entries
-                if uses.get(e, 0) * (len(e) - 3) > len(e) + 1]
-        if len(keep) == len(entries):
-            break
-        entries = keep
-    trie = _trie(entries)
-    for e in entries:
-        for _, f in _greedy(e, trie, skip=e):
-            uses[f] = uses.get(f, 0) + 1
-    entries.sort(key=lambda e: (-uses[e], e))
-    best = None
-    for k in range(1, len(ALPHABET)):
-        if len(entries) > k + (len(ALPHABET) - k) * len(ALPHABET):
-            continue
-        cost = sum(uses[e] * (1 if i < k else 2)
-                   for i, e in enumerate(entries))
-        if best is None or cost < best[0]:
-            best = (cost, k)
-    if best is None:
-        raise SystemExit("bundle: more phrases than codes")
-    return best[1], entries
-
-
-def _encode_with(text, trie, table, skip=None):
-    out, last = [], 0
-    for i, e in _greedy(text, trie, skip):
-        out.append(text[last:i] + table[e])
-        last = i + len(e)
-    return "".join(out) + text[last:]
-
-
-def encode(text, k, entries):
-    """``(text, dictionary)``: ``text`` with each phrase written as its code,
-    and the entries, each written with the codes of shorter ones."""
-    table = dict(zip(entries, (ESCAPE + c for c in codes(k))))
-    trie = _trie(entries)
-    return (_encode_with(text, trie, table),
-            [_encode_with(e, trie, table, skip=e) for e in entries])
-
-
-def expand(text, k, entries):
-    """``_X``'s work, for reading a bundle back: ``entries`` as written."""
-    table = dict(zip(codes(k), entries))
-    single = set(ALPHABET[:k])
-    done = {}
-
-    def run(s):
-        parts = s.split(ESCAPE)
-        out = [parts[0]]
-        for p in parts[1:]:
-            n = 1 if p[0] in single else 2
-            q = p[:n]
-            if q not in done:
-                done[q] = run(table[q])
-            out.append(done[q] + p[n:])
-        return "".join(out)
-    return run(text)
-
-
 def unpack(path):
     """``{name: (is_package, source)}`` and the loader's text, read back out
     of a written bundle the way the loader reads them."""
     import ast
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    found, want = {}, {"_P", "_D", "_K", "_A"}
+    names = {"_P", "_D", "_K", "_A", "_S", "_1", "_2", "_L"}
+    found = {}
     for node in ast.parse(text).body:
         if (isinstance(node, ast.Assign)
-                and getattr(node.targets[0], "id", "") in want):
+                and getattr(node.targets[0], "id", "") in names):
             found[node.targets[0].id] = node.value.value
-    if set(found) != want:
-        raise SystemExit("bundle lacks %s" % ", ".join(sorted(want
+    if set(found) != names:
+        raise SystemExit("bundle lacks %s" % ", ".join(sorted(names
                                                           - set(found))))
-    if found["_A"] != ALPHABET:
-        raise SystemExit("bundle's code alphabet is not this bundler's")
-    blob = expand(found["_P"], found["_K"], found["_D"].split("\n"))
+    header = {k[1:]: v for k, v in found.items() if k != "_P"}
+    header["D"] = header["D"][:-1]
+    blob = pydict.expand(found["_P"], header)
     modules = {}
     for entry in blob.split(RECORD):
         name, kind, source = entry.split(FIELD, 2)
@@ -701,14 +578,15 @@ def build():
             raise SystemExit("pilot %s needs %s, which no bundled package "
                              "has: add its package to PACKAGES"
                              % (name, module))
-    text = payload(modules)
-    k, entries = dictionary(text)
-    packed, table = encode(text, k, entries)
-    # A trailing line break keeps a last entry's backslash off the quotes.
+    packed, header = pydict.pack(payload(modules))
+    # ``_D`` ends in a line break the loader drops, keeping a last entry's
+    # backslash off the quotes.
+    header["D"] += "\n"
     body = (SHEBANG + compacted("loader", LOADER) + "_P=r" + DELIMITER
-            + packed + DELIMITER + "\n_D=r" + DELIMITER + "\n".join(table)
-            + "\n" + DELIMITER + "\n_K=%d\n_A=r%s%s%s\n" % (
-                k, DELIMITER, ALPHABET, DELIMITER)
+            + packed + DELIMITER + "\n"
+            + "".join("_%s=r%s%s%s\n" % (k, DELIMITER, header[k], DELIMITER)
+                      for k in ("D", "A", "S", "1", "2", "L"))
+            + "_K=%d\n" % header["K"]
             + compacted("tail", TAIL))
     return body, NAME, len(modules)
 
@@ -814,7 +692,7 @@ DEFAULT = os.path.join(ROOT, "dist", NAME)
 def sources():
     """Every file the bundle is made from, the bundler included."""
     files = [os.path.abspath(m.__file__) for m in (
-        sys.modules[__name__], pystrip, pyminify, pyshort, pyalias,
+        sys.modules[__name__], pystrip, pyminify, pyshort, pyalias, pydict,
         pycompact)]
     for package in PACKAGES:
         directory = os.path.join(ROOT, package)

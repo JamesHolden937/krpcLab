@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bundle    # noqa: E402
 import pyalias   # noqa: E402
 import pycompact  # noqa: E402
+import pydict    # noqa: E402
 import pyminify  # noqa: E402
 import pyshort   # noqa: E402
 import pystrip   # noqa: E402
@@ -499,14 +500,15 @@ class TestTheSingleFileExport(unittest.TestCase):
 
     def test_the_dictionary_round_trips_and_shrinks(self):
         text = ("def reference_frame(position, velocity):\n"
-                "    return position, velocity, reference_frame\n") * 30
-        k, entries = bundle.dictionary(text)
-        packed, table = bundle.encode(text, k, entries)
-        self.assertLess(len(packed) + len("\n".join(table)), len(text) / 4)
+                "    return position, velocity, reference_frame  # ~\n") * 30
+        packed, header = pydict.pack(text)
+        size = len(packed) + sum(len(str(v)) for v in header.values())
+        self.assertLess(size, len(text) / 4)
         self.assertNotIn("reference_frame", packed)
-        self.assertEqual(bundle.expand(packed, k, table), text)
+        self.assertEqual(pydict.expand(packed, header), text)
         # The loader's own expander says the same.
-        space = {"_A": bundle.ALPHABET, "_K": k, "_D": "\n".join(table)}
+        space = {"_%s" % k: v for k, v in header.items()}
+        space["_D"] += "\n"
         loader = bundle.LOADER[bundle.LOADER.index("def _X"):
                                bundle.LOADER.index("def _main")]
         exec(loader, space)
