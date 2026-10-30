@@ -97,10 +97,41 @@ def _own_nodes(func):
         stack.extend(ast.iter_child_nodes(node))
 
 
-def _plan(func, free=frozenset()):
+def _inner_bindings(scope):
+    """Every name ``scope`` (a nested function, lambda or class) or any
+    scope inside it binds, declares ``global``/``nonlocal``, reads in an
+    f-string or binds in a comprehension: a name of ours any of those
+    mentions keeps its name."""
+    out = set()
+    for m in ast.walk(scope):
+        if isinstance(m, ast.Name) and not isinstance(m.ctx, ast.Load):
+            out.add(m.id)
+        elif isinstance(m, ast.arg):
+            out.add(m.arg)
+        elif isinstance(m, SCOPES[:2] + SCOPES[3:]) and m is not scope:
+            out.add(m.name)
+        elif isinstance(m, (ast.Import, ast.ImportFrom)):
+            out |= {(al.asname or al.name).split(".")[0] for al in m.names}
+        elif isinstance(m, (ast.Global, ast.Nonlocal)):
+            out |= set(m.names)
+        elif isinstance(m, ast.ExceptHandler) and m.name:
+            out.add(m.name)
+        elif isinstance(m, ast.JoinedStr):
+            out |= {x.id for x in ast.walk(m) if isinstance(x, ast.Name)}
+        elif isinstance(m, (ast.MatchAs, ast.MatchStar)) and m.name:
+            out.add(m.name)
+        elif isinstance(m, ast.Call) and isinstance(m.func, ast.Name) \
+                and m.func.id in DYNAMIC:
+            out |= {x.id for x in ast.walk(scope) if isinstance(x, ast.Name)}
+    return out
+
+
+def _plan(func, free=frozenset(), owner=None, reserved=frozenset()):
     """``{old: new}`` for one function, or ``{}``.  ``free`` holds the
-    ``(function, parameter)`` pairs no caller can pass by keyword; those
-    move like locals."""
+    ``(function, parameter)`` pairs no caller can pass by keyword (an
+    ``__init__`` as ``Class.__init__``, ``owner`` naming its class); those
+    move like locals.  ``reserved``: names an enclosing function's renames
+    bring into this one."""
     own = list(_own_nodes(func))
     every = [n for n in ast.walk(func)]
     used = {n.id for n in every if isinstance(n, ast.Name)}
@@ -124,8 +155,13 @@ def _plan(func, free=frozenset()):
                 comp_targets |= {t.id for t in ast.walk(g.target)
                                  if isinstance(t, ast.Name)}
     movable = set()
-    if not (func.name.startswith("__") and func.name.endswith("__")):
-        movable = {p for p in params if (func.name, p) in free} - {
+    key = func.name
+    if func.name == "__init__" and owner:
+        key = owner + ".__init__"
+    if key == func.name and not (func.name.startswith("__")
+                                 and func.name.endswith("__")) \
+            or key != func.name:
+        movable = {p for p in params if (key, p) in free} - {
             "self", "cls"}
         movable |= {v.arg for v in (a.vararg, a.kwarg) if v}
     bound = set(movable)
@@ -143,13 +179,13 @@ def _plan(func, free=frozenset()):
         elif isinstance(n, ast.JoinedStr):
             excluded |= {m.id for m in ast.walk(n) if isinstance(m, ast.Name)}
         elif isinstance(n, SCOPES):
-            # Anything a nested scope mentions might be a closure over ours.
-            inner = [n] if isinstance(n, ast.Lambda) else n.body
-            for part in inner:
-                excluded |= {m.id for m in ast.walk(part)
+            # A nested function or lambda reads ours unless it binds the
+            # name itself: then neither moves.  A nested class keeps every
+            # name it mentions (its body is a scope its methods skip).
+            excluded |= _inner_bindings(n)
+            if isinstance(n, ast.ClassDef):
+                excluded |= {m.id for m in ast.walk(n)
                              if isinstance(m, ast.Name)}
-                excluded |= {m.arg for m in ast.walk(part)
-                             if isinstance(m, ast.arg)}
             if isinstance(n, FUNCS):
                 bound.add(n.name)
             elif isinstance(n, ast.ClassDef):
@@ -164,7 +200,7 @@ def _plan(func, free=frozenset()):
         if k in rename:
             count[k] = count.get(k, 0) + 1
     rename.sort(key=lambda k: (-count.get(k, 0), k))
-    taken = used | RESERVED
+    taken = used | RESERVED | set(reserved)
     plan, i = {}, 0
     for old in rename:
         while names(i) in taken:
@@ -178,14 +214,24 @@ def _plan(func, free=frozenset()):
 
 def _apply(tree, free=frozenset()):
     """``[(node, new)]`` for every ``Name`` to rename, innermost function's
-    plan first, comprehension targets shadowing it."""
+    plan first, comprehension targets shadowing it.  A name a nested
+    function or lambda reads moves there too (``_plan`` refused it if
+    anything nested binds it)."""
     edits = []
+    owners = {id(f): c.name for c in ast.walk(tree)
+              if isinstance(c, ast.ClassDef) for f in c.body}
+    reserved = {}
     for func in ast.walk(tree):
         if not isinstance(func, FUNCS):
             continue
-        plan = _plan(func, free)
+        plan = _plan(func, free, owners.get(id(func)),
+                     reserved.get(id(func), ()))
         if not plan:
             continue
+        # A function inside this one must not pick a name ours now uses.
+        for inner in ast.walk(func):
+            if inner is not func and isinstance(inner, FUNCS):
+                reserved.setdefault(id(inner), set()).update(plan.values())
         a = func.args
         edits += [(x, plan[x.arg]) for x in a.posonlyargs + a.args
                   + a.kwonlyargs + [v for v in (a.vararg, a.kwarg) if v]
@@ -204,6 +250,15 @@ def _apply(tree, free=frozenset()):
                         d for d in node.args.kw_defaults if d]
                 for o in outer:
                     visit(o, shadow)
+                if not isinstance(node, ast.ClassDef):
+                    # Its free reads of our names (it binds none of them).
+                    inner = [node.body] if isinstance(node, ast.Lambda) \
+                        else node.body
+                    for part in inner:
+                        for m in ast.walk(part):
+                            if (isinstance(m, ast.Name) and m.id in plan
+                                    and m.id not in shadow):
+                                edits.append((m, plan[m.id]))
                 return
             if isinstance(node, COMPS):
                 inner = set(shadow)
@@ -628,26 +683,58 @@ def _splats_a_namespace(call):
             and k.value.attr == "__dict__")) for k in call.keywords)
 
 
+def _file_functions(tree):
+    """Top-level functions nothing else in the file binds under their
+    names: a bare call to one in that file reaches it and nothing else."""
+    counts = {}
+    for n in ast.walk(tree):
+        k = None
+        if isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+            k = n.id
+        elif isinstance(n, ast.arg):
+            k = n.arg
+        elif isinstance(n, FUNCS + (ast.ClassDef,)):
+            k = n.name
+        elif isinstance(n, ast.alias):
+            k = (n.asname or n.name).split(".")[0]
+        elif isinstance(n, (ast.Global, ast.Nonlocal)):
+            for g in n.names:
+                counts[g] = counts.get(g, 0) + 2
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            k = n.name
+        if k is not None:
+            counts[k] = counts.get(k, 0) + 1
+    return {st.name for st in tree.body if isinstance(st, FUNCS)
+            and counts.get(st.name) == 1}
+
+
 def free_parameters(sources, outside, callers=()):
-    """``(function name, parameter)`` pairs no call can pass by keyword.  A
-    keyword at a call to a function the sources define (by its last name:
-    ``f(...)``, ``x.f(...)``) pins that parameter in every function so
-    named; one at any other call (``partial``, ``dict``, a name some
-    variable or attribute also holds) pins it everywhere -- ``OWN_KEYWORDS``
-    excepted while no namespace is splatted into a function -- as does a
-    word of a string that can become a dict key (``f(**{"name": ...})``)
-    or of ``outside``.  ``callers`` (the tests) pin the same way but
-    have no parameters of their own to free.  ``*args``/``**kwargs`` always move; a
-    dunder's parameters never do."""
+    """``(function name, parameter)`` pairs no call can pass by keyword (an
+    ``__init__``'s as ``("Class.__init__", parameter)``).  A keyword at a
+    call to a function the sources define (by its last name: ``f(...)``,
+    ``x.f(...)``) pins that parameter in every function so named; one at a
+    call to a class pins it in that class's ``__init__`` and its bases',
+    one at ``__init__`` itself (``super().__init__(x=...)``) in every
+    ``__init__``; one at any other call (``partial``, ``dict``, a name
+    some variable or attribute also holds) pins it everywhere --
+    ``OWN_KEYWORDS`` excepted while no namespace is splatted into a
+    function -- as does a word of a string that can become a dict key
+    (``f(**{"name": ...})``) or of ``outside``.  A bare call to a function
+    its own file defines (and binds nowhere else) reaches only that one:
+    in ``callers`` (the tests), which have no parameters of their own to
+    free, it pins nothing.  ``*args``/``**kwargs`` always move; other
+    dunders' parameters never do."""
     trees = [ast.parse(source) for source in sources]
     every = trees + [ast.parse(source) for source in callers]
-    defined, classes, held = set(), set(), set()
+    defined, classes, held, bases = set(), set(), set(), {}
     for tree in every:
         for n in ast.walk(tree):
             if isinstance(n, FUNCS):
                 defined.add(n.name)
             elif isinstance(n, ast.ClassDef):
                 classes.add(n.name)
+                bases.setdefault(n.name, set()).update(
+                    _ident_of(b) for b in n.bases)
             elif isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
                 held.add(n.id)
             elif isinstance(n, ast.Attribute) and not isinstance(
@@ -656,14 +743,45 @@ def free_parameters(sources, outside, callers=()):
             elif isinstance(n, ast.arg):
                 held.add(n.arg)
     known = defined - held - classes
-    # A call to a class reaches only ``__init__``, whose parameters stay.
+    # A call to a class reaches its ``__init__``, or an inherited one.
     constructors = classes - held - defined
+    own = set()
     if not any(isinstance(n, ast.Call) and _splats_a_namespace(n)
                and _ident_of(n.func) not in constructors | OWN_KEYWORDS
                for tree in every for n in ast.walk(tree)):
-        constructors |= OWN_KEYWORDS - held - defined
+        own = OWN_KEYWORDS - held - defined
+
+    def lineage(cls):
+        out, stack = set(), [cls]
+        while stack:
+            c = stack.pop()
+            if c not in out:
+                out.add(c)
+                stack.extend(bases.get(c, ()))
+        return out
     everywhere, pinned = set(outside), set()
+    # A class handed on as a value can be built where we cannot see the
+    # call (``action=Cls``, a factory table): its ``__init__`` stays whole.
     for tree in every:
+        plain = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call):
+                plain.add(id(n.func))
+                if _ident_of(n.func) in ("isinstance", "issubclass") \
+                        and len(n.args) > 1:
+                    plain |= {id(m) for m in ast.walk(n.args[1])}
+            elif isinstance(n, ast.ClassDef):
+                plain |= {id(m) for b in n.bases for m in ast.walk(b)}
+            elif isinstance(n, ast.ExceptHandler) and n.type is not None:
+                plain |= {id(m) for m in ast.walk(n.type)}
+        for n in ast.walk(tree):
+            if (isinstance(n, (ast.Name, ast.Attribute)) and id(n) not in plain
+                    and _ident_of(n) in classes):
+                pinned |= {(c + ".__init__", "*")
+                           for c in lineage(_ident_of(n))}
+    for index, tree in enumerate(every):
+        caller = index >= len(trees)
+        local = _file_functions(tree)
         # Only a string that can become a dict key reaches ``f(**d)``.
         keys = {id(k) for n in ast.walk(tree) if isinstance(n, ast.Dict)
                 for k in n.keys if k is not None}
@@ -673,10 +791,18 @@ def free_parameters(sources, outside, callers=()):
         for n in ast.walk(tree):
             if isinstance(n, ast.Call):
                 callee = _ident_of(n.func)
-                if callee in constructors:
+                if callee in own:
+                    continue
+                if isinstance(n.func, ast.Name) and callee in local:
+                    if not caller:
+                        pinned |= {(callee, k.arg or "*")
+                                   for k in n.keywords}
                     continue
                 for k in n.keywords:
-                    if k.arg is None:   # f(**kw): any of f's
+                    if callee in constructors:
+                        pinned |= {(c + ".__init__", k.arg or "*")
+                                   for c in lineage(callee)}
+                    elif k.arg is None:   # f(**kw): any of f's
                         pinned.add((callee, "*"))
                     elif callee in known:
                         pinned.add((callee, k.arg))
@@ -687,13 +813,22 @@ def free_parameters(sources, outside, callers=()):
                 everywhere |= set(WORD.findall(n.value))
     out = set()
     for tree in trees:
+        owners = {id(f): c.name for c in ast.walk(tree)
+                  if isinstance(c, ast.ClassDef) for f in c.body}
         for f in ast.walk(tree):
-            if isinstance(f, FUNCS):
-                a = f.args
-                for x in a.posonlyargs + a.args + a.kwonlyargs:
-                    if x.arg not in everywhere and not pinned & {
-                            (f.name, x.arg), (f.name, "*")}:
-                        out.add((f.name, x.arg))
+            if not isinstance(f, FUNCS):
+                continue
+            key = f.name
+            if f.name == "__init__":
+                if id(f) not in owners:
+                    continue
+                key = owners[id(f)] + ".__init__"
+            a = f.args
+            for x in a.posonlyargs + a.args + a.kwonlyargs:
+                if x.arg not in everywhere and not pinned & {
+                        (key, x.arg), (key, "*"), (f.name, x.arg),
+                        (f.name, "*")}:
+                    out.add((key, x.arg))
     return frozenset(out)
 
 

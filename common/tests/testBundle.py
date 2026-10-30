@@ -99,14 +99,18 @@ class TestTheRenamer(unittest.TestCase):
         self.assertNotIn("total", out)
         self.run_both(src, "f(3, height=4)")
 
-    def test_a_closure_keeps_its_name(self):
+    def test_a_closure_moves_unless_a_nested_scope_binds_it(self):
         src = ("def f():\n"
-               "    kept = 5\n"
+               "    read = 5\n"
                "    gone = 1\n"
-               "    return (lambda: kept)() + gone\n")
+               "    shadowed = 2\n"
+               "    def g():\n        shadowed = 7\n        return shadowed\n"
+               "    class K:\n        z = gone\n"
+               "    return (lambda: read)() + gone + shadowed + g() + K.z\n")
         out = pyminify.minify(src)
-        self.assertIn("kept", out)
-        self.assertNotIn("gone", out)
+        self.assertNotIn("read", out)
+        self.assertIn("shadowed", out)
+        self.assertIn("gone", out)          # a nested class mentions it
         self.run_both(src, "f()")
 
     def test_no_new_name_hides_a_global(self):
@@ -148,7 +152,7 @@ class TestTheRenamer(unittest.TestCase):
                "    return helper(n) + recurse(n)\n")
         out = pyminify.minify(src)
         self.assertNotIn("helper", out)
-        self.assertIn("recurse", out)
+        self.assertNotIn("recurse", out)
         self.run_both(src, "f(3)")
 
     def test_names_move_only_when_nothing_outside_names_them(self):
@@ -208,6 +212,39 @@ class TestTheRenamer(unittest.TestCase):
                               free=free)
         self.assertIn("height", out)
         self.assertNotIn("def area(width", out)
+        before, after = {}, {}
+        exec(src, before)
+        exec(out, after)
+        self.assertEqual(before["run"](), after["run"]())
+
+    def test_an_init_parameter_moves_unless_a_construction_names_it(self):
+        src = ("class Base:\n    def __init__(self, depth):\n"
+               "        self.depth = depth\n"
+               "class Box(Base):\n    def __init__(self, width, height):\n"
+               "        super().__init__(2)\n        self.v = width * height\n"
+               "class Free:\n    def __init__(self, weight):\n"
+               "        self.w = weight\n"
+               "def run():\n    return Box(1, height=3).v + Base(4).depth\n")
+        free = pyminify.free_parameters([src], set())
+        self.assertIn(("Box.__init__", "width"), free)
+        self.assertNotIn(("Box.__init__", "height"), free)
+        self.assertIn(("Base.__init__", "depth"), free)
+        self.assertIn(("Free.__init__", "weight"), free)
+        # A subclass built with a keyword reaches its bases' __init__ too,
+        # and a class handed on as a value keeps all of them.
+        more = src + "def k():\n    return Box(1, 2, depth=3)\n"
+        self.assertNotIn(("Base.__init__", "depth"),
+                         pyminify.free_parameters([more], set()))
+        handed = src + "FACTORY = Free\n"
+        self.assertNotIn(("Free.__init__", "weight"),
+                         pyminify.free_parameters([handed], set()))
+        # A test's own helper called by keyword pins nothing.
+        helper = "def helper(width):\n    return width\nhelper(width=1)\n"
+        self.assertIn(("Box.__init__", "width"), pyminify.free_parameters(
+            [src], set(), [helper]))
+        out = pyminify.minify(src, outside={"run", "Box", "Base", "Free"},
+                              free=free)
+        self.assertNotIn("weight", out)
         before, after = {}, {}
         exec(src, before)
         exec(out, after)
