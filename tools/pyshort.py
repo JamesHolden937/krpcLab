@@ -14,6 +14,9 @@
   ``if (n:=v)...`` (only ``if``: a ``while`` test runs again each time
   round, and never in a class body);
 - ``if c: return a`` followed by ``return b`` -> ``return a if c else b``;
+- ``if c: x = a`` / ``else: x = b`` -> ``x = a if c else b``;
+- ``pass`` -> ``0`` (a statement that does nothing either way), ``while
+  True`` -> ``while 1``;
 - consecutive ``x = 0`` / ``y = 0`` (one constant, same type and spelling)
   -> ``x=y=0``, assigned in the same order.  A tuple (``x,y=0,1``) saves
   nothing once statements share a line, and evaluates every value first.
@@ -98,6 +101,23 @@ class _Canon(ast.NodeTransformer):
                     one.names = [al]
                     out.append(one)
                 continue
+            if (isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant)
+                    and st.value.value == 0 and type(st.value.value) is int):
+                out.append(ast.Pass())
+                continue
+            if (isinstance(st, ast.While) and isinstance(st.test, ast.Constant)
+                    and st.test.value == 1 and type(st.test.value) is int):
+                st.test = ast.Constant(value=True)
+            if (isinstance(st, ast.Assign) and len(st.targets) == 1
+                    and isinstance(st.targets[0], ast.Name)
+                    and isinstance(st.value, ast.IfExp)):
+                e, t = st.value, st.targets[0]
+                # Made here, so its own blocks are canonicalised here too.
+                todo.insert(0, self.generic_visit(ast.If(
+                    test=e.test,
+                    body=[ast.Assign(targets=[t], value=e.body)],
+                    orelse=[ast.Assign(targets=[t], value=e.orelse)])))
+                continue
             if (isinstance(st, ast.Assign) and len(st.targets) > 1
                     and isinstance(st.value, ast.Constant)):
                 out += [ast.Assign(targets=[t], value=st.value)
@@ -108,9 +128,9 @@ class _Canon(ast.NodeTransformer):
                     st.value = ast.Constant(value=None)
                 elif isinstance(st.value, ast.IfExp):
                     e = st.value
-                    out.append(ast.If(test=e.test,
-                                      body=[ast.Return(value=e.body)],
-                                      orelse=[]))
+                    out.append(self.generic_visit(ast.If(
+                        test=e.test, body=[ast.Return(value=e.body)],
+                        orelse=[])))
                     todo.insert(0, ast.Return(value=e.orelse))
                     continue
             if isinstance(st, ast.If):
@@ -244,6 +264,24 @@ def shorten(source, name="<source>"):
                                                     st.module or "", names)
                 groups.append([(begin(st), end(group[-1]), text)])
                 i += len(group)
+                continue
+            if isinstance(st, ast.Pass):
+                groups.append([(begin(st), end(st), "0")])
+            if (isinstance(st, ast.While) and isinstance(st.test, ast.Constant)
+                    and st.test.value is True and seg(st.test) == "True"):
+                groups.append([(begin(st.test), end(st.test), "1")])
+            if (isinstance(st, ast.If) and len(st.body) == 1
+                    and len(st.orelse) == 1 and seg(st).startswith("if")
+                    and all(isinstance(x, ast.Assign) and len(x.targets) == 1
+                            and isinstance(x.targets[0], ast.Name)
+                            and x.type_comment is None
+                            for x in (st.body[0], st.orelse[0]))
+                    and st.body[0].targets[0].id == st.orelse[0].targets[0].id):
+                a, b = st.body[0], st.orelse[0]
+                groups.append([(begin(st), end(st), "%s=%s if %s else %s" % (
+                    a.targets[0].id, wrap(a.value), wrap(st.test),
+                    wrap(b.value)))])
+                i += 1
                 continue
             run = [st]
             while (isinstance(st, ast.Assign) and len(st.targets) == 1

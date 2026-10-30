@@ -419,6 +419,26 @@ class TestTheShortener(unittest.TestCase):
                 args = (x, g, lambda v: v * 2)
                 self.assertEqual(a["f"](*args), b["f"](*args))
 
+    def test_a_conditional_assignment_pass_and_while_true(self):
+        src = ("def f(c, g):\n    if c:\n        x = 1\n    else:\n"
+               "        x = g(2)\n    while True:\n        if x:\n"
+               "            pass\n        break\n    if c is not None:\n"
+               "        y = 0 if c else 1\n    else:\n"
+               "        y = 2 if x else 3\n    if c:\n        z = 1\n"
+               "    elif g:\n        z = 2\n    else:\n        z = 3\n"
+               "    return x, y, z\n")
+        out = pyshort.shorten(src)
+        self.assertIn("x=1 if c else g(2)", out)
+        self.assertIn("while 1:", out)
+        self.assertIn("            0\n", out)
+        self.assertIn("y=(0 if c else 1) if c is not None else (2 if x", out)
+        self.assertIn("elif g:", out)     # an elif chain stays
+        a, b = {}, {}
+        exec(src, a)
+        exec(out, b)
+        for c in (None, 0, 1):
+            self.assertEqual(a["f"](c, lambda v: v), b["f"](c, lambda v: v))
+
     def test_a_while_test_and_a_multiline_value(self):
         src = ("def f(g):\n    n = g()\n    while n:\n        n = g()\n"
                "    if n:\n        return 1\n    return ('a'\n"
