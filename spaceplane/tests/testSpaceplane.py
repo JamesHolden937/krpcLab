@@ -5724,6 +5724,7 @@ class TestDrainTooSlow(unittest.TestCase):
         events = []
         ap = object.__new__(autopilot_module.Autopilot)
         ap.cfg = SimpleNamespace(DRAIN_TIMEOUT_S=90.0, DRAIN_PROBE_S=3.0,
+                                 DRAIN_RATE_MAX=20.0,
                                  DRAIN_RESOURCES=("LiquidFuel",),
                                  RESOURCE_KG_PER_UNIT=5.0)
         ap.drain_modules = ["valve"]

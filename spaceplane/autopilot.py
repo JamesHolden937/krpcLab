@@ -4464,7 +4464,8 @@ class Autopilot:
                            % (left, budget, isp))
 
     def raise_drain_rate(self, snap):
-        """Open every valve's ``Drain rate`` to its stop (100%).
+        """Open every valve's ``Drain rate`` to its stop (``DRAIN_RATE_MAX``,
+        the slider's 20%: kRPC would set a value the part menu cannot).
 
         A rate is a craft-file setting nothing commanded, so it is right
         only by inheritance -- the shuttle's valves came at 20% and empty in
@@ -4475,7 +4476,8 @@ class Autopilot:
         rates = []
         for module in self.drain_modules:
             try:
-                partmodule.set_field_float(module, "Drain rate", 100.0)
+                partmodule.set_field_float(module, "Drain rate",
+                                            float(self.cfg.DRAIN_RATE_MAX))
                 rates.append(partmodule.get_field(module, "Drain rate"))
             except Exception as exc:                    # noqa: BLE001
                 rates.append("failed (%s)" % exc)

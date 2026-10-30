@@ -2193,6 +2193,9 @@ class Config:
     # projecting whether it reaches the reserve inside ``DRAIN_TIMEOUT_S``
     # (``drain_to_reserve``).  The shuttle's valves are done in two.
     DRAIN_PROBE_S: float = 3.0
+    # What a too-slow valve's ``Drain rate`` is raised to: the top of the
+    # part menu's slider, which stops at 20%.
+    DRAIN_RATE_MAX: float = 20.0
     DRAIN_REMAINING_UNITS: float = 0.5
     DRAIN_RESERVE_UNITS: float = 40.0
     # **And 40 units was not enough, on the first entry state that asked.**
