@@ -38,7 +38,10 @@ name nothing outside the bundle can reach renamed (``pyminify``; ``outsiders``
 and ``foreign`` say what can), builtins and other modules' functions
 read through one-letter aliases (``pyalias``; ``hoistable`` says which
 functions), whitespace squeezed (``pycompact``), each proven by the
-parser.  Not compressed: unpacking would cost every start.
+parser -- and every word worth it written as a short code from a
+dictionary the loader expands in memory before anything compiles
+(``dictionary``), so the file is a quarter smaller and what runs is the
+same plain text.  Not compressed: zip is the last resort.
 
 What the bundle still needs from the outside world is ``krpc`` (and, for the
 ascent, MechJeb with KRPC.MechJeb in the game).  The tests and tools are not
@@ -172,13 +175,12 @@ def _snake(word):
 
 
 def foreign(sources):
-    """``(names, complete, services)``: every attribute name an object we did not
+    """``(names, complete)``: every attribute name an object we did not
     write may carry -- kRPC's services (from the game's ``KRPC*.json``, in
     the client's snake_case), the ``krpc`` client's classes, and every class
     of every module the sources import, the standard library's included.
     ``complete`` is False when no service definitions were found: then only
-    private attributes may be renamed.  ``services``: the names kRPC's
-    service definitions alone give."""
+    private attributes may be renamed."""
     import importlib
     import json
     out = set()
@@ -211,7 +213,6 @@ def foreign(sources):
             members(importlib.import_module(mod))
         except Exception:  # noqa: BLE001  (our own packages, absent extras)
             continue
-    python = set(out)
     complete = False
     for directory in KRPC_DEFINITIONS:
         if not os.path.isdir(directory):
@@ -237,7 +238,7 @@ def foreign(sources):
             complete = True
         if complete:
             break
-    return out, complete, out - python
+    return out, complete
 
 
 def stripped(modules):
@@ -253,7 +254,7 @@ def stripped(modules):
     try:
         bare = {name: pystrip.strip(source, name)
                 for name, (_, source) in modules.items()}
-        names, complete, services = foreign(bare.values())
+        names, complete = foreign(bare.values())
         attributes = pyminify.attribute_plan(
             bare, beyond, names, private_only=not complete)
         free = pyminify.free_parameters(bare.values(), keywords,
@@ -286,10 +287,9 @@ def stripped(modules):
                                           reached | imported.get(name, set()))
                     for name in modules}
         hoist = hoistable(modules, minified, callers, beyond_other)
-        gets = getters(minified, services)
         return {name: (is_package, compacted(name, pyalias.alias(
                     pyshort.shorten(minified[name], name), name,
-                    hoist.get(name), gets)))
+                    hoist.get(name))))
                 for name, (is_package, _) in modules.items()}
     except (pystrip.StripError, pyminify.MinifyError,
             pyshort.ShortError, pyalias.AliasError) as exc:
@@ -349,34 +349,6 @@ def _imported_modules(modules, name, tree):
                     if id(n) in top:
                         bound[al.asname or al.name] = full
     return bound, named
-
-
-def getters(sources, services):
-    """Attribute names ``pyalias`` may read through a getter (``R(o)`` for
-    ``o.reference_frame``): only names kRPC's services give and nothing of
-    ours defines -- no store, class-body binding, field, keyword argument
-    (``SimpleNamespace(mass=...)``) or module-level name -- so every such
-    read is of a remote object, whose read is a call to the game and makes
-    the getter's own call negligible."""
-    ours = set()
-    for source in sources.values():
-        tree = ast.parse(source)
-        for st in tree.body:
-            if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef,
-                               ast.ClassDef)):
-                ours.add(st.name)
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Attribute) and not isinstance(n.ctx,
-                                                               ast.Load):
-                ours.add(n.attr)
-            elif isinstance(n, ast.keyword) and n.arg:
-                ours.add(n.arg)
-            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                ast.ClassDef)):
-                ours.add(n.name)
-            elif isinstance(n, ast.Constant) and isinstance(n.value, str):
-                ours |= set(pyminify.WORD.findall(n.value))
-    return {k for k in services - ours if not k.startswith("_")}
 
 
 def hoistable(modules, sources, callers, script_words):
@@ -472,8 +444,11 @@ def compacted(name, source):
 # The bundle is plain text: a ``#!`` line, this loader (compacted like
 # everything else), then ``_P``, one raw string holding every module as
 # ``name `is_package` source``, joined by ``$`` -- two printable characters
-# no compacted source contains (``payload`` refuses one that does).  Not compressed:
-# unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
+# no compacted source contains (``payload`` refuses one that does) -- with
+# every word the dictionary ``_D`` lists written as ``&`` and a one- or
+# two-character code (``dictionary``); ``_X`` writes the words back, in
+# memory, before anything is split or compiled, so what runs is the plain
+# text.  Not compressed: unpacking would cost every start.  ``_B`` is a ``sys.meta_path`` finder
 # over the sources: packages get a ``__path__`` so relative imports
 # resolve, each module a ``__file__`` beside the bundle, and ``get_source``
 # serves tracebacks and ``inspect``.  ``_main`` is ``run.sh``: ``--pilot
@@ -497,6 +472,11 @@ class _B(A.MetaPathFinder,A.Loader):
         m.__file__=os.path.join(H,*(q+["__init__.py"] if k else q[:-1]+[q[-1]+".py"]))
         exec(compile(c,m.__file__,"exec"),m.__dict__)
     def get_source(s,n):return S[n][1]
+def _X(t):
+    a,k=_A,_K;m=dict(zip(list(a[:k])+[x+y for x in a[k:] for y in a],_D.split(" ")));o=t.split("&");r=[o[0]];f=set(a[:k])
+    for p in o[1:]:
+        n=1 if p[0] in f else 2;r.append(m[p[:n]]+p[n:])
+    return "".join(r)
 def _main(a):
     import importlib
     from common import launcher
@@ -512,7 +492,7 @@ def _main(a):
             del r[i:i+d];break
     sys.argv=[Z]+r;return importlib.import_module(m).main(r)
 """
-TAIL = r"""for e in _P.split("$"):
+TAIL = r"""for e in _X(_P).split("$"):
     n,k,c=e.split("`",2);S[n]=(k=="1",c)
 sys.meta_path.insert(0,_B())
 if __name__=="__main__":sys.exit(_main(sys.argv[1:]))
@@ -534,6 +514,12 @@ def pilots():
 
 DELIMITER = "\x27" * 3
 RECORD, FIELD = "$", "`"       # as ``TAIL`` splits them
+ESCAPE = "&"                   # opens a dictionary code (``_X``)
+# A code's characters: printable, never the escape, a single quote
+# (three would close ``_P``) or a backslash.
+ALPHABET = "".join(c for c in map(chr, range(33, 127))
+                   if c not in ESCAPE + "\x27\\")
+WORDS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def payload(modules):
@@ -541,13 +527,68 @@ def payload(modules):
     parts = []
     for name in sorted(modules):
         is_package, source = modules[name]
-        if RECORD in source or FIELD in source or DELIMITER in source:
-            raise SystemExit("%s contains %r, %r or %r, which separate the "
-                             "bundle's modules: pick other separators"
-                             % (name, RECORD, FIELD, DELIMITER))
+        if (RECORD in source or FIELD in source or DELIMITER in source
+                or ESCAPE in source):
+            raise SystemExit("%s contains %r, %r, %r or %r, which separate "
+                             "the bundle's modules or open a dictionary "
+                             "code: pick others"
+                             % (name, RECORD, FIELD, DELIMITER, ESCAPE))
         parts.append("%s%s%d%s%s" % (name, FIELD, is_package, FIELD, source))
     # Ends in the last module's newline, so no backslash meets the quotes.
     return RECORD.join(parts)
+
+
+def codes(k):
+    """Every dictionary code in order: ``k`` single characters, then two
+    for each of the rest (``_X`` builds the same list)."""
+    return list(ALPHABET[:k]) + [x + y for x in ALPHABET[k:]
+                                 for y in ALPHABET]
+
+
+def dictionary(text):
+    """``(k, words)``: the words worth a code in ``text``, most frequent
+    first, and how many of them get one character.  A word earns its entry
+    when its uses save more than the entry costs (its letters and a space);
+    the split between one- and two-character codes is the one that saves
+    most."""
+    count = {}
+    for w in WORDS.findall(text):
+        if len(w) > 2:
+            count[w] = count.get(w, 0) + 1
+    ranked = sorted(count, key=lambda w: (-count[w], -len(w), w))
+    best = (0, 0, [])
+    for k in range(1, len(ALPHABET)):
+        room = k + (len(ALPHABET) - k) * len(ALPHABET)
+        chosen, saved = [], 0
+        for w in ranked:
+            if len(chosen) >= room:
+                break
+            size = 1 if len(chosen) < k else 2
+            gain = count[w] * (len(w) - 1 - size) - (len(w) + 1)
+            if gain > 0:
+                chosen.append(w)
+                saved += gain
+        if saved > best[0]:
+            best = (saved, k, chosen)
+    return best[1], best[2]
+
+
+def encode(text, k, words):
+    """``text`` with each listed word written as its code."""
+    table = dict(zip(words, (ESCAPE + c for c in codes(k))))
+    return WORDS.sub(lambda m: table.get(m.group(0), m.group(0)), text)
+
+
+def expand(text, k, words):
+    """``_X``'s work, for reading a bundle back."""
+    table = dict(zip(codes(k), words))
+    single = set(ALPHABET[:k])
+    parts = text.split(ESCAPE)
+    out = [parts[0]]
+    for p in parts[1:]:
+        n = 1 if p[0] in single else 2
+        out.append(table[p[:n]] + p[n:])
+    return "".join(out)
 
 
 def unpack(path):
@@ -556,13 +597,17 @@ def unpack(path):
     import ast
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    blob = None
+    found, want = {}, {"_P", "_D", "_K", "_A"}
     for node in ast.parse(text).body:
         if (isinstance(node, ast.Assign)
-                and getattr(node.targets[0], "id", "") == "_P"):
-            blob = node.value.value
-    if blob is None:
-        raise SystemExit("bundle has no _P")
+                and getattr(node.targets[0], "id", "") in want):
+            found[node.targets[0].id] = node.value.value
+    if set(found) != want:
+        raise SystemExit("bundle lacks %s" % ", ".join(sorted(want
+                                                          - set(found))))
+    if found["_A"] != ALPHABET:
+        raise SystemExit("bundle's code alphabet is not this bundler's")
+    blob = expand(found["_P"], found["_K"], found["_D"].split(" "))
     modules = {}
     for entry in blob.split(RECORD):
         name, kind, source = entry.split(FIELD, 2)
@@ -578,8 +623,13 @@ def build():
             raise SystemExit("pilot %s needs %s, which no bundled package "
                              "has: add its package to PACKAGES"
                              % (name, module))
+    text = payload(modules)
+    k, words = dictionary(text)
     body = (SHEBANG + compacted("loader", LOADER) + "_P=r" + DELIMITER
-            + payload(modules) + DELIMITER + "\n" + compacted("tail", TAIL))
+            + encode(text, k, words) + DELIMITER + "\n"
+            + "_D=%r\n_K=%d\n_A=r%s%s%s\n" % (" ".join(words), k, DELIMITER,
+                                              ALPHABET, DELIMITER)
+            + compacted("tail", TAIL))
     return body, NAME, len(modules)
 
 

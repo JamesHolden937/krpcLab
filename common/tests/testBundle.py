@@ -363,24 +363,6 @@ class TestTheAliaser(unittest.TestCase):
         exec(out, b)
         self.assertEqual(a["f"]({"threshold": 1}), b["f"]({"threshold": 1}))
 
-    def test_a_getter_reads_an_attribute_of_anything(self):
-        src = ("def f(v, c):\n"
-               "    a = v.flight(c).mean_altitude + v.flight(c).mean_altitude\n"
-               "    return [a, v.mean_altitude, v.mean_altitude,"
-               " c.space_center.active_vessel.mean_altitude,"
-               " f'{v.mean_altitude}']\n")
-        out = pyalias.alias(src, getters={"mean_altitude", "active_vessel"})
-        self.assertTrue(out.startswith("A=lambda o:o.mean_altitude\n"), out)
-        self.assertIn("A(c.space_center.active_vessel)", out)
-        self.assertIn("f'{v.mean_altitude}'", out)
-        from types import SimpleNamespace as N
-        v = N(mean_altitude=5, flight=lambda c: N(mean_altitude=2))
-        c = N(space_center=N(active_vessel=N(mean_altitude=7)))
-        a, b = {}, {}
-        exec(src, a)
-        exec(out, b)
-        self.assertEqual(a["f"](v, c), b["f"](v, c))
-
     def test_a_module_function_is_read_once_after_its_import(self):
         src = ("import math\nX = 1\ndef f(v):\n    return [math.radians(v),"
                " math.radians(v + 1), math.radians(v + 2), math.radians(2)]\n")
@@ -514,6 +496,26 @@ class TestTheSingleFileExport(unittest.TestCase):
             text = handle.read()
         self.assertTrue(text.startswith(bundle.SHEBANG))
         compile(text, self.path, "exec")
+
+    def test_the_dictionary_round_trips_and_shrinks(self):
+        text = ("def reference_frame(position, velocity):\n"
+                "    return position, velocity, reference_frame\n") * 30
+        k, words = bundle.dictionary(text)
+        self.assertIn("reference_frame", words)
+        packed = bundle.encode(text, k, words)
+        self.assertLess(len(packed) + len(" ".join(words)), len(text))
+        self.assertNotIn("reference_frame", packed)
+        self.assertEqual(bundle.expand(packed, k, words), text)
+        # The loader's own expander says the same.
+        space = {"_A": bundle.ALPHABET, "_K": k, "_D": " ".join(words)}
+        loader = bundle.LOADER[bundle.LOADER.index("def _X"):
+                               bundle.LOADER.index("def _main")]
+        exec(loader, space)
+        self.assertEqual(space["_X"](packed), text)
+
+    def test_a_module_using_the_escape_is_refused(self):
+        with self.assertRaises(SystemExit):
+            bundle.payload({"m": (False, "x = 1 & 2\n")})
 
     def test_the_same_sources_give_the_same_bytes(self):
         self.assertEqual(bundle.build()[0],

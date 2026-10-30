@@ -22,11 +22,7 @@ or a postponed annotation.
 
 A string or number literal spelled the same way often enough is read
 through a capital too (``Q="nan"``), but never one in an f-string, a
-postponed annotation or a ``match`` pattern.  ``getters`` names
-attributes read through a getter: ``o.reference_frame`` -> ``R(o)``, with
-``R=lambda o:o.reference_frame`` -- the same read of any object, at the
-cost of a call (``tools/bundle.py`` passes only kRPC's remote
-attributes, whose every read is a call to the game).
+postponed annotation or a ``match`` pattern.
 
 **Proven**: delete the alias lines from the result, put the builtins' names
 and the attribute reads back, and the tree must be exactly the original's,
@@ -136,7 +132,7 @@ def _insert_at(tree):
     return i
 
 
-def alias(source, name="<source>", hoist=None, getters=()):
+def alias(source, name="<source>", hoist=None):
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
@@ -177,36 +173,17 @@ def alias(source, name="<source>", hoist=None, getters=()):
             reads.setdefault((n.value.id, n.attr), []).append((
                 _offset(lines, starts, n.lineno, n.col_offset),
                 _offset(lines, starts, n.end_lineno, n.end_col_offset)))
-        elif (getters and isinstance(n, ast.Attribute)
-                and isinstance(n.ctx, ast.Load) and n.attr in getters
-                and id(n) not in skipped
-                and not (isinstance(n.value, ast.Call)
-                         and getattr(n.value.func, "id", "") == "super")):
-            # (start of the object, its end, the end of ``.attr``)
-            reads.setdefault((".", n.attr), []).append((
-                _offset(lines, starts, n.value.lineno, n.value.col_offset),
-                _offset(lines, starts, n.value.end_lineno,
-                        n.value.end_col_offset),
-                _offset(lines, starts, n.end_lineno, n.end_col_offset)))
 
     def text(key):
         if isinstance(key, str):
             return key
-        if key[0] == ".":
-            return "lambda o:o." + key[1]
         return key[1] if key[0] == "@" else "%s.%s" % key
 
-    def getter(key):
-        return not isinstance(key, str) and key[0] == "."
-
     def headed(key):
-        return isinstance(key, str) or key[0] in "@."
+        return isinstance(key, str) or key[0] == "@"
     # A read spelled across lines or with spaces is not the plain text.
-    def plain(k, v):
-        if getter(k):
-            return all(source[r[1]:r[2]] == "." + k[1] for r in v)
-        return all(source[a:b] == text(k) for a, b in v)
-    reads = {k: v for k, v in reads.items() if plain(k, v)}
+    reads = {k: v for k, v in reads.items()
+             if all(source[a:b] == text(k) for a, b in v)}
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | bound
     free = [c for c in string.ascii_uppercase if c not in used]
     free += [a + b for a in string.ascii_uppercase
@@ -218,24 +195,12 @@ def alias(source, name="<source>", hoist=None, getters=()):
             break
         new = free[0]
         cost = len(new) + 1 + len(text(old)) + 1
-        each = (len(old[1]) + 1 - len(new) - 2 if getter(old)
-                else len(text(old)) - len(new))
-        if len(reads[old]) * each > cost:
+        if len(reads[old]) * (len(text(old)) - len(new)) > cost:
             plan[old] = free.pop(0)
     if not plan:
         return source
     builtin = {old: new for old, new in plan.items() if headed(old)}
-    spans, opens = [], {}
-    for old, new in plan.items():
-        for r in reads[old]:
-            if getter(old):
-                # ``o.attr`` -> ``X(o)``; nested reads open outermost first.
-                opens.setdefault(r[0], []).append((-r[2], new + "("))
-                spans.append((r[1], r[2], ")"))
-            else:
-                spans.append((r[0], r[1], new))
-    for p, parts in opens.items():
-        spans.append((p, p, "".join(t for _, t in sorted(parts))))
+    spans = [(a, b, new) for old, new in plan.items() for a, b in reads[old]]
     at = _insert_at(tree)
     if builtin:
         head = ";".join("%s=%s" % (new, text(old))
@@ -274,9 +239,6 @@ def alias(source, name="<source>", hoist=None, getters=()):
         old = back.get(s.targets[0].id)
         if isinstance(old, str):
             return getattr(s.value, "id", None) == old
-        if old is not None and old[0] == ".":
-            return ast.dump(s.value) == ast.dump(
-                ast.parse(text(old), mode="eval").body)
         return (old is not None and old[0] == "@"
                 and ast.dump(s.value) == ast.dump(literal(old)))
     if not all(heads(s) for s in head_stmts):
@@ -296,15 +258,6 @@ def alias(source, name="<source>", hoist=None, getters=()):
     got.body = [s for s in got.body if all(s is not h for h in hoisted)]
 
     class Back(ast.NodeTransformer):
-        def visit_Call(self, n):
-            old = back.get(getattr(n.func, "id", None))
-            if (old is not None and not isinstance(old, str)
-                    and old[0] == "." and len(n.args) == 1
-                    and not n.keywords):
-                return ast.Attribute(value=self.visit(n.args[0]),
-                                     attr=old[1], ctx=ast.Load())
-            return self.generic_visit(n)
-
         def visit_Name(self, n):
             old = back.get(n.id)
             if old is None:
@@ -314,8 +267,6 @@ def alias(source, name="<source>", hoist=None, getters=()):
                 return n
             if old[0] == "@":
                 return literal(old)
-            if old[0] == ".":
-                return n        # a getter stands only as a call's callee
             return ast.Attribute(value=ast.Name(id=old[0], ctx=ast.Load()),
                                  attr=old[1], ctx=ast.Load())
     got = Back().visit(got)
