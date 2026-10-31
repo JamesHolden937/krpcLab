@@ -2326,11 +2326,40 @@ class Autopilot:
                 for module in part.modules:
                     if module.name == "ModuleResourceDrain":
                         self.log_drain_module(module, len(found))
-                        found.append(module)
+                        if self._drain_has_propellant(part, len(found)):
+                            found.append(module)
         except Exception:                               # noqa: BLE001
             pass
         self.logbook.event(0.0, "drain valves found: %d" % (len(found),))
         return found
+
+    def _drain_has_propellant(self, part, index):
+        """Whether the part this valve is mounted on holds any propellant.
+
+        **A valve drains only the part it is bolted to.**  The game builds
+        its list of drainable resources from ``part.parent`` alone
+        (``ModuleResourceDrain.LoadResourcesAvailable``), and ``Drain Mode``
+        does not widen it.  The heavy shuttle's two valves sit on a fairing
+        base: the part menu read ``'Resources to drain': 'None'``, the valves
+        opened onto nothing, and the watch measured 0.0 units/s, raised the
+        rate, called it "too slow" and flew 4636 units wet (LOG14992).  A
+        valve like that is said once at startup, by part name, and not
+        driven.
+        """
+        names = tuple(self.cfg.DRAIN_RESOURCES)
+        try:
+            parent = part.parent
+            held = set(parent.resources.names) if parent is not None else set()
+            title = parent.title if parent is not None else "nothing"
+        except Exception:                               # noqa: BLE001
+            return True
+        if held.intersection(names):
+            return True
+        self.logbook.event(0.0, "drain module %d is USELESS: mounted on %s, "
+                                "which holds no %s -- a valve drains only its "
+                                "own parent part; move it onto a tank"
+                           % (index, title, "/".join(names)))
+        return False
 
     def _surface_records(self):
         """Every control surface as a plain record, in the vessel frame.
@@ -4701,8 +4730,8 @@ class Autopilot:
             self.enter(after, snap.ut, "drain disabled")
             return
         if not self.drain_modules:
-            self.logbook.event(snap.ut, "no ModuleResourceDrain on this "
-                                        "vessel -- flying wet")
+            self.logbook.event(snap.ut, "no drain valve on a propellant "
+                                        "tank -- flying wet")
             self.enter(after, snap.ut)
             return
         if self.drain_started is None:
