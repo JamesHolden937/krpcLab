@@ -638,3 +638,45 @@ earlier 6 v 6s flown on a farm at 20-22 GB of swap are discarded.  Under PyPy
 the booster serves its 0.05 s tick (~2470 coast ticks) where CPython gave
 ~0.07 s (~1650); not shown to matter.
 
+
+## 2026-11-01: gimbal roll was never off under kRPC 0.7; correction when the brakes are spent; the FMRS Heavy Shuttle booster
+
+The user's live FMRS flight of the Heavy Shuttle booster (13 Vectors, 24
+Vernors, 12 airbrakes, no legs, 227 t; LOG15102) landed 596 m out and broke
+up.  Two faults:
+
+1. `set_gimbal_roll` called `Module.set_field_bool_by_id`, which kRPC 0.7 does
+   not have.  The AttributeError was swallowed as "0 engines (n refused)", so
+   **every booster flight since 2026-10-21 flew its burns with roll on the
+   gimbals** -- the 200 deg/s spin of diag2-1017.  LOG15102 rolled at
+   100-227 deg/s in the landing burn, 34 deg off vertical at 16 m legs
+   height; something touched, `landed` cut the engines 7.6 m up, 13 m/s
+   impact.  Now through `common.partmodule.set_field_bool_by_id` (finds the
+   `PartField` by code name; works while the gimbal's toggles are hidden),
+   and a refusal logs its exception.
+2. It coasted from apogee to the ground +600 m long with the brakes at 90 and
+   no lift (tracking 0.06): `CORRECTION_ENTER_M` 1000 never let a burn fire.
+   The cause upstream is boostback aiming on a curve swept at aoa 20-25 (the
+   `DRAG_RESWEEP_AOA_DEG` gate is 25): the first descent-attitude sweep reads
+   +400 to +1200 m long *with the brakes full open* on both boosters.  New
+   `CORRECTION_SATURATED_ENTER_M` 150: with the brakes at `DEPLOY_MAX_DEG`
+   and the steered prediction long, correct above 150.  Corrections also
+   wait for the re-sweep after the late brakes open (LOG15110 burned on the
+   opening tick at +395, the re-sweep then read -639).
+
+`saves/qs_heavyshuttlebooster`: the live `FMRS/krpclab_boostback.sfs`.  The
+farm placed it 10 deg east of where the live game did (130 km from the pad
+instead of 24; 9/9 ran dry in boostback, LOG15103-15120): same UT, same
+ORBIT, so the live game evidently positions it from lat/lon (a mod).  LAN
+rotated -9.8916 on the Kerbin orbits; it now loads at the live start.
+
+Fresh farm, 9 an arm a save, gate v `CORRECTION_SATURATED_ENTER_M=1000`:
+
+| | gate 150 (LOG15121-15138) | off (LOG15139-15156) |
+|---|---|---|
+| FMRS booster | 12 14 35 44 70 87 87 89 118, median 70 | 43 83 163 267 292 355 488 502 516, median 292 |
+| qs_heavy | 19 22 54 63 112 120 130 139 492, median 112, 2/9 destroyed | 25 31 32 38 41 64 252 287 325, median 41, 6/9 destroyed (8-13 m/s) |
+
+Kept.  On qs_heavy six gate flights end ~120 m west, just under the gate:
+the residual after the first burn, which the landing burn does not divert.
+Tip-overs are not scored (the user is adding legs to the craft).

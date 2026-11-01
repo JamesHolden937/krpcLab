@@ -1,5 +1,59 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
+
+Started from the user's live FMRS flight (LOG15102: Heavy Shuttle booster,
+596 m out, broke up). Committed and pushed; farm stopped. Journal:
+"2026-11-01".
+
+**Fixed (defaults):**
+- `set_gimbal_roll` -> `common.partmodule.set_field_bool_by_id`. kRPC 0.7
+  has no `Module.set_field_bool_by_id`; **from 2026-10-21 to today every
+  booster burned with roll on its gimbals** (logged "0 engines (n
+  refused)"). LOG15102 spun 100-227 deg/s in the landing burn. Refusals now
+  log the exception. Roll-off works while the gimbal's toggles are hidden.
+- `CORRECTION_SATURATED_ENTER_M` 150: with the brakes at `DEPLOY_MAX_DEG`
+  and the steered prediction long, correct above 150 m (not 1000). And no
+  correction while `late_state == "switched"` (before the opened brakes are
+  re-swept). 9 an arm, gate v off: FMRS booster median **70 v 292 m**;
+  qs_heavy 112 v 41 median, means 139 v 133, destroyed at contact 2/9 v 6/9.
+- `saves/qs_heavyshuttlebooster`: the live FMRS boostback save, booster
+  active, Kerbin orbits' LAN -9.8916 (the farm put it 10 deg east of the
+  live game; see saves/README).
+
+**Where it stands:** both boosters leave boostback on a curve swept at aoa
+20-25 deg (inside `DRAG_RESWEEP_AOA_DEG` 25); the first descent sweep says
++400..+1200 m long *with the brakes full open*, and the first correction
+takes it to ~100-200 m. qs_heavy then ends ~120 m west on 6/9 (just under
+the gate; the landing burn does not divert it). Pre-0.7 the heavy landed
+median ~13 m. **Tip-overs are not scored**: the Heavy Shuttle booster has no
+legs and the user will fix the craft.
+
+**Next, in order:**
+1. The boostback's drag curve: probe the descent attitude (aoa ~0, what
+   `holdable` says) instead of the real one while boostback is at 20-25 deg,
+   or tighten `DRAG_RESWEEP_AOA_DEG` -- the boostback exit should land
+   inside [closed, open] of the late brakes. pd10-1016 lost boosters probing
+   at retrograde; that was before the late brakes, re-measure.
+2. The ~120 m residual after the first correction on qs_heavy.
+3. Older, still open (the 2026-10-18 list): brakes for speed not range;
+   aoa as a speedbrake; the +28 m along-track from the RCS trim; legs down
+   ~13.5 s early; pad debris; qs_hot sideways arrival.
+4. FMRS on live: LOG15102's `FATAL jump back: ConnectionError` came while
+   the panel waited -- the game closed under it, not chased.
+
+**FMRS button** (`./run.sh --pilot fmrs`, `boosterland/fmrs.py`): saves the
+live game as `krpclab_main`, finds the first `FMRS/FMRS_save_<n>` of this
+launch with a booster in flight, writes `FMRS/krpclab_boostback` with it
+active, loads it paused, flies it, then offers JUMP BACK TO MAIN MISSION
+(booster's block merged into `krpclab_main`). Landed merge unit-tested only.
+
+**Traps paid:** a swallowed exception in a mode switch reads as "0 done"
+for ten days -- log the reason. A live save on the farm may load somewhere
+else: check `pad=` on the first log line against the live log. Swap reaches
+27 GB per 10-min batch: restart between batches. Readers: `logsum.py`;
+per-flight corrections from `phase COAST -> CORRECTION`.
+
 ## 2026-11-01: spaceplane -- the approach plans in the middle of each craft's own span; the low-alpha glide is off (fingerprint `07089ff3`)
 
 Committed and pushed; farm stopped (the last batch, heavy-1101, was killed by Claude Code for low memory before it flew -- LOG15091-15095 are part-batch, don't read them). Journal: "Session, 2026-10-31 late" and "2026-11-01". **howItWorks.pdf NOT updated for the approach ratio** -- do it next wrap-up.
@@ -61,174 +115,6 @@ null (the coast miss is ~180 m in both).  Logs: `logs/harness-1027/`.
 **Trap paid:** the farm reached 22 GB of swap after an hour of six-instance
 booster flights and every comparison flown on it was worthless -- restart
 between comparisons, as the farm section says.
-
-## 2026-10-20: boosterland -- FMRS button: booster active on load, JUMP BACK TO MAIN MISSION; flight code as 2026-10-18 (fingerprint `7aa71525`)
-
-**2026-10-21 (farm-wide, see the spaceplane section):** kRPC 0.7.0 and
-AtmosphereAutopilot removed.  Boosterland ported: `ROLL_THRESHOLD_DEG` now
-sets `roll_start_angle`/`roll_engage_angle` (0.7 removed `roll_threshold`);
-`ObjectDestroyedException` ends a flight as destroyed; module calls via
-`common.partmodule`.  One smoke flight on qs_heavy: down 222 m out, fell
-over.  kRPC 0.7's wobble mitigation is left at its default here
-(unmeasured).  Re-fly the baseline before comparing anything to the
-numbers below.
-
-
-**`boosterland/fmrs.py`, launcher button "BOOSTBACK FROM FMRS SAVE"**
-(`./run.sh --pilot fmrs`), reworked 2026-10-20 at the user's request:
-1. It first saves the live game (the main mission) as `krpclab_main` --
-   under a unique name, found on disk among `~/Kerbal Space Program/saves/*`
-   and `testInstances/ksp*/saves/*`, then renamed; that is how it learns
-   the save folder (`--save-dir` overrides; a remote `--address` needs it).
-   Refuses if the live game's active vessel *is* the booster.
-2. It reads the `FMRS/FMRS_save_<n>` files as text (`common/sfs.py`), takes
-   the first with a booster (closest vessel to the active one, in flight,
-   with an engine module, within 5 km), writes a copy with `activeVessel`
-   set to it (`FMRS/krpclab_boostback`) and loads that: **no vessel switch**
-   (ksp0: 2.6 s wall from button to the first tick, LOG13114/13115).
-3. When the flight ends (touchdown settled, destroyed, or TERMINATE) the
-   panel shows **JUMP BACK TO MAIN MISSION** (TERMINATE stays with the
-   booster). Jump: saves the booster's game as `krpclab_booster`, replaces
-   every VESSEL with the booster's persistentId in `krpclab_main` by the
-   booster's final block (or removes it if destroyed), keeps
-   `activeVessel` on the main vessel, loads `krpclab_main`.
-   Tested on ksp0 (LOG13115, main = FMRS_save_0 itself): destroyed booster
-   removed, main mission reloaded with the upper stage active. The
-   **landed** merge is unit-tested only (`tests/testFmrs.py`) -- ksp0's
-   FMRS save crashes its booster (91-316 m out, falls over); not chased.
-   Untested: whether FMRS itself objects to the reloaded main mission.
-Also: `fakeksp.Vessel` gained `moment_of_inertia`/`reference_frame`
-(FLIP_THROTTLE_LAW read them; 20 closed-loop tests had errored since
-2026-10-18). Suite 656 OK.
-
-Test state: ascent on `qs_stack` on ksp0, paused and saved at separation
-(20.5 km, Mach 3, 26.7 km from the pad, booster 99 t). Boostback fine (miss
-179 m at COAST, 27 m at 20 km) but the coast lost it below 17 km: cross
--2.2 km by 11 km, long -8.6 km at the burn, destroyed 8.9 km out. One
-flight, a booster lighter (62 t at COAST) than `qs_heavy`; the save is not
-kept (rebuild with ascent + pause at the second engined vessel). Worth a
-look as boosterland's next item if FMRS-state flights keep missing.
-
-
-Full write-up: `docs/boosterland/journal.md`, "Session, 2026-10-18 day".
-How-it-works PDF rewritten. Committed and pushed; farm stopped; sleep
-inhibitor released.
-
-**The user asked:** keep eliminating the miss; is the yaw at the end of
-boostback intentional (no -- fixed); can anything but the gimbal roll the
-heavy (only the Vernors; airbrakes cannot); should a reaction wheel go on
-(not yet: it would only buy roll, and roll is not costing anything
-measured); are the legs deploying early (yes, ~13.5 s before contact for a
-6.8 s lead -- a fix was flown and lost, below).
-
-**Defaults changed** (batches `logs/rot-trim1..4-1018`, `rot-def2-1018`):
-- `BOOSTBACK_HEADING_HOLD`: the taper flies the aim held at its first tick
-  and exits on the miss *along* it. Removes the 30-deg end-of-burn swing.
-- `COAST_FLIP_RELAY`: the coast's flip gets the RCS error relay until the
-  nose is within 10 deg (it had RCS only by the luck of that swing).
-- `COAST_RCS_TRIM`: once settled, push sideways on the Vernors against the
-  cross-track (>10 m start, <3 m stop), valve open only while pushing,
-  sign self-checked until the first successful push. ~0.15-0.2 t.
-  Heavy miss 26/17/22 v 35/47 over three batches; def2 defaults: contact
-  median 13 m, worst 33, stood 10/12. qs_hot: null.
-- Deleted after measuring: `COAST_RCS_TRIM_LONG`, `LANDING_RCS_TRANSLATE`,
-  `GEAR_BURN_TTG` (journal). No flags open.
-
-**Where it stands:** heavy contact median ~13 m (def2), cross-track ~0.
-**The remaining miss is along-track, set before the burn**: def2's defaults
-reach burn entry +14..+54 m long (median +28); the burn halves it and the
-last 30 m add only 1-7 m. The two falls were the two longest (+49, +54 ->
-contact 30-33 m). Standing ~50% when it touches 10-34 m from centre: the
-KSC pad model's colliders ("Fuel Tank" at 14-18 m) and the launch clamps.
-
-**Next, in order:**
-**DONE this evening -- `FLIP_THROTTLE_LAW` (now default; boosterland
-fingerprint now `7aa71525`):** the boostback flip burns the throttle that makes the turn
-cheapest (`guidance.flip_throttle`: waste u*a*t(u)*(1-sin th/th) against the
-drift `guidance.drift_rate` buys back, t from a bang-bang turn at
-u*gimbal + RCS/wheels; gimbal from geometry, RCS/wheels read live). Logged
-as `flip law:` (inputs) and `flip done:` (seconds, tonnes, mean throttle).
-`flipheavy-1018` (qs_heavy, 6 v 6): boostback 27.9 v 29.5 t, flip ~6 s at
-mean throttle 0.08-0.16, stood 6/6 v 4/6, lands ~+45 m long (median 43 v
-20 m; boostback exit miss identical, so the shift is downstream -- the
-coast is ~1.6 t heavier). `flip1-1018` (ascent stacks): -3.3 t boostback on
-the shuttle stack, all spent on the climb (ascent models the same law).
-How-it-works PDF: the law is page 3; the phase table's BOOSTBACK row (page
-2, "full throttle before the turn is finished") predates it -- fold it in at
-the next rewrite. Journal: "Session, 2026-10-18 evening".
-
-**Next for the coast (the user, 2026-10-18 evening; another agent will
-take these):**
-
-a. **Why the miss reads 0-3 m above ~14 km and jumps to ~40 below.** The
-   displayed miss is of the *steered* prediction, re-nulled every tick by
-   `solve_steer`, so it reads ~0 while the commanded aoa creeps up (LOG12905:
-   0.4 deg at 21 km -> 3.0 at 15 km). The late brakes went 30 -> 90 at
-   20.4 km; six open brakes at the tail are a weathervane, the holdable aoa
-   is ~3 deg, the solve saturates at ~14 km and the residual appears at once
-   (-36..-45 m), partly recovered lower (landed -18). Same mechanism as
-   `DEPLOY_UNSTEERED`'s comment (LOG10637). On the ascent's hotter
-   separations it is part of the shuttle stack's ~250 m-short landings
-   (flip1-1018, law arm: -25..-608).
-
-b. **Brakes for speed, not range.** The user: "do you need to deploy full so
-   early? I just want it near terminal velocity by the landing burn." Full
-   deploy buys little drag: the measured `Cd*A at 90 deg is N x at 30` is
-   1.07-1.20 on most of this session's flights (one 1.62) -- ~6% terminal
-   velocity, ~15 m/s at the burn, ~0.3 t. It opens early (4-23 km this
-   session) because `DEPLOY_LATE` makes it the *range* actuator: boostback
-   aims long on 30 deg and the switch height is solved to pull it back (the
-   flight above was +731 m long closed -> opened at 20.4 km). Proposal:
-   boostback aims at the pad on the 30-deg profile, lift steering trims
-   range all the way down (it keeps authority with the brakes at 30), and
-   90 only low -- at a height computed for ~terminal at the burn -- or
-   never. Risk: `DEPLOY_LATE` won its comparison (journal), so the brakes do
-   real range work; measure against the defaults on qs_heavy + the ascent
-   stacks.
-
-c. **Angle of attack as a speed brake** (the user: "lift creates drag, so
-   use aoa to make it slower"). Shuttle-style: fly an aoa for drag and roll
-   the lift vector round (coning / bank reversals) so the lift cancels.
-   Unknown is the drag curve: at the 2-5 deg the booster holds now there is
-   no measurable Cd*A rise in the logs (LOG12906: 18.1 at 0.4 deg v 14.7 at
-   4.5, Mach-dominated), but a long cylinder shows ~10x its tail area side-on
-   (heavy: ~112 v ~11 m2), so 10-30 deg may matter -- only holdable with the
-   brakes at 30 or in. Step 1: add a drag-vs-aoa probe beside
-   `Environment.refresh_holdable`'s torque probe (same rotated-attitude
-   machinery), 0-30 deg at brakes 30 and 90, logged with the holdable angle
-   per brake setting; fly one batch. Step 2, if aoa buys drag: brakes at
-   30 for authority, aoa for speed with the lift rolled to cancel, a lift
-   offset for range, brakes 90 only where the curve says. Whatever the
-   coast flies, `ascent/budget.landing_dv` models the landing from the
-   terminal velocity -- keep it in step.
-
-1. **The +28 m along-track at the burn.** It comes with the trim (trim arms
-   +20..+28 v -7..+1 without, three batches) and grows after the late brakes
-   open fully (LOG12746: +24 at the switch, +73 eight seconds later), where
-   no drag is left to add. Candidates: the Vernors' push has an axial
-   component (axis ~ velocity in the coast), or the open valve shifts the
-   held attitude. Log the along-track change across each push and after
-   the switch, trim on v off; then cancel on `forward` or stop late
-   re-pushes.
-2. The leg lead: the time-to-go is the coast-speed fall, so the legs are
-   down ~13.5 s early. A burn-aware estimate that is right early in the
-   burn (the powered prediction reads 4 s at 9.7 actual) -- or measure the
-   burn's duration per vehicle. Earlier legs measured worse (factor 2.0).
-3. Pad debris: the launch clamps stay on the pad (live too). Ask the user
-   before recovering vessels; an aim point chosen clear of them is the
-   alternative.
-4. Older: qs_hot sideways arrival, a legged single-engine save, separation
-   breakups (LOG12500 again: 0.66 t at 2 s), the coast's roll drift.
-
-**Traps paid:** a fallen booster's reported miss is where the wreck lies
-(+25-35 m): use the first TOUCHDOWN line's `pad=`. Summaries that drop "no
-exit line" rows drop every fallen booster. Every new `cfg.X` must exist --
-grep the diff; a bare-`Autoland` test runs the method. ksp5 returned
-nothing for all of trim3 (12 flights lost silently): check every instance
-has rows. Swap reached ~20 GB per 40-min batch: restart between batches.
-Readers (scratchpad, easy to rewrite): per-arm contact distance from the
-first TOUCHDOWN `pad=`, stood from `max=`, gear-to-contact seconds,
-burn-entry mass; KSP.log CollisionSpy matched to flights by wall clock.
 
 ## 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
 

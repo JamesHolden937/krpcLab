@@ -36,7 +36,9 @@ the intended flight profile.
 
 Saves: `quicksave`, `qs_hot`, `qs_cold`, `qs_steep`, `qs_north` (18 parts,
 no legs, flying at 21 km after separation; `tools/savegen.py` makes more);
-`qs_heavy` (99 t, five engines, six LT-2 legs).
+`qs_heavy` (99 t, five engines, six LT-2 legs); `qs_heavyshuttlebooster` (the
+user's live FMRS Heavy Shuttle booster: 227 t, 13 Vectors, no legs -- tip-overs
+are not scored on it).
 
 `boosterland/data/gearTimes.json` is the leg deploy-time cache (gitignored,
 written in flight; delete it and the next flight re-times its legs).
