@@ -3277,3 +3277,8 @@ Batches: rollfix1028 (stopped), coord1028, coord2-1028, coord3-1029, breadth-102
 - **Trap paid:** `pkill -f 'krpcLab.py --pilot spaceplane'` inside a compound Bash command matched its own shell and killed it before `git commit` ran.
 
 Batches: probe-1031 (6 flights, startup probe lines only; farm stopped mid-flight).
+
+## Session, 2026-10-31 late: the approach ratio on a different airframe
+
+LOG15006 (live Heavy Shuttle, 63 parts): touched down 765 m before the threshold, diverted north 150 m. `APPROACH_BEST_LD` 4.2 (qs_shuttle2's) placed the gate 7.2 km out at 2 km; the craft's table best glide is 3.03 and it flew 3.09 straight, 3.41 rollout to wheels. Removed the constant for a table derivation (bec678c): `cla/cda` at the approach speed at 1 g from the STANDBY sweep, times `(h + (v_app^2 - v_stall^2)/2g)/h`. reach-1031 (LOG15007-15018): 0/12 on the runway, every flight short (diverted north; two cone exits "out of height" against an 11.5 km gate); planned 6.33 where the shuttle family achieved 4.6-5.3. The table reads the shuttle's approach L/D 4.8 against 3.8-4.2 flown, and touchdown is ~60 m/s not the 49 m/s stall. Reverted (6fb047b). The landing-mass table re-read is noisy on one craft (best glide 2.4-5.6 on qs_stackorb_live1028) -- re-probed at the surfaces' deflection. Second refutation of a table-derived approach ratio (first: `APPROACH_LD_DERIVED`, 2026-09-23); next is the flown ratio, learned in flight.
+
