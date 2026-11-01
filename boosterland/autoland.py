@@ -1664,7 +1664,10 @@ class Autoland:
                 self.env, prediction.position, self.env.target, snap.position)
             if long == long and long < 0.0 and abs(long) >= abs(cross):
                 return False
-        return (distance > cfg.CORRECTION_ENTER_M
+        enter = cfg.CORRECTION_ENTER_M
+        if self.brakes_saturated_long(snap, prediction):
+            enter = min(enter, cfg.CORRECTION_SATURATED_ENTER_M)
+        return (distance > enter
                 and snap.max_accel > 0.0
                 and snap.landing_height > cfg.CORRECTION_MIN_ALT_M
                 and snap.landing_height <= cfg.CORRECTION_MAX_ALT_M
@@ -1674,6 +1677,25 @@ class Autoland:
                 and self.settled_enough_to_correct(snap)
                 and self.correction_gradient(snap, prediction)
                 > cfg.CORRECTION_MIN_GRADIENT)
+
+    def brakes_saturated_long(self, snap, prediction):
+        """Is the prediction long with the airbrakes already full open?
+
+        ``CORRECTION_ENTER_M`` is high because below it the air steers the
+        miss out and a burn fights it.  That only holds while the air has
+        authority left: with the brakes at ``DEPLOY_MAX_DEG`` they cannot
+        shorten any further, and the prediction this is handed is COAST's
+        steered one, so whatever lift the vehicle can make is already in it.
+        A long miss then stays long all the way to the landing burn, which
+        has seconds to move it (LOG15102: +600 m from apogee to the ground).
+        """
+        cfg = self.cfg
+        angle = getattr(self, "deploy_angle", None)
+        if not cfg.DEPLOY_LAW or angle is None or angle < cfg.DEPLOY_MAX_DEG:
+            return False
+        long, cross = trajectory.miss_components(
+            self.env, prediction.position, self.env.target, snap.position)
+        return long == long and long > 0.0 and long >= abs(cross)
 
     def settled_enough_to_correct(self, snap):
         """Has the drag curve stopped moving under the prediction?

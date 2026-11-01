@@ -1176,6 +1176,43 @@ class TestCorrectionAltitudeWindow(unittest.TestCase):
         self.assertGreater(Config().CORRECTION_MAX_ALT_M, 1e6)
 
 
+class TestCorrectionWithBrakesSaturated(unittest.TestCase):
+    """A long miss the open brakes cannot close is corrected below 1000 m.
+
+    LOG15102 coasted from apogee to the ground +600 m long with the brakes at
+    90 deg and no lift: under ``CORRECTION_ENTER_M`` nothing ever acted on it.
+    """
+
+    def run_with(self, angle, beyond):
+        run = object.__new__(autoland_module.Autoland)
+        run.cfg = Config()
+        run.late_state = "handed"
+        run.gear_timing = "done"
+        run.deploy_angle = angle
+        run.corrections = 0
+        run.correction_ready_ut = 0.0
+        run.correction_gradient = lambda snap, prediction: 1.0
+        target = (600000.0, 0.0, 0.0)
+        run.env = SimpleNamespace(target=target)
+        snap = SimpleNamespace(max_accel=18.0, landing_height=20000.0, ut=0.0,
+                               position=(620000.0, 0.0, -30000.0))
+        prediction = SimpleNamespace(time_to_land=90.0,
+                                     position=(600000.0, 0.0, beyond))
+        return run, snap, prediction
+
+    def test_long_with_full_brakes_corrects(self):
+        run, snap, prediction = self.run_with(90.0, 600.0)
+        self.assertTrue(run.correction_worthwhile(snap, prediction, 600.0))
+
+    def test_long_with_brakes_to_spare_waits(self):
+        run, snap, prediction = self.run_with(60.0, 600.0)
+        self.assertFalse(run.correction_worthwhile(snap, prediction, 600.0))
+
+    def test_short_with_full_brakes_waits(self):
+        run, snap, prediction = self.run_with(90.0, -600.0)
+        self.assertFalse(run.correction_worthwhile(snap, prediction, 600.0))
+
+
 class TestTouchdownBackstop(unittest.TestCase):
     """A booster lying on the pad is down, however fast it is sliding.
 

@@ -405,6 +405,17 @@ class Config:
                                             # can come back down to where the
                                             # miss it is meant to catch lives;
                                             # see CLAUDE.md failure 14.
+    CORRECTION_SATURATED_ENTER_M: float = 150.0  # ... but this, once the
+                                            # brakes are full open and it is
+                                            # still long: the air has nothing
+                                            # left to steer with, so the
+                                            # reason for the 1000 m gate is
+                                            # gone.  LOG15102 (FMRS Heavy
+                                            # Shuttle booster) coasted 100 s
+                                            # at +600 m with brakes at 90,
+                                            # lift tracking 0.06, and landed
+                                            # 596 m out.  See
+                                            # Autoland.brakes_saturated_long
     CORRECTION_EXIT_M: float = 15.0         # hysteresis: stop below this miss.
                                             # Must stay well under
                                             # CORRECTION_ENTER_M -- at 100
