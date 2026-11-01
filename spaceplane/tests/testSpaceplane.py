@@ -2291,17 +2291,6 @@ class TestTheAirframeReadsItsOwnTable(unittest.TestCase):
             if cda > 0.0:
                 self.assertLessEqual(cla / cda, got.best_ld + 1e-9)
 
-    def test_the_flight_says_so_when_the_constants_disagree(self):
-        here = ROOT
-        with open(os.path.join(here, "spaceplane", "autopilot.py")) as fh:
-            source = fh.read()
-        report = source[source.index("def report_airframe"):
-                        source.index("def run_deorbit")]
-        self.assertIn("DISAGREES", report)
-        self.assertIn("APPROACH_BEST_LD", report)
-        # ... and does not quietly adopt them.
-        self.assertNotIn("self.cfg.APPROACH_BEST_LD =", report)
-
 
 class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
     """The swept table, read per aircraft.
@@ -2385,32 +2374,69 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         # ``airframe.PLANNING_BIAS``.
         self.assertAlmostEqual(got, cfg.HAC_LD, delta=0.15)
 
-    def test_the_approach_ratio_has_its_own_switch(self):
-        """It halves the committed constant, which the constant's own
-        comment says was destructive the last two times.  It does not ride
-        along with the two that reproduce their fits."""
-        cfg = Config()
+    def _polar_env(self, cfg):
         env = FakeEnv(cfg, rows=flownpolar.ROWS)
         measured = airframe.measure(env, flownpolar.MASS, flownpolar.GRAVITY)
         env.stall_speed = measured.stall_speed
         env.best_ld = measured.best_ld
-        self.assertEqual(
-            airframe.approach_ld(env, cfg, 500.0, flownpolar.MASS,
-                                 flownpolar.GRAVITY),
-            cfg.APPROACH_BEST_LD)
+        return env, measured
 
-    def test_the_committed_constant_matches_the_flights_not_the_comment(self):
-        """Resolved, the other way round from how it looked.
-
-        ``APPROACH_BEST_LD`` is 4.2 above a comment stating its measurement
-        as "mean 2.08 sd 0.27 over 41 flights", which read like a constant
-        at twice its own evidence.  Re-run on the 2026-09-21 batch, the
-        rollout-to-wheels ratio is **3.96 sd 0.41** -- the constant is
-        right and the comment is stale.  Failure 23: a quantity measured
-        from flight data describes the vehicle as it was flown.
-        """
+    def test_the_approach_is_planned_in_the_middle_of_its_span(self):
+        """No configured ratio: the clean reach (the glide at the approach
+        speed and the flare's float) times the root of the braked span, so
+        the plan is as far from the stretch as from the brake's stop
+        (LOG15006 short at the shuttle's 4.2; reach-1031 0/12 short at the
+        clean reach)."""
         cfg = Config()
-        self.assertAlmostEqual(cfg.APPROACH_BEST_LD, 3.96, delta=0.5)
+        env, measured = self._polar_env(cfg)
+        m, g = flownpolar.MASS, flownpolar.GRAVITY
+        glide = airframe.approach_glide_ld(env, cfg, m, g)
+        lift = airframe.approach_float_m(env, cfg, g)
+        self.assertIsNotNone(glide)
+        self.assertLess(glide, measured.best_ld + 1e-9)   # fast is draggy
+        self.assertGreater(lift, 0.0)
+        reach = airframe.approach_reach_ld(env, cfg, cfg.GATE_ALT_M, m, g)
+        self.assertAlmostEqual(reach, glide * (cfg.GATE_ALT_M + lift)
+                               / cfg.GATE_ALT_M)
+        env.approach_brake_factor = 0.45
+        plan = airframe.approach_ld(env, cfg, cfg.GATE_ALT_M, m, g)
+        self.assertAlmostEqual(plan, reach * math.sqrt(0.45))
+        # One ratio per flight, whatever the height asked at.
+        self.assertEqual(plan, airframe.approach_ld(env, cfg, 300.0, m, g))
+        # No brake: the S-turn's span.
+        env.approach_brake_factor = None
+        self.assertAlmostEqual(
+            airframe.approach_ld(env, cfg, cfg.GATE_ALT_M, m, g),
+            reach * math.sqrt(math.cos(math.radians(
+                cfg.APPROACH_SCURVE_MAX_DEG))))
+
+    def test_it_reproduces_the_constant_on_the_craft_it_was_measured_on(self):
+        """qs_shuttle2: L/D 4.80 at 125 m/s, 642 m of float, split stop
+        0.45 (reach-1031's STANDBY line) -> 4.25, where ``APPROACH_BEST_LD``
+        was 4.2 and landed it."""
+        reach = 4.80 * (2000.0 + 642.0) / 2000.0
+        self.assertAlmostEqual(reach * math.sqrt(0.45), 4.2, delta=0.1)
+
+    def test_the_glide_is_the_standby_reading_scaled_by_the_flown(self):
+        """The table re-probed in flight reads at the surfaces' deflection
+        (2.4 to 5.6 on one craft): STANDBY's reading is kept, and only the
+        measured flown/table scale moves it."""
+        cfg = Config()
+        env, _ = self._polar_env(cfg)
+        env.approach_glide_ld = 4.0
+        self.assertEqual(airframe.approach_glide_ld(
+            env, cfg, flownpolar.MASS, flownpolar.GRAVITY), 4.0)
+        env.approach_ld_scale = 0.9
+        self.assertAlmostEqual(airframe.approach_glide_ld(
+            env, cfg, flownpolar.MASS, flownpolar.GRAVITY), 3.6)
+
+    def test_no_table_no_approach_ratio(self):
+        """A missing answer must not look like a good one."""
+        cfg = Config()
+        env = FakeEnv(cfg, rows=flownpolar.ROWS)
+        env.stall_speed = None
+        self.assertIsNone(airframe.approach_ld(
+            env, cfg, cfg.GATE_ALT_M, flownpolar.MASS, flownpolar.GRAVITY))
 
     def _env(self, trim_ratio=None, mass=None, discount=False):
         cfg = Config()
@@ -2527,8 +2553,7 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         for name in ("guidance.py", "trajectory.py", "environment.py"):
             with open(os.path.join(here, "spaceplane", name)) as fh:
                 source = fh.read()
-            for const in ("FAKE_STALL", "cfg.APPROACH_BEST_LD",
-                          "cfg.HAC_LD"):
+            for const in ("FAKE_STALL", "cfg.HAC_LD"):
                 self.assertNotIn(const, source,
                                  "%s reads %s directly" % (name, const))
 
@@ -3003,8 +3028,12 @@ class TestTheGateIsMovedInNotUp(unittest.TestCase):
         an order of magnitude more than the gap."""
         cfg = Config()
         to_fly = cfg.GATE_DIST_M + cfg.TOUCHDOWN_AIM_M
-        self.assertGreater(cfg.GATE_ALT_M * cfg.APPROACH_BEST_LD,
-                           0.93 * to_fly)
+        env = FakeEnv(cfg, rows=flownpolar.ROWS)
+        env.stall_speed = airframe.measure(
+            env, flownpolar.MASS, flownpolar.GRAVITY).stall_speed
+        self.assertGreater(cfg.GATE_ALT_M * airframe.approach_ld(
+            env, cfg, cfg.GATE_ALT_M, flownpolar.MASS, flownpolar.GRAVITY),
+            0.93 * to_fly)
 
     def test_the_gate_radius_is_what_the_deorbit_stops_at(self):
         """The coupling that made lifting it expensive, stated where someone
@@ -3014,37 +3043,6 @@ class TestTheGateIsMovedInNotUp(unittest.TestCase):
         # name unrenamed in every bundled module (tools/bundle.py).
         self.assertRegex(source, r"target_radius=\w+\.norm\(gate\)")
 
-    def test_the_approach_ld_is_the_one_it_flies_not_best_glide(self):
-        """**The ratio flown to the wheels, bounded by the polar above it.**
-
-        The old bound here was ``< 2.0``, written when the approach was flown
-        at 2.40 times the stall -- 127 m/s with 69 of sink is L/D 1.54 -- and
-        when the constant described the APPROACH phase alone. It now has to
-        describe the rollout *to the wheels*, flare included, because where
-        the wheels touch is what it sizes; measured over 41 flights that is
-        2.08 (sd 0.27). What cannot move is the ceiling: the vehicle cannot
-        glide better than its own clean polar, about 2.19, so a value above
-        that is a transcription error rather than a re-measurement.
-
-        **And the landing configuration flies 4.2, which is not a glide
-        ratio at all.**  That is recorded here rather than asserted away: at
-        4.2 the ``reachable`` distance the approach computes is small, the
-        ``excess`` is large, and the constant is doing the job of a
-        *dissipation* gain -- how much surplus height the S-turn is told to
-        spend -- not of a polar.  The flights are unambiguous (9 of 9 on the
-        runway, 9 of 9 inside the strip) and so is the contradiction: this is
-        a constant wearing a missing model's clothes, exactly the shape
-        CLAUDE.md names, and the model it stands in for has not been written.
-        The guard that survives is the one about the *sign and scale* of the
-        thing, so that a transcription error still fails here.
-        """
-        cfg = Config()
-        self.assertGreater(cfg.APPROACH_BEST_LD, 1.0)
-        self.assertLess(cfg.APPROACH_BEST_LD, 10.0)
-        # The physical reading of it, kept as a named fact rather than a
-        # silent assumption: a *glide ratio* for this airframe cannot exceed
-        # its clean polar.
-        self.assertLess(2.19, 2.2, "the airframe's clean best glide")
 
 
 class TestTheCoastWarpsTheVacuumPart(unittest.TestCase):

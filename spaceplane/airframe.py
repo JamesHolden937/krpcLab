@@ -313,12 +313,124 @@ def cone_ld(env, cfg, speed, altitude, mass, gravity):
     return cfg.HAC_LD
 
 
+def approach_float_m(env, cfg, gravity):
+    """The flare's float as a height, ``(v_app^2 - v_stall^2) / 2g``;
+    ``None`` without a table."""
+    vs = stall(env, cfg)
+    if vs is None or gravity <= 0.0:
+        return None
+    speed = cfg.APPROACH_FACTOR * vs
+    return max(0.0, speed * speed - vs * vs) / (2.0 * gravity)
+
+
 def approach_ld(env, cfg, altitude, mass, gravity):
-    """Ground per metre of height on final, rollout to wheels:
-    ``APPROACH_BEST_LD``.  It includes the flare's float, so it is not the
-    straight glide ratio; ``landsum.py`` measures it (2.6-3.0 on the
-    shuttle's good landings of 2026-10-08, 3.4-4.0 on its long ones)."""
-    return cfg.APPROACH_BEST_LD
+    """Ground per metre of height the approach plans with, from the gate
+    to the wheels: **the middle of what this airframe can do**, or ``None``
+    before its table has been read.
+
+    The top of the span is the clean reach, ``approach_reach_ld``: the
+    straight glide at the approach speed and the flare's float.  The bottom
+    is the same with the split rudder at its stop (``approach_brake_span``).
+    The plan sits at their geometric mean, so a gust or a mis-flown cone
+    has as much authority to answer it one way as the other -- and a
+    vehicle can only *stretch* by giving back brake it was planned to be
+    using.  Planned at the top, every shortfall is a short landing
+    (reach-1031, LOG15007-15018: 0/12, all short at 6.3).
+
+    Taken at ``GATE_ALT_M`` -- the height the gate and the cone's handover
+    are sized on -- so it is one ratio per flight, as the constant was.
+
+    It replaced ``APPROACH_BEST_LD`` 4.2, measured on qs_shuttle2, whose
+    span is 2.85-6.33: the middle is 4.25, which is why 4.2 landed it.  On
+    the Heavy Shuttle (best glide 3.0) the same 4.2 is above its clean reach
+    of ~3.5: the gate went 7.2 km out and the wheels 765 m short
+    (LOG15006).
+    """
+    reach = approach_reach_ld(env, cfg, cfg.GATE_ALT_M, mass, gravity)
+    if reach is None:
+        return None
+    return reach * math.sqrt(approach_brake_span(env, cfg))
+
+
+def approach_brake_span(env, cfg):
+    """The braked ratio over the clean one, at the brake's stop:
+    ``env.approach_brake_factor`` (the split rudder's last
+    ``APPROACH_SPLIT_FACTOR``, set when the pair is found) or, with no
+    brake, what the S-turn spends at ``APPROACH_SCURVE_MAX_DEG``."""
+    got = getattr(env, "approach_brake_factor", None)
+    if got is None or got <= 0.0:
+        got = math.cos(math.radians(cfg.APPROACH_SCURVE_MAX_DEG))
+    return min(1.0, max(0.05, float(got)))
+
+
+def approach_reach_ld(env, cfg, altitude, mass, gravity):
+    """The most ground per metre of height this airframe makes from
+    ``altitude`` to the wheels, clean -- or ``None`` without a table.
+
+    Two terms (``APPROACH_LD_DERIVED``, removed 2026-10-09, had only the
+    first): the straight glide at the approach speed
+    (``approach_glide_ld``), and the flare's float -- the speed above the
+    stall is range too, spent at the same ratio (dE/ds = D/L), so the
+    height is credited with ``(v_app^2 - v_stall^2) / 2g``.  Clean,
+    qs_shuttle2 made 6.1-7.3 per metre from the cone's exit against 6.33
+    here; the Heavy Shuttle 3.41 (LOG15006, brake out a quarter of the way)
+    against ~3.5.
+    """
+    glide = approach_glide_ld(env, cfg, mass, gravity)
+    lift = approach_float_m(env, cfg, gravity)
+    if glide is None or lift is None:
+        return None
+    height = max(1.0, altitude)
+    return glide * (height + lift) / height
+
+
+def approach_glide_ld(env, cfg, mass, gravity):
+    """The straight glide ratio at the approach speed, ``APPROACH_FACTOR``
+    x stall, at one g wings level -- ``cla/cda`` at ``alpha_for_load``, not
+    best glide, because the approach is flown fast -- scaled by what the
+    vehicle is measured to fly against its table
+    (``env.approach_ld_scale``, from ``Autopilot.measure_hac_ld``; 0.94-1.16
+    on both shuttles).  ``None`` without a table.
+
+    A ratio at a fixed multiple of the stall is a ratio at a fixed lift
+    coefficient, so it does not depend on the mass: read once off the
+    STANDBY sweep and kept on ``env.approach_glide_ld``.  It has to be read
+    then -- the table re-probed in flight is taken at the surfaces' present
+    deflection, and on ``qs_stackorb_live1028`` its landing-mass best glide
+    read anywhere from 2.4 to 5.6 on one craft.
+    """
+    glide = getattr(env, "approach_glide_ld", None)
+    if glide is None:
+        glide = approach_glide_table(env, cfg, mass, gravity)
+    if glide is None or glide <= 0.0:
+        return None
+    scale = getattr(env, "approach_ld_scale", None)
+    if scale is not None and scale > 0.0:
+        glide *= scale
+    return glide
+
+
+def approach_glide_table(env, cfg, mass, gravity):
+    """``approach_glide_ld`` off the table now, unscaled: what STANDBY
+    keeps on ``env.approach_glide_ld``."""
+    vs = stall(env, cfg)
+    if vs is None or mass <= 0.0 or gravity <= 0.0:
+        return None
+    from . import trajectory              # local: trajectory has no airframe
+    speed = cfg.APPROACH_FACTOR * vs
+    altitude = cfg.GATE_ALT_M
+    try:
+        alpha = trajectory.alpha_for_load(env, speed, altitude, mass,
+                                          gravity)
+        if alpha is None:
+            return None
+        cla, cda = env.coefficients(alpha, speed, altitude)
+    except Exception:                                       # noqa: BLE001
+        return None
+    if cla <= 0.0 or cda <= 0.0:
+        return None
+    return cla / cda
+
 
 def touchdown_aim(env, cfg):
     """Where the final's glide line meets the runway, metres past the

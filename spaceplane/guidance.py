@@ -1139,7 +1139,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # left.**  Serpentining at ``theta`` flies ``1/cos(theta)`` times as far
     # for the same progress, and the shortfall has exactly that shape:
     # ``distance`` is the path a straight-in final would fly and
-    # ``height * APPROACH_BEST_LD`` is the path the height can pay for.
+    # ``height * airframe.approach_ld`` is the path the height can pay for.
     # Zero by construction the moment the vehicle is on profile, and off
     # near the ground and near the aim, where the cross-track it creates has
     # no time left to be taken back.
@@ -1328,8 +1328,8 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # the same ratio (dE/ds = D/L).  The four diverts were at 150-155 m/s
     # against a 93 m/s best glide -- some 720 m of height uncounted.  The
     # table's own numbers (``env.best_ld`` / ``best_speed``, re-read at the
-    # landing mass), not the configured ``APPROACH_BEST_LD``: the first cut
-    # of this read that and changed nothing.
+    # landing mass), not the approach's planning ratio: the first cut of
+    # this read that and changed nothing.
     reach_ld = clean_ld
     energy = height
     if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
@@ -2370,10 +2370,11 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # The gate is at ``(0, -side * radius)`` in this circle's frame, so the
     # range to it is one hypotenuse and it is not ambiguous about anything.
     gate_range = math.hypot(distance * ux, side * radius + distance * uy)
-    approach_needed = ((gate_range + gate_dist(env, cfg)
+    plan_ratio = airframe.approach_ld(env, cfg, height, mass, gravity)
+    approach_needed = (None if plan_ratio is None else
+                       (gate_range + gate_dist(env, cfg)
                         + airframe.touchdown_aim(env, cfg))
-                       / max(0.1, airframe.approach_ld(env, cfg, height,
-                                                       mass, gravity)))
+                       / max(0.1, plan_ratio))
     command = HacCommand(alpha, bank, math.degrees(turn), distance, radius,
                          laps, side, height, needed, speed, sink)
     command.path = total

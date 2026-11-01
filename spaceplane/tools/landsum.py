@@ -159,7 +159,7 @@ def main(argv):
     ratios = [r["ratio"] for r in rows if r["ratio"]]
     if ratios:
         print("  rollout->wheels ratio mean %.2f sd %.2f  (sizes "
-              "APPROACH_BEST_LD and GATE_ALT_M)"
+              "airframe.approach_ld and GATE_ALT_M)"
               % (statistics.mean(ratios),
                  statistics.stdev(ratios) if len(ratios) > 1 else 0.0))
     if landed:
