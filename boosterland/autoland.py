@@ -169,18 +169,23 @@ def set_gimbal_roll(vessel, enabled):
     the whole burn.  Off, roll is left to RCS and wheels -- the torque kRPC
     actually credits.  ``ModuleGimbal.enableRoll``, the editor's hidden
     per-axis toggle; returns the line to log."""
-    done, refused = 0, 0
+    done, refused, why = 0, 0, None
     for engine in vessel.parts.engines:
         try:
             for module in engine.part.modules:
                 if module.name == "ModuleGimbal":
-                    module.set_field_bool_by_id("enableRoll", bool(enabled))
+                    partmodule.set_field_bool_by_id(module, "enableRoll",
+                                                    enabled)
                     done += 1
-        except Exception:               # noqa: BLE001 -- KSP-side failure
+        except Exception as exc:        # noqa: BLE001 -- KSP-side failure
             refused += 1
+            why = why or "%s: %s" % (type(exc).__name__, exc)
+    # Say why: from the move to kRPC 0.7 until LOG15102 every booster flew
+    # with roll on its gimbals, logged as "0 engines (n refused)" and an
+    # AttributeError nobody saw.
     return ("gimbal roll %s on %d engines%s"
             % ("enabled" if enabled else "disabled", done,
-               " (%d refused)" % refused if refused else ""))
+               " (%d refused, %s)" % (refused, why) if refused else ""))
 
 
 class EngineCluster:
