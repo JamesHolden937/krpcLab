@@ -2572,6 +2572,15 @@ class Autopilot:
                 return
         except Exception:                               # noqa: BLE001
             pass
+        # **Not before the stall is known**: the probe flies at the
+        # approach's speed, which is a multiple of it.  It is read off the
+        # swept table later in the first STANDBY tick, and returning here
+        # after the latch below skipped the measurement for good -- the
+        # live heavy shuttle flew the geometric set, never measured
+        # (LOG14999).  The next tick is still in vacuum.
+        if airframe.stall(self.env, self.cfg) is None \
+                and snap.dynamic_pressure <= 1.0:
+            return
         self._brake_measured = True
         if getattr(self, "vacuum_surfaces", None) is not None:
             self.vacuum_surfaces.suspend("measuring the brake")
@@ -2592,9 +2601,21 @@ class Autopilot:
         speed = self.cfg.APPROACH_FACTOR * vs
         alpha = float(self.cfg.AIRBRAKE_MEASURE_ALPHA_DEG)
         try:
+            # **The base is read with every surface where the probes will
+            # find it.**  ``suspend`` has just released the vacuum hold, so
+            # the surfaces are still travelling from neutral to whatever the
+            # controls hold; read at once, the base was the held airframe and
+            # every probe after it the released one -- each surface read
+            # ~+280 dCmA in *both* senses and nothing armed from 2026-10-21
+            # (``VACUUM_SURFACE_HOLD``) to 10-31.  So settle first, and take
+            # a fresh base before each surface and each verification: a
+            # difference of two wrenches a few frames apart, not one taken
+            # at the start.
+            self.settle_game(settle)
             base = self._probe_wrench(alt, speed, alpha)
             samples = []
             for r in horizontals:
+                base = self._probe_wrench(alt, speed, alpha)
                 got = []
                 for angle in (theta, -theta):
                     self._deploy_surface(r, angle, True)
@@ -2622,11 +2643,12 @@ class Autopilot:
                 for attempt in range(1 + int(self.cfg.AIRBRAKE_MEASURE_ITER)):
                     if not chosen.any:
                         break
+                    ref = self._probe_wrench(alt, speed, alpha)
                     for r, m in chosen.surfaces():
                         self._deploy_surface(r, theta * m, True)
                     self.settle_game(settle)
                     w = self._probe_wrench(alt, speed, alpha)
-                    verified = (w[0] - base[0], w[1] - base[1])
+                    verified = (w[0] - ref[0], w[1] - ref[1])
                     for r, _ in chosen.surfaces():
                         self._deploy_surface(r, 0.0, False)
                     self.settle_game(settle)
