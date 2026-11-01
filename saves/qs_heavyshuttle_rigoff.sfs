@@ -7873,7 +7873,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 2880
+					amount = 294.9120
 					maxAmount = 2880
 					flowState = True
 					isTweakable = True
@@ -7884,7 +7884,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 3520
+					amount = 360.4480
 					maxAmount = 3520
 					flowState = True
 					isTweakable = True
@@ -8133,7 +8133,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 1440
+					amount = 147.4560
 					maxAmount = 1440
 					flowState = True
 					isTweakable = True
@@ -8144,7 +8144,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 1760
+					amount = 180.2240
 					maxAmount = 1760
 					flowState = True
 					isTweakable = True
@@ -8376,7 +8376,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 360
+					amount = 36.8640
 					maxAmount = 360
 					flowState = True
 					isTweakable = True
@@ -8387,7 +8387,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 440
+					amount = 45.0560
 					maxAmount = 440
 					flowState = True
 					isTweakable = True
@@ -13349,7 +13349,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 2880
+					amount = 294.9120
 					maxAmount = 2880
 					flowState = True
 					isTweakable = True
@@ -13360,7 +13360,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 3520
+					amount = 360.4480
 					maxAmount = 3520
 					flowState = True
 					isTweakable = True
@@ -13609,7 +13609,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 1440
+					amount = 147.4560
 					maxAmount = 1440
 					flowState = True
 					isTweakable = True
@@ -13620,7 +13620,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 1760
+					amount = 180.2240
 					maxAmount = 1760
 					flowState = True
 					isTweakable = True
@@ -13852,7 +13852,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 360
+					amount = 36.8640
 					maxAmount = 360
 					flowState = True
 					isTweakable = True
@@ -13863,7 +13863,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 440
+					amount = 45.0560
 					maxAmount = 440
 					flowState = True
 					isTweakable = True
@@ -23517,7 +23517,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 1440
+					amount = 147.4560
 					maxAmount = 1440
 					flowState = True
 					isTweakable = True
@@ -23528,7 +23528,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 1760
+					amount = 180.2240
 					maxAmount = 1760
 					flowState = True
 					isTweakable = True
@@ -24878,7 +24878,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 360
+					amount = 36.8640
 					maxAmount = 360
 					flowState = True
 					isTweakable = True
@@ -24889,7 +24889,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 440
+					amount = 45.0560
 					maxAmount = 440
 					flowState = True
 					isTweakable = True
@@ -25158,7 +25158,7 @@ GAME
 				RESOURCE
 				{
 					name = LiquidFuel
-					amount = 90
+					amount = 9.2160
 					maxAmount = 90
 					flowState = True
 					isTweakable = True
@@ -25169,7 +25169,7 @@ GAME
 				RESOURCE
 				{
 					name = Oxidizer
-					amount = 110
+					amount = 11.2640
 					maxAmount = 110
 					flowState = True
 					isTweakable = True

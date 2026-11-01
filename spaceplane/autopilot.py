@@ -3002,25 +3002,34 @@ class Autopilot:
         self.env.best_speed = measured.best_speed
         self.env.stall_alpha = measured.stall_alpha
         if not landing and measured.stall_speed is not None:
-            # The approach's glide ratio off the clean sweep, once: see
+            # The approach's glide ratio off the clean sweep, once, at the
+            # mass it lands at (the drain dumps the rest): see
             # ``airframe.approach_glide_ld``.
+            try:
+                self.approach_mass = float(self.vessel.dry_mass)
+            except Exception:                           # noqa: BLE001
+                self.approach_mass = mass
             self.env.approach_glide_ld = airframe.approach_glide_table(
-                self.env, self.cfg, mass, self.surface_gravity)
+                self.env, self.cfg, self.approach_mass, self.surface_gravity)
             reach = airframe.approach_reach_ld(
-                self.env, self.cfg, self.cfg.GATE_ALT_M, mass,
+                self.env, self.cfg, self.cfg.GATE_ALT_M, self.approach_mass,
                 self.surface_gravity)
             plan = airframe.approach_ld(self.env, self.cfg,
-                                        self.cfg.GATE_ALT_M, mass,
+                                        self.cfg.GATE_ALT_M,
+                                        self.approach_mass,
                                         self.surface_gravity)
             if reach is not None and plan is not None:
                 self.logbook.event(
-                    snap.ut, "approach: L/D %.2f at %.0f m/s, %.0f m of float "
-                             "to the stall -- reach %.2f from %.0f m, braked "
-                             "x%.2f, planned at %.2f"
-                    % (self.env.approach_glide_ld,
+                    snap.ut, "approach at %.2f t: L/D %.2f at %.0f m/s, "
+                             "%.0f m of float to the stall -- reach %.2f "
+                             "from %.0f m, braked x%.2f, planned at %.2f"
+                    % (self.approach_mass / 1000.0,
+                       self.env.approach_glide_ld,
                        self.cfg.APPROACH_FACTOR
-                       * airframe.stall(self.env, self.cfg),
+                       * airframe.stall_at(self.env, self.cfg,
+                                           self.approach_mass),
                        airframe.approach_float_m(self.env, self.cfg,
+                                                 self.approach_mass,
                                                  self.surface_gravity),
                        reach, self.cfg.GATE_ALT_M,
                        airframe.approach_brake_span(self.env, self.cfg),
@@ -3031,9 +3040,9 @@ class Autopilot:
             # See ``Config.GATE_FROM_APPROACH``.  Once, before the deorbit,
             # so the geometry the entry is solved to never moves.
             # No table, no ratio: the gate stays at ``GATE_DIST_M``.
-            ratio = airframe.approach_ld(self.env, self.cfg,
-                                         self.cfg.GATE_ALT_M, mass,
-                                         self.surface_gravity)
+            ratio = airframe.approach_ld(
+                self.env, self.cfg, self.cfg.GATE_ALT_M,
+                getattr(self, "approach_mass", mass), self.surface_gravity)
         else:
             ratio = None
         if ratio is not None:

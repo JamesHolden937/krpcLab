@@ -2391,7 +2391,7 @@ class TestTheLandingIsSizedOnTheAircraftThatIsFlown(unittest.TestCase):
         env, measured = self._polar_env(cfg)
         m, g = flownpolar.MASS, flownpolar.GRAVITY
         glide = airframe.approach_glide_ld(env, cfg, m, g)
-        lift = airframe.approach_float_m(env, cfg, g)
+        lift = airframe.approach_float_m(env, cfg, m, g)
         self.assertIsNotNone(glide)
         self.assertLess(glide, measured.best_ld + 1e-9)   # fast is draggy
         self.assertGreater(lift, 0.0)

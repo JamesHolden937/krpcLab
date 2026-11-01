@@ -313,10 +313,23 @@ def cone_ld(env, cfg, speed, altitude, mass, gravity):
     return cfg.HAC_LD
 
 
-def approach_float_m(env, cfg, gravity):
-    """The flare's float as a height, ``(v_app^2 - v_stall^2) / 2g``;
-    ``None`` without a table."""
-    vs = stall(env, cfg)
+def stall_at(env, cfg, mass):
+    """The stall speed at ``mass`` rather than at the mass aboard now:
+    ``env.stall_speed`` scaled from ``env.stall_mass`` (``at_mass``'s
+    square root).  ``stall`` when either is unknown."""
+    v0 = getattr(env, "stall_speed", None)
+    m0 = getattr(env, "stall_mass", None)
+    if v0 is None or v0 <= 0.0:
+        return None
+    if m0 and m0 > 0.0 and mass and mass > 0.0:
+        return v0 * math.sqrt(mass / m0)
+    return stall(env, cfg)
+
+
+def approach_float_m(env, cfg, mass, gravity):
+    """The flare's float as a height at ``mass``, ``(v_app^2 -
+    v_stall^2) / 2g``; ``None`` without a table."""
+    vs = stall_at(env, cfg, mass)
     if vs is None or gravity <= 0.0:
         return None
     speed = cfg.APPROACH_FACTOR * vs
@@ -377,7 +390,7 @@ def approach_reach_ld(env, cfg, altitude, mass, gravity):
     against ~3.5.
     """
     glide = approach_glide_ld(env, cfg, mass, gravity)
-    lift = approach_float_m(env, cfg, gravity)
+    lift = approach_float_m(env, cfg, mass, gravity)
     if glide is None or lift is None:
         return None
     height = max(1.0, altitude)
@@ -411,9 +424,13 @@ def approach_glide_ld(env, cfg, mass, gravity):
 
 
 def approach_glide_table(env, cfg, mass, gravity):
-    """``approach_glide_ld`` off the table now, unscaled: what STANDBY
-    keeps on ``env.approach_glide_ld``."""
-    vs = stall(env, cfg)
+    """``approach_glide_ld`` off the table now, unscaled, at ``mass``: what
+    STANDBY keeps on ``env.approach_glide_ld``, read at the dry mass the
+    approach is flown at.  The ratio at a fixed multiple of the stall does
+    not depend on the mass *at one Mach*, but the speed does: read at the
+    full 182.6 t of a refilled Heavy Shuttle the "approach" was 210 m/s,
+    Mach 0.6, and L/D 1.70 (LOG15019)."""
+    vs = stall_at(env, cfg, mass)
     if vs is None or mass <= 0.0 or gravity <= 0.0:
         return None
     from . import trajectory              # local: trajectory has no airframe
