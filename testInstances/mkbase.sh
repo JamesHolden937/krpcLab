@@ -160,6 +160,23 @@ if [ -f "$HERE/collisionSpySrc/CollisionSpy.cs" ] && command -v mcs >/dev/null; 
   echo "CollisionSpy installed"
 fi
 
+# --- the drain-valve selector ---------------------------------------------
+# A release valve drains only the resources ticked in its part menu, and kRPC
+# cannot reach those ticks; this adds an event it can ("Release propellant").
+# The spaceplane triggers it at startup on any valve with nothing ticked.
+if [ -f "$HERE/drainSelectSrc/DrainSelect.cs" ] && command -v mcs >/dev/null; then
+  M="$BASE/KSP_x64_Data/Managed"
+  D="$BASE/GameData/DrainSelect"
+  mkdir -p "$D"
+  mcs -target:library -out:"$D/DrainSelect.dll" \
+      -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.dll" \
+      -r:"$M/UnityEngine.CoreModule.dll" -r:"$M/UnityEngine.UI.dll" \
+      "$HERE/drainSelectSrc/DrainSelect.cs" || {
+        echo "DrainSelect build failed" >&2; exit 1; }
+  cp -f "$HERE/drainSelectSrc/DrainSelect.cfg" "$D/"
+  echo "DrainSelect installed"
+fi
+
 # --- frame rate: vsync off, and only as many frames as the speedup needs ---
 # SYNC_VBL pins the instance to the virtual output's 60 Hz, and that pins the
 # achievable time scale: Unity applies control input once a frame, so the

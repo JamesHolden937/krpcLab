@@ -2327,6 +2327,8 @@ class Autopilot:
                     if module.name == "ModuleResourceDrain":
                         self.log_drain_module(module, len(found))
                         if self._drain_has_propellant(part, len(found)):
+                            self._select_drain_resources(part, module,
+                                                         len(found))
                             found.append(module)
         except Exception:                               # noqa: BLE001
             pass
@@ -2360,6 +2362,51 @@ class Autopilot:
                                 "own parent part; move it onto a tank"
                            % (index, title, "/".join(names)))
         return False
+
+    def _select_drain_resources(self, part, module, index):
+        """Tick the valve's propellant when the craft saved it ticking none.
+
+        **A valve drains only the resources ticked "yes" in its part menu**,
+        and its ``Resources`` field is how many are ticked.  The heavy
+        shuttle's valves came in at ``'Resources': '0'``: both opened onto
+        nothing, the watch read 0.0 units/s and the entry flew 1672 units
+        wet (LOG14998).  The ticks are no field, event or action kRPC can
+        reach (the menu calls ``TogglePartResource`` directly), so the farm's
+        ``DrainSelect`` plugin puts a module beside every valve whose
+        "Release propellant" event ticks LiquidFuel and Oxidizer through the
+        game's own ``UpdateResourcesToRelease``.  Without the plugin this says
+        so and the drain flies as before.
+        """
+        try:
+            ticked = int(str(partmodule.get_field(module, "Resources")).strip())
+        except Exception:                               # noqa: BLE001
+            return
+        if ticked > 0:
+            return
+        selector = None
+        try:
+            for other in part.modules:
+                if other.name == "ModuleDrainSelect":
+                    selector = other
+                    break
+        except Exception:                               # noqa: BLE001
+            pass
+        if selector is None or not partmodule.has_event(
+                selector, "Release propellant"):
+            self.logbook.event(0.0, "drain module %d has no resource ticked "
+                                    "to release and no DrainSelect module to "
+                                    "tick one -- it will drain nothing "
+                                    "(install testInstances/drainSelectSrc)"
+                               % (index,))
+            return
+        try:
+            partmodule.trigger_event(selector, "Release propellant")
+            after = str(partmodule.get_field(module, "Resources")).strip()
+        except Exception as exc:                        # noqa: BLE001
+            after = "error %s" % (exc,)
+        self.logbook.event(0.0, "drain module %d had no resource ticked: "
+                                "Release propellant -> 'Resources' %s"
+                           % (index, after))
 
     def _surface_records(self):
         """Every control surface as a plain record, in the vessel frame.
