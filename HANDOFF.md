@@ -1,45 +1,25 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-29 night: spaceplane -- roll held back only as far as the rudder can coordinate, in every winged phase (fingerprint `04b7cad1`)
+## 2026-10-31: spaceplane -- the brake probe sees again; bank before alpha below 1 km/s (fingerprint `72937e7a`)
 
-Committed and pushed; farm stopped. Journal: "Session, 2026-10-28 late / 10-29". howItWorks.pdf updated.
+Committed and pushed; farm stopped. Journal: "Session, 2026-10-31". howItWorks.pdf updated. **Both changes are default and unflown on the farm: the user is testing live.**
 
-**Started from the user's live LOG14863** (`dbdcefee`: intact, 12.6 km short, 6.2 km south). Three findings:
-- the cone couldn't bank: roll pinned at yaw's 10 s x1.91;
-- the azimuth floor read roll's 2.8 s damper figure, not the applied 10 s, so the bank chattered below Mach 3;
-- a ~13 s hypersonic wag on yaw.
-
-**Now the default (commit 4c7bfcd).** In GLIDE/HAC/APPROACH/FLARE, roll's time_to_peak is floored at the slowest roll the rudder can coordinate, the user's law: `coord_roll_floor` = sqrt(dphi sin(alpha) I_yaw / (wheel+surface torque, smoothed, no RCS)).
-- dphi is the largest reversal lately commanded, decaying over `ROLL_DAMPER_RECOVER_S`.
-- The floor slews toward yaw's static figure (x `GLIDE_ROLL_YAW_SHARE`) as the yaw input, held and decaying over `ROLL_COORD_HEADROOM_DECAY_S` 20 s, rises from `ROLL_COORD_HEADROOM_LO` 0.5 to `_HI` 0.9 (`yaw_headroom_used`).
-- Yaw ignores the RCS-open figure.
-- The azimuth floor reads the applied roll lag (`roll_lag_s()`, commit 3437e4a).
-- Deleted: `HAC_ROLL_WITH_YAW`, `HAC_ROLL_YAW_REF_ALPHA_DEG`, `hac_roll_floor`, the glide's flat 10 s floor, and `YAW_AIR_TUNE`.
-
-**Measured (all on `qs_stackorb_live1028`):**
-
-| batch | arms | result |
-|---|---|---|
-| coord1028 | v1 (floor on the current 2\|bank\|) v defaults, 11 an arm | v1: 8/11 landed 7-61 km short. Roll's tune swung 2.8-6.9 s as 2\|bank\| passed zero mid-reversal, and yaw's tune followed the RCS relay |
-| coord2-1028 | defaults / v2 (held dphi, no RCS yaw) / v2+`YAW_AIR_TUNE`, 12 an arm | v2 6/12 and v2+YAW 6/12 reached the cone 6-27 km short; defaults 0/12. They departed below Mach 3 with yaw input pinned at 1.0 (bank +89 against -30 commanded, then inverted, slip 27): kRPC's surface torque counts the fins at full effect at 30 deg alpha. `YAW_AIR_TUNE`: Mach 5-7 bank error unchanged -> deleted |
-| coord3-1029 | defaults v v3 (+ yaw headroom), 18 an arm | landed >3 km off: v3 1/18, defaults 6/18. Along-track sd with one outlier each excluded: 0.75 km against 2.6. No departures. Cone arrivals slightly shorter: median long -0.7 against -0.3 km; arrivals >2 km short 7 v 3. Intact rate similar (rollout breakups at 50-105 m/s in both) -> **promoted** |
-| breadth-1029 | new defaults on `qs_shuttle2_rigoff`, 12 | 8/12 intact on the runway, 11/12 within 1.6 km, one intact 8.5 km short; 2 rollout breakups at 70-93 m/s. No regression seen on the twin-fin shuttle (breadth2-1029; breadth-1029 failed to connect: multirot does not start the farm before cycle 0) |
-
-**Where the stack orbiter stands:** lands within ~1 km on most flights. The losses:
-- rollout breakups at 50-105 m/s;
-- one cone in ~18 exits ~3 km short, needing ~40 deg more bank than it flies (LOG14944 and LOG14950, one in each arm);
-- the glide reaches the cone a little shorter under v3.
+**From the user's live LOG14999** (Heavy Shuttle, 63 parts, not a farm save): no surface braked in the air.
+- **The measured spoiler never armed anywhere since 2026-10-21.** Two bugs in `measure_flap_brake`: it latched itself done before the stall speed was known (live: never measured, flew the geometric set), and it read its base the instant the vacuum hold released the surfaces (farm: ~+280 dCmA in both senses, refused every flight). Now it waits for the stall, runs under `_quiet_inputs` (SAS off, inputs zero -- released surfaces followed them), settles, and re-reads the base before each surface and each verification.
+  - 09de46d (settle + rebase, no quiet inputs) flew 6 startups: sane magnitudes, still refused/inconsistent (LOG15000-15005). The quiet-inputs version (a3a64cf) has not flown.
+- **`GLIDE_LOW_ALPHA_SPEED_M_S` 1000 (the user's request):** below 1 km/s the glide holds the table's best-L/D alpha for the Mach, bank takes a surplus first, alpha rises only with bank at 70; short, best L/D is bracketed in; the 20 deg floor relaxes; propagations from above fly best L/D below it. Offline only (FakeEnv): 10 km long -> alpha 16.5, bank 41 (off: 20.8/37.7).
 
 **Next, in order:**
-1. The cone shortfall outliers (LOG14944, LOG14950, LOG14956): `conebank.py` medians 17-43 deg. Is roll or yaw saturated, or is the alpha simply too low to bank?
-2. v3's slightly short cone arrivals: is the glide's M1-3 bank error still costing range? (`wag.py` M1-3 median ~17 against ~15).
-3. The headroom constants 0.5/0.9/20 s are a first guess; the floor's dphi decay borrows `ROLL_DAMPER_RECOVER_S`.
-4. The items carried from 2026-10-28: confirm `HAC_TRIM_AT_TARGET` on the shuttle saves; the stack orbiter's high cone exits and hard rollouts; the shuttle's short touchdowns; the 1.8 m wings-forward bisect; kspSim probe models.
+1. Read the user's live logs: `brake probe` lines and `spoiler (measured) verified ... armed`/`REFUSED`; `glide below 1000 m/s:` and the `aoa=` command after it. If the probe still refuses on the shuttle, read which side is empty ("0 nose-up, 4 nose-down") before changing the selection rule.
+2. Farm: low-alpha on v `GLIDE_LOW_ALPHA_SPEED_M_S=0` on `qs_shuttle2_rigoff` and `qs_stackorb_live1028`, 12 an arm (4 multirot cycles, ~20 min a cycle, ~80 min). Watch the M1-3 lateral summaries (`wag.py`): the point is fewer high-alpha departures.
+3. The spoiler only opens with the split rudder at its stop, and the rudder's angle comes from qs_shuttle2's fitted `APPROACH_/HAC_SPLIT_FACTOR` tables. On a craft whose rudder is weaker than the table, the spoiler waits for nothing.
+4. LOG14999 touched down 118 m off the centreline and ran off sideways with wheel brakes off.
+5. Carried from 2026-10-29: the stack orbiter's cone shortfall outliers (LOG14944/14950/14956), v3's slightly short cone arrivals, the coord-floor headroom constants, `HAC_TRIM_AT_TARGET` on the shuttle saves, the 1.8 m wings-forward bisect, kspSim probe models.
 
 **Traps paid:**
-- kRPC's `available_control_surface_torque` is not the rudder's authority at high alpha: a law sized on it departed. When a law needs an authority, prefer what the control channel is measurably using (input saturation) over kRPC's figure.
-- A floor computed from the current command collapses wherever the command passes through zero (mid-reversal). Hold the largest recent demand.
-- `dbdcefee`'s live failures were also in farm logs (M1-3 bank error 13-58 deg on the defaults): read the farm's own lateral summaries (`wag.py`) before calling a live failure new.
+- kRPC's `deflection_override` *is* a deploy (KRPC.SpaceCenter.xml), and setting `deployed` under it throws. It cannot hold a surface neutral while something else deploys it.
+- `pkill -f '<pattern>'` in a compound Bash command kills its own shell: use `pgrep -f ... | grep -v $$` or a separate call.
+- `pdftohtml -c` loses embedded fonts and leaves some per-page font classes undefined (ft4NN = ft1NN); map them back before printing.
 
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 

@@ -3265,3 +3265,15 @@ Batches: live1028base, ctrim1028a/b, bays1028 (FATAL, no CargoBayState in 0.7), 
 - **breadth-1029** (`qs_shuttle2_rigoff`, new defaults, 12; rerun as breadth2-1029 because multirot does not start the farm before cycle 0): 8/12 intact, 11/12 within 1.6 km, one intact 8.5 km short.
 
 Batches: rollfix1028 (stopped), coord1028, coord2-1028, coord3-1029, breadth-1029.
+
+## Session, 2026-10-31: the brake probe was blind for ten days; bank before alpha below 1 km/s
+
+- **The user's live LOG14999 (Heavy Shuttle, 63 parts, `6e0fbfae`)**: no control surface was ever used as a brake in the air, though the craft has eight. Destroyed in ROLLOUT after touching down 118 m off the centreline (a lateral problem, not chased).
+- **Cause 1, live: the probe never ran.** `measure_flap_brake` needs the stall speed, which is set later in the first STANDBY tick; it returned on `vs is None` *after* latching `_brake_measured`, so it never retried and the geometric opposed-flap set flew (on Mk3 elevons it opens some surfaces lift-up). Since bbfd1e9 (2026-10-05) wherever the stall came late. Fixed: it waits for the stall.
+- **Cause 2, farm: the probe was blind from 2026-10-21 (`VACUUM_SURFACE_HOLD`, b2a4d74) to today.** It read its base the instant `suspend` released the vacuum hold, so every surface read ~+280 dCmA in *both* senses (LOG13884 onward) and no flight armed a spoiler after LOG14149. Settling first (09de46d) gave sane magnitudes but still refused (LOG15000-15005: some elevons added lift both ways, and identical runs disagreed): released surfaces follow SAS and the client's inputs, so +-15 deploys sat on a standing deflection. kRPC's `deflection_override` is itself a deploy (its own docs), so it cannot hold them. Fixed (a3a64cf): the probe runs under `_quiet_inputs` and re-reads the base before each surface and each verification. **Unflown.**
+- **Not changed: the spoiler waits for the split rudder at its stop.** In LOG14999 the cone read itself short (need > h) all the way, so no cone brake was asked for; the approach opened the rudder to 12 deg (factor 0.89, 149 m/s against 115 held) and spent its +254 m in 17 s, so the spoiler was never reached.
+- **`GLIDE_LOW_ALPHA_SPEED_M_S` 1000 (the user: no part heats below ~1 km/s), default, unflown.** Below it the solve holds the table's best-L/D alpha at the Mach flown (`trajectory.best_ld_alpha`, ~16 deg on FakeEnv), spends a surplus on bank first and raises alpha only with bank at 70; short, it brackets the span with best L/D as a candidate; the 20 deg floor relaxes; propagations starting above the speed fly best L/D below it (`low_alpha_cap`), and the glide sets `env.low_alpha_free` under it. Offline (FakeEnv, 900 m/s, 10 km long): on alpha 16.5 bank 40.7, off 20.8/37.7.
+- **Not measured on the farm:** the user stopped the comparison ("I'll test myself").
+- **Trap paid:** `pkill -f 'krpcLab.py --pilot spaceplane'` inside a compound Bash command matched its own shell and killed it before `git commit` ran.
+
+Batches: probe-1031 (6 flights, startup probe lines only; farm stopped mid-flight).

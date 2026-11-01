@@ -48,7 +48,11 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-28 evening, fingerprint `36bad8b6`)
+## Where it stands (2026-10-31, fingerprint `72937e7a`)
+
+The measured spoiler can arm again: the brake probe had been blind since 2026-10-21 (it read its base as the vacuum hold let go, and with SAS still moving the surfaces) and live it never ran (it latched before the stall was known). Below 1 km/s the glide holds best L/D and steers range with bank, raising alpha only with bank at its stop (`GLIDE_LOW_ALPHA_SPEED_M_S`). Both default and unflown on the farm; the user is testing live. The root HANDOFF.md has the checks to read in the next live log.
+
+## Earlier (2026-10-28 evening, fingerprint `36bad8b6`)
 
 Every cargo bay is shut at startup, before the aero sweep (`CLOSE_BAYS_ON_START`): the live stack orbiter swept with its bay open, flew it shut, and dived out of the cone. The canard trim also learns while the nose falls short the way the stick pushes (`CANARD_TRIM_SHORTFALL`), and the cone's trim is the 1 g alpha at its *target* speed (`HAC_TRIM_AT_TARGET`), so a slow cone accelerates instead of mushing. Reproduce live flights from `qs_stackorb_live1028`. The root HANDOFF.md has the numbers.
 
