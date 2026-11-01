@@ -211,7 +211,11 @@ def alpha_floor(env, cfg, speed, altitude, mass=None, gravity=None):
         mach = env.mach(speed, altitude)
     except Exception:                                   # noqa: BLE001
         return cfg.SOLVE_ALPHA_MIN_DEG
-    if mach >= cfg.SOLVE_ALPHA_SUB_MACH:
+    low = float(getattr(cfg, "GLIDE_LOW_ALPHA_SPEED_M_S", 0.0) or 0.0)
+    # Below ``GLIDE_LOW_ALPHA_SPEED_M_S`` too: the hypersonic range
+    # minimum this floor guards is a thin-air effect, and down there the
+    # solve brackets the span and holds best L/D (``_solve_range``).
+    if mach >= cfg.SOLVE_ALPHA_SUB_MACH and not (0.0 < low and speed < low):
         return cfg.SOLVE_ALPHA_MIN_DEG
     # Subsonically the Mach floor relaxes to best glide -- and the speed
     # floor, when it is on, takes over from there.  The solve has to see the
@@ -327,7 +331,17 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     # shedding is cheap.  See ``glide_reserve``.
     target = (0.0 if getattr(env, "taem", None) is not None
               else glide_reserve(env, cfg, r))
-    if abs(m0[0] - target) <= cfg.SOLVE_DEADBAND_M:
+    # Below ``GLIDE_LOW_ALPHA_SPEED_M_S`` an on-target pair above best L/D
+    # is still re-solved -- bank can usually carry what that alpha does --
+    # and a pair that keeps the miss inside the deadband is good enough to
+    # take, or the glide crosses the speed on target and stays at 40 deg.
+    low = float(getattr(cfg, "GLIDE_LOW_ALPHA_SPEED_M_S", 0.0) or 0.0)
+    pref = None
+    if 0.0 < low and vec.norm(v) < low:
+        pref = trajectory.best_ld_alpha(env, vec.norm(v),
+                                        vec.norm(r) - env.equatorial_radius)
+    high = pref is not None and alpha0 > max(pref, floor) + 0.5
+    if abs(m0[0] - target) <= cfg.SOLVE_DEADBAND_M and not high:
         alpha, magnitude = alpha0, abs(bank0)
     else:
         alpha, magnitude = _solve_range(env, r, v, mass, cfg, end, gate,
@@ -337,16 +351,63 @@ def solve_glide(env, r, v, mass, cfg, end, alpha0, bank0, ceiling=None):
     sign = _bank_sign(env, cfg, r, v, gate, bank0, m0[1])
     bank = sign * magnitude
     return verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
-                    alpha0, bank0, floor, target, top)
+                    alpha0, bank0, floor, target, top,
+                    within=cfg.SOLVE_DEADBAND_M if high else 0.0)
 
 
 def _solve_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0,
                  floor=None, top=None, target=0.0):
-    """Angle of attack first, then bank magnitude on what is left of the miss."""
+    """Angle of attack first, then bank magnitude on what is left of the
+    miss -- except below ``GLIDE_LOW_ALPHA_SPEED_M_S`` (``_solve_low``)."""
     if floor is None:
         floor = cfg.SOLVE_ALPHA_MIN_DEG
     if top is None:
         top = cfg.ALPHA_MAX_DEG
+    low = float(getattr(cfg, "GLIDE_LOW_ALPHA_SPEED_M_S", 0.0) or 0.0)
+    if 0.0 < low and vec.norm(v) < low:
+        pref = trajectory.best_ld_alpha(
+            env, vec.norm(v), vec.norm(r) - env.equatorial_radius)
+        if pref is not None:
+            return _solve_low(env, r, v, mass, cfg, end, gate, alpha0, bank0,
+                              m0, floor, top, target, pref)
+    return _solve_alpha_then_bank(env, r, v, mass, cfg, end, gate, alpha0,
+                                  bank0, m0, floor, top, target)
+
+
+def _solve_low(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0, floor,
+               top, target, pref):
+    """``GLIDE_LOW_ALPHA_SPEED_M_S``: below it, **bank first, alpha last**.
+
+    High alpha is the entry's heat and drag answer; below ~1 km/s no part
+    heats (the user, 2026-10-31) and it is only the attitude where roll and
+    yaw are one axis and the shuttle departs.  So the glide holds the
+    table's best-L/D alpha at this Mach and spends a surplus on bank; alpha
+    rises above best L/D only when bank is at ``BANK_MAX_DEG`` and still
+    long.  Short at best L/D, the whole span is bracketed for the furthest
+    arc, as before -- best L/D is near it subsonically, and nothing is
+    given away by holding it.
+    """
+    sign = 1.0 if bank0 >= 0.0 else -1.0
+    pref = vec.clamp(pref, floor, top)
+    _, probe, mp = _fly(env, r, v, mass, cfg, end, gate, pref, bank0)
+    if probe.skipped or not probe.reached or mp[0] - target <= 0.0:
+        return _solve_alpha_then_bank(env, r, v, mass, cfg, end, gate,
+                                      alpha0, bank0, m0, floor, top, target,
+                                      extra=(pref,))
+    alpha, magnitude = _solve_alpha_then_bank(
+        env, r, v, mass, cfg, end, gate, pref, bank0, mp, pref, pref, target)
+    if top - pref < 0.5 or magnitude < cfg.BANK_MAX_DEG - 0.5:
+        return alpha, magnitude
+    _, _, m1 = _fly(env, r, v, mass, cfg, end, gate, alpha, sign * magnitude)
+    if m1[0] - target <= cfg.SOLVE_DEADBAND_M:
+        return alpha, magnitude
+    return _solve_alpha_then_bank(env, r, v, mass, cfg, end, gate, alpha,
+                                  sign * magnitude, m1, pref, top, target)
+
+
+def _solve_alpha_then_bank(env, r, v, mass, cfg, end, gate, alpha0, bank0,
+                           m0, floor, top, target, extra=()):
+    """Angle of attack first, then bank magnitude on what is left of the miss."""
     magnitude = abs(bank0)
     sign = 1.0 if bank0 >= 0.0 else -1.0
 
@@ -420,6 +481,7 @@ def _solve_range(env, r, v, mass, cfg, end, gate, alpha0, bank0, m0,
     # phase that ticks once a second.
     if top - floor > 2.0 * cfg.SOLVE_ALPHA_PROBE_DEG:
         candidates.append(0.5 * (floor + top))
+    candidates.extend(a for a in extra if floor <= a <= top)
     if slope and abs(slope) * (top - floor) \
             > cfg.SOLVE_MIN_AUTHORITY_M:
         candidates.append(vec.clamp(alpha0 - (m0[0] - target) / slope,
@@ -625,7 +687,7 @@ def azimuth_deadband(env, cfg, r, v, gate, bank0):
 
 
 def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
-             alpha0, bank0, floor=None, target=0.0, top=None):
+             alpha0, bank0, floor=None, target=0.0, top=None, within=0.0):
     """Command the solved pair only if propagating it lands nearer.
 
     The inversion divides the miss by a sensitivity measured from two probes,
@@ -635,6 +697,8 @@ def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
     for the last three ticks of a coast and took a closed miss from 0 to
     -91 m; the guard that fixed it is this one, and it is free, because the
     prediction at the commanded angles is computed anyway to hand back.
+    ``within``: a miss inside it is accepted even if no nearer (the low-
+    speed glide trading alpha for bank, ``solve_glide``).
     """
     if floor is None:
         floor = cfg.SOLVE_ALPHA_MIN_DEG
@@ -655,7 +719,8 @@ def verified(env, r, v, mass, cfg, end, gate, alpha, bank, m0, flat,
             # trajectory can.  Refuse it and let the fallbacks bank instead,
             # which is the control that sinks the vehicle.
             continue
-        if prediction.reached and abs(miss[0] - target) < was:
+        if prediction.reached and (abs(miss[0] - target) < was
+                                   or abs(miss[0] - target) <= within):
             return steer, prediction
     # Hold, rather than commit a control on no evidence -- but keep any
     # reversal, because the sign costs the range budget nothing and the

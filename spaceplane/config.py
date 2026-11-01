@@ -552,6 +552,15 @@ class Config:
     # the floor relaxes to this.
     SOLVE_ALPHA_MIN_SUB_DEG: float = 8.0
     SOLVE_ALPHA_SUB_MACH: float = 1.2
+    # **Below this speed the glide holds best L/D and steers range with
+    # bank** (``guidance._solve_low``; the user, 2026-10-31: no part heats
+    # below ~1 km/s, so nothing there needs high alpha).  Alpha is the table's
+    # best-L/D angle at the Mach flown (``trajectory.best_ld_alpha``), the
+    # floor relaxes as subsonically, a surplus goes to bank first and alpha
+    # rises past best L/D only with bank at ``BANK_MAX_DEG``; every
+    # propagation that starts above the speed flies best L/D below it.
+    # 0 is off (alpha first, as above).
+    GLIDE_LOW_ALPHA_SPEED_M_S: float = 1000.0
     # **An instrument, not a flight mode.**  Set non-zero, every angle of
     # attack commanded from COAST onward is replaced by this one, downstream
     # of the solve and every clamp (see ``Autopilot.aim``).  It exists to

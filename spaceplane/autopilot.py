@@ -2600,17 +2600,20 @@ class Autopilot:
             return
         speed = self.cfg.APPROACH_FACTOR * vs
         alpha = float(self.cfg.AIRBRAKE_MEASURE_ALPHA_DEG)
+        # **Every surface at neutral while it is probed.**  ``suspend`` has
+        # just released the vacuum hold, and a released surface follows
+        # SAS and the client's inputs: read at once, the base was the held
+        # airframe and every probe after it the released one -- each
+        # surface read ~+280 dCmA in *both* senses and nothing armed from
+        # 2026-10-21 (``VACUUM_SURFACE_HOLD``) to 10-31; settled but with
+        # SAS on, deploys of +-15 sat on a standing deflection and several
+        # surfaces added lift both ways.  kRPC's override is itself a
+        # deploy, so it cannot hold them: the inputs are quieted instead
+        # (``_quiet_inputs``, as ``measure_surfaces`` does), the surfaces
+        # settle, and a fresh base is read before each surface and each
+        # verification.
+        restore = self._quiet_inputs()
         try:
-            # **The base is read with every surface where the probes will
-            # find it.**  ``suspend`` has just released the vacuum hold, so
-            # the surfaces are still travelling from neutral to whatever the
-            # controls hold; read at once, the base was the held airframe and
-            # every probe after it the released one -- each surface read
-            # ~+280 dCmA in *both* senses and nothing armed from 2026-10-21
-            # (``VACUUM_SURFACE_HOLD``) to 10-31.  So settle first, and take
-            # a fresh base before each surface and each verification: a
-            # difference of two wrenches a few frames apart, not one taken
-            # at the start.
             self.settle_game(settle)
             base = self._probe_wrench(alt, speed, alpha)
             samples = []
@@ -2693,6 +2696,8 @@ class Autopilot:
             self.logbook.event(snap.ut, "brake (measured): probe failed (%s) "
                                         "-- not armed" % exc)
             return
+        finally:
+            restore()
         self.flap_brake = spoiler
         self.flap_set = flaps
 
@@ -5539,6 +5544,23 @@ class Autopilot:
         self.env.roll_lag_s = self.roll_lag_s()
         self.env.spending = (self.last_miss is None
                              or self.last_miss[0] >= reserve)
+        # ``GLIDE_LOW_ALPHA_SPEED_M_S``: under the speed the solve chooses
+        # alpha itself, so its candidates propagate uncapped; and the
+        # best-L/D angles are re-read, since the lift trim moves.
+        low = float(getattr(self.cfg, "GLIDE_LOW_ALPHA_SPEED_M_S", 0.0) or 0.0)
+        self.env.low_alpha_free = 0.0 < low and vec.norm(snap.velocity) < low
+        self.env._best_ld_cache = {}
+        if self.env.low_alpha_free and not getattr(self, "_low_alpha_said",
+                                                   False):
+            self._low_alpha_said = True
+            pref = trajectory.best_ld_alpha(
+                self.env, vec.norm(snap.velocity),
+                vec.norm(snap.position) - self.env.equatorial_radius)
+            self.logbook.event(snap.ut, "glide below %.0f m/s: best L/D "
+                               "alpha %s, bank spends the surplus first "
+                               "(alpha %.1f now)" % (
+                                   low, "-" if pref is None
+                                   else "%.1f" % pref, self.steer.alpha))
         alpha0 = vec.clamp(self.steer.alpha, self.cfg.ALPHA_MIN_DEG,
                            self.alpha_ceiling)
         # **Predict the lean the solve intends, not the one the rate limiter

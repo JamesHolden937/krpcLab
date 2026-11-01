@@ -2909,14 +2909,14 @@ class TestTheSolveTriesBestGlide(unittest.TestCase):
         self.env = FakeEnv(self.cfg)
 
     def test_the_candidate_list_includes_it_when_the_env_knows_it(self):
-        source = inspect.getsource(guidance._solve_range)
+        source = inspect.getsource(guidance._solve_alpha_then_bank)
         self.assertIn('getattr(env, "best_alpha"', source)
         self.assertIn("candidates.append(glide_alpha)", source)
 
     def test_it_is_ignored_when_outside_what_the_solve_may_command(self):
         """A candidate past the ceiling is a command the vehicle is not
         allowed, and proposing it would undo ``ratchet_alpha``."""
-        source = inspect.getsource(guidance._solve_range)
+        source = inspect.getsource(guidance._solve_alpha_then_bank)
         self.assertIn("floor <= glide_alpha <= top", source)
 
     def test_an_env_that_never_measured_it_still_solves(self):
@@ -2950,13 +2950,13 @@ class TestTheAlphaSpanIsActuallySampled(unittest.TestCase):
     """
 
     def test_the_interior_is_a_candidate(self):
-        source = inspect.getsource(guidance._solve_range)
+        source = inspect.getsource(guidance._solve_alpha_then_bank)
         self.assertIn("0.5 * (floor + top)", source)
 
     def test_it_is_skipped_when_the_span_is_narrower_than_a_probe(self):
         """Sampling inside a span smaller than the probe step is spending a
         propagation to measure noise."""
-        source = inspect.getsource(guidance._solve_range)
+        source = inspect.getsource(guidance._solve_alpha_then_bank)
         self.assertIn("SOLVE_ALPHA_PROBE_DEG", source)
 
     def test_reading_best_glide_off_the_table_does_not_replace_it(self):
@@ -2969,7 +2969,7 @@ class TestTheAlphaSpanIsActuallySampled(unittest.TestCase):
         measured = airframe.measure(env, MASS, GRAVITY)
         self.assertIsNotNone(measured.best_alpha)
         # Whatever it says, the interior sample is still taken.
-        source = inspect.getsource(guidance._solve_range)
+        source = inspect.getsource(guidance._solve_alpha_then_bank)
         mid = source.index("0.5 * (floor + top)")
         best = source.index('getattr(env, "best_alpha"')
         self.assertLess(best, mid, "the two are meant to be independent")
@@ -5818,3 +5818,65 @@ class TestDrainLeftover(unittest.TestCase):
         ap.drain_leftover(self._snap(2.0, 0.2))
         self.assertNotIn("open", events)
         self.assertEqual(len(events), 1)
+
+
+class TestBelowAKilometreASecondBankComesFirst(unittest.TestCase):
+    """``GLIDE_LOW_ALPHA_SPEED_M_S``: below it nothing heats, so the glide
+    holds best L/D and spends a surplus on bank; alpha rises only with bank
+    at its stop (the user, 2026-10-31)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = Config()
+        cls.env = FakeEnv(cls.cfg)
+        r, v = entry_state(cls.env, cls.cfg)
+        cls.end = cls.env.runway.choose(r, v)
+        cls.gate = cls.env.runway.gate(cls.end)
+        st = Steer(alpha=40.0, bank=60.0, cfg=cls.cfg, mass=MASS)
+        st.reversing = True
+        while vec.norm(v) > 900.0:
+            r, v = trajectory._step(cls.env, r, v, MASS, 2.0, cls.cfg, st)
+        cls.r, cls.v = r, v
+        cls.alt = vec.norm(r) - cls.env.equatorial_radius
+        cls.env.low_alpha_free = True
+        cls.pref = trajectory.best_ld_alpha(cls.env, vec.norm(v), cls.alt)
+
+    def test_best_ld_is_read_off_the_table_and_only_below_the_speed(self):
+        self.assertIsNotNone(self.pref)
+        self.assertGreater(self.pref, 0.0)
+        self.assertLess(self.pref, self.cfg.GLIDE_ALPHA_MAX_DEG)
+        self.assertIsNone(trajectory.low_alpha_cap(
+            self.env, self.cfg, 1200.0, self.alt))
+        self.assertIsNotNone(trajectory.low_alpha_cap(
+            self.env, self.cfg, 800.0, self.alt))
+
+    def test_the_floor_relaxes_below_the_speed(self):
+        floor = guidance.alpha_floor(self.env, self.cfg, vec.norm(self.v),
+                                     self.alt, MASS, GRAVITY)
+        self.assertLess(floor, self.cfg.SOLVE_ALPHA_MIN_DEG)
+
+    def _solve(self, target):
+        env, cfg = self.env, self.cfg
+        _, _, m0 = guidance._fly(env, self.r, self.v, MASS, cfg, self.end,
+                                 self.gate, 35.0, 10.0)
+        floor = guidance.alpha_floor(env, cfg, vec.norm(self.v), self.alt,
+                                     MASS, GRAVITY)
+        return guidance._solve_range(env, self.r, self.v, MASS, cfg,
+                                     self.end, self.gate, 35.0, 10.0, m0,
+                                     floor, cfg.GLIDE_ALPHA_MAX_DEG, target)
+
+    def test_a_surplus_bank_can_carry_is_spent_on_bank(self):
+        _, _, mp = guidance._fly(self.env, self.r, self.v, MASS, self.cfg,
+                                 self.end, self.gate, self.pref, 10.0)
+        alpha, bank = self._solve(mp[0] - 10000.0)
+        self.assertAlmostEqual(alpha, self.pref, delta=0.1)
+        self.assertGreater(bank, 10.0)
+        self.assertLess(bank, self.cfg.BANK_MAX_DEG)
+
+    def test_alpha_rises_only_with_bank_at_its_stop(self):
+        _, _, mmax = guidance._fly(self.env, self.r, self.v, MASS, self.cfg,
+                                   self.end, self.gate, self.pref,
+                                   self.cfg.BANK_MAX_DEG)
+        alpha, bank = self._solve(mmax[0] - 20000.0)
+        self.assertAlmostEqual(bank, self.cfg.BANK_MAX_DEG, delta=0.5)
+        self.assertGreater(alpha, self.pref + 1.0)

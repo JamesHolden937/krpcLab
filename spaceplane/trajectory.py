@@ -402,6 +402,63 @@ def glide_alpha_max(cfg, env=None, speed=None, altitude=None):
     return top if top > 0.0 else cfg.ALPHA_MAX_DEG
 
 
+def best_ld_alpha(env, speed, altitude):
+    """The alpha of best ``ClA/CdA`` at this Mach, off the swept table (lift
+    trim included), refined by a parabola through the best bin and its
+    neighbours; ``None`` when the table cannot answer.  Cached on ``env`` per
+    0.1 of Mach -- the propagator asks every step; the glide clears the
+    cache each tick, since the lift trim moves."""
+    try:
+        if not env.ready():
+            return None
+        mach = env.mach(speed, altitude)
+    except Exception:                                       # noqa: BLE001
+        return None
+    key = round(mach, 1)
+    cache = getattr(env, "_best_ld_cache", None)
+    if cache is None:
+        cache = env._best_ld_cache = {}
+    if key in cache:
+        return cache[key]
+    alphas = sorted(a for a in (getattr(env, "_alphas", ()) or ())
+                    if a > 0.0)
+    out = None
+    ratios = []
+    for a in alphas:
+        try:
+            cla, cda = env.coefficients(a, speed, altitude)
+        except Exception:                                   # noqa: BLE001
+            ratios = []
+            break
+        ratios.append(cla / cda if cda > 0.0 else 0.0)
+    if ratios and max(ratios) > 0.0:
+        i = max(range(len(ratios)), key=lambda k: ratios[k])
+        out = alphas[i]
+        if 0 < i < len(ratios) - 1:
+            x0, x1, x2 = alphas[i - 1], alphas[i], alphas[i + 1]
+            y0, y1, y2 = ratios[i - 1], ratios[i], ratios[i + 1]
+            den = (x0 - x1) * (x0 - x2) * (x1 - x2)
+            a2 = (x2 * (y1 - y0) + x1 * (y0 - y2) + x0 * (y2 - y1)) / den \
+                if den else 0.0
+            if a2 < 0.0:
+                b = (x2 * x2 * (y0 - y1) + x1 * x1 * (y2 - y0)
+                     + x0 * x0 * (y1 - y2)) / den
+                out = vec.clamp(-b / (2.0 * a2), x0, x2)
+    cache[key] = out
+    return out
+
+
+def low_alpha_cap(env, cfg, speed, altitude):
+    """``GLIDE_LOW_ALPHA_SPEED_M_S``: below that speed the glide flies the
+    best-L/D alpha and spends surplus on bank first (``guidance._solve_range``),
+    so a propagation that starts above it flies best L/D from there down.
+    ``None`` above the speed, with the setting off, or with no table."""
+    top = float(getattr(cfg, "GLIDE_LOW_ALPHA_SPEED_M_S", 0.0) or 0.0)
+    if top <= 0.0 or speed >= top:
+        return None
+    return best_ld_alpha(env, speed, altitude)
+
+
 def plateau_edge(env, frac, speed, altitude):
     """Highest alpha with ``ClA >= (1 - frac) * peak`` at this Mach, from the
     swept table, interpolated; ``None`` when the table cannot answer.
@@ -668,6 +725,14 @@ def acceleration(env, r, v, mass, steer):
             q0 = 0.5 * rho * speed * speed
             if steer is not None and steer.cfg is not None:
                 gravity = env.mu / (vec.norm(r) ** 2)
+                # Below ``GLIDE_LOW_ALPHA_SPEED_M_S`` the glide holds best
+                # L/D while bank can spend the surplus; once the vehicle is
+                # down there the solve picks alpha itself and the glide sets
+                # ``low_alpha_free`` so its candidates propagate as asked.
+                if not getattr(env, "low_alpha_free", False):
+                    cap = low_alpha_cap(env, steer.cfg, speed, altitude)
+                    if cap is not None:
+                        alpha = min(alpha, cap)
                 alpha = min(alpha, alpha_limit_for_speed(
                     env, steer.cfg, speed, altitude,
                     steer.mass or mass, gravity))
