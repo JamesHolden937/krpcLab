@@ -1656,8 +1656,12 @@ class Autoland:
         the landing burn, which has seconds and a tilt limit to work with.
         """
         cfg = self.cfg
-        if cfg.DEPLOY_LATE and self.late_state in (None, "full", "settling"):
-            return False                # the brakes are being measured
+        if cfg.DEPLOY_LATE and self.late_state in (None, "full", "settling",
+                                                  "switched"):
+            # The brakes are being measured, or have just opened and the
+            # curve is not re-swept yet: LOG15110 corrected on the tick they
+            # opened (+395 m), and the re-sweep then read -639.
+            return False
         if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
             return False                # ... or the legs are
         if cfg.CORRECTION_OVERSHOOT_ONLY:
