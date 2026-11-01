@@ -2886,9 +2886,10 @@ class Autopilot:
                 reach = (self.env.runway.gate_dist()
                          + airframe.touchdown_aim(self.env, self.cfg)
                          + self.cfg.GATE_ALT_M
-                         * airframe.approach_ld(
+                         * (airframe.approach_ld(
                              self.env, self.cfg, self.cfg.GATE_ALT_M,
-                             self.vessel.mass, self.surface_gravity))
+                             self.vessel.mass, self.surface_gravity)
+                            or 0.0))
                 try:
                     out = trajectory.surface_distance(
                         self.env, position, self.end["threshold"])
@@ -2992,14 +2993,37 @@ class Autopilot:
         self.env.best_ld = measured.best_ld
         self.env.best_speed = measured.best_speed
         self.env.stall_alpha = measured.stall_alpha
+        if not landing and measured.stall_speed is not None:
+            # The approach's glide ratio off the clean sweep, once: see
+            # ``airframe.approach_glide_ld``.
+            self.env.approach_glide_ld = None
+            self.env.approach_glide_ld = airframe.approach_glide_ld(
+                self.env, self.cfg, mass, self.surface_gravity)
+            lift = airframe.approach_float_m(self.env, self.cfg,
+                                             self.surface_gravity)
+            if self.env.approach_glide_ld is not None and lift is not None:
+                self.logbook.event(
+                    snap.ut, "approach: L/D %.2f at %.0f m/s and %.0f m of "
+                             "float to the stall -- %.2f from %.0f m"
+                    % (self.env.approach_glide_ld,
+                       self.cfg.APPROACH_FACTOR
+                       * airframe.stall(self.env, self.cfg), lift,
+                       airframe.approach_ld(self.env, self.cfg,
+                                            self.cfg.GATE_ALT_M, mass,
+                                            self.surface_gravity),
+                       self.cfg.GATE_ALT_M))
         if (not landing
                 and getattr(self.env.runway, "gate_dist_m", None) is None):
             # **The gate is where the approach's own model needs GATE_ALT_M.**
             # See ``Config.GATE_FROM_APPROACH``.  Once, before the deorbit,
             # so the geometry the entry is solved to never moves.
+            # No table, no ratio: the gate stays at ``GATE_DIST_M``.
             ratio = airframe.approach_ld(self.env, self.cfg,
                                          self.cfg.GATE_ALT_M, mass,
                                          self.surface_gravity)
+        else:
+            ratio = None
+        if ratio is not None:
             dist = max(self.cfg.GATE_CAPTURE_M,
                        self.cfg.GATE_ALT_M * ratio
                        - airframe.touchdown_aim(self.env, self.cfg))
@@ -3029,20 +3053,6 @@ class Autopilot:
                               measured.describe()))
         if measured.stall_speed is None:
             return
-        for name, configured, derived in (
-                ("APPROACH_BEST_LD", self.cfg.APPROACH_BEST_LD,
-                 measured.best_ld),):
-            if configured <= 0.0 or derived is None:
-                continue
-            off = abs(derived - configured) / configured
-            if off > self.cfg.AIRFRAME_DISAGREE_FRACTION:
-                self.logbook.event(
-                    snap.ut, "airframe DISAGREES%s: %s is %.2f and the swept "
-                             "table says %.2f (%.0f%% out) -- one of them is "
-                             "not this aircraft"
-                    % (" at the landing mass" if landing else " at the entry "
-                       "mass (the landing is lighter -- read the one on final)",
-                       name, configured, derived, 100.0 * off))
 
     def run_deorbit(self, snap):
         """Wait for a burn that works, then hand over to flying it.
@@ -5931,7 +5941,9 @@ class Autopilot:
         # approach achieves.  Checking the handover against the cone's own
         # arithmetic passed a vehicle 560 m high and put it 1.9 km down a
         # 2.4 km runway (``logs/LOG1500``, from an arrival 19 m off the gate).
-        needed = getattr(command, "approach_needed", command.needed_height)
+        needed = getattr(command, "approach_needed", None)
+        if needed is None:
+            needed = command.needed_height
         # ``HAC_EXIT_PAST_DEG``: a little *past* the rollout counts for the
         # exit (not for the plan, whose wrap is what owes a lap -- putting
         # the band in ``hac_turn`` broke laps, journal 2026-09-24).  LOG4104
@@ -6177,7 +6189,7 @@ class Autopilot:
         paid for in path angle: at a fixed speed the brake *is* a steeper
         glide, the Shuttle's outer glide slope.  The wanted factor is the
         straight path to the aim over the path the height buys clean,
-        ``distance / (height x APPROACH_BEST_LD)``, re-solved every tick so
+        ``distance / (height x airframe.approach_ld)``, re-solved every tick so
         it is a loop on the geometry and not a schedule.  Bounded three
         ways, each one of the 2026-10-08 failures: no steeper than
         ``APPROACH_SPLIT_SINK_FACTOR`` x the design sink (dives above ~40
@@ -6191,8 +6203,9 @@ class Autopilot:
         speed = vec.norm(snap.velocity)
         held = max(float(getattr(command, "target_speed", 0.0) or 0.0),
                    float(getattr(command, "speed_floor", 0.0) or 0.0))
-        clean = float(getattr(command, "clean_ld", 0.0) or
-                      self.cfg.APPROACH_BEST_LD)
+        clean = float(getattr(command, "clean_ld", 0.0) or 0.0)
+        if clean <= 0.0:
+            return
         design = float(getattr(command, "design_sink", 0.0) or 0.0)
         stall = airframe.stall(self.env, self.cfg)
         stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
@@ -6230,7 +6243,8 @@ class Autopilot:
             factor = command.distance / (height * clean)
             # The steepest path the sink cap allows at this speed.
             if cap_sink > 0.0:
-                factor = max(factor, speed / (cap_sink * clean))
+                factor = max(factor, speed / (cap_sink * float(
+                    getattr(command, "glide_ld", None) or clean)))
             table = sorted(self.cfg.APPROACH_SPLIT_FACTOR)
             if factor < 1.0:
                 want = table[-1][0]

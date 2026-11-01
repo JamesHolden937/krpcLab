@@ -314,11 +314,87 @@ def cone_ld(env, cfg, speed, altitude, mass, gravity):
 
 
 def approach_ld(env, cfg, altitude, mass, gravity):
-    """Ground per metre of height on final, rollout to wheels:
-    ``APPROACH_BEST_LD``.  It includes the flare's float, so it is not the
-    straight glide ratio; ``landsum.py`` measures it (2.6-3.0 on the
-    shuttle's good landings of 2026-10-08, 3.4-4.0 on its long ones)."""
-    return cfg.APPROACH_BEST_LD
+    """Ground per metre of height from ``altitude`` to the wheels, off this
+    airframe's own table: the straight glide at the approach speed over the
+    height *and* the flare's float, ``glide x (h + float) / h``
+    (``approach_glide_ld``, ``approach_float_m``).  ``None`` before the
+    table has been read -- the approach's speeds are multiples of the
+    stall, so nothing on final can be flown without one.
+
+    It replaced ``APPROACH_BEST_LD`` (4.2, one number measured on
+    qs_shuttle2, the float folded in): planned at 4.2 the Heavy Shuttle --
+    3.0 at best glide -- had its gate put 7.2 km out at 2 km and landed
+    765 m short (LOG15006), where this reads 3.5 from 2092 m at 116 m/s
+    and the flight made 3.41.  The float is a height, not a ratio, so the
+    ratio rises near the ground; where a *height* is wanted for a
+    distance, ``approach_height`` is exact.
+    """
+    glide = approach_glide_ld(env, cfg, mass, gravity)
+    lift = approach_float_m(env, cfg, gravity)
+    if glide is None or lift is None:
+        return None
+    height = max(1.0, altitude)
+    return glide * (height + lift) / height
+
+
+def approach_height(env, cfg, distance, mass, gravity, factor=1.0):
+    """The height that reaches the wheels ``distance`` metres on, gliding
+    at ``factor`` x ``approach_glide_ld`` and floating to the stall; may be
+    negative (the float alone covers it).  ``None`` without a table."""
+    glide = approach_glide_ld(env, cfg, mass, gravity)
+    lift = approach_float_m(env, cfg, gravity)
+    if glide is None or lift is None:
+        return None
+    return max(0.0, distance) / max(0.1, glide * factor) - lift
+
+
+def approach_float_m(env, cfg, gravity):
+    """The flare's float as a height: the approach speed's energy over the
+    stall's, ``(v_app^2 - v_stall^2) / 2g`` -- spent at the same ratio as
+    height (dE/ds = D/L), the same energy height ``ABORT_SHORT_BEST_GLIDE``
+    judges reach on.  ``None`` without a table."""
+    vs = stall(env, cfg)
+    if vs is None or gravity <= 0.0:
+        return None
+    speed = cfg.APPROACH_FACTOR * vs
+    return max(0.0, speed * speed - vs * vs) / (2.0 * gravity)
+
+
+def approach_glide_ld(env, cfg, mass, gravity):
+    """The straight glide ratio at the approach speed, ``APPROACH_FACTOR``
+    x stall, at one g wings level: ``cla/cda`` at ``alpha_for_load`` -- not
+    best glide, because the approach is flown fast.  ``None`` without a
+    table.
+
+    A ratio at a fixed multiple of the stall is a ratio at a fixed lift
+    coefficient, so it does not depend on the mass: read once from the
+    STANDBY sweep it is kept on ``env.approach_glide_ld`` and holds for the
+    landing.  It has to be read then -- the table re-probed in flight is
+    taken at the surfaces' present deflection, and on
+    ``qs_stackorb_live1028`` its landing-mass best glide read anywhere from
+    2.4 to 5.6 on one craft.
+    """
+    kept = getattr(env, "approach_glide_ld", None)
+    if kept is not None:
+        return kept
+    vs = stall(env, cfg)
+    if vs is None or mass <= 0.0 or gravity <= 0.0:
+        return None
+    from . import trajectory              # local: trajectory has no airframe
+    speed = cfg.APPROACH_FACTOR * vs
+    altitude = cfg.GATE_ALT_M
+    try:
+        alpha = trajectory.alpha_for_load(env, speed, altitude, mass,
+                                          gravity)
+        if alpha is None:
+            return None
+        cla, cda = env.coefficients(alpha, speed, altitude)
+    except Exception:                                       # noqa: BLE001
+        return None
+    if cla <= 0.0 or cda <= 0.0:
+        return None
+    return cla / cda
+
 
 def touchdown_aim(env, cfg):
     """Where the final's glide line meets the runway, metres past the
