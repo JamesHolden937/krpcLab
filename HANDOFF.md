@@ -1,28 +1,28 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-10-31: spaceplane -- the brake probe sees again; bank before alpha below 1 km/s (fingerprint `72937e7a`)
+## 2026-11-01: spaceplane -- the approach plans in the middle of each craft's own span; the low-alpha glide is off (fingerprint `07089ff3`)
 
-Committed and pushed; farm stopped. Journal: "Session, 2026-10-31". howItWorks.pdf updated. **Both changes are default and unflown on the farm: the user is testing live.**
+Committed and pushed; farm stopped (the last batch, heavy-1101, was killed by Claude Code for low memory before it flew -- LOG15091-15095 are part-batch, don't read them). Journal: "Session, 2026-10-31 late" and "2026-11-01". **howItWorks.pdf NOT updated for the approach ratio** -- do it next wrap-up.
 
-**From the user's live LOG14999** (Heavy Shuttle, 63 parts, not a farm save): no surface braked in the air.
-- **The measured spoiler never armed anywhere since 2026-10-21.** Two bugs in `measure_flap_brake`: it latched itself done before the stall speed was known (live: never measured, flew the geometric set), and it read its base the instant the vacuum hold released the surfaces (farm: ~+280 dCmA in both senses, refused every flight). Now it waits for the stall, runs under `_quiet_inputs` (SAS off, inputs zero -- released surfaces followed them), settles, and re-reads the base before each surface and each verification.
-  - 09de46d (settle + rebase, no quiet inputs) flew 6 startups: sane magnitudes, still refused/inconsistent (LOG15000-15005). The quiet-inputs version (a3a64cf) has not flown.
-- **`GLIDE_LOW_ALPHA_SPEED_M_S` 1000 (the user's request):** below 1 km/s the glide holds the table's best-L/D alpha for the Mach, bank takes a surplus first, alpha rises only with bank at 70; short, best L/D is bracketed in; the 20 deg floor relaxes; propagations from above fly best L/D below it. Offline only (FakeEnv): 10 km long -> alpha 16.5, bank 41 (off: 20.8/37.7).
+**`APPROACH_BEST_LD` is deleted (the user: "remove the hardcoded value").** It was qs_shuttle2's 4.2; the live Heavy Shuttle (best glide 3.0) planned at 4.2 got a 7.2 km gate and landed 765 m short (LOG15006). Now `airframe.approach_ld` = clean reach x sqrt(braked span), at `GATE_ALT_M`:
+- clean reach = glide x (h + float)/h: glide is `cla/cda` at 1 g at `APPROACH_FACTOR` x stall, read from the STANDBY sweep **at the dry mass** (`Vessel.dry_mass`, `airframe.stall_at`) and kept on `env.approach_glide_ld`, scaled by `env.approach_ld_scale` (= `hac_ld_scale`, the flown/table ratio, 0.94-1.16 on both craft); float = `(v_app^2 - v_stall^2)/2g`.
+- braked span = the split rudder's last `APPROACH_SPLIT_FACTOR` (0.45), or cos(`APPROACH_SCURVE_MAX_DEG`) with no pair.
+- Consumers' formulas unchanged (gate, handover `approach_needed`, excess, S-turn, split brake, short divert). The DISAGREES check is gone.
+- **qs_shuttle2: 5.11 x 1.23 x 0.67 = 4.22** (gate 7242 m, was 7200) -- inert, by design. Heavy, from LOG15006's live table: L/D 2.65 at 115 m/s, reach 3.37 (flew 3.41), **planned 2.26, gate ~3.3 km**. Unflown on the heavy: see below.
+- **Refuted on the way:** planning at the clean reach (bec678c, reverted 6fb047b): reach-1031 0/12, every flight short at 6.3. The table *is* right where flown; the shuttle simply can't be planned with no margin.
 
-**Late 2026-10-31: the live Heavy Shuttle landed 765 m short (LOG15006)** -- `APPROACH_BEST_LD` 4.2 is qs_shuttle2's; the heavy craft (best glide 3.0) reaches 3.1-3.4 rollout to wheels, so the gate went 7.2 km out at 2 km and the cone handed over low. At the user's request the constant was removed for a table derivation (bec678c: glide `cla/cda` at `APPROACH_FACTOR` x stall off the STANDBY sweep, times `(h + float to the stall)/h`). **Refuted on the farm, reverted (6fb047b):** reach-1031 (LOG15007-15018, 6 rigoff + 6 stackorb) 0/12 on the runway, all short -- the table says 4.8 at the approach speed on the shuttle where it flies 3.8-4.2, and it touches down ~60 m/s, not 49. Swap was 28 GB by the end, but every flight was short the same way. **What fits both craft:** the *flown* L/D on final (telemetry `cla/cda`) x the same float term -- shuttle 5.0-5.5 v 4.6-5.3 achieved, heavy 3.49 v 3.41. Next: learn the ratio in flight (subsonic cone/approach `cla/cda`), keep the gate on a prior, then delete `APPROACH_BEST_LD` (the user wants it gone, not capped). Default is back to 4.2, so the heavy craft still lands short live.
+**`GLIDE_LOW_ALPHA_SPEED_M_S` 1000 -> 0 (off).** lowa-1101, rigoff 12 an arm: on 2/12 on the runway, **7/12 out of energy 56-82 km short** ("on the ground in HAC"); off 7/12, none. This was last session's unflown default and the user's live flights carried it. The rule says delete or promote: it was the user's idea, so ask before deleting the code.
+
+**`saves/qs_heavyshuttle_rigoff`** (new): the live Heavy Shuttle on rigoff's orbit, LOG15006's propellant (70.37 t), surfaces/gear stowed. Two traps cost two batches: the first copy had full tanks (182.6 t, entry breakup, 0/8 at 100-300 km) and was taken from a persistent saved *after* landing (4 surfaces deployed, gear down: the farm table read CdA 41/ClA 12 at 0 deg against live 25/56). **The stowed version has not flown.**
 
 **Next, in order:**
-0. The flown-L/D approach ratio above.
-1. Read the user's live logs: `brake probe` lines and `spoiler (measured) verified ... armed`/`REFUSED`; `glide below 1000 m/s:` and the `aoa=` command after it. If the probe still refuses on the shuttle, read which side is empty ("0 nose-up, 4 nose-down") before changing the selection rule.
-2. Farm: low-alpha on v `GLIDE_LOW_ALPHA_SPEED_M_S=0` on `qs_shuttle2_rigoff` and `qs_stackorb_live1028`, 12 an arm (4 multirot cycles, ~20 min a cycle, ~80 min). Watch the M1-3 lateral summaries (`wag.py`): the point is fewer high-alpha departures.
-3. The spoiler only opens with the split rudder at its stop, and the rudder's angle comes from qs_shuttle2's fitted `APPROACH_/HAC_SPLIT_FACTOR` tables. On a craft whose rudder is weaker than the table, the spoiler waits for nothing.
-4. LOG14999 touched down 118 m off the centreline and ran off sideways with wheel brakes off.
-5. Carried from 2026-10-29: the stack orbiter's cone shortfall outliers (LOG14944/14950/14956), v3's slightly short cone arrivals, the coord-floor headroom constants, `HAC_TRIM_AT_TARGET` on the shuttle saves, the 1.8 m wings-forward bisect, kspSim probe models.
+1. Fly heavy-1101: `multirot.sh heavy-1101 2 "qs_heavyshuttle_rigoff|" "qs_stackorb_live1028|"`. Read the `approach at ... planned at` line and the gate (expect ~2.3 / ~3.3 km), and whether the farm table now matches LOG15006's (`aero M=0.3` row). If the heavy still breaks up in the entry, that's its own failure (RCS blocks at 100% skin, then 74 deg alpha at 46 km in LOG15043).
+2. Ask the user: delete `GLIDE_LOW_ALPHA_SPEED_M_S`'s code, or find why bank-first runs out of energy.
+3. Rigoff off-arm still had 2 ROLLOUT losses and 3 misses (-2449, +1898, -8813) in 12.
+4. The brake probe's quiet-inputs version (a3a64cf) still unflown; read `spoiler (measured) ... armed/REFUSED` live.
+5. Carried: `APPROACH_SPLIT_FACTOR` is qs_shuttle2's splitprobe table and now also sets the approach's span; LOG14999's 118 m off-centreline touchdown; the stack orbiter's cone outliers; kspSim probe models.
 
-**Traps paid:**
-- kRPC's `deflection_override` *is* a deploy (KRPC.SpaceCenter.xml), and setting `deployed` under it throws. It cannot hold a surface neutral while something else deploys it.
-- `pkill -f '<pattern>'` in a compound Bash command kills its own shell: use `pgrep -f ... | grep -v $$` or a separate call.
-- `pdftohtml -c` loses embedded fonts and leaves some per-page font classes undefined (ft4NN = ft1NN); map them back before printing.
+**Traps paid:** a background batch launched from `testInstances/` (the Bash cwd resets there) silently found no `spaceplane/tools` -- `cd /home/holden/krpcLab &&` in every launch. The telemetry's `cla=`/`cda=` are the *table at the commanded alpha*, not flown values. The swept table re-read at the landing mass is noisy (2.4-5.6 best glide on one craft). Zram at 28 GB after two cycles is now normal; restart between batches.
 
 ## 2026-10-27: tooling and the farm harnesses; boosterland's farm entry state (bundle 369 kB)
 
