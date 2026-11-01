@@ -560,7 +560,10 @@ class Config:
     # rises past best L/D only with bank at ``BANK_MAX_DEG``; every
     # propagation that starts above the speed flies best L/D below it.
     # 0 is off (alpha first, as above).
-    GLIDE_LOW_ALPHA_SPEED_M_S: float = 1000.0
+    # **Off: lowa-1101 on qs_shuttle2_rigoff, 12 an arm -- at 1000 it put
+    # 2/12 on the runway and ran 7/12 out of energy 56-82 km short ("on
+    # the ground in HAC"); at 0, 7/12 and none.**
+    GLIDE_LOW_ALPHA_SPEED_M_S: float = 0.0
     # **An instrument, not a flight mode.**  Set non-zero, every angle of
     # attack commanded from COAST onward is replaced by this one, downstream
     # of the solve and every clamp (see ``Autopilot.aim``).  It exists to

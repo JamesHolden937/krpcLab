@@ -5826,6 +5826,7 @@ class TestBelowAKilometreASecondBankComesFirst(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = Config()
+        cls.cfg.GLIDE_LOW_ALPHA_SPEED_M_S = 1000.0   # off by default
         cls.env = FakeEnv(cls.cfg)
         r, v = entry_state(cls.env, cls.cfg)
         cls.end = cls.env.runway.choose(r, v)

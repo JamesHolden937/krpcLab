@@ -11676,10 +11676,10 @@ GAME
 					isEnabled = True
 					persistentId = 2814551356
 					shieldedCanDeploy = False
-					stateDisplayString = Deployed
-					stateString = Deployed
+					stateDisplayString = Retracted
+					stateString = Retracted
 					stagingEnabled = True
-					position = 1
+					position = 0
 					EVENTS
 					{
 					}
@@ -12179,7 +12179,7 @@ GAME
 					ignorePitch = False
 					ignoreYaw = False
 					ignoreRoll = False
-					deploy = True
+					deploy = False
 					deployInvert = False
 					partDeployInvert = False
 					deployAngle = 25
@@ -12533,7 +12533,7 @@ GAME
 					ignorePitch = False
 					ignoreYaw = False
 					ignoreRoll = False
-					deploy = True
+					deploy = False
 					deployInvert = False
 					partDeployInvert = False
 					deployAngle = 25
@@ -17160,10 +17160,10 @@ GAME
 					isEnabled = True
 					persistentId = 1921670218
 					shieldedCanDeploy = False
-					stateDisplayString = Deployed
-					stateString = Deployed
+					stateDisplayString = Retracted
+					stateString = Retracted
 					stagingEnabled = True
-					position = 1
+					position = 0
 					EVENTS
 					{
 					}
@@ -17687,7 +17687,7 @@ GAME
 					ignorePitch = False
 					ignoreYaw = False
 					ignoreRoll = False
-					deploy = True
+					deploy = False
 					deployInvert = False
 					partDeployInvert = False
 					deployAngle = 25
@@ -18041,7 +18041,7 @@ GAME
 					ignorePitch = False
 					ignoreYaw = False
 					ignoreRoll = False
-					deploy = True
+					deploy = False
 					deployInvert = False
 					partDeployInvert = False
 					deployAngle = 25
@@ -18852,10 +18852,10 @@ GAME
 					isEnabled = True
 					persistentId = 3571596819
 					shieldedCanDeploy = False
-					stateDisplayString = Deployed
-					stateString = Deployed
+					stateDisplayString = Retracted
+					stateString = Retracted
 					stagingEnabled = True
-					position = 1
+					position = 0
 					EVENTS
 					{
 					}
@@ -25181,11 +25181,11 @@ GAME
 			ACTIONGROUPS
 			{
 				Stage = False, 0
-				Gear = True, 237669.091607477
+				Gear = False, 0
 				Light = False, 0
 				RCS = False, 237462.2516121
 				SAS = True, 237732.311606064
-				Brakes = True, 235202.613964243
+				Brakes = False, 0
 				Abort = False, 0
 				Custom01 = False, 0
 				Custom02 = False, 0
