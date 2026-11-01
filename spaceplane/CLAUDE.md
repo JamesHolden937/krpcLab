@@ -48,7 +48,11 @@ the misses are mostly the farm's own faults, not the autopilot.
 flight that cannot make or stop on the runway lands north of it
 (`ABORT_NORTH`); a miss to the south counts as a loss.
 
-## Where it stands (2026-10-31, fingerprint `72937e7a`)
+## Where it stands (2026-11-01, fingerprint `07089ff3`)
+
+The approach plans in the middle of each craft's own span (`airframe.approach_ld`: clean reach from the STANDBY sweep at the dry mass, times the root of the split rudder's stop factor); `APPROACH_BEST_LD` is gone, and on qs_shuttle2 the law gives 4.22 where the constant was 4.2. The low-alpha glide is off (`GLIDE_LOW_ALPHA_SPEED_M_S` 0: on, 7/12 ran out of energy short). The Heavy Shuttle has a farm save, `qs_heavyshuttle_rigoff`, which has not yet flown in its stowed form. The root HANDOFF.md has the next batch.
+
+## Earlier (2026-10-31, fingerprint `72937e7a`)
 
 The measured spoiler can arm again: the brake probe had been blind since 2026-10-21 (it read its base as the vacuum hold let go, and with SAS still moving the surfaces) and live it never ran (it latched before the stall was known). Below 1 km/s the glide holds best L/D and steers range with bank, raising alpha only with bank at its stop (`GLIDE_LOW_ALPHA_SPEED_M_S`). Both default and unflown on the farm; the user is testing live. The root HANDOFF.md has the checks to read in the next live log.
 
