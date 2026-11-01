@@ -283,6 +283,10 @@ class Config:
     ALPHA_TRIM_ROLL_TOL_DEG: float = 10.0
     ALPHA_TRIM_SLIP_TOL_DEG: float = 15.0  # default 2026-10-03: the landing stack, rot-orbit2-1003
     ALPHA_TRIM_GLIDE_MAX_DEG: float = 10.0
+    # The alpha trim does not grow while the pitch input is at least this
+    # far toward its stop in the direction the error asks (anti-windup):
+    # LOG14998 wound +9 deg on a saturated elevon.  Default 2026-10-31.
+    ALPHA_TRIM_SAT_INPUT: float = 0.95
     LIFT_LOOP_MIN_Q_PA: float = 500.0
     SPEED_PATH_CLIMB_MAX_DEG: float = 20.0
     HAC_ALPHA_MAX_DEG: float = 22.0
@@ -2903,6 +2907,17 @@ class Config:
     # 0.67-1.03 (median 0.88, 9 flights turning >= 10 ticks) against
     # 0.04-1.11 (median 0.16; 6 of 11 under 0.2) without.
     APPROACH_REENGAGE: bool = True        # default 2026-10-25
+    # **Re-engage kRPC when its yaw integrator winds up against the error**
+    # (``Autopilot.watch_yaw_windup``), from the cone on: yaw input at least
+    # ``_INPUT`` pushing the nose away from a yaw error of at least
+    # ``_ERR_DEG``, held ``_S`` game-seconds; at most once per
+    # ``_COOLDOWN_S``.  LOG14998 flew its whole cone at +0.7..+0.98 yaw
+    # against a 5-14 deg error (slip -7..-11, the turn a third short) until
+    # the cone exit's re-engage cleared it in two seconds.  0 s turns it off.
+    YAW_WINDUP_S: float = 4.0             # default 2026-10-31, unflown
+    YAW_WINDUP_INPUT: float = 0.6
+    YAW_WINDUP_ERR_DEG: float = 3.0
+    YAW_WINDUP_COOLDOWN_S: float = 10.0
     # **Hand ``time_to_peak`` over in kRPC's order, (pitch, roll, yaw).**
     # The derivation above handed it (pitch, yaw, roll), so the shuttle has
     # flown roll on 22.6 s and yaw on 4.8 since the derived tune became the

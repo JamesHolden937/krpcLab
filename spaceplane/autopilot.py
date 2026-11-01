@@ -537,6 +537,52 @@ class Autopilot:
                            "(pitch/roll/yaw inputs were %s)"
                            % (self.state, before))
 
+    def watch_yaw_windup(self, snap):
+        """Re-engage kRPC when its yaw integrator has wound up against the
+        yaw error: ``|yaw input| >= YAW_WINDUP_INPUT`` pushing the nose the
+        other way from a yaw error over ``YAW_WINDUP_ERR_DEG``, held for
+        ``YAW_WINDUP_S``, from the cone on.
+
+        LOG14998: the pitch-down at cone entry left kRPC holding +0.7..+0.98
+        yaw (nose right) for the whole 140 s cone while the error asked
+        5-14 deg left -- weathercock stability balanced the rudder at -7..-11
+        slip, the error never moved, so the integrator never unwound, and
+        the side force cancelled a third of the bank's turn (roof 35, force
+        22).  The cone exit's re-engage (``APPROACH_REENGAGE``) took it to
+        +0.3 slip and -0.02 input in two seconds.  A loop that is closing
+        never pushes against its own error for seconds on end, so this
+        fires only on a stuck integrator."""
+        hold = float(getattr(self.cfg, "YAW_WINDUP_S", 0.0) or 0.0)
+        if (hold <= 0.0 or self.state not in (HAC, APPROACH, FLARE)
+                or not getattr(self, "autopilot_engaged", False)):
+            self._yaw_windup_since = None
+            return
+        yaw_in = float(getattr(snap, "yaw_input", 0.0) or 0.0)
+        yaw_err = pointing_errors(self, snap)[0]
+        against = (abs(yaw_in) >= float(self.cfg.YAW_WINDUP_INPUT)
+                   and yaw_err == yaw_err
+                   and abs(yaw_err) >= float(self.cfg.YAW_WINDUP_ERR_DEG)
+                   and yaw_in * yaw_err < 0.0)
+        if not against:
+            self._yaw_windup_since = None
+            return
+        since = getattr(self, "_yaw_windup_since", None)
+        if since is None:
+            self._yaw_windup_since = snap.ut
+            return
+        last = getattr(self, "_yaw_windup_reset_ut", None)
+        if snap.ut - since < hold or (
+                last is not None
+                and snap.ut - last < float(self.cfg.YAW_WINDUP_COOLDOWN_S)):
+            return
+        self.logbook.event(snap.ut, "yaw wound up: input %+.2f against a "
+                                    "%+.1f deg yaw error for %.1f s, slip %+.1f"
+                           % (yaw_in, yaw_err, snap.ut - since,
+                              float(getattr(snap, "sideslip", 0.0) or 0.0)))
+        self._yaw_windup_reset_ut = snap.ut
+        self._yaw_windup_since = None
+        self.reset_attitude_integrators(snap.ut)
+
     def derive_hac_aim(self, snap):
         """``HAC_AIM_DERIVED``: set the entry aim's ratio once, off the table,
         at the mass the cone will fly (the residual is dumped before it)."""
@@ -1220,8 +1266,17 @@ class Autopilot:
                 # integrates kRPC's own standing error, which the offset
                 # never closes, and winds to the bound regardless.
                 error = vec.clamp(alpha_deg - achieved, -5.0, 5.0)
-                delta = vec.clamp(delta + error * dt / settle,
-                                  float(self.cfg.ALPHA_TRIM_MIN_DEG), top)
+                # **No winding into a saturated elevon.**  Pitch input
+                # already at its stop the way the error asks has nothing left
+                # to give, so the offset holds rather than grows: LOG14998's
+                # glide wound it to +9 on pin=+1.00, asking 41-42 deg of a
+                # vehicle holding 25-30.
+                pitch_in = float(getattr(snap, "pitch_input", 0.0) or 0.0)
+                if not (pitch_in * error > 0.0 and abs(pitch_in)
+                        >= float(self.cfg.ALPHA_TRIM_SAT_INPUT)):
+                    delta = vec.clamp(delta + error * dt / settle,
+                                      float(self.cfg.ALPHA_TRIM_MIN_DEG),
+                                      top)
         except (TypeError, ValueError):
             pass
         self._alpha_trim = delta
@@ -6852,6 +6907,7 @@ class Autopilot:
         self.measure_surfaces(snap)
         self.retune_attitude(snap)
         handler(snap)
+        self.watch_yaw_windup(snap)
         self.drain_leftover(snap)
         self.pitch_assist(snap)
         if self.state == GLIDE:
