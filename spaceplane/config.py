@@ -2419,6 +2419,64 @@ class Config:
     AIRBRAKE_PAIR_TOL_M: float = 0.20
     AIRBRAKE_MIN_OFFSET_M: float = 0.20
     AIRBRAKE_AREA_TOL: float = 0.25
+    # How far the configured landing constants may sit from what the swept
+    # table says before the log calls it out.  See
+    # ``Autopilot.report_airframe``: this does not change the flight, it
+    # makes a disagreement impossible to miss, which is the whole lesson of
+    # failure 13 -- those constants were wrong by 1.8x for the life of the
+    # project because nothing could contradict them.
+    AIRFRAME_DISAGREE_FRACTION: float = 0.15
+    # **The L/D the approach actually flies, which is not best glide.**  2.05
+    # is what the airframe manages at its best-glide angle around 70 m/s.
+    # The approach is deliberately flown fast now (see ``APPROACH_FACTOR``),
+    # and fast is draggy: measured at the flare entry, v 127.3 m/s with
+    # 69.3 of sink is **L/D 1.54**, and 120.6 with 67.7 is 1.50.  Using the
+    # best-glide figure here is the same mistake failure 13 made with
+    # ``planeprobe``'s -- a number measured in one regime used to place
+    # geometry in another.
+    # **Re-measured, because the approach is not flown at 127 m/s any
+    # more.**  1.55 was taken at the flare entry when ``APPROACH_FACTOR``
+    # was 2.40; the ground distance per metre of height over the whole
+    # APPROACH phase, read off fourteen logs at the speeds it is flown at
+    # now, is **1.65 to 2.07, mean 1.87** -- and it barely moves whether the
+    # vehicle is high or low, which is the same measurement that says the
+    # S-turn is worth a few per cent rather than a third. Understating it
+    # understates ``excess``, which is what the S-turn is sized from and
+    # what the gate's margin is checked against. Failure 23's rule: a
+    # quantity measured from flight data describes the vehicle *as it was
+    # flown*.
+    # **And measured from the rollout to the wheels, not over APPROACH.**
+    # What this number sizes is where the vehicle touches down, so the span
+    # it has to describe is the whole of it -- the approach *and* the flare,
+    # which is flat and covers 400-500 m of ground for 150 of height.  Over
+    # 41 flights, ground from the rollout to the first wheel contact divided
+    # by the height there:
+    #
+    #     mean 2.08   sd 0.27   [1.67 .. 3.03]
+    #
+    # 1.55 was taken at the flare entry when the approach was flown at
+    # 2.40 times the stall; 1.95 was this measurement taken over the
+    # APPROACH phase alone and stopped at the flare. Understating it makes
+    # the cone hand over high, and the cone converts a metre of that into
+    # two metres of runway: at 1.95 the handover is 340 m high and the
+    # wheels land 700 m late. Failure 23, twice on the same constant.
+    # **And 2.08 -- the mean -- is the wrong end of the spread to use.**
+    # This number has two consumers that pull opposite ways: it sets what
+    # the *approach* is asked to reach, and through ``approach_needed`` it
+    # sets when the cone is allowed to hand over.  At 2.08 the handover test
+    # asks for a height the cone's own descent profile never reaches at the
+    # rollout, so the exit stops firing there and the vehicle leaves through
+    # the ``GATE_ALT_M`` floor instead -- flown, **eight of eight** exits
+    # were "out of height", 2.0 to 3.2 km below profile, and none of them
+    # landed.  A margin constant wants the pessimistic end of its own
+    # measurement, and the low quartile of the 41 flights is about 1.85.
+    # **4.2 is current; the "2.08 sd 0.27" below is not.**  ``landsum.py``
+    # measures the rollout-to-wheels ratio at 3.96 sd 0.41 today, on the
+    # configuration that lands 88% intact.  Do not "correct" the constant
+    # towards the stale comment, and see ``APPROACH_LD_DERIVED`` for why the
+    # derivation's 2.33 is a different quantity (it omits the flare, which is
+    # flat and covers 400-500 m of ground for 150 of height).
+    APPROACH_BEST_LD: float = 4.2# rollout to wheels, low end of 41
     # A rate term on the speed law, per unit of measured dv/dt over g (0 =
     # off): damps the approach's phugoid.  See ``guidance.alpha_for_speed``.
     APPROACH_SPEED_KD: float = 0.0
@@ -2437,7 +2495,7 @@ class Config:
     # (``Autopilot.approach_split_brake``) -- the Shuttle's outer glide
     # slope: alpha still holds the speed, the brake makes that speed cost a
     # steeper path.  Opened to the L/D factor ``distance / (height x
-    # airframe.approach_ld)`` that makes the straight path to the aim spend the
+    # APPROACH_BEST_LD)`` that makes the straight path to the aim spend the
     # height, never steeper than ``APPROACH_SPLIT_SINK_FACTOR`` x the design
     # sink (the top of the intact flares), only at or above
     # ``APPROACH_SPLIT_MIN_SPEED_FACTOR`` x stall (no brake while a slow
@@ -2592,7 +2650,7 @@ class Config:
     # (``test_the_gate_sits_on_a_path_the_vehicle_can_fly``) and the point
     # the approach's S-turn measures its surplus from, so moving it 1.7 km
     # moves four constraints at once.  The overshoot is real -- the
-    # rollout-to-wheels ratio is 2.4-2.5 where the approach's ratio said
+    # rollout-to-wheels ratio is 2.4-2.5 where ``APPROACH_BEST_LD`` says
     # 2.08, and part of it is not a ratio at all but the flare's roughly
     # fixed float -- and the honest fix is to model those two separately
     # rather than to aim at the grass.

@@ -1050,7 +1050,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # ``airframe.approach_ld``.  The approach flies 2.25 x stall, not the
     # 78 m/s best glide sits at, and the two ratios differ by a third.
     best_ld = airframe.approach_ld(env, cfg, height, mass, gravity)
-    glide_ld = airframe.approach_glide_ld(env, cfg, mass, gravity)
     # ``APPROACH_SPLIT_BRAKE``: the split rudder's L/D factor at its present
     # angle.  The surplus and the S-turn are sized against the ratio the
     # vehicle is flying, so the weave spends only what the brake does not;
@@ -1092,11 +1091,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
 
     # How much height there is over the best glide to the aim point.  Positive
     # is surplus, which is the side to be on.
-    # Exact: the glide at the braked ratio over the height, plus the
-    # flare's float (``airframe.approach_height``).
-    reachable = airframe.approach_height(
-        env, cfg, distance, mass, gravity,
-        vec.clamp(float(ld_factor or 1.0), 0.1, 1.0))
+    reachable = max(0.0, distance) / max(0.1, best_ld)
     excess = height - reachable
     target, floor = spend_as_speed(cfg, target, floor, excess, stall,
                                    gravity, False)
@@ -1144,7 +1139,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # left.**  Serpentining at ``theta`` flies ``1/cos(theta)`` times as far
     # for the same progress, and the shortfall has exactly that shape:
     # ``distance`` is the path a straight-in final would fly and
-    # ``height * airframe.approach_ld`` is the path the height can pay for.
+    # ``height * APPROACH_BEST_LD`` is the path the height can pay for.
     # Zero by construction the moment the vehicle is on profile, and off
     # near the ground and near the aim, where the cross-track it creates has
     # no time left to be taken back.
@@ -1308,9 +1303,7 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
                                                   cfg.APPROACH_PATH_LIMIT_M)
         alpha = vec.clamp(alpha, cfg.ALPHA_MIN_DEG, cfg.APPROACH_ALPHA_MAX_DEG)
 
-    # The straight glide's sink, without the float: the flare is not flown
-    # until the flare.
-    design = max(target, floor) / max(0.1, glide_ld)
+    design = max(target, floor) / max(0.1, clean_ld)
 
     command = ApproachCommand(alpha, bank, sink, wanted_sink, cross,
                               heading_error, distance, height, speed)
@@ -1335,14 +1328,14 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     # the same ratio (dE/ds = D/L).  The four diverts were at 150-155 m/s
     # against a 93 m/s best glide -- some 720 m of height uncounted.  The
     # table's own numbers (``env.best_ld`` / ``best_speed``, re-read at the
-    # landing mass).  On the straight glide, not ``clean_ld``: that already
-    # counts the float, which the energy height below counts again.
-    reach_ld = glide_ld
+    # landing mass), not the configured ``APPROACH_BEST_LD``: the first cut
+    # of this read that and changed nothing.
+    reach_ld = clean_ld
     energy = height
     if getattr(cfg, "ABORT_SHORT_BEST_GLIDE", False):
         measured = getattr(env, "best_ld", None)
         if measured is not None and measured > 0.0:
-            reach_ld = max(glide_ld, measured)
+            reach_ld = max(clean_ld, measured)
         glide = airframe.at_mass(env, getattr(env, "best_speed", None))
         if glide is not None and glide > 0.0:
             energy = height + (speed * speed - glide * glide) / (
@@ -1358,7 +1351,6 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
     command.target_speed = target
     command.speed_floor = floor
     command.clean_ld = clean_ld
-    command.glide_ld = glide_ld
     command.design_sink = design
     return command
 
@@ -2378,9 +2370,10 @@ def hac(env, cfg, end, r, v, mass, gravity, height, side,
     # The gate is at ``(0, -side * radius)`` in this circle's frame, so the
     # range to it is one hypotenuse and it is not ambiguous about anything.
     gate_range = math.hypot(distance * ux, side * radius + distance * uy)
-    approach_needed = airframe.approach_height(
-        env, cfg, gate_range + gate_dist(env, cfg)
-        + airframe.touchdown_aim(env, cfg), mass, gravity)
+    approach_needed = ((gate_range + gate_dist(env, cfg)
+                        + airframe.touchdown_aim(env, cfg))
+                       / max(0.1, airframe.approach_ld(env, cfg, height,
+                                                       mass, gravity)))
     command = HacCommand(alpha, bank, math.degrees(turn), distance, radius,
                          laps, side, height, needed, speed, sink)
     command.path = total
