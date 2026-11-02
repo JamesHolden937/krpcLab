@@ -2458,6 +2458,16 @@ class Config:
     APPROACH_SPLIT_FACTOR: tuple = ((0.0, 1.0), (10.0, 0.92), (20.0, 0.73),
                                     (30.0, 0.53), (38.0, 0.45))
     APPROACH_SPLIT_SINK_FACTOR: float = 1.5
+    # **Over the tarmac and hot, every brake out** (the user, 2026-11-01):
+    # past the threshold with height over the best glide to the aim, plus
+    # the speed over the held speed counted as height, still positive, the
+    # split rudder goes to its stop and the opposed flaps open with it; the
+    # speed loop holds the approach speed, so the drag is paid for in path
+    # angle -- a shallow dive, not an unloaded wing.  Latched; stowed at the
+    # flare door as before (``Autopilot.approach_hot``).  LOG15100 crossed
+    # the threshold 460 m up with the rudder at 24 of 38 deg and the flaps
+    # shut, and touched down 1726 m along.  Default, unflown.
+    APPROACH_HOT_BRAKES: bool = True
     # Over the cap, the brake fades out across this fraction of it rather
     # than stowing, and holds while faster than the held speed; 0 is the
     # stow (``Autopilot.approach_split_brake``).

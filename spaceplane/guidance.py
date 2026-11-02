@@ -781,6 +781,7 @@ class ApproachCommand:
         self.height = height
         self.speed = speed
         self.excess = 0.0
+        self.past_threshold = False
         self.scurve_deg = 0.0
         self.target_speed = speed
         self.speed_floor = 0.0
@@ -1341,6 +1342,11 @@ def approach(env, cfg, end, r, v, mass, gravity, height, weave=0.0,
             energy = height + (speed * speed - glide * glide) / (
                 2.0 * max(0.1, gravity))
     command.threshold_excess = energy - to_threshold / max(0.1, reach_ld)
+    # Signed metres to the threshold along the approach; zero or below is
+    # over the tarmac (``Autopilot.approach_hot``).
+    command.past_threshold = (distance - airframe.touchdown_aim(env, cfg)
+                              + float(getattr(cfg, "APPROACH_AIM_SHIFT_M",
+                                              0.0))) <= 0.0
     command.scurve_deg = scurve_deg
     # **The speed the approach is trying to hold, published.**  Anything that
     # adds drag has to know it: a glider that ends up below this can only get

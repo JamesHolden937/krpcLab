@@ -6024,7 +6024,7 @@ class Autopilot:
                 >= float(self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG) - 1.0)
 
     def throttle_spoiler(self, snap, surplus, full_at, allowed, phase,
-                         height):
+                         height, hot=False):
         """``BRAKES_BEFORE_WEAVE``: the opposed-flap spoiler as the second,
         throttled brake -- after the split rudder (which costs no attitude),
         before the weave or S-turn (which manoeuvre the airframe).
@@ -6046,6 +6046,10 @@ class Autopilot:
             reason = "stowed for the flare"
         elif self.roll_needs_the_flaps(snap):
             reason = "rolling"
+        elif hot:
+            # ``Autopilot.approach_hot``: both brakes at once, all the way.
+            want = top
+            reason = "hot over the runway"
         elif self.split_saturated() and surplus > 0.0 and full_at > 0.0:
             want = top * vec.clamp(surplus / full_at, 0.0, 1.0)
         last = getattr(self, "_spoiler_ut", None)
@@ -6203,6 +6207,35 @@ class Autopilot:
                 return f0 + (f1 - f0) * (angle - a0) / max(1e-6, a1 - a0)
         return 1.0
 
+    def approach_hot(self, snap, command, speed, held):
+        """``APPROACH_HOT_BRAKES``: over the tarmac with energy to spare --
+        height over the best glide to the aim plus the speed over the held
+        speed, as height -- every brake goes out at once (the split rudder
+        to its stop, the opposed flaps with it rather than after it) and
+        the speed loop, still holding ``held``, lowers the nose against the
+        drag: a shallow dive at the approach speed, never an unloaded wing.
+        Latched for the rest of the approach; the flare door and the
+        roll/slow/sink guards still stow the brakes.  LOG15100 crossed the
+        threshold 460 m up at 95 m/s with the rudder at 24 of 38 deg and
+        the flaps shut, retracted the rudder at 400 m because the aim was
+        behind it, flared 1.1 km down and touched down at 1726 m."""
+        if not getattr(self.cfg, "APPROACH_HOT_BRAKES", False):
+            return False
+        if getattr(self, "_approach_hot", False):
+            return True
+        if not getattr(command, "past_threshold", False):
+            return False
+        energy = (float(getattr(command, "excess", 0.0) or 0.0)
+                  + (speed * speed - held * held)
+                  / (2.0 * max(0.1, self.surface_gravity)))
+        if energy <= 0.0:
+            return False
+        self._approach_hot = True
+        self.logbook.event(snap.ut, "hot over the runway: every brake out, "
+                           "%.0f m/s (held %.0f), excess %+.0f m with the "
+                           "speed counted" % (speed, held, energy))
+        return True
+
     def approach_split_brake(self, snap, command, height, trigger, sink):
         """``APPROACH_SPLIT_BRAKE``: the split rudder opened to the glide
         ratio the geometry asks for.
@@ -6232,6 +6265,7 @@ class Autopilot:
         stall = airframe.stall(self.env, self.cfg)
         stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(0.0, sink)
         cap_sink = float(self.cfg.APPROACH_SPLIT_SINK_FACTOR) * design
+        hot = getattr(self, "_approach_hot", False)
         want = 0.0
         reason = ""
         # ``APPROACH_SPLIT_SINK_FADE``: over the cap the brake backs off in
@@ -6257,12 +6291,13 @@ class Autopilot:
                 fade <= 0.0 or (speed <= held and sink >= (1.0 + fade)
                                 * cap_sink)):
             reason = "sink"
-        elif command.distance > 50.0 and height > 1.0 and clean > 0.0:
+        elif hot or (command.distance > 50.0 and height > 1.0
+                     and clean > 0.0):
             if fade > 0.0 and cap_sink > 0.0 and sink > cap_sink \
                     and speed <= held:
                 scale = vec.clamp(((1.0 + fade) * cap_sink - sink)
                                   / (fade * cap_sink), 0.0, 1.0)
-            factor = command.distance / (height * clean)
+            factor = 0.0 if hot else command.distance / (height * clean)
             # The steepest path the sink cap allows at this speed.
             if cap_sink > 0.0:
                 factor = max(factor, speed / (cap_sink * clean))
@@ -6278,7 +6313,8 @@ class Autopilot:
                 scale *= vec.clamp((speed - (1.0 - slow_fade) * gate_speed)
                                    / (slow_fade * gate_speed), 0.0, 1.0)
             want *= scale
-            reason = "factor %.2f" % factor
+            reason = ("hot over the runway" if hot
+                      else "factor %.2f" % factor)
             if scale < 1.0:
                 reason += " x%.2f (sink)" % scale
         dt = max(0.05, snap.ut - (getattr(self, "_split_app_ut", None)
@@ -6383,13 +6419,17 @@ class Autopilot:
         # (``FLARE_ALT_M + FLARE_LEAD_S * sink``) and the next aircraft's is
         # somewhere else entirely.  Hence the ordering: the trigger first,
         # then the brake that has to stay clear of it.
+        self.approach_hot(snap, command, vec.norm(snap.velocity), max(
+            float(getattr(command, "target_speed", 0.0) or 0.0),
+            float(getattr(command, "speed_floor", 0.0) or 0.0)))
         if split_brake:
             self.approach_split_brake(snap, command, height, trigger, sink)
         stow = trigger + float(self.cfg.AIRBRAKE_STOW_LEAD_S) * max(
             0.0, sink)
         self.throttle_spoiler(snap, getattr(command, "excess", 0.0),
                               float(self.cfg.APPROACH_SCURVE_M),
-                              height > stow, "approach", height)
+                              height > stow, "approach", height,
+                              hot=getattr(self, "_approach_hot", False))
         if height <= trigger:
             self.flare_since = snap.ut
             self.enter(FLARE, snap.ut, "h=%.1f v=%.1f sink=%.1f cross=%+.0f"
@@ -6626,7 +6666,13 @@ class Autopilot:
                 shown = ((self.touchdown_speed - speed)
                          / (snap.ut - self.touchdown_ut))
                 decel = max(decel, shown)
-            if decel is not None and speed > 5.0:
+            # And not before that second: 0.8 s after touchdown, with the
+            # brakes not yet biting, LOG15100 read 2.1 m/s^2 and diverted
+            # off a runway it was braking at ~3.6 on.
+            settling = (getattr(self.cfg, "ABORT_NORTH_TOLERANT", False)
+                        and self.touchdown_ut is not None
+                        and snap.ut - self.touchdown_ut <= 1.0)
+            if decel is not None and speed > 5.0 and not settling:
                 stop = speed * speed / (2.0 * max(0.2, decel))
                 left = float(self.cfg.RUNWAY_LENGTH_M) - down
                 if stop > left:
