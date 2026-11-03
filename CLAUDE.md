@@ -88,6 +88,7 @@ readers. New autopilots go here and plug into all of it.
 | `ascent/` | MechJeb classic ascent (over KRPC.MechJeb), turn shape solved from the craft at liftoff; drops the booster when it has just enough propellant to fly home and follows the upper stage to orbit (the booster is flown from FMRS's save by `boosterland/fmrs.py`). Read `ascent/CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
 | `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
+| `propPitch/` | a propeller plane's collective blade pitch held at the setting that goes fastest (extremum seeking on forward aero force); flies only the blades. Read `propPitch/CLAUDE.md` |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
 | `common/` | shared by every autopilot: `vec`, `logbook`, `pacing` (loop pacing and the time-scale governor), `rcs` (the RCS valve), `timescale` (the farm plugin's file), `paths`, `launcher`, `cli` (the standard flags and connect), `config` (`--set`, the defaults fingerprint), `panel` (`ControlPanel`), `krpcpilot` (engaging and aiming kRPC's autopilot), `geo` (gravity, great-circle distance), `idle` (gimbals and surfaces held when useless). **Anything two pilots both need goes here, not into a second copy** |
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |
@@ -416,6 +417,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
 | [lowThrust/CLAUDE.md](lowThrust/CLAUDE.md) | anything in `lowThrust/` |
+| [propPitch/CLAUDE.md](propPitch/CLAUDE.md) | anything in `propPitch/` |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
 | [saves/README.md](saves/README.md) | which save is which vehicle and state; adding a save |
 

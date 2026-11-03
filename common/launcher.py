@@ -35,6 +35,7 @@ PILOTS = [
     ("BOOSTBACK AND LAND", "boosterland", "boosterland.autoland"),
     ("BOOSTBACK FROM FMRS SAVE", "fmrs", "boosterland.fmrs"),
     ("ASCENT TO ORBIT", "ascent", "ascent.autopilot"),
+    ("PROP PITCH FOR TOP SPEED", "prop", "propPitch.autopilot"),
 ]
 
 # run.sh --pilot accepts these as well as the names above.
