@@ -4,7 +4,7 @@ Holds a propeller plane's collective blade pitch at whatever setting makes it
 go fastest, continuously. The root `CLAUDE.md` applies in full.
 
 ```
-STANDBY -> SEEK -> DONE        (./run.sh --pilot prop)
+STANDBY -> TRACK -> DONE        (./run.sh --pilot prop)
 ```
 
 **It flies only the propellers.** The pilot (or the harness) flies the
@@ -15,23 +15,39 @@ part with a `Deploy Angle` field), disables the craft's KAL controllers
 `Deploy Angle`. TERMINATE gives it all back: the KALs re-enabled, the
 rotors' RPM and torque limits as they were.
 
-**Objective**: `J` = the aerodynamic force along the vessel's nose divided by
-its mass (`Flight.aerodynamic_force` in the vessel frame, which counts the
-blades). That is propeller thrust minus airframe drag. At any airspeed the
-pitch that maximises it accelerates fastest, so tracking it reaches the
-highest speed. The log carries `acc=`, the measured specific force along
-the nose (acceleration less gravity), as a check: the two agree to ~0.1-1
-m/s^2 in flight (LOG15158).
+**Law** (`bladeModel.py`): the best pitch is *computed*, not searched for.
+KSP evaluates each blade as one lifting surface at one point
+(`velocityOffset` along its span, ~6.0 m from the hub on the R-25), lift
+along the blade's normal turned by the Deploy Angle, drag along the flow,
+both from the part cfg's curves (read from Assembly-CSharp:
+`ModuleControlSurface.FixedUpdate`, `ModuleLiftingSurface`). At START the
+pilot reads every blade's position and axes once; every tick it reads the
+airspeed vector in the vessel's axes, density and speed of sound, evaluates
+that law for all blades at every angle (1 deg grid + golden section) and
+commands the angle with the most thrust along the nose. No dither, no lag:
+a change of conditions is answered on the next tick. Data for all nine stock
+blades is in `bladeTable.py`, generated from the game's cfgs by
+`tools/bladetable.py` (a test checks it against `testInstances/base`); a
+blade not in it stops START with its name.
 
-**Law** (`seeker.py`): extremum seeking, no model of the blade, rotor or
-craft. The pitch is dithered by a 1 s, +-2 deg sine. Every tick, J over the
-last 2 s is fitted by least squares to mean + trend + trend^2 + sin + cos +
-sin2 + cos2. The in-phase sine gives the slope J' and the cos2 term gives the
-curvature J'' (as -J'' A^2/4). Well-measured curvatures (t < -3) feed a
-smoothed J''. With one, the centre takes Newton steps toward -J'/J'' (tau
-1 s, at most 5 deg/s). Before that it climbs at 5 tanh(t/3) deg/s on the
-slope's t-statistic. Every second the KALs' Enabled flag and the rotors'
-limits are read back and re-set if changed.
+**Blade load and rpm**: each pitch is scored at the rpm its rotor would
+settle at. KSP's rotor is a stiff velocity drive (damper 1000) capped at
+`maxTorque` x torque limit (70 kN m, EM-32S); its EC draw is
+0.06 x 70 x limit x rpm/460 / 0.75 = 5.6 EC/s at 100%, independent of
+load, and with no EC it gives no torque. The motor's real torque is
+*learned* from the measured rpm (`Rotor.observe`): below target and flat
+for 0.6 s, the model's blade torque at that rpm is all the motor has; while
+holding target it recovers toward the cap over ~5 s. A dead motor learns
+~0 and the search then stops loading that rotor.
+
+**Deflection sense** is not readable through kRPC (the CW/CCW variant sets
+it), so `choose_signs` picks, per blade, the sense that pushes forward at
+rest; the thrust only depends on that and the spin's product.
+
+The log's `J=` is the measured forward aero force per unit mass (thrust less
+airframe drag); `model=` the model's thrust per unit mass at the angle flown;
+`motor=` the learned torque per rotor (kN m); `torque=` the worst rotor's
+load over its cap.
 
 ## The test craft: `qs_prop`, `qs_prop_noon`
 
@@ -43,52 +59,44 @@ the panels give 1.5 EC/s and the rotors starve and stall. `qs_prop_noon`
 is the same save warped +5100 s on the farm (53 EC/s): fly that one.
 **Rotor brakes are on the Brakes action group**: brakes on means 0 rpm.
 
-## Where it stands (2026-11-02, fingerprint `9ce0c552`)
+## Where it stands (2026-11-02)
 
-Unflown live. On the farm (`qs_prop_noon`):
+Unflown live. On the farm (`qs_prop_noon`), LOG15177-15183:
 
-- **The seeker works on the takeoff roll.** On 6/6 flights (LOG15168-15173)
-  it went from 0 deg at rest to 60-70 deg by 90 m/s, at its 5 deg/s cap,
-  while forward acceleration rose from 0 to 2-3 g. `J` agrees with the
-  measured `acc=` to within ~5%.
-- **Every flight ended destroyed once airborne.** At 2-3 g of thrust,
-  `propfly.py`'s kRPC attitude hold loses the plane: vertical speed swings
-  +25/-74 m/s and it hits the ground. The manoeuvring then dominates J,
-  and the fit reads nonsense slopes (|t| ~ 100, lag ~180 deg).
-  **Not yet known: is that the harness's hold or the airframe?** Fixed
-  pitch 45 deg never leaves the ground (36 m/s top speed, LOG15160).
-- The best pitch rises with airspeed: ~10-20 deg at rest, ~30 at 3 m/s,
-  ~50 at 17 m/s, ~68 at 50-90 m/s. **Low pitch at speed is a brake**: the
-  blades windmill. A false negative slope at 90 m/s once took the pitch
-  68 -> 23 deg and decelerated the plane at 9 m/s^2 (LOG15167, the old
-  6 s linear fit).
-- The craft's KAL maps full throttle to 0 deg, which on the farm is no
-  thrust at all. The live game may differ: ~50 extra mods.
-- The blade's "Angle of Attack" / "Air Speed" fields read ~0 on the farm,
-  so the blade gives no incidence feedback.
+- The model's best angle: 85 at rest, 82 at 14 m/s, 75 at 52, 68 at 91,
+  60 at 133 m/s; the old seeker's measured best at 90 m/s was 68.
+- `bladeprobe` (LOG15182, angles 40-89 on the roll): J and model agree
+  within ~1 m/s^2 at 40-80 deg at 0-40 m/s. With a starved motor (115 rpm,
+  readout refreshed every 0.3 s) the model's peak was ~4 deg higher than
+  measured -- not a clean test.
+- At the optimum the plane accelerates ~3.5 g; J 29-34 against model 38-40
+  at 70-110 m/s (the gap is airframe drag).
+- **Every farm flight is destroyed by ~100-130 m/s**: sideslip of 25-38 m/s
+  on the runway (or airborne under the harness's hold). The harness cannot
+  fly this plane at this thrust; top speed is unmeasured.
+- In the probe, EC fell 53 -> 2 while the plane tumbled to 200 m, and three
+  motors disengaged; the learning took their torque to ~0. The draw law says
+  4 rotors use 22 EC/s, so the drain was something else (panels out of the
+  sun or lost).
 
 ## Next
 
-1. The user's live flight: does the plane fly at the pitch this picks?
-   Read `slope/t/curv/rate` in the log. Do the Newton steps hold the
-   centre still in steady flight?
-2. A harness that can fly the plane (a gentler attitude law, or
-   `RATE_MAX_DEG_S` limited on the roll), so top speed can be measured
-   against a fixed-pitch sweep.
-3. When the pilot manoeuvres, J changes for reasons that aren't the
-   pitch. Consider gating the centre's motion on |vertical speed| or
-   bank, or measuring J along the velocity with the lift removed.
-4. START costs ~2500 calls (each blade's field table): read
-   `field_list` by code name once instead.
+1. The user's live flight: read `J=`/`model=`/`motor=`/`rpm=`.
+2. A harness that can fly it (rudder/heading on the runway at 3.5 g).
+3. RPM as a second control: at 460 rpm the velocity point is near Mach 0.85,
+   where the liftMach curve has fallen to ~0.19; the model can score rpm.
+4. START costs ~2500 calls (~4 s): the blade field tables.
 
 ## Commands
 
 ```bash
 ./run.sh --pilot prop                                  # live: START on the panel
 ./propPitch/tools/propfly.py --instance 0              # farm: take off, hold 300 m, 300 game-s
-./propPitch/tools/propfly.py --instance 1 --set DITHER_AMP_DEG=0 \
-    --set RATE_MAX_DEG_S=0 --set INITIAL_PITCH_DEG=45  # a fixed pitch, for reference
-.venv-pypy/bin/python -m unittest propPitch.tests.testSeeker
+./propPitch/tools/propfly.py --instance 1 --probe --takeoff-speed 9999 \
+    --seconds 40 --set LOG_INTERVAL_UT=0               # model vs game, angle sweep
+./propPitch/tools/probesum.py logs/LOG<n>              # ... read it
+./propPitch/tools/bladetable.py                        # regenerate bladeTable.py
+.venv-pypy/bin/python -m unittest propPitch.tests.testBladeModel
 ```
 
 `propfly.py` flies the plane from its own connection with kRPC's autopilot

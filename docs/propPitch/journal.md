@@ -31,3 +31,23 @@ as fast as possible.
   speed +25/-74 m/s). Harness or airframe: unresolved.
 - Fixed pitch 30/45/60/75 (LOG15159-15162): 45 tops out at 36 m/s on the
   ground. 60 and 75 at rest stall the blades and drain the EC.
+
+## 2026-11-02 evening: the optimum computed, not searched
+
+The user: "could you make it calculate the optimum instead of hill climb?
+conditions change fast sometimes", then "blade load reduces rpm".
+
+- Read KSP's blade code (Assembly-CSharp, monodis): one lifting surface per
+  blade evaluated at `velocityOffset` (-5.8 m along the R-25's span: ~6.0 m
+  radius, ~290 m/s at 460 rpm), lift along the deflected normal (not
+  perpendicular to the flow), drag along the flow; q and Mach of that point.
+  Deploy 0 = blade normal tangential (a flat plate into the rotation: the
+  stall the seeker sat in at rest); 90 = flat in the disc.
+- `bladeModel.py` replaces `seeker.py` (deleted). LOG15177-15183.
+  Bug on the way: thrust kN over mass kg in the log (fixed).
+- Rotor code: velocity drive, damper 1000, cap maxTorque x limit; EC draw
+  load-independent. Load slows the rotor past the cap or without power;
+  the motor torque is learned from rpm. Bug: the rpm readout refreshes
+  every 0.3 s, so spin-up read as a limit (70 -> 54); fixed with a 0.6 s
+  flat-window rule.
+- Probe agreement and the harness crashes: propPitch/CLAUDE.md.
