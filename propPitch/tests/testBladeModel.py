@@ -115,3 +115,17 @@ class TestMotor(unittest.TestCase):
             m.observe([460.0], [460.0], 80.0, (0.0, 30.0, 0.0), 1.2, 340.0,
                       0.05)
         self.assertGreater(r.max_torque, 0.9 * r.cap)
+
+
+class TestSpinUp(unittest.TestCase):
+    def test_stepwise_spin_up_is_not_a_limit(self):
+        """A readout that steps every 0.3 s while spinning up is not a
+        motor at its limit."""
+        m = PropModel([rotor()])
+        r = m.rotors[0]
+        t = 0.0
+        while t < 3.0:
+            shown = min(460.0, 150.0 * (int(t / 0.3) * 0.3))
+            m.observe([shown], [460.0], 85.0, (0.0, 0.0, 0.0), 1.2, 340.0, 0.05)
+            t += 0.05
+        self.assertGreater(r.max_torque, 0.95 * r.cap)

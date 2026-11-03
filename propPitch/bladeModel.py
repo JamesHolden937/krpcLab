@@ -161,7 +161,7 @@ class Blade:
         vel = _add(v_air, _cross(omega, self.point))
         w2 = _dot(vel, vel)
         if w2 < 1e-6:
-            return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+            return (0.0, 0.0, 0.0), None
         w = math.sqrt(w2)
         u = (vel[0] / w, vel[1] / w, vel[2] / w)
         n = self.normal_at(deploy_deg)
@@ -186,7 +186,8 @@ class Rotor:
         self.cap = max_torque           # the game's motor limit
         self.max_torque = max_torque    # what the motor delivers (learned)
         self.spin = spin
-        self.last_rpm = None
+        self.history = []
+        self.clock = 0.0
 
     def thrust_torque(self, deploy_deg, rpm, v_air, rho, sound,
                       forward=(0.0, 1.0, 0.0)):
@@ -200,7 +201,7 @@ class Rotor:
         for b in self.blades:
             f, parts = b.force(deploy_deg, omega, v_air, rho, sound)
             thrust += _dot(f, forward)
-            if parts[0] == (0.0, 0.0, 0.0) and parts[1] == (0.0, 0.0, 0.0):
+            if parts is None:
                 continue
             n, lift, u, drag = parts
             fl = (n[0] * lift, n[1] * lift, n[2] * lift)
@@ -237,15 +238,20 @@ class Rotor:
 
 
     def observe(self, rpm, rpm_target, deploy, v_air, rho, sound, dt,
-                forward=(0.0, 1.0, 0.0), sag=0.02, rise_rpm_s=20.0,
+                forward=(0.0, 1.0, 0.0), sag=0.02, rise_rpm=2.0, window_s=0.6,
                 tau_s=0.5, recover_s=5.0):
         """Learn the motor's torque from its measured ``rpm`` with the blades
         at ``deploy``."""
         if self.cap is None or rpm is None or dt <= 0.0:
             return
-        rising = (self.last_rpm is not None
-                  and (rpm - self.last_rpm) / dt > rise_rpm_s)
-        self.last_rpm = rpm
+        # KSP refreshes a rotor's rpm readout every 0.3 s
+        # (rpmRefreshSeconds), so a rotor spinning up reads flat between
+        # refreshes: it is "rising" if it rose at all over the last window.
+        self.history.append((self.clock, rpm))
+        self.clock += dt
+        while self.history and self.history[0][0] < self.clock - window_s:
+            self.history.pop(0)
+        rising = rpm - min(r for _, r in self.history) > rise_rpm
         _, load = self.thrust_torque(deploy, rpm, v_air, rho, sound, forward)
         load = max(0.0, load)
         a = min(1.0, dt / tau_s)
