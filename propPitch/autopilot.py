@@ -117,6 +117,7 @@ class PropPilot:
         self.seeker = None
         self.aoa_field = None
         self.start_ut = None
+        self.next_reassert = 0.0
         self.last_cmd = None
         self.lines = []
         ut = self.sc.ut
@@ -195,6 +196,37 @@ class PropPilot:
         self.seeker = PitchSeeker(self.cfg, start)
         self.start_ut = ut
 
+    def reassert(self, ut):
+        """Read back the KALs' Enabled flag and the rotors' limits; re-set
+        whatever something else changed, and say so."""
+        changed = []
+        if self.cfg.DISABLE_KAL:
+            for m in self.kals:
+                try:
+                    if partmodule.get_field(m, "Enabled") == "True":
+                        partmodule.set_field_bool_by_id(
+                            m, "controllerEnabled", False)
+                        changed.append("KAL")
+                except Exception:                       # noqa: BLE001
+                    pass
+        for r in self.rotors:
+            try:
+                if (abs(r.target_rpm - self.cfg.ROTOR_RPM) > 0.5
+                        or abs(r.torque_limit - self.cfg.ROTOR_TORQUE_PCT) > 0.5
+                        or not r.motor_engaged or r.locked):
+                    changed.append("rotor %.0f/%.0f%s%s" % (
+                        r.target_rpm, r.torque_limit,
+                        "" if r.motor_engaged else " off",
+                        " locked" if r.locked else ""))
+                    r.motor_engaged = True
+                    r.locked = False
+                    r.torque_limit = self.cfg.ROTOR_TORQUE_PCT
+                    r.target_rpm = self.cfg.ROTOR_RPM
+            except Exception:                           # noqa: BLE001
+                pass
+        if changed:
+            self.log.event(ut, "re-set: %s" % ", ".join(changed))
+
     def hand_back(self, ut):
         for r, rpm, torque, engaged in self.saved_rotors:
             try:
@@ -260,6 +292,9 @@ class PropPilot:
         j = None
         if force is not None and mass:
             j = force[1] / mass
+        if ut >= self.next_reassert:
+            self.reassert(ut)
+            self.next_reassert = ut + self.cfg.REASSERT_S
         cmd = self.seeker.step(ut, j)
         if self.last_cmd is None or abs(cmd - self.last_cmd) >= 0.01:
             for b in self.blades:
@@ -274,8 +309,12 @@ class PropPilot:
                    meas if meas is not None else float("nan"), rpm,
                    aoa if aoa is not None else float("nan"), ec or 0))
         if fit is not None:
-            text += (" slope=%+7.4f lag=%+5.0f trend=%+6.3f"
-                     % (fit.slope, fit.lag_deg, fit.trend))
+            text += (" slope=%+7.4f t=%+6.1f curv=%+8.5f/%+5.1f lag=%+5.0f "
+                     "trend=%+6.3f rate=%+5.2f%s"
+                     % (fit.slope, fit.slope_t, fit.curvature,
+                        fit.curvature_t, fit.lag_deg, fit.trend,
+                        self.seeker.rate,
+                        " newton" if self.seeker.newton else ""))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : SEEK",
                       "speed   : %.1f m/s" % (speed or 0),

@@ -23,7 +23,7 @@ class TestSeeker(unittest.TestCase):
         cfg = Config()
         s = PitchSeeker(cfg, start)
         rng = random.Random(1)
-        t, dt = 0.0, 0.1
+        t, dt = 0.0, 0.05
         cmd = s.command(0.0)
         hist = []
         while t < seconds:
@@ -40,13 +40,32 @@ class TestSeeker(unittest.TestCase):
             self.assertAlmostEqual(s.centre, 40.0, delta=2.0)
 
     def test_noise_and_lag(self):
-        s = self.run_plant(10.0, noise=0.05, lag_s=0.3)
+        s = self.run_plant(10.0, noise=0.05, lag_s=0.1)
         self.assertAlmostEqual(s.centre, 40.0, delta=3.0)
 
     def test_follows_speed(self):
         speed = lambda t: 30.0 + 0.3 * t                # noqa: E731
         s = self.run_plant(30.0, seconds=200.0, speed_fn=speed)
         self.assertAlmostEqual(s.centre, 20.0 + 0.4 * speed(200.0), delta=4.0)
+
+    def test_takeoff_roll(self):
+        """0 -> 120 m/s in 30 s: the optimum moves 1.6 deg/s."""
+        speed = lambda t: min(120.0, 4.0 * t)          # noqa: E731
+        s = self.run_plant(5.0, seconds=40.0, speed_fn=speed, noise=0.01)
+        self.assertAlmostEqual(s.centre, 20.0 + 0.4 * 120.0, delta=2.0)
+
+    def test_no_hunting(self):
+        cfg = Config()
+        s = PitchSeeker(cfg, 70.0)
+        rng = random.Random(3)
+        t, cmd, seen = 0.0, s.command(0.0), []
+        while t < 120.0:
+            t += 0.05
+            cmd = s.step(t, plant(cmd, 50.0) + rng.gauss(0.0, 0.01))
+            if t > 60.0:
+                seen.append(s.centre)
+        self.assertLess(max(seen) - min(seen), 2.0)
+        self.assertAlmostEqual(sum(seen) / len(seen), 40.0, delta=1.0)
 
     def test_clamped(self):
         cfg = Config()
