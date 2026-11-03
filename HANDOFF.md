@@ -1,5 +1,31 @@
 # HANDOFF — read this first, rewrite it last
 
+## 2026-11-02: propPitch -- new autopilot, prop pitch for top speed (fingerprint `9ce0c552`)
+
+The user asked for a new autopilot: on the prop plane in the newest live
+save, keep adjusting the prop pitch to go as fast as possible. Built as
+`propPitch/` (`./run.sh --pilot prop`, launcher button "PROP PITCH FOR TOP
+SPEED"). It flies only the blades: the KALs are off and the rotors run at
+460 rpm / 100%. Extremum seeking on the forward aero force per unit mass,
+with Newton steps on a measured curvature. Committed and pushed; farm
+stopped. Read `propPitch/CLAUDE.md` (where it stands, next) and
+`docs/propPitch/journal.md`.
+
+**Where it stands:** unflown live. On the farm (`qs_prop_noon`) the
+takeoff roll does what it should: 0 -> 60-70 deg, 2-3 g of acceleration.
+Every airborne flight was lost under the harness's kRPC hold
+(LOG15168-15173). Is that the harness or the airframe? Unresolved.
+`qs_prop` (the live file) is at sunrise, and the rotors starve on 55 EC:
+fly the noon save.
+
+**Next:** the user's live log (slope/t/curv/rate lines); a harness that
+can fly a 3 g prop plane; robustness of J to the pilot's manoeuvres.
+
+**Traps paid:** rotor brakes ride the Brakes group (brakes on = 0 rpm).
+A plane that doubles its speed inside the fit window reads as a false slope:
+fit a quadratic trend over a short window. Low pitch at speed windmills
+(a brake, not neutral).
+
 ## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
 
 Started from the user's live FMRS flight (LOG15102: Heavy Shuttle booster,

@@ -95,7 +95,7 @@ readers. New autopilots go here and plug into all of it.
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
 | `saves/` | **the reference quicksaves and craft files** -- tracked; the farm copies drift. `saves/README.md` says which save is which vehicle |
 | `testInstances/` | the measurement farm's scripts (the 15 GB of game copies beside them are git-ignored) |
-| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
+| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/`, `propPitch/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
 | `logs/` | every flight's `LOG<n>`, numbered across all autopilots; git-ignored, cited by number in the docs |
 
 Every autopilot has the same shape: one phase machine is the only kRPC-aware
