@@ -127,6 +127,7 @@ class PropPilot:
         self.start_ut = None
         self.next_reassert = 0.0
         self.last_cmd = None
+        self.last_ut = None
         self.lines = []
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
@@ -241,6 +242,7 @@ class PropPilot:
         if unknown:
             raise RuntimeError("no aero data for blade part(s) %s "
                                "(propPitch/bladeTable.py)" % sorted(unknown))
+        self.model_rotors = [i for i, (_, r) in enumerate(rotors) if r.blades]
         rotors = [r for _, r in rotors if r.blades]
         signs = choose_signs(rotors, self.cfg.ROTOR_RPM)
         self.model = PropModel(rotors)
@@ -335,7 +337,8 @@ class PropPilot:
     def run_track(self, ut):
         got = self.read()
         force, mass, v_air, rho, sound, speed, alt, vs, ec = got[:9]
-        rpms = [x for x in got[9:] if x is not None]
+        rpm_list = list(got[9:])
+        rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
         if ut >= self.next_reassert:
             self.reassert(ut)
@@ -343,6 +346,14 @@ class PropPilot:
         cfg = self.cfg
         targets = [cfg.ROTOR_RPM] * len(self.model.rotors)
         opt = None
+        dt = 0.0 if self.last_ut is None else ut - self.last_ut
+        self.last_ut = ut
+        if (v_air is not None and rho and sound and self.last_cmd is not None
+                and None not in rpm_list):
+            # The rotors' rpm now answers the angle flown since last tick.
+            self.model.observe([rpm_list[i] for i in self.model_rotors],
+                               targets, self.last_cmd, v_air, rho,
+                               sound, dt)
         if v_air is not None and rho and sound:
             opt = self.model.optimum(targets, v_air, rho, sound,
                                      cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG,
@@ -361,21 +372,23 @@ class PropPilot:
         rpm = sum(rpms) / len(rpms) if rpms else float("nan")
         # The model's thrust at the angle flown, per unit mass: J less this
         # is the airframe's drag, whatever the angle.
-        model_acc = (flown.thrust / mass if flown is not None and mass
-                     else float("nan"))
-        qfrac = (max(q / r.max_torque for q, r in zip(flown.torques,
+        model_acc = (1000.0 * flown.thrust / mass
+                     if flown is not None and mass else float("nan"))
+        qfrac = (max(q / r.cap for q, r in zip(flown.torques,
                                                        self.model.rotors)
-                     if r.max_torque) if flown is not None and any(
-                         r.max_torque for r in self.model.rotors)
+                     if r.cap) if flown is not None and any(
+                         r.cap for r in self.model.rotors)
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
-                "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f "
+                "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
                 "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
                    j if j is not None else float("nan"), model_acc, rpm,
                    min(flown.rpms) if flown is not None else float("nan"), qfrac,
+                   ",".join("%.0f" % (r.max_torque or 0)
+                            for r in self.model.rotors),
                    *(v_air or (float("nan"),) * 3), ec or 0))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",

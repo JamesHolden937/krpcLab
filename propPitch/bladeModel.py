@@ -29,10 +29,16 @@ angle is a one-dimensional search.  Each rotor's blades sit at evenly spaced
 azimuths, so the blades' geometry frozen at any one moment is already an
 average around the disc.
 
-A rotor whose motor cannot hold its target speed against the blades'
-torque slows until the torque balances; ``Rotor.max_torque`` (the motor's
-limit times its torque-limit setting) is where that happens, and the
-search scores every angle at the speed the rotor would settle at.
+Blade load slows a rotor once its motor runs out of torque.  KSP's rotor
+is a velocity drive (``ModuleRoboticServoRotor``: damper 1000, capped at
+``maxTorque`` x the torque limit; no torque at all without power), so the
+rotor holds its target rpm until the blades' torque reaches the motor's,
+then slows until the two balance.  The search scores every angle at the
+rpm the rotor would settle at.  The motor's torque is *learned*
+(``PropModel.observe``): whenever a rotor runs below its target and is not
+spinning up, the torque the model says its blades are putting on it at the
+measured rpm is all the motor has (a power-starved motor reads near 0), and
+while it holds its target the estimate recovers toward the game's cap.
 """
 
 import math
@@ -177,8 +183,10 @@ class Rotor:
     def __init__(self, axis, blades, max_torque=None, spin=1.0):
         self.axis = _unit(axis)
         self.blades = blades
-        self.max_torque = max_torque
+        self.cap = max_torque           # the game's motor limit
+        self.max_torque = max_torque    # what the motor delivers (learned)
         self.spin = spin
+        self.last_rpm = None
 
     def thrust_torque(self, deploy_deg, rpm, v_air, rho, sound,
                       forward=(0.0, 1.0, 0.0)):
@@ -209,6 +217,13 @@ class Rotor:
         if self.max_torque is None or q <= self.max_torque:
             return t, q, rpm_target
         lo, hi = 0.0, rpm_target
+        if self.thrust_torque(deploy_deg, 0.0, v_air, rho, sound,
+                              forward)[1] >= self.max_torque:
+            # Even stopped the blades load it past the motor: they drive it
+            # backwards; call it stopped.
+            t, q = self.thrust_torque(deploy_deg, 0.0, v_air, rho, sound,
+                                      forward)
+            return t, q, 0.0
         for _ in range(18):
             mid = 0.5 * (lo + hi)
             _, qm = self.thrust_torque(deploy_deg, mid, v_air, rho, sound,
@@ -219,6 +234,30 @@ class Rotor:
                 lo = mid
         t, q = self.thrust_torque(deploy_deg, lo, v_air, rho, sound, forward)
         return t, q, lo
+
+
+    def observe(self, rpm, rpm_target, deploy, v_air, rho, sound, dt,
+                forward=(0.0, 1.0, 0.0), sag=0.02, rise_rpm_s=20.0,
+                tau_s=0.5, recover_s=5.0):
+        """Learn the motor's torque from its measured ``rpm`` with the blades
+        at ``deploy``."""
+        if self.cap is None or rpm is None or dt <= 0.0:
+            return
+        rising = (self.last_rpm is not None
+                  and (rpm - self.last_rpm) / dt > rise_rpm_s)
+        self.last_rpm = rpm
+        _, load = self.thrust_torque(deploy, rpm, v_air, rho, sound, forward)
+        load = max(0.0, load)
+        a = min(1.0, dt / tau_s)
+        if rpm < rpm_target * (1.0 - sag):
+            if not rising:
+                self.max_torque += a * (min(load, self.cap) - self.max_torque)
+        else:
+            # Holding the target: the motor has at least the load, and the
+            # cap is the most it can have.
+            self.max_torque = max(self.max_torque, min(load, self.cap))
+            self.max_torque += min(1.0, dt / recover_s) * (self.cap
+                                                           - self.max_torque)
 
 
 class Optimum:
@@ -235,6 +274,10 @@ class PropModel:
     def __init__(self, rotors, forward=(0.0, 1.0, 0.0)):
         self.rotors = rotors
         self.forward = forward
+
+    def observe(self, rpms, rpm_targets, deploy, v_air, rho, sound, dt):
+        for r, rpm, tgt in zip(self.rotors, rpms, rpm_targets):
+            r.observe(rpm, tgt, deploy, v_air, rho, sound, dt, self.forward)
 
     def evaluate(self, deploy, rpm_targets, v_air, rho, sound):
         """Total thrust (kN) with each rotor where it settles."""

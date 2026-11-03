@@ -86,3 +86,32 @@ class TestTable(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMotor(unittest.TestCase):
+    def test_starved_motor_is_learned_and_feathers(self):
+        """A rotor that sags under load teaches the model its real torque;
+        with none left the optimum stops loading it."""
+        m = PropModel([rotor()])
+        r = m.rotors[0]
+        full = m.optimum([460.0], (0.0, 60.0, 0.0), 1.2, 340.0)
+        for _ in range(100):      # sagging to 300 rpm at the full-cap angle
+            m.observe([300.0], [460.0], full.deploy, (0.0, 60.0, 0.0), 1.2,
+                      340.0, 0.05)
+        self.assertLess(r.max_torque, r.cap)
+        weak = m.optimum([460.0], (0.0, 60.0, 0.0), 1.2, 340.0)
+        self.assertLess(weak.rpms[0], 460.0)
+        r.max_torque = 0.0
+        dead = m.optimum([460.0], (0.0, 60.0, 0.0), 1.2, 340.0)
+        self.assertGreater(dead.thrust, m.evaluate(full.deploy, [460.0],
+                                                   (0.0, 60.0, 0.0), 1.2,
+                                                   340.0).thrust)
+
+    def test_holding_target_recovers(self):
+        m = PropModel([rotor()])
+        r = m.rotors[0]
+        r.max_torque = 5.0
+        for _ in range(400):
+            m.observe([460.0], [460.0], 80.0, (0.0, 30.0, 0.0), 1.2, 340.0,
+                      0.05)
+        self.assertGreater(r.max_torque, 0.9 * r.cap)
