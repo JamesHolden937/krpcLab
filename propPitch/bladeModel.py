@@ -251,12 +251,15 @@ class Rotor:
         self.clock += dt
         while self.history and self.history[0][0] < self.clock - window_s:
             self.history.pop(0)
-        rising = rpm - min(r for _, r in self.history) > rise_rpm
+        # Learn only from a full window of flat readings: a rotor still at
+        # rest as its motor engages reads like a dead one for a moment.
+        steady = (self.history[-1][0] - self.history[0][0] >= 0.9 * window_s
+                  and rpm - min(r for _, r in self.history) <= rise_rpm)
         _, load = self.thrust_torque(deploy, rpm, v_air, rho, sound, forward)
         load = max(0.0, load)
         a = min(1.0, dt / tau_s)
         if rpm < rpm_target * (1.0 - sag):
-            if not rising:
+            if steady:
                 self.max_torque += a * (min(load, self.cap) - self.max_torque)
         else:
             # Holding the target: the motor has at least the load, and the
