@@ -1,6 +1,6 @@
 """All tunables for the prop-pitch optimizer.
 
-    ./run.sh --pilot prop --set DITHER_AMP_DEG=2
+    ./run.sh --pilot prop --set ROTOR_RPM=400
 """
 
 from dataclasses import dataclass
@@ -10,36 +10,14 @@ from common.config import apply_overrides, differences, fingerprint  # noqa: F40
 
 @dataclass
 class Config:
-    # --- the seeker (seeker.py) ------------------------------------------
-    # The collective pitch is dithered by +-DITHER_AMP_DEG with this period
-    # (game seconds); the response is fitted over WINDOW_PERIODS periods.
-    # Short: the takeoff roll doubles the speed in ~3 s (LOG15167), and the
-    # blades' actuator (35 deg/s, largeFanBlade.cfg) and the rotor answer
-    # within ~0.1 s (lag ~10-15 deg at a 3 s period, LOG15158).
-    DITHER_AMP_DEG: float = 2.0
-    DITHER_PERIOD_S: float = 1.0
-    WINDOW_PERIODS: float = 2.0
-    # The thrust's lag behind the pitch, in degrees of the dither: the fit
-    # demodulates against sin(wt - lag).  Each log's telemetry prints the
-    # measured lag (`lag=`); this should match it.
-    PHASE_LAG_DEG: float = 0.0
-    # The centre climbs at RATE_MAX tanh(t / SLOPE_T_SCALE) deg/s, t the
-    # fitted slope over its standard error.
-    RATE_MAX_DEG_S: float = 5.0
-    SLOPE_T_SCALE: float = 3.0
-    # Fits whose curvature (second harmonic) is negative by more than
-    # CURVATURE_MIN_T standard errors feed a curvature smoothed over
-    # CURVATURE_TAU_S; with one, the centre closes the Newton distance
-    # -J'/J'' with time constant NEWTON_TAU_S instead (capped at RATE_MAX).
-    CURVATURE_MIN_T: float = 3.0
-    CURVATURE_TAU_S: float = 5.0
-    NEWTON_TAU_S: float = 1.0
-    # The blades' Deploy Angle range the seeker may use.  The craft's own
-    # KAL-1000 sweeps 0..90 (qs_prop).
+    # --- the optimum (bladeModel.py) ------------------------------------
+    # The Deploy Angle range searched; the craft's own KAL-1000 sweeps 0..90
+    # and KSP clamps a blade's deflection at 1.5 x ctrlSurfaceRange (90).
     PITCH_MIN_DEG: float = 0.0
     PITCH_MAX_DEG: float = 90.0
-    # Where the centre starts; negative = the blades' Deploy Angle at START.
-    INITIAL_PITCH_DEG: float = -1.0
+    # Grid step of the search (then golden section to SEARCH_TOL_DEG).
+    SEARCH_STEP_DEG: float = 1.0
+    SEARCH_TOL_DEG: float = 0.05
 
     # --- the rotors -------------------------------------------------------
     # Every rotor is run at this RPM limit and torque limit (percent) while

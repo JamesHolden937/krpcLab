@@ -5,8 +5,8 @@ own connection), and let the prop pilot own the blades.  Prints one line per
 flight: the airspeed reached, from the log.
 
     ./propPitch/tools/propfly.py --instance 0
-    ./propPitch/tools/propfly.py --instance 1 --set DITHER_AMP_DEG=0 \\
-        --set RATE_MAX_DEG_S=0 --set INITIAL_PITCH_DEG=30     # fixed pitch
+    ./propPitch/tools/propfly.py --instance 1 --probe --takeoff-speed 9999 \
+        --seconds 40     # the model checked against the game, on the roll
 
 The plane is flown by the harness, not the pilot: the pilot is the
 propellers only.  Heading HEADING, wheels until TAKEOFF_SPEED, a climb at
@@ -73,15 +73,15 @@ def summary(path):
     """Speed at the end and best 10-s mean, pitch centre at the end."""
     speeds, ctrs = [], []
     for line in open(path):
-        m = re.search(r"SEEK spd=\s*([\d.]+) alt=\s*(-?\d+).*?ctr=\s*([\d.]+)",
+        m = re.search(r"TRACK spd=\s*([\d.]+) alt=\s*(-?\d+).*?pitch=\s*([\d.]+)",
                       line)
         if m:
             speeds.append(float(m.group(1)))
             ctrs.append(float(m.group(3)))
     if not speeds:
-        return "no SEEK lines"
+        return "no TRACK lines"
     best = max(sum(speeds[i:i + 10]) / 10 for i in range(max(1, len(speeds) - 9)))
-    return ("end %.1f m/s, best 10 s %.1f, last 30 s %.1f, centre %.1f"
+    return ("end %.1f m/s, best 10 s %.1f, last 30 s %.1f, pitch %.1f"
             % (speeds[-1], best, sum(speeds[-30:]) / len(speeds[-30:]),
                ctrs[-1]))
 
@@ -97,6 +97,8 @@ def main():
     p.add_argument("--takeoff-speed", type=float, default=40.0)
     p.add_argument("--climb-pitch", type=float, default=5.0)
     p.add_argument("--set", action="append", default=[])
+    p.add_argument("--probe", action="store_true",
+                   help="fly tools/bladeprobe.py's angle sweep (implies --tree)")
     farmflight.add_arguments(p)
     args = p.parse_args()
     rpc, stream = paths.ports(args.instance)
@@ -111,7 +113,10 @@ def main():
     plane.start()
     overrides = list(args.set) + ["RUN_TIME_S=%g" % args.seconds]
     try:
-        path, timed_out = farmflight.fly(args, "prop", "propPitch.autopilot",
+        if args.probe:
+            args.tree = True
+        path, timed_out = farmflight.fly(args, "prop", "propPitch.tools.bladeprobe"
+                                         if args.probe else "propPitch.autopilot",
                                          overrides, args.seconds * 3 + 120,
                                          ports=(rpc, stream))
     finally:

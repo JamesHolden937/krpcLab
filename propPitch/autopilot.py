@@ -1,30 +1,27 @@
 """Prop pitch for top speed: the collective blade pitch that makes the most
-forward force, found and re-found continuously in flight.
+forward thrust, computed every tick from the game's own blade aerodynamics.
 
 Phase machine::
 
-    STANDBY -> SEEK -> DONE
+    STANDBY -> TRACK -> DONE
 
 The pilot flies nothing but the propellers.  At START it finds every
 robotic rotor and the control-surface blades mounted on it (any part with a
 ``Deploy Angle`` field below a rotor), disables the craft's KAL controllers
 (which otherwise write the blades' angle every frame), runs every rotor at
-``ROTOR_RPM`` and ``ROTOR_TORQUE_PCT`` with its motor engaged, and from then
-on owns the blades' ``Deploy Angle``.
+``ROTOR_RPM`` and ``ROTOR_TORQUE_PCT`` with its motor engaged, reads each
+blade's position and axes once, and from then on owns the blades'
+``Deploy Angle``.
 
-**What it maximises**: the aerodynamic force along the vessel's forward
-axis per unit mass (``Flight.aerodynamic_force`` in the vessel frame, which
-sums every part's lift and drag, the blades' included): the propellers'
-thrust less the airframe's drag, i.e. the acceleration the air gives the
-plane.  At any airspeed the pitch that maximises it is the pitch that
-accelerates fastest, so following it to the top of the curve is following
-it to the highest speed the plane can hold.
-
-**How** (``seeker.PitchSeeker``): the pitch is dithered by a sine, the
-force's response fitted over the last periods, and the dither's centre
-moved up the measured slope.  It needs no model of the blades, the rotor or
-the craft, and it follows the optimum as the airspeed (and with it the
-blades' inflow angle) changes.
+**How** (``bladeModel.PropModel``): every tick it reads the vessel's
+velocity through the air (in its own axes), the air's density and speed of
+sound, and evaluates KSP's lift and drag law for every blade at every
+Deploy Angle; it commands the angle with the most thrust along the nose,
+each rotor scored at the speed its motor can hold.  Nothing is searched
+in flight, so a change of airspeed or attitude is answered on the next
+tick.  The measured forward aero force per unit mass (``J``, which also
+counts the airframe's drag) is logged against the model's thrust as the
+check.
 
 TERMINATE (or ``RUN_TIME_S``) hands everything back: the KALs re-enabled,
 the rotors' RPM and torque limits as they were.
@@ -41,10 +38,10 @@ from common.pacing import LoopRate, sleeper
 from common.panel import ControlPanel
 from common.rpccount import RpcCounter
 from .config import Config, apply_overrides, defaults_fingerprint, differences
-from .seeker import PitchSeeker
+from .bladeModel import Blade, PropModel, Rotor, blade_type, choose_signs
 
 STANDBY = "STANDBY"
-SEEK = "SEEK"
+TRACK = "TRACK"
 DONE = "DONE"
 
 ACCENT_PROP = (0.5, 1.0, 0.5)
@@ -78,7 +75,18 @@ def deploy_module(part):
     return None
 
 
-class Blade:
+def qrot(q, p):
+    """Vector ``p`` turned by kRPC quaternion ``q`` (x, y, z, w)."""
+    x, y, z, w = q
+    tx = 2 * (y * p[2] - z * p[1])
+    ty = 2 * (z * p[0] - x * p[2])
+    tz = 2 * (x * p[1] - y * p[0])
+    return (p[0] + w * tx + (y * tz - z * ty),
+            p[1] + w * ty + (z * tx - x * tz),
+            p[2] + w * tz + (x * ty - y * tx))
+
+
+class BladePart:
     def __init__(self, part, module, surface):
         self.part = part
         self.module = module
@@ -114,8 +122,8 @@ class PropPilot:
         self.blades = []
         self.kals = []
         self.saved_rotors = []
-        self.seeker = None
-        self.aoa_field = None
+        self.model = None
+        self.opt = None
         self.start_ut = None
         self.next_reassert = 0.0
         self.last_cmd = None
@@ -131,6 +139,12 @@ class PropPilot:
         self.flight = self.vessel.flight(self.frame)
         self.surface_flight = self.vessel.flight(
             self.vessel.orbit.body.reference_frame)
+        # Velocity through the air (the body's rotating frame) in the
+        # vessel's own axes.
+        self.air_flight = self.vessel.flight(
+            self.sc.ReferenceFrame.create_hybrid(
+                position=self.vessel.orbit.body.reference_frame,
+                rotation=self.frame))
         self.gui = ControlPanel(conn, "PROP PITCH", "START", ACCENT_PROP)
 
     # -- takeover -----------------------------------------------------------
@@ -147,7 +161,7 @@ class PropPilot:
                     continue
                 m = deploy_module(p)
                 if m is not None:
-                    self.blades.append(Blade(p, m, cs))
+                    self.blades.append(BladePart(p, m, cs))
         for p in self.vessel.parts.with_module(KAL_MODULE):
             for m in p.modules:
                 if m.name == KAL_MODULE:
@@ -178,23 +192,72 @@ class PropPilot:
                 b.surface.deployed = True
             except Exception:                           # noqa: BLE001
                 pass
-        angles = [b.angle() for b in self.blades]
-        start = (self.cfg.INITIAL_PITCH_DEG if self.cfg.INITIAL_PITCH_DEG >= 0
-                 else sum(angles) / len(angles))
-        self.log.event(ut, "blade angles at start %s; rotor rpm %s; "
-                       "seeking from %.1f deg"
-                       % (",".join("%.1f" % a for a in sorted(set(angles))),
-                          ",".join("%.0f/%.0f" % (s[1], s[2])
-                                   for s in self.saved_rotors), start))
-        # The blade's own "Angle of Attack" (the part menu's): logged, so
-        # the optimum the seeker finds can be read as a blade incidence.
-        self.aoa_field = None
-        b = self.blades[0]
-        if hasattr(b.module, "field_list"):
-            self.aoa_field = partmodule._table(b.module, "field").get(
-                "Angle of Attack")
-        self.seeker = PitchSeeker(self.cfg, start)
+        self.build_model(ut)
         self.start_ut = ut
+
+    def build_model(self, ut):
+        """Every blade's geometry relative to its rotor's axis, read once
+        (the blades turn with the rotor, but each rotor's evenly spaced
+        blades are an average around the disc at any moment)."""
+        vf = self.frame
+        calls = []
+        for r in self.rotors:
+            calls += [(r.part.position, (vf,)), (r.part.direction, (vf,)),
+                      (getattr, (r, "max_torque"))]
+        owner = []
+        for b in self.blades:
+            calls += [(b.part.position, (vf,)), (b.part.rotation, (vf,)),
+                      (getattr, (b.part, "name")), (getattr, (b.part, "parent"))]
+        got = ask(self.conn, calls)
+        rotor_parts = [r.part for r in self.rotors]
+        rotors = []
+        for i, r in enumerate(self.rotors):
+            pos, axis, tmax = got[3 * i:3 * i + 3]
+            rotors.append((pos, Rotor(axis, [], None if tmax is None else
+                                      tmax * self.cfg.ROTOR_TORQUE_PCT / 100.0)))
+        k = 3 * len(self.rotors)
+        unknown = set()
+        for j, b in enumerate(self.blades):
+            pos, rot, name, parent = got[k + 4 * j:k + 4 * j + 4]
+            kind = blade_type(name or "")
+            if kind is None:
+                unknown.add(name)
+                continue
+            # The rotor this blade hangs from: its nearest ancestor rotor.
+            ri = None
+            p = parent
+            while p is not None and ri is None:
+                if p in rotor_parts:
+                    ri = rotor_parts.index(p)
+                else:
+                    p = p.parent
+            if ri is None:
+                ri = 0
+            hub = rotors[ri][0]
+            rel = tuple(x - h for x, h in zip(pos, hub))
+            rotors[ri][1].blades.append(Blade(kind, rel, qrot(rot, (1, 0, 0)),
+                                              qrot(rot, (0, 0, 1)),
+                                              up=qrot(rot, (0, 1, 0))))
+        if unknown:
+            raise RuntimeError("no aero data for blade part(s) %s "
+                               "(propPitch/bladeTable.py)" % sorted(unknown))
+        rotors = [r for _, r in rotors if r.blades]
+        signs = choose_signs(rotors, self.cfg.ROTOR_RPM)
+        self.model = PropModel(rotors)
+        for r in rotors:
+            self.log.event(ut, "rotor axis %s max torque %s kN m, %d blades "
+                           "at radius %s m (velocity point)"
+                           % (",".join("%+.2f" % x for x in r.axis),
+                              "%.1f" % r.max_torque if r.max_torque else "?",
+                              len(r.blades),
+                              ",".join("%.2f" % math.hypot(*[
+                                  c - r.axis[i] * sum(
+                                      bp * a for bp, a in zip(bl.point, r.axis))
+                                  for i, c in enumerate(bl.point)])
+                                       for bl in r.blades)))
+        self.log.event(ut, "deflection senses %s (thrust at rest, +/-: %s)"
+                       % ("".join("+" if s > 0 else "-" for s, _, _ in signs),
+                          " ".join("%.0f/%.0f" % (a, b) for _, a, b in signs)))
 
     def reassert(self, ut):
         """Read back the KALs' Enabled flag and the rotors' limits; re-set
@@ -254,78 +317,79 @@ class PropPilot:
         self.finished = True
 
     def read(self):
-        """One batch: forward aero force, mass, airspeed, height, rpm."""
+        """One batch: forward aero force, mass, the airspeed vector in the
+        vessel's axes, atmosphere, height, rpm."""
+        f = self.surface_flight
         calls = [(getattr, (self.flight, "aerodynamic_force")),
                  (getattr, (self.vessel, "mass")),
-                 (getattr, (self.surface_flight, "speed")),
-                 (getattr, (self.surface_flight, "mean_altitude")),
-                 (getattr, (self.surface_flight, "vertical_speed"))]
-        bf = self.vessel.orbit.body.reference_frame
-        calls += [(getattr, (self.surface_flight, "acceleration")),
-                  (self.vessel.direction, (bf,)),
-                  (self.vessel.position, (bf,)),
-                  (self.vessel.resources.amount, ("ElectricCharge",))]
-        calls.append((getattr, (self.aoa_field, "value"))
-                     if self.aoa_field is not None else
-                     (getattr, (self.surface_flight, "speed")))
+                 (getattr, (self.air_flight, "velocity")),
+                 (getattr, (f, "atmosphere_density")),
+                 (getattr, (f, "speed_of_sound")),
+                 (getattr, (f, "speed")),
+                 (getattr, (f, "mean_altitude")),
+                 (getattr, (f, "vertical_speed")),
+                 (self.vessel.resources.amount, ("ElectricCharge",))]
         calls += [(getattr, (r, "current_rpm")) for r in self.rotors]
         return ask(self.conn, calls)
 
-    def run_seek(self, ut):
+    def run_track(self, ut):
         got = self.read()
-        force, mass, speed, alt, vs, acc, fwd, pos, ec = got[:9]
-        aoa = None
-        if self.aoa_field is not None:
-            try:
-                aoa = float(got[9])
-            except (TypeError, ValueError):
-                pass
-        rpms = [x for x in got[10:] if x is not None]
-        # The measured specific force along the nose: the acceleration
-        # less gravity (kRPC's includes it), to check J against.
-        meas = None
-        if acc is not None and fwd is not None and pos is not None:
-            r = math.sqrt(sum(x * x for x in pos))
-            g = self.mu / (r * r)
-            meas = sum(a * d for a, d in zip(acc, fwd)) + g * sum(
-                p * d for p, d in zip(pos, fwd)) / r
-        j = None
-        if force is not None and mass:
-            j = force[1] / mass
+        force, mass, v_air, rho, sound, speed, alt, vs, ec = got[:9]
+        rpms = [x for x in got[9:] if x is not None]
+        j = force[1] / mass if force is not None and mass else None
         if ut >= self.next_reassert:
             self.reassert(ut)
             self.next_reassert = ut + self.cfg.REASSERT_S
-        cmd = self.seeker.step(ut, j)
-        if self.last_cmd is None or abs(cmd - self.last_cmd) >= 0.01:
+        cfg = self.cfg
+        targets = [cfg.ROTOR_RPM] * len(self.model.rotors)
+        opt = None
+        if v_air is not None and rho and sound:
+            opt = self.model.optimum(targets, v_air, rho, sound,
+                                     cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG,
+                                     cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG)
+        cmd = self.command(ut, opt, v_air, rho, sound)
+        if cmd is not None and (self.last_cmd is None
+                                or abs(cmd - self.last_cmd) >= 0.01):
             for b in self.blades:
                 b.set(cmd)
             self.last_cmd = cmd
-        fit = self.seeker.fit
+        self.opt = opt
+        flown = opt
+        if (opt is not None and cmd is not None
+                and abs(cmd - opt.deploy) > 1e-6):
+            flown = self.model.evaluate(cmd, targets, v_air, rho, sound)
         rpm = sum(rpms) / len(rpms) if rpms else float("nan")
-        text = ("SEEK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f ctr=%5.1f "
-                "J=%+7.3f acc=%+7.3f rpm=%5.0f aoa=%5.1f ec=%4.0f"
-                % (speed or 0, alt or 0, vs or 0, cmd, self.seeker.centre,
-                   j if j is not None else float("nan"),
-                   meas if meas is not None else float("nan"), rpm,
-                   aoa if aoa is not None else float("nan"), ec or 0))
-        if fit is not None:
-            text += (" slope=%+7.4f t=%+6.1f curv=%+8.5f/%+5.1f lag=%+5.0f "
-                     "trend=%+6.3f rate=%+5.2f%s"
-                     % (fit.slope, fit.slope_t, fit.curvature,
-                        fit.curvature_t, fit.lag_deg, fit.trend,
-                        self.seeker.rate,
-                        " newton" if self.seeker.newton else ""))
+        # The model's thrust at the angle flown, per unit mass: J less this
+        # is the airframe's drag, whatever the angle.
+        model_acc = (flown.thrust / mass if flown is not None and mass
+                     else float("nan"))
+        qfrac = (max(q / r.max_torque for q, r in zip(flown.torques,
+                                                       self.model.rotors)
+                     if r.max_torque) if flown is not None and any(
+                         r.max_torque for r in self.model.rotors)
+                 else float("nan"))
+        text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
+                "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f "
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f"
+                % (speed or 0, alt or 0, vs or 0,
+                   cmd if cmd is not None else float("nan"),
+                   opt.deploy if opt is not None else float("nan"),
+                   j if j is not None else float("nan"), model_acc, rpm,
+                   min(flown.rpms) if flown is not None else float("nan"), qfrac,
+                   *(v_air or (float("nan"),) * 3), ec or 0))
         self.log.telemetry(ut, text)
-        self.lines = ["phase   : SEEK",
+        self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
-                      "pitch   : %.1f deg (centre %.1f)"
-                      % (cmd, self.seeker.centre),
+                      "pitch   : %.1f deg" % (cmd or 0),
                       "rpm     : %.0f" % rpm,
-                      "accel   : %+.3f m/s^2" % (j or 0)]
-        if fit is not None:
-            self.lines.append("slope   : %+.4f per deg" % fit.slope)
-        if self.cfg.RUN_TIME_S > 0 and ut - self.start_ut >= self.cfg.RUN_TIME_S:
+                      "accel   : %+.3f m/s^2 (model thrust %+.3f)"
+                      % (j or 0, model_acc)]
+        if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
+
+    def command(self, ut, opt, v_air, rho, sound):
+        """The Deploy Angle to fly: the optimum (a probe overrides this)."""
+        return opt.deploy if opt is not None else None
 
     def tick(self):
         ut = self.sc.ut
@@ -339,11 +403,11 @@ class PropPilot:
             if self.autostart or self.gui.start_pressed():
                 self.take_over(ut)
                 self.gui.hide_start()
-                self.enter(SEEK, ut)
+                self.enter(TRACK, ut)
             else:
                 self.lines = ["phase   : STANDBY", "press START"]
-        elif self.state == SEEK:
-            self.run_seek(ut)
+        elif self.state == TRACK:
+            self.run_track(ut)
         self.loop_rate.sample(self.state, ut, time.monotonic() - started)
         try:
             self.gui.update(self.lines)
@@ -357,7 +421,7 @@ class PropPilot:
             ut = self.sc.ut
         except Exception:                               # noqa: BLE001
             pass
-        if self.state == SEEK:
+        if self.state == TRACK:
             self.hand_back(ut)
         self.log.event(ut, "loop rate, game-s per tick / wall-s of work: %s"
                        % self.loop_rate.report())
@@ -370,8 +434,8 @@ class PropPilot:
             pass
 
 
-def run(conn, cfg, log, autostart=False):
-    pilot = PropPilot(conn, cfg, log)
+def run(conn, cfg, log, autostart=False, pilot_class=None):
+    pilot = (pilot_class or PropPilot)(conn, cfg, log)
     pilot.rpc = RpcCounter()
     pilot.rpc.install(conn)
     pilot.autostart = autostart
@@ -395,7 +459,7 @@ def run(conn, cfg, log, autostart=False):
     return pilot, reason
 
 
-def main(argv=None):
+def main(argv=None, pilot_class=None):
     args = cli.parser("prop", "Prop pitch for top speed.").parse_args(
         sys.argv[1:] if argv is None else argv)
     cfg = apply_overrides(Config(), args.set)
@@ -403,7 +467,7 @@ def main(argv=None):
     status = 0
     try:
         conn = cli.connect(args)
-        _, reason = run(conn, cfg, log, args.autostart)
+        _, reason = run(conn, cfg, log, args.autostart, pilot_class)
         if reason.startswith("error"):
             status = 1
     except KeyboardInterrupt:
