@@ -47,6 +47,12 @@ DONE = "DONE"
 ACCENT_PROP = (0.5, 1.0, 0.5)
 DEPLOY_FIELD = "Deploy Angle"
 KAL_MODULE = "ModuleRoboticController"
+ROTOR_MODULE = "ModuleRoboticServoRotor"
+# The rotor's brake: a latched mode (``brakingMode``) the Brakes action
+# group sets and clears, and the rotor also latches on losing power.  No
+# kRPC property reads or clears it; only this action does (Deactivate
+# releases it, Assembly-CSharp ``ModuleRoboticServoRotor.BrakeAction``).
+BRAKE_ACTION = "BrakeAction"
 
 
 def descendants(part):
@@ -72,6 +78,17 @@ def deploy_module(part):
                 return m
         except Exception:                               # noqa: BLE001
             continue
+    return None
+
+
+def brake_action(part):
+    """The rotor part's ``BrakeAction`` (a kRPC PartAction), or None."""
+    for m in part.modules:
+        if m.name != ROTOR_MODULE or not hasattr(m, "action_list"):
+            continue
+        for a in m.action_list:
+            if a.name == BRAKE_ACTION:
+                return a
     return None
 
 
@@ -122,6 +139,7 @@ class PropPilot:
         self.blades = []
         self.kals = []
         self.saved_rotors = []
+        self.brakes = []
         self.model = None
         self.opt = None
         self.start_ut = None
@@ -188,6 +206,18 @@ class PropPilot:
             r.locked = False
             r.torque_limit = self.cfg.ROTOR_TORQUE_PCT
             r.target_rpm = self.cfg.ROTOR_RPM
+            try:
+                self.brakes.append(brake_action(r.part))
+            except Exception:                           # noqa: BLE001
+                self.brakes.append(None)
+        # Started in flight, the rotors may be braked (Brakes pressed on the
+        # ground and never released, or a power loss): a braked rotor holds
+        # 0 rpm whatever its motor is told (LOG15188).  The vessel's wheel
+        # brakes are left as they are.
+        released = self.release_brakes(range(len(self.rotors)))
+        self.log.event(ut, "rotor brakes released: %d of %d (Brakes group %s)"
+                       % (released, len(self.rotors),
+                          "on" if self.vessel.control.brakes else "off"))
         for b in self.blades:
             try:
                 b.surface.deployed = True
@@ -261,10 +291,33 @@ class PropPilot:
                        % ("".join("+" if s > 0 else "-" for s, _, _ in signs),
                           " ".join("%.0f/%.0f" % (a, b) for _, a, b in signs)))
 
-    def reassert(self, ut):
+    def release_brakes(self, which):
+        """Release the brakes of rotors ``which``; how many were released."""
+        n = 0
+        for i in which:
+            a = self.brakes[i] if i < len(self.brakes) else None
+            if a is None:
+                continue
+            try:
+                a.activated = False
+                n += 1
+            except Exception:                           # noqa: BLE001
+                pass
+        return n
+
+    def reassert(self, ut, rpm_list=None):
         """Read back the KALs' Enabled flag and the rotors' limits; re-set
-        whatever something else changed, and say so."""
+        whatever something else changed, and say so.  A rotor stopped while
+        the Brakes group is off is a latched brake (a power loss latches
+        one): released."""
         changed = []
+        if rpm_list and len(rpm_list) == len(self.rotors):
+            stopped = [i for i, w in enumerate(rpm_list)
+                       if w is not None and abs(w) < self.cfg.BRAKE_RPM]
+            if stopped and not self.vessel.control.brakes:
+                if self.release_brakes(stopped):
+                    changed.append("brake on %d stopped rotor(s)"
+                                   % len(stopped))
         if self.cfg.DISABLE_KAL:
             for m in self.kals:
                 try:
@@ -341,7 +394,7 @@ class PropPilot:
         rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
         if ut >= self.next_reassert:
-            self.reassert(ut)
+            self.reassert(ut, rpm_list)
             self.next_reassert = ut + self.cfg.REASSERT_S
         cfg = self.cfg
         targets = [cfg.ROTOR_RPM] * len(self.model.rotors)

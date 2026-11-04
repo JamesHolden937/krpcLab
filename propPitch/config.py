@@ -38,6 +38,9 @@ class Config:
     # (two of five instances flew with the rotors at 0 and 229 rpm,
     # LOG15165-15166).
     REASSERT_S: float = 1.0
+    # A rotor turning slower than this (rpm) at a reassert while the Brakes
+    # group is off has its brake released (a power loss latches it).
+    BRAKE_RPM: float = 1.0
     LOG_DIR: str = "logs"
     # Stop after this many game seconds (0 = until TERMINATE).
     RUN_TIME_S: float = 0.0
