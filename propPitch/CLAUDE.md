@@ -11,8 +11,8 @@ STANDBY -> TRACK -> DONE        (./run.sh --pilot prop)
 plane. At START it finds every robotic rotor and the blades below it (any
 part with a `Deploy Angle` field), disables the craft's KAL controllers
 (they would overwrite the blades every frame), runs every rotor at
-`ROTOR_RPM`/`ROTOR_TORQUE_PCT`, and from then on writes every blade's
-`Deploy Angle`. TERMINATE gives it all back: the KALs re-enabled, the
+`ROTOR_RPM`/`ROTOR_TORQUE_PCT`, **releases every rotor's brake**, and from
+then on writes every blade's `Deploy Angle`. TERMINATE gives it all back: the KALs re-enabled, the
 rotors' RPM and torque limits as they were.
 
 **Law** (`bladeModel.py`): the best pitch is *computed*, not searched for.
@@ -40,6 +40,16 @@ for 0.6 s, the model's blade torque at that rpm is all the motor has; while
 holding target it recovers toward the cap over ~5 s. A dead motor learns
 ~0 and the search then stops loading that rotor.
 
+**Rotor brakes** (works mid-flight): a rotor's brake is a latched mode
+(`ModuleRoboticServoRotor.brakingMode`) set by the Brakes action group *and*
+by a power loss; a braked rotor holds 0 rpm whatever kRPC tells its motor,
+and no kRPC property reads or clears it. The rotor's own `BrakeAction`
+(kRPC `PartAction.activated = False`, i.e. Deactivate) releases it without
+touching the wheel brakes. START releases all of them; each re-assert
+releases a rotor below `BRAKE_RPM` while the Brakes group is off (a group
+left on is respected after START). Before this, a START in flight with the
+rotors braked flew 0 rpm while the model assumed 460 (LOG15188).
+
 **Deflection sense** is not readable through kRPC (the CW/CCW variant sets
 it), so `choose_signs` picks, per blade, the sense that pushes forward at
 rest; the thrust only depends on that and the spin's product.
@@ -59,9 +69,17 @@ the panels give 1.5 EC/s and the rotors starve and stall. `qs_prop_noon`
 is the same save warped +5100 s on the farm (53 EC/s): fly that one.
 **Rotor brakes are on the Brakes action group**: brakes on means 0 rpm.
 
-## Where it stands (2026-11-02)
+## Where it stands (2026-11-03)
 
-Unflown live. On the farm (`qs_prop_noon`), LOG15177-15183:
+First live flights (LOG15184-15188, 2026-11-02 night): from the runway it
+matches the farm (J tracks model within ~1 m/s^2 to 75 m/s; climbed to 57 km
+on a zoom at 894 m/s before EC ran out). START in flight (LOG15188, 7.7 km)
+failed: rotors braked, fixed 2026-11-03 (farm LOG15189, LOG15193: braked
+rotors at 0 rpm spin to 460 in ~2 s after START, Brakes group on). The pilot
+still dies with `ObjectDestroyedException` if a part it holds breaks off
+(LOG15184, LOG15193).
+
+Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 
 - The model's best angle: 85 at rest, 82 at 14 m/s, 75 at 52, 68 at 91,
   60 at 133 m/s; the old seeker's measured best at 90 m/s was 68.
@@ -81,7 +99,7 @@ Unflown live. On the farm (`qs_prop_noon`), LOG15177-15183:
 
 ## Next
 
-1. The user's live flight: read `J=`/`model=`/`motor=`/`rpm=`.
+1. Survive losing a blade/rotor (re-`find` on ObjectDestroyedException).
 2. A harness that can fly it (rudder/heading on the runway at 3.5 g).
 3. RPM as a second control: at 460 rpm the velocity point is near Mach 0.85,
    where the liftMach curve has fallen to ~0.19; the model can score rpm.

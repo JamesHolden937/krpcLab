@@ -247,8 +247,10 @@ class Rotor:
         # KSP refreshes a rotor's rpm readout every 0.3 s
         # (rpmRefreshSeconds), so a rotor spinning up reads flat between
         # refreshes: it is "rising" if it rose at all over the last window.
-        self.history.append((self.clock, rpm))
+        # Stamped after the clock advances: a tick longer than the window
+        # (a slow START) must not empty the window it was just added to.
         self.clock += dt
+        self.history.append((self.clock, rpm))
         while self.history and self.history[0][0] < self.clock - window_s:
             self.history.pop(0)
         # Learn only from a full window of flat readings: a rotor still at

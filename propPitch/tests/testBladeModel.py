@@ -129,3 +129,13 @@ class TestSpinUp(unittest.TestCase):
             m.observe([shown], [460.0], 85.0, (0.0, 0.0, 0.0), 1.2, 340.0, 0.05)
             t += 0.05
         self.assertGreater(r.max_torque, 0.95 * r.cap)
+
+
+class TestLongTick(unittest.TestCase):
+    def test_tick_longer_than_the_window(self):
+        """A tick longer than the flat-rpm window (a slow START: 4.7 game-s,
+        LOG15189) must not crash the learning."""
+        m = PropModel([rotor()])
+        m.observe([368.0], [460.0], 85.0, (0.0, 0.0, 0.0), 1.2, 340.0, 4.7)
+        m.observe([400.0], [460.0], 85.0, (0.0, 0.0, 0.0), 1.2, 340.0, 0.05)
+        self.assertEqual(m.rotors[0].max_torque, m.rotors[0].cap)

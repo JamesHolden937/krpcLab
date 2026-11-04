@@ -51,3 +51,31 @@ conditions change fast sometimes", then "blade load reduces rpm".
   every 0.3 s, so spin-up read as a limit (70 -> 54); fixed with a 0.6 s
   flat-window rule.
 - Probe agreement and the harness crashes: propPitch/CLAUDE.md.
+
+## 2026-11-03: START in flight
+
+The user: "the prop autopilot doesn't seem to work when you turn it on mid
+flight, change that".
+
+- Live LOG15188 ("Probe", 91 parts, START at 7.7 km, 164 m/s): every rotor
+  read 0 rpm for the whole run, EC flat at 5 (no draw), motors engaged and
+  unlocked per kRPC; model +24 m/s^2 against J -10.
+- Assembly-CSharp: `ModuleRoboticServoRotor.brakingMode` is private, set by
+  `BrakeAction` (the Brakes group) and latched on power loss
+  (`lockPartOnPowerLoss`, default true). FixedUpdate's drain is skipped
+  while braking, matching the flat EC. Only `BrakeAction` with Deactivate
+  clears it. The farm harness always sets `brakes = False`, so no farm
+  flight had seen it.
+- Fix: release every rotor's brake at START; at each re-assert release a
+  rotor below `BRAKE_RPM` while the group is off. Farm LOG15189 (on the
+  runway, Brakes group on): 0 -> 239-285 rpm 2 s after START. LOG15193 (a
+  harness wreck braked to 0): 460 rpm in ~2 s.
+- Second bug on the way (LOG15189): `Rotor.observe` stamped the reading
+  before advancing its clock, so one tick longer than the 0.6 s window (the
+  4.7 game-s START tick) emptied it and raised IndexError. Stamped after.
+- Live LOG15185/15187 from the runway: model and J agree to ~1 m/s^2 up to
+  75 m/s; LOG15187 zoomed to 57 km at up to 894 m/s, EC out at 35 km.
+  Re-sets of "motor off" on all four rotors at 256888/257006 (user input or
+  a power latch); the re-assert re-engaged them.
+- The farm harness still cannot fly the plane past ~100 m/s (two more
+  break-ups, LOG15191/15193).
