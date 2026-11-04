@@ -79,3 +79,26 @@ flight, change that".
   a power latch); the re-assert re-engaged them.
 - The farm harness still cannot fly the plane past ~100 m/s (two more
   break-ups, LOG15191/15193).
+
+## 2026-11-03: throttle sets the rpm; the prop brake
+
+The user: "make it so my throttle will control RPM limit", then "when [I]
+hit brake, you should spin the motor at full RPM and angle the blades in a
+way to stop the motion of the craft ... read whether the velocity vector is
+closer to forwards or backwards first".
+
+- `THROTTLE_RPM` (default): RPM limit = throttle x `ROTOR_RPM`. Farm,
+  runway, throttle held: LOG15208 (1.0) 460 rpm, LOG15206 (0.5) 230 rpm
+  (reached 173 m/s on the runway without breaking up -- at 460 every farm
+  run breaks up by ~130), LOG15207 (0) 0 rpm. `propfly --throttle`.
+- `PROP_BRAKE` (default): Deploy Angle limits read from Assembly-CSharp
+  (`OnStart`: +/-1.5 x ctrlSurfaceRange, field default 15) and the cfgs
+  (60 fans/props, 15 heli), now in `bladeTable.py`. Offline (R-25 rotor,
+  460 rpm): most reverse thrust -85 deg at rest, 77-89 deg at 30-100 m/s
+  (flat in the disc, the inflow from the front), -76 at 150; zero thrust at
+  40-45 deg. `settled` now overspeeds a windmilling rotor.
+- Farm `propfly --brake-at`: LOG15211 at 40 m/s: 40 -> 0 in ~1 s
+  (J -42), then hold at ~0 thrust, still. LOG15210 / 15209 (0.5 throttle)
+  at 80 m/s: ~4.5 g reverse reared the plane up and over (ksp2 lost 7
+  parts), and the tumbling flipped fwd/rev. A deceleration cap was written
+  and reverted: the user releases Brakes if it starts to flip.

@@ -11,7 +11,7 @@ STANDBY -> TRACK -> DONE        (./run.sh --pilot prop)
 plane. At START it finds every robotic rotor and the blades below it (any
 part with a `Deploy Angle` field), disables the craft's KAL controllers
 (they would overwrite the blades every frame), runs every rotor at
-`ROTOR_RPM`/`ROTOR_TORQUE_PCT`, **releases every rotor's brake**, and from
+the throttle's RPM limit and `ROTOR_TORQUE_PCT`, **releases every rotor's brake**, and from
 then on writes every blade's `Deploy Angle`. TERMINATE gives it all back: the KALs re-enabled, the
 rotors' RPM and torque limits as they were.
 
@@ -29,6 +29,27 @@ a change of conditions is answered on the next tick. Data for all nine stock
 blades is in `bladeTable.py`, generated from the game's cfgs by
 `tools/bladetable.py` (a test checks it against `testInstances/base`); a
 blade not in it stops START with its name.
+
+**Throttle = RPM limit** (`THROTTLE_RPM`, default on): every tick the
+rotors' `target_rpm` is max(`THROTTLE_RPM_MIN`, throttle x `ROTOR_RPM`),
+written when it moves by `RPM_WRITE_STEP`; the pitch is scored at that
+rpm. Throttle 0 stops the props (and the stopped-rotor brake release is
+skipped). Farm LOG15208/15206/15207: throttle 1/0.5/0 ran 460/230/0 rpm.
+
+**Prop brake** (`PROP_BRAKE`, default on): while `control.brakes` is on,
+every rotor runs at `ROTOR_RPM`, the rotors' own brake latch (the craft's
+Brakes group sets it) is released on the press and at every re-assert, and
+the blades go to the angle with the most thrust *against* the motion: the
+air velocity's nose component (vessel y) > `BRAKE_HOLD_SPEED` -> most
+reverse thrust, < -`BRAKE_HOLD_SPEED` -> most forward, between -> zero
+thrust. The braking search spans the blades' whole Deploy Angle range,
++/-1.5 x ctrlSurfaceRange (Assembly-CSharp `ModuleControlSurface.OnStart`;
+`range` in `bladeTable.py`: 90 for fans/props, 22.5 for heli blades);
+negative angles give reverse thrust. No thrust cap, by the user's choice
+(they release Brakes if it starts to go over). Farm LOG15211: 40 -> 0 m/s
+in ~1 s at -42 m/s^2, then held still. LOG15210/15209 (from 80 m/s): the
+~4.5 g of reverse thrust from props above the CoM reared the plane up and
+over. The model also lets a windmilling rotor overspeed past its limit.
 
 **Blade load and rpm**: each pitch is scored at the rpm its rotor would
 settle at. KSP's rotor is a stiff velocity drive (damper 1000) capped at
@@ -57,7 +78,7 @@ rest; the thrust only depends on that and the spin's product.
 The log's `J=` is the measured forward aero force per unit mass (thrust less
 airframe drag); `model=` the model's thrust per unit mass at the angle flown;
 `motor=` the learned torque per rotor (kN m); `torque=` the worst rotor's
-load over its cap.
+load over its cap; `thr=` the throttle; `brake=` `-` or rev/fwd/hold.
 
 ## The test craft: `qs_prop`, `qs_prop_noon`
 
@@ -69,7 +90,7 @@ the panels give 1.5 EC/s and the rotors starve and stall. `qs_prop_noon`
 is the same save warped +5100 s on the farm (53 EC/s): fly that one.
 **Rotor brakes are on the Brakes action group**: brakes on means 0 rpm.
 
-## Where it stands (2026-11-03)
+## Where it stands (2026-11-03, late)
 
 First live flights (LOG15184-15188, 2026-11-02 night): from the runway it
 matches the farm (J tracks model within ~1 m/s^2 to 75 m/s; climbed to 57 km
@@ -101,8 +122,8 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 
 1. Survive losing a blade/rotor (re-`find` on ObjectDestroyedException).
 2. A harness that can fly it (rudder/heading on the runway at 3.5 g).
-3. RPM as a second control: at 460 rpm the velocity point is near Mach 0.85,
-   where the liftMach curve has fallen to ~0.19; the model can score rpm.
+3. The prop brake flown live, and backwards (only forward was flown on the
+   farm; the backward branch is unit-tested).
 4. START costs ~2500 calls (~4 s): the blade field tables.
 
 ## Commands
@@ -110,6 +131,8 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 ```bash
 ./run.sh --pilot prop                                  # live: START on the panel
 ./propPitch/tools/propfly.py --instance 0              # farm: take off, hold 300 m, 300 game-s
+./propPitch/tools/propfly.py --instance 0 --takeoff-speed 9999 --seconds 30 \
+    --brake-at 40 [--throttle 0.5]                     # runway: prop brake past 40 m/s
 ./propPitch/tools/propfly.py --instance 1 --probe --takeoff-speed 9999 \
     --seconds 40 --set LOG_INTERVAL_UT=0               # model vs game, angle sweep
 ./propPitch/tools/probesum.py logs/LOG<n>              # ... read it
