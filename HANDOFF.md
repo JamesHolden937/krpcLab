@@ -1,35 +1,38 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-03: propPitch -- START works in flight (fingerprint `3cee0625`)
+## 2026-11-03: propPitch -- throttle sets the rpm; Brakes brakes with the props (fingerprint `c7e450d5`)
 
-The user: "the prop autopilot doesn't seem to work when you turn it on mid
-flight, change that". Committed and pushed; farm stopped. Read
-`propPitch/CLAUDE.md` and `docs/propPitch/journal.md`.
+The user: "make it so my throttle will control RPM limit", then "when [I]
+hit brake, spin the motor at full RPM and angle the blades to stop the
+motion ... read whether the velocity vector is closer to forwards or
+backwards first". Both are defaults; committed and pushed; farm stopped.
+Read `propPitch/CLAUDE.md` and `docs/propPitch/journal.md`.
 
-**Cause:** the user's mid-flight START (LOG15188, 7.7 km) had all four
-rotors braked: 0 rpm throughout, EC flat, model +24 vs J -10. A rotor's
-brake is a private latch (`brakingMode`) set by the Brakes group and by a
-power loss; kRPC can neither read nor clear it except through the rotor's
-`BrakeAction`. Farm harnesses always set `brakes = False`, so no farm flight
-had seen it.
+**What changed:** `THROTTLE_RPM` -- the rotors' RPM limit is throttle x
+`ROTOR_RPM` (floor `THROTTLE_RPM_MIN` 0), re-written on a 2-rpm step, and
+the pitch is scored at it. `PROP_BRAKE` -- while `control.brakes` is on:
+all rotors at `ROTOR_RPM`, their brake latches released, blades at the
+most thrust against the nose-axis airspeed (rev / fwd / hold within
+`BRAKE_HOLD_SPEED`), searched over the blades' full Deploy Angle range
+(+/-1.5 x ctrlSurfaceRange, now `range` in `bladeTable.py`). Model: a
+windmilling rotor overspeeds. Log `thr=`, `brake=`; events `rotor rpm`,
+`prop brake on/off`. `propfly --throttle T --brake-at V`.
 
-**What changed:** START releases every rotor's brake (`BrakeAction`
-Deactivate; wheel brakes untouched). Each re-assert releases a rotor below
-`BRAKE_RPM` (new, 1 rpm) while the Brakes group is off. Also fixed:
-`Rotor.observe` raised IndexError after any tick longer than its 0.6 s
-window (a slow START tick, 4.7 game-s on the farm, LOG15189).
-Farm check: LOG15189 (Brakes on, runway) 0 -> ~260 rpm 2 s after START;
-LOG15193 (braked wreck) 0 -> 460 rpm.
+**Measured (farm, runway):** throttle 1/0.5/0 -> 460/230/0 rpm
+(LOG15208/15206/15207). Brake at 40 m/s: stopped in ~1 s at -42 m/s^2 and
+held (LOG15211). At 80 m/s the ~4.5 g reverse thrust reared the plane over
+(LOG15210/15209). A decel cap was written and reverted on the user's word:
+they release Brakes if it starts to flip.
 
-**Live, first flights (LOG15184-15187):** from the runway J tracks the
-model within ~1 m/s^2 to 75 m/s; LOG15187 zoomed to 57 km at up to 894 m/s.
+**Previous (still true):** START works in flight (rotor brake latch).
+The pilot dies with ObjectDestroyedException when a part breaks off.
 
-**Next:** the pilot dies with ObjectDestroyedException when a part breaks
-off (LOG15184, LOG15193): re-find instead. A harness that can fly the plane
-past 100 m/s (two more break-ups today). RPM as a second control.
+**Next:** the user flies the brake and throttle live. Re-find on a lost
+part. A harness that can fly the plane past 100 m/s. START's ~2500 calls.
 
-**Traps paid:** a rotor that kRPC says is engaged and unlocked can still be
-braked. A history stamped before its clock advances empties on a long tick.
+**Traps paid:** Deploy Angle reaches negative angles (reverse thrust);
++90 and -90 are the same blade. The Brakes group also latches the rotors'
+own brakes, so the prop brake must release them every press.
 
 ## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
 
