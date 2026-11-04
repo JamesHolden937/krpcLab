@@ -146,6 +146,7 @@ class PropPilot:
         self.next_reassert = 0.0
         self.last_cmd = None
         self.last_ut = None
+        self.rpm_cmd = cfg.ROTOR_RPM
         self.lines = []
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
@@ -190,8 +191,38 @@ class PropPilot:
         if not self.rotors or not self.blades:
             raise RuntimeError("no rotor with blades on this vessel")
 
+    def throttle_rpm(self, throttle):
+        """The RPM limit the throttle asks for (ROTOR_RPM when the throttle
+        does not set it, or cannot be read)."""
+        cfg = self.cfg
+        if not cfg.THROTTLE_RPM or throttle is None:
+            return cfg.ROTOR_RPM
+        t = max(0.0, min(1.0, float(throttle)))
+        return max(cfg.THROTTLE_RPM_MIN, t * cfg.ROTOR_RPM)
+
+    def set_rpm(self, ut, rpm):
+        """Write the rotors' RPM limit when it moved by RPM_WRITE_STEP (or
+        reached an end of the range)."""
+        if (abs(rpm - self.rpm_cmd) < self.cfg.RPM_WRITE_STEP
+                and not (rpm != self.rpm_cmd and (rpm <= self.cfg.THROTTLE_RPM_MIN
+                                                   or rpm >= self.cfg.ROTOR_RPM))):
+            return
+        self.rpm_cmd = rpm
+        for r in self.rotors:
+            try:
+                r.target_rpm = rpm
+            except Exception:                           # noqa: BLE001
+                pass
+
     def take_over(self, ut):
         self.find(ut)
+        try:
+            self.rpm_cmd = self.throttle_rpm(self.vessel.control.throttle)
+        except Exception:                               # noqa: BLE001
+            self.rpm_cmd = self.cfg.ROTOR_RPM
+        self.log.event(ut, "rotor rpm %s: %.0f" % (
+            "from the throttle" if self.cfg.THROTTLE_RPM else "fixed",
+            self.rpm_cmd))
         if self.cfg.DISABLE_KAL:
             for m in self.kals:
                 try:
@@ -205,7 +236,7 @@ class PropPilot:
             r.motor_engaged = True
             r.locked = False
             r.torque_limit = self.cfg.ROTOR_TORQUE_PCT
-            r.target_rpm = self.cfg.ROTOR_RPM
+            r.target_rpm = self.rpm_cmd
             try:
                 self.brakes.append(brake_action(r.part))
             except Exception:                           # noqa: BLE001
@@ -314,7 +345,9 @@ class PropPilot:
         if rpm_list and len(rpm_list) == len(self.rotors):
             stopped = [i for i, w in enumerate(rpm_list)
                        if w is not None and abs(w) < self.cfg.BRAKE_RPM]
-            if stopped and not self.vessel.control.brakes:
+            # A throttle cut stops the rotors on purpose: not a brake.
+            if (stopped and self.rpm_cmd > self.cfg.BRAKE_RPM
+                    and not self.vessel.control.brakes):
                 if self.release_brakes(stopped):
                     changed.append("brake on %d stopped rotor(s)"
                                    % len(stopped))
@@ -329,7 +362,7 @@ class PropPilot:
                     pass
         for r in self.rotors:
             try:
-                if (abs(r.target_rpm - self.cfg.ROTOR_RPM) > 0.5
+                if (abs(r.target_rpm - self.rpm_cmd) > 0.5
                         or abs(r.torque_limit - self.cfg.ROTOR_TORQUE_PCT) > 0.5
                         or not r.motor_engaged or r.locked):
                     changed.append("rotor %.0f/%.0f%s%s" % (
@@ -339,7 +372,7 @@ class PropPilot:
                     r.motor_engaged = True
                     r.locked = False
                     r.torque_limit = self.cfg.ROTOR_TORQUE_PCT
-                    r.target_rpm = self.cfg.ROTOR_RPM
+                    r.target_rpm = self.rpm_cmd
             except Exception:                           # noqa: BLE001
                 pass
         if changed:
@@ -383,21 +416,24 @@ class PropPilot:
                  (getattr, (f, "speed")),
                  (getattr, (f, "mean_altitude")),
                  (getattr, (f, "vertical_speed")),
-                 (self.vessel.resources.amount, ("ElectricCharge",))]
+                 (self.vessel.resources.amount, ("ElectricCharge",)),
+                 (getattr, (self.vessel.control, "throttle"))]
         calls += [(getattr, (r, "current_rpm")) for r in self.rotors]
         return ask(self.conn, calls)
 
     def run_track(self, ut):
         got = self.read()
         force, mass, v_air, rho, sound, speed, alt, vs, ec = got[:9]
-        rpm_list = list(got[9:])
+        throttle = got[9]
+        rpm_list = list(got[10:])
         rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
         if ut >= self.next_reassert:
             self.reassert(ut, rpm_list)
             self.next_reassert = ut + self.cfg.REASSERT_S
         cfg = self.cfg
-        targets = [cfg.ROTOR_RPM] * len(self.model.rotors)
+        self.set_rpm(ut, self.throttle_rpm(throttle))
+        targets = [self.rpm_cmd] * len(self.model.rotors)
         opt = None
         dt = 0.0 if self.last_ut is None else ut - self.last_ut
         self.last_ut = ut
@@ -434,7 +470,7 @@ class PropPilot:
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
                 "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
-                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f"
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
@@ -442,12 +478,15 @@ class PropPilot:
                    min(flown.rpms) if flown is not None else float("nan"), qfrac,
                    ",".join("%.0f" % (r.max_torque or 0)
                             for r in self.model.rotors),
-                   *(v_air or (float("nan"),) * 3), ec or 0))
+                   *(v_air or (float("nan"),) * 3), ec or 0,
+                   throttle if throttle is not None else float("nan")))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
                       "pitch   : %.1f deg" % (cmd or 0),
-                      "rpm     : %.0f" % rpm,
+                      "rpm     : %.0f (limit %.0f%s)" % (
+                          rpm, self.rpm_cmd,
+                          ", throttle" if cfg.THROTTLE_RPM else ""),
                       "accel   : %+.3f m/s^2 (model thrust %+.3f)"
                       % (j or 0, model_acc)]
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:

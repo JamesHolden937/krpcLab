@@ -25,6 +25,14 @@ class Config:
     # 460, so that is the fastest the EM-32S will turn.
     ROTOR_RPM: float = 460.0
     ROTOR_TORQUE_PCT: float = 100.0
+    # The throttle sets the rotors' RPM limit: throttle x ROTOR_RPM, never
+    # below THROTTLE_RPM_MIN (0 = throttle cut stops the props).  Off, every
+    # rotor runs at ROTOR_RPM whatever the throttle.
+    THROTTLE_RPM: bool = True
+    THROTTLE_RPM_MIN: float = 0.0
+    # The rotors' limit is re-written only when the throttle's RPM moves by
+    # at least this much (rpm): one write per rotor per change.
+    RPM_WRITE_STEP: float = 2.0
     # Disable every KAL robotic controller while flying (it would write the
     # blades' Deploy Angle back every frame); restored on shutdown.
     DISABLE_KAL: bool = True

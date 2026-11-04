@@ -39,7 +39,7 @@ def fly_plane(rpc, stream, args, stop):
     ctl = v.control
     ctl.sas = False
     ctl.brakes = False
-    ctl.throttle = 0.0
+    ctl.throttle = args.throttle       # the throttle sets the rotors' rpm
     ap = v.auto_pilot
     ap.reference_frame = v.surface_reference_frame
     ap.target_heading = args.heading
@@ -96,6 +96,8 @@ def main():
     p.add_argument("--alt", type=float, default=300.0)
     p.add_argument("--takeoff-speed", type=float, default=40.0)
     p.add_argument("--climb-pitch", type=float, default=5.0)
+    p.add_argument("--throttle", type=float, default=1.0,
+                   help="throttle held (sets the rotors' rpm limit)")
     p.add_argument("--set", action="append", default=[])
     p.add_argument("--probe", action="store_true",
                    help="fly tools/bladeprobe.py's angle sweep (implies --tree)")
