@@ -102,3 +102,13 @@ closer to forwards or backwards first".
   at 80 m/s: ~4.5 g reverse reared the plane up and over (ksp2 lost 7
   parts), and the tumbling flipped fwd/rev. A deceleration cap was written
   and reverted: the user releases Brakes if it starts to flip.
+- The user: "feather the prop on zero throttle to increase glide ratio".
+  The model already picked Deploy 0 at 0 rpm (the most thrust at rest is
+  the least drag); made explicit: `THROTTLE_FEATHER` 0.02 (a joystick seldom
+  rests at 0) -> 0 rpm, search over the blades' whole range; log `mode=`
+  replaces `brake=`. Farm `propfly --cut-at 60`: LOG15214 0 rpm / 0.0 deg
+  within ~1 s, coast J ~-2 m/s^2 against the model's prop drag 0.07.
+  LOG15212 (THROTTLE_FEATHER=-1) is the same arm: a throttle of exactly 0
+  is 0 rpm anyway. LOG15213 (DISABLE_KAL=False as a baseline) is unusable:
+  the KAL fought the pilot and never reached the cut. Both coasts
+  ground-looped ~5 s after the cut.

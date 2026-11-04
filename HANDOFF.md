@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-03: propPitch -- throttle sets the rpm; Brakes brakes with the props (fingerprint `c7e450d5`)
+## 2026-11-03: propPitch -- throttle sets the rpm; Brakes brakes with the props; a cut feathers (fingerprint `a4583810`)
 
 The user: "make it so my throttle will control RPM limit", then "when [I]
 hit brake, spin the motor at full RPM and angle the blades to stop the
@@ -17,6 +17,13 @@ most thrust against the nose-axis airspeed (rev / fwd / hold within
 (+/-1.5 x ctrlSurfaceRange, now `range` in `bladeTable.py`). Model: a
 windmilling rotor overspeeds. Log `thr=`, `brake=`; events `rotor rpm`,
 `prop brake on/off`. `propfly --throttle T --brake-at V`.
+
+Then "feather the prop on zero throttle": `THROTTLE_FEATHER` 0.02 -> 0 rpm
+and the least-drag angle over the whole range (Deploy 0 edge-on); log
+`mode=` (thrust/feather/brake-*) replaces `brake=`; `propfly --cut-at V`.
+LOG15214: feathered within ~1 s of a cut at 60 m/s, coast J ~-2 (props'
+model share 0.07). No in-game baseline at idle 90 yet; both coasts
+ground-looped ~5 s after the cut.
 
 **Measured (farm, runway):** throttle 1/0.5/0 -> 460/230/0 rpm
 (LOG15208/15206/15207). Brake at 40 m/s: stopped in ~1 s at -42 m/s^2 and

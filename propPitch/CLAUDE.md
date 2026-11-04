@@ -33,8 +33,15 @@ blade not in it stops START with its name.
 **Throttle = RPM limit** (`THROTTLE_RPM`, default on): every tick the
 rotors' `target_rpm` is max(`THROTTLE_RPM_MIN`, throttle x `ROTOR_RPM`),
 written when it moves by `RPM_WRITE_STEP`; the pitch is scored at that
-rpm. Throttle 0 stops the props (and the stopped-rotor brake release is
-skipped). Farm LOG15208/15206/15207: throttle 1/0.5/0 ran 460/230/0 rpm.
+rpm. Farm LOG15208/15206/15207: throttle 1/0.5/0 ran 460/230/0 rpm.
+
+**Feather** (`THROTTLE_FEATHER`, 0.02): a throttle at or below it is a
+cut -- 0 rpm (the stopped-rotor brake release is skipped) and the blades at
+the most thrust at 0 rpm, i.e. the least drag, searched over the blades'
+whole range: edge-on, Deploy 0 in axial flow. Model (R-25, 60 m/s): 0.16 kN
+per rotor feathered against ~4 kN at 85 deg. Farm LOG15214: cut at 60 m/s,
+0 rpm and 0.0 deg within ~1 s, coast J ~-2 m/s^2 (model's prop share 0.07);
+no in-game baseline with the blades left at idle 90 yet.
 
 **Prop brake** (`PROP_BRAKE`, default on): while `control.brakes` is on,
 every rotor runs at `ROTOR_RPM`, the rotors' own brake latch (the craft's
@@ -78,7 +85,8 @@ rest; the thrust only depends on that and the spin's product.
 The log's `J=` is the measured forward aero force per unit mass (thrust less
 airframe drag); `model=` the model's thrust per unit mass at the angle flown;
 `motor=` the learned torque per rotor (kN m); `torque=` the worst rotor's
-load over its cap; `thr=` the throttle; `brake=` `-` or rev/fwd/hold.
+load over its cap; `thr=` the throttle; `mode=` thrust / feather /
+brake-rev / brake-fwd / brake-hold.
 
 ## The test craft: `qs_prop`, `qs_prop_noon`
 
@@ -122,9 +130,12 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 
 1. Survive losing a blade/rotor (re-`find` on ObjectDestroyedException).
 2. A harness that can fly it (rudder/heading on the runway at 3.5 g).
-3. The prop brake flown live, and backwards (only forward was flown on the
+3. Feather's gain measured in game: a coast with the blades held at 90
+   against feathered (needs an arm that holds an angle at a cut). Both farm
+   coasts ground-looped ~5 s after the cut (harness steering, probably).
+4. The prop brake flown live, and backwards (only forward was flown on the
    farm; the backward branch is unit-tested).
-4. START costs ~2500 calls (~4 s): the blade field tables.
+5. START costs ~2500 calls (~4 s): the blade field tables.
 
 ## Commands
 
@@ -133,6 +144,7 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 ./propPitch/tools/propfly.py --instance 0              # farm: take off, hold 300 m, 300 game-s
 ./propPitch/tools/propfly.py --instance 0 --takeoff-speed 9999 --seconds 30 \
     --brake-at 40 [--throttle 0.5]                     # runway: prop brake past 40 m/s
+    # ... --cut-at 60 instead: throttle cut (feather) past 60 m/s
 ./propPitch/tools/propfly.py --instance 1 --probe --takeoff-speed 9999 \
     --seconds 40 --set LOG_INTERVAL_UT=0               # model vs game, angle sweep
 ./propPitch/tools/probesum.py logs/LOG<n>              # ... read it
