@@ -51,6 +51,8 @@ def fly_plane(rpc, stream, args, stop):
     try:
         while not stop.is_set():
             spd, alt, vs = surf.speed, surf.mean_altitude, surf.vertical_speed
+            if args.brake_at and spd > args.brake_at and not ctl.brakes:
+                ctl.brakes = True          # the props brake (PROP_BRAKE)
             if not airborne:
                 pitch = args.climb_pitch if spd > args.takeoff_speed else 0.0
                 if alt - ground > 20.0:
@@ -96,6 +98,8 @@ def main():
     p.add_argument("--alt", type=float, default=300.0)
     p.add_argument("--takeoff-speed", type=float, default=40.0)
     p.add_argument("--climb-pitch", type=float, default=5.0)
+    p.add_argument("--brake-at", type=float, default=0.0,
+                   help="press Brakes once past this speed (m/s; 0 = never)")
     p.add_argument("--throttle", type=float, default=1.0,
                    help="throttle held (sets the rotors' rpm limit)")
     p.add_argument("--set", action="append", default=[])

@@ -93,6 +93,8 @@ class BladeType:
         self.lift_mach = Curve(entry["liftMachCurve"])
         self.drag = Curve(entry["dragCurve"])
         self.drag_mach = Curve(entry["dragMachCurve"])
+        # KSP limits Deploy Angle to +/-1.5 x ctrlSurfaceRange.
+        self.deploy_limit = 1.5 * entry.get("range", 15.0)
 
 
 def blade_type(part_name):
@@ -215,8 +217,24 @@ class Rotor:
         ``max_torque``."""
         t, q = self.thrust_torque(deploy_deg, rpm_target, v_air, rho, sound,
                                   forward)
-        if self.max_torque is None or q <= self.max_torque:
+        if self.max_torque is None or abs(q) <= self.max_torque:
             return t, q, rpm_target
+        if q < 0.0:
+            # The air drives the rotor harder than the motor can hold it
+            # back (a windmill): it overspeeds until the blades' driving
+            # torque falls to what the motor can absorb.
+            lo, hi = rpm_target, max(2.0 * rpm_target, rpm_target + 100.0)
+            for _ in range(18):
+                mid = 0.5 * (lo + hi)
+                _, qm = self.thrust_torque(deploy_deg, mid, v_air, rho, sound,
+                                           forward)
+                if qm < -self.max_torque:
+                    lo = mid
+                else:
+                    hi = mid
+            t, q = self.thrust_torque(deploy_deg, hi, v_air, rho, sound,
+                                      forward)
+            return t, q, hi
         lo, hi = 0.0, rpm_target
         if self.thrust_torque(deploy_deg, 0.0, v_air, rho, sound,
                               forward)[1] >= self.max_torque:
@@ -281,10 +299,27 @@ class Optimum:
         self.rpms = rpms
 
 
+# What ``PropModel.optimum`` searches for.
+MOST_FORWARD = "forward"            # the most thrust along the nose
+MOST_REVERSE = "reverse"            # the most thrust against the nose
+ZERO_THRUST = "zero"                # no thrust (the plane held still)
+
+
+def _score(objective, thrust):
+    if objective == MOST_REVERSE:
+        return -thrust
+    if objective == ZERO_THRUST:
+        return -abs(thrust)
+    return thrust
+
+
 class PropModel:
     def __init__(self, rotors, forward=(0.0, 1.0, 0.0)):
         self.rotors = rotors
         self.forward = forward
+        # The Deploy Angle every blade can reach: the tightest blade's.
+        lims = [b.kind.deploy_limit for r in rotors for b in r.blades]
+        self.deploy_limit = min(lims) if lims else 90.0
 
     def observe(self, rpms, rpm_targets, deploy, v_air, rho, sound, dt):
         for r, rpm, tgt in zip(self.rotors, rpms, rpm_targets):
@@ -301,30 +336,37 @@ class PropModel:
         return Optimum(deploy, thrust, torques, rpms)
 
     def optimum(self, rpm_targets, v_air, rho, sound, lo=0.0, hi=90.0,
-                step=1.0, tol=0.05):
-        """The Deploy Angle in [lo, hi] with the most thrust: a grid at
+                step=1.0, tol=0.05, objective=MOST_FORWARD):
+        """The Deploy Angle in [lo, hi] (inside the blades' limits) that
+        best meets ``objective`` -- by default the most thrust: a grid at
         ``step``, then golden-section on the best cell's neighbours."""
+        lim = self.deploy_limit
+        lo, hi = max(lo, -lim), min(hi, lim)
+
+        def f(d):
+            return _score(objective,
+                          self.evaluate(d, rpm_targets, v_air, rho,
+                                        sound).thrust)
         n = max(2, int(math.ceil((hi - lo) / step)))
         grid = [lo + (hi - lo) * i / n for i in range(n + 1)]
-        vals = [self.evaluate(d, rpm_targets, v_air, rho, sound).thrust
-                for d in grid]
+        vals = [f(d) for d in grid]
         i = max(range(len(grid)), key=vals.__getitem__)
         a = grid[max(0, i - 1)]
         b = grid[min(n, i + 1)]
         g = (math.sqrt(5.0) - 1.0) / 2.0
         c = b - g * (b - a)
         d = a + g * (b - a)
-        fc = self.evaluate(c, rpm_targets, v_air, rho, sound).thrust
-        fd = self.evaluate(d, rpm_targets, v_air, rho, sound).thrust
+        fc = f(c)
+        fd = f(d)
         while b - a > tol:
             if fc >= fd:
                 b, d, fd = d, c, fc
                 c = b - g * (b - a)
-                fc = self.evaluate(c, rpm_targets, v_air, rho, sound).thrust
+                fc = f(c)
             else:
                 a, c, fc = c, d, fd
                 d = a + g * (b - a)
-                fd = self.evaluate(d, rpm_targets, v_air, rho, sound).thrust
+                fd = f(d)
         best = 0.5 * (a + b)
         if vals[i] > max(fc, fd):          # the grid point itself (an edge)
             best = grid[i]

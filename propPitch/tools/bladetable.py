@@ -52,7 +52,10 @@ def parse_part(path):
     if body is None:
         return None
     entry = {"dlc": float(value(body, "deflectionLiftCoeff") or 1.5),
-             "area": float(value(body, "ctrlSurfaceArea") or 0.5)}
+             "area": float(value(body, "ctrlSurfaceArea") or 0.5),
+             # Deploy Angle is limited to +/-1.5 x this (ModuleControlSurface
+             # .OnStart; the field's default is 15).
+             "range": float(value(body, "ctrlSurfaceRange") or 15.0)}
     off = value(body, "velocityOffset") or "0,0,0"
     entry["offset"] = tuple(float(x) for x in off.split(","))
     col = value(text, "CoLOffset") or "0,0,0"
@@ -96,7 +99,7 @@ def main():
         fh.write("BLADES = {\n")
         for name, e in table.items():
             fh.write("    %r: {\n" % name)
-            for k in ("dlc", "area", "offset", "col", "displace"):
+            for k in ("dlc", "area", "range", "offset", "col", "displace"):
                 fh.write("        %r: %r,\n" % (k, e[k]))
             for c in CURVES:
                 fh.write("        %r: [\n" % c)

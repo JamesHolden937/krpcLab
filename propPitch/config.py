@@ -33,6 +33,15 @@ class Config:
     # The rotors' limit is re-written only when the throttle's RPM moves by
     # at least this much (rpm): one write per rotor per change.
     RPM_WRITE_STEP: float = 2.0
+    # The Brakes group brakes with the props: every rotor at ROTOR_RPM
+    # (whatever the throttle), its own brake latch released, and the blades
+    # at the angle with the most thrust against the motion -- reverse
+    # thrust while the plane moves forward along its nose, forward thrust
+    # while it moves backward, no thrust within BRAKE_HOLD_SPEED (m/s,
+    # airspeed along the nose) of standing still.  Off, Brakes leaves the
+    # rotors braked by the craft's own action group.
+    PROP_BRAKE: bool = True
+    BRAKE_HOLD_SPEED: float = 0.5
     # Disable every KAL robotic controller while flying (it would write the
     # blades' Deploy Angle back every frame); restored on shutdown.
     DISABLE_KAL: bool = True

@@ -13,6 +13,7 @@ BLADES = {
     'largeFanBlade': {
         'dlc': 0.1,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-5.8, 0.0, 0.0),
         'col': (-0.4, 0.0, 0.0),
         'displace': True,
@@ -54,6 +55,7 @@ BLADES = {
     'largeHeliBlade': {
         'dlc': 1.6,
         'area': 1.0,
+        'range': 15.0,
         'offset': (-3.0, 0.0, 0.0),
         'col': (-1.2, 0.0, 0.0),
         'displace': True,
@@ -93,6 +95,7 @@ BLADES = {
     'largePropeller': {
         'dlc': 0.12,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-4.8, 0.0, 0.0),
         'col': (-0.8, 0.0, 0.0),
         'displace': True,
@@ -135,6 +138,7 @@ BLADES = {
     'mediumFanBlade': {
         'dlc': 0.025,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-5.8, 0.0, 0.0),
         'col': (-0.2, 0.0, 0.0),
         'displace': True,
@@ -176,6 +180,7 @@ BLADES = {
     'mediumHeliBlade': {
         'dlc': 0.4,
         'area': 1.0,
+        'range': 15.0,
         'offset': (-2.5, 0.0, 0.0),
         'col': (-0.6, 0.0, 0.0),
         'displace': True,
@@ -215,6 +220,7 @@ BLADES = {
     'mediumPropeller': {
         'dlc': 0.03,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-4.8, 0.0, 0.0),
         'col': (-0.4, 0.0, 0.0),
         'displace': True,
@@ -257,6 +263,7 @@ BLADES = {
     'smallFanBlade': {
         'dlc': 0.00625,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-5.8, 0.0, 0.0),
         'col': (-0.1, 0.0, 0.0),
         'displace': True,
@@ -298,6 +305,7 @@ BLADES = {
     'smallHeliBlade': {
         'dlc': 0.1,
         'area': 1.0,
+        'range': 15.0,
         'offset': (-2.0, 0.0, 0.0),
         'col': (-0.3, 0.0, 0.0),
         'displace': True,
@@ -337,6 +345,7 @@ BLADES = {
     'smallPropeller': {
         'dlc': 0.0075,
         'area': 1.0,
+        'range': 60.0,
         'offset': (-4.8, 0.0, 0.0),
         'col': (-0.2, 0.0, 0.0),
         'displace': True,

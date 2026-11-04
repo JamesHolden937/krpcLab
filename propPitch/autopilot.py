@@ -38,7 +38,8 @@ from common.pacing import LoopRate, sleeper
 from common.panel import ControlPanel
 from common.rpccount import RpcCounter
 from .config import Config, apply_overrides, defaults_fingerprint, differences
-from .bladeModel import Blade, PropModel, Rotor, blade_type, choose_signs
+from .bladeModel import (MOST_FORWARD, MOST_REVERSE, ZERO_THRUST, Blade,
+                         PropModel, Rotor, blade_type, choose_signs)
 
 STANDBY = "STANDBY"
 TRACK = "TRACK"
@@ -53,6 +54,8 @@ ROTOR_MODULE = "ModuleRoboticServoRotor"
 # kRPC property reads or clears it; only this action does (Deactivate
 # releases it, Assembly-CSharp ``ModuleRoboticServoRotor.BrakeAction``).
 BRAKE_ACTION = "BrakeAction"
+# The log's brake= field: which way the props push while braking.
+BRAKE_TAG = {MOST_REVERSE: "rev", MOST_FORWARD: "fwd", ZERO_THRUST: "hold"}
 
 
 def descendants(part):
@@ -147,6 +150,7 @@ class PropPilot:
         self.last_cmd = None
         self.last_ut = None
         self.rpm_cmd = cfg.ROTOR_RPM
+        self.braking = False
         self.lines = []
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
@@ -336,18 +340,21 @@ class PropPilot:
                 pass
         return n
 
-    def reassert(self, ut, rpm_list=None):
+    def reassert(self, ut, rpm_list=None, brakes=False):
         """Read back the KALs' Enabled flag and the rotors' limits; re-set
         whatever something else changed, and say so.  A rotor stopped while
         the Brakes group is off is a latched brake (a power loss latches
-        one): released."""
+        one): released.  While the props brake, every rotor's brake is
+        released."""
         changed = []
-        if rpm_list and len(rpm_list) == len(self.rotors):
+        if self.braking:
+            self.release_brakes(range(len(self.rotors)))
+        elif rpm_list and len(rpm_list) == len(self.rotors):
             stopped = [i for i, w in enumerate(rpm_list)
                        if w is not None and abs(w) < self.cfg.BRAKE_RPM]
             # A throttle cut stops the rotors on purpose: not a brake.
             if (stopped and self.rpm_cmd > self.cfg.BRAKE_RPM
-                    and not self.vessel.control.brakes):
+                    and not brakes):
                 if self.release_brakes(stopped):
                     changed.append("brake on %d stopped rotor(s)"
                                    % len(stopped))
@@ -417,22 +424,31 @@ class PropPilot:
                  (getattr, (f, "mean_altitude")),
                  (getattr, (f, "vertical_speed")),
                  (self.vessel.resources.amount, ("ElectricCharge",)),
-                 (getattr, (self.vessel.control, "throttle"))]
+                 (getattr, (self.vessel.control, "throttle")),
+                 (getattr, (self.vessel.control, "brakes"))]
         calls += [(getattr, (r, "current_rpm")) for r in self.rotors]
         return ask(self.conn, calls)
 
     def run_track(self, ut):
         got = self.read()
         force, mass, v_air, rho, sound, speed, alt, vs, ec = got[:9]
-        throttle = got[9]
-        rpm_list = list(got[10:])
+        throttle, brakes = got[9:11]
+        rpm_list = list(got[11:])
         rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
-        if ut >= self.next_reassert:
-            self.reassert(ut, rpm_list)
-            self.next_reassert = ut + self.cfg.REASSERT_S
         cfg = self.cfg
-        self.set_rpm(ut, self.throttle_rpm(throttle))
+        braking = bool(cfg.PROP_BRAKE and brakes)
+        if braking != self.braking:
+            self.braking = braking
+            if braking:
+                # The Brakes group has just latched the rotors' own brakes.
+                self.release_brakes(range(len(self.rotors)))
+            self.log.event(ut, "prop brake %s" % ("on" if braking else "off"))
+        if ut >= self.next_reassert:
+            self.reassert(ut, rpm_list, bool(brakes))
+            self.next_reassert = ut + self.cfg.REASSERT_S
+        self.set_rpm(ut, cfg.ROTOR_RPM if braking
+                     else self.throttle_rpm(throttle))
         targets = [self.rpm_cmd] * len(self.model.rotors)
         opt = None
         dt = 0.0 if self.last_ut is None else ut - self.last_ut
@@ -443,10 +459,17 @@ class PropPilot:
             self.model.observe([rpm_list[i] for i in self.model_rotors],
                                targets, self.last_cmd, v_air, rho,
                                sound, dt)
+        objective = None
         if v_air is not None and rho and sound:
-            opt = self.model.optimum(targets, v_air, rho, sound,
-                                     cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG,
-                                     cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG)
+            lo, hi, objective = cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG, MOST_FORWARD
+            if braking:
+                # Against the motion: which way the air comes along the
+                # nose (y in the vessel's axes) says which thrust stops it.
+                objective = self.brake_objective(v_air[1])
+                lo, hi = -self.model.deploy_limit, self.model.deploy_limit
+            opt = self.model.optimum(targets, v_air, rho, sound, lo, hi,
+                                     cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
+                                     objective)
         cmd = self.command(ut, opt, v_air, rho, sound)
         if cmd is not None and (self.last_cmd is None
                                 or abs(cmd - self.last_cmd) >= 0.01):
@@ -470,7 +493,7 @@ class PropPilot:
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
                 "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
-                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f"
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f brake=%s"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
@@ -479,18 +502,31 @@ class PropPilot:
                    ",".join("%.0f" % (r.max_torque or 0)
                             for r in self.model.rotors),
                    *(v_air or (float("nan"),) * 3), ec or 0,
-                   throttle if throttle is not None else float("nan")))
+                   throttle if throttle is not None else float("nan"),
+                   BRAKE_TAG.get(objective, "?") if braking else "-"))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
                       "pitch   : %.1f deg" % (cmd or 0),
                       "rpm     : %.0f (limit %.0f%s)" % (
                           rpm, self.rpm_cmd,
+                          ", brake" if braking else
                           ", throttle" if cfg.THROTTLE_RPM else ""),
                       "accel   : %+.3f m/s^2 (model thrust %+.3f)"
-                      % (j or 0, model_acc)]
+                      % (j or 0, model_acc),
+                      "brake   : %s" % (BRAKE_TAG.get(objective, "?")
+                                        if braking else "off")]
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
+
+    def brake_objective(self, v_nose):
+        """Reverse thrust while moving forward along the nose, forward thrust
+        while moving backward, none when nearly still."""
+        if v_nose > self.cfg.BRAKE_HOLD_SPEED:
+            return MOST_REVERSE
+        if v_nose < -self.cfg.BRAKE_HOLD_SPEED:
+            return MOST_FORWARD
+        return ZERO_THRUST
 
     def command(self, ut, opt, v_air, rho, sound):
         """The Deploy Angle to fly: the optimum (a probe overrides this)."""
