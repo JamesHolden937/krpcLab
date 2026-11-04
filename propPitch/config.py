@@ -30,6 +30,11 @@ class Config:
     # rotor runs at ROTOR_RPM whatever the throttle.
     THROTTLE_RPM: bool = True
     THROTTLE_RPM_MIN: float = 0.0
+    # A throttle at or below this (0..1) is a cut: the rotors at 0 rpm and
+    # the blades feathered -- the Deploy Angle with the least drag at rest,
+    # searched over the blades' whole range -- for the best glide.  A
+    # joystick axis seldom rests at exactly 0.
+    THROTTLE_FEATHER: float = 0.02
     # The rotors' limit is re-written only when the throttle's RPM moves by
     # at least this much (rpm): one write per rotor per change.
     RPM_WRITE_STEP: float = 2.0

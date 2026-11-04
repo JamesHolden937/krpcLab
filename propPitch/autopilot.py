@@ -54,8 +54,9 @@ ROTOR_MODULE = "ModuleRoboticServoRotor"
 # kRPC property reads or clears it; only this action does (Deactivate
 # releases it, Assembly-CSharp ``ModuleRoboticServoRotor.BrakeAction``).
 BRAKE_ACTION = "BrakeAction"
-# The log's brake= field: which way the props push while braking.
-BRAKE_TAG = {MOST_REVERSE: "rev", MOST_FORWARD: "fwd", ZERO_THRUST: "hold"}
+# The log's mode= field while braking: which way the props push.
+BRAKE_TAG = {MOST_REVERSE: "brake-rev", MOST_FORWARD: "brake-fwd",
+             ZERO_THRUST: "brake-hold"}
 
 
 def descendants(part):
@@ -202,7 +203,14 @@ class PropPilot:
         if not cfg.THROTTLE_RPM or throttle is None:
             return cfg.ROTOR_RPM
         t = max(0.0, min(1.0, float(throttle)))
+        if t <= cfg.THROTTLE_FEATHER:
+            return 0.0
         return max(cfg.THROTTLE_RPM_MIN, t * cfg.ROTOR_RPM)
+
+    def feathered(self, braking):
+        """Throttle cut: the rotors held stopped, the blades feathered."""
+        return (self.cfg.THROTTLE_RPM and not braking
+                and self.rpm_cmd <= 0.0)
 
     def set_rpm(self, ut, rpm):
         """Write the rotors' RPM limit when it moved by RPM_WRITE_STEP (or
@@ -460,13 +468,20 @@ class PropPilot:
                                targets, self.last_cmd, v_air, rho,
                                sound, dt)
         objective = None
+        feather = self.feathered(braking)
+        mode = ("feather" if feather else "thrust") if not braking else "brake"
         if v_air is not None and rho and sound:
             lo, hi, objective = cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG, MOST_FORWARD
+            if feather:
+                # The most thrust at 0 rpm is the least drag: each blade
+                # edge-on to the flow, wherever the flow comes from.
+                lo, hi = -self.model.deploy_limit, self.model.deploy_limit
             if braking:
                 # Against the motion: which way the air comes along the
                 # nose (y in the vessel's axes) says which thrust stops it.
                 objective = self.brake_objective(v_air[1])
                 lo, hi = -self.model.deploy_limit, self.model.deploy_limit
+                mode = BRAKE_TAG[objective]
             opt = self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                      cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
                                      objective)
@@ -493,7 +508,7 @@ class PropPilot:
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
                 "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
-                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f brake=%s"
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f mode=%s"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
@@ -503,19 +518,18 @@ class PropPilot:
                             for r in self.model.rotors),
                    *(v_air or (float("nan"),) * 3), ec or 0,
                    throttle if throttle is not None else float("nan"),
-                   BRAKE_TAG.get(objective, "?") if braking else "-"))
+                   mode))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
                       "pitch   : %.1f deg" % (cmd or 0),
                       "rpm     : %.0f (limit %.0f%s)" % (
                           rpm, self.rpm_cmd,
-                          ", brake" if braking else
-                          ", throttle" if cfg.THROTTLE_RPM else ""),
+                          ", throttle" if cfg.THROTTLE_RPM and not braking
+                          else ""),
                       "accel   : %+.3f m/s^2 (model thrust %+.3f)"
                       % (j or 0, model_acc),
-                      "brake   : %s" % (BRAKE_TAG.get(objective, "?")
-                                        if braking else "off")]
+                      "mode    : %s" % mode]
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
 

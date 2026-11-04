@@ -24,6 +24,14 @@ class TestThrottleRpm(unittest.TestCase):
         self.assertEqual(PropPilot.throttle_rpm(p, 0.0), 0.0)
         self.assertEqual(PropPilot.throttle_rpm(p, 1.7), 460.0)
 
+    def test_feather_band(self):
+        p = pilot()
+        self.assertEqual(PropPilot.throttle_rpm(p, 0.02), 0.0)
+        self.assertGreater(PropPilot.throttle_rpm(p, 0.03), 13.0)
+        p.rpm_cmd = 0.0
+        self.assertTrue(PropPilot.feathered(p, False))
+        self.assertFalse(PropPilot.feathered(p, True))       # braking
+
     def test_floor_and_off(self):
         self.assertEqual(PropPilot.throttle_rpm(
             pilot(THROTTLE_RPM_MIN=100.0), 0.1), 100.0)

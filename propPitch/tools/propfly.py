@@ -48,9 +48,13 @@ def fly_plane(rpc, stream, args, stop):
     set_autopilot_engaged(ap, True)
     ground = surf.mean_altitude
     airborne = False
+    cut = False
     try:
         while not stop.is_set():
             spd, alt, vs = surf.speed, surf.mean_altitude, surf.vertical_speed
+            if args.cut_at and spd > args.cut_at and not cut:
+                cut = True
+                ctl.throttle = 0.0         # the props feather (THROTTLE_FEATHER)
             if args.brake_at and spd > args.brake_at and not ctl.brakes:
                 ctl.brakes = True          # the props brake (PROP_BRAKE)
             if not airborne:
@@ -98,6 +102,8 @@ def main():
     p.add_argument("--alt", type=float, default=300.0)
     p.add_argument("--takeoff-speed", type=float, default=40.0)
     p.add_argument("--climb-pitch", type=float, default=5.0)
+    p.add_argument("--cut-at", type=float, default=0.0,
+                   help="cut the throttle once past this speed (m/s; 0 = never)")
     p.add_argument("--brake-at", type=float, default=0.0,
                    help="press Brakes once past this speed (m/s; 0 = never)")
     p.add_argument("--throttle", type=float, default=1.0,

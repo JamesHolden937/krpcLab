@@ -42,6 +42,14 @@ class TestBrakeModel(unittest.TestCase):
                            objective=ZERO_THRUST)
         self.assertLess(abs(o.thrust), 0.5)
 
+    def test_feather_is_edge_on(self):
+        """At 0 rpm the most thrust is the least drag: Deploy 0, the blade
+        edge-on to an axial flow, ~25x less drag than at 85 deg."""
+        o = self.m.optimum([0.0], (0.0, 60.0, 0.0), 1.2, 340.0, -90, 90)
+        self.assertAlmostEqual(o.deploy, 0.0, delta=1.0)
+        e = self.m.evaluate(85.0, [0.0], (0.0, 60.0, 0.0), 1.2, 340.0)
+        self.assertGreater(o.thrust, 10.0 * e.thrust)        # both < 0
+
     def test_windmill_overspeeds(self):
         """Air driving the rotor harder than the motor can hold it back
         settles above the limit, with the driving torque at the cap."""
