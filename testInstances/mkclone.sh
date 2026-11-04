@@ -10,10 +10,17 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE="$HERE/base"
+# The game copies live in the shared farm, ~/kspfarm (see its README.md):
+# base in $KSPFARM/base, this project's clones and prefixes in
+# $KSPFARM/krpclab.  testInstances/ksp<n>, prefix<n> and base are symlinks to
+# them, so every other script and tool keeps addressing testInstances/.
+KSPFARM="${KSPFARM:-$HOME/kspfarm}"
+BASE="$KSPFARM/base"
 N="${1:?usage: mkclone.sh <n>}"
 DIR="$HERE/ksp$N"
 PREFIX="$HERE/prefix$N"
+REALDIR="$KSPFARM/krpclab/ksp$N"
+REALPREFIX="$KSPFARM/krpclab/prefix$N"
 SRCPREFIX="${KSP_PREFIX:-$HOME/.local/share/ksp-prefix}"
 
 # Ports start at 50100 so a clone never collides with the normal install's
@@ -22,12 +29,14 @@ RPC=$((50100 + 2 * N))
 STREAM=$((50101 + 2 * N))
 
 [ -d "$BASE" ] || { echo "no base/ -- run ./mkbase.sh first" >&2; exit 1; }
-[ -e "$DIR" ] && { echo "ksp$N already exists" >&2; exit 1; }
+[ -e "$DIR" ] || [ -e "$REALDIR" ] && { echo "ksp$N already exists" >&2; exit 1; }
 
 echo "clone  : $DIR"
 echo "ports  : rpc $RPC  stream $STREAM"
 
-cp -al "$BASE" "$DIR"
+mkdir -p "$KSPFARM/krpclab"
+cp -al "$BASE" "$REALDIR"
+ln -s "$REALDIR" "$DIR"
 
 # --- break the links on everything writable -------------------------------
 # cp -al hardlinks files but recreates directories, so a NEW file in a clone
@@ -59,10 +68,10 @@ grep -qE "autoStartServers = True" "$K" || { echo "autostart not set" >&2; exit 
 if [ -d "$PREFIX" ]; then
   echo "  reusing existing $PREFIX"
 elif [ -d "$SRCPREFIX" ]; then
-  cp -a "$SRCPREFIX" "$PREFIX"
+  cp -a "$SRCPREFIX" "$REALPREFIX" && ln -s "$REALPREFIX" "$PREFIX"
 else
   echo "  no prefix at $SRCPREFIX -- umu will build one on first launch"
-  mkdir -p "$PREFIX"
+  mkdir -p "$REALPREFIX" && ln -s "$REALPREFIX" "$PREFIX"
 fi
 
 # --- launcher -------------------------------------------------------------

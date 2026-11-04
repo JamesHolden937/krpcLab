@@ -95,7 +95,7 @@ readers. New autopilots go here and plug into all of it.
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
 | `saves/` | **the reference quicksaves and craft files** -- tracked; the farm copies drift. `saves/README.md` says which save is which vehicle |
-| `testInstances/` | the measurement farm's scripts (the 15 GB of game copies beside them are git-ignored) |
+| `testInstances/` | the measurement farm's scripts. The 15 GB of game copies are in the shared farm `~/kspfarm` (`base/`, `krpclab/`; see its README.md), with git-ignored symlinks here |
 | `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/`, `propPitch/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
 | `logs/` | every flight's `LOG<n>`, numbered across all autopilots; git-ignored, cited by number in the docs |
 
@@ -146,7 +146,7 @@ rather than a stored plan.
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `cd testInstances && ./nosleep.sh start && ./start.sh` (six, 0-5; it returns
+# `nosleep start && cd testInstances && ./start.sh` (six, 0-5; it returns
 # when every port is up, relaunching boot crashes), fly; `./stop.sh` when the
 # suite has to run or the session ends.
 #
@@ -157,7 +157,7 @@ rather than a stored plan.
 # CPython), time-scale ceiling 20, six instances.  Check `swapon --show`
 # after each batch.  The unittest suite on top of the farm
 # is killed by memory pressure: stop the farm, run the suite, restart, fly.
-cd testInstances && ./mkbase.sh        # build a stripped KSP copy (once, ~7.5 GB)
+cd testInstances && ./mkbase.sh        # build a stripped KSP copy into ~/kspfarm/base (once, ~7.5 GB)
 ./mkclone.sh 0 && ./kwinRun.sh 0       # an unattended instance, invisible
 ./syncSaves.sh check                   # do the instances fly the reference saves?
 ./syncSaves.sh push                    # ... make them
@@ -181,6 +181,14 @@ need no third-party packages.
 
 
 ## The farm
+
+**Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
+- `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.
+- `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
+  works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
+  `KSPFARM=<dir>` moves the farm.
+- NiftyNebulae's benchmark instances share the farm (`~/kspfarm/nebula`). Never run them while
+  these are up.
 
 **Three things make a farm batch a lie, and none of them announce it.**
 `pgrep -af 'krpcLab.py --pilot spaceplane'` should show exactly one per busy instance --

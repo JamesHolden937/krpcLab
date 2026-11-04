@@ -4,6 +4,14 @@ Independent, graphics-stripped copies of the KSP install, each with its own
 kRPC port, so several `quickfly.py` runs can fly at once.  The live install at
 `~/Kerbal Space Program` is only ever **read**.
 
+**Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
+- `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.
+- `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
+  works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
+  `KSPFARM=<dir>` moves the farm.
+- NiftyNebulae's benchmark instances share the farm (`~/kspfarm/nebula`). Never run them while
+  these are up.
+
 ## Layout
 
     HANDOFF.md     start here: what works, what is measured, what is not
@@ -55,7 +63,7 @@ of each log to see which config produced it.
 
 ## Disk
 
-`base/` is 7.5 GB of real files.  Each clone is `cp -al` hardlinked against it
+`base/` (really `~/kspfarm/base`) is 7.5 GB of real files.  Each clone is `cp -al` hardlinked against it
 and then has the link broken on every file KSP might rewrite in place, so a
 clone costs about 10 MB.  `base/` is never launched, so nothing writes to the
 shared inodes.  Each clone does get its own 1.3 GB wine prefix, because wine

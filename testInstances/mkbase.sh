@@ -11,7 +11,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="${KSP_SRC:-$HOME/Kerbal Space Program}"
-BASE="$HERE/base"
+# Built into the shared farm (~/kspfarm, see its README.md); testInstances/base
+# is a symlink to it so every script and tool keeps finding it here.
+KSPFARM="${KSPFARM:-$HOME/kspfarm}"
+BASE="$KSPFARM/base"
 
 [ -f "$SRC/KSP_x64.exe" ] || { echo "no KSP at: $SRC" >&2; exit 1; }
 command -v tar >/dev/null || { echo "tar required" >&2; exit 1; }
@@ -75,6 +78,7 @@ EX+=( --exclude="./GameData/Squad/Agencies"
 EX+=( --exclude="./GameData/KSPCommunityFixes/PluginData/TextureCache" )
 
 mkdir -p "$BASE"
+[ -L "$HERE/base" ] || ln -s "$BASE" "$HERE/base"
 tar -C "$SRC" -cf - "${EX[@]}" . | tar -C "$BASE" -xf -
 
 # --- mod-local caches -----------------------------------------------------

@@ -13,9 +13,11 @@ dist/
 
 # The measurement farm's game copies and wine prefixes: 15 GB, rebuilt by
 # mkbase.sh / mkclone.sh.  The scripts and mod sources beside them are tracked.
-testInstances/base/
-testInstances/ksp[0-9]*/
-testInstances/prefix[0-9]*/
+# They live in the shared farm ~/kspfarm (base/, krpclab/); these are the
+# symlinks to it (no trailing slash: a symlink is not a directory to git).
+testInstances/base
+testInstances/ksp[0-9]*
+testInstances/prefix[0-9]*
 testInstances/*.log
 
 # kspSim: probed models (regenerate with kspSim/tools/probe.py, 1-5 min each)

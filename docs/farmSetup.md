@@ -1,5 +1,13 @@
 # Setting up the measurement farm
 
+**Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
+- `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.
+- `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
+  works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
+  `KSPFARM=<dir>` moves the farm.
+- NiftyNebulae's benchmark instances share the farm (`~/kspfarm/nebula`). Never run them while
+  these are up.
+
 The farm is a set of headless copies of Kerbal Space Program, each with its
 own kRPC port, that the harnesses fly unattended and in parallel. **The game
 copies are not in this repository and never will be**: KSP is commercial

@@ -3,6 +3,14 @@
 Independent graphics-stripped KSP copies for flying several measurements at
 once, and the operational failures that farm has produced.
 
+**Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
+- `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.
+- `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
+  works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
+  `KSPFARM=<dir>` moves the farm.
+- NiftyNebulae's benchmark instances share the farm (`~/kspfarm/nebula`). Never run them while
+  these are up.
+
 In-game measurement is the bottleneck: a flight is about three minutes and the
 useful experiments are three flights a configuration. `testInstances/` holds
 independent, graphics-stripped copies of the KSP install, each with its own
