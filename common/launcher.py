@@ -1,12 +1,14 @@
 """In-game launcher: one button per autopilot.
 
-``./run.sh`` with no ``--pilot`` runs this.  It puts a small panel on the
+``./run.sh`` with no ``--pilot`` runs this.  It puts a window on the
 game's screen with a button per entry in ``PILOTS``; pressing one runs that
 autopilot as a child process with ``--autostart``, so the button *is* the
-start command.  The autopilot's own panel (telemetry and TERMINATE) opens in
-the same window (``common.panel``) and the launcher's hides under it; when
-the flight exits the launcher comes back, showing how it ended and which log
-it wrote.
+start command.  The window is a stock KSP window with a toolbar button,
+drawn by ``launcherMod/`` (its kRPC service ``KrpcLabLauncher``); a game
+without that mod gets a kRPC panel instead (``LauncherPanel``).  While the
+autopilot's own panel (telemetry and TERMINATE, ``common.panel``) is up the
+launcher's window hides; when the flight exits it comes back, showing how
+it ended and which log it wrote.
 
 Adding an autopilot is one line in ``PILOTS``; the module has to accept
 ``--address``/``--rpc-port``/``--stream-port`` and ``--autostart``.
@@ -101,6 +103,9 @@ class LauncherPanel:
             self.status.content = status
         self.panel.visible = visible
 
+    def tick(self):
+        pass
+
     def show_buttons(self, visible):
         for button in self.buttons:
             button.visible = visible
@@ -117,6 +122,70 @@ class LauncherPanel:
             pass
 
 
+class StockLauncher:
+    """The launcher's window as ``launcherMod``'s stock KSP window: the same
+    interface as ``LauncherPanel``.  The service is reached by name strings
+    because the bundle's minifier knows only the kRPC services in the
+    game's ``GameData/kRPC/*.json`` and would rename ``show``/``pressed``
+    to match this file's own methods."""
+
+    SERVICE = "krpc_lab_launcher"
+    PING_S = 1.0            # the mod calls the launcher gone after 5 s
+
+    @classmethod
+    def available(cls, conn):
+        return getattr(conn, cls.SERVICE, None) is not None
+
+    def __init__(self, conn):
+        svc = getattr(conn, self.SERVICE)
+        self._update = getattr(svc, "update")
+        self._pressed = getattr(svc, "pressed")
+        self._close = getattr(svc, "close")
+        self.status = "choose an autopilot"
+        self.buttons = True
+        self.open = True
+        self.pinged = time.monotonic()
+        getattr(svc, "show")([label for label, _, _ in PILOTS]
+                             + ["QUIT LAUNCHER"], self.status)
+
+    def _send(self):
+        self._update(self.status, self.buttons, self.open)
+        self.pinged = time.monotonic()
+
+    def pressed(self):
+        i = self._pressed()
+        self.pinged = time.monotonic()
+        return None if i < 0 else i
+
+    def tick(self):
+        """Keep the window from saying the launcher is gone mid-flight."""
+        if time.monotonic() - self.pinged >= self.PING_S:
+            self.pressed()
+
+    def show(self, visible, status=None):
+        if status is not None:
+            self.status = status
+        self.open = visible
+        self._send()
+
+    def show_buttons(self, visible):
+        self.buttons = visible
+        self._send()
+
+    def close(self):
+        try:
+            self._close()
+        except Exception:                               # noqa: BLE001
+            pass
+
+
+def make_window(conn):
+    """The stock window when the game has ``launcherMod``, else the panel."""
+    if StockLauncher.available(conn):
+        return StockLauncher(conn)
+    return LauncherPanel(conn)
+
+
 def log_names():
     try:
         return {n for n in os.listdir(paths.LOGS) if re.fullmatch(r"LOG\d+", n)}
@@ -124,11 +193,12 @@ def log_names():
         return set()
 
 
-def fly(module, connection_args, started):
+def fly(module, connection_args, started, tick=None):
     """Run one autopilot to completion; returns (exit code, new log names).
 
     ``started`` is called once the autopilot's log exists plus
-    ``HANDOVER_S``, by when its own panel has replaced the launcher's.
+    ``HANDOVER_S``, by when its own panel has replaced the launcher's;
+    ``tick``, if given, every poll while the autopilot runs.
     """
     before = log_names()
     command = [sys.executable, "-m", module, "--autostart"] + connection_args
@@ -146,6 +216,11 @@ def fly(module, connection_args, started):
                 if handover is not None and time.monotonic() >= handover:
                     started()
                     started = None
+            if tick is not None:
+                try:
+                    tick()
+                except Exception:                       # noqa: BLE001
+                    tick = None     # the scene was reloaded under it
             time.sleep(POLL_S)
         code = child.returncode
     except KeyboardInterrupt:
@@ -184,7 +259,7 @@ def main(argv=None):
         forward += ["--stream-port", str(args.stream_port)]
 
     conn = krpc.connect(**kwargs)
-    window = LauncherPanel(conn)
+    window = make_window(conn)
     try:
         while True:
             choice = window.pressed()
@@ -199,7 +274,8 @@ def main(argv=None):
             # so, until the autopilot is drawing, and comes back after.
             window.show_buttons(False)
             window.show(True, "starting %s ..." % label.lower())
-            code, logs = fly(module, forward, lambda: hide(window))
+            code, logs = fly(module, forward, lambda: hide(window),
+                             window.tick)
             ended = "finished" if code == 0 else "exited %d" % code
             status = "%s %s\n%s" % (
                 name, ended, ", ".join(logs) if logs else "no log written")
@@ -215,7 +291,7 @@ def main(argv=None):
                 except Exception:                       # noqa: BLE001
                     pass
                 conn = krpc.connect(**kwargs)
-                window = LauncherPanel(conn)
+                window = make_window(conn)
                 window.show(True, status)
     except KeyboardInterrupt:
         return 0
