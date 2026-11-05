@@ -117,16 +117,6 @@ def thrust_bounds(contacts, up, g, mass, accel, aero, hub, thrust_now,
     return floor, ceiling
 
 
-def stricter(a, b):
-    """The tighter of two (floor, ceiling) bounds; either may be None."""
-    if a is None or b is None:
-        return a if b is None else b
-
-    def pick(x, y, f):
-        return x if y is None else y if x is None else f(x, y)
-    return pick(a[0], b[0], max), pick(a[1], b[1], min)
-
-
 def reaction_torque(rotors, torques, senses):
     """The props' torque on the airframe (vessel frame, same units as
     ``torques``): each rotor's blade load ``q`` (against its spin, as the

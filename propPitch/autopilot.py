@@ -157,18 +157,16 @@ class PropPilot:
         # The prop brake has stopped the props (the plane is still).
         self.held = False
         # Tipping: the wheels, their bounding boxes (vessel frame, read at
-        # START), the filtered acceleration and the hill climb's fraction.
+        # START) and the hill climb's fraction.
         self.wheels = []
         self.wheel_boxes = []
-        self.accel = (0.0, 0.0, 0.0)
-        self.last_v = None
-        self.last_grounded = None
         self.last_pitch = None
         self.tip_k = 1.0
         self.tip_climb = 0.0
         self.tip_base = None
         self.tip_computed = False
         self.tip_contacts = set()
+        self.lift_since = {}
         self.tip_backoff_ut = -1e9
         self.tip_note = "-"
         self.last_flown = None
@@ -539,7 +537,8 @@ class PropPilot:
         grounded = []
         if cfg.PROP_BRAKE and cfg.BRAKE_TIP_LIMIT:
             up, pitch = rest[:2]
-            grounded = rest[2:2 + len(self.wheels)]
+            # A wheel that broke off reads None: not on the ground.
+            grounded = [bool(g) for g in rest[2:2 + len(self.wheels)]]
             rest = rest[2 + len(self.wheels):]
         torque_avail = trims = None
         if cfg.TORQUE_COUNTER:
@@ -548,7 +547,6 @@ class PropPilot:
         j = force[1] / mass if force is not None and mass else None
         dt = 0.0 if self.last_ut is None else ut - self.last_ut
         self.last_ut = ut
-        self.track_accel(v_air, dt)
         braking = bool(cfg.PROP_BRAKE and brakes)
         pressed = braking and not self.braking
         if braking != self.braking:
@@ -559,6 +557,7 @@ class PropPilot:
             self.tip_base = None
             self.tip_computed = False
             self.tip_contacts = set()
+            self.lift_since = {}
             self.log.event(ut, "prop brake %s" % ("on" if braking else "off"))
         objective = MOST_FORWARD
         if braking and v_air is not None:
@@ -620,7 +619,7 @@ class PropPilot:
                                        sound, lo, hi, up, pitch, grounded,
                                        mass, force, dt)
             else:
-                self.last_grounded = self.last_pitch = None
+                self.last_pitch = None
         if braking and self.held:
             cmd = self.last_cmd             # stopped: the blades stay put
         else:
@@ -678,17 +677,6 @@ class PropPilot:
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
 
-    def track_accel(self, v_air, dt):
-        """The vessel's acceleration (vessel axes), the airspeed's
-        derivative low-passed over BRAKE_ACCEL_TAU_S."""
-        if v_air is None:
-            return
-        if self.last_v is not None and dt > 0.0:
-            a = min(1.0, dt / self.cfg.BRAKE_ACCEL_TAU_S)
-            self.accel = tuple(f + a * ((v - lv) / dt - f) for f, v, lv
-                               in zip(self.accel, v_air, self.last_v))
-        self.last_v = v_air
-
     def tip_limited(self, ut, opt, objective, targets, v_air, rho, sound,
                     lo, hi, up, pitch, grounded, mass, force, dt):
         """The braking optimum held to the thrust that keeps the wheels on
@@ -696,12 +684,18 @@ class PropPilot:
         fraction, which halves on a wheel lifting or a pitch rate."""
         cfg = self.cfg
         # The hill climb: a tipping symptom backs off, quiet raises it.
-        lifted = (self.last_grounded is not None
-                  and sum(grounded) < sum(self.last_grounded))
+        # A contact wheel off the ground for BRAKE_TIP_LIFT_S (a bounce on
+        # the runway is shorter).
+        for i in self.tip_contacts:
+            if grounded[i]:
+                self.lift_since.pop(i, None)
+            else:
+                self.lift_since.setdefault(i, ut)
+        lifted = any(ut - t >= cfg.BRAKE_TIP_LIFT_S
+                     for t in self.lift_since.values())
         rate = (abs(pitch - self.last_pitch) / dt
                 if pitch is not None and self.last_pitch is not None and dt > 0
                 else 0.0)
-        self.last_grounded = list(grounded)
         self.last_pitch = pitch
         symptom = lifted or rate > cfg.BRAKE_TIP_RATE_DEG_S
         if symptom and ut - self.tip_backoff_ut >= cfg.BRAKE_TIP_BACKOFF_S:
@@ -729,18 +723,16 @@ class PropPilot:
             hub = tuple(sum(wi * h[i] for wi, h in zip(w, self.hubs)) / sum(w)
                         for i in range(3))
             t_now = 1000.0 * last.thrust if last is not None else 0.0
-            # Twice: with the measured deceleration (the wheel brakes' share
-            # in it, but filtered, so it lags a thrust that just swung), and
-            # with the aero force's alone (no lag, no wheel friction); the
-            # stricter of the two.
+            # The deceleration the aero force alone gives (along the
+            # ground): then the props' share cancels and only gravity, lift
+            # and the thrust line's height over the CoM are left -- no lag
+            # from a filtered derivative, no dependence on the model's
+            # thrust.  The wheel brakes' own moment is not counted.
             aero_h = tipping._sub(force, tipping._scale(
                 up, tipping._dot(force, up)))
-            bounds = tipping.stricter(
-                tipping.thrust_bounds(contacts, up, self.g, mass, self.accel,
-                                      force, hub, t_now, cfg.BRAKE_TIP_MARGIN),
-                tipping.thrust_bounds(contacts, up, self.g, mass,
-                                      tipping._scale(aero_h, 1.0 / mass),
-                                      force, hub, t_now, cfg.BRAKE_TIP_MARGIN))
+            bounds = tipping.thrust_bounds(
+                contacts, up, self.g, mass, tipping._scale(aero_h, 1.0 / mass),
+                force, hub, t_now, cfg.BRAKE_TIP_MARGIN)
             if bounds is not None:
                 # No bound on this side: the props cannot tip it this way.
                 b = bounds[0] if reverse else bounds[1]

@@ -53,26 +53,28 @@ class Config:
     BRAKE_RESUME_SPEED: float = 2.0
     # On the wheels, the prop brake is held to the thrust that keeps every
     # wheel down (propPitch/tipping.py): the moment about the foremost and
-    # rearmost grounded contacts from gravity, the measured deceleration,
-    # the airframe's aero force and the props' thrust line, solved for the
-    # thrust that leaves BRAKE_TIP_MARGIN of gravity's restoring moment.
-    # The deceleration is the airspeed's derivative, low-passed over
-    # BRAKE_ACCEL_TAU_S.  Airborne, no limit.
+    # rearmost grounded contacts from gravity, the measured aero force (its
+    # lift and the deceleration it gives) and the props' thrust line,
+    # solved for the thrust that leaves BRAKE_TIP_MARGIN of gravity's
+    # restoring moment.  The wheel brakes' own moment is not counted (on a
+    # plane whose props sit above the CoM it opposes a tail-over).
+    # Airborne, no limit.
     BRAKE_TIP_LIMIT: bool = True
     BRAKE_TIP_MARGIN: float = 0.5
-    BRAKE_ACCEL_TAU_S: float = 0.3
     # The contacts are every wheel grounded since Brakes went on (a wheel
     # lifting is the tip starting, not new geometry), and a bound that
     # cannot be computed this tick is the last one that could.
     # Hill climb, the backstop: the allowed thrust is that bound times a
     # fraction, halved when a grounded wheel leaves the ground or the
-    # pitch moves faster than BRAKE_TIP_RATE_DEG_S (at most once per
+    # pitch moves faster than BRAKE_TIP_RATE_DEG_S (a wheel counts as
+    # lifted after BRAKE_TIP_LIFT_S off the ground; at most once per
     # BRAKE_TIP_BACKOFF_S) and raised back by BRAKE_TIP_RISE_PER_S per
     # second.  Where no bound was ever computed (the contacts do not span
     # the ground: one wheel, a row across), the hill climb is the whole
     # limit: from no thrust, up by BRAKE_TIP_CLIMB_G_PER_S of m g per second,
     # halved the same way.
     BRAKE_TIP_RATE_DEG_S: float = 10.0
+    BRAKE_TIP_LIFT_S: float = 0.25
     BRAKE_TIP_BACKOFF_S: float = 0.3
     BRAKE_TIP_RISE_PER_S: float = 0.25
     BRAKE_TIP_CLIMB_G_PER_S: float = 0.1
