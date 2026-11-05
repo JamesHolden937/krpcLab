@@ -22,6 +22,21 @@ which is how a coordinated turn is flown: a bank and a turn rate
 ``psi' = g tan(phi) / V`` give a pull ``q`` (the back pressure that keeps
 the nose up) and a yaw ``r``; ``theta'`` asks for the pitch the hold wants
 on top.
+
+**Gains come from the craft, not from a table.**  kRPC's
+``available_torque`` (wheels, RCS, gimbals and the control surfaces *at the
+present dynamic pressure and Mach*) over ``moment_of_inertia`` is the
+angular acceleration a full input gives on each axis (``authority``).  A
+rate loop meant to close in ``tau`` then needs ``kp = 1 / (accel tau)``
+(``rate_gains``), and ``tau`` is set by what the loop can serve -- a few of
+its own measured ticks -- not by the craft.  What is left to choose is
+design: how many ticks, how much slower the attitude loops are than the
+rate loops.  Where kRPC's figure is wrong high (it models the surfaces,
+it does not measure them), the loop rings; ``Ringing`` sees the output
+reverse and halves that axis's gain, which recovers slowly when quiet.
+(Measuring the effectiveness from differenced rates was tried for the
+spaceplane, ``SURFACE_OWN`` 2026-10-21: at kRPC's tick it was too noisy to
+fly on.)
 """
 
 import math
@@ -96,34 +111,100 @@ def turn_rate(phi, speed, max_g, min_speed):
     return G0 * t / max(speed, min_speed)
 
 
-def gain_scale(q_dyn, q_ref, lo, hi):
-    """How much harder the surfaces must be pushed than at ``q_ref``: their
-    moment goes with dynamic pressure."""
-    if q_dyn is None or q_dyn <= 0.0:
-        return hi
-    return clamp(q_ref / q_dyn, lo, hi)
+def authority(torque, inertia):
+    """Angular acceleration per unit input, (pitch, roll, yaw) in rad/s^2,
+    from kRPC's ``available_torque`` (``((+x, +y, +z), (-x, -y, -z))``, N m,
+    vessel axes: x pitch, y roll, z yaw) and ``moment_of_inertia`` (kg m^2,
+    same axes): the mean of the two directions' magnitudes over the
+    inertia.  None for an axis it cannot tell."""
+    if torque is None or inertia is None:
+        return (None, None, None)
+    pos, neg = torque
+    out = []
+    for i in range(3):
+        t = 0.5 * (abs(pos[i]) + abs(neg[i]))
+        out.append(t / inertia[i] if inertia[i] and inertia[i] > 0.0
+                   else None)
+    return tuple(out)
+
+
+def rate_gains(accel, tau, integral_factor, kp_max):
+    """``(kp, ki)`` for a body-rate loop that closes in ``tau`` seconds on
+    an axis whose full input gives ``accel`` rad/s^2: the input that would
+    take the rate error out in ``tau``, and an integral ``integral_factor``
+    times slower.  No authority (None or 0): ``kp_max``, the loop pinned
+    rather than divided by zero."""
+    if accel is None or accel <= 0.0:
+        kp = kp_max
+    else:
+        kp = min(kp_max, 1.0 / (accel * tau))
+    return kp, kp / (integral_factor * tau)
 
 
 class RateLoop:
-    """One axis: stick input from the body-rate error, PI, the gains
-    scaled by ``gain_scale``.  The integral (the axis's trim) is kept in
-    output units, held at +/- ``i_max``, and stops winding while the output
-    is pinned the way it would wind."""
+    """One axis: stick input from the body-rate error, PI.  The integral
+    (the axis's trim) is kept in output units, held at +/- ``i_max``, and
+    stops winding while the output is pinned the way it would wind."""
 
-    def __init__(self, kp, ki, i_max):
-        self.kp, self.ki, self.i_max = kp, ki, i_max
+    def __init__(self, i_max):
+        self.i_max = i_max
         self.i = 0.0
 
-    def step(self, want, rate, scale, dt, integrate=True, proportional=True):
+    def step(self, want, rate, kp, ki, dt, integrate=True, proportional=True):
         e = want - rate
-        p = scale * self.kp * e if proportional else 0.0
+        p = kp * e if proportional else 0.0
         u = p + self.i
         if integrate and dt > 0.0:
-            di = scale * self.ki * e * dt
+            di = ki * e * dt
             if not ((u >= 1.0 and di > 0.0) or (u <= -1.0 and di < 0.0)):
                 self.i = clamp(self.i + di, -self.i_max, self.i_max)
             u = p + self.i
         return clamp(u, -1.0, 1.0)
+
+
+class Ringing:
+    """One axis's gain multiplier: halved when the loop's output has
+    reversed ``reversals`` times by at least ``swing`` within ``window_s``
+    (a loop ringing at its own gain), at most once per window; raised back
+    toward 1 by ``recover_per_s`` while it is quiet; never below
+    ``floor``."""
+
+    def __init__(self, reversals, swing, window_s, recover_per_s, floor):
+        self.reversals, self.swing = reversals, swing
+        self.window_s, self.recover = window_s, recover_per_s
+        self.floor = floor
+        self.mult = 1.0
+        self.dir = 0            # +1 rising, -1 falling, 0 not yet moved
+        self.hi = self.lo = None
+        self.turns = []         # times of the reversals
+        self.cut_at = -1e9
+
+    def update(self, t, u, dt):
+        """Feed the output ``u`` at time ``t``; True when it backed off."""
+        if self.hi is None:
+            self.hi = self.lo = u
+        self.hi, self.lo = max(self.hi, u), min(self.lo, u)
+        if self.dir > 0 and self.hi - u >= self.swing:
+            self.turns.append(t)
+            self.dir, self.lo = -1, u
+        elif self.dir < 0 and u - self.lo >= self.swing:
+            self.turns.append(t)
+            self.dir, self.hi = 1, u
+        elif self.dir == 0:
+            if u - self.lo >= self.swing:
+                self.dir, self.hi = 1, u
+            elif self.hi - u >= self.swing:
+                self.dir, self.lo = -1, u
+        self.turns = [x for x in self.turns if t - x <= self.window_s]
+        if (len(self.turns) >= self.reversals
+                and t - self.cut_at >= self.window_s):
+            self.mult = max(self.floor, 0.5 * self.mult)
+            self.cut_at = t
+            self.turns = []
+            return True
+        if not self.turns and dt > 0.0:
+            self.mult = min(1.0, self.mult + self.recover * dt)
+        return False
 
 
 def stick(read, written, trim):

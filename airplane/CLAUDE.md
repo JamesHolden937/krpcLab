@@ -25,15 +25,33 @@ pulls until 30 is held. Heading is free.
 **HOLD**: pitch, heading and bank held where taken. Past `VERTICAL_DEG`
 80 of pitch heading is undefined: it is re-taken every tick.
 
-**How**: attitude error x gain = Euler rates (`*_GAIN`), into body rates
-(`control.euler_to_body`), capped at `MAX_*_RATE_DEG_S`; each body rate
-flown by a PI loop on its stick axis (`control.RateLoop`), gains x
-`GAIN_Q_REF_PA / q` within [0.1, 5] (surface moment goes with dynamic
-pressure). The integrals are the axes' trims. Attitude and rates come from
-the vessel's axes and angular velocity in its surface frame, read off as
-the axes' own motion (`d(axis)/dt = w x axis`, the convention measured for
-the spaceplane). Senses: pitch +1 nose up, roll +1 right, yaw +1 nose
-right. SAS is turned off while flying and put back.
+**How**: attitude error / (`ATTITUDE_TAU_FACTOR` x tau) = Euler rates,
+into body rates (`control.euler_to_body`), capped at `MAX_*_RATE_DEG_S`;
+each body rate flown by a PI loop on its stick axis (`control.RateLoop`).
+The integrals are the axes' trims. Attitude and rates come from the
+vessel's axes and angular velocity in its surface frame, read off as the
+axes' own motion (`d(axis)/dt = w x axis`, the convention measured for the
+spaceplane). Senses: pitch +1 nose up, roll +1 right, yaw +1 nose right.
+SAS is turned off while flying and put back.
+
+**No gain is fitted to a craft** (the user, 2026-11-05: "shouldn't you use
+something that adapts to the plane?"). Per axis, the authority is kRPC's
+`available_torque` / `moment_of_inertia` -- wheels, RCS, gimbals and the
+surfaces *at the present q and Mach* -- re-read every
+`AUTHORITY_REFRESH_S` (`control.authority`); `kp = 1 / (accel x tau)`,
+`ki = kp / (INTEGRAL_TAU_FACTOR x tau)` (`control.rate_gains`). tau is
+`RATE_TAU_TICKS` (4) of the loop's own measured interval (>= 0.15 s): the
+loop is as fast as it can serve, not as fast as a table says. What is left
+is design, the same for every craft. kRPC *models* the surfaces; where its
+figure is high the loop rings, and `control.Ringing` halves that axis's
+gain (4 reversals of 0.15 in 2 s; floor 1/8) and lets it recover at
+0.05/s. Offline, a 1-tick-latency plant whose real authority is 0.25x-8x
+kRPC's settles on every step (backstop cutting to 0.33 at 8x). Not chosen:
+identifying the effectiveness from differenced rates (INDI) --
+`SURFACE_OWN` did that for the spaceplane on 2026-10-21 and kRPC's tick
+made it too noisy to fly (0/12). Log `kp=`, `acc=` (deg/s^2 per unit
+input), `ring=`, `tau=`; events `authority ...` at START, `<axis> ringing:
+gain xN`.
 
 **The player's stick**: kRPC adds a client's input to the player's
 (`PilotAddon.OnFlyByWire`: `ControlInputs.Add`) and KSP folds the trim into
@@ -52,18 +70,20 @@ airplane's panel). Unticking it hands the props back.
 
 **Log** `FLY` line: `att=`/`tgt=` bank, pitch, heading (deg), `slip=`,
 `rate=`/`want=` pitch, roll, yaw rates (deg/s), `out=` our inputs, `i=` the
-integrals, `stick=` the player's input per axis, `scale=` the q gain scale.
+integrals, `stick=` the player's input per axis, `kp=`/`acc=`/`ring=`/`tau=`
+the gains and where they came from.
 
-## Where it stands (2026-11-04, fingerprint `a2ff2c90`)
+## Where it stands (2026-11-05, fingerprint `214ff2b8`)
 
 Written 2026-11-04 on the user's spec; **never flown** (the user tests it
-live). Gains are first guesses. No farm harness yet.
+live). Its gains come from kRPC's authority and its own tick; offline they
+hold over a 32x error in that authority. No farm harness yet.
 
 ## Next
 
-1. The user's live flights: read `out=`/`i=` against `rate=`/`want=` --
-   a loop whose `out` sits at +/-1 or whose rate rings has its gain wrong
-   (`*_KP`/`*_KI`, `GAIN_Q_REF_PA`).
+1. The user's live flights: `acc=` against what the plane does (a
+   `ringing` event means kRPC's authority is high on that axis; `out=`
+   pinned at +/-1 with `rate=` short of `want=` means it is low).
 2. If a sense is wrong (it rolls away instead of holding) it is one sign in
    `control.body_rates` or the input senses; `tests/testControl.py` pins
    the geometry, not the game's input senses.

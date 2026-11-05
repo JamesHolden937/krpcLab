@@ -125,25 +125,72 @@ class TestStick(unittest.TestCase):
 
 class TestRateLoop(unittest.TestCase):
     def test_closed_loop_settles(self):
-        """A first-order rate plant (rate' = k u - d rate + bias) settles
-        on the command with the integral holding the bias."""
-        loop = law.RateLoop(1.5, 1.5, 0.6)
-        rate, dt = 0.0, 0.05
-        for _ in range(400):
-            u = loop.step(0.2, rate, 1.0, dt)
-            rate += (2.0 * u - 1.0 * rate - 0.3) * dt
-        self.assertAlmostEqual(rate, 0.2, places=2)
-        self.assertGreater(loop.i, 0.0)
+        """A rate plant (rate' = accel u - damping + bias) flown on gains
+        from its own authority settles on the command, the integral holding
+        the bias -- for authorities 50x apart, with no retuning."""
+        for accel in (0.4, 2.0, 20.0):
+            tau, dt = 0.2, 0.05
+            kp, ki = law.rate_gains(accel, tau, 4.0, 1e9)
+            loop = law.RateLoop(0.6)
+            rate = 0.0
+            for _ in range(600):
+                u = loop.step(0.1, rate, kp, ki, dt)
+                rate += (accel * u - 0.2 * rate - 0.1 * accel) * dt
+            self.assertAlmostEqual(rate, 0.1, places=3, msg=accel)
+            self.assertAlmostEqual(loop.i, 0.1 + 0.2 * 0.1 / accel, places=3)
 
     def test_no_windup_when_pinned(self):
-        loop = law.RateLoop(10.0, 10.0, 0.6)
+        loop = law.RateLoop(0.6)
         for _ in range(100):
-            loop.step(5.0, 0.0, 1.0, 0.05)
+            loop.step(5.0, 0.0, 10.0, 10.0, 0.05)
         self.assertLessEqual(loop.i, 0.6)
 
-    def test_gain_scale(self):
-        self.assertEqual(law.gain_scale(None, 5000.0, 0.1, 5.0), 5.0)
-        self.assertEqual(law.gain_scale(10000.0, 5000.0, 0.1, 5.0), 0.5)
+
+class TestGains(unittest.TestCase):
+    def test_authority(self):
+        acc = law.authority(((100.0, 300.0, 50.0), (-100.0, -100.0, -50.0)),
+                            (10.0, 20.0, 0.0))
+        self.assertAlmostEqual(acc[0], 10.0)
+        self.assertAlmostEqual(acc[1], 10.0)
+        self.assertIsNone(acc[2])
+        self.assertEqual(law.authority(None, (1, 1, 1)), (None, None, None))
+
+    def test_rate_gains(self):
+        kp, ki = law.rate_gains(2.0, 0.25, 4.0, 20.0)
+        self.assertAlmostEqual(kp, 2.0)
+        self.assertAlmostEqual(ki, 2.0)
+        self.assertEqual(law.rate_gains(None, 0.25, 4.0, 20.0)[0], 20.0)
+        self.assertEqual(law.rate_gains(0.01, 0.25, 4.0, 20.0)[0], 20.0)
+
+
+class TestRinging(unittest.TestCase):
+    def ring(self):
+        return law.Ringing(4, 0.15, 2.0, 0.05, 0.125)
+
+    def test_oscillation_halves(self):
+        r, t, cut = self.ring(), 0.0, False
+        for k in range(40):
+            t += 0.05
+            cut |= r.update(t, 0.5 if (k // 3) % 2 else -0.5, 0.05)
+        self.assertTrue(cut)
+        self.assertLess(r.mult, 1.0)
+
+    def test_steady_and_slow_moves_do_not(self):
+        r, t = self.ring(), 0.0
+        for k in range(200):
+            t += 0.05
+            self.assertFalse(r.update(t, 0.3 + 0.002 * k, 0.05))
+        r2 = self.ring()
+        for k in range(200):        # small dither under the swing
+            self.assertFalse(r2.update(k * 0.05, 0.05 * (-1) ** k, 0.05))
+        self.assertEqual(r2.mult, 1.0)
+
+    def test_recovers_when_quiet(self):
+        r = self.ring()
+        r.mult = 0.5
+        for k in range(100):
+            r.update(k * 0.05, 0.2, 0.05)
+        self.assertAlmostEqual(r.mult, 0.75, places=6)
 
 
 if __name__ == "__main__":

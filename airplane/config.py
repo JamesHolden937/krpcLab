@@ -18,11 +18,34 @@ class Config:
     # CRUISE never banks past this (deg).
     BANK_LIMIT_DEG: float = 89.0
 
-    # --- outer loops: attitude error -> Euler rate (1/s) ------------------
-    PITCH_GAIN: float = 1.0
-    BANK_GAIN: float = 1.5
-    HEADING_GAIN: float = 0.6
-    # The body rates the holds themselves may ask for (deg/s).
+    # --- gains: from the craft, not fitted to it (control.py) ------------
+    # The rate loops close in RATE_TAU_TICKS of the loop's own measured
+    # interval (never under RATE_TAU_MIN_S): a loop cannot be faster than
+    # what it can serve.  kp = 1 / (accel x tau), accel = kRPC
+    # available_torque / moment_of_inertia per axis (the surfaces at the
+    # present q and Mach), re-read every AUTHORITY_REFRESH_S of game time;
+    # ki = kp / (INTEGRAL_TAU_FACTOR x tau).  KP_MAX bounds an axis with no
+    # authority.
+    RATE_TAU_TICKS: float = 4.0
+    RATE_TAU_MIN_S: float = 0.15
+    INTEGRAL_TAU_FACTOR: float = 4.0
+    KP_MAX: float = 20.0
+    AUTHORITY_REFRESH_S: float = 0.5
+    # The attitude loops (and CRUISE's slip loop) close ATTITUDE_TAU_FACTOR
+    # times slower than the rate loops: error / (factor x tau) is the rate
+    # asked for; the slip loop's integral INTEGRAL_TAU_FACTOR slower again.
+    ATTITUDE_TAU_FACTOR: float = 3.0
+    # Where kRPC's authority is high the loop rings: an axis whose input
+    # reverses RING_REVERSALS times by RING_SWING within RING_WINDOW_S has
+    # its gain halved (to RING_FLOOR at least), raised back by
+    # RING_RECOVER_PER_S while quiet.
+    RING_REVERSALS: int = 4
+    RING_SWING: float = 0.15
+    RING_WINDOW_S: float = 2.0
+    RING_RECOVER_PER_S: float = 0.05
+    RING_FLOOR: float = 0.125
+    # The rates the holds themselves may ask for (deg/s): how hard it may
+    # manoeuvre on its own, a comfort limit, not the craft's.
     MAX_PITCH_RATE_DEG_S: float = 15.0
     MAX_ROLL_RATE_DEG_S: float = 60.0
     MAX_YAW_RATE_DEG_S: float = 10.0
@@ -33,25 +56,9 @@ class Config:
     # Past this pitch (deg) heading is undefined: HOLD stops holding it and
     # the turn's feed-forward is off.
     VERTICAL_DEG: float = 80.0
-    # CRUISE's sideslip loop: yaw rate per radian of slip (1/s), and its
-    # integral (1/s^2), held to SLIP_I_MAX_DEG_S.
-    SLIP_GAIN: float = 1.5
-    SLIP_KI: float = 0.5
+    # CRUISE's slip integral is held to this yaw rate.
     SLIP_I_MAX_DEG_S: float = 5.0
-
-    # --- inner loops: body-rate error (rad/s) -> stick, PI ----------------
-    # At dynamic pressure GAIN_Q_REF_PA; scaled by Q_REF / q (the surfaces'
-    # moment goes with q) within [GAIN_SCALE_MIN, GAIN_SCALE_MAX].
-    PITCH_KP: float = 1.5
-    PITCH_KI: float = 1.5
-    ROLL_KP: float = 0.6
-    ROLL_KI: float = 0.4
-    YAW_KP: float = 1.5
-    YAW_KI: float = 1.0
     INTEGRAL_MAX: float = 0.6
-    GAIN_Q_REF_PA: float = 5000.0
-    GAIN_SCALE_MIN: float = 0.1
-    GAIN_SCALE_MAX: float = 5.0
 
     # --- the player's stick -----------------------------------------------
     # A stick deflection beyond this is the player flying the axis: the
