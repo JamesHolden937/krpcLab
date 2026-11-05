@@ -37,6 +37,17 @@ reverse and halves that axis's gain, which recovers slowly when quiet.
 (Measuring the effectiveness from differenced rates was tried for the
 spaceplane, ``SURFACE_OWN`` 2026-10-21: at kRPC's tick it was too noisy to
 fly on.)
+
+**The surfaces take time to move.**  KSP slews a control surface's input
+by ``actuatorSpeed x dt / ctrlSurfaceRange`` of full travel per physics
+step (``Mathf.MoveTowards``; ``Mathf.Lerp`` -- a first-order lag -- when
+``useExponentialSpeed``), and its angle the same way
+(``ModuleControlSurface``, Assembly-CSharp): stock parts take 0.3-2.4 s
+end to end.  ``actuators`` reads that per axis from the game (the window
+mod's ``SurfaceActuators``), torque-weighted, wheels and RCS counted as
+instant.  ``closing_time`` then keeps each loop no faster than its surfaces
+can deliver the deflection a step needs, and ``RateLoop`` never commands
+faster than they move.
 """
 
 import math
@@ -128,6 +139,58 @@ def authority(torque, inertia):
     return tuple(out)
 
 
+def actuators(lines):
+    """Per axis (pitch, roll, yaw): ``(slew, lag)`` from the window mod's
+    ``SurfaceActuators`` lines.  ``slew`` is how fast the axis's input can
+    move, in full travel per second: the surfaces' ``actuatorSpeed /
+    ctrlSurfaceRange``, combined harmonically by torque, with the torque
+    that is not on a slewed surface (wheels, RCS, gimbals) counted as
+    instant; None when no slewed surface acts on the axis.  ``lag`` is the
+    torque-weighted first-order lag (s) of exponential surfaces (input
+    ``range / speed`` plus angle ``1 / speed``), 0 with none.  None when the
+    lines cannot be read."""
+    if not lines or not lines[0].startswith("total"):
+        return None
+    tot = [float(x) for x in lines[0].split()[1:7]]
+    total = [0.5 * (tot[i] + tot[i + 3]) for i in range(3)]
+    slow = [0.0, 0.0, 0.0]          # sum of torque / slew
+    lagged = [0.0, 0.0, 0.0]        # sum of torque x lag
+    for line in lines[1:]:
+        f = [float(x) for x in line.split()]
+        speed, rng, expo = f[0], f[1], f[2] > 0.5
+        if speed <= 0.0 or rng <= 0.0:
+            continue
+        for i in range(3):
+            t = 0.5 * (f[3 + i] + f[6 + i])
+            if expo:
+                lagged[i] += t * (rng / speed + 1.0 / speed)
+            else:
+                slow[i] += t / (speed / rng)
+    out = []
+    for i in range(3):
+        if total[i] <= 0.0:
+            out.append((None, 0.0))
+            continue
+        out.append((total[i] / slow[i] if slow[i] > 0.0 else None,
+                    lagged[i] / total[i]))
+    return tuple(out)
+
+
+def closing_time(tick_tau, accel, slew, lag, step, slew_factor, lag_factor):
+    """A rate loop's closing time on one axis: at least ``tick_tau`` (what
+    the loop can serve); long enough that its surfaces reach the input a
+    rate step of ``step`` rad/s needs while the step is still being taken --
+    the input is ``step / (accel tau)`` and it has to get there in about
+    ``tau / slew_factor`` at ``slew``, so ``tau >= sqrt(slew_factor step /
+    (accel slew))``; and ``lag_factor`` times a lagged surface's lag."""
+    tau = tick_tau
+    if slew and accel and accel > 0.0 and step > 0.0:
+        tau = max(tau, math.sqrt(slew_factor * step / (accel * slew)))
+    if lag:
+        tau = max(tau, lag_factor * lag)
+    return tau
+
+
 def rate_gains(accel, tau, integral_factor, kp_max):
     """``(kp, ki)`` for a body-rate loop that closes in ``tau`` seconds on
     an axis whose full input gives ``accel`` rad/s^2: the input that would
@@ -143,23 +206,37 @@ def rate_gains(accel, tau, integral_factor, kp_max):
 
 class RateLoop:
     """One axis: stick input from the body-rate error, PI.  The integral
-    (the axis's trim) is kept in output units, held at +/- ``i_max``, and
-    stops winding while the output is pinned the way it would wind."""
+    (the axis's trim) is kept in output units, held at +/- ``i_max``.  The
+    output moves at most ``slew x dt`` a step (what the surfaces can
+    follow), and the integral stops winding while the output is pinned --
+    at +/-1 or at that slew -- the way it would wind."""
 
     def __init__(self, i_max):
         self.i_max = i_max
         self.i = 0.0
+        self.u = 0.0
 
-    def step(self, want, rate, kp, ki, dt, integrate=True, proportional=True):
+    def _limit(self, u, slew, dt):
+        u = clamp(u, -1.0, 1.0)
+        if slew and dt > 0.0:
+            u = clamp(u, self.u - slew * dt, self.u + slew * dt)
+        return u
+
+    def step(self, want, rate, kp, ki, dt, integrate=True, proportional=True,
+             slew=None):
         e = want - rate
         p = kp * e if proportional else 0.0
-        u = p + self.i
+        raw = p + self.i
         if integrate and dt > 0.0:
             di = ki * e * dt
-            if not ((u >= 1.0 and di > 0.0) or (u <= -1.0 and di < 0.0)):
+            u = self._limit(raw, slew, dt)
+            pinned_up = u < raw - 1e-12
+            pinned_down = u > raw + 1e-12
+            if not ((pinned_up and di > 0.0) or (pinned_down and di < 0.0)):
                 self.i = clamp(self.i + di, -self.i_max, self.i_max)
-            u = p + self.i
-        return clamp(u, -1.0, 1.0)
+            raw = p + self.i
+        self.u = self._limit(raw, slew, dt)
+        return self.u
 
 
 class Ringing:

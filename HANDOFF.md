@@ -1,6 +1,6 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-05: airplane -- new pilot, CRUISE and HOLD, gains from the craft, unflown (fingerprint `214ff2b8`)
+## 2026-11-05: airplane -- new pilot, CRUISE and HOLD, gains from the craft and its surfaces' travel time, unflown (fingerprint `570902c5`)
 
 `airplane/` (launcher "AIRPLANE: CRUISE / HOLD", `./run.sh --pilot
 airplane`). Read `airplane/CLAUDE.md`. CRUISE: slip nulled on the rudder,
@@ -10,7 +10,12 @@ nose). HOLD: pitch, heading, bank. PI body-rate loops whose gains come
 from the craft (2026-11-05, the user asked why they were hand-picked):
 kRPC's available torque / inertia per axis (surfaces at the present q),
 the loop closing in 4 of its own ticks, a ringing backstop halving an
-axis's gain; offline it holds over a 32x error in kRPC's figure. The player's stick is read back (kRPC adds client
+axis's gain; offline it holds over a 32x error in kRPC's figure. The
+surfaces' travel time too (the user asked): the window mod's
+`SurfaceActuators` reads each surface's actuatorSpeed/range/torque; each
+axis's loop is no faster than its surfaces can deliver a step, and the
+command is slew-limited (offline overshoot 0.76 -> <0.05 rad/s on slow
+surfaces). **Needs the rebuilt window mod: restart the game.** The player's stick is read back (kRPC adds client
 input to the player's; KSP adds the trim in -- both read from the IL) and
 an axis it moves is let go and re-held where left; **constant rates**:
 stick = body rate, limits in RPM on the panel. **Prop plane** runs
@@ -25,7 +30,7 @@ tested (`airplane/tests/testControl.py`), the senses are not.
 `rate=` vs `want=`; a `ringing` event = kRPC's authority high on that
 axis); a farm harness flying steps per axis.
 
-## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `214ff2b8`, propPitch `ca612601`)
+## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `570902c5`, propPitch `ca612601`)
 
 The user's request, all done and committed; **nothing here was flown or
 run in a game** (the user: "no need to test this"; they test live).

@@ -44,7 +44,8 @@ from common import cli
 from common.krpcbatch import ask
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
-from common.panel import ACCENT_AIRPLANE, ControlPanel, choice, field, toggle
+from common.panel import (ACCENT_AIRPLANE, ControlPanel, choice, field,
+                          service, toggle)
 from common.rpccount import RpcCounter
 from . import control as law
 from .config import Config, apply_overrides, defaults_fingerprint, differences
@@ -80,6 +81,10 @@ class AirplanePilot:
         self.loops = None
         self.ringing = None
         self.accel = None
+        self.acts = ((None, 0.0),) * 3
+        svc = service(conn)
+        self.actuator_call = (getattr(svc, "surface_actuators")
+                              if svc is not None else None)
         self.next_authority = 0.0
         self.interval = None
         self.slip_i = 0.0
@@ -140,6 +145,15 @@ class AirplanePilot:
         first = self.accel is None
         self.accel = law.authority(torque, inertia)
         self.next_authority = ut + self.cfg.AUTHORITY_REFRESH_S
+        # The surfaces' actuators, from the game (the window mod); without
+        # it, every axis is taken as instant.
+        acts = None
+        if self.actuator_call is not None:
+            try:
+                acts = law.actuators(list(self.actuator_call()))
+            except Exception:                           # noqa: BLE001
+                acts = None
+        self.acts = acts or ((None, 0.0),) * 3
         if first:
             self.log.event(ut, "authority (pitch, roll, yaw) deg/s^2 per unit "
                            "input: %s; inertia %s kg m^2" % (
@@ -147,13 +161,24 @@ class AirplanePilot:
                                         if a is not None else "?"
                                         for a in self.accel),
                                ",".join("%.0f" % x for x in inertia or ())))
+            self.log.event(ut, "surface actuators (pitch, roll, yaw): slew %s "
+                           "full travel/s, lag %s s%s" % (
+                               ",".join("%.2f" % sl if sl else "instant"
+                                        for sl, _ in self.acts),
+                               ",".join("%.2f" % lg for _, lg in self.acts),
+                               "" if acts else " (not read: no window mod)"))
 
-    def tau(self):
-        """The rate loops' closing time: RATE_TAU_TICKS of the loop's own
-        measured interval, never under RATE_TAU_MIN_S."""
+    def taus(self, caps):
+        """Each axis's (pitch, roll, yaw) rate-loop closing time: at least
+        RATE_TAU_TICKS of the loop's own measured interval (and
+        RATE_TAU_MIN_S), and no faster than its surfaces can move
+        (``control.closing_time``, a step of the axis's rate cap)."""
         cfg = self.cfg
         tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
-        return max(cfg.RATE_TAU_MIN_S, cfg.RATE_TAU_TICKS * tick)
+        base = max(cfg.RATE_TAU_MIN_S, cfg.RATE_TAU_TICKS * tick)
+        return [law.closing_time(base, self.accel[i], self.acts[i][0],
+                                 self.acts[i][1], caps[i], cfg.SLEW_FACTOR,
+                                 cfg.LAG_FACTOR) for i in range(3)]
 
     def hand_back(self, ut):
         c = self.vessel.control
@@ -268,8 +293,6 @@ class AirplanePilot:
                              else 0.9 * self.interval + 0.1 * dt)
         if ut >= self.next_authority:
             self.refresh_authority(ut)
-        tau = self.tau()
-        k_att = 1.0 / (cfg.ATTITUDE_TAU_FACTOR * tau)
         if None in (nose, right, belly, omega):
             return
         roof = tuple(-x for x in belly)
@@ -307,6 +330,15 @@ class AirplanePilot:
             tpsi = psi
         if mode == CRUISE:
             tphi = law.clamp(tphi, -bank_cap, bank_cap)
+        # The rates each axis may be asked for (pitch, roll, yaw), and from
+        # them and the surfaces each axis's closing time.
+        caps = [math.radians(cfg.MAX_PITCH_RATE_DEG_S),
+                math.radians(cfg.MAX_ROLL_RATE_DEG_S),
+                math.radians(cfg.MAX_YAW_RATE_DEG_S)]
+        if constant:
+            caps = [min(c, x) for c, x in zip(caps, lim)]
+        taus = self.taus(caps)
+        k_att = [1.0 / (cfg.ATTITUDE_TAU_FACTOR * t) for t in taus]
         for i, a in enumerate(active):
             if a != self.manual[i]:
                 self.log.event(ut, "stick %s %s" % (
@@ -315,8 +347,8 @@ class AirplanePilot:
         self.target = [tphi, ttheta, tpsi]
 
         # Outer loops: attitude error -> Euler rates.
-        dphi = k_att * law.wrap(tphi - phi)
-        dtheta = k_att * (ttheta - theta)
+        dphi = k_att[1] * law.wrap(tphi - phi)
+        dtheta = k_att[0] * (ttheta - theta)
         if mode == CRUISE:
             # The turn the bank makes, coordinated (and the bank cap's
             # bank rather than the vessel's own, past it).
@@ -324,35 +356,29 @@ class AirplanePilot:
                 law.clamp(phi, -bank_cap, bank_cap), speed,
                 cfg.TURN_MAX_G, cfg.TURN_MIN_SPEED_M_S)
         else:
-            dpsi = k_att * law.wrap(tpsi - psi)
+            dpsi = k_att[2] * law.wrap(tpsi - psi)
         want = list(law.euler_to_body(phi, theta, dphi, dtheta, dpsi))
         if mode == CRUISE and beta is not None and not active[2]:
             # The rudder takes the slip out.
             if dt > 0.0:
                 cap = math.radians(cfg.SLIP_I_MAX_DEG_S)
-                ki = k_att / (cfg.INTEGRAL_TAU_FACTOR * cfg.ATTITUDE_TAU_FACTOR
-                              * tau)
+                ki = k_att[2] / (cfg.INTEGRAL_TAU_FACTOR
+                                 * cfg.ATTITUDE_TAU_FACTOR * taus[2])
                 self.slip_i = law.clamp(self.slip_i + ki * beta * dt,
                                         -cap, cap)
-            want[2] += k_att * beta + self.slip_i
-        # The holds' own rates (p, q, r order in ``want``).
-        caps = [math.radians(cfg.MAX_ROLL_RATE_DEG_S),
-                math.radians(cfg.MAX_PITCH_RATE_DEG_S),
-                math.radians(cfg.MAX_YAW_RATE_DEG_S)]
-        if constant:
-            caps = [min(caps[0], lim[1]), min(caps[1], lim[0]),
-                    min(caps[2], lim[2])]
-        want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
+            want[2] += k_att[2] * beta + self.slip_i
         # want/rate in the stick's order: pitch (q), roll (p), yaw (r).
         want = [want[1], want[0], want[2]]
+        want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
         rate = [q, p, r]
 
         out = []
         kps = []
         for i in range(3):
             s = sticks[i] or 0.0
-            kp, ki = law.rate_gains(self.accel[i], tau,
+            kp, ki = law.rate_gains(self.accel[i], taus[i],
                                     cfg.INTEGRAL_TAU_FACTOR, cfg.KP_MAX)
+            slew = self.acts[i][0]
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
             kps.append(kp)
@@ -366,7 +392,7 @@ class AirplanePilot:
                 # The stick is a rate command; the game adds the player's
                 # input to ours, so ours is the loop's less the stick.
                 want[i] = s * lim[i]
-            u = self.loops[i].step(want[i], rate[i], kp, ki, dt)
+            u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew)
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))
@@ -381,7 +407,7 @@ class AirplanePilot:
             "tgt=%+6.1f,%+6.1f,%5.1f slip=%+5.1f rate=%+6.1f,%+6.1f,%+6.1f "
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
-            "acc=%s ring=%.2f,%.2f,%.2f tau=%.2f%s"
+            "acc=%s ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
                deg(tphi), deg(ttheta), deg(tpsi) % 360.0,
@@ -391,7 +417,7 @@ class AirplanePilot:
                ",".join("%+.2f" % s if s is not None else "?" for s in sticks),
                *kps, ",".join("%.1f" % math.degrees(a) if a is not None
                               else "?" for a in self.accel),
-               *[rg.mult for rg in self.ringing], tau,
+               *[rg.mult for rg in self.ringing], *taus,
                " const" if constant else "")))
         self.lines = [
             "mode    : %s%s" % (MODES[mode], ", constant rates" if constant

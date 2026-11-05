@@ -36,3 +36,20 @@ steps, the backstop at 1/0.9/0.39/0.33. Weaker than reported is the slow
 case (no gain increase is attempted). INDI on measured angular
 acceleration was not used: `SURFACE_OWN` (spaceplane, 2026-10-21) flew it
 at kRPC's tick and went 0/12.
+
+## 2026-11-05: the surfaces' travel time
+
+The user: "also factor in things like control surface deflection time".
+It was not: tau counted only the loop's tick. KSP (Assembly-CSharp
+`ModuleControlSurface`) slews each surface's input by `actuatorSpeed x dt /
+ctrlSurfaceRange` a physics step (`MoveTowards`; `Lerp` when
+`useExponentialSpeed`) and its angle at `actuatorSpeed` deg/s; the farm's
+base GameData has actuatorSpeed 25/30/35/40 over ranges 10-60 deg (no
+exponential stock part). kRPC exposes neither, so the window mod gained
+`SurfaceActuators` (every ITorqueProvider's potential torque, and per
+control surface its speed, range, mode and torque). The loop's closing time
+per axis is now also `sqrt(2 x cap / (accel x slew))` and 3 x any lag, and
+the command is slew-limited. Offline grid (accel 1/3/8/20 rad/s^2, slew
+0.4/0.6/1.67/3 travel/s, 0.2 rad/s steps, one tick latency): overshoot
+sized on the tick 0.044-0.763 rad/s, slew-aware 0.000-0.048; the command
+slew alone is most of it at fast settings. Unflown.

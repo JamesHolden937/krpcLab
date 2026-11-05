@@ -197,6 +197,52 @@ namespace KrpcLab
             LauncherState.lastPing = -1e9f;
         }
 
+        // -- the active vessel's actuators ---------------------------------
+        /// <summary>The active vessel's control authority and its control
+        /// surfaces' actuators, from the game's own modules (kRPC reports
+        /// neither actuator speed nor range).  First line: "total" and the
+        /// summed potential torque of every ITorqueProvider (kN m, vessel
+        /// axes x pitch, y roll, z yaw: positive then negative).  Then one
+        /// line per ModuleControlSurface: actuatorSpeed (deg/s, or the lag
+        /// rate when exponential), ctrlSurfaceRange (deg),
+        /// useExponentialSpeed (1/0), and its own potential torque.  Empty
+        /// outside flight.</summary>
+        [KRPCProcedure]
+        public static IList<string> SurfaceActuators()
+        {
+            var out_ = new List<string>();
+            if (!HighLogic.LoadedSceneIsFlight) return out_;
+            var v = FlightGlobals.ActiveVessel;
+            if (v == null) return out_;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            Vector3 tp = Vector3.zero, tn = Vector3.zero;
+            var lines = new List<string>();
+            foreach (var p in v.parts)
+            {
+                foreach (PartModule m in p.Modules)
+                {
+                    var tq = m as ITorqueProvider;
+                    if (tq == null) continue;
+                    Vector3 pos, neg;
+                    try { tq.GetPotentialTorque(out pos, out neg); }
+                    catch (Exception) { continue; }
+                    tp += Abs(pos);
+                    tn += Abs(neg);
+                    var cs = m as ModuleControlSurface;
+                    if (cs == null) continue;
+                    lines.Add(string.Format(ci, "{0} {1} {2} {3} {4} {5} {6} {7} {8}",
+                        cs.actuatorSpeed, cs.ctrlSurfaceRange, cs.useExponentialSpeed ? 1 : 0,
+                        Mathf.Abs(pos.x), Mathf.Abs(pos.y), Mathf.Abs(pos.z),
+                        Mathf.Abs(neg.x), Mathf.Abs(neg.y), Mathf.Abs(neg.z)));
+                }
+            }
+            out_.Add(string.Format(ci, "total {0} {1} {2} {3} {4} {5}", tp.x, tp.y, tp.z, tn.x, tn.y, tn.z));
+            out_.AddRange(lines);
+            return out_;
+        }
+
+        static Vector3 Abs(Vector3 a) { return new Vector3(Mathf.Abs(a.x), Mathf.Abs(a.y), Mathf.Abs(a.z)); }
+
         // -- an autopilot's panel -----------------------------------------
         /// <summary>Open the panel: a title in <paramref name="accent"/>
         /// ("r g b", 0..1) and these controls.</summary>

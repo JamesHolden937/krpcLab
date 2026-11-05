@@ -53,6 +53,26 @@ made it too noisy to fly (0/12). Log `kp=`, `acc=` (deg/s^2 per unit
 input), `ring=`, `tau=`; events `authority ...` at START, `<axis> ringing:
 gain xN`.
 
+**The surfaces take time to move** (the user, 2026-11-05). KSP slews a
+surface's input and angle at `actuatorSpeed` deg/s over `ctrlSurfaceRange`
+(`Mathf.MoveTowards` in `ModuleControlSurface`; a `Lerp` lag when
+`useExponentialSpeed`): stock 25-40 deg/s over 10-60 deg, 0.3-2.4 s end to
+end. kRPC reports neither, so the window mod's `SurfaceActuators` reads
+them, with each surface's and the vessel's potential torque, every
+`AUTHORITY_REFRESH_S`. Per axis (`control.actuators`): slew = full travel
+per second, torque-weighted harmonically, wheels/RCS/gimbals instant; lag
+of exponential surfaces. Then (`control.closing_time`) each axis's tau is
+at least `sqrt(SLEW_FACTOR x cap / (accel x slew))` -- the surfaces must
+reach the input a step of the axis's rate cap needs within half the
+closing time -- and `LAG_FACTOR` x the lag; and `RateLoop` never moves the
+command faster than the slew (its integral does not wind against it).
+Offline (`TestSlowSurfaces`, a slewed plant with a tick of latency): sized
+on the tick alone a 0.2 rad/s step overshot by up to 0.76 rad/s; with both,
+at most 0.048 over accel 1-20 rad/s^2, slew 0.4-3 travel/s. Engine gimbal
+response is not modelled (counted instant). Without the window mod (kspSim)
+every axis is taken as instant. Log `tau=` per axis; event `surface
+actuators` at START.
+
 **The player's stick**: kRPC adds a client's input to the player's
 (`PilotAddon.OnFlyByWire`: `ControlInputs.Add`) and KSP folds the trim into
 the stick (`FlightInputHandler`), so the player's input is the read-back
@@ -73,7 +93,7 @@ airplane's panel). Unticking it hands the props back.
 integrals, `stick=` the player's input per axis, `kp=`/`acc=`/`ring=`/`tau=`
 the gains and where they came from.
 
-## Where it stands (2026-11-05, fingerprint `214ff2b8`)
+## Where it stands (2026-11-05, fingerprint `570902c5`)
 
 Written 2026-11-04 on the user's spec; **never flown** (the user tests it
 live). Its gains come from kRPC's authority and its own tick; offline they

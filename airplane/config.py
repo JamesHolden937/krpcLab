@@ -28,6 +28,15 @@ class Config:
     # authority.
     RATE_TAU_TICKS: float = 4.0
     RATE_TAU_MIN_S: float = 0.15
+    # The control surfaces take time to move (KSP slews each by its
+    # actuatorSpeed over its ctrlSurfaceRange, read from the game by the
+    # window mod): an axis's loop is also no faster than its surfaces can
+    # reach the input a rate step of the axis's cap needs in 1/SLEW_FACTOR
+    # of the closing time, tau >= sqrt(SLEW_FACTOR x step / (accel x slew)),
+    # nor faster than LAG_FACTOR x an exponential surface's lag; and the
+    # command never moves faster than the surfaces can.
+    SLEW_FACTOR: float = 2.0
+    LAG_FACTOR: float = 3.0
     INTEGRAL_TAU_FACTOR: float = 4.0
     KP_MAX: float = 20.0
     AUTHORITY_REFRESH_S: float = 0.5

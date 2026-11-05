@@ -193,5 +193,77 @@ class TestRinging(unittest.TestCase):
         self.assertAlmostEqual(r.mult, 0.75, places=6)
 
 
+class TestActuators(unittest.TestCase):
+    def test_slew_and_lag(self):
+        """Pitch: one linear surface (25 deg/s over 15 deg = 1.67 travel/s)
+        carrying 90 of 100; roll: wheels only; yaw: an exponential surface
+        (speed 10 over 20: lag 2.0 + 0.1 s) carrying all of it."""
+        lines = ["total 100 50 40 100 50 40",
+                 "25 15 0 90 0 0 90 0 0",
+                 "10 20 1 0 0 40 0 0 40"]
+        (sp, lp), (sr, lr), (sy, ly) = law.actuators(lines)
+        self.assertAlmostEqual(sp, 100.0 / (90.0 / (25.0 / 15.0)))
+        self.assertEqual(lp, 0.0)
+        self.assertIsNone(sr)
+        self.assertEqual(lr, 0.0)
+        self.assertIsNone(sy)
+        self.assertAlmostEqual(ly, 2.1)
+        self.assertIsNone(law.actuators([]))
+
+    def test_closing_time(self):
+        # fast surfaces: the tick decides
+        self.assertEqual(law.closing_time(0.28, 10.0, 100.0, 0.0, 0.26,
+                                          2.0, 3.0), 0.28)
+        # slow surfaces and little authority: the surfaces decide
+        tau = law.closing_time(0.28, 0.5, 0.5, 0.0, 0.26, 2.0, 3.0)
+        self.assertAlmostEqual(tau, math.sqrt(2.0 * 0.26 / (0.5 * 0.5)))
+        # a lagged surface
+        self.assertAlmostEqual(law.closing_time(0.28, 10.0, None, 0.5, 0.26,
+                                                2.0, 3.0), 1.5)
+
+    def test_loop_never_outruns_its_surfaces(self):
+        loop = law.RateLoop(0.6)
+        us = [loop.step(1.0, 0.0, 10.0, 0.0, 0.05, slew=1.0)
+              for _ in range(10)]
+        steps = [b - a for a, b in zip([0.0] + us, us)]
+        self.assertTrue(all(st <= 0.05 + 1e-9 for st in steps))
+        self.assertAlmostEqual(us[-1], 0.5)
+
+
+def slewed_plant(accel, slew, tau, dt=0.07, seconds=30.0, model_slew=None):
+    """A rate step response flown through a surface that moves at ``slew``
+    full travel per second, one tick of latency; the loop's gains from
+    ``tau``.  Returns the worst overshoot past the 0.2 rad/s steps after
+    the first 12 s."""
+    loop = law.RateLoop(0.6)
+    kp, ki = law.rate_gains(accel, tau, 4.0, 20.0)
+    rate, cmd, surf, t, over = 0.0, 0.0, 0.0, 0.0, 0.0
+    while t < seconds:
+        t += dt
+        want = 0.2 if (t % 6) < 3 else -0.2
+        u = loop.step(want, rate, kp, ki, dt, slew=model_slew)
+        for _ in range(int(round(dt / 0.02))):
+            surf += law.clamp(cmd - surf, -slew * 0.02, slew * 0.02)
+            rate += (accel * surf - 0.3 * rate) * 0.02
+        cmd = u
+        if t > 12.0:
+            over = max(over, abs(rate) - 0.2)
+    return over
+
+
+class TestSlowSurfaces(unittest.TestCase):
+    def test_closing_time_from_the_surfaces_stops_the_ringing(self):
+        """Slow surfaces (0.4 travel/s: 60 deg at 25 deg/s) on a 3 rad/s^2
+        axis: a loop sized on its tick alone overshoots a 0.2 rad/s step by
+        ~0.76 rad/s; sized by ``closing_time`` and slewed, by ~0."""
+        accel, slew = 3.0, 0.4
+        tick_tau = 4 * 0.07
+        naive = slewed_plant(accel, slew, tick_tau)
+        tau = law.closing_time(tick_tau, accel, slew, 0.0, 0.2, 2.0, 3.0)
+        aware = slewed_plant(accel, slew, tau, model_slew=slew)
+        self.assertGreater(naive, 0.2)
+        self.assertLess(aware, 0.05)
+
+
 if __name__ == "__main__":
     unittest.main()
