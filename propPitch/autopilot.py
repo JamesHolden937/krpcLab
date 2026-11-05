@@ -32,14 +32,15 @@ import sys
 import time
 
 from common import cli, partmodule
+from . import tipping
 from common.krpcbatch import ask
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from common.panel import ControlPanel
 from common.rpccount import RpcCounter
 from .config import Config, apply_overrides, defaults_fingerprint, differences
-from .bladeModel import (MOST_FORWARD, MOST_REVERSE, ZERO_THRUST, Blade,
-                         PropModel, Rotor, blade_type, choose_signs)
+from .bladeModel import (MOST_FORWARD, MOST_REVERSE, Blade, PropModel, Rotor,
+                         blade_type, choose_signs)
 
 STANDBY = "STANDBY"
 TRACK = "TRACK"
@@ -54,9 +55,10 @@ ROTOR_MODULE = "ModuleRoboticServoRotor"
 # kRPC property reads or clears it; only this action does (Deactivate
 # releases it, Assembly-CSharp ``ModuleRoboticServoRotor.BrakeAction``).
 BRAKE_ACTION = "BrakeAction"
-# The log's mode= field while braking: which way the props push.
+# The log's mode= field while braking: which way the props push (None:
+# the plane is still and the props are stopped).
 BRAKE_TAG = {MOST_REVERSE: "brake-rev", MOST_FORWARD: "brake-fwd",
-             ZERO_THRUST: "brake-hold"}
+             None: "brake-stop"}
 
 
 def descendants(part):
@@ -152,6 +154,29 @@ class PropPilot:
         self.last_ut = None
         self.rpm_cmd = cfg.ROTOR_RPM
         self.braking = False
+        # The prop brake has stopped the props (the plane is still).
+        self.held = False
+        # Tipping: the wheels, their bounding boxes (vessel frame, read at
+        # START), the filtered acceleration and the hill climb's fraction.
+        self.wheels = []
+        self.wheel_boxes = []
+        self.accel = (0.0, 0.0, 0.0)
+        self.last_v = None
+        self.last_grounded = None
+        self.last_pitch = None
+        self.tip_k = 1.0
+        self.tip_backoff_ut = -1e9
+        self.tip_note = "-"
+        self.last_flown = None
+        # Reaction torque: each model rotor's (rotor part, one blade part),
+        # its measured spin sense, and the trims (the pilot's own, ours).
+        self.spin_parts = []
+        self.spin_sense = []
+        self.hubs = []
+        self.user_trim = None
+        self.trim_written = None
+        self.trim_prev = None
+        self.counter = (0.0, 0.0, 0.0)
         self.lines = []
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
@@ -267,7 +292,30 @@ class PropPilot:
             except Exception:                           # noqa: BLE001
                 pass
         self.build_model(ut)
+        self.find_wheels(ut)
+        if self.cfg.TORQUE_COUNTER:
+            c = self.vessel.control
+            self.user_trim = (c.pitch_trim, c.roll_trim, c.yaw_trim)
         self.start_ut = ut
+
+    def find_wheels(self, ut):
+        """Every wheel and its bounding box in the vessel frame (fixed to
+        the airframe), for the tipping limit."""
+        body = self.vessel.orbit.body
+        self.g = body.surface_gravity
+        self.srf_frame = self.vessel.surface_reference_frame
+        try:
+            self.wheels = list(self.vessel.parts.wheels)
+        except Exception:                               # noqa: BLE001
+            self.wheels = []
+        boxes = ask(self.conn, [(w.part.bounding_box, (self.frame,))
+                                for w in self.wheels])
+        keep = [(w, b) for w, b in zip(self.wheels, boxes) if b is not None]
+        self.wheels = [w for w, _ in keep]
+        self.wheel_boxes = [b for _, b in keep]
+        self.log.event(ut, "wheels %d: %s" % (len(self.wheels), " ".join(
+            "%+.1f,%+.1f,%+.1f" % tuple((a + b) / 2 for a, b in zip(*bx))
+            for bx in self.wheel_boxes)))
 
     def build_model(self, ut):
         """Every blade's geometry relative to its rotor's axis, read once
@@ -291,6 +339,7 @@ class PropPilot:
                                       tmax * self.cfg.ROTOR_TORQUE_PCT / 100.0)))
         k = 3 * len(self.rotors)
         unknown = set()
+        first_blade = {}
         for j, b in enumerate(self.blades):
             pos, rot, name, parent = got[k + 4 * j:k + 4 * j + 4]
             kind = blade_type(name or "")
@@ -308,6 +357,7 @@ class PropPilot:
             if ri is None:
                 ri = 0
             hub = rotors[ri][0]
+            first_blade.setdefault(ri, b.part)
             rel = tuple(x - h for x, h in zip(pos, hub))
             rotors[ri][1].blades.append(Blade(kind, rel, qrot(rot, (1, 0, 0)),
                                               qrot(rot, (0, 0, 1)),
@@ -316,6 +366,10 @@ class PropPilot:
             raise RuntimeError("no aero data for blade part(s) %s "
                                "(propPitch/bladeTable.py)" % sorted(unknown))
         self.model_rotors = [i for i, (_, r) in enumerate(rotors) if r.blades]
+        self.hubs = [rotors[i][0] for i in self.model_rotors]
+        self.spin_parts = [(self.rotors[i].part, first_blade[i])
+                           for i in self.model_rotors]
+        self.spin_sense = [None] * len(self.model_rotors)
         rotors = [r for _, r in rotors if r.blades]
         signs = choose_signs(rotors, self.cfg.ROTOR_RPM)
         self.model = PropModel(rotors)
@@ -348,6 +402,16 @@ class PropPilot:
                 pass
         return n
 
+    def engage_brakes(self):
+        """Set every rotor's brake latch (the props held stopped)."""
+        for a in self.brakes:
+            if a is None:
+                continue
+            try:
+                a.activated = True
+            except Exception:                           # noqa: BLE001
+                pass
+
     def reassert(self, ut, rpm_list=None, brakes=False):
         """Read back the KALs' Enabled flag and the rotors' limits; re-set
         whatever something else changed, and say so.  A rotor stopped while
@@ -356,7 +420,8 @@ class PropPilot:
         released."""
         changed = []
         if self.braking:
-            self.release_brakes(range(len(self.rotors)))
+            if not self.held:
+                self.release_brakes(range(len(self.rotors)))
         elif rpm_list and len(rpm_list) == len(self.rotors):
             stopped = [i for i, w in enumerate(rpm_list)
                        if w is not None and abs(w) < self.cfg.BRAKE_RPM]
@@ -394,6 +459,12 @@ class PropPilot:
             self.log.event(ut, "re-set: %s" % ", ".join(changed))
 
     def hand_back(self, ut):
+        if self.user_trim is not None and self.trim_written is not None:
+            try:
+                c = self.vessel.control
+                c.pitch_trim, c.roll_trim, c.yaw_trim = self.user_trim
+            except Exception:                           # noqa: BLE001
+                pass
         for r, rpm, torque, engaged in self.saved_rotors:
             try:
                 r.target_rpm = rpm
@@ -435,57 +506,110 @@ class PropPilot:
                  (getattr, (self.vessel.control, "throttle")),
                  (getattr, (self.vessel.control, "brakes"))]
         calls += [(getattr, (r, "current_rpm")) for r in self.rotors]
+        cfg = self.cfg
+        if cfg.PROP_BRAKE and cfg.BRAKE_TIP_LIMIT:
+            calls += [(self.sc.transform_direction,
+                       ((1.0, 0.0, 0.0), self.srf_frame, self.frame)),
+                      (getattr, (f, "pitch"))]
+            calls += [(getattr, (w, "grounded")) for w in self.wheels]
+        if cfg.TORQUE_COUNTER:
+            c = self.vessel.control
+            calls += [(getattr, (self.vessel, "available_torque")),
+                      (getattr, (c, "pitch_trim")), (getattr, (c, "roll_trim")),
+                      (getattr, (c, "yaw_trim"))]
         return ask(self.conn, calls)
 
     def run_track(self, ut):
         got = self.read()
         force, mass, v_air, rho, sound, speed, alt, vs, ec = got[:9]
         throttle, brakes = got[9:11]
-        rpm_list = list(got[11:])
+        n = len(self.rotors)
+        rpm_list = list(got[11:11 + n])
+        rest = list(got[11 + n:])
+        cfg = self.cfg
+        up = pitch = None
+        grounded = []
+        if cfg.PROP_BRAKE and cfg.BRAKE_TIP_LIMIT:
+            up, pitch = rest[:2]
+            grounded = rest[2:2 + len(self.wheels)]
+            rest = rest[2 + len(self.wheels):]
+        torque_avail = trims = None
+        if cfg.TORQUE_COUNTER:
+            torque_avail, trims = rest[0], tuple(rest[1:4])
         rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
-        cfg = self.cfg
+        dt = 0.0 if self.last_ut is None else ut - self.last_ut
+        self.last_ut = ut
+        self.track_accel(v_air, dt)
         braking = bool(cfg.PROP_BRAKE and brakes)
+        pressed = braking and not self.braking
         if braking != self.braking:
             self.braking = braking
-            if braking:
-                # The Brakes group has just latched the rotors' own brakes.
-                self.release_brakes(range(len(self.rotors)))
+            self.held = False
+            self.tip_k = 1.0
             self.log.event(ut, "prop brake %s" % ("on" if braking else "off"))
+        objective = MOST_FORWARD
+        if braking and v_air is not None:
+            was = self.held
+            # Against the motion: which way the air comes along the nose
+            # (y in the vessel's axes) says which thrust stops it.
+            objective = self.brake_objective(v_air[1])
+            if self.held and (pressed or not was):
+                # Still: the props stop and stay stopped.
+                self.engage_brakes()
+                self.log.event(ut, "prop brake: still at %+.2f m/s, props "
+                               "stopped" % v_air[1])
+            elif not self.held and (pressed or was):
+                # The Brakes group has just latched the rotors' own brakes
+                # (or the plane moves again): released, so the props spin.
+                self.release_brakes(range(n))
+                if was:
+                    self.log.event(ut, "prop brake: moving at %+.2f m/s, "
+                                   "props spun up" % v_air[1])
+        elif pressed:
+            self.release_brakes(range(n))
         if ut >= self.next_reassert:
             self.reassert(ut, rpm_list, bool(brakes))
             self.next_reassert = ut + self.cfg.REASSERT_S
-        self.set_rpm(ut, cfg.ROTOR_RPM if braking
-                     else self.throttle_rpm(throttle))
+        if braking:
+            self.set_rpm(ut, 0.0 if self.held else cfg.ROTOR_RPM)
+        else:
+            self.set_rpm(ut, self.throttle_rpm(throttle))
         targets = [self.rpm_cmd] * len(self.model.rotors)
+        if None not in rpm_list:
+            self.probe_spin(ut, rpm_list)
         opt = None
-        dt = 0.0 if self.last_ut is None else ut - self.last_ut
-        self.last_ut = ut
         if (v_air is not None and rho and sound and self.last_cmd is not None
                 and None not in rpm_list):
             # The rotors' rpm now answers the angle flown since last tick.
             self.model.observe([rpm_list[i] for i in self.model_rotors],
                                targets, self.last_cmd, v_air, rho,
                                sound, dt)
-        objective = None
         feather = self.feathered(braking)
         mode = ("feather" if feather else "thrust") if not braking else "brake"
-        if v_air is not None and rho and sound:
-            lo, hi, objective = cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG, MOST_FORWARD
-            if feather:
-                # The most thrust at 0 rpm is the least drag: each blade
-                # edge-on to the flow, wherever the flow comes from.
+        self.tip_note = "-"
+        if braking:
+            mode = BRAKE_TAG[objective if v_air is not None else MOST_REVERSE]
+        if v_air is not None and rho and sound and not (braking and self.held):
+            lo, hi = cfg.PITCH_MIN_DEG, cfg.PITCH_MAX_DEG
+            if feather or braking:
+                # Feathered, the most thrust at 0 rpm is the least drag (each
+                # blade edge-on to the flow, wherever it comes from); braking,
+                # negative angles give reverse thrust.
                 lo, hi = -self.model.deploy_limit, self.model.deploy_limit
-            if braking:
-                # Against the motion: which way the air comes along the
-                # nose (y in the vessel's axes) says which thrust stops it.
-                objective = self.brake_objective(v_air[1])
-                lo, hi = -self.model.deploy_limit, self.model.deploy_limit
-                mode = BRAKE_TAG[objective]
             opt = self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                      cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
                                      objective)
-        cmd = self.command(ut, opt, v_air, rho, sound)
+            if braking and cfg.BRAKE_TIP_LIMIT and grounded and any(grounded):
+                opt = self.tip_limited(ut, opt, objective, targets, v_air, rho,
+                                       sound, lo, hi, up, pitch, grounded,
+                                       mass, force, dt)
+            else:
+                self.last_grounded = self.last_pitch = None
+        if braking and self.held:
+            cmd = self.last_cmd             # stopped: the blades stay put
+        else:
+            cmd = self.command(ut, opt, v_air, rho, sound)
         if cmd is not None and (self.last_cmd is None
                                 or abs(cmd - self.last_cmd) >= 0.01):
             for b in self.blades:
@@ -493,9 +617,12 @@ class PropPilot:
             self.last_cmd = cmd
         self.opt = opt
         flown = opt
-        if (opt is not None and cmd is not None
-                and abs(cmd - opt.deploy) > 1e-6):
+        if (cmd is not None and v_air is not None and rho and sound
+                and (opt is None or abs(cmd - opt.deploy) > 1e-6)):
             flown = self.model.evaluate(cmd, targets, v_air, rho, sound)
+        self.last_flown = flown
+        self.counter_torque(flown if not (braking and self.held) else None,
+                            torque_avail, trims)
         rpm = sum(rpms) / len(rpms) if rpms else float("nan")
         # The model's thrust at the angle flown, per unit mass: J less this
         # is the airframe's drag, whatever the angle.
@@ -508,7 +635,8 @@ class PropPilot:
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
                 "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
-                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f mode=%s"
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f mode=%s tip=%s "
+                "trim=%+.2f,%+.2f,%+.2f"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
@@ -518,7 +646,7 @@ class PropPilot:
                             for r in self.model.rotors),
                    *(v_air or (float("nan"),) * 3), ec or 0,
                    throttle if throttle is not None else float("nan"),
-                   mode))
+                   mode, self.tip_note, *self.counter))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
@@ -530,17 +658,156 @@ class PropPilot:
                       "accel   : %+.3f m/s^2 (model thrust %+.3f)"
                       % (j or 0, model_acc),
                       "mode    : %s" % mode]
+        if self.tip_note != "-":
+            self.lines.append("tip lim : %s" % self.tip_note)
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
 
+    def track_accel(self, v_air, dt):
+        """The vessel's acceleration (vessel axes), the airspeed's
+        derivative low-passed over BRAKE_ACCEL_TAU_S."""
+        if v_air is None:
+            return
+        if self.last_v is not None and dt > 0.0:
+            a = min(1.0, dt / self.cfg.BRAKE_ACCEL_TAU_S)
+            self.accel = tuple(f + a * ((v - lv) / dt - f) for f, v, lv
+                               in zip(self.accel, v_air, self.last_v))
+        self.last_v = v_air
+
+    def tip_limited(self, ut, opt, objective, targets, v_air, rho, sound,
+                    lo, hi, up, pitch, grounded, mass, force, dt):
+        """The braking optimum held to the thrust that keeps the wheels on
+        the ground (``tipping.thrust_bounds``), times the hill climb's
+        fraction, which halves on a wheel lifting or a pitch rate."""
+        cfg = self.cfg
+        # The hill climb: a tipping symptom backs off, quiet raises it.
+        lifted = (self.last_grounded is not None
+                  and sum(grounded) < sum(self.last_grounded))
+        rate = (abs(pitch - self.last_pitch) / dt
+                if pitch is not None and self.last_pitch is not None and dt > 0
+                else 0.0)
+        self.last_grounded = list(grounded)
+        self.last_pitch = pitch
+        if lifted or rate > cfg.BRAKE_TIP_RATE_DEG_S:
+            if ut - self.tip_backoff_ut >= cfg.BRAKE_TIP_BACKOFF_S:
+                self.tip_k *= 0.5
+                self.tip_backoff_ut = ut
+                self.log.event(ut, "tip: %s, braking x%.2f" % (
+                    "a wheel left the ground" if lifted
+                    else "pitch %.1f deg/s" % rate, self.tip_k))
+        elif dt > 0.0:
+            self.tip_k = min(1.0, self.tip_k + cfg.BRAKE_TIP_RISE_PER_S * dt)
+        bounds = None
+        if up is not None and mass and force is not None and self.wheel_boxes:
+            contacts = [tipping.contact_point(bx[0], bx[1], up)
+                        for bx, gr in zip(self.wheel_boxes, grounded) if gr]
+            last = self.last_flown
+            w = ([abs(t) for t in last.thrusts] if last is not None
+                 and last.thrusts else [1.0] * len(self.hubs))
+            if sum(w) <= 0.0:
+                w = [1.0] * len(self.hubs)
+            hub = tuple(sum(wi * h[i] for wi, h in zip(w, self.hubs)) / sum(w)
+                        for i in range(3))
+            bounds = tipping.thrust_bounds(
+                contacts, up, self.g, mass, self.accel, force, hub,
+                1000.0 * last.thrust if last is not None else 0.0,
+                cfg.BRAKE_TIP_MARGIN)
+        k = self.tip_k
+        if objective == MOST_REVERSE:
+            base = (bounds[0] / 1000.0 if bounds is not None
+                    and bounds[0] is not None else None)
+            floor = k * (min(0.0, base) if base is not None else opt.thrust)
+            self.tip_note = "%+.1fkN%s x%.2f" % (
+                floor, "" if base is not None else " (climb)", k)
+            if opt.thrust >= floor:
+                return opt
+            return self.model.optimum(targets, v_air, rho, sound, lo, hi,
+                                      cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
+                                      objective, floor=floor)
+        base = (bounds[1] / 1000.0 if bounds is not None
+                and bounds[1] is not None else None)
+        ceiling = k * (max(0.0, base) if base is not None else opt.thrust)
+        self.tip_note = "%+.1fkN%s x%.2f" % (
+            ceiling, "" if base is not None else " (climb)", k)
+        if opt.thrust <= ceiling:
+            return opt
+        return self.model.optimum(targets, v_air, rho, sound, lo, hi,
+                                  cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
+                                  objective, ceiling=ceiling)
+
+    def probe_spin(self, ut, rpm_list):
+        """Each rotor's real spin direction, once it turns: a blade's
+        velocity about the hub (vessel frame), against the model's axis."""
+        todo = [k for k, s in enumerate(self.spin_sense) if s is None
+                and abs(rpm_list[self.model_rotors[k]])
+                > self.cfg.SPIN_PROBE_RPM]
+        if not todo or not self.cfg.TORQUE_COUNTER:
+            return
+        calls = []
+        for k in todo:
+            rp, bp = self.spin_parts[k]
+            calls += [(rp.position, (self.frame,)), (bp.position, (self.frame,)),
+                      (bp.velocity, (self.frame,))]
+        got = ask(self.conn, calls)
+        for i, k in enumerate(todo):
+            hub, pos, vel = got[3 * i:3 * i + 3]
+            if None in (hub, pos, vel):
+                continue
+            r = self.model.rotors[k]
+            rel = tuple(p - h for p, h in zip(pos, hub))
+            turn = tipping._dot(tipping._cross(rel, vel),
+                                tuple(a * r.spin for a in r.axis))
+            if abs(turn) > 1e-3:
+                self.spin_sense[k] = 1.0 if turn > 0 else -1.0
+        if all(s is not None for s in self.spin_sense):
+            self.log.event(ut, "rotor spin senses (x model): %s" % "".join(
+                "+" if s > 0 else "-" for s in self.spin_sense))
+
+    def counter_torque(self, flown, avail, trims):
+        """Set the trims to cancel the props' reaction torque, on top of
+        whatever trim the pilot has set (a trim that moved since we wrote
+        it is the pilot's)."""
+        cfg = self.cfg
+        if not cfg.TORQUE_COUNTER or trims is None or None in trims:
+            return
+        if self.trim_written is None:
+            self.user_trim = trims          # nothing of ours in it yet
+        elif all(any(abs(t - w) > 0.005 for t, w in zip(trims, ref))
+                 for ref in (self.trim_written,
+                             self.trim_prev or self.trim_written)):
+            # Neither of our last two writes: the pilot moved it.
+            self.user_trim = tuple(t - c for t, c in zip(trims, self.counter))
+        torque = (0.0, 0.0, 0.0)
+        if flown is not None:
+            torque = tipping.reaction_torque(
+                self.model.rotors, [1000.0 * q for q in flown.torques],
+                self.spin_sense)
+        u = (tipping.counter_trim(torque, avail) if avail is not None
+             else (0.0, 0.0, 0.0))
+        want = tuple(max(-1.0, min(1.0, a + b))
+                     for a, b in zip(self.user_trim, u))
+        ref = self.trim_written if self.trim_written is not None else trims
+        if all(abs(a - b) < cfg.TRIM_WRITE_STEP for a, b in zip(want, ref)):
+            return
+        c = self.vessel.control
+        try:
+            c.pitch_trim, c.roll_trim, c.yaw_trim = want
+        except Exception:                               # noqa: BLE001
+            return
+        self.trim_prev = self.trim_written
+        self.trim_written = want
+        self.counter = tuple(w - a for w, a in zip(want, self.user_trim))
+
     def brake_objective(self, v_nose):
         """Reverse thrust while moving forward along the nose, forward thrust
-        while moving backward, none when nearly still."""
-        if v_nose > self.cfg.BRAKE_HOLD_SPEED:
-            return MOST_REVERSE
-        if v_nose < -self.cfg.BRAKE_HOLD_SPEED:
-            return MOST_FORWARD
-        return ZERO_THRUST
+        while moving backward; None (props stopped) once nearly still, until
+        the plane moves past BRAKE_RESUME_SPEED again."""
+        if self.held and abs(v_nose) <= self.cfg.BRAKE_RESUME_SPEED:
+            return None
+        self.held = abs(v_nose) < self.cfg.BRAKE_HOLD_SPEED
+        if self.held:
+            return None
+        return MOST_REVERSE if v_nose > 0.0 else MOST_FORWARD
 
     def command(self, ut, opt, v_air, rho, sound):
         """The Deploy Angle to fly: the optimum (a probe overrides this)."""

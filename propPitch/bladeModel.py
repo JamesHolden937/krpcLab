@@ -290,26 +290,31 @@ class Rotor:
 
 
 class Optimum:
-    __slots__ = ("deploy", "thrust", "torques", "rpms")
+    __slots__ = ("deploy", "thrust", "torques", "rpms", "thrusts")
 
-    def __init__(self, deploy, thrust, torques, rpms):
+    def __init__(self, deploy, thrust, torques, rpms, thrusts=()):
         self.deploy = deploy
         self.thrust = thrust
         self.torques = torques
         self.rpms = rpms
+        self.thrusts = thrusts
 
 
 # What ``PropModel.optimum`` searches for.
 MOST_FORWARD = "forward"            # the most thrust along the nose
 MOST_REVERSE = "reverse"            # the most thrust against the nose
-ZERO_THRUST = "zero"                # no thrust (the plane held still)
 
 
-def _score(objective, thrust):
+def _score(objective, thrust, floor=None, ceiling=None):
+    """Higher is better.  A bound turns "the most" into "the most within
+    it": past the bound the score falls again, so the search's peak sits on
+    the bound when the unbounded best is beyond it."""
     if objective == MOST_REVERSE:
+        if floor is not None and thrust < floor:
+            return thrust - 2.0 * floor
         return -thrust
-    if objective == ZERO_THRUST:
-        return -abs(thrust)
+    if ceiling is not None and thrust > ceiling:
+        return 2.0 * ceiling - thrust
     return thrust
 
 
@@ -327,26 +332,30 @@ class PropModel:
 
     def evaluate(self, deploy, rpm_targets, v_air, rho, sound):
         """Total thrust (kN) with each rotor where it settles."""
-        thrust, torques, rpms = 0.0, [], []
+        thrust, torques, rpms, thrusts = 0.0, [], [], []
         for r, rpm in zip(self.rotors, rpm_targets):
             t, q, w = r.settled(deploy, rpm, v_air, rho, sound, self.forward)
             thrust += t
+            thrusts.append(t)
             torques.append(q)
             rpms.append(w)
-        return Optimum(deploy, thrust, torques, rpms)
+        return Optimum(deploy, thrust, torques, rpms, thrusts)
 
     def optimum(self, rpm_targets, v_air, rho, sound, lo=0.0, hi=90.0,
-                step=1.0, tol=0.05, objective=MOST_FORWARD):
+                step=1.0, tol=0.05, objective=MOST_FORWARD, floor=None,
+                ceiling=None):
         """The Deploy Angle in [lo, hi] (inside the blades' limits) that
         best meets ``objective`` -- by default the most thrust: a grid at
-        ``step``, then golden-section on the best cell's neighbours."""
+        ``step``, then golden-section on the best cell's neighbours.  With
+        ``floor`` (reverse) or ``ceiling`` (forward), kN, the most thrust
+        that does not pass it."""
         lim = self.deploy_limit
         lo, hi = max(lo, -lim), min(hi, lim)
 
         def f(d):
             return _score(objective,
                           self.evaluate(d, rpm_targets, v_air, rho,
-                                        sound).thrust)
+                                        sound).thrust, floor, ceiling)
         n = max(2, int(math.ceil((hi - lo) / step)))
         grid = [lo + (hi - lo) * i / n for i in range(n + 1)]
         vals = [f(d) for d in grid]

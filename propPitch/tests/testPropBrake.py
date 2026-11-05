@@ -4,7 +4,7 @@ import types
 import unittest
 
 from propPitch.autopilot import PropPilot
-from propPitch.bladeModel import (MOST_FORWARD, MOST_REVERSE, ZERO_THRUST,
+from propPitch.bladeModel import (MOST_FORWARD, MOST_REVERSE,
                                   PropModel)
 from propPitch.config import Config
 from propPitch.tests.testBladeModel import rotor
@@ -12,11 +12,22 @@ from propPitch.tests.testBladeModel import rotor
 
 class TestBrakeObjective(unittest.TestCase):
     def test_against_the_motion(self):
-        p = types.SimpleNamespace(cfg=Config())
+        p = types.SimpleNamespace(cfg=Config(), held=False)
         self.assertEqual(PropPilot.brake_objective(p, 20.0), MOST_REVERSE)
         self.assertEqual(PropPilot.brake_objective(p, -3.0), MOST_FORWARD)
-        self.assertEqual(PropPilot.brake_objective(p, 0.2), ZERO_THRUST)
-        self.assertEqual(PropPilot.brake_objective(p, -0.2), ZERO_THRUST)
+        self.assertFalse(p.held)
+        self.assertIsNone(PropPilot.brake_objective(p, 0.2))
+        self.assertTrue(p.held)
+
+    def test_stopped_until_it_moves(self):
+        """Still, the props stay stopped through a creep below
+        BRAKE_RESUME_SPEED and spin up past it."""
+        p = types.SimpleNamespace(cfg=Config(), held=False)
+        self.assertIsNone(PropPilot.brake_objective(p, -0.2))
+        self.assertIsNone(PropPilot.brake_objective(p, 1.5))
+        self.assertIsNone(PropPilot.brake_objective(p, -1.9))
+        self.assertEqual(PropPilot.brake_objective(p, 2.5), MOST_REVERSE)
+        self.assertFalse(p.held)
 
 
 class TestBrakeModel(unittest.TestCase):
@@ -37,10 +48,17 @@ class TestBrakeModel(unittest.TestCase):
                     self.m.evaluate(d, [460.0], (0.0, v, 0.0), 1.2,
                                     340.0).thrust, o.thrust - 1e-6)
 
-    def test_zero_thrust(self):
-        o = self.m.optimum([460.0], (0.0, 0.3, 0.0), 1.2, 340.0, -90, 90,
-                           objective=ZERO_THRUST)
-        self.assertLess(abs(o.thrust), 0.5)
+    def test_floor_holds_the_thrust(self):
+        """A floor turns the most reverse thrust into the most that does not
+        pass it; a ceiling the same for forward thrust."""
+        free = self.m.optimum([460.0], (0.0, 30.0, 0.0), 1.2, 340.0, -90, 90,
+                              objective=MOST_REVERSE)
+        o = self.m.optimum([460.0], (0.0, 30.0, 0.0), 1.2, 340.0, -90, 90,
+                           objective=MOST_REVERSE, floor=free.thrust / 3)
+        self.assertAlmostEqual(o.thrust, free.thrust / 3, delta=0.5)
+        fwd = self.m.optimum([460.0], (0.0, -5.0, 0.0), 1.2, 340.0, -90, 90,
+                             objective=MOST_FORWARD, ceiling=20.0)
+        self.assertAlmostEqual(fwd.thrust, 20.0, delta=0.5)
 
     def test_feather_is_edge_on(self):
         """At 0 rpm the most thrust is the least drag: Deploy 0, the blade

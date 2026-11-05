@@ -42,11 +42,44 @@ class Config:
     # (whatever the throttle), its own brake latch released, and the blades
     # at the angle with the most thrust against the motion -- reverse
     # thrust while the plane moves forward along its nose, forward thrust
-    # while it moves backward, no thrust within BRAKE_HOLD_SPEED (m/s,
-    # airspeed along the nose) of standing still.  Off, Brakes leaves the
-    # rotors braked by the craft's own action group.
+    # while it moves backward.  Off, Brakes leaves the rotors braked by the
+    # craft's own action group.
     PROP_BRAKE: bool = True
+    # Within BRAKE_HOLD_SPEED of standing still the props stop: every
+    # rotor at 0 rpm with its brake latch set, the blades left where they
+    # are; they spin up again only past BRAKE_RESUME_SPEED (m/s along the
+    # nose) -- a creep, a slope, the wind.
     BRAKE_HOLD_SPEED: float = 0.5
+    BRAKE_RESUME_SPEED: float = 2.0
+    # On the wheels, the prop brake is held to the thrust that keeps every
+    # wheel down (propPitch/tipping.py): the moment about the foremost and
+    # rearmost grounded contacts from gravity, the measured deceleration,
+    # the airframe's aero force and the props' thrust line, solved for the
+    # thrust that leaves BRAKE_TIP_MARGIN of gravity's restoring moment.
+    # The deceleration is the airspeed's derivative, low-passed over
+    # BRAKE_ACCEL_TAU_S.  Airborne, no limit.
+    BRAKE_TIP_LIMIT: bool = True
+    BRAKE_TIP_MARGIN: float = 0.5
+    BRAKE_ACCEL_TAU_S: float = 0.3
+    # Hill climb, the backstop (and the whole limit when the contacts do
+    # not span the ground, e.g. one wheel): the allowed thrust is a
+    # fraction of the bound (or of the most the props make), halved when a
+    # grounded wheel leaves the ground or the pitch moves faster than
+    # BRAKE_TIP_RATE_DEG_S, at most once per BRAKE_TIP_BACKOFF_S, and
+    # raised back by BRAKE_TIP_RISE_PER_S per second.
+    BRAKE_TIP_RATE_DEG_S: float = 4.0
+    BRAKE_TIP_BACKOFF_S: float = 0.3
+    BRAKE_TIP_RISE_PER_S: float = 0.25
+    # Cancel the props' reaction torque on the airframe: every rotor's blade
+    # load turns the airframe the other way about its axis (a net torque
+    # when the rotors do not pair off), and the pitch/roll/yaw trims are set
+    # to the input that makes the opposite torque from what the vessel has
+    # (kRPC available_torque), on top of the pilot's own trim.  Each rotor's
+    # real spin direction is measured once it turns faster than
+    # SPIN_PROBE_RPM (a blade's velocity about the hub).
+    TORQUE_COUNTER: bool = True
+    SPIN_PROBE_RPM: float = 30.0
+    TRIM_WRITE_STEP: float = 0.01
     # Disable every KAL robotic controller while flying (it would write the
     # blades' Deploy Angle back every frame); restored on shutdown.
     DISABLE_KAL: bool = True
