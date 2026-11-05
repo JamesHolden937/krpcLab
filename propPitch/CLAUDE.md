@@ -77,19 +77,6 @@ LOG15210). From 55-75 m/s it slides and hops whatever the props do: a
 plain throttle cut there breaks up 4/6 (LOG15249-15254) -- the plane under
 the harness, not the brake.
 
-**Reaction-torque counter** (`TORQUE_COUNTER`): each rotor's blade load
-`q` turns the airframe by -q about its real spin; the sum is cancelled with
-the pitch/roll/yaw **trims** (input = torque / kRPC `available_torque` per
-axis: KSP applies ReferenceTransform x -input x torque,
-`ModuleReactionWheel.ActiveUpdate`), on top of the pilot's own trim (a trim
-that moved since we wrote it is theirs; restored at TERMINATE). The spin
-sense is measured once a rotor turns past `SPIN_PROBE_RPM`: a blade's angle
-about the hub between ticks against +/-rpm x dt, `SPIN_VOTES` ticks
-(`Part.velocity` of a blade is meaningless -- no rigidbody). Event `rotor
-spin senses`; log `trim=`. `qs_prop_noon` reads `--++` every flight and
-its counter stays 0.00. **Not yet flown on a craft with a net torque.**
-The rotors' spin-up/down inertia torque is not counted.
-
 **Blade load and rpm**: each pitch is scored at the rpm its rotor would
 settle at. KSP's rotor is a stiff velocity drive (damper 1000) capped at
 `maxTorque` x torque limit (70 kN m, EM-32S); its EC draw is
@@ -130,10 +117,11 @@ the panels give 1.5 EC/s and the rotors starve and stall. `qs_prop_noon`
 is the same save warped +5100 s on the farm (53 EC/s): fly that one.
 **Rotor brakes are on the Brakes action group**: brakes on means 0 rpm.
 
-## Where it stands (2026-11-04)
+## Where it stands (2026-11-04, fingerprint `ca612601`)
 
-2026-11-04: the tip limit, the stop when still and the torque counter
-(above; journal). Every brake from <= 40 m/s stops intact and still.
+2026-11-04: the tip limit and the stop when still (above; journal). The
+reaction-torque counter is deleted (the user, 2026-11-04 late). propPitch
+also runs inside the airplane pilot (`airplane/`, its "prop plane" box). Every brake from <= 40 m/s stops intact and still.
 
 First live flights (LOG15184-15188, 2026-11-02 night): from the runway it
 matches the farm (J tracks model within ~1 m/s^2 to 75 m/s; climbed to 57 km
@@ -170,7 +158,7 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
    coasts ground-looped ~5 s after the cut (harness steering, probably).
 4. The prop brake flown live, and backwards (only forward was flown on the
    farm; the backward branch is unit-tested). The tip limit on a craft
-   that sits on a wider wheelbase, and the counter on a single rotor.
+   that sits on a wider wheelbase.
 5. START costs ~2500 calls (~4 s): the blade field tables.
 
 ## Commands

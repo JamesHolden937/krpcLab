@@ -1,61 +1,100 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-04: propPitch -- the prop brake's tip limit; props stopped when still; reaction-torque counter (fingerprint `d4caf88c`)
+## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `a2ff2c90`, propPitch `ca612601`)
 
-The user asked for three things: limit the prop brake on the wheels so the
-plane doesn't nose or tail over ("calculate value if possible, hill climb
-if not"); no spinning props at 0 m/s under Brakes; counter the props'
-torque. All three are defaults now, committed and pushed, and the farm is
-stopped. Read `propPitch/CLAUDE.md` and `docs/propPitch/journal.md`
-("2026-11-04").
+The user's request, all done and committed; **nothing here was flown or
+run in a game** (the user: "no need to test this"; they test live).
+
+- **`launcherMod` draws everything**: the launcher's menu and every pilot's
+  panel (`common/panel.py` is now a client of it: title, telemetry text,
+  and controls -- buttons, checkboxes, number fields, choices -- sent as
+  `kind|id|label|value` strings and read back by one kRPC stream of
+  `PanelRead`). The kRPC-UI panel (`panel.window`, the glyph-drawn frame)
+  and `LauncherPanel` are deleted. Without the mod a pilot's panel is
+  headless (kspSim; START never pressed, so fly with `--autostart`).
+- **Scene changes**: the mod's `EpochWatcher` (an `Instantly` addon kept
+  across scenes) counts `onGameSceneLoadRequested` and `onVesselChange`;
+  the launcher polls `Epoch()` while a pilot flies and, on a change, stops
+  it (SIGINT, SIGKILL after 3 s), takes its panel down and shows the menu.
+  The window and toolbar button exist in flight only; the launcher keeps
+  running through the space centre / SPH. A pilot's own load or switch is
+  announced first with `panel.expect_scene_change(conn, s)` (fmrs: 90 s per
+  load; ascent's booster handoff: 10 s).
+- **START SCRIPT** (the window with no launcher running): starts kRPC's
+  servers (`KRPC.Core.Instance.StartAll`) and runs `env -i HOME=.. PATH=..
+  KRPCLAB_GAME_PID=<pid> /bin/bash -lc "cd <root> && exec ./run.sh"`
+  (`Z:\usr\bin\env` under Wine; the pid from `/proc/self/stat`).
+  `build.sh` writes `GameData/KrpcLabLauncher/PluginData/launch.cfg`
+  (`root=`, `home=`). **Unverified**: that Wine's CreateProcess execs a
+  Unix binary from Mono's `Process.Start` -- if START SCRIPT says it could
+  not run, that is the place; the window shows the exception text.
+- **The game's death**: the launcher exits when a kRPC call raises a
+  connection error or `KRPCLAB_GAME_PID` is gone, killing the pilot first;
+  pilots also get `PR_SET_PDEATHSIG` SIGTERM from the launcher.
+
+**Traps paid:** `tools/bundle.py` only counts identifiers in *git-tracked*
+files as reachable from outside a module; an untracked new package's
+imports get renamed away ("cannot import name ACCENT_AIRPLANE"). `git add`
+a new package before building the bundle.
+
+## 2026-11-04 late: airplane -- new pilot, CRUISE and HOLD, unflown (fingerprint `a2ff2c90`)
+
+`airplane/` (launcher "AIRPLANE: CRUISE / HOLD", `./run.sh --pilot
+airplane`). Read `airplane/CLAUDE.md`. CRUISE: slip nulled on the rudder,
+bank held (cap 89), pitch attitude held, turns coordinated (turn rate
+`g tan(phi)/V` through the Euler kinematics = the pull that keeps the
+nose). HOLD: pitch, heading, bank. PI body-rate loops scaled by
+`GAIN_Q_REF_PA / q`. The player's stick is read back (kRPC adds client
+input to the player's; KSP adds the trim in -- both read from the IL) and
+an axis it moves is let go and re-held where left; **constant rates**:
+stick = body rate, limits in RPM on the panel. **Prop plane** runs
+propPitch in-process (own LOG).
+
+**Never flown.** Gains are first guesses. The input senses (pitch +1 nose
+up, roll +1 right, yaw +1 right) come from `ModuleReactionWheel`'s
+`-input` and the spaceplane's measured nose-down +x; the geometry is unit
+tested (`airplane/tests/testControl.py`), the senses are not.
+
+**Next:** read the user's first live LOG (`rate=` vs `want=`, `out=`,
+`i=`); a farm harness flying steps per axis to tune the gains.
+
+## 2026-11-04: propPitch -- the prop brake's tip limit; props stopped when still; torque counter deleted (fingerprint `ca612601`)
+
+The tip limit and the stop when still are defaults (below); **the
+reaction-torque counter (`TORQUE_COUNTER`, the spin-sense probe, the trims,
+the log's `trim=`) is deleted** at the user's request (it read 0.00 on the
+only craft it flew). `PropPilot` takes a `gui` so the airplane pilot can run
+it. Read `propPitch/CLAUDE.md` and `docs/propPitch/journal.md`.
 
 **What changed (all defaults):**
 - `BRAKE_TIP_LIMIT` (`propPitch/tipping.py`): on the wheels, the braking
   thrust is bounded so every wheel stays down with `BRAKE_TIP_MARGIN` 0.5 of
-  gravity's restoring moment. The bound comes from the moment about the
-  foremost/rearmost contacts (wheel bounding boxes, every wheel grounded
-  since Brakes went on), using gravity, the measured aero force (lift, and
-  the deceleration it alone gives) and the thrust line's height over the
-  CoM. Past the balance point the bound is the balance. A hill climb is the
-  backstop: it halves on a contact off the ground for 0.25 s or a pitch rate
-  over 10 deg/s, and rises 0.25/s. Where no bound can be computed it climbs
-  from 0 at 0.1 g/s. The wheel brakes' own moment is not counted. Log
-  `tip=`; events `tip:`.
-- Still (|v| < 0.5 m/s): every rotor at 0 rpm with its brake latch set
-  (`BrakeAction` activated), blades held, until 2 m/s
-  (`BRAKE_RESUME_SPEED`). `mode=brake-stop` replaces brake-hold, and
-  ZERO_THRUST is deleted.
-- `TORQUE_COUNTER`: the net -q x spin of the rotors is cancelled with the
-  pitch/roll/yaw trims (torque / `available_torque`, from
-  `ModuleReactionWheel`'s sign), on top of the pilot's trim and restored at
-  TERMINATE. Each rotor's spin sense is voted from a blade's angle between
-  ticks (`Part.velocity` of a blade is junk: no rigidbody).
-- `propfly --wheel-brakes P`; `tools/brakesum.py` reads brake and cut flights.
+  gravity's restoring moment, from the moment about the foremost/rearmost
+  contacts (gravity, measured aero force, the thrust line's height over the
+  CoM). Past the balance point the bound is the balance. Hill-climb
+  backstop: halves on a contact off the ground 0.25 s or pitch rate > 10
+  deg/s, rises 0.25/s; where no bound can be computed it climbs from 0 at
+  0.1 g/s. Log `tip=`; events `tip:`.
+- Still (|v| < 0.5 m/s): every rotor at 0 rpm with its brake latch set,
+  until 2 m/s (`BRAKE_RESUME_SPEED`); `mode=brake-stop`.
+- `propfly --wheel-brakes P`; `tools/brakesum.py`.
 
-**Measured (farm, qs_prop_noon):** it stands on four wing gear with the
-CoM 0.15 m ahead of the rear pair. The bound is ~-17..-25 kN at low speed
-(the props make ~-570 kN) and ~0 from 55 m/s, where lift is about equal to
-weight. Braked from 33-38 m/s it stopped intact in 8-9 s with no sideslip
-(LOG15245/15246); it went over in earlier versions. From 55-75 m/s it
-slides and hops whatever the props do: a plain throttle cut there breaks
-up 4/6 (LOG15249-15254), so that's the airframe under the harness. Spin
-senses `--++` on 12/12 flights; the counter stays 0.00 on this craft.
+**Measured (farm, qs_prop_noon):** bound ~-17..-25 kN at low speed, ~0 from
+55 m/s. Braked from 33-38 m/s it stopped intact in 8-9 s (LOG15245/15246).
+From 55-75 m/s it slides and hops whatever the props do; a plain throttle
+cut there breaks up 4/6 (LOG15249-15254): the airframe under the harness.
 
-**Not measured:** the counter on a craft with a net torque (a single
-rotor); the tip limit on a craft with a wide wheelbase or props below the
+**Not measured:** the tip limit on a wide wheelbase or props below the
 CoM; the brake live.
 
 **Next:** the user flies it live. Then: re-find after a lost part (still
-ObjectDestroyedException); a harness that can fly this plane past 55 m/s;
-a single-rotor craft file to check the counter's sign in game.
+ObjectDestroyedException); a harness that can fly this plane past 55 m/s.
 
-**Traps paid:** "no bound on this side" must never mean "unlimited". A
-pivot past its balance point was skipped and full thrust came back (LOG15225-15230).
-A bound extrapolated through a filtered acceleration lies right after a
-1000 kN thrust swing (-1450 kN allowed, LOG15233). The fallback must climb
-from zero, not from a fraction of the free optimum (-289 kN, LOG15221).
-A propfly launch of six with an inner `&` returns at once: wait on the
-`ROT DONE` marker, not the launcher.
+**Traps paid:** "no bound on this side" must never mean "unlimited"
+(LOG15225-15230). A bound extrapolated through a filtered acceleration lies
+after a 1000 kN thrust swing (LOG15233). The fallback must climb from zero
+(LOG15221). A propfly launch of six with an inner `&` returns at once: wait
+on the `ROT DONE` marker.
 
 ## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
 

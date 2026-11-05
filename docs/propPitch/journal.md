@@ -172,3 +172,14 @@ script autocounter prop torque if any". All three defaults.
   Written as pitch/roll/yaw trim on top of the pilot's own. With the wrong
   senses (version 1) it wrote roll trim -1.0 on the ground; since, 0.00 on
   this craft (the pairs cancel). **Not flown on a craft with a net torque.**
+
+## 2026-11-04 late: the torque counter deleted
+
+The user asked for the reaction-torque counter (`TORQUE_COUNTER`: rotor
+spin senses voted from blade angles, the net -q x spin cancelled with the
+pitch/roll/yaw trims) to be removed. It had only flown on `qs_prop_noon`,
+whose rotors pair off (`--++`), where it stayed 0.00; never measured on a
+craft with a net torque. Deleted with `SPIN_PROBE_RPM`, `SPIN_VOTES`,
+`TRIM_WRITE_STEP`, `tipping.reaction_torque`/`counter_trim` and their
+tests; the log's `trim=` field is gone. The code is in git before
+9bd1071. propPitch also runs inside the new airplane pilot now.

@@ -35,12 +35,9 @@ nothing to build.
 roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
 from the previous batch's round length times the rounds left.
 
-0. **Take the sleep inhibitor first thing**: `testInstances/nosleep.sh start`
-   (idempotent; `status` checks it). **Release it last thing**, after the
-   farm is stopped and HANDOFF.md is written: `testInstances/nosleep.sh
-   stop`. Both, every session, whether or not anything flies -- a suspend
-   mid-batch reads as a crash, and an inhibitor left held is the user's
-   sleep setting overridden.
+0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
+   prompt, released at the end of a turn unless a farm instance is still
+   running, then released once the farm is idle. Don't run nosleep by hand.
 1. **Start by reading [HANDOFF.md](HANDOFF.md)**, the last session's state:
    what changed, which flags exist and what they measured, the blocker,
    what's next, and the traps. Then the pilot's own `CLAUDE.md`.
@@ -89,14 +86,15 @@ readers. New autopilots go here and plug into all of it.
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
 | `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
 | `propPitch/` | a propeller plane's collective blade pitch held at the setting that goes fastest (extremum seeking on forward aero force); flies only the blades. Read `propPitch/CLAUDE.md` |
-| `launcherMod/` | the launcher's stock KSP window and toolbar button (C#, kRPC service `KrpcLabLauncher`); `launcherMod/build.sh` builds it and installs it into the farm and the live game. Without it `common/launcher.py` falls back to a kRPC panel |
+| `airplane/` | an attitude autopilot for winged craft: CRUISE (sideslip nulled, bank held to 89 deg, pitch attitude held through coordinated turns) and HOLD (pitch, heading, bank held), the player's stick on top; optional constant body rates (RPM) and propPitch beside it. Read `airplane/CLAUDE.md` |
+| `launcherMod/` | **krpcLab's only UI** (C#, kRPC service `KrpcLabLauncher`): one stock KSP window and toolbar button, in flight only, drawing the launcher's menu and every pilot's panel (`common.panel`); counts scene changes and vessel switches (the launcher stops a pilot on one); START SCRIPT starts the kRPC server and `./run.sh`. `launcherMod/build.sh` builds it and installs it into the farm and the live game. Without it a pilot's panel is headless (kspSim) |
 | `kspSim/` | a headless KSP behind a real kRPC server: the autopilots fly it unmodified (`--instance sim0`), ~10x faster per flight and many at once. Screening only -- confirm on the farm. **Read `kspSim/CLAUDE.md` first** |
 | `common/` | shared by every autopilot: `vec`, `logbook`, `pacing` (loop pacing and the time-scale governor), `rcs` (the RCS valve), `timescale` (the farm plugin's file), `paths`, `launcher`, `cli` (the standard flags and connect), `config` (`--set`, the defaults fingerprint), `panel` (`ControlPanel`), `krpcpilot` (engaging and aiming kRPC's autopilot), `geo` (gravity, great-circle distance), `idle` (gimbals and surfaces held when useless). **Anything two pilots both need goes here, not into a second copy** |
 | `tools/` | tools for any autopilot: `bundle.py`, `savegen.py`, `timescale.py`, `instancebench.py` |
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
 | `saves/` | **the reference quicksaves and craft files** -- tracked; the farm copies drift. `saves/README.md` says which save is which vehicle |
 | `testInstances/` | the measurement farm's scripts. The 15 GB of game copies are in the shared farm `~/kspfarm` (`base/`, `krpclab/`; see its README.md), with git-ignored symlinks here |
-| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/`, `propPitch/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
+| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/`, `propPitch/`, `airplane/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
 | `logs/` | every flight's `LOG<n>`, numbered across all autopilots; git-ignored, cited by number in the docs |
 
 Every autopilot has the same shape: one phase machine is the only kRPC-aware
@@ -108,7 +106,9 @@ rather than a stored plan.
 
 1. A package `<name>/` with a module that accepts `--address`,
    `--rpc-port`, `--stream-port`, `--set FIELD=VALUE` and `--autostart`, and
-   shows an in-game panel with START and TERMINATE (see either existing one).
+   shows an in-game panel with START and TERMINATE (`common.panel.ControlPanel`,
+   drawn by `launcherMod`). If it loads a save or switches the active vessel
+   itself, it calls `panel.expect_scene_change` first, or the launcher stops it.
 2. Its tunables in `<name>/config.py`, a `Logbook` from `common.logbook`, the
    `config:` line and a defaults fingerprint in every log (hard conventions
    below).
@@ -146,7 +146,7 @@ rather than a stored plan.
 # **Starting, stopping and restarting the farm never needs permission.**
 # It is the measuring instrument, it is always OK to bring up or take down,
 # and a session that flies nothing measures nothing.  Standing procedure:
-# `nosleep start && cd testInstances && ./start.sh` (six, 0-5; it returns
+# `cd testInstances && ./start.sh` (six, 0-5; it returns
 # when every port is up, relaunching boot crashes), fly; `./stop.sh` when the
 # suite has to run or the session ends.
 #
@@ -427,6 +427,7 @@ Read the file that covers what you are about to touch; do not load them all.
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
 | [lowThrust/CLAUDE.md](lowThrust/CLAUDE.md) | anything in `lowThrust/` |
 | [propPitch/CLAUDE.md](propPitch/CLAUDE.md) | anything in `propPitch/` |
+| [airplane/CLAUDE.md](airplane/CLAUDE.md) | anything in `airplane/` |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
 | [saves/README.md](saves/README.md) | which save is which vehicle and state; adding a save |
 
