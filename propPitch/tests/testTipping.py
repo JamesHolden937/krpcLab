@@ -61,6 +61,15 @@ class TestTipping(unittest.TestCase):
         self.assertIsNone(bounds(HIGH_HUB, -1000.0, 0.5,
                                  contacts=(MAINS, (1.0, -1.0, 2.0))))
 
+    def test_going_over_still_bounded(self):
+        """Nose up past the balance point (the CoM behind the mains), the
+        reverse thrust that lifts it further is still bounded: no tipping
+        reverse thrust at all."""
+        mains = (0.0, 0.5, 2.0)                 # now ahead of the CoM
+        floor, _ = bounds(HIGH_HUB, -1000.0, 0.5, contacts=(mains, NOSE))
+        self.assertIsNotNone(floor)
+        self.assertGreater(floor, -1.0)
+
     def test_contact_point(self):
         p = tipping.contact_point((-0.5, 1.0, 1.0), (0.5, 2.0, 2.0), UP)
         self.assertEqual(p, (0.0, 1.5, 2.0))

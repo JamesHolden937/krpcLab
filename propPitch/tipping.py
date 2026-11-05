@@ -102,12 +102,14 @@ def thrust_bounds(contacts, up, g, mass, accel, aero, hub, thrust_now,
                  + _dot(_cross(_sub(hub, pivot), prop), axis))
         m_grav = _dot(_cross(_scale(pivot, -1.0), grav), axis)
         restoring = tip(m_grav)
-        if restoring >= 0.0:
-            continue                    # gravity alone would lift it
+        # Past the balance point (the CoM beyond the pivot: it is going
+        # over) gravity lifts the far end too, and the bound is where the
+        # moment just balances -- no thrust that tips it further.
+        target = margin * restoring if restoring < 0.0 else 0.0
         slope = tip(dmdt)
         if abs(slope) < 1e-12:
             continue
-        limit = thrust_now + (margin * restoring - tip(m_now)) / slope
+        limit = thrust_now + (target - tip(m_now)) / slope
         if slope > 0.0:
             ceiling = limit if ceiling is None else min(ceiling, limit)
         else:
