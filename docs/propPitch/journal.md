@@ -112,3 +112,63 @@ closer to forwards or backwards first".
   is 0 rpm anyway. LOG15213 (DISABLE_KAL=False as a baseline) is unusable:
   the KAL fought the pilot and never reached the cut. Both coasts
   ground-looped ~5 s after the cut.
+
+## 2026-11-04: tip limit on the prop brake, props stopped when still, reaction-torque counter
+
+The user: "if craft starts nosing over (or even tailing over in the case of
+a pusher prop) during braking while wheels are on the ground, limit
+braking ... calculate value if possible, hill climb if not"; "at 0 m/s the
+prop still spins when you brake ... make sure it doesn't spin"; "make the
+script autocounter prop torque if any". All three defaults.
+
+- **Geometry** (`qs_prop_noon`, parked, a scratch probe): it stands on the
+  four wing gear (y -0.15 and +2.8 m), the tail and nose gear clear; the
+  CoM is **0.15 m ahead of the rear pair**, the hubs 0.43 m above the CoM.
+  Gravity's restoring moment about the rear pair is ~19 kN m, so reverse
+  thrust tips it at ~-50 kN (bound -25 kN at margin 0.5) against ~-570 kN
+  the props can make. At 55+ m/s the wings carry most of the weight and the
+  bound goes to ~0.
+- **Version 1** (the bound from the *measured*, filtered deceleration, a
+  hill climb on a fraction of the unlimited thrust where no bound):
+  LOG15219-15224, all from 40-90 m/s tipped. The contacts collapsed one
+  tick after the press (the far wheels lifted), the fallback took
+  0.5 x -577 = -289 kN, over in ~0.3 s.
+- **Version 2** (contacts latched over the brake, last bound kept, climb
+  from zero in g/s): LOG15225-15230. Still over, at k ~0.01: past the
+  balance point `thrust_bounds` skipped the pivot ("gravity alone lifts
+  it") and the pilot read that as no limit -- full reverse again.
+  Fixed: past the balance the bound is the balance.
+- **Version 3** (also the lag-free bound; stricter of two): LOG15231-15236.
+  The measured-deceleration bound right after the press allowed -1450 kN
+  (the filter still held +36 m/s^2 from full thrust; extrapolating 1000 kN
+  of thrust swing through it). At 40 m/s it flickered 0/-22 kN with the
+  model thrust -21 kN against a measured prop share of ~-4.
+- **Version 4 (committed)**: only the aero force's own deceleration --
+  the props' share cancels, the bound depends on gravity, lift and the
+  thrust line's height over the CoM, not on the model's thrust or a
+  derivative. Wheel brakes' moment not counted. A wheel lifted = 0.25 s
+  off the ground (single-tick bounces were halving the climb); pitch-rate
+  backstop 4 -> 10 deg/s. LOG15243-15248: from 33-38 m/s **stopped in
+  8-9 s with no sideslip** (LOG15245 0 back-offs, bound ~-17 kN; 15246),
+  24 s with the wheel brakes off (15247). From 55-75 m/s: slip 12-18 m/s,
+  hops 5-24 m, 2/3 broke, bound 0.
+- **Control** (no brake, throttle cut, `--cut-at`, LOG15249-15254): at
+  56-74 m/s slip 6-38 m/s, climbed up to 28 m, 4/6 broke. The high-speed
+  breakups are this plane losing its thrust under the harness, not the
+  brake (as LOG15214's ground loop). With wheel brakes off (`propfly
+  --wheel-brakes 0`, LOG15237-15240) the same.
+- **Stopped when still**: within `BRAKE_HOLD_SPEED` 0.5 m/s the rotors go to
+  0 rpm with their brake latch set (`BrakeAction` activated) and the blades
+  stay put, until `BRAKE_RESUME_SPEED` 2 m/s. Every brake flight above ends
+  `brake-stop`, 0 rpm, still.
+- **Spin sense**: `Part.velocity` of a blade gave a different answer every
+  flight (LOG15219-15224: ++-+, +---, --++, +++-) -- a blade has no
+  rigidbody of its own. Now voted from the blade's angle about the hub
+  between ticks against +/-rpm dt (alias-safe): `--++` on all twelve since
+  (the left pair one way, the right pair the other).
+- **Counter**: `ModuleReactionWheel.ActiveUpdate` applies
+  ReferenceTransform.rotation x -(pitch, roll, yaw) x torque, so the trim
+  that cancels a reaction torque tau is tau / available torque per axis.
+  Written as pitch/roll/yaw trim on top of the pilot's own. With the wrong
+  senses (version 1) it wrote roll trim -1.0 on the ground; since, 0.00 on
+  this craft (the pairs cancel). **Not flown on a craft with a net torque.**

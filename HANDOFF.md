@@ -1,45 +1,61 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-03: propPitch -- throttle sets the rpm; Brakes brakes with the props; a cut feathers (fingerprint `a4583810`)
+## 2026-11-04: propPitch -- the prop brake's tip limit; props stopped when still; reaction-torque counter (fingerprint `d4caf88c`)
 
-The user: "make it so my throttle will control RPM limit", then "when [I]
-hit brake, spin the motor at full RPM and angle the blades to stop the
-motion ... read whether the velocity vector is closer to forwards or
-backwards first". Both are defaults; committed and pushed; farm stopped.
-Read `propPitch/CLAUDE.md` and `docs/propPitch/journal.md`.
+The user asked for three things: limit the prop brake on the wheels so the
+plane doesn't nose or tail over ("calculate value if possible, hill climb
+if not"); no spinning props at 0 m/s under Brakes; counter the props'
+torque. All three are defaults now, committed and pushed, and the farm is
+stopped. Read `propPitch/CLAUDE.md` and `docs/propPitch/journal.md`
+("2026-11-04").
 
-**What changed:** `THROTTLE_RPM` -- the rotors' RPM limit is throttle x
-`ROTOR_RPM` (floor `THROTTLE_RPM_MIN` 0), re-written on a 2-rpm step, and
-the pitch is scored at it. `PROP_BRAKE` -- while `control.brakes` is on:
-all rotors at `ROTOR_RPM`, their brake latches released, blades at the
-most thrust against the nose-axis airspeed (rev / fwd / hold within
-`BRAKE_HOLD_SPEED`), searched over the blades' full Deploy Angle range
-(+/-1.5 x ctrlSurfaceRange, now `range` in `bladeTable.py`). Model: a
-windmilling rotor overspeeds. Log `thr=`, `brake=`; events `rotor rpm`,
-`prop brake on/off`. `propfly --throttle T --brake-at V`.
+**What changed (all defaults):**
+- `BRAKE_TIP_LIMIT` (`propPitch/tipping.py`): on the wheels, the braking
+  thrust is bounded so every wheel stays down with `BRAKE_TIP_MARGIN` 0.5 of
+  gravity's restoring moment. The bound comes from the moment about the
+  foremost/rearmost contacts (wheel bounding boxes, every wheel grounded
+  since Brakes went on), using gravity, the measured aero force (lift, and
+  the deceleration it alone gives) and the thrust line's height over the
+  CoM. Past the balance point the bound is the balance. A hill climb is the
+  backstop: it halves on a contact off the ground for 0.25 s or a pitch rate
+  over 10 deg/s, and rises 0.25/s. Where no bound can be computed it climbs
+  from 0 at 0.1 g/s. The wheel brakes' own moment is not counted. Log
+  `tip=`; events `tip:`.
+- Still (|v| < 0.5 m/s): every rotor at 0 rpm with its brake latch set
+  (`BrakeAction` activated), blades held, until 2 m/s
+  (`BRAKE_RESUME_SPEED`). `mode=brake-stop` replaces brake-hold, and
+  ZERO_THRUST is deleted.
+- `TORQUE_COUNTER`: the net -q x spin of the rotors is cancelled with the
+  pitch/roll/yaw trims (torque / `available_torque`, from
+  `ModuleReactionWheel`'s sign), on top of the pilot's trim and restored at
+  TERMINATE. Each rotor's spin sense is voted from a blade's angle between
+  ticks (`Part.velocity` of a blade is junk: no rigidbody).
+- `propfly --wheel-brakes P`; `tools/brakesum.py` reads brake and cut flights.
 
-Then "feather the prop on zero throttle": `THROTTLE_FEATHER` 0.02 -> 0 rpm
-and the least-drag angle over the whole range (Deploy 0 edge-on); log
-`mode=` (thrust/feather/brake-*) replaces `brake=`; `propfly --cut-at V`.
-LOG15214: feathered within ~1 s of a cut at 60 m/s, coast J ~-2 (props'
-model share 0.07). No in-game baseline at idle 90 yet; both coasts
-ground-looped ~5 s after the cut.
+**Measured (farm, qs_prop_noon):** it stands on four wing gear with the
+CoM 0.15 m ahead of the rear pair. The bound is ~-17..-25 kN at low speed
+(the props make ~-570 kN) and ~0 from 55 m/s, where lift is about equal to
+weight. Braked from 33-38 m/s it stopped intact in 8-9 s with no sideslip
+(LOG15245/15246); it went over in earlier versions. From 55-75 m/s it
+slides and hops whatever the props do: a plain throttle cut there breaks
+up 4/6 (LOG15249-15254), so that's the airframe under the harness. Spin
+senses `--++` on 12/12 flights; the counter stays 0.00 on this craft.
 
-**Measured (farm, runway):** throttle 1/0.5/0 -> 460/230/0 rpm
-(LOG15208/15206/15207). Brake at 40 m/s: stopped in ~1 s at -42 m/s^2 and
-held (LOG15211). At 80 m/s the ~4.5 g reverse thrust reared the plane over
-(LOG15210/15209). A decel cap was written and reverted on the user's word:
-they release Brakes if it starts to flip.
+**Not measured:** the counter on a craft with a net torque (a single
+rotor); the tip limit on a craft with a wide wheelbase or props below the
+CoM; the brake live.
 
-**Previous (still true):** START works in flight (rotor brake latch).
-The pilot dies with ObjectDestroyedException when a part breaks off.
+**Next:** the user flies it live. Then: re-find after a lost part (still
+ObjectDestroyedException); a harness that can fly this plane past 55 m/s;
+a single-rotor craft file to check the counter's sign in game.
 
-**Next:** the user flies the brake and throttle live. Re-find on a lost
-part. A harness that can fly the plane past 100 m/s. START's ~2500 calls.
-
-**Traps paid:** Deploy Angle reaches negative angles (reverse thrust);
-+90 and -90 are the same blade. The Brakes group also latches the rotors'
-own brakes, so the prop brake must release them every press.
+**Traps paid:** "no bound on this side" must never mean "unlimited". A
+pivot past its balance point was skipped and full thrust came back (LOG15225-15230).
+A bound extrapolated through a filtered acceleration lies right after a
+1000 kN thrust swing (-1450 kN allowed, LOG15233). The fallback must climb
+from zero, not from a fraction of the free optimum (-289 kN, LOG15221).
+A propfly launch of six with an inner `&` returns at once: wait on the
+`ROT DONE` marker, not the launcher.
 
 ## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
 

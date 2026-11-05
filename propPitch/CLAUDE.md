@@ -45,18 +45,50 @@ no in-game baseline with the blades left at idle 90 yet.
 
 **Prop brake** (`PROP_BRAKE`, default on): while `control.brakes` is on,
 every rotor runs at `ROTOR_RPM`, the rotors' own brake latch (the craft's
-Brakes group sets it) is released on the press and at every re-assert, and
-the blades go to the angle with the most thrust *against* the motion: the
-air velocity's nose component (vessel y) > `BRAKE_HOLD_SPEED` -> most
-reverse thrust, < -`BRAKE_HOLD_SPEED` -> most forward, between -> zero
-thrust. The braking search spans the blades' whole Deploy Angle range,
-+/-1.5 x ctrlSurfaceRange (Assembly-CSharp `ModuleControlSurface.OnStart`;
-`range` in `bladeTable.py`: 90 for fans/props, 22.5 for heli blades);
-negative angles give reverse thrust. No thrust cap, by the user's choice
-(they release Brakes if it starts to go over). Farm LOG15211: 40 -> 0 m/s
-in ~1 s at -42 m/s^2, then held still. LOG15210/15209 (from 80 m/s): the
-~4.5 g of reverse thrust from props above the CoM reared the plane up and
-over. The model also lets a windmilling rotor overspeed past its limit.
+Brakes group sets it) is released, and the blades go to the angle with the
+most thrust *against* the motion: the air velocity's nose component
+(vessel y) > 0 -> most reverse, < 0 -> most forward, searched over the
+blades' whole Deploy Angle range, +/-1.5 x ctrlSurfaceRange (Assembly-CSharp
+`ModuleControlSurface.OnStart`; `range` in `bladeTable.py`: 90 for
+fans/props, 22.5 for heli blades). **Still** (|v| < `BRAKE_HOLD_SPEED`
+0.5 m/s): every rotor at 0 rpm with its brake latch set, blades left where
+they are, until |v| > `BRAKE_RESUME_SPEED` 2 m/s (`mode=brake-stop`).
+
+**Tip limit** (`BRAKE_TIP_LIMIT`, on the wheels only; `tipping.py`): the
+contacts are the bottoms of the bounding boxes (read at START) of every
+wheel grounded since Brakes went on. About the foremost and the rearmost,
+the moment of gravity, the measured aero force (its lift, and the
+deceleration it alone gives, at the CoM) and the props' thrust at the hubs
+is linear in the thrust, so the thrust that leaves `BRAKE_TIP_MARGIN` 0.5
+of gravity's restoring moment is solved for; past the balance point the
+bound is the balance. The props' share cancels out: only gravity, lift and
+the thrust line's height over the CoM decide it. **The wheel brakes'
+moment is not counted** (it opposes a tail-over with props above the CoM;
+it would add to a nose-over with props below). Backstop, a hill climb: a
+fraction of the bound halved when a contact wheel is off the ground 0.25 s
+or the pitch moves > 10 deg/s, raised 0.25/s. Where no bound can be
+computed (one wheel, a row across) it climbs from zero at 0.1 g/s. Log
+`tip=` (the bound, kN, and the fraction); events `tip: ...`.
+`qs_prop_noon` stands on its four wing gear with the CoM **0.15 m** ahead of
+the rear pair: bound ~-17..-25 kN at low speed (the props make ~-570 kN),
+~0 from 55 m/s (lift ~ weight). From 33-38 m/s it stops in 8-9 s with no
+sideslip (LOG15245/15246; unlimited: ~1 s, and from 80 m/s it went over,
+LOG15210). From 55-75 m/s it slides and hops whatever the props do: a
+plain throttle cut there breaks up 4/6 (LOG15249-15254) -- the plane under
+the harness, not the brake.
+
+**Reaction-torque counter** (`TORQUE_COUNTER`): each rotor's blade load
+`q` turns the airframe by -q about its real spin; the sum is cancelled with
+the pitch/roll/yaw **trims** (input = torque / kRPC `available_torque` per
+axis: KSP applies ReferenceTransform x -input x torque,
+`ModuleReactionWheel.ActiveUpdate`), on top of the pilot's own trim (a trim
+that moved since we wrote it is theirs; restored at TERMINATE). The spin
+sense is measured once a rotor turns past `SPIN_PROBE_RPM`: a blade's angle
+about the hub between ticks against +/-rpm x dt, `SPIN_VOTES` ticks
+(`Part.velocity` of a blade is meaningless -- no rigidbody). Event `rotor
+spin senses`; log `trim=`. `qs_prop_noon` reads `--++` every flight and
+its counter stays 0.00. **Not yet flown on a craft with a net torque.**
+The rotors' spin-up/down inertia torque is not counted.
 
 **Blade load and rpm**: each pitch is scored at the rpm its rotor would
 settle at. KSP's rotor is a stiff velocity drive (damper 1000) capped at
@@ -98,7 +130,10 @@ the panels give 1.5 EC/s and the rotors starve and stall. `qs_prop_noon`
 is the same save warped +5100 s on the farm (53 EC/s): fly that one.
 **Rotor brakes are on the Brakes action group**: brakes on means 0 rpm.
 
-## Where it stands (2026-11-03, late)
+## Where it stands (2026-11-04)
+
+2026-11-04: the tip limit, the stop when still and the torque counter
+(above; journal). Every brake from <= 40 m/s stops intact and still.
 
 First live flights (LOG15184-15188, 2026-11-02 night): from the runway it
 matches the farm (J tracks model within ~1 m/s^2 to 75 m/s; climbed to 57 km
@@ -134,7 +169,8 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
    against feathered (needs an arm that holds an angle at a cut). Both farm
    coasts ground-looped ~5 s after the cut (harness steering, probably).
 4. The prop brake flown live, and backwards (only forward was flown on the
-   farm; the backward branch is unit-tested).
+   farm; the backward branch is unit-tested). The tip limit on a craft
+   that sits on a wider wheelbase, and the counter on a single rotor.
 5. START costs ~2500 calls (~4 s): the blade field tables.
 
 ## Commands
@@ -145,6 +181,8 @@ Farm, earlier (`qs_prop_noon`), LOG15177-15183:
 ./propPitch/tools/propfly.py --instance 0 --takeoff-speed 9999 --seconds 30 \
     --brake-at 40 [--throttle 0.5]                     # runway: prop brake past 40 m/s
     # ... --cut-at 60 instead: throttle cut (feather) past 60 m/s
+    # ... --wheel-brakes 0: the craft's wheel brakes off (props only)
+./propPitch/tools/brakesum.py logs/LOG<n> ...            # per brake/cut flight: stop time, slip, nose-up, bound
 ./propPitch/tools/propfly.py --instance 1 --probe --takeoff-speed 9999 \
     --seconds 40 --set LOG_INTERVAL_UT=0               # model vs game, angle sweep
 ./propPitch/tools/probesum.py logs/LOG<n>              # ... read it

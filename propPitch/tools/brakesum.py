@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""One line per prop-brake flight: the speed Brakes went on at, the time to
+"""One line per prop-brake (or throttle-cut) flight: the speed Brakes
+went on (or the props feathered) at, the time to
 stand still, the worst sideslip (|va x|), the worst nose-up (va z, the air
 from below in the vessel's axes), the height gained over the runway, the
 tightest tip bound, the hill climb's back-offs, and whether it broke up.
@@ -26,9 +27,11 @@ def summary(path):
             config = line.split("config:")[1].split("defaults_fingerprint")[0]
         if "FATAL" in line:
             fatal = True
-        if "prop brake on" in line and on is None:
-            on = ut
-        if "props stopped" in line and on is not None and still is None:
+        if on is None and ("prop brake on" in line or "mode=feather" in line):
+            on = ut                     # Brakes, or a throttle cut
+        if on is not None and still is None and (
+                "props stopped" in line
+                or re.search(r"spd=\s*0\.[0-4] ", line)):
             still = ut
         if "tip: " in line:
             tips += 1
@@ -49,7 +52,7 @@ def summary(path):
                 kn = float(t.group(6).rstrip("kN"))
                 tightest = kn if tightest is None else max(tightest, kn)
     if on is None:
-        return "%s: no brake" % path
+        return "%s: no brake or cut" % path
     return ("%s: brake at %5.1f m/s, still %s, slip %4.1f, nose-up %4.1f m/s, "
             "climbed %4.1f m, tightest %s, %d back-offs%s |%s"
             % (path, v_on or 0, "%.1f s" % (still - on) if still else "never",
