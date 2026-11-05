@@ -45,13 +45,16 @@ from common.pacing import sleeper
 from common.sfs import FLYING, Save
 from boosterland.autoland import Autoland
 from boosterland.config import Config, apply_overrides
-from common.panel import ACCENT_BOOSTER, ControlPanel
+from common.panel import ACCENT_BOOSTER, ControlPanel, expect_scene_change
 
 SAVES = ["FMRS/FMRS_save_%d" % n for n in range(10)]
 MAIN = "krpclab_main"                 # the main mission, in the save folder
 BOOSTBACK = "FMRS/krpclab_boostback"  # the FMRS save with the booster active
 LANDED = "krpclab_booster"            # the booster's game at the end
 CONNECT_TIMEOUT_S = 90.0     # wall time for the scene to come back
+# Our own load: scene changes and vessel switches this long after it are ours
+# (the launcher stops an autopilot on any other).
+SCENE_CHANGE_S = CONNECT_TIMEOUT_S
 SAVE_TIMEOUT_S = 10.0        # wall time for a save to appear on disk
 POLL_S = 0.1
 NEAR_M = 5000.0              # the booster is within this of the active vessel
@@ -197,6 +200,8 @@ def load_paused(args, save):
     this reconnects rather than reusing anything across it."""
     conn = connect(args, "fmrs-loader")
     try:
+        # Our own load: the launcher must not stop us for it.
+        expect_scene_change(conn, SCENE_CHANGE_S)
         conn.space_center.load(save)
         try:
             conn.krpc.paused = True
@@ -249,6 +254,7 @@ def offer_jump_back(args, save_dir, booster_id, reason, log):
     finally:
         gui.close()
     try:
+        expect_scene_change(conn, SCENE_CHANGE_S)
         conn.space_center.load(MAIN)
     finally:
         try:

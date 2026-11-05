@@ -36,7 +36,7 @@ from . import tipping
 from common.krpcbatch import ask
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
-from common.panel import ControlPanel
+from common.panel import ACCENT_PROP, ControlPanel
 from common.rpccount import RpcCounter
 from .config import Config, apply_overrides, defaults_fingerprint, differences
 from .bladeModel import (MOST_FORWARD, MOST_REVERSE, Blade, PropModel, Rotor,
@@ -46,7 +46,6 @@ STANDBY = "STANDBY"
 TRACK = "TRACK"
 DONE = "DONE"
 
-ACCENT_PROP = (0.5, 1.0, 0.5)
 DEPLOY_FIELD = "Deploy Angle"
 KAL_MODULE = "ModuleRoboticController"
 ROTOR_MODULE = "ModuleRoboticServoRotor"
@@ -129,7 +128,7 @@ class BladePart:
 
 
 class PropPilot:
-    def __init__(self, conn, cfg, log):
+    def __init__(self, conn, cfg, log, gui=None):
         self.conn = conn
         self.cfg = cfg
         self.log = log
@@ -170,17 +169,7 @@ class PropPilot:
         self.tip_backoff_ut = -1e9
         self.tip_note = "-"
         self.last_flown = None
-        # Reaction torque: each model rotor's (rotor part, one blade part),
-        # its measured spin sense, and the trims (the pilot's own, ours).
-        self.spin_parts = []
-        self.spin_sense = []
-        self.spin_seen = []
-        self.spin_votes = []
         self.hubs = []
-        self.user_trim = None
-        self.trim_written = None
-        self.trim_prev = None
-        self.counter = (0.0, 0.0, 0.0)
         self.lines = []
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
@@ -199,7 +188,10 @@ class PropPilot:
             self.sc.ReferenceFrame.create_hybrid(
                 position=self.vessel.orbit.body.reference_frame,
                 rotation=self.frame))
-        self.gui = ControlPanel(conn, "PROP PITCH", "START", ACCENT_PROP)
+        # ``gui``: run inside another pilot (the airplane's "prop plane"),
+        # whose panel is the one drawn.
+        self.gui = gui if gui is not None else ControlPanel(
+            conn, "PROP PITCH", "START", ACCENT_PROP)
 
     # -- takeover -----------------------------------------------------------
     def find(self, ut):
@@ -297,9 +289,6 @@ class PropPilot:
                 pass
         self.build_model(ut)
         self.find_wheels(ut)
-        if self.cfg.TORQUE_COUNTER:
-            c = self.vessel.control
-            self.user_trim = (c.pitch_trim, c.roll_trim, c.yaw_trim)
         self.start_ut = ut
 
     def find_wheels(self, ut):
@@ -343,7 +332,6 @@ class PropPilot:
                                       tmax * self.cfg.ROTOR_TORQUE_PCT / 100.0)))
         k = 3 * len(self.rotors)
         unknown = set()
-        first_blade = {}
         for j, b in enumerate(self.blades):
             pos, rot, name, parent = got[k + 4 * j:k + 4 * j + 4]
             kind = blade_type(name or "")
@@ -361,7 +349,6 @@ class PropPilot:
             if ri is None:
                 ri = 0
             hub = rotors[ri][0]
-            first_blade.setdefault(ri, b.part)
             rel = tuple(x - h for x, h in zip(pos, hub))
             rotors[ri][1].blades.append(Blade(kind, rel, qrot(rot, (1, 0, 0)),
                                               qrot(rot, (0, 0, 1)),
@@ -371,11 +358,6 @@ class PropPilot:
                                "(propPitch/bladeTable.py)" % sorted(unknown))
         self.model_rotors = [i for i, (_, r) in enumerate(rotors) if r.blades]
         self.hubs = [rotors[i][0] for i in self.model_rotors]
-        self.spin_parts = [(self.rotors[i].part, first_blade[i])
-                           for i in self.model_rotors]
-        self.spin_sense = [None] * len(self.model_rotors)
-        self.spin_seen = [None] * len(self.model_rotors)
-        self.spin_votes = [0] * len(self.model_rotors)
         rotors = [r for _, r in rotors if r.blades]
         signs = choose_signs(rotors, self.cfg.ROTOR_RPM)
         self.model = PropModel(rotors)
@@ -465,12 +447,6 @@ class PropPilot:
             self.log.event(ut, "re-set: %s" % ", ".join(changed))
 
     def hand_back(self, ut):
-        if self.user_trim is not None and self.trim_written is not None:
-            try:
-                c = self.vessel.control
-                c.pitch_trim, c.roll_trim, c.yaw_trim = self.user_trim
-            except Exception:                           # noqa: BLE001
-                pass
         for r, rpm, torque, engaged in self.saved_rotors:
             try:
                 r.target_rpm = rpm
@@ -518,11 +494,6 @@ class PropPilot:
                        ((1.0, 0.0, 0.0), self.srf_frame, self.frame)),
                       (getattr, (f, "pitch"))]
             calls += [(getattr, (w, "grounded")) for w in self.wheels]
-        if cfg.TORQUE_COUNTER:
-            c = self.vessel.control
-            calls += [(getattr, (self.vessel, "available_torque")),
-                      (getattr, (c, "pitch_trim")), (getattr, (c, "roll_trim")),
-                      (getattr, (c, "yaw_trim"))]
         return ask(self.conn, calls)
 
     def run_track(self, ut):
@@ -540,9 +511,6 @@ class PropPilot:
             # A wheel that broke off reads None: not on the ground.
             grounded = [bool(g) for g in rest[2:2 + len(self.wheels)]]
             rest = rest[2 + len(self.wheels):]
-        torque_avail = trims = None
-        if cfg.TORQUE_COUNTER:
-            torque_avail, trims = rest[0], tuple(rest[1:4])
         rpms = [x for x in rpm_list if x is not None]
         j = force[1] / mass if force is not None and mass else None
         dt = 0.0 if self.last_ut is None else ut - self.last_ut
@@ -587,8 +555,6 @@ class PropPilot:
         else:
             self.set_rpm(ut, self.throttle_rpm(throttle))
         targets = [self.rpm_cmd] * len(self.model.rotors)
-        if None not in rpm_list:
-            self.probe_spin(ut, rpm_list)
         opt = None
         if (v_air is not None and rho and sound and self.last_cmd is not None
                 and None not in rpm_list):
@@ -635,8 +601,6 @@ class PropPilot:
                 and (opt is None or abs(cmd - opt.deploy) > 1e-6)):
             flown = self.model.evaluate(cmd, targets, v_air, rho, sound)
         self.last_flown = flown
-        self.counter_torque(flown if not (braking and self.held) else None,
-                            torque_avail, trims)
         rpm = sum(rpms) / len(rpms) if rpms else float("nan")
         # The model's thrust at the angle flown, per unit mass: J less this
         # is the airframe's drag, whatever the angle.
@@ -649,8 +613,7 @@ class PropPilot:
                  else float("nan"))
         text = ("TRACK spd=%6.1f alt=%6.0f vs=%+5.1f pitch=%5.1f opt=%5.1f "
                 "J=%+7.3f model=%+7.3f rpm=%5.0f/%5.0f torque=%4.2f motor=%s "
-                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f mode=%s tip=%s "
-                "trim=%+.2f,%+.2f,%+.2f"
+                "va=%+6.1f,%+6.1f,%+6.1f ec=%4.0f thr=%4.2f mode=%s tip=%s"
                 % (speed or 0, alt or 0, vs or 0,
                    cmd if cmd is not None else float("nan"),
                    opt.deploy if opt is not None else float("nan"),
@@ -660,7 +623,7 @@ class PropPilot:
                             for r in self.model.rotors),
                    *(v_air or (float("nan"),) * 3), ec or 0,
                    throttle if throttle is not None else float("nan"),
-                   mode, self.tip_note, *self.counter))
+                   mode, self.tip_note))
         self.log.telemetry(ut, text)
         self.lines = ["phase   : TRACK",
                       "speed   : %.1f m/s" % (speed or 0),
@@ -760,85 +723,6 @@ class PropPilot:
         return self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                   cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
                                   objective, ceiling=limit)
-
-    def probe_spin(self, ut, rpm_list):
-        """Each rotor's real spin sense about the model's axis: a blade's
-        angle about the hub between two ticks, against what +rpm and -rpm
-        would have turned it by in that time (the readings alias at 460
-        rpm, so a tick only votes when the two predictions differ)."""
-        cfg = self.cfg
-        todo = [k for k, s in enumerate(self.spin_sense) if s is None
-                and abs(rpm_list[self.model_rotors[k]]) > cfg.SPIN_PROBE_RPM]
-        if not todo or not cfg.TORQUE_COUNTER:
-            return
-        got = ask(self.conn, [(self.spin_parts[k][1].position, (self.frame,))
-                              for k in todo])
-        for k, pos in zip(todo, got):
-            if pos is None:
-                continue
-            r = self.model.rotors[k]
-            ax = tuple(a * r.spin for a in r.axis)
-            rel = tuple(p - h for p, h in zip(pos, self.hubs[k]))
-            e1 = tipping._unit(tipping._cross(ax, (1.0, 0.0, 0.0))
-                               if abs(ax[0]) < 0.9 else
-                               tipping._cross(ax, (0.0, 1.0, 0.0)))
-            e2 = tipping._cross(ax, e1)
-            theta = math.atan2(tipping._dot(rel, e2), tipping._dot(rel, e1))
-            seen = self.spin_seen[k]
-            self.spin_seen[k] = (ut, theta)
-            if seen is None or ut <= seen[0]:
-                continue
-            turn = abs(rpm_list[self.model_rotors[k]]) * math.pi / 30.0 * (
-                ut - seen[0])
-            d = theta - seen[1]
-
-            def miss(x):
-                return abs((x + math.pi) % (2.0 * math.pi) - math.pi)
-            plus, minus = miss(d - turn), miss(d + turn)
-            if abs(plus - minus) < math.radians(40.0):
-                continue
-            self.spin_votes[k] += 1 if plus < minus else -1
-            if abs(self.spin_votes[k]) >= cfg.SPIN_VOTES:
-                self.spin_sense[k] = 1.0 if self.spin_votes[k] > 0 else -1.0
-                if all(x is not None for x in self.spin_sense):
-                    self.log.event(ut, "rotor spin senses (x model): %s"
-                                   % "".join("+" if x > 0 else "-"
-                                             for x in self.spin_sense))
-
-    def counter_torque(self, flown, avail, trims):
-        """Set the trims to cancel the props' reaction torque, on top of
-        whatever trim the pilot has set (a trim that moved since we wrote
-        it is the pilot's)."""
-        cfg = self.cfg
-        if not cfg.TORQUE_COUNTER or trims is None or None in trims:
-            return
-        if self.trim_written is None:
-            self.user_trim = trims          # nothing of ours in it yet
-        elif all(any(abs(t - w) > 0.005 for t, w in zip(trims, ref))
-                 for ref in (self.trim_written,
-                             self.trim_prev or self.trim_written)):
-            # Neither of our last two writes: the pilot moved it.
-            self.user_trim = tuple(t - c for t, c in zip(trims, self.counter))
-        torque = (0.0, 0.0, 0.0)
-        if flown is not None and None not in self.spin_sense:
-            torque = tipping.reaction_torque(
-                self.model.rotors, [1000.0 * q for q in flown.torques],
-                self.spin_sense)
-        u = (tipping.counter_trim(torque, avail) if avail is not None
-             else (0.0, 0.0, 0.0))
-        want = tuple(max(-1.0, min(1.0, a + b))
-                     for a, b in zip(self.user_trim, u))
-        ref = self.trim_written if self.trim_written is not None else trims
-        if all(abs(a - b) < cfg.TRIM_WRITE_STEP for a, b in zip(want, ref)):
-            return
-        c = self.vessel.control
-        try:
-            c.pitch_trim, c.roll_trim, c.yaw_trim = want
-        except Exception:                               # noqa: BLE001
-            return
-        self.trim_prev = self.trim_written
-        self.trim_written = want
-        self.counter = tuple(w - a for w, a in zip(want, self.user_trim))
 
     def brake_objective(self, v_nose):
         """Reverse thrust while moving forward along the nose, forward thrust

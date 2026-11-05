@@ -44,7 +44,7 @@ def fly(vessel, log_dir, max_ut=1200.0, cfg=None):
 
     log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
     run = autoland.Autoland(conn, cfg, log)
-    run.gui.start_button.clicked = True       # press START on the first tick
+    run.gui.conn.krpc_lab_launcher.click("start")       # press START on the first tick
 
     def advance(_seconds):
         vessel.step(SIM_DT)
@@ -197,7 +197,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()                                   # STANDBY -> SEPARATION
         self.assertEqual(run.state, "SEPARATION")
 
@@ -230,7 +230,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()                                   # STANDBY -> SEPARATION
         self.assertEqual(run.state, "SEPARATION")
 
@@ -269,7 +269,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()
         for _ in range(200):
             if run.state != "SEPARATION":
@@ -443,7 +443,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.PREDICT_DT_VACUUM = 2.0
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
 
         promised = None
 
@@ -552,7 +552,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
 
         kicked = False
 
@@ -599,7 +599,7 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
 
         def advance(_seconds):
             vessel.step(SIM_DT)
@@ -825,9 +825,9 @@ class TestClosedLoop(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()                              # starts the sequence
-        run.gui.stop_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("terminate")
         run.tick()                              # terminate is handled first
         run.shutdown(run.exit_reason)
         log.close()
@@ -1043,7 +1043,7 @@ class TestThrottleWatchdog(unittest.TestCase):
         cfg.LOG_DIR = self.tmp.name
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()                                   # STANDBY -> SEPARATION
         for _ in range(6):
             # The game puts the throttle back up after every command, the way
@@ -1081,7 +1081,7 @@ class TestSeparationClearance(unittest.TestCase):
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         self.addCleanup(log.close)
         run = autoland.Autoland(conn, cfg, log)
-        run.gui.start_button.clicked = True
+        run.gui.conn.krpc_lab_launcher.click("start")
         run.tick()                                  # STANDBY -> SEPARATION
         return run, log
 

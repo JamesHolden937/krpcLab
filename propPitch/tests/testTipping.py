@@ -1,4 +1,4 @@
-"""The tip-over limit and the reaction-torque counter (propPitch/tipping.py)."""
+"""The tip-over limit (propPitch/tipping.py)."""
 
 import unittest
 
@@ -73,30 +73,6 @@ class TestTipping(unittest.TestCase):
     def test_contact_point(self):
         p = tipping.contact_point((-0.5, 1.0, 1.0), (0.5, 2.0, 2.0), UP)
         self.assertEqual(p, (0.0, 1.5, 2.0))
-
-
-class TestCounter(unittest.TestCase):
-    def test_pair_cancels(self):
-        r = Rotor((0.0, 1.0, 0.0), [])
-        t = tipping.reaction_torque([r, r], [5.0, 5.0], [1.0, -1.0])
-        self.assertEqual(t, (0.0, 0.0, 0.0))
-
-    def test_single_rotor(self):
-        """Blades resisting a spin along +y turn the airframe along -y;
-        the roll input that answers it makes +y torque (KSP applies -u)."""
-        r = Rotor((0.0, 1.0, 0.0), [])
-        t = tipping.reaction_torque([r], [5.0], [1.0])
-        self.assertEqual(t, (0.0, -5.0, 0.0))
-        u = tipping.counter_trim(t, ((10.0, 20.0, 10.0), (-10.0, -20.0, -10.0)))
-        self.assertEqual(u, (0.0, -0.25, 0.0))
-        self.assertEqual(tipping.reaction_torque([r], [5.0], [None]),
-                         (0.0, 0.0, 0.0))
-
-    def test_no_authority(self):
-        u = tipping.counter_trim((0.0, -5.0, 0.0), ((0, 0, 0), (0, 0, 0)))
-        self.assertEqual(u, (0.0, 0.0, 0.0))
-        u = tipping.counter_trim((0.0, -50.0, 0.0), ((0, 1, 0), (0, -1, 0)))
-        self.assertEqual(u, (0.0, -1.0, 0.0))
 
 
 if __name__ == "__main__":

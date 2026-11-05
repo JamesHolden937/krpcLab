@@ -35,76 +35,51 @@ class Stream:
         pass
 
 
-class RectTransform:
+class LauncherService:
+    """The krpcLab window mod's kRPC service (``launcherMod/``), as far as
+    ``common.panel.ControlPanel`` uses it: ``click`` stands in for the
+    player pressing a button."""
+
     def __init__(self):
-        self.size = (800, 600)
-        self.position = (0, 0)
+        self.controls = []
+        self.values = {}
+        self.body = ""
+        self.open = False
 
+    def _set(self, specs):
+        self.controls = list(specs)
+        for spec in specs:
+            f = spec.split("|")
+            if f[0] == "button":
+                self.values.setdefault(f[1], 0)
+            elif f[0] in ("toggle", "field", "choice"):
+                self.values.setdefault(f[1], f[3])
 
-class Widget:
-    def __init__(self, content=""):
-        self.rect_transform = RectTransform()
-        self.content = content
-        self.size = 12
-        self.color = (1, 1, 1)
-        self.alignment = None
-        self.line_spacing = 1.0
-        self.visible = True
+    def panel_open(self, title, accent, specs):
+        self.title, self.open = title, True
+        self._set(specs)
 
-    def remove(self):
+    def panel_controls(self, specs):
+        self._set(specs)
+
+    def panel_body(self, body):
+        self.body = body
+
+    def panel_read(self):
+        return ["%s=%s" % kv for kv in self.values.items()]
+
+    def panel_close(self):
+        self.open = False
+
+    def expect_scene_change(self, seconds):
         pass
 
+    def click(self, cid):
+        self.values[cid] = int(self.values.get(cid, 0)) + 1
 
-class Button(Widget):
-    def __init__(self, label):
-        super().__init__()
-        self.text = Widget(label)
-        self.clicked = False
-
-
-class Panel:
-    def __init__(self):
-        self.rect_transform = RectTransform()
-        self.texts, self.buttons, self.panels = [], [], []
-        self.visible = True
-
-    def add_panel(self):
-        panel = Panel()
-        self.panels.append(panel)
-        return panel
-
-    def add_text(self, content=""):
-        widget = Widget(content)
-        self.texts.append(widget)
-        return widget
-
-    def add_button(self, label):
-        button = Button(label)
-        self.buttons.append(button)
-        return button
-
-    def remove(self):
-        pass
-
-
-class Canvas:
-    def __init__(self):
-        self.rect_transform = RectTransform()
-        self.panels = []
-
-    def add_panel(self):
-        panel = Panel()
-        self.panels.append(panel)
-        return panel
-
-
-class UI:
-    class TextAnchor:
-        middle_center = "middle_center"
-        upper_left = "upper_left"
-
-    def __init__(self):
-        self.stock_canvas = Canvas()
+    def labels(self):
+        return [s.split("|")[2] for s in self.controls
+                if s.startswith("button|")]
 
 
 # --- the flight model -----------------------------------------------------
@@ -529,7 +504,7 @@ class SpaceCenter:
 class Connection:
     def __init__(self, vessel):
         self.space_center = SpaceCenter(vessel)
-        self.ui = UI()
+        self.krpc_lab_launcher = LauncherService()
         self.closed = False
 
     def add_stream(self, func, *args):

@@ -44,7 +44,7 @@ from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from common.rpccount import RpcCounter
 from boosterland.engines import allocate, group_engines
-from common.panel import ACCENT_BOOSTER, ControlPanel
+from common.panel import ACCENT_BOOSTER, ControlPanel, expect_scene_change
 from . import attitude, budget, turnshape
 from .config import Config, apply_overrides, defaults_fingerprint
 
@@ -1012,6 +1012,8 @@ def fly_booster(conn, ascent, args_set, pacing_game_time=False):
     sc = conn.space_center
     booster = ascent.booster_vessel
     ut = sc.ut
+    # Our own switch: the launcher must not stop us for it.
+    expect_scene_change(conn, 10.0)
     sc.active_vessel = booster
     deadline = time.time() + ascent.cfg.SWITCH_TIMEOUT_S
     while time.time() < deadline:

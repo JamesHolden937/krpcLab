@@ -78,20 +78,6 @@ class Config:
     BRAKE_TIP_BACKOFF_S: float = 0.3
     BRAKE_TIP_RISE_PER_S: float = 0.25
     BRAKE_TIP_CLIMB_G_PER_S: float = 0.1
-    # Cancel the props' reaction torque on the airframe: every rotor's blade
-    # load turns the airframe the other way about its axis (a net torque
-    # when the rotors do not pair off), and the pitch/roll/yaw trims are set
-    # to the input that makes the opposite torque from what the vessel has
-    # (kRPC available_torque), on top of the pilot's own trim.  Each rotor's
-    # real spin direction is measured once it turns faster than
-    # SPIN_PROBE_RPM: a blade's angle about the hub between ticks, against
-    # +/- rpm x dt (a blade has no rigidbody of its own to read a velocity
-    # from); decided once one sense leads by SPIN_VOTES ticks that tell
-    # them apart.  Until every rotor is known, no counter.
-    TORQUE_COUNTER: bool = True
-    SPIN_PROBE_RPM: float = 30.0
-    SPIN_VOTES: int = 5
-    TRIM_WRITE_STEP: float = 0.01
     # Disable every KAL robotic controller while flying (it would write the
     # blades' Deploy Angle back every frame); restored on shutdown.
     DISABLE_KAL: bool = True

@@ -1,5 +1,5 @@
 """How much prop thrust a plane on its wheels can take before it tips over
-a wheel, and what the props' turning does to the airframe.  No kRPC here.
+a wheel.  No kRPC here.
 
 **Tipping** (``thrust_bounds``).  The plane rests on its wheels; it starts
 to go over when the moment about the foremost (nose-over) or rearmost
@@ -116,34 +116,3 @@ def thrust_bounds(contacts, up, g, mass, accel, aero, hub, thrust_now,
             floor = limit if floor is None else max(floor, limit)
     return floor, ceiling
 
-
-def reaction_torque(rotors, torques, senses):
-    """The props' torque on the airframe (vessel frame, same units as
-    ``torques``): each rotor's blade load ``q`` (against its spin, as the
-    model scores it) turns the airframe by ``-q`` about its real spin
-    direction, ``sense`` x the model's (``None`` = not yet measured: 0)."""
-    out = [0.0, 0.0, 0.0]
-    for r, q, s in zip(rotors, torques, senses):
-        if s is None or q is None:
-            continue
-        k = -q * s * r.spin
-        for i in range(3):
-            out[i] += k * r.axis[i]
-    return tuple(out)
-
-
-def counter_trim(torque, available):
-    """The (pitch, roll, yaw) input that cancels ``torque`` (N m, vessel
-    frame): KSP turns an input ``u`` into ``-u x`` the available torque on
-    each axis (``ModuleReactionWheel.ActiveUpdate``: ReferenceTransform
-    rotation x -inputVector; control surfaces follow the same sense).
-    ``available`` is kRPC's ((+x, +y, +z), (-x, -y, -z)); an axis with no
-    authority gets 0.  Clamped to +/-1."""
-    out = []
-    pos, neg = available
-    for i in range(3):
-        need = -torque[i]                       # the torque to apply
-        cap = abs(pos[i]) if need >= 0.0 else abs(neg[i])
-        u = 0.0 if cap <= 0.0 else torque[i] / cap
-        out.append(max(-1.0, min(1.0, u)))
-    return tuple(out)

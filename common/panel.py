@@ -1,185 +1,231 @@
-"""The one in-game window every krpcLab panel draws in.
+"""An autopilot's in-game panel, drawn by the krpcLab window mod
+(``launcherMod/``, kRPC service ``KrpcLabLauncher``): a title in the
+autopilot's accent colour, a block of telemetry text and its controls --
+START and TERMINATE, and whatever buttons, checkboxes, number fields and
+choices the autopilot adds.  The mod is krpcLab's only UI: the launcher's
+menu is the same window, so pressing a launcher button reads as the window
+switching from the menu to the flight.
 
-The launcher and each autopilot share its geometry, so pressing a launcher
-button reads as the window switching from the menu to the flight's telemetry
-rather than a second window opening: the launcher hides its panel and the
-autopilot's appears in exactly the same place.
+The controls are described to the mod as strings and read back through one
+kRPC stream of ``PanelRead`` ("id=value" per control: a button's click
+count, a checkbox 1/0, a field's text, a choice's index), so polling them
+costs no call.  The service is reached by name strings because the
+bundle's minifier knows only the services in the game's
+``GameData/kRPC/*.json``.
 
-kRPC's UI service gives a panel no background colour, only KSP's translucent
-window sprite, whose white frame is uneven (2.5-5 px at 1280x720) and cannot
-be restyled.  So the root panel is an empty container of no size, which
-draws no sprite, and the window is drawn out of text: a rounded rectangle is
-two crossed rectangles and a circle in each corner.  A rectangle is a text
-element stuffed with more full-block glyphs than it can hold -- Unity wraps
-and truncates them to the element's own rect, so its edges are the rect's at
-any UI scale (glyph counts are not: the font is pixel-snapped, 1-3 px a
-glyph at small sizes) -- and a circle is one ``FILL_CIRCLE`` glyph.  A red
-shape the size of the window goes first and a black one inset by ``BORDER``
-over it, which leaves an even red frame with rounded corners.
+A game without the mod (``kspSim``, the offline fakes without one) gets a
+headless panel: nothing is drawn, START is never pressed (fly it with
+``--autostart``), TERMINATE never, and every control reads its default.
 """
 
-WIDTH = 300
-HEIGHT = 420
-MARGIN = 30          # from the left edge of the screen
+SERVICE = "krpc_lab_launcher"
 
-# OLED palette: true-black ground, dim greys, one accent per autopilot.
-BLACK = (0.0, 0.0, 0.0)
-TEXT = (0.85, 0.85, 0.85)
-DIM = (0.5, 0.5, 0.5)
-FRAME = (0.85, 0.0, 0.0)
 # Each autopilot's title colour.
 ACCENT_BOOSTER = (1.0, 0.75, 0.2)
 ACCENT_SPACEPLANE = (0.4, 0.8, 1.0)
+ACCENT_PROP = (0.5, 1.0, 0.5)
+ACCENT_AIRPLANE = (0.9, 0.6, 1.0)
 
-BORDER = 5           # frame width, canvas units (2 px at 1280x720)
-RADIUS = 16          # outer corner radius, canvas units
-
-FILL_GLYPH = u"█"
-FILL_SIZE = 5
-# More glyphs than the window holds at any UI scale (~9600 at 1280x720), and
-# under Unity's 16k-character limit for one text mesh.
-FILL_COUNT = 12000
-FILL_CIRCLE = u"●"
-# The circle's diameter, and how far below the line's centre it sits, per
-# unit of font size -- measured off ``SpaceCenter.screenshot`` at sizes 40
-# and 80.  Wrong, the corners bulge or notch where they meet the edges.
-CIRCLE_DIAMETER = 0.43
-CIRCLE_DROP = 0.045
+START = "start"
+TERMINATE = "terminate"
 
 
-def rgba(color):
-    """A text colour as the server takes it: kRPC 0.7 wants a
-    ``StdLib.ColorRGBA`` structure (an RGB tuple is refused); 0.6 and the
-    offline fakes take the tuple."""
-    try:
-        from krpc.services.stdlib import ColorRGBA
-    except ImportError:
-        return tuple(color)
-    c = tuple(float(x) for x in color)
-    return ColorRGBA(*(c + (1.0,) * (4 - len(c))))
+def service(conn):
+    """The window mod's kRPC service, or None when the game has no mod."""
+    return getattr(conn, SERVICE, None)
 
 
-def _text(conn, panel, content, size, position, rect, color):
-    text = panel.add_text(content)
-    text.rect_transform.size = rect
-    text.rect_transform.position = position
-    text.size = size
-    text.line_spacing = 1.0
-    text.color = rgba(color)
-    text.alignment = conn.ui.TextAnchor.middle_center
-    return text
-
-
-def _rounded(conn, panel, width, height, radius, color):
-    """A filled ``width`` x ``height`` rectangle with rounded corners,
-    centred on the panel."""
-    radius = max(0.0, min(radius, width / 2.0, height / 2.0))
-    fill = FILL_GLYPH * FILL_COUNT
-    _text(conn, panel, fill, FILL_SIZE, (0, 0),
-          (width, height - 2 * radius), color)
-    _text(conn, panel, fill, FILL_SIZE, (0, 0),
-          (width - 2 * radius, height), color)
-    if radius <= 0.0:
+def expect_scene_change(conn, seconds=30.0):
+    """Tell the launcher that a save load or vessel switch in the next
+    ``seconds`` is this autopilot's own doing, so it is not terminated for
+    it (the launcher stops an autopilot on any other)."""
+    svc = service(conn)
+    if svc is None:
         return
-    size = int(round(2.0 * radius / CIRCLE_DIAMETER))
-    drop = CIRCLE_DROP * size
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            _text(conn, panel, FILL_CIRCLE, size,
-                  (sx * (width / 2.0 - radius),
-                   sy * (height / 2.0 - radius) + drop),
-                  (3 * size, 3 * size), color)
+    try:
+        getattr(svc, "expect_scene_change")(float(seconds))
+    except Exception:                                   # noqa: BLE001
+        pass
 
 
-def window(conn):
-    """An opaque black panel with a thin red frame at the shared position;
-    add content to it."""
-    canvas = conn.ui.stock_canvas
-    screen = canvas.rect_transform.size
-    panel = canvas.add_panel()
-    rect = panel.rect_transform
-    rect.size = (0, 0)
-    rect.position = (WIDTH / 2 + MARGIN - screen[0] / 2, 0)
-    # Children draw in the order they are added, so the frame and the fill
-    # go first and everything the caller adds afterwards sits on top.
-    _rounded(conn, panel, WIDTH, HEIGHT, RADIUS, FRAME)
-    _rounded(conn, panel, WIDTH - 2 * BORDER, HEIGHT - 2 * BORDER,
-             RADIUS - BORDER, BLACK)
-    return panel
+def button(cid, label):
+    return ("button", cid, label)
+
+
+def toggle(cid, label, on=False):
+    return ("toggle", cid, label, bool(on))
+
+
+def field(cid, label, value):
+    return ("field", cid, label, str(value))
+
+
+def choice(cid, label, options, index=0):
+    return ("choice", cid, label, int(index), tuple(options))
+
+
+def note(text):
+    return ("label", "", text)
+
+
+def _spec(c):
+    kind, cid, label = c[0], c[1], c[2]
+    for s in (cid, label):
+        if "|" in s:
+            raise ValueError("'|' in a panel control: %r" % (c,))
+    if kind == "toggle":
+        return "toggle|%s|%s|%d" % (cid, label, 1 if c[3] else 0)
+    if kind == "field":
+        return "field|%s|%s|%s" % (cid, label, c[3])
+    if kind == "choice":
+        return "choice|%s|%s|%d|%s" % (cid, label, c[3], ";".join(c[4]))
+    return "%s|%s|%s" % (kind, cid, label)
+
+
+def _default(c):
+    kind = c[0]
+    if kind == "toggle":
+        return "1" if c[3] else "0"
+    if kind in ("field",):
+        return c[3]
+    if kind == "choice":
+        return str(c[3])
+    return "0"
 
 
 class ControlPanel:
     """START and TERMINATE under a title in the autopilot's ``accent``
-    colour, and a body of telemetry lines.  Button presses are read through
-    kRPC streams (cheap polling) and the ``clicked`` flag is reset here, as
-    in the kRPC user-interface tutorial."""
+    colour, a body of telemetry lines, and ``controls`` (built with
+    ``toggle``/``field``/``choice``/``button``/``note``) above them.
+    ``draw=False`` is the headless panel (an autopilot run inside another
+    one, whose panel is the one drawn)."""
 
-    WIDTH = WIDTH
-    HEIGHT = HEIGHT
-
-    def __init__(self, conn, title, start_label, accent):
+    def __init__(self, conn, title, start_label, accent, controls=(),
+                 draw=True):
         self.conn = conn
-        self.ui = conn.ui
-        self.panel = window(conn)
+        self.svc = service(conn) if draw else None
+        self.start_label = start_label
+        self.start_shown = True
+        self.controls = list(controls)
+        self.seen = {}
+        self.body = None
+        self.sent = None
+        self.stream = None
+        if self.svc is None:
+            return
+        self._body = getattr(self.svc, "panel_body")
+        self._controls = getattr(self.svc, "panel_controls")
+        self._close = getattr(self.svc, "panel_close")
+        self.sent = self._specs()
+        getattr(self.svc, "panel_open")(
+            title, " ".join("%.3f" % x for x in accent), self.sent)
+        self.stream = conn.add_stream(getattr(self.svc, "panel_read"))
+        # Clicks before this panel opened are not presses.
+        for cid, value in self._values().items():
+            self.seen[cid] = value
 
-        self.title = self.panel.add_text(title)
-        self.title.rect_transform.position = (0, self.HEIGHT / 2 - 25)
-        self.title.rect_transform.size = (self.WIDTH - 20, 24)
-        self.title.size = 16
-        self.title.color = rgba(accent)
-        self.title.alignment = self.ui.TextAnchor.middle_center
+    def _specs(self):
+        out = [_spec(c) for c in self.controls]
+        if self.start_shown:
+            out.append(_spec(button(START, self.start_label)))
+        out.append(_spec(button(TERMINATE, "TERMINATE SCRIPT")))
+        return out
 
-        self.body = self.panel.add_text("standing by")
-        self.body.rect_transform.position = (0, 20)
-        self.body.rect_transform.size = (self.WIDTH - 24, self.HEIGHT - 130)
-        self.body.size = 13
-        self.body.color = rgba(TEXT)
-        self.body.alignment = self.ui.TextAnchor.upper_left
+    def _send(self):
+        if self.svc is None:
+            return
+        specs = self._specs()
+        if specs != self.sent:
+            self._controls(specs)
+            self.sent = specs
 
-        self.start_button = self.panel.add_button(start_label)
-        self.start_button.rect_transform.position = (0, -self.HEIGHT / 2 + 60)
-        self.start_button.rect_transform.size = (self.WIDTH - 40, 32)
-
-        self.stop_button = self.panel.add_button("TERMINATE SCRIPT")
-        self.stop_button.rect_transform.position = (0, -self.HEIGHT / 2 + 24)
-        self.stop_button.rect_transform.size = (self.WIDTH - 40, 32)
-
-        self._start_clicked = conn.add_stream(
-            getattr, self.start_button, "clicked")
-        self._stop_clicked = conn.add_stream(
-            getattr, self.stop_button, "clicked")
+    def _values(self):
+        if self.stream is None:
+            return {}
+        try:
+            got = self.stream()
+        except Exception:                               # noqa: BLE001
+            return {}
+        out = {}
+        for item in got or ():
+            k, _, v = item.partition("=")
+            out[k] = v
+        return out
 
     # -- input -------------------------------------------------------------
+    def pressed(self, cid):
+        """Whether button ``cid`` was clicked since the last call."""
+        values = self._values()
+        if cid not in values:
+            return False
+        try:
+            count = int(values[cid])
+        except ValueError:
+            return False
+        last = int(self.seen.get(cid, count))
+        self.seen[cid] = count
+        return count > last
+
+    def value(self, cid):
+        """A control's value: a checkbox's bool, a field's text, a choice's
+        index; its default when the player has not set it (or no mod)."""
+        spec = next((c for c in self.controls if c[1] == cid), None)
+        if spec is None:
+            raise KeyError(cid)
+        raw = self._values().get(cid, _default(spec))
+        if spec[0] == "toggle":
+            return raw == "1"
+        if spec[0] == "choice":
+            try:
+                return int(raw)
+            except ValueError:
+                return spec[3]
+        return raw
+
+    def number(self, cid, default):
+        """A field's value as a float, ``default`` when it does not parse."""
+        try:
+            return float(self.value(cid))
+        except (TypeError, ValueError):
+            return default
+
     def start_pressed(self):
-        if self._start_clicked():
-            self.start_button.clicked = False
-            return True
-        return False
+        return self.pressed(START)
 
     def terminate_pressed(self):
-        if self._stop_clicked():
-            self.stop_button.clicked = False
-            return True
-        return False
+        return self.pressed(TERMINATE)
 
     def hide_start(self):
-        """``--autostart``: the flight is already running, so no START."""
-        self.start_button.visible = False
+        """``--autostart``, or started: the flight is running, so no START."""
+        self.start_shown = False
+        self._send()
 
     def set_start_label(self, text):
-        self.start_button.text.content = text
+        self.start_label = text
+        if self.start_shown:
+            self._send()
+
+    def set_controls(self, controls):
+        self.controls = list(controls)
+        self._send()
 
     # -- output ------------------------------------------------------------
     def update(self, lines):
-        self.body.content = "\n".join(lines)
+        if self.svc is None:
+            return
+        body = "\n".join(lines)
+        if body != self.body:
+            self._body(body)
+            self.body = body
 
     def close(self):
-        for stream in (self._start_clicked, self._stop_clicked):
+        if self.stream is not None:
             try:
-                stream.remove()
-            except Exception:                       # noqa: BLE001
+                self.stream.remove()
+            except Exception:                           # noqa: BLE001
                 pass
-        try:
-            self.panel.remove()
-        except Exception:                           # noqa: BLE001
-            pass
+        if self.svc is not None:
+            try:
+                self._close()
+            except Exception:                           # noqa: BLE001
+                pass

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Build the launcher's window mod (KrpcLabLauncher.dll) and install it into
-# the farm (base/ and every clone) and the live game.
+# Build the krpcLab window mod (KrpcLabLauncher.dll) -- the launcher's menu,
+# every autopilot's panel, START SCRIPT -- and install it into the farm
+# (base/ and every clone) and the live game, with PluginData/launch.cfg
+# naming this checkout (START SCRIPT runs its ./run.sh).
 #
 #   launcherMod/build.sh
 #
@@ -26,6 +28,10 @@ install_into() {   # $1: a game directory
     [ -d "$g/kRPC" ] || return 0
     mkdir -p "$g/KrpcLabLauncher/Plugins"
     cp -f --remove-destination "$BIN/KrpcLabLauncher.dll" "$g/KrpcLabLauncher/Plugins/"
+    # where START SCRIPT finds ./run.sh
+    mkdir -p "$g/KrpcLabLauncher/PluginData"
+    printf 'root=%s\nhome=%s\n' "$(cd "$ROOT" && pwd)" "$HOME" \
+        > "$g/KrpcLabLauncher/PluginData/launch.cfg"
 }
 for d in "$ROOT/testInstances/base" "$ROOT"/testInstances/ksp[0-9]*; do install_into "$d"; done
 install_into "${KSP_LIVE:-$HOME/Kerbal Space Program}"
