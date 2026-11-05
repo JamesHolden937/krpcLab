@@ -165,6 +165,10 @@ class PropPilot:
         self.last_grounded = None
         self.last_pitch = None
         self.tip_k = 1.0
+        self.tip_climb = 0.0
+        self.tip_base = None
+        self.tip_computed = False
+        self.tip_contacts = set()
         self.tip_backoff_ut = -1e9
         self.tip_note = "-"
         self.last_flown = None
@@ -172,6 +176,8 @@ class PropPilot:
         # its measured spin sense, and the trims (the pilot's own, ours).
         self.spin_parts = []
         self.spin_sense = []
+        self.spin_seen = []
+        self.spin_votes = []
         self.hubs = []
         self.user_trim = None
         self.trim_written = None
@@ -370,6 +376,8 @@ class PropPilot:
         self.spin_parts = [(self.rotors[i].part, first_blade[i])
                            for i in self.model_rotors]
         self.spin_sense = [None] * len(self.model_rotors)
+        self.spin_seen = [None] * len(self.model_rotors)
+        self.spin_votes = [0] * len(self.model_rotors)
         rotors = [r for _, r in rotors if r.blades]
         signs = choose_signs(rotors, self.cfg.ROTOR_RPM)
         self.model = PropModel(rotors)
@@ -547,6 +555,10 @@ class PropPilot:
             self.braking = braking
             self.held = False
             self.tip_k = 1.0
+            self.tip_climb = 0.0
+            self.tip_base = None
+            self.tip_computed = False
+            self.tip_contacts = set()
             self.log.event(ut, "prop brake %s" % ("on" if braking else "off"))
         objective = MOST_FORWARD
         if braking and v_air is not None:
@@ -600,7 +612,10 @@ class PropPilot:
             opt = self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                      cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
                                      objective)
-            if braking and cfg.BRAKE_TIP_LIMIT and grounded and any(grounded):
+            # Once this brake has touched the ground, a bounce (every wheel
+            # up for a moment) keeps the limit.
+            if (braking and cfg.BRAKE_TIP_LIMIT and grounded
+                    and (any(grounded) or self.tip_contacts)):
                 opt = self.tip_limited(ut, opt, objective, targets, v_air, rho,
                                        sound, lo, hi, up, pitch, grounded,
                                        mass, force, dt)
@@ -688,19 +703,24 @@ class PropPilot:
                 else 0.0)
         self.last_grounded = list(grounded)
         self.last_pitch = pitch
-        if lifted or rate > cfg.BRAKE_TIP_RATE_DEG_S:
-            if ut - self.tip_backoff_ut >= cfg.BRAKE_TIP_BACKOFF_S:
-                self.tip_k *= 0.5
-                self.tip_backoff_ut = ut
-                self.log.event(ut, "tip: %s, braking x%.2f" % (
-                    "a wheel left the ground" if lifted
-                    else "pitch %.1f deg/s" % rate, self.tip_k))
-        elif dt > 0.0:
+        symptom = lifted or rate > cfg.BRAKE_TIP_RATE_DEG_S
+        if symptom and ut - self.tip_backoff_ut >= cfg.BRAKE_TIP_BACKOFF_S:
+            self.tip_k *= 0.5
+            self.tip_climb *= 0.5
+            self.tip_backoff_ut = ut
+            self.log.event(ut, "tip: %s, braking x%.2f" % (
+                "a wheel left the ground" if lifted
+                else "pitch %.1f deg/s" % rate, self.tip_k))
+        elif not symptom and dt > 0.0:
             self.tip_k = min(1.0, self.tip_k + cfg.BRAKE_TIP_RISE_PER_S * dt)
-        bounds = None
+            self.tip_climb += cfg.BRAKE_TIP_CLIMB_G_PER_S * dt
+        # Every wheel on the ground since Brakes went on.
+        self.tip_contacts.update(i for i, gr in enumerate(grounded) if gr)
+        reverse = objective == MOST_REVERSE
         if up is not None and mass and force is not None and self.wheel_boxes:
             contacts = [tipping.contact_point(bx[0], bx[1], up)
-                        for bx, gr in zip(self.wheel_boxes, grounded) if gr]
+                        for i, bx in enumerate(self.wheel_boxes)
+                        if i in self.tip_contacts]
             last = self.last_flown
             w = ([abs(t) for t in last.thrusts] if last is not None
                  and last.thrusts else [1.0] * len(self.hubs))
@@ -712,56 +732,77 @@ class PropPilot:
                 contacts, up, self.g, mass, self.accel, force, hub,
                 1000.0 * last.thrust if last is not None else 0.0,
                 cfg.BRAKE_TIP_MARGIN)
-        k = self.tip_k
-        if objective == MOST_REVERSE:
-            base = (bounds[0] / 1000.0 if bounds is not None
-                    and bounds[0] is not None else None)
-            floor = k * (min(0.0, base) if base is not None else opt.thrust)
-            self.tip_note = "%+.1fkN%s x%.2f" % (
-                floor, "" if base is not None else " (climb)", k)
-            if opt.thrust >= floor:
-                return opt
+            if bounds is not None:
+                # No bound on this side: the props cannot tip it this way.
+                b = bounds[0] if reverse else bounds[1]
+                self.tip_base = (None if b is None else
+                                 min(0.0, b / 1000.0) if reverse
+                                 else max(0.0, b / 1000.0))
+                self.tip_computed = True
+        if self.tip_computed and self.tip_base is None:
+            return opt
+        if self.tip_base is not None:
+            limit = self.tip_k * self.tip_base
+            how = "x%.2f" % self.tip_k
+        else:
+            # Never computed: climb from nothing in m g per second.
+            limit = (self.tip_climb * (mass or 0.0) * self.g / 1000.0
+                     * (-1.0 if reverse else 1.0))
+            how = "(climb %.2f g)" % self.tip_climb
+        self.tip_note = "%+.1fkN %s" % (limit, how)
+        if (opt.thrust >= limit) if reverse else (opt.thrust <= limit):
+            return opt
+        if reverse:
             return self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                       cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
-                                      objective, floor=floor)
-        base = (bounds[1] / 1000.0 if bounds is not None
-                and bounds[1] is not None else None)
-        ceiling = k * (max(0.0, base) if base is not None else opt.thrust)
-        self.tip_note = "%+.1fkN%s x%.2f" % (
-            ceiling, "" if base is not None else " (climb)", k)
-        if opt.thrust <= ceiling:
-            return opt
+                                      objective, floor=limit)
         return self.model.optimum(targets, v_air, rho, sound, lo, hi,
                                   cfg.SEARCH_STEP_DEG, cfg.SEARCH_TOL_DEG,
-                                  objective, ceiling=ceiling)
+                                  objective, ceiling=limit)
 
     def probe_spin(self, ut, rpm_list):
-        """Each rotor's real spin direction, once it turns: a blade's
-        velocity about the hub (vessel frame), against the model's axis."""
+        """Each rotor's real spin sense about the model's axis: a blade's
+        angle about the hub between two ticks, against what +rpm and -rpm
+        would have turned it by in that time (the readings alias at 460
+        rpm, so a tick only votes when the two predictions differ)."""
+        cfg = self.cfg
         todo = [k for k, s in enumerate(self.spin_sense) if s is None
-                and abs(rpm_list[self.model_rotors[k]])
-                > self.cfg.SPIN_PROBE_RPM]
-        if not todo or not self.cfg.TORQUE_COUNTER:
+                and abs(rpm_list[self.model_rotors[k]]) > cfg.SPIN_PROBE_RPM]
+        if not todo or not cfg.TORQUE_COUNTER:
             return
-        calls = []
-        for k in todo:
-            rp, bp = self.spin_parts[k]
-            calls += [(rp.position, (self.frame,)), (bp.position, (self.frame,)),
-                      (bp.velocity, (self.frame,))]
-        got = ask(self.conn, calls)
-        for i, k in enumerate(todo):
-            hub, pos, vel = got[3 * i:3 * i + 3]
-            if None in (hub, pos, vel):
+        got = ask(self.conn, [(self.spin_parts[k][1].position, (self.frame,))
+                              for k in todo])
+        for k, pos in zip(todo, got):
+            if pos is None:
                 continue
             r = self.model.rotors[k]
-            rel = tuple(p - h for p, h in zip(pos, hub))
-            turn = tipping._dot(tipping._cross(rel, vel),
-                                tuple(a * r.spin for a in r.axis))
-            if abs(turn) > 1e-3:
-                self.spin_sense[k] = 1.0 if turn > 0 else -1.0
-        if all(s is not None for s in self.spin_sense):
-            self.log.event(ut, "rotor spin senses (x model): %s" % "".join(
-                "+" if s > 0 else "-" for s in self.spin_sense))
+            ax = tuple(a * r.spin for a in r.axis)
+            rel = tuple(p - h for p, h in zip(pos, self.hubs[k]))
+            e1 = tipping._unit(tipping._cross(ax, (1.0, 0.0, 0.0))
+                               if abs(ax[0]) < 0.9 else
+                               tipping._cross(ax, (0.0, 1.0, 0.0)))
+            e2 = tipping._cross(ax, e1)
+            theta = math.atan2(tipping._dot(rel, e2), tipping._dot(rel, e1))
+            seen = self.spin_seen[k]
+            self.spin_seen[k] = (ut, theta)
+            if seen is None or ut <= seen[0]:
+                continue
+            turn = abs(rpm_list[self.model_rotors[k]]) * math.pi / 30.0 * (
+                ut - seen[0])
+            d = theta - seen[1]
+
+            def miss(x):
+                return abs((x + math.pi) % (2.0 * math.pi) - math.pi)
+            plus, minus = miss(d - turn), miss(d + turn)
+            if abs(plus - minus) < math.radians(40.0):
+                continue
+            self.spin_votes[k] += 1 if plus < minus else -1
+            if abs(self.spin_votes[k]) >= cfg.SPIN_VOTES:
+                self.spin_sense[k] = 1.0 if self.spin_votes[k] > 0 else -1.0
+                if all(x is not None for x in self.spin_sense):
+                    self.log.event(ut, "rotor spin senses (x model): %s"
+                                   % "".join("+" if x > 0 else "-"
+                                             for x in self.spin_sense))
 
     def counter_torque(self, flown, avail, trims):
         """Set the trims to cancel the props' reaction torque, on top of
@@ -778,7 +819,7 @@ class PropPilot:
             # Neither of our last two writes: the pilot moved it.
             self.user_trim = tuple(t - c for t, c in zip(trims, self.counter))
         torque = (0.0, 0.0, 0.0)
-        if flown is not None:
+        if flown is not None and None not in self.spin_sense:
             torque = tipping.reaction_torque(
                 self.model.rotors, [1000.0 * q for q in flown.torques],
                 self.spin_sense)
