@@ -72,7 +72,7 @@ class Config:
     # the ground: one wheel, a row across), the hill climb is the whole
     # limit: from no thrust, up by BRAKE_TIP_CLIMB_G_PER_S of m g per second,
     # halved the same way.
-    BRAKE_TIP_RATE_DEG_S: float = 4.0
+    BRAKE_TIP_RATE_DEG_S: float = 10.0
     BRAKE_TIP_BACKOFF_S: float = 0.3
     BRAKE_TIP_RISE_PER_S: float = 0.25
     BRAKE_TIP_CLIMB_G_PER_S: float = 0.1

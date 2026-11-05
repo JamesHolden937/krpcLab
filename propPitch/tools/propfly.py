@@ -56,6 +56,10 @@ def fly_plane(rpc, stream, args, stop):
                 cut = True
                 ctl.throttle = 0.0         # the props feather (THROTTLE_FEATHER)
             if args.brake_at and spd > args.brake_at and not ctl.brakes:
+                if args.wheel_brakes is not None:
+                    for w in v.parts.wheels:
+                        if w.has_brakes:
+                            w.brakes = args.wheel_brakes
                 ctl.brakes = True          # the props brake (PROP_BRAKE)
             if not airborne:
                 pitch = args.climb_pitch if spd > args.takeoff_speed else 0.0
@@ -106,6 +110,9 @@ def main():
                    help="cut the throttle once past this speed (m/s; 0 = never)")
     p.add_argument("--brake-at", type=float, default=0.0,
                    help="press Brakes once past this speed (m/s; 0 = never)")
+    p.add_argument("--wheel-brakes", type=float, default=None,
+                   help="set every wheel's brake force (percent) as Brakes "
+                        "goes on (default: the craft's)")
     p.add_argument("--throttle", type=float, default=1.0,
                    help="throttle held (sets the rotors' rpm limit)")
     p.add_argument("--set", action="append", default=[])

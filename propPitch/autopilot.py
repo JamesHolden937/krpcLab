@@ -728,10 +728,19 @@ class PropPilot:
                 w = [1.0] * len(self.hubs)
             hub = tuple(sum(wi * h[i] for wi, h in zip(w, self.hubs)) / sum(w)
                         for i in range(3))
-            bounds = tipping.thrust_bounds(
-                contacts, up, self.g, mass, self.accel, force, hub,
-                1000.0 * last.thrust if last is not None else 0.0,
-                cfg.BRAKE_TIP_MARGIN)
+            t_now = 1000.0 * last.thrust if last is not None else 0.0
+            # Twice: with the measured deceleration (the wheel brakes' share
+            # in it, but filtered, so it lags a thrust that just swung), and
+            # with the aero force's alone (no lag, no wheel friction); the
+            # stricter of the two.
+            aero_h = tipping._sub(force, tipping._scale(
+                up, tipping._dot(force, up)))
+            bounds = tipping.stricter(
+                tipping.thrust_bounds(contacts, up, self.g, mass, self.accel,
+                                      force, hub, t_now, cfg.BRAKE_TIP_MARGIN),
+                tipping.thrust_bounds(contacts, up, self.g, mass,
+                                      tipping._scale(aero_h, 1.0 / mass),
+                                      force, hub, t_now, cfg.BRAKE_TIP_MARGIN))
             if bounds is not None:
                 # No bound on this side: the props cannot tip it this way.
                 b = bounds[0] if reverse else bounds[1]
