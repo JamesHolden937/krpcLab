@@ -17,7 +17,10 @@ KSP="${KSP:-$ROOT/testInstances/base}"
 M="$KSP/KSP_x64_Data/Managed"
 BIN="$HERE/bin"
 mkdir -p "$BIN"
-mcs -optimize -nologo -target:library -out:"$BIN/KrpcLabLauncher.dll" \
+# against the game's own mscorlib: the system Mono's has overloads KSP's lacks
+# (string.Split(char, StringSplitOptions) bound silently and failed at runtime)
+mcs -optimize -nologo -target:library -nostdlib -noconfig \
+    -r:"$M/mscorlib.dll" -r:"$M/System.dll" -r:"$M/System.Core.dll" -out:"$BIN/KrpcLabLauncher.dll" \
     -r:"$M/Assembly-CSharp.dll" -r:"$M/Assembly-CSharp-firstpass.dll" -r:"$M/UnityEngine.CoreModule.dll" \
     -r:"$M/UnityEngine.dll" -r:"$M/UnityEngine.UI.dll" -r:"$M/UnityEngine.IMGUIModule.dll" \
     -r:"$M/UnityEngine.TextRenderingModule.dll" -r:"$M/UnityEngine.InputLegacyModule.dll" -r:"$M/UnityEngine.AnimationModule.dll" \
