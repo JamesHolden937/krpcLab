@@ -155,11 +155,13 @@ Fixed at the source: the child is started in its own session and reaped in a
 an instance is behaving strangely:
 
 ```bash
-pgrep -af spaceplane.autopilot        # should be one per busy instance
+pgrepf -a spaceplane.autopilot        # should be one per busy instance
 ```
 
 More than one on a port means a batch was killed and the old flight is still
-running; `pkill -9 -f spaceplane.autopilot` before measuring anything.
+running; `pkillf -9 spaceplane.autopilot` before measuring anything.
+(`pgrepf`/`pkillf` are `pgrep -f`/`pkill -f` that skip the calling shell,
+`~/.local/bin`; a global Claude Code hook refuses the raw `-f` forms.)
 
 **Three ways a batch lies about itself, all paid for in one session:**
 

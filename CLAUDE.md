@@ -191,7 +191,7 @@ need no third-party packages.
   these are up.
 
 **Three things make a farm batch a lie, and none of them announce it.**
-`pgrep -af 'krpcLab.py --pilot spaceplane'` should show exactly one per busy instance --
+`pgrepf -a 'krpcLab.py --pilot spaceplane'` should show exactly one per busy instance --
 the harness runs the flight as a *child*, so a killed batch used to leave it
 flying (fixed, but check). `testInstances/syncSaves.sh check` should say every
 instance matches `saves/` -- each clone keeps its own quicksaves and they drift

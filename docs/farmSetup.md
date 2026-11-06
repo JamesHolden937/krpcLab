@@ -129,5 +129,5 @@ minute or two. That is not a hang (`keepNotes.md` has the one that is).
 - `testInstances/actuators.py` on a craft before any other work with it.
 - `swapon --show` should be near zero before and after a batch. Restart the
   farm between sessions: hours of flying bias the results.
-- `pgrep -af spaceplane.autopilot` should show one process per busy instance
+- `pgrepf -a spaceplane.autopilot` should show one process per busy instance
   and none once the batch is over.
