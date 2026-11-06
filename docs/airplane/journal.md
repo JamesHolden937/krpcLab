@@ -53,3 +53,77 @@ the command is slew-limited. Offline grid (accel 1/3/8/20 rad/s^2, slew
 0.4/0.6/1.67/3 travel/s, 0.2 rad/s steps, one tick latency): overshoot
 sized on the tick 0.044-0.763 rad/s, slew-aware 0.000-0.048; the command
 slew alone is most of it at fast settings. Unflown.
+
+## 2026-11-05 evening: first flights -- the Warbird, the farm harness, gains measured in flight (fingerprint `b3fd31af`)
+
+The user: "both hold and cruise is very oscillation prone. fix the issue"
+and test on the "Electric Warbird" from now on, spawned flying at 200 m/s,
+100 m, full throttle; then "use the prop pitch autopilot" and "make sure to
+apply some input during cruise".
+
+**Test bed.** `saves/qs_warbird` (level, 101.8 m, 200.6 m/s, heading 090
+over the water, full throttle). Made by `airplane/tools/airstart.py`, which
+*flies* it there from runway 09 (kRPC's autopilot on the controls,
+propPitch on the blades, the throttle holding 200 m/s while it levels, full
+throttle set at the paused save point). Editing a runway save into the air
+was tried first and abandoned: the rotor starts at rest, its spin-up rolls
+the plane (-24 deg before the first paused frame) and the stopped blades
+brake it at ~50 m/s^2; spawned at 150 m/s it slowed to 23 m/s in 18 s and
+fell in. Without propPitch the plane does not move at full throttle (the
+blades are not at a thrusting pitch).
+
+**Harness.** `airplane/tools/airfly.py` loads the save paused, runs the
+pilot with `PROP_PLANE`, unpauses and flies pulses. A second kRPC client
+cannot play the stick (kRPC 0.7: one `manualInputs` per vessel, so its
+writes replace the pilot's), so the window mod gained `TestStick`: it adds
+to `ctrlState` in `OnPreAutopilotUpdate`, which `Vessel.FeedInputFeed` runs
+before `OnFlyByWire` (where kRPC adds its input) -- the pilot reads it
+exactly as the player's stick. Trims are the hidden disturbance. Schedule:
+bank right, reverse, level, pitch up, pitch down, rudder kick, an
+out-of-trim roll. Summary: attitude error rms/peak, rate rms, rate
+reversals per second, quiet windows and overall.
+
+**The user's live LOG15261** (defaults `570902c5`): pitch kp 0.07 at 300
+m/s (kRPC: 2958 deg/s^2 per unit), the nose 8 deg off its target for 10 s;
+after stick releases the bank swung -89 -> -91 -> -65 -> -50 against -41,
+roll rate -216 -> +180 deg/s, `roll ringing` repeatedly.
+
+**Measured (LOG15265, regression of rate change on input at 0.1 s):** roll
+2164 deg/s^2 per unit, damping 1.2/s (kRPC 585: **3.7x low**, the gain too
+high, it rang and overshot 46 deg); pitch 675, damping 4.8/s (kRPC 2958:
+**4.4x high**, gain too low, and the old integral `kp/(4 tau)` 15x short
+of what the damped axis needs). Yaw unidentifiable at that resolution.
+
+**What was tried, in order (each an interleaved batch, restarted farm):**
+1. Batch 1, stick pulses of 0.15 for 0.6 s: banked the Warbird **85 deg**
+   (it rolls ~180 deg/s at 0.15). CRUISE held the bank in its 4 g turn
+   (11.5 g needed at 85) and spiralled into the sea from 100 m -- 5 of 6
+   CRUISE flights, both laws. A test problem, not oscillation; pulses cut
+   to 0.05 x 0.5 s (~30 deg). The RLS fit on every tick also showed yaw
+   sliding to k 0.06 under feedback (no excitation) and ringing.
+2. Batch 2 (fit gated to ticks whose input stepped): pitch error 3-5x
+   down, roll reversals 2-4x down; roll settled slowly, HOLD yaw rang more.
+3. Batch 3 (fit over a 1 s window after each step, mean-rate regressor,
+   covariance cap 100 -- the cap of 10 acted as a prior, k 0.20 for 0.25
+   offline): same picture; roll peaks traced to the out-of-trim gust only
+   (13-17 deg against 5 on the old law; after stick inputs both 3-6 deg).
+4. Batch 4: `RATE_TAU_TICKS` 2.5 against 4: no faster roll, more pitch/yaw
+   ringing. Stays 4.
+5. Batch 5: the fit trusted as far as it explains the rate (`k^quality`,
+   `quality x d`). HOLD's cross-controlled yaw had fitted k 0.1-0.3
+   explaining little. Result, 3 flights an arm (LOG15363-15382):
+   CRUISE roll err 1.4 v 1.6, reversals 0.36 v 0.98/s, pitch 0.5 v 2.9,
+   yaw 0.1 v 0.3; HOLD roll 1.3 v 1.3, reversals 0.70 v 1.23/s, pitch 0.9 v
+   2.9, yaw 1.1 v 2.1 (reversals 0.69 v 0.64). Promoted; `PLANT_FIT` and
+   `rate_gains` deleted.
+
+**Known costs:** the out-of-trim roll gust (0.05 trim, ~90 deg/s worth)
+peaks 12-16 deg against ~5-7 on the old, stiffer law, with no swing; HOLD
+pitch reversals 0.96 v 0.80/s (small). The pole placement's stronger
+integral overshoots a slow-surface step by 0.058 rad/s offline where the
+old law did 0.048.
+
+**Traps paid:** `pkill -f <pattern>` from a Bash call matches the call's
+own shell (exit 144); a killed `airstart` left two instances whose next
+`launch_vessel` never returned -- restart the farm. Setting
+`krpc.paused` outside flight throws (PauseMenu.Close).

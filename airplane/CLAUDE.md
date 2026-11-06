@@ -34,24 +34,33 @@ axes' own motion (`d(axis)/dt = w x axis`, the convention measured for the
 spaceplane). Senses: pitch +1 nose up, roll +1 right, yaw +1 nose right.
 SAS is turned off while flying and put back.
 
-**No gain is fitted to a craft** (the user, 2026-11-05: "shouldn't you use
-something that adapts to the plane?"). Per axis, the authority is kRPC's
-`available_torque` / `moment_of_inertia` -- wheels, RCS, gimbals and the
-surfaces *at the present q and Mach* -- re-read every
-`AUTHORITY_REFRESH_S` (`control.authority`); `kp = 1 / (accel x tau)`,
-`ki = kp / (INTEGRAL_TAU_FACTOR x tau)` (`control.rate_gains`). tau is
-`RATE_TAU_TICKS` (4) of the loop's own measured interval (>= 0.15 s): the
-loop is as fast as it can serve, not as fast as a table says. What is left
-is design, the same for every craft. kRPC *models* the surfaces; where its
-figure is high the loop rings, and `control.Ringing` halves that axis's
-gain (4 reversals of 0.15 in 2 s; floor 1/8) and lets it recover at
-0.05/s. Offline, a 1-tick-latency plant whose real authority is 0.25x-8x
-kRPC's settles on every step (backstop cutting to 0.33 at 8x). Not chosen:
-identifying the effectiveness from differenced rates (INDI) --
-`SURFACE_OWN` did that for the spaceplane on 2026-10-21 and kRPC's tick
-made it too noisy to fly (0/12). Log `kp=`, `acc=` (deg/s^2 per unit
-input), `ring=`, `tau=`; events `authority ...` at START, `<axis> ringing:
-gain xN`.
+**No gain is fitted to a craft by hand; each axis is measured in flight.**
+kRPC's `available_torque` / `moment_of_inertia` (wheels, RCS, gimbals and
+the surfaces *at the present q and Mach*, re-read every
+`AUTHORITY_REFRESH_S`, `control.authority`) is only the starting point:
+it is a model, and on the Electric Warbird it reads roll 3.7x low and
+pitch 4.4x high. `control.Plant` fits each axis's `w' = k accel u - d w +
+c` (effect relative to kRPC's figure, the airframe's own rate damping, the
+out-of-trim acceleration) by recursive least squares, forgetting over
+`PLANT_FORGET_S` 10 s, on the input actually flown (ours + the player's
+stick + the trim) against the rate's change over the next tick (the tick's
+mean rate as regressor). Only the `PLANT_WINDOW_S` 1 s after an input step
+of `PLANT_EXCITE` 0.01 is fitted -- in a steady hold the input moves only
+as feedback and the fit would slide; the covariance is capped at
+`PLANT_P_MAX` 100. What is used is trusted as far as the fit explains the
+rate (`quality`, 0..1): `k^quality` and `quality x d`, so an axis the
+per-axis model cannot explain (HOLD's yaw, cross-controlled against a
+held bank) stays near kRPC's figure. `control.pi_gains` puts both poles of
+the rate loop at `-1/tau` on the measured plant: `kp = (2/tau - d) /
+effect` (>= 0), `ki = 1/(tau^2 effect)`. tau is `RATE_TAU_TICKS` (4) of the
+loop's own measured interval (>= 0.15 s) and the surfaces' travel (below):
+the loop is as fast as it can serve. Where the loop still rings,
+`control.Ringing` halves that axis's gain (4 reversals of 0.15 in 2 s;
+floor 1/8) and lets it recover at 0.05/s. This is not INDI (the
+spaceplane's `SURFACE_OWN`, too noisy at kRPC's tick): the fit averages
+hundreds of ticks and sets only the gains, never the command. Log `kp=`,
+`acc=` (kRPC, deg/s^2 per unit input), `k=`, `d=`, `fitq=`, `ring=`,
+`tau=`; events `authority ...` at START, `<axis> ringing: gain xN`.
 
 **The surfaces take time to move** (the user, 2026-11-05). KSP slews a
 surface's input and angle at `actuatorSpeed` deg/s over `ctrlSurfaceRange`
@@ -62,13 +71,16 @@ them, with each surface's and the vessel's potential torque, every
 `AUTHORITY_REFRESH_S`. Per axis (`control.actuators`): slew = full travel
 per second, torque-weighted harmonically, wheels/RCS/gimbals instant; lag
 of exponential surfaces. Then (`control.closing_time`) each axis's tau is
-at least `sqrt(SLEW_FACTOR x cap / (accel x slew))` -- the surfaces must
+at least `sqrt(SLEW_FACTOR x cap / (accel x slew))` -- on **kRPC's** figure,
+not the measured effect: with the measured effect roll's tau fell 0.37 ->
+0.26 s and it rang (journal 2026-11-05 evening); this floor holds roll at
+a closing time the per-axis model does not explain -- the surfaces must
 reach the input a step of the axis's rate cap needs within half the
 closing time -- and `LAG_FACTOR` x the lag; and `RateLoop` never moves the
 command faster than the slew (its integral does not wind against it).
 Offline (`TestSlowSurfaces`, a slewed plant with a tick of latency): sized
 on the tick alone a 0.2 rad/s step overshot by up to 0.76 rad/s; with both,
-at most 0.048 over accel 1-20 rad/s^2, slew 0.4-3 travel/s. Engine gimbal
+at most 0.058 over accel 1-20 rad/s^2, slew 0.4-3 travel/s. Engine gimbal
 response is not modelled (counted instant). Without the window mod (kspSim)
 every axis is taken as instant. Log `tau=` per axis; event `surface
 actuators` at START.
@@ -90,29 +102,37 @@ airplane's panel). Unticking it hands the props back.
 
 **Log** `FLY` line: `att=`/`tgt=` bank, pitch, heading (deg), `slip=`,
 `rate=`/`want=` pitch, roll, yaw rates (deg/s), `out=` our inputs, `i=` the
-integrals, `stick=` the player's input per axis, `kp=`/`acc=`/`ring=`/`tau=`
-the gains and where they came from.
+integrals, `stick=` the player's input per axis, `kp=`/`acc=`/`k=`/`d=`/
+`fitq=`/`ring=`/`tau=` the gains and where they came from.
 
-## Where it stands (2026-11-05, fingerprint `570902c5`)
+## Where it stands (2026-11-05 evening, fingerprint `b3fd31af`)
 
-Written 2026-11-04 on the user's spec; **never flown** (the user tests it
-live). Its gains come from kRPC's authority and its own tick; offline they
-hold over a 32x error in that authority. No farm harness yet.
+**Test airframe: the Electric Warbird** (the user, 2026-11-05: use it from
+now on), `saves/qs_warbird`: level at 100 m, 200 m/s, full throttle,
+propPitch on the blades. Flown on the farm by `tools/airfly.py`, stick
+inputs through the window mod's `TestStick`. On it, against the gains
+from kRPC's figure (3 flights an arm, LOG15363-15382): roll reversals
+0.36 v 0.98/s (CRUISE) and 0.70 v 1.23/s (HOLD), pitch error 0.5-0.9 v
+2.9 deg, HOLD yaw error 1.1 v 2.1 deg. The out-of-trim roll gust peaks
+12-16 deg (no swing); a full-size roll input banks it 85 deg and CRUISE,
+holding that bank in its 4 g turn, cannot hold altitude -- by design.
 
 ## Next
 
-1. The user's live flights: `acc=` against what the plane does (a
-   `ringing` event means kRPC's authority is high on that axis; `out=`
-   pinned at +/-1 with `rate=` short of `want=` means it is low).
-2. If a sense is wrong (it rolls away instead of holding) it is one sign in
-   `control.body_rates` or the input senses; `tests/testControl.py` pins
-   the geometry, not the game's input senses.
-3. A farm harness (`tools/`, from `propPitch/tools/propfly.py`) flying a
-   step on each axis, for tuning.
+1. The user flies it live (needs the game restarted for the window mod).
+2. HOLD's pitch reverses ~1/s in small swings; the gust rejection is
+   softer than the old stiffer law. Both from `airfly` summaries.
+3. A second airframe (a jet; a different wing) through `airstart.py` +
+   `airfly.py --save`: the fit has only met the Warbird.
+4. Yaw is modelled per axis; roll-yaw coupling (adverse yaw, dihedral) is
+   what the quality weighting is hiding, not measuring.
 
 ## Commands
 
 ```bash
+./airplane/tools/airstart.py --instance 0    # (re)make qs_warbird: flies it from the runway, saves
+./airplane/tools/airfly.py --instance 0      # CRUISE from qs_warbird, stick pulses, one summary line
+./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_TAU_TICKS=6   # HOLD, an override
 ./run.sh --pilot airplane                    # live: START on the panel
 ./run.sh --pilot airplane --set MODE=1       # start in HOLD
 .venv-pypy/bin/python -m unittest airplane.tests

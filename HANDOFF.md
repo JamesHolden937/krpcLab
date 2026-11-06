@@ -1,34 +1,39 @@
 # HANDOFF — read this first, rewrite it last
 
-## 2026-11-05: airplane -- new pilot, CRUISE and HOLD, gains from the craft and its surfaces' travel time, unflown (fingerprint `570902c5`)
+## 2026-11-05 evening: airplane -- tested on the Electric Warbird; gains measured in flight (fingerprint `b3fd31af`)
 
-`airplane/` (launcher "AIRPLANE: CRUISE / HOLD", `./run.sh --pilot
-airplane`). Read `airplane/CLAUDE.md`. CRUISE: slip nulled on the rudder,
-bank held (cap 89), pitch attitude held, turns coordinated (turn rate
-`g tan(phi)/V` through the Euler kinematics = the pull that keeps the
-nose). HOLD: pitch, heading, bank. PI body-rate loops whose gains come
-from the craft (2026-11-05, the user asked why they were hand-picked):
-kRPC's available torque / inertia per axis (surfaces at the present q),
-the loop closing in 4 of its own ticks, a ringing backstop halving an
-axis's gain; offline it holds over a 32x error in kRPC's figure. The
-surfaces' travel time too (the user asked): the window mod's
-`SurfaceActuators` reads each surface's actuatorSpeed/range/torque; each
-axis's loop is no faster than its surfaces can deliver a step, and the
-command is slew-limited (offline overshoot 0.76 -> <0.05 rad/s on slow
-surfaces). **Needs the rebuilt window mod: restart the game.** The player's stick is read back (kRPC adds client
-input to the player's; KSP adds the trim in -- both read from the IL) and
-an axis it moves is let go and re-held where left; **constant rates**:
-stick = body rate, limits in RPM on the panel. **Prop plane** runs
-propPitch in-process (own LOG).
+`airplane/` (read `airplane/CLAUDE.md`; history in
+`docs/airplane/journal.md`). The user: both modes "very oscillation
+prone"; test on the **Electric Warbird** from now on, spawned at 100 m,
+200 m/s, full throttle, propPitch on the blades, with stick input.
 
-**Never flown.** The input senses (pitch +1 nose
-up, roll +1 right, yaw +1 right) come from `ModuleReactionWheel`'s
-`-input` and the spaceplane's measured nose-down +x; the geometry is unit
-tested (`airplane/tests/testControl.py`), the senses are not.
+**Built:** `saves/qs_warbird` (flown there from the runway by
+`airplane/tools/airstart.py` -- an edited air-start carries a stopped rotor
+that never spins up); `airplane/tools/airfly.py` (load paused, pilot with
+`PROP_PLANE`, stick pulses through the window mod's new **`TestStick`**,
+trim gusts, per-axis summary). `launcherMod` rebuilt and installed into
+the farm and live: **the live game must be restarted** to load it.
 
-**Next:** read the user's first live LOG (`acc=`, `kp=`, `ring=`,
-`rate=` vs `want=`; a `ringing` event = kRPC's authority high on that
-axis); a farm harness flying steps per axis.
+**Cause:** gains came from kRPC's torque model, wrong ~4x both ways on the
+Warbird (roll 3.7x low: rang, 46 deg overshoot; pitch 4.4x high: sat 10 deg
+off). **Fix (default):** `control.Plant` fits each axis's `w' = k accel u -
+d w + c` in flight (RLS, 10 s forgetting, only in the 1 s after an input
+step, trusted as far as it explains the rate); `control.pi_gains` places
+the rate loop's poles at `-1/tau` on it. Old law and `PLANT_FIT` deleted.
+Batch 5 (3 an arm, LOG15363-15382): roll reversals 0.36 v 0.98/s CRUISE,
+0.70 v 1.23/s HOLD; pitch error 0.5-0.9 v 2.9 deg; HOLD yaw 1.1 v 2.1 deg.
+Confirmation of the merged defaults: see the journal's last entry.
+
+**Open, in order:** the user flies it live; HOLD pitch small reversals
+(~1/s); softer gust rejection (out-of-trim roll peaks 12-16 deg, no swing);
+a second airframe; roll-yaw coupling is hidden by the quality weighting,
+not measured.
+
+**Traps paid:** stick pulses must be a player's size -- 0.15 for 0.6 s
+banks the Warbird 85 deg and CRUISE spirals into the sea from 100 m (a
+4 g turn cannot hold altitude there). A killed `airstart` left instances
+whose next `launch_vessel` hangs: restart the farm. `pkill -f` from a Bash
+call matches its own shell.
 
 ## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `570902c5`, propPitch `ca612601`)
 

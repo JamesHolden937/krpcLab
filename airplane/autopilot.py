@@ -185,7 +185,13 @@ class AirplanePilot:
         cfg = self.cfg
         tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
         base = max(cfg.RATE_TAU_MIN_S, cfg.RATE_TAU_TICKS * tick)
-        return [law.closing_time(base, self.effect(i), self.acts[i][0],
+        # On kRPC's figure, not the measured effect: the measured effect
+        # (roll ~6x kRPC's on the Warbird) shortened roll's tau 0.37 ->
+        # 0.26 s and its reversals rose 0.36 -> 0.91/s (CRUISE), 0.70 ->
+        # 1.33/s (HOLD), LOG15387-15396 against LOG15363-15382.  This floor
+        # is holding roll at a closing time the per-axis model cannot
+        # explain (roll-yaw coupling, unmodelled, is the suspect).
+        return [law.closing_time(base, self.accel[i], self.acts[i][0],
                                  self.acts[i][1], caps[i], cfg.SLEW_FACTOR,
                                  cfg.LAG_FACTOR) for i in range(3)]
 
