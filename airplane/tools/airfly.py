@@ -7,6 +7,7 @@ air, disturb it, and say how well it held.
 
 The save (``airstart.py``: the Electric Warbird level at 100 m, 200 m/s,
 full throttle) is loaded paused, the pilot is started with ``--autostart``
+and ``PROP_PLANE`` (propPitch flies the blades, in-process, as live)
 and takes the attitude it finds; then the game runs and the harness puts
 **trim pulses** on each axis in turn (``--pulses``: ``axis:value:start:
 length`` in game seconds after the unpause).  KSP adds the trim to the
@@ -182,7 +183,9 @@ def main():
                                                 stop, t0_box, 3.0),
                           daemon=True)
     th.start()
-    overrides = (["MODE=%d" % args.mode, "LOG_INTERVAL_UT=0.1"]
+    # The blades are flown by propPitch inside the pilot, as live.
+    overrides = (["MODE=%d" % args.mode, "LOG_INTERVAL_UT=0.1",
+                  "PROP_PLANE=True"]
                  + list(args.set))
     # The pilot's RUN_TIME_S counts from its takeover, made while paused.
     overrides.append("RUN_TIME_S=%g" % args.seconds)
