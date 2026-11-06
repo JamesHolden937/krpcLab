@@ -15,7 +15,7 @@ structures (`AxisRange`, `Wrench`, `BoundingBox`), `PartField`/`PartEvent`/
 `AddStream(call)` starting at once.  `data/services.bin` is the 0.7
 `GetServices` answer, built from the mod's own definitions
 (`tools/services.py --json`; `--compare N` diffs it against a farm
-instance -- only the farm-only `LowThrustBridge` differs).  0.7's
+instance).  0.7's
 `AttitudeController` has 0.6's control law; `attitude.py` carries 0.7's
 one behavioural change (setting the target direction keeps the roll).
 

@@ -284,63 +284,6 @@ CollisionSpy / explosion lines before restarting. A farm launch with every
 kerbal Missing produces an uncrewed pod silently. Swap read 10-15 GB right
 after each farm restart tonight (other memory pressure on the machine).
 
-## 2026-10-15 night: lowThrust RCS/gimbal on rails; the attitude model leaves other flights alone
-
-Defaults fingerprint `8deb8110` (lowThrust, C# `Config`). Committed and
-pushed to origin/main. Farm stopped (swap 0.85 GB after), sleep inhibitor
-released. How-it-works PDF rewritten (new section 3a). History:
-`docs/lowThrust/journal.md`, "Session, 2026-10-15 night". `build.sh`
-installed the dll in the farm and the **live game** (restart KSP to load it).
-
-The user asked:
-- **Does the mod work like Persistent Rotation?** In part: it integrates
-  rotation on rails, but only to steer its own burns (answered).
-- **RCS and gimbal steering**: done. `RCS_MODE` (assist default / always /
-  off), `RCS_RATE_DEG` 2. Assist uses wheels + gimbal, RCS only where they
-  give nothing or a hold exceeds them; respects the RCS action group; pure
-  torque. Measured on `qs_shuttle2_lt*` (new saves, Kerbin 200x150 i3 from
-  86.7): wheels present -> 0 kg RCS; always 187 kg; no wheel 114 kg (holds
-  during burns all on the gimbal); every arm arrives, dv 207.8-208.4.
-- **"Make sure persistent rotation can't change my orbit"** -- the live
-  shuttle "plunged" (spaceplane LOG10208). Findings: orbit was 77.6 x 80 at
-  22:37 (2.3 m/s above the air); the autopilot planned a 31.6 m/s deorbit,
-  `warp_to` 739 s, was Ctrl-C'd 2 s into the warp, and KSP.log ends there.
-  No log shows an orbit change. But the mod *did* rotate the shuttle through
-  that warp: `Attitude.Step` ran on every active vessel. Now: it turns a
-  vessel only while a mission flies it; rigid hand-back (w x r, momentum
-  unchanged); every rotation on rails restores the elements if they moved
-  (`orbit restores`: 0 on all flights). Persistent Thrust is enabled live on
-  the shuttle's Rhino and *would* burn on rails with throttle up during a
-  warp -- told the user; not evidenced in this flight.
-
-Bugs found and fixed this session (in the journal): measuring stopped with
-the gate (a mission starting on rails never turned); RCS costed at full
-nozzle thrust; **a new command read as the target turning** (spun the vessel
-to 30 deg/s and back: 480 -> 114 kg; the wheels wasted EC the same way).
-
-Regressions with the final build: Kerbin 150x150 99.6 m/s (LOG10232),
-Kerbin 400x150 i3 361.4 (LOG10233) -- same as 10-14.
-
-Open, in order:
-1. **Mun route stalls in WAIT in game** (46 days, LOG10220/10225/10226; the
-   pre-session build f2841c5 stalls identically; the stand-in arrives). The
-   last good in-game Mun flight (LOG10196) predates 7111c0e (WAIT's search
-   spread over physics steps). Fly 7111c0e^ against 7111c0e on the farm (copy
-   a worktree build into one clone, as this session did), then read the
-   spread search / `SearchFor`.
-2. Fly multi-pass aerobraking on the farm (Duna 200, Duna 80 i0) -- still
-   unflown in game since 10-15's changes; ESCAPE's Lambert burn in game.
-3. A pass still flown on rails (Kerbin pass 5): who sets the rate.
-4. Kerbin aerobraking heat-bound by RTGs; Laythe stand-in time limit; weak
-   departure caught by the Mun (LOG10202).
-
-Traps paid: a gate on the attitude model must not gate *measuring* (a
-mission can start on rails); an angle difference between two *commands* is
-not a rate -- restart rate estimates on a command change; `ltfly` batches:
-an instance whose kRPC refuses (ksp5 once) loses its arm silently -- check
-every arm has a LOG; KSP's `Orbit` clashes with `LowThrust.Orbit` in the
-plugin (`global::Orbit`).
-
 ### Earlier spaceplane snapshot -- 2026-10-12 evening: low alpha flown and refuted; the live tumble not reproducible (fingerprint `01de6e69`)
 
 Defaults unchanged all session (every arm was a flag; all deleted).

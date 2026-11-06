@@ -84,7 +84,6 @@ readers. New autopilots go here and plug into all of it.
 | `boosterland/` | flies a booster back to the KSC pad after stage separation. Largely settled. Has its own `CLAUDE.md` |
 | `ascent/` | MechJeb classic ascent (over KRPC.MechJeb), turn shape solved from the craft at liftoff; drops the booster when it has just enough propellant to fly home and follows the upper stage to orbit (the booster is flown from FMRS's save by `boosterland/fmrs.py`). Read `ascent/CLAUDE.md` |
 | `spaceplane/` | deorbits a winged vehicle, flies the entry, lands on the KSC runway. The active frontier. **Read `spaceplane/CLAUDE.md` before touching it** |
-| `lowThrust/` | ion/low-thrust transfers: type a target orbit -- same body, a moon, another planet -- and a dv/time budget, and it solves and flies every burn. A **standalone KSP mod in C#** (`lowThrust/mod/`, no kRPC or Python in flight; a farm-only kRPC bridge starts flights). Read `lowThrust/CLAUDE.md` |
 | `propPitch/` | a propeller plane's collective blade pitch held at the setting that goes fastest (extremum seeking on forward aero force); flies only the blades. Read `propPitch/CLAUDE.md` |
 | `airplane/` | an attitude autopilot for winged craft: CRUISE (sideslip nulled, bank held to 89 deg, pitch attitude held through coordinated turns) and HOLD (pitch, heading, bank held), the player's stick on top; optional constant body rates (RPM) and propPitch beside it. Read `airplane/CLAUDE.md` |
 | `launcherMod/` | **krpcLab's only UI** (C#, kRPC service `KrpcLabLauncher`): one stock KSP window and toolbar button, in flight only, drawing the launcher's menu and every pilot's panel (`common.panel`); counts scene changes and vessel switches (the launcher stops a pilot on one); reports the control surfaces' actuator speed/range/torque (`SurfaceActuators`, which kRPC lacks); START SCRIPT starts the kRPC server and `./run.sh`. `launcherMod/build.sh` builds it and installs it into the farm and the live game. Without it a pilot's panel is headless (kspSim) |
@@ -94,7 +93,7 @@ readers. New autopilots go here and plug into all of it.
 | `<pilot>/tests/`, `<pilot>/tools/` | each autopilot's offline tests and its own harness and log readers |
 | `saves/` | **the reference quicksaves and craft files** -- tracked; the farm copies drift. `saves/README.md` says which save is which vehicle |
 | `testInstances/` | the measurement farm's scripts. The 15 GB of game copies are in the shared farm `~/kspfarm` (`base/`, `krpclab/`; see its README.md), with git-ignored symlinks here |
-| `docs/` | `boosterland/`, `spaceplane/`, `lowThrust/`, `propPitch/`, `airplane/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
+| `docs/` | `boosterland/`, `spaceplane/`, `propPitch/`, `airplane/` (design, failures, session journal), `testInstances.md`, `krpc.md` |
 | `logs/` | every flight's `LOG<n>`, numbered across all autopilots; git-ignored, cited by number in the docs |
 
 Every autopilot has the same shape: one phase machine is the only kRPC-aware
@@ -425,7 +424,6 @@ Read the file that covers what you are about to touch; do not load them all.
 | [docs/farmSetup.md](docs/farmSetup.md) | building the farm from scratch on a new machine (the game copies are not in git) |
 | [docs/loopCost.md](docs/loopCost.md) | writing or changing a control loop, a kRPC call in one, or a farm/harness script |
 | [docs/krpc.md](docs/krpc.md) | any kRPC call whose signature you are not certain of |
-| [lowThrust/CLAUDE.md](lowThrust/CLAUDE.md) | anything in `lowThrust/` |
 | [propPitch/CLAUDE.md](propPitch/CLAUDE.md) | anything in `propPitch/` |
 | [airplane/CLAUDE.md](airplane/CLAUDE.md) | anything in `airplane/` |
 | [kspSim/CLAUDE.md](kspSim/CLAUDE.md) | flying anything in the simulator, or making a model of a new save |
