@@ -249,7 +249,7 @@ class TestSlowSurfaces(unittest.TestCase):
     def test_closing_time_from_the_surfaces_stops_the_ringing(self):
         """Slow surfaces (0.4 travel/s: 60 deg at 25 deg/s) on a 3 rad/s^2
         axis: a loop sized on its tick alone overshoots a 0.2 rad/s step by
-        ~0.76 rad/s; sized by ``closing_time`` and slewed, by ~0."""
+        ~0.76 rad/s; sized by ``closing_time`` and slewed, by under 0.07."""
         accel, slew = 3.0, 0.4
         tick_tau = 4 * 0.07
         naive = slewed_plant(accel, slew, tick_tau)
