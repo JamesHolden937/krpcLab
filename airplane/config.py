@@ -44,7 +44,19 @@ class Config:
     # times slower than the rate loops: error / (factor x tau) is the rate
     # asked for; the slip loop's integral INTEGRAL_TAU_FACTOR slower again.
     ATTITUDE_TAU_FACTOR: float = 3.0
-    # Where kRPC's authority is high the loop rings: an axis whose input
+    # kRPC's authority is a model, wrong 4x either way on the Warbird
+    # (control.Plant): each axis's response w' = k accel u - d w + c is
+    # fitted in flight by least squares forgetting over PLANT_FORGET_S, k
+    # held in [PLANT_K_MIN, PLANT_K_MAX], d in [0, PLANT_D_MAX] (1/s); the
+    # rate loops' PI gains put both poles at -1/tau on what it measures
+    # (control.pi_gains).
+    PLANT_FIT: bool = True
+    PLANT_FORGET_S: float = 10.0
+    PLANT_P_MAX: float = 10.0
+    PLANT_K_MIN: float = 1.0 / 16.0
+    PLANT_K_MAX: float = 16.0
+    PLANT_D_MAX: float = 20.0
+    # Where the loop still rings: an axis whose input
     # reverses RING_REVERSALS times by RING_SWING within RING_WINDOW_S has
     # its gain halved (to RING_FLOOR at least), raised back by
     # RING_RECOVER_PER_S while quiet.

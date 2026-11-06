@@ -79,6 +79,8 @@ class AirplanePilot:
         self.manual = [False, False, False]     # pitch, roll, yaw
         self.written = [0.0, 0.0, 0.0]
         self.loops = None
+        self.plants = None
+        self.flown = None           # (accel, input, rate) of the last tick
         self.ringing = None
         self.accel = None
         self.acts = ((None, 0.0),) * 3
@@ -123,6 +125,10 @@ class AirplanePilot:
     def take_over(self, ut):
         cfg = self.cfg
         self.loops = [law.RateLoop(cfg.INTEGRAL_MAX) for _ in AXES]
+        self.plants = [law.Plant(cfg.PLANT_FORGET_S, cfg.PLANT_P_MAX,
+                                 cfg.PLANT_K_MIN, cfg.PLANT_K_MAX,
+                                 cfg.PLANT_D_MAX) for _ in AXES]
+        self.flown = None
         self.ringing = [law.Ringing(cfg.RING_REVERSALS, cfg.RING_SWING,
                                     cfg.RING_WINDOW_S, cfg.RING_RECOVER_PER_S,
                                     cfg.RING_FLOOR) for _ in AXES]
@@ -371,13 +377,24 @@ class AirplanePilot:
         want = [want[1], want[0], want[2]]
         want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
         rate = [q, p, r]
+        # What the last tick's input did: each axis's plant, measured.
+        if self.flown is not None:
+            for i in range(3):
+                acc_i, u_i, w_i = self.flown[i]
+                self.plants[i].update(acc_i, u_i, w_i, rate[i], dt)
 
         out = []
         kps = []
         for i in range(3):
             s = sticks[i] or 0.0
-            kp, ki = law.rate_gains(self.accel[i], taus[i],
-                                    cfg.INTEGRAL_TAU_FACTOR, cfg.KP_MAX)
+            pl = self.plants[i]
+            acc_i = self.accel[i] if self.accel[i] else 1.0
+            if cfg.PLANT_FIT:
+                kp, ki = law.pi_gains(pl.k * acc_i, pl.d, taus[i],
+                                      cfg.KP_MAX)
+            else:
+                kp, ki = law.rate_gains(self.accel[i], taus[i],
+                                        cfg.INTEGRAL_TAU_FACTOR, cfg.KP_MAX)
             slew = self.acts[i][0]
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
@@ -398,6 +415,10 @@ class AirplanePilot:
                                                                ring.mult))
             out.append(law.clamp(u - s, -1.0, 1.0) if active[i] else u)
         self.command(out)
+        # The input this tick flies until the next: ours, the player's stick
+        # and the trim (KSP adds all three).
+        self.flown = [(self.accel[i], out[i] + (sticks[i] or 0.0)
+                       + (trims[i] or 0.0), rate[i]) for i in range(3)]
 
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
@@ -407,7 +428,8 @@ class AirplanePilot:
             "tgt=%+6.1f,%+6.1f,%5.1f slip=%+5.1f rate=%+6.1f,%+6.1f,%+6.1f "
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
-            "acc=%s ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f%s"
+            "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f "
+            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
                deg(tphi), deg(ttheta), deg(tpsi) % 360.0,
@@ -417,6 +439,7 @@ class AirplanePilot:
                ",".join("%+.2f" % s if s is not None else "?" for s in sticks),
                *kps, ",".join("%.1f" % math.degrees(a) if a is not None
                               else "?" for a in self.accel),
+               *[pl.k for pl in self.plants], *[pl.d for pl in self.plants],
                *[rg.mult for rg in self.ringing], *taus,
                " const" if constant else "")))
         self.lines = [

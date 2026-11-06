@@ -191,6 +191,76 @@ def closing_time(tick_tau, accel, slew, lag, step, slew_factor, lag_factor):
     return tau
 
 
+class Plant:
+    """One axis's rate response, measured in flight: ``w' = k accel u - d w
+    + c`` -- ``accel`` kRPC's angular acceleration per unit input (or 1
+    rad/s^2 where it has none), ``k`` how wrong that figure is, ``d`` the
+    airframe's own rate damping (1/s), ``c`` the out-of-trim acceleration
+    -- fitted by recursive least squares with forgetting (``forget_s``) on
+    every tick: the input flown (ours, the player's and the trim) against
+    the change in rate over the next tick.
+
+    kRPC models the surfaces; on the Electric Warbird at 200 m/s its roll
+    figure was 3.7x low and its pitch figure 4.4x high (2026-11-05,
+    LOG15265), so gains from it rang in roll and sat 10 deg off in pitch.
+    The fit starts at kRPC's figure (``k`` 1, no damping) and its
+    covariance is capped (``p_max``) so the parameters an unexcited stretch
+    cannot see stop drifting rather than wind up.  ``k`` is held in
+    [``k_min``, ``k_max``], ``d`` in [0, ``d_max``]."""
+
+    def __init__(self, forget_s, p_max, k_min, k_max, d_max):
+        self.forget_s, self.p_max = forget_s, p_max
+        self.k_min, self.k_max, self.d_max = k_min, k_max, d_max
+        self.theta = [1.0, 0.0, 0.0]            # k, -d, c
+        self.p = [[p_max if i == j else 0.0 for j in range(3)]
+                  for i in range(3)]
+        self.n = 0
+
+    @property
+    def k(self):
+        return clamp(self.theta[0], self.k_min, self.k_max)
+
+    @property
+    def d(self):
+        return clamp(-self.theta[1], 0.0, self.d_max)
+
+    def update(self, accel, u, w0, w1, dt):
+        """Feed one tick: input ``u`` flown from rate ``w0`` to ``w1``
+        over ``dt``.  Ignored without a usable step."""
+        if dt <= 0.0 or dt > 0.5:
+            return
+        a = accel if accel and accel > 0.0 else 1.0
+        phi = (a * u, w0, 1.0)
+        y = (w1 - w0) / dt
+        lam = math.exp(-dt / self.forget_s)
+        p = self.p
+        pphi = [sum(p[i][j] * phi[j] for j in range(3)) for i in range(3)]
+        den = lam + sum(phi[i] * pphi[i] for i in range(3))
+        gain = [x / den for x in pphi]
+        err = y - sum(self.theta[i] * phi[i] for i in range(3))
+        self.theta = [self.theta[i] + gain[i] * err for i in range(3)]
+        self.p = [[(p[i][j] - gain[i] * pphi[j]) / lam for j in range(3)]
+                  for i in range(3)]
+        tr = sum(self.p[i][i] for i in range(3))
+        if tr > 3.0 * self.p_max:
+            s = 3.0 * self.p_max / tr
+            self.p = [[x * s for x in row] for row in self.p]
+        self.n += 1
+
+
+def pi_gains(effect, damping, tau, kp_max):
+    """``(kp, ki)`` for a rate loop on ``w' = effect u - damping w``
+    (``effect`` rad/s^2 per unit input): PI with both closed-loop poles at
+    ``-1/tau``, ``s^2 + (damping + effect kp) s + effect ki = (s +
+    1/tau)^2``.  A plant damped faster than ``2/tau`` gets no proportional
+    term (it is already quick); no effectiveness, ``kp_max``."""
+    if effect is None or effect <= 0.0:
+        return kp_max, kp_max / tau
+    wn = 1.0 / tau
+    kp = clamp((2.0 * wn - damping) / effect, 0.0, kp_max)
+    return kp, wn * wn / effect
+
+
 def rate_gains(accel, tau, integral_factor, kp_max):
     """``(kp, ki)`` for a body-rate loop that closes in ``tau`` seconds on
     an axis whose full input gives ``accel`` rad/s^2: the input that would
