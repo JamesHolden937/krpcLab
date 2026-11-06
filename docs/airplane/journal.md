@@ -127,3 +127,11 @@ old law did 0.048.
 own shell (exit 144); a killed `airstart` left two instances whose next
 `launch_vessel` never returned -- restart the farm. Setting
 `krpc.paused` outside flight throws (PauseMenu.Close).
+
+**Confirmation of the merged defaults** (`b3fd31af`, 3 CRUISE + 3 HOLD,
+restarted farm). First try (LOG15387-15396) had the surfaces' closing time
+on the *measured* effect: roll tau 0.37 -> 0.26 s, roll reversals back to
+0.91/s CRUISE and 1.33/s HOLD -- reverted to kRPC's figure, which is what
+flew in batch 5. Second (LOG15399-15409): CRUISE roll err 1.3 deg, rev
+0.45/s, pitch 1.0, yaw 0.1; HOLD roll 2.1 / 0.89/s, pitch 0.9, yaw 1.1 /
+0.56/s. Swap 18-21 GB through the session (six instances).

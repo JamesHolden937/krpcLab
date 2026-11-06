@@ -22,7 +22,7 @@ step, trusted as far as it explains the rate); `control.pi_gains` places
 the rate loop's poles at `-1/tau` on it. Old law and `PLANT_FIT` deleted.
 Batch 5 (3 an arm, LOG15363-15382): roll reversals 0.36 v 0.98/s CRUISE,
 0.70 v 1.23/s HOLD; pitch error 0.5-0.9 v 2.9 deg; HOLD yaw 1.1 v 2.1 deg.
-Confirmation of the merged defaults: see the journal's last entry.
+Confirmed on the merged defaults (LOG15399-15409): CRUISE roll rev 0.45/s, HOLD 0.89/s; pitch ~1 deg. The surfaces' closing time stays on kRPC's figure: on the measured effect roll rang again (LOG15387-15396).
 
 **Open, in order:** the user flies it live; HOLD pitch small reversals
 (~1/s); softer gust rejection (out-of-trim roll peaks 12-16 deg, no swing);
