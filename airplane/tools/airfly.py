@@ -9,14 +9,16 @@ The save (``airstart.py``: the Electric Warbird level at 100 m, 200 m/s,
 full throttle) is loaded paused, the pilot is started with ``--autostart``
 and ``PROP_PLANE`` (propPitch flies the blades, in-process, as live)
 and takes the attitude it finds; then the game runs and the harness puts
-**trim pulses** on each axis in turn (``--pulses``: ``axis:value:start:
-length`` in game seconds after the unpause).  KSP adds the trim to the
-stick and the pilot takes it out of what it reads as the player's input
-(``control.stick``), so a trim is a disturbance the hold cannot see and
-must reject -- a gust or a change of trim -- and its release is a step back
-to the held attitude.  (A second kRPC client cannot play the stick: kRPC
-keeps one set of inputs per vessel, ``PilotAddon.manualInputs``, so its
-writes would replace the pilot's.)
+**pulses** (``--pulses``: ``axis:value:start:length`` in game seconds after
+the unpause).  ``pitch``, ``roll``, ``yaw`` are **the player's stick**: the
+window mod's ``TestStick`` adds them where KSP puts the player's input,
+before kRPC adds the pilot's, so the pilot reads them as the player flying
+(a second kRPC client cannot: kRPC keeps one set of inputs per vessel,
+``PilotAddon.manualInputs``).  ``pitch_trim`` etc. are a disturbance the
+hold cannot see -- KSP adds the trim to the stick and the pilot takes it
+out of what it reads as the player's -- a gust or a change of trim.  After
+a stick pulse the target is wherever the stick left the attitude, so the
+error is the hold settling there.
 
 The summary per axis, from the LOG's FLY lines: the attitude error's rms
 and peak, the body rate's rms, and its **reversals** -- swings of the rate
@@ -42,8 +44,11 @@ import krpc                                             # noqa: E402
 import farmflight                                       # noqa: E402
 from kspSim.tools import flighttest                     # noqa: E402
 
-DEFAULT_PULSES = ("roll:0.3:8:3,pitch:0.15:18:3,yaw:0.3:28:3,"
-                  "roll:-0.5:38:1.5,pitch:-0.15:46:1.5")
+# A player's flying: bank right and let go, reverse to the left, roll back
+# level, pitch up, pitch down, a rudder kick; then an out-of-trim roll.
+DEFAULT_PULSES = ("roll:0.15:6:0.6,roll:-0.15:14:1.2,roll:0.15:22:0.6,"
+                  "pitch:0.2:30:0.8,pitch:-0.2:38:0.8,yaw:0.4:46:0.6,"
+                  "roll_trim:0.1:52:3")
 QUIET_S = 1.0
 REVERSAL_DEG_S = 2.0
 
@@ -59,11 +64,15 @@ def parse_pulses(text):
 
 
 def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s):
-    """Unpause once the pilot has started, then put the trim pulses on."""
+    """Unpause once the pilot has started, then fly the pulses: ``pitch``,
+    ``roll`` and ``yaw`` as the player's stick (the window mod's
+    ``TestStick``), ``*_trim`` as the trims."""
     conn = krpc.connect(name="airfly-disturb", rpc_port=rpc,
                         stream_port=stream)
+    svc = conn.krpc_lab_launcher
+    stick = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
+    c = conn.space_center.active_vessel.control
     try:
-        c = conn.space_center.active_vessel.control
         ut = conn.add_stream(getattr, conn.space_center, "ut")
         started.wait(60.0)
         time.sleep(lead_s)
@@ -77,15 +86,23 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s):
         events.sort()
         for at, axis, value in events:
             while not stop.is_set() and ut() - t0 < at:
-                time.sleep(0.01)
+                time.sleep(0.005)
             if stop.is_set():
                 break
-            setattr(c, axis + "_trim", value)
+            if axis in stick:
+                stick[axis] = value
+                svc.test_stick(stick["pitch"], stick["roll"], stick["yaw"])
+            else:
+                setattr(c, axis, value)
         while not stop.is_set():
             time.sleep(0.1)
-        for axis in ("pitch", "roll", "yaw"):
-            setattr(c, axis + "_trim", 0.0)
     finally:
+        try:
+            svc.test_stick(0.0, 0.0, 0.0)
+            for axis in ("pitch", "roll", "yaw"):
+                setattr(c, axis + "_trim", 0.0)
+        except Exception:                               # noqa: BLE001
+            pass
         conn.close()
 
 
@@ -164,7 +181,7 @@ def main():
     p.add_argument("--instance", default="0")
     p.add_argument("--save", default="qs_warbird")
     p.add_argument("--mode", type=int, default=0, help="0 CRUISE, 1 HOLD")
-    p.add_argument("--seconds", type=float, default=56.0,
+    p.add_argument("--seconds", type=float, default=60.0,
                    help="game seconds the pilot flies")
     p.add_argument("--pulses", default=DEFAULT_PULSES,
                    help="axis:trim:start:length,... (game s after unpause)")

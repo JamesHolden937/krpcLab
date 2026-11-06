@@ -243,6 +243,24 @@ namespace KrpcLab
 
         static Vector3 Abs(Vector3 a) { return new Vector3(Mathf.Abs(a.x), Mathf.Abs(a.y), Mathf.Abs(a.z)); }
 
+        // -- a test harness's stick ------------------------------------------
+        /// <summary>Add this pitch, roll and yaw to the active vessel's input
+        /// every frame, where the player's stick goes: in
+        /// OnPreAutopilotUpdate, which Vessel.FeedInputFeed calls before
+        /// OnFlyByWire (where kRPC adds its clients' input), so an autopilot
+        /// reads it back exactly as it reads the player's.  A second kRPC
+        /// client cannot do this: kRPC keeps one input set per vessel.  For
+        /// farm harnesses (airplane/tools/airfly.py); 0,0,0 adds
+        /// nothing.</summary>
+        [KRPCProcedure]
+        public static void TestStick(float pitch, float roll, float yaw)
+        {
+            TestStickState.pitch = pitch;
+            TestStickState.roll = roll;
+            TestStickState.yaw = yaw;
+            TestStickState.Hook();
+        }
+
         // -- an autopilot's panel -----------------------------------------
         /// <summary>Open the panel: a title in <paramref name="accent"/>
         /// ("r g b", 0..1) and these controls.</summary>
@@ -310,6 +328,29 @@ namespace KrpcLab
     /// <summary>Counts scene changes and vessel switches for the whole game
     /// (not only in flight).</summary>
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
+    public static class TestStickState
+    {
+        public static float pitch, roll, yaw;
+        static Vessel hooked;
+
+        public static void Hook()
+        {
+            if (!HighLogic.LoadedSceneIsFlight) return;
+            var v = FlightGlobals.ActiveVessel;
+            if (v == hooked) return;
+            if (hooked != null) hooked.OnPreAutopilotUpdate -= Add;
+            hooked = v;
+            if (v != null) v.OnPreAutopilotUpdate += Add;
+        }
+
+        static void Add(FlightCtrlState s)
+        {
+            s.pitch = Mathf.Clamp(s.pitch + pitch, -1f, 1f);
+            s.roll = Mathf.Clamp(s.roll + roll, -1f, 1f);
+            s.yaw = Mathf.Clamp(s.yaw + yaw, -1f, 1f);
+        }
+    }
+
     public class EpochWatcher : MonoBehaviour
     {
         void Awake()
