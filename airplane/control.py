@@ -23,20 +23,22 @@ which is how a coordinated turn is flown: a bank and a turn rate
 the nose up) and a yaw ``r``; ``theta'`` asks for the pitch the hold wants
 on top.
 
-**Gains come from the craft, not from a table.**  kRPC's
+**Gains come from the craft, measured in flight.**  kRPC's
 ``available_torque`` (wheels, RCS, gimbals and the control surfaces *at the
 present dynamic pressure and Mach*) over ``moment_of_inertia`` is the
-angular acceleration a full input gives on each axis (``authority``).  A
-rate loop meant to close in ``tau`` then needs ``kp = 1 / (accel tau)``
-(``rate_gains``), and ``tau`` is set by what the loop can serve -- a few of
-its own measured ticks -- not by the craft.  What is left to choose is
-design: how many ticks, how much slower the attitude loops are than the
-rate loops.  Where kRPC's figure is wrong high (it models the surfaces,
-it does not measure them), the loop rings; ``Ringing`` sees the output
-reverse and halves that axis's gain, which recovers slowly when quiet.
-(Measuring the effectiveness from differenced rates was tried for the
-spaceplane, ``SURFACE_OWN`` 2026-10-21: at kRPC's tick it was too noisy to
-fly on.)
+angular acceleration a full input gives on each axis (``authority``) -- as
+kRPC models it.  ``Plant`` measures how wrong that is: it fits each axis's
+``w' = k accel u - d w + c`` by least squares over the windows after an
+input steps, and trusts the fit as far as it explains the rate.
+``pi_gains`` then puts both poles of the rate loop at ``-1/tau``, ``tau``
+set by what the loop can serve -- a few of its own measured ticks -- and
+by its surfaces' travel.  What is left to choose is design: how many
+ticks, how much slower the attitude loops are than the rate loops.  Where
+the loop still rings, ``Ringing`` sees the output reverse and halves that
+axis's gain, which recovers slowly when quiet.  (This is not INDI, which
+the spaceplane tried as ``SURFACE_OWN`` on 2026-10-21 and found too noisy
+at kRPC's tick: the fit averages hundreds of ticks and sets only the
+gains, never the command.)
 
 **The surfaces take time to move.**  KSP slews a control surface's input
 by ``actuatorSpeed x dt / ctrlSurfaceRange`` of full travel per physics
@@ -304,19 +306,6 @@ def pi_gains(effect, damping, tau, kp_max):
     wn = 1.0 / tau
     kp = clamp((2.0 * wn - damping) / effect, 0.0, kp_max)
     return kp, wn * wn / effect
-
-
-def rate_gains(accel, tau, integral_factor, kp_max):
-    """``(kp, ki)`` for a body-rate loop that closes in ``tau`` seconds on
-    an axis whose full input gives ``accel`` rad/s^2: the input that would
-    take the rate error out in ``tau``, and an integral ``integral_factor``
-    times slower.  No authority (None or 0): ``kp_max``, the loop pinned
-    rather than divided by zero."""
-    if accel is None or accel <= 0.0:
-        kp = kp_max
-    else:
-        kp = min(kp_max, 1.0 / (accel * tau))
-    return kp, kp / (integral_factor * tau)
 
 
 class RateLoop:

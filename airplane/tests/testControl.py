@@ -130,7 +130,7 @@ class TestRateLoop(unittest.TestCase):
         the bias -- for authorities 50x apart, with no retuning."""
         for accel in (0.4, 2.0, 20.0):
             tau, dt = 0.2, 0.05
-            kp, ki = law.rate_gains(accel, tau, 4.0, 1e9)
+            kp, ki = law.pi_gains(accel, 0.2, tau, 1e9)
             loop = law.RateLoop(0.6)
             rate = 0.0
             for _ in range(600):
@@ -155,12 +155,6 @@ class TestGains(unittest.TestCase):
         self.assertIsNone(acc[2])
         self.assertEqual(law.authority(None, (1, 1, 1)), (None, None, None))
 
-    def test_rate_gains(self):
-        kp, ki = law.rate_gains(2.0, 0.25, 4.0, 20.0)
-        self.assertAlmostEqual(kp, 2.0)
-        self.assertAlmostEqual(ki, 2.0)
-        self.assertEqual(law.rate_gains(None, 0.25, 4.0, 20.0)[0], 20.0)
-        self.assertEqual(law.rate_gains(0.01, 0.25, 4.0, 20.0)[0], 20.0)
 
 
 class TestRinging(unittest.TestCase):
@@ -236,7 +230,7 @@ def slewed_plant(accel, slew, tau, dt=0.07, seconds=30.0, model_slew=None):
     ``tau``.  Returns the worst overshoot past the 0.2 rad/s steps after
     the first 12 s."""
     loop = law.RateLoop(0.6)
-    kp, ki = law.rate_gains(accel, tau, 4.0, 20.0)
+    kp, ki = law.pi_gains(accel, 0.3, tau, 20.0)
     rate, cmd, surf, t, over = 0.0, 0.0, 0.0, 0.0, 0.0
     while t < seconds:
         t += dt
@@ -262,7 +256,9 @@ class TestSlowSurfaces(unittest.TestCase):
         tau = law.closing_time(tick_tau, accel, slew, 0.0, 0.2, 2.0, 3.0)
         aware = slewed_plant(accel, slew, tau, model_slew=slew)
         self.assertGreater(naive, 0.2)
-        self.assertLess(aware, 0.05)
+        # 0.048 under the old kp = 1/(accel tau), ki = kp/(4 tau); the pole
+        # placement's integral is 4x stronger and its zero overshoots 0.058.
+        self.assertLess(aware, 0.07)
 
 
 class TestPlant(unittest.TestCase):
@@ -301,6 +297,22 @@ class TestPlant(unittest.TestCase):
             w = w1
         self.assertEqual(pl.n, 0)
         self.assertEqual(pl.k, 1.0)
+
+    def test_a_fit_that_explains_nothing_is_not_trusted(self):
+        """The rate driven by a disturbance the model does not have (a
+        coupled axis): the fit may land anywhere, and the k used stays
+        near kRPC's 1."""
+        import random
+        rnd = random.Random(2)
+        pl = law.Plant(10.0, 100.0, 1 / 16, 16, 20, 0.01, 1.0)
+        w = 0.0
+        for k in range(2000):
+            u = rnd.choice((-0.05, 0.0, 0.05)) if k % 5 == 0 else u
+            w1 = w + (0.2 * 10.0 * u + rnd.gauss(0.0, 3.0)) * 0.08
+            pl.update(10.0, u, w, w1, 0.08)
+            w = 0.9 * w1
+        self.assertLess(pl.quality, 0.2)
+        self.assertLess(abs(math.log(pl.k)), 0.4)
 
 
 class TestPiGains(unittest.TestCase):

@@ -16,11 +16,12 @@ Two modes, picked on the panel and switchable in flight:
 
 Each mode turns its attitude errors into Euler rates, those into body rates
 (``control.euler_to_body``), and each body rate is flown by a PI loop on
-the stick (``control.RateLoop``).  **No gain is fitted to a craft**: each
-axis's comes from kRPC's available torque over the moment of inertia (the
-surfaces at the present dynamic pressure), for a loop that closes in a few
-of its own measured ticks; an axis that rings has its gain halved
-(``control.Ringing``).
+the stick (``control.RateLoop``).  **No gain is fitted to a craft by
+hand**: each axis's response is measured in flight (``control.Plant``,
+starting from kRPC's available torque over the moment of inertia) and its
+PI gains place both poles of a loop that closes in a few of its own
+measured ticks (``control.pi_gains``); an axis that rings has its gain
+halved (``control.Ringing``).
 
 **The player's stick adds to it.**  kRPC adds a script's input to the
 player's, so the player's own is read back as what the game flew less ours
@@ -184,9 +185,15 @@ class AirplanePilot:
         cfg = self.cfg
         tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
         base = max(cfg.RATE_TAU_MIN_S, cfg.RATE_TAU_TICKS * tick)
-        return [law.closing_time(base, self.accel[i], self.acts[i][0],
+        return [law.closing_time(base, self.effect(i), self.acts[i][0],
                                  self.acts[i][1], caps[i], cfg.SLEW_FACTOR,
                                  cfg.LAG_FACTOR) for i in range(3)]
+
+    def effect(self, i):
+        """Axis i's angular acceleration per unit input (rad/s^2): kRPC's
+        figure (1 where it has none) times what the fit makes of it."""
+        acc = self.accel[i] if self.accel[i] else 1.0
+        return self.plants[i].k * acc if self.plants else acc
 
     def hand_back(self, ut):
         c = self.vessel.control
@@ -389,14 +396,8 @@ class AirplanePilot:
         kps = []
         for i in range(3):
             s = sticks[i] or 0.0
-            pl = self.plants[i]
-            acc_i = self.accel[i] if self.accel[i] else 1.0
-            if cfg.PLANT_FIT:
-                kp, ki = law.pi_gains(pl.k * acc_i, pl.d, taus[i],
-                                      cfg.KP_MAX)
-            else:
-                kp, ki = law.rate_gains(self.accel[i], taus[i],
-                                        cfg.INTEGRAL_TAU_FACTOR, cfg.KP_MAX)
+            kp, ki = law.pi_gains(self.effect(i), self.plants[i].d, taus[i],
+                                  cfg.KP_MAX)
             slew = self.acts[i][0]
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult

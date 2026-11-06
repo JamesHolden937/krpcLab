@@ -21,11 +21,11 @@ class Config:
     # --- gains: from the craft, not fitted to it (control.py) ------------
     # The rate loops close in RATE_TAU_TICKS of the loop's own measured
     # interval (never under RATE_TAU_MIN_S): a loop cannot be faster than
-    # what it can serve.  kp = 1 / (accel x tau), accel = kRPC
-    # available_torque / moment_of_inertia per axis (the surfaces at the
-    # present q and Mach), re-read every AUTHORITY_REFRESH_S of game time;
-    # ki = kp / (INTEGRAL_TAU_FACTOR x tau).  KP_MAX bounds an axis with no
-    # authority.
+    # what it can serve.  The PI gains put both poles at -1/tau on the
+    # axis's measured response (PLANT_* below), starting from kRPC's
+    # available_torque / moment_of_inertia (the surfaces at the present q
+    # and Mach), re-read every AUTHORITY_REFRESH_S of game time.  KP_MAX
+    # bounds an axis with no authority.
     RATE_TAU_TICKS: float = 4.0
     RATE_TAU_MIN_S: float = 0.15
     # The control surfaces take time to move (KSP slews each by its
@@ -43,14 +43,16 @@ class Config:
     # The attitude loops (and CRUISE's slip loop) close ATTITUDE_TAU_FACTOR
     # times slower than the rate loops: error / (factor x tau) is the rate
     # asked for; the slip loop's integral INTEGRAL_TAU_FACTOR slower again.
+    # (RATE_TAU_TICKS 2.5 rang more in pitch and yaw and settled roll no
+    # faster than 4: airfly batch 2026-11-05, LOG15339-15361.)
     ATTITUDE_TAU_FACTOR: float = 3.0
     # kRPC's authority is a model, wrong 4x either way on the Warbird
     # (control.Plant): each axis's response w' = k accel u - d w + c is
-    # fitted in flight by least squares forgetting over PLANT_FORGET_S, k
-    # held in [PLANT_K_MIN, PLANT_K_MAX], d in [0, PLANT_D_MAX] (1/s); the
-    # rate loops' PI gains put both poles at -1/tau on what it measures
-    # (control.pi_gains).
-    PLANT_FIT: bool = True
+    # fitted in flight by least squares forgetting over PLANT_FORGET_S
+    # (covariance capped at PLANT_P_MAX), k held in [PLANT_K_MIN,
+    # PLANT_K_MAX], d in [0, PLANT_D_MAX] (1/s), both trusted as far as the
+    # fit explains the rate; the rate loops' PI gains put both poles at
+    # -1/tau on what it measures (control.pi_gains).
     PLANT_FORGET_S: float = 10.0
     PLANT_P_MAX: float = 100.0
     PLANT_K_MIN: float = 1.0 / 16.0
