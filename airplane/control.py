@@ -205,16 +205,18 @@ class Plant:
     LOG15265), so gains from it rang in roll and sat 10 deg off in pitch.
     The fit starts at kRPC's figure (``k`` 1, no damping) and its
     covariance is capped (``p_max``) so the parameters an unexcited stretch
-    cannot see stop drifting rather than wind up.  ``k`` is held in
+    cannot see stop drifting rather than wind up; and only ticks whose
+    input stepped by ``excite`` are fitted at all.  ``k`` is held in
     [``k_min``, ``k_max``], ``d`` in [0, ``d_max``]."""
 
-    def __init__(self, forget_s, p_max, k_min, k_max, d_max):
-        self.forget_s, self.p_max = forget_s, p_max
+    def __init__(self, forget_s, p_max, k_min, k_max, d_max, excite):
+        self.forget_s, self.p_max, self.excite = forget_s, p_max, excite
         self.k_min, self.k_max, self.d_max = k_min, k_max, d_max
         self.theta = [1.0, 0.0, 0.0]            # k, -d, c
         self.p = [[p_max if i == j else 0.0 for j in range(3)]
                   for i in range(3)]
         self.n = 0
+        self.u_last = None
 
     @property
     def k(self):
@@ -228,6 +230,13 @@ class Plant:
         """Feed one tick: input ``u`` flown from rate ``w0`` to ``w1``
         over ``dt``.  Ignored without a usable step."""
         if dt <= 0.0 or dt > 0.5:
+            return
+        # Only a tick whose input stepped says anything about the input's
+        # effect: in a steady hold the input moves only as feedback on the
+        # rate, and fitted there the effect slides toward nothing (the
+        # Warbird's yaw: k 1 -> 0.06 in 10 s, its gain blown up, 2026-11-05).
+        last, self.u_last = self.u_last, u
+        if last is None or abs(u - last) < self.excite:
             return
         a = accel if accel and accel > 0.0 else 1.0
         phi = (a * u, w0, 1.0)

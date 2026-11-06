@@ -46,9 +46,12 @@ from kspSim.tools import flighttest                     # noqa: E402
 
 # A player's flying: bank right and let go, reverse to the left, roll back
 # level, pitch up, pitch down, a rudder kick; then an out-of-trim roll.
-DEFAULT_PULSES = ("roll:0.15:6:0.6,roll:-0.15:14:1.2,roll:0.15:22:0.6,"
-                  "pitch:0.2:30:0.8,pitch:-0.2:38:0.8,yaw:0.4:46:0.6,"
-                  "roll_trim:0.1:52:3")
+# The Warbird rolls ~180 deg/s at 0.15 of stick: 0.05 for 0.5 s banks it
+# ~30 deg.  (0.15 for 0.6 s banked it 85 and CRUISE, holding that bank in a
+# 4 g turn, spiralled into the sea from 100 m.)
+DEFAULT_PULSES = ("roll:0.05:6:0.5,roll:-0.05:14:1.0,roll:0.05:22:0.5,"
+                  "pitch:0.1:30:0.5,pitch:-0.1:38:0.5,yaw:0.2:46:0.5,"
+                  "roll_trim:0.05:52:3")
 QUIET_S = 1.0
 REVERSAL_DEG_S = 2.0
 

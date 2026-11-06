@@ -56,6 +56,8 @@ class Config:
     PLANT_K_MIN: float = 1.0 / 16.0
     PLANT_K_MAX: float = 16.0
     PLANT_D_MAX: float = 20.0
+    # Only ticks whose input stepped by this are fitted.
+    PLANT_EXCITE: float = 0.01
     # Where the loop still rings: an axis whose input
     # reverses RING_REVERSALS times by RING_SWING within RING_WINDOW_S has
     # its gain halved (to RING_FLOOR at least), raised back by
