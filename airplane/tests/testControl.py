@@ -265,5 +265,60 @@ class TestSlowSurfaces(unittest.TestCase):
         self.assertLess(aware, 0.05)
 
 
+class TestPlant(unittest.TestCase):
+    def _fly(self, true_k, d, accel=10.0, n=2000, dt=0.08, excite=0.01):
+        """A rate plant w' = true_k accel u - d w + 0.3, driven by a loop
+        on kRPC's (wrong) figure plus steps of the player's stick."""
+        import random
+        rnd = random.Random(1)
+        pl = law.Plant(10.0, 100.0, 1 / 16, 16, 20, excite, 1.0)
+        w, u_stick = 0.0, 0.0
+        for k in range(n):
+            if k % 40 == 0:
+                u_stick = rnd.choice((-0.05, 0.0, 0.05))
+            u = -0.02 * w + u_stick
+            w1 = w
+            for _ in range(8):
+                w1 += (true_k * accel * u - d * w1 + 0.3) * dt / 8
+            pl.update(accel, u, w, w1, dt)
+            w = w1
+        return pl
+
+    def test_finds_a_wrong_figure(self):
+        """kRPC 4x low (roll) and 4x high (pitch): the fit finds both."""
+        for true_k, d in ((4.0, 1.2), (0.25, 5.0)):
+            pl = self._fly(true_k, d)
+            self.assertAlmostEqual(pl.k / true_k, 1.0, delta=0.15)
+            self.assertAlmostEqual(pl.d, d, delta=0.3 * d)
+
+    def test_holds_without_excitation(self):
+        """An input that never steps teaches nothing: k stays where it was."""
+        pl = law.Plant(10.0, 100.0, 1 / 16, 16, 20, 0.01, 1.0)
+        w = 0.0
+        for _ in range(500):
+            w1 = w + (0.3 - 2.0 * w) * 0.08
+            pl.update(10.0, 0.001, w, w1, 0.08)
+            w = w1
+        self.assertEqual(pl.n, 0)
+        self.assertEqual(pl.k, 1.0)
+
+
+class TestPiGains(unittest.TestCase):
+    def test_poles_at_one_over_tau(self):
+        """s^2 + (d + B kp) s + B ki = (s + 1/tau)^2."""
+        b, d, tau = 12.0, 1.0, 0.3
+        kp, ki = law.pi_gains(b, d, tau, 20.0)
+        self.assertAlmostEqual(d + b * kp, 2.0 / tau)
+        self.assertAlmostEqual(b * ki, 1.0 / tau ** 2)
+
+    def test_heavily_damped_axis_gets_no_proportional(self):
+        kp, ki = law.pi_gains(12.0, 10.0, 0.3, 20.0)
+        self.assertEqual(kp, 0.0)
+        self.assertGreater(ki, 0.0)
+
+    def test_no_effect(self):
+        self.assertEqual(law.pi_gains(None, 1.0, 0.3, 20.0)[0], 20.0)
+
+
 if __name__ == "__main__":
     unittest.main()

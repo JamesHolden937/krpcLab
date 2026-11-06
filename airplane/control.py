@@ -205,12 +205,15 @@ class Plant:
     LOG15265), so gains from it rang in roll and sat 10 deg off in pitch.
     The fit starts at kRPC's figure (``k`` 1, no damping) and its
     covariance is capped (``p_max``) so the parameters an unexcited stretch
-    cannot see stop drifting rather than wind up; and only ticks whose
-    input stepped by ``excite`` are fitted at all.  ``k`` is held in
+    cannot see stop drifting rather than wind up; and only the
+    ``window_s`` after an input step of ``excite`` is fitted at all.  ``k`` is held in
     [``k_min``, ``k_max``], ``d`` in [0, ``d_max``]."""
 
-    def __init__(self, forget_s, p_max, k_min, k_max, d_max, excite):
+    def __init__(self, forget_s, p_max, k_min, k_max, d_max, excite,
+                 window_s):
         self.forget_s, self.p_max, self.excite = forget_s, p_max, excite
+        self.window_s = window_s
+        self.window = 0.0
         self.k_min, self.k_max, self.d_max = k_min, k_max, d_max
         self.theta = [1.0, 0.0, 0.0]            # k, -d, c
         self.p = [[p_max if i == j else 0.0 for j in range(3)]
@@ -231,15 +234,22 @@ class Plant:
         over ``dt``.  Ignored without a usable step."""
         if dt <= 0.0 or dt > 0.5:
             return
-        # Only a tick whose input stepped says anything about the input's
-        # effect: in a steady hold the input moves only as feedback on the
-        # rate, and fitted there the effect slides toward nothing (the
-        # Warbird's yaw: k 1 -> 0.06 in 10 s, its gain blown up, 2026-11-05).
+        # Only an input that stepped, and the rate's answer to it, say
+        # anything about the input's effect: in a steady hold the input
+        # moves only as feedback on the rate, and fitted there the effect
+        # slides toward nothing (the Warbird's yaw: k 1 -> 0.06 in 10 s,
+        # its gain blown up, 2026-11-05).  A step opens a window_s window.
         last, self.u_last = self.u_last, u
-        if last is None or abs(u - last) < self.excite:
+        if last is not None and abs(u - last) >= self.excite:
+            self.window = self.window_s
+        else:
+            self.window -= dt
+        if self.window <= 0.0:
             return
         a = accel if accel and accel > 0.0 else 1.0
-        phi = (a * u, w0, 1.0)
+        # The tick's mean rate, not its first: Euler on w0 reads a damped
+        # axis's effect low by (1 - exp(-d dt)) / (d dt), 18% at d 5.
+        phi = (a * u, 0.5 * (w0 + w1), 1.0)
         y = (w1 - w0) / dt
         lam = math.exp(-dt / self.forget_s)
         p = self.p

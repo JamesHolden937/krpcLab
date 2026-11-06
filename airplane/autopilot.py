@@ -127,7 +127,8 @@ class AirplanePilot:
         self.loops = [law.RateLoop(cfg.INTEGRAL_MAX) for _ in AXES]
         self.plants = [law.Plant(cfg.PLANT_FORGET_S, cfg.PLANT_P_MAX,
                                  cfg.PLANT_K_MIN, cfg.PLANT_K_MAX,
-                                 cfg.PLANT_D_MAX, cfg.PLANT_EXCITE)
+                                 cfg.PLANT_D_MAX, cfg.PLANT_EXCITE,
+                                 cfg.PLANT_WINDOW_S)
                        for _ in AXES]
         self.flown = None
         self.ringing = [law.Ringing(cfg.RING_REVERSALS, cfg.RING_SWING,
