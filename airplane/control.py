@@ -205,8 +205,10 @@ class Plant:
     LOG15265), so gains from it rang in roll and sat 10 deg off in pitch.
     The fit starts at kRPC's figure (``k`` 1, no damping) and its
     covariance is capped (``p_max``) so the parameters an unexcited stretch
-    cannot see stop drifting rather than wind up; and only the
-    ``window_s`` after an input step of ``excite`` is fitted at all.  ``k`` is held in
+    cannot see stop drifting rather than wind up; only the ``window_s``
+    after an input step of ``excite`` is fitted at all; and what is used is
+    pulled back toward kRPC's figure as far as the fit fails to explain the
+    rate (``quality``).  ``k`` is held in
     [``k_min``, ``k_max``], ``d`` in [0, ``d_max``]."""
 
     def __init__(self, forget_s, p_max, k_min, k_max, d_max, excite,
@@ -220,14 +222,34 @@ class Plant:
                   for i in range(3)]
         self.n = 0
         self.u_last = None
+        self.e2 = 0.0               # the fit's squared error, forgetting
+        self.ym = 0.0               # the change in rate: its mean ...
+        self.y2 = 0.0               # ... and its spread
+
+    @property
+    def quality(self):
+        """How much of the rate's change the fit explains, 0..1: one less
+        its forgetting mean squared error (taken before each update) over
+        the spread of what it fitted.  0 until it has fitted anything."""
+        if self.y2 <= 0.0:
+            return 0.0
+        return clamp(1.0 - self.e2 / self.y2, 0.0, 1.0)
 
     @property
     def k(self):
-        return clamp(self.theta[0], self.k_min, self.k_max)
+        """The effect relative to kRPC's figure, trusted as far as the fit
+        explains the data: ``k^quality`` (geometric, between kRPC's 1 and
+        the fit).  The Warbird's yaw in HOLD, cross-controlled against a
+        held bank, fits at k 0.1-0.3 explaining little of the rate; taken
+        at face value it set the yaw gain 3-10x high and the rudder
+        jittered (2026-11-05)."""
+        k = clamp(self.theta[0], self.k_min, self.k_max)
+        return math.exp(self.quality * math.log(k))
 
     @property
     def d(self):
-        return clamp(-self.theta[1], 0.0, self.d_max)
+        """The damping, likewise trusted as far as the fit explains."""
+        return self.quality * clamp(-self.theta[1], 0.0, self.d_max)
 
     def update(self, accel, u, w0, w1, dt):
         """Feed one tick: input ``u`` flown from rate ``w0`` to ``w1``
@@ -257,6 +279,10 @@ class Plant:
         den = lam + sum(phi[i] * pphi[i] for i in range(3))
         gain = [x / den for x in pphi]
         err = y - sum(self.theta[i] * phi[i] for i in range(3))
+        f = 1.0 - lam
+        self.e2 += f * (err * err - self.e2)
+        self.ym += f * (y - self.ym)
+        self.y2 += f * ((y - self.ym) ** 2 - self.y2)
         self.theta = [self.theta[i] + gain[i] * err for i in range(3)]
         self.p = [[(p[i][j] - gain[i] * pphi[j]) / lam for j in range(3)]
                   for i in range(3)]

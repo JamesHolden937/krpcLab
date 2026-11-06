@@ -430,7 +430,7 @@ class AirplanePilot:
             "tgt=%+6.1f,%+6.1f,%5.1f slip=%+5.1f rate=%+6.1f,%+6.1f,%+6.1f "
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
-            "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f "
+            "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f fitq=%.2f,%.2f,%.2f "
             "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
@@ -442,6 +442,7 @@ class AirplanePilot:
                *kps, ",".join("%.1f" % math.degrees(a) if a is not None
                               else "?" for a in self.accel),
                *[pl.k for pl in self.plants], *[pl.d for pl in self.plants],
+               *[pl.quality for pl in self.plants],
                *[rg.mult for rg in self.ringing], *taus,
                " const" if constant else "")))
         self.lines = [
