@@ -388,6 +388,59 @@ class Ringing:
         return False
 
 
+GROUND = ("landed", "splashed", "pre_launch")
+
+
+def on_ground(situation):
+    """Whether a kRPC ``VesselSituation`` (or its name) has the craft on
+    the ground or the water: the wheels, skids or floats carry it, so they
+    and not the air hold its pitch and bank."""
+    if situation is None:
+        return False
+    name = getattr(situation, "name", None) or str(situation).split(".")[-1]
+    return name in GROUND
+
+
+def tick_tau(tau, dt, tau_ticks):
+    """A rate loop's closing time for a tick of ``dt``: at least
+    ``tau_ticks`` of that tick.  The gains are sized on the mean tick; a
+    longer one gives each of the PI terms more of the rate error than the
+    loop was designed for (``kp effect dt`` = ``2 dt / tau``, ``ki effect
+    dt^2`` = ``(dt / tau)^2``), and near one tick per tau the loop
+    overshoots every tick and the rate flips sign tick to tick."""
+    return max(tau, tau_ticks * dt) if dt > 0.0 else tau
+
+
+class StickGate:
+    """Whether the player is flying an axis, from the stick read back.  The
+    read-back is the game's input less ours and the trim, and in the live
+    game it flickers past a small deadband for a tick at a time with the
+    stick untouched (LOG15411: 834 one-tick crossings in 400 s against 3-6
+    a minute on the farm); every crossing let the hold go and re-took its
+    target where the plane had drifted to.  So the axis is the player's
+    once the stick has stayed past ``deadband`` for ``confirm_s`` (at once
+    past ``firm``), and the hold's again once it has stayed inside
+    ``deadband`` for ``confirm_s``."""
+
+    def __init__(self, deadband, firm, confirm_s):
+        self.deadband, self.firm, self.confirm_s = deadband, firm, confirm_s
+        self.active = False
+        self.held = 0.0             # how long the stick has disagreed
+
+    def update(self, s, dt):
+        if s is None:
+            return self.active
+        a = abs(s)
+        out = a > self.deadband
+        if out == self.active:
+            self.held = 0.0
+            return self.active
+        self.held += dt
+        if self.held >= self.confirm_s or (out and a > self.firm):
+            self.active, self.held = out, 0.0
+        return self.active
+
+
 def stick(read, written, trim):
     """The player's own input on an axis: kRPC adds a client's input to
     the player's (``PilotAddon.OnFlyByWire``) and KSP folds the trim into

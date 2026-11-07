@@ -92,6 +92,11 @@ class Config:
     # the stick leaves it at.  With constant rates on, the stick commands
     # a body rate instead: full deflection = the panel's rate limit.
     STICK_DEADBAND: float = 0.05
+    # ... held past it STICK_CONFIRM_S (past STICK_FIRM at once), and back
+    # inside it STICK_CONFIRM_S before the hold takes the axis back: the
+    # live read-back flickers past the deadband a tick at a time.
+    STICK_CONFIRM_S: float = 0.15
+    STICK_FIRM: float = 0.2
     # The panel's rate limits (rev/min) at start.
     PITCH_RATE_RPM: float = 3.0
     ROLL_RATE_RPM: float = 10.0

@@ -78,6 +78,8 @@ class AirplanePilot:
         self.mode = None
         self.target = None          # (phi, theta, psi), rad
         self.manual = [False, False, False]     # pitch, roll, yaw
+        self.gates = None
+        self.ground = None          # on the wheels/floats (None: not read yet)
         self.written = [0.0, 0.0, 0.0]
         self.loops = None
         self.plants = None
@@ -135,6 +137,8 @@ class AirplanePilot:
         self.ringing = [law.Ringing(cfg.RING_REVERSALS, cfg.RING_SWING,
                                     cfg.RING_WINDOW_S, cfg.RING_RECOVER_PER_S,
                                     cfg.RING_FLOOR) for _ in AXES]
+        self.gates = [law.StickGate(cfg.STICK_DEADBAND, cfg.STICK_FIRM,
+                                    cfg.STICK_CONFIRM_S) for _ in AXES]
         self.refresh_authority(ut)
         c = self.vessel.control
         if cfg.SAS_OFF:
@@ -299,6 +303,7 @@ class AirplanePilot:
                  (getattr, (self.surface_flight, "mean_altitude"))]
         calls += [(getattr, (c, a)) for a in AXES]
         calls += [(getattr, (c, a + "_trim")) for a in AXES]
+        calls.append((getattr, (self.vessel, "situation")))
         return ask(self.conn, calls)
 
     def run_fly(self, ut):
@@ -307,6 +312,7 @@ class AirplanePilot:
         nose, right, belly, omega, v_air, speed, q_dyn, alt = got[:8]
         reads = list(got[8:11])
         trims = list(got[11:14])
+        ground = law.on_ground(got[14])
         dt = 0.0 if self.last_ut is None else max(0.0, ut - self.last_ut)
         self.last_ut = ut
         if dt > 0.0:
@@ -330,22 +336,37 @@ class AirplanePilot:
             self.log.event(ut, "mode %s" % MODES[mode])
             self.mode = mode
             self.target = None
+        if ground != self.ground:
+            if self.ground is not None:
+                self.log.event(ut, "lift-off" if not ground else "touchdown")
+            self.ground = ground
+            # Off the ground the hold takes the attitude it finds: the
+            # pitch the take-off left it at, the heading it is on; the
+            # slip loop starts afresh.
+            if self.target is not None and not ground:
+                self.target[1], self.target[2] = theta, psi
+            self.slip_i = 0.0
         vertical = abs(theta) > math.radians(cfg.VERTICAL_DEG)
         bank_cap = math.radians(cfg.BANK_LIMIT_DEG)
 
         # The player's stick, per axis (pitch, roll, yaw).
         sticks = [law.stick(rd, w, t)
                   for rd, w, t in zip(reads, self.written, trims)]
-        active = [s is not None and abs(s) > cfg.STICK_DEADBAND
-                  for s in sticks]
+        active = [g.update(s, dt) for g, s in zip(self.gates, sticks)]
         # Where the attitude is now is the target on every axis the stick
         # moves (and was moving): it is held once the stick lets go.
         if self.target is None:
             self.target = [phi, theta, psi]
         tphi, ttheta, tpsi = self.target
+        # On the ground the gear holds pitch: it is not flown (the tail
+        # wheel would wind its trim against the nose all down the runway
+        # and pitch the plane up at lift-off), and the wings are held
+        # level.
+        if ground:
+            tphi = 0.0
         if active[1] or self.manual[1]:
             tphi = phi
-        if active[0] or self.manual[0]:
+        if active[0] or self.manual[0] or ground:
             ttheta = theta
         if active[2] or self.manual[2] or vertical:
             tpsi = psi
@@ -370,16 +391,19 @@ class AirplanePilot:
         # Outer loops: attitude error -> Euler rates.
         dphi = k_att[1] * law.wrap(tphi - phi)
         dtheta = k_att[0] * (ttheta - theta)
-        if mode == CRUISE:
+        if mode == CRUISE and not ground:
             # The turn the bank makes, coordinated (and the bank cap's
             # bank rather than the vessel's own, past it).
             dpsi = 0.0 if vertical else law.turn_rate(
                 law.clamp(phi, -bank_cap, bank_cap), speed,
                 cfg.TURN_MAX_G, cfg.TURN_MIN_SPEED_M_S)
         else:
+            # HOLD's heading, and on the ground either mode's: the rudder
+            # and the steering keep it on the runway.
             dpsi = k_att[2] * law.wrap(tpsi - psi)
         want = list(law.euler_to_body(phi, theta, dphi, dtheta, dpsi))
-        if mode == CRUISE and beta is not None and not active[2]:
+        if (mode == CRUISE and beta is not None and not active[2]
+                and not ground):
             # The rudder takes the slip out.
             if dt > 0.0:
                 cap = math.radians(cfg.SLIP_I_MAX_DEG_S)
@@ -392,24 +416,32 @@ class AirplanePilot:
         want = [want[1], want[0], want[2]]
         want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
         rate = [q, p, r]
-        # What the last tick's input did: each axis's plant, measured.
-        if self.flown is not None:
+        # What the last tick's input did: each axis's plant, measured --
+        # in the air only: on the ground the gear answers the input too.
+        if self.flown is not None and not ground:
             for i in range(3):
                 acc_i, u_i, w_i = self.flown[i]
                 self.plants[i].update(acc_i, u_i, w_i, rate[i], dt)
 
         out = []
         kps = []
+        tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
         for i in range(3):
             s = sticks[i] or 0.0
+            # Closed on this tick, when it is longer than the mean one (the
+            # Warbird's roll rate flipped sign tick to tick on 0.15-0.2 s
+            # ticks, gains sized on 0.10, LOG15423).
+            taus[i] = law.tick_tau(taus[i], max(dt, tick), cfg.RATE_TAU_TICKS)
             kp, ki = law.pi_gains(self.effect(i), self.plants[i].d, taus[i],
                                   cfg.KP_MAX)
             slew = self.acts[i][0]
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
             kps.append(kp)
-            if active[i] and not constant:
-                # The player flies the axis; the hold keeps only its trim.
+            if (active[i] and not constant) or (i == 0 and ground
+                                                and not active[i]):
+                # The player flies the axis (or, on the ground, the gear
+                # holds the pitch); the hold keeps only its trim.
                 out.append(self.loops[i].step(want[i], rate[i], kp, ki, dt,
                                               integrate=False,
                                               proportional=False))
@@ -438,7 +470,7 @@ class AirplanePilot:
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
             "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f fitq=%.2f,%.2f,%.2f "
-            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f%s"
+            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f gnd=%d%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
                deg(tphi), deg(ttheta), deg(tpsi) % 360.0,
@@ -450,11 +482,12 @@ class AirplanePilot:
                               else "?" for a in self.accel),
                *[pl.k for pl in self.plants], *[pl.d for pl in self.plants],
                *[pl.quality for pl in self.plants],
-               *[rg.mult for rg in self.ringing], *taus,
+               *[rg.mult for rg in self.ringing], *taus, int(ground),
                " const" if constant else "")))
         self.lines = [
-            "mode    : %s%s" % (MODES[mode], ", constant rates" if constant
-                                else ""),
+            "mode    : %s%s%s" % (MODES[mode], ", constant rates" if constant
+                                  else "", ", on the ground" if ground
+                                  else ""),
             "speed   : %.1f m/s  alt %.0f m" % (speed, alt or 0.0),
             "bank    : %+.1f (hold %+.1f)" % (deg(phi), deg(tphi)),
             "pitch   : %+.1f (hold %+.1f)" % (deg(theta), deg(ttheta)),

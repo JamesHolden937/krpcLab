@@ -332,5 +332,68 @@ class TestPiGains(unittest.TestCase):
         self.assertEqual(law.pi_gains(None, 1.0, 0.3, 20.0)[0], 20.0)
 
 
+class TestLongTicks(unittest.TestCase):
+    def fly(self, bound):
+        """Gains sized on 0.05 s ticks (tau = 4 of them), flown on 0.2 s
+        ticks with the command a tick late: the rate's peak error over the
+        last five ticks, from a 0.1 rad/s step."""
+        accel, dt = 20.0, 0.2
+        tau = law.tick_tau(0.2, dt, 4.0) if bound else 0.2
+        kp, ki = law.pi_gains(accel, 0.0, tau, 1e9)
+        loop = law.RateLoop(0.6)
+        rate, u_late, errs = 0.0, 0.0, []
+        for _ in range(100):
+            u = loop.step(0.1, rate, kp, ki, dt)
+            rate += accel * u_late * dt
+            u_late = u
+            errs.append(abs(rate - 0.1))
+        return max(errs[-5:])
+
+    def test_long_ticks_ring_without_the_bound(self):
+        self.assertGreater(self.fly(False), 0.1)
+        self.assertLess(self.fly(True), 0.01)
+
+    def test_bound_leaves_a_short_tick_alone(self):
+        self.assertEqual(law.tick_tau(0.3, 0.05, 4.0), 0.3)
+        self.assertAlmostEqual(law.tick_tau(0.3, 0.1, 4.0), 0.4)
+
+
+class TestStickGate(unittest.TestCase):
+    def gate(self):
+        return law.StickGate(0.05, 0.2, 0.15)
+
+    def test_one_tick_flicker_is_not_the_player(self):
+        g = self.gate()
+        for s in (0.0, 0.09, 0.0, -0.08, 0.0, 0.1, 0.0) * 5:
+            self.assertFalse(g.update(s, 0.06))
+
+    def test_held_stick_is_the_player_then_released(self):
+        g = self.gate()
+        got = [g.update(0.1, 0.06) for _ in range(4)]
+        self.assertEqual(got, [False, False, True, True])
+        got = [g.update(0.0, 0.06) for _ in range(4)]
+        self.assertEqual(got, [True, True, False, False])
+
+    def test_firm_stick_at_once(self):
+        self.assertTrue(self.gate().update(0.5, 0.06))
+
+    def test_unreadable_keeps_state(self):
+        g = self.gate()
+        self.assertFalse(g.update(None, 0.06))
+
+
+class TestGround(unittest.TestCase):
+    def test_situations(self):
+        class S:
+            def __init__(self, name):
+                self.name = name
+        for n in ("landed", "splashed", "pre_launch"):
+            self.assertTrue(law.on_ground(S(n)))
+        for n in ("flying", "sub_orbital"):
+            self.assertFalse(law.on_ground(S(n)))
+        self.assertTrue(law.on_ground("VesselSituation.landed"))
+        self.assertFalse(law.on_ground(None))
+
+
 if __name__ == "__main__":
     unittest.main()
