@@ -195,6 +195,23 @@ class TestTheRenamer(unittest.TestCase):
         exec(pyminify.minify(src, outside=set(), attributes=plan), after)
         self.assertEqual(before["f"](), after["f"]())
 
+    def test_an_option_keeps_its_argparse_dest(self):
+        # boosterland's --start-ut: airplane's ``self.start_ut`` renamed
+        # ``args.start_ut`` too, and every booster flight died on it.
+        src = ("import argparse\n"
+               "class A:\n"
+               "    def __init__(self):\n"
+               "        self.start_ut = 1\n        self.depth = 3\n"
+               "def f():\n"
+               "    p = argparse.ArgumentParser()\n"
+               "    p.add_argument('--start-ut', type=float, default=2.0)\n"
+               "    return p.parse_args([]).start_ut + A().depth\n")
+        plan = pyminify.attribute_plan({"m": src}, set(), set())
+        self.assertEqual(set(plan), {"depth"})
+        after = {}
+        exec(pyminify.minify(src, outside=set(), attributes=plan), after)
+        self.assertEqual(after["f"](), 5.0)
+
     def test_a_parameter_moves_unless_some_call_names_it(self):
         src = ("from types import SimpleNamespace\n"
                "def area(width, height):\n    return width * height\n"

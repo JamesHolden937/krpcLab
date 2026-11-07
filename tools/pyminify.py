@@ -490,7 +490,8 @@ def attribute_plan(sources, outside, foreign, private_only=False):
       no object we did not write is reached under a new name;
     - a dataclass/NamedTuple field (annotated in a class body), a keyword
       argument anywhere (``SimpleNamespace(ut=...)``), a word in any string
-      (``getattr(x, "name")``), read inside an f-string, a top-level name
+      (``getattr(x, "name")``; hyphens read as underscores, so an
+      option ``"--start-ut"`` keeps ``args.start_ut``), read inside an f-string, a top-level name
       of any module (``module.name``), or read as a plain name in a class
       body (``@name.setter``);
     - a dunder or ``_sunder_``; or, with ``private_only``, public.
@@ -521,7 +522,10 @@ def attribute_plan(sources, outside, foreign, private_only=False):
             elif isinstance(n, ast.keyword) and n.arg:
                 refused.add(n.arg)
             elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                # ``"--start-ut"`` is argparse's ``args.start_ut``.
                 refused |= set(WORD.findall(n.value))
+                refused |= set(WORD.findall(
+                    re.sub(r"(?<=\w)-(?=\w)", "_", n.value)))
             elif isinstance(n, ast.JoinedStr):
                 refused |= {m.attr for m in ast.walk(n)
                             if isinstance(m, ast.Attribute)}
