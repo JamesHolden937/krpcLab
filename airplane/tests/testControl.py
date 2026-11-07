@@ -331,6 +331,24 @@ class TestPiGains(unittest.TestCase):
     def test_no_effect(self):
         self.assertEqual(law.pi_gains(None, 1.0, 0.3, 20.0)[0], 20.0)
 
+    def test_little_authority_is_held_to_full_input_at_the_cap(self):
+        """At walking pace (effect 0.05 rad/s^2 per unit) the poles would
+        ask for 2/(tau effect); held to 1/cap, the loop is critically
+        damped on what that gain gives: one overshoot, the PI zero's
+        ~14%, and no ring."""
+        effect, cap, dt = 0.05, 1.0, 0.05
+        kp, ki = law.pi_gains(effect, 0.0, 2.0, 1.0 / cap)
+        self.assertEqual(kp, 1.0)
+        self.assertAlmostEqual(ki, 0.25 * effect * kp * kp)
+        loop, rate, peak, rates = law.RateLoop(0.6), 0.0, 0.0, []
+        for _ in range(8000):
+            u = loop.step(0.01, rate, kp, ki, dt)
+            rate += effect * u * dt
+            peak = max(peak, rate)
+            rates.append(rate)
+        self.assertLess(peak, 0.0115)
+        self.assertGreater(min(rates[len(rates) // 3:]), 0.0099)
+
 
 class TestLongTicks(unittest.TestCase):
     def fly(self, bound):

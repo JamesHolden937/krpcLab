@@ -358,15 +358,13 @@ class AirplanePilot:
         if self.target is None:
             self.target = [phi, theta, psi]
         tphi, ttheta, tpsi = self.target
-        # On the ground the gear holds pitch: it is not flown (the tail
-        # wheel would wind its trim against the nose all down the runway
-        # and pitch the plane up at lift-off), and the wings are held
-        # level.
+        # On the ground the wings are held level; the pitch is held where
+        # it sits (below: without a trim, which the gear would wind up).
         if ground:
             tphi = 0.0
         if active[1] or self.manual[1]:
             tphi = phi
-        if active[0] or self.manual[0] or ground:
+        if active[0] or self.manual[0]:
             ttheta = theta
         if active[2] or self.manual[2] or vertical:
             tpsi = psi
@@ -417,9 +415,11 @@ class AirplanePilot:
         want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
         rate = [q, p, r]
         # What the last tick's input did: each axis's plant, measured --
-        # in the air only: on the ground the gear answers the input too.
-        if self.flown is not None and not ground:
-            for i in range(3):
+        # on the ground yaw only (the steering is part of what the yaw
+        # input does; the gear holds pitch and bank, so they would fit as
+        # an axis that barely answers).
+        if self.flown is not None:
+            for i in ((2,) if ground else range(3)):
                 acc_i, u_i, w_i = self.flown[i]
                 self.plants[i].update(acc_i, u_i, w_i, rate[i], dt)
 
@@ -433,15 +433,13 @@ class AirplanePilot:
             # ticks, gains sized on 0.10, LOG15423).
             taus[i] = law.tick_tau(taus[i], max(dt, tick), cfg.RATE_TAU_TICKS)
             kp, ki = law.pi_gains(self.effect(i), self.plants[i].d, taus[i],
-                                  cfg.KP_MAX)
+                                  1.0 / caps[i])
             slew = self.acts[i][0]
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
             kps.append(kp)
-            if (active[i] and not constant) or (i == 0 and ground
-                                                and not active[i]):
-                # The player flies the axis (or, on the ground, the gear
-                # holds the pitch); the hold keeps only its trim.
+            if active[i] and not constant:
+                # The player flies the axis; the hold keeps only its trim.
                 out.append(self.loops[i].step(want[i], rate[i], kp, ki, dt,
                                               integrate=False,
                                               proportional=False))
@@ -450,7 +448,11 @@ class AirplanePilot:
                 # The stick is a rate command; the game adds the player's
                 # input to ours, so ours is the loop's less the stick.
                 want[i] = s * lim[i]
-            u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew)
+            # On the ground the pitch is held without a trim: against the
+            # tail wheel it would wind nose-up all down the runway (+0.13
+            # by 41 m/s, LOG15423) and pitch the plane up at lift-off.
+            u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew,
+                                   integrate=not (ground and i == 0))
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))

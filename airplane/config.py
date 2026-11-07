@@ -24,8 +24,9 @@ class Config:
     # what it can serve.  The PI gains put both poles at -1/tau on the
     # axis's measured response (PLANT_* below), starting from kRPC's
     # available_torque / moment_of_inertia (the surfaces at the present q
-    # and Mach), re-read every AUTHORITY_REFRESH_S of game time.  KP_MAX
-    # bounds an axis with no authority.
+    # and Mach), re-read every AUTHORITY_REFRESH_S of game time.  No axis
+    # asks for more than full input for an error of its rate cap
+    # (MAX_*_RATE_DEG_S): what bounds an axis with no authority.
     RATE_TAU_TICKS: float = 4.0
     RATE_TAU_MIN_S: float = 0.15
     # The control surfaces take time to move (KSP slews each by its
@@ -38,7 +39,6 @@ class Config:
     SLEW_FACTOR: float = 2.0
     LAG_FACTOR: float = 3.0
     INTEGRAL_TAU_FACTOR: float = 4.0
-    KP_MAX: float = 20.0
     AUTHORITY_REFRESH_S: float = 0.5
     # The attitude loops (and CRUISE's slip loop) close ATTITUDE_TAU_FACTOR
     # times slower than the rate loops: error / (factor x tau) is the rate

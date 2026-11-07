@@ -300,12 +300,21 @@ def pi_gains(effect, damping, tau, kp_max):
     (``effect`` rad/s^2 per unit input): PI with both closed-loop poles at
     ``-1/tau``, ``s^2 + (damping + effect kp) s + effect ki = (s +
     1/tau)^2``.  A plant damped faster than ``2/tau`` gets no proportional
-    term (it is already quick); no effectiveness, ``kp_max``."""
+    term (it is already quick); no effectiveness, ``kp_max``.
+
+    ``kp_max`` is the axis's own: full input for an error of the axis's
+    rate cap (``1 / cap``).  An axis with almost no authority (the runway
+    at walking pace) would otherwise ask for ``2 / (tau effect)`` -- 20x
+    full input per rad/s on the Warbird's roll at rest, the ailerons and
+    rudder slamming side to side.  Held there, the poles go where that
+    gain puts them: ``ki`` places both at ``-effect kp / 2`` (critical)."""
     if effect is None or effect <= 0.0:
         return kp_max, kp_max / tau
     wn = 1.0 / tau
-    kp = clamp((2.0 * wn - damping) / effect, 0.0, kp_max)
-    return kp, wn * wn / effect
+    kp = (2.0 * wn - damping) / effect
+    if kp > kp_max:
+        return kp_max, min(wn * wn, 0.25 * (effect * kp_max) ** 2) / effect
+    return max(0.0, kp), wn * wn / effect
 
 
 class RateLoop:
