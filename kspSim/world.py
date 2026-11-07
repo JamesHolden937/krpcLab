@@ -117,7 +117,7 @@ def inertia_at_part_coms(tensor, parts):
 
 # The farm runs the MiniSystem planet patch (krpcLab CLAUDE.md, testInstances/miniSystem.sh): Kerbin's
 # solar day is still 21600 s, but its year is 5x shorter, so the sidereal rotation is this (measured in game).
-MINISYSTEM_KERBIN_SIDEREAL = 21104.689431850475
+MINISYSTEM_KERBIN_SIDEREAL = 21349.472285
 
 
 class Body:

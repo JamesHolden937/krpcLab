@@ -3,7 +3,7 @@
 # miniSystem.sh [n]... -- put the MiniSystem planet patch (~/minisystem) and a working Kopernicus into
 # base/ and into the named clones (default 0-5).  Since 2026-11-06 the farm runs this MODIFIED Kerbol
 # system, not stock: planets' orbits x0.2, Kerbol GM and radius x0.2, moons' orbits x0.5.  Kerbin itself
-# (mass, radius, atmosphere, solar day 21600 s) is stock, but its SIDEREAL rotation is 21104.69 s
+# (mass, radius, atmosphere, solar day 21600 s) is stock, but its SIDEREAL rotation is 21349.47 s
 # (stock 21549.43), because the year is 5x shorter.  See ~/minisystem/CLAUDE.md.
 #
 # Also fixes Kopernicus, which never loaded on the farm before: strip.txt removed KSPTextureLoader, which
