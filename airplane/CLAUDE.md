@@ -54,7 +54,14 @@ held bank) stays near kRPC's figure. `control.pi_gains` puts both poles of
 the rate loop at `-1/tau` on the measured plant: `kp = (2/tau - d) /
 effect` (>= 0), `ki = 1/(tau^2 effect)`. tau is `RATE_TAU_TICKS` (4) of the
 loop's own measured interval (>= 0.15 s) and the surfaces' travel (below):
-the loop is as fast as it can serve. Where the loop still rings,
+the loop is as fast as it can serve. A tick longer than the mean closes
+that tick's loop on `RATE_TAU_TICKS` of it (`control.tick_tau`): gains
+sized on the mean tick overshoot on a long one and the rate flips sign tick
+to tick. No axis asks for more than full input for an error of its own
+rate cap (`kp <= 1 / MAX_*_RATE`; held there, `ki` puts both poles at
+`-effect kp / 2`): with almost no authority (the runway at walking pace)
+the poles would ask for 2/(tau effect), and the ailerons and rudder
+slammed side to side. Where the loop still rings,
 `control.Ringing` halves that axis's gain (4 reversals of 0.15 in 2 s;
 floor 1/8) and lets it recover at 0.05/s. This is not INDI (the
 spaceplane's `SURFACE_OWN`, too noisy at kRPC's tick): the fit averages
@@ -85,12 +92,29 @@ response is not modelled (counted instant). Without the window mod (kspSim)
 every axis is taken as instant. Log `tau=` per axis; event `surface
 actuators` at START.
 
+**On the ground** (kRPC's situation landed, splashed or pre-launch;
+`control.on_ground`; events `lift-off` / `touchdown`, `gnd=` on the FLY
+line): the wings are held level; the pitch is held where it sits with the
+proportional term only (no trim: against a tail wheel it would wind
+nose-up all down the runway and pitch the plane up at lift-off); the
+heading is held in both modes by the rudder and the steering (CRUISE's
+slip and turn are off); and only the yaw plant is fitted (the steering is
+part of the yaw input's effect; the gear holds pitch and bank, which would
+fit as axes that barely answer). Off the ground the pitch and heading
+targets are re-taken where the take-off left them.
+
 **The player's stick**: kRPC adds a client's input to the player's
 (`PilotAddon.OnFlyByWire`: `ControlInputs.Add`) and KSP folds the trim into
 the stick (`FlightInputHandler`), so the player's input is the read-back
 less what we wrote less the trim (`control.stick`). Past `STICK_DEADBAND`
-on an axis the hold lets that axis go (keeps its trim) and holds whatever
-attitude the stick leaves it at. **Constant rates**: the stick commands a
+on an axis for `STICK_CONFIRM_S` 0.15 s (past `STICK_FIRM` 0.2 at once)
+the hold lets that axis go (keeps its trim) and, once the stick has been
+back inside the deadband as long, holds whatever attitude the stick left
+it at (`control.StickGate`). The live read-back flickers past the
+deadband a tick at a time with the stick untouched (LOG15411: 834 one-tick
+crossings in 400 s, against 3-6 a minute on the farm), and every crossing
+used to let the hold go and re-take its target wherever the plane had
+drifted. **Constant rates**: the stick commands a
 body rate instead, full deflection = the panel's limit (RPM x 2 pi / 60
 rad/s), and the loop flies it (our input = loop output less the stick), so
 a full stick at high speed turns no faster than the limit; the holds' own
@@ -133,6 +157,7 @@ holding that bank in its 4 g turn, cannot hold altitude -- by design.
 ./airplane/tools/airstart.py --instance 0    # (re)make qs_warbird: flies it from the runway, saves
 ./airplane/tools/airfly.py --instance 0      # CRUISE from qs_warbird, stick pulses, one summary line
 ./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_TAU_TICKS=6   # HOLD, an override
+./airplane/tools/airfly.py --instance 2 --runway   # from runway 09: full throttle, hands off; take-off summary
 ./run.sh --pilot airplane                    # live: START on the panel
 ./run.sh --pilot airplane --set MODE=1       # start in HOLD
 .venv-pypy/bin/python -m unittest airplane.tests

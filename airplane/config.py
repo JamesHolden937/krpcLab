@@ -86,6 +86,19 @@ class Config:
     SLIP_I_MAX_DEG_S: float = 5.0
     INTEGRAL_MAX: float = 0.6
 
+    # --- crash guard -----------------------------------------------------
+    # In the air with the gear up: when a recovery from here (react, roll
+    # wings level, pull the path level at the pitch rate cap and
+    # TURN_MAX_G, control.pull_up_loss) would end closer to the terrain or
+    # sea than GUARD_FLOOR_M plus GUARD_MARGIN_S of the present sink, the
+    # holds and the player's stick are overridden -- wings level, full
+    # pull -- until the plane climbs.  React time: GUARD_REACT_TAUS of the
+    # pitch loop's closing time and a tick.
+    GUARD: bool = True
+    GUARD_FLOOR_M: float = 20.0
+    GUARD_MARGIN_S: float = 2.0
+    GUARD_REACT_TAUS: float = 3.0
+
     # --- the player's stick -----------------------------------------------
     # A stick deflection beyond this is the player flying the axis: the
     # hold on that axis lets go (its trim stays) and re-takes the attitude
