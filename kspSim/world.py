@@ -115,6 +115,11 @@ def inertia_at_part_coms(tensor, parts):
 
 # -- the body ---------------------------------------------------------------
 
+# The farm runs the MiniSystem planet patch (krpcLab CLAUDE.md, testInstances/miniSystem.sh): Kerbin's
+# solar day is still 21600 s, but its year is 5x shorter, so the sidereal rotation is this (measured in game).
+MINISYSTEM_KERBIN_SIDEREAL = 21104.689431850475
+
+
 class Body:
     def __init__(self, model):
         b = model["body"]
@@ -123,6 +128,11 @@ class Body:
         self.radius = b["equatorial_radius"]
         self.mu = b["gravitational_parameter"]
         self.period = b["rotational_period"]
+        if abs(self.period - MINISYSTEM_KERBIN_SIDEREAL) > 0.01 and self.name == "Kerbin":
+            import warnings
+            warnings.warn("kspSim model has Kerbin rotational_period %.3f s, but the farm runs MiniSystem "
+                          "(%.3f s, since 2026-11-06): the model was probed on the stock system -- "
+                          "re-probe it (tools/probe.py)" % (self.period, MINISYSTEM_KERBIN_SIDEREAL))
         self.omega = 2.0 * math.pi / self.period
         self.t0 = model["ut"]
         self.phi0 = b["rotation_angle"]

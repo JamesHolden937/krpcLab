@@ -421,7 +421,8 @@ def body_alt_at(w, b, position, ref):
 @rpc("CelestialBody_Position")
 def body_position(w, b, ref):
     if _is_sun(b):
-        return ref.position(vec.scale(w.body.sun_nr, 13599840256.0), w)
+        # Kerbin-Sun distance: 2719968051.2 m under MiniSystem (farm, since 2026-11-06); stock 13599840256.
+        return ref.position(vec.scale(w.body.sun_nr, 2719968051.2), w)
     return ref.position((0.0, 0.0, 0.0), w)
 
 

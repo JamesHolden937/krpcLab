@@ -1,5 +1,17 @@
 # HANDOFF — read this first, rewrite it last
 
+> **⚠ The farm runs a MODIFIED Kerbol system (MiniSystem, since 2026-11-06), not stock.**
+> - Changed: planets' orbits x0.2, Kerbol GM and radius x0.2, moons' orbits x0.5 (Mun at 6 Mm, Minmus at 23.5 Mm).
+> - Kerbin's mass, radius, atmosphere and 6 h solar day are stock. Its **sidereal rotation is 21104.69 s**
+>   (stock 21549.43) and the year is ~85 days.
+> - Kopernicus now actually loads on the farm. Before, it silently didn't, because `KSPTextureLoader` was
+>   stripped. It brings its own patches, e.g. solar panels.
+> - Farm results from before 2026-11-06 are not comparable with later ones.
+> - kspSim models probed before then are stale: re-probe (`kspSim/world.py` warns).
+> - The live game (`~/Kerbal Space Program`) and KSP-VSE's `vse/` instance are still stock.
+> - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
+
+
 ## 2026-11-05 evening: airplane -- tested on the Electric Warbird; gains measured in flight (fingerprint `b3fd31af`)
 
 `airplane/` (read `airplane/CLAUDE.md`; history in

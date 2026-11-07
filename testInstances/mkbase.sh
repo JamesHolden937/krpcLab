@@ -98,6 +98,14 @@ tar -C "$SRC" -cf - "${EX[@]}" . | tar -C "$BASE" -xf -
 # kRPC stops its servers outside a game scene, and the main menu is one, so an
 # unattended instance has to load a save by itself before anything can connect.
 # See README.md, "Why there is a plugin in here".
+# The farm runs the MiniSystem planet patch (a MODIFIED Kerbol system; see miniSystem.sh).
+MINI="${MINISYSTEM:-$HOME/minisystem}/GameData/MiniSystem"
+if [ -f "$MINI/MiniSystem.cfg" ]; then
+  cp -a "$MINI" "$BASE/GameData/MiniSystem"; echo "MiniSystem installed (modified Kerbol system)"
+else
+  echo "WARNING: no $MINI -- base/ will run the stock system, unlike the rest of the farm" >&2
+fi
+rm -rf "$BASE/GameData/Kopernicus/Cache"/*
 if [ -f "$HERE/autoloadSrc/AutoLoadSave.cs" ]; then
   M="$BASE/KSP_x64_Data/Managed"
   if command -v mcs >/dev/null; then

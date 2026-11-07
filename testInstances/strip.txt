@@ -8,6 +8,8 @@
 # NOT stripped, deliberately -- see keepNotes.md:
 #   ReStock   rewrites mass and drag cubes on 15 of the 20 parts
 #   Shabby    32 KB shader shim, nothing to gain
+#   KSPTextureLoader  Kopernicus 1.0.25x needs it; stripping it silently disabled Kopernicus
+#             until 2026-11-06 (see miniSystem.sh)
 #
 000_TexturesUnlimited
 BoulderCo
@@ -16,7 +18,6 @@ EnvironmentalVisualEnhancements
 Firefly
 FireflyAPI
 KerbalFX
-KSPTextureLoader
 ParallaxContinued
 Parallax_StockPlanetTextures
 Parallax_StockScatterTextures
