@@ -31,6 +31,7 @@ import argparse
 import math
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -66,10 +67,12 @@ def parse_pulses(text):
     return out
 
 
-def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s):
-    """Unpause once the pilot has started, then fly the pulses: ``pitch``,
-    ``roll`` and ``yaw`` as the player's stick (the window mod's
-    ``TestStick``), ``*_trim`` as the trims."""
+def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
+            runway=False):
+    """Unpause once the pilot has started (on the runway: full throttle,
+    brakes off), then fly the pulses: ``pitch``, ``roll`` and ``yaw`` as
+    the player's stick (the window mod's ``TestStick``), ``*_trim`` as the
+    trims."""
     conn = krpc.connect(name="airfly-disturb", rpc_port=rpc,
                         stream_port=stream)
     svc = conn.krpc_lab_launcher
@@ -80,6 +83,9 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s):
         started.wait(60.0)
         time.sleep(lead_s)
         conn.krpc.paused = False
+        if runway:
+            c.brakes = False
+            c.throttle = 1.0
         t0 = ut()
         t0_box.append(t0)
         events = []
@@ -118,6 +124,37 @@ FLY_RE = re.compile(
 
 def wrap180(x):
     return (x + 180.0) % 360.0 - 180.0
+
+
+def takeoff(path, t0):
+    """On the runway: the ground roll's peak bank, heading drift and pitch
+    rate, and the lift-off (the first tick 2 m up that stays up 2 s; the
+    FLY line's ``gnd=`` where it has one)."""
+    rows = []
+    for line in open(path):
+        m = FLY_RE.search(line)
+        if not m or float(m.group(1)) < t0:
+            continue
+        g = re.search(r" gnd=(\d)", line)
+        rows.append((float(m.group(1)), float(m.group(3)), float(m.group(4)),
+                     float(m.group(5)), float(m.group(6)), float(m.group(7)),
+                     float(m.group(12)), None if g is None else g.group(1) == "1"))
+    if len(rows) < 5:
+        return "no FLY lines"
+    alt0, psi0 = rows[0][2], rows[0][5]
+    gnd = [r[7] if r[7] is not None else r[2] < alt0 + 2.0 for r in rows]
+    lift = next((i for i in range(len(rows)) if not any(
+        gnd[j] for j in range(i, len(rows)) if rows[j][0] - rows[i][0] <= 2.0)),
+        None)
+    ground = rows[:lift] if lift else rows
+    out = "ground: bank max %.1f hdg drift max %.1f pitch-rate max %.1f" % (
+        max(abs(r[3]) for r in ground),
+        max(abs(wrap180(r[5] - psi0)) for r in ground),
+        max(abs(r[6]) for r in ground))
+    if lift is None:
+        return out + "  NO LIFT-OFF (end spd %.0f)" % rows[-1][1]
+    return out + "  lift-off t+%.1f %.0f m/s pitch %+.1f  " % (
+        rows[lift][0] - t0, rows[lift][1], rows[lift][4])
 
 
 def summary(path, t0, pulses):
@@ -178,11 +215,38 @@ def summary(path, t0, pulses):
     return "  ".join(out)
 
 
+def launch_on_runway(instance, craft, rpc, stream):
+    """The craft (``saves/craft/SPH``) on runway 09, settled, throttle shut,
+    brakes on, paused."""
+    sdir = os.path.join(paths.instance_dir(instance), "saves", "default")
+    shutil.copy(os.path.join(ROOT, "saves", "craft", "SPH", craft + ".craft"),
+                os.path.join(sdir, "Ships", "SPH", craft + ".craft"))
+    conn = krpc.connect(name="airfly", rpc_port=rpc, stream_port=stream)
+    try:
+        conn.krpc.paused = False          # a run killed while paused
+    except Exception:                                   # noqa: BLE001
+        pass
+    conn.space_center.launch_vessel("SPH", craft, "Runway", recover=True)
+    time.sleep(8.0)
+    c = conn.space_center.active_vessel.control
+    c.throttle = 0.0
+    c.brakes = True
+    time.sleep(2.0)
+    conn.krpc.paused = True
+    return conn
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--instance", default="0")
     p.add_argument("--save", default="qs_warbird")
+    p.add_argument("--runway", action="store_true",
+                   help="start on runway 09 instead of from --save: the "
+                   "craft (--craft) is launched, settles, and on the unpause "
+                   "goes to full throttle, brakes off; no pulses unless "
+                   "--pulses is given; the summary adds the take-off")
+    p.add_argument("--craft", default="Electric Warbird")
     p.add_argument("--mode", type=int, default=0, help="0 CRUISE, 1 HOLD")
     p.add_argument("--seconds", type=float, default=60.0,
                    help="game seconds the pilot flies")
@@ -191,16 +255,22 @@ def main():
     p.add_argument("--set", action="append", default=[])
     farmflight.add_arguments(p)
     args = p.parse_args()
+    if args.runway and args.pulses == DEFAULT_PULSES:
+        args.pulses = ""
     pulses = parse_pulses(args.pulses)
     rpc, stream = paths.ports(args.instance)
-    conn = flighttest.load_paused(args.instance, args.save)
-    conn.space_center.active_vessel.control.gear = False
+    if args.runway:
+        conn = launch_on_runway(args.instance, args.craft, rpc, stream)
+    else:
+        conn = flighttest.load_paused(args.instance, args.save)
+        conn.space_center.active_vessel.control.gear = False
     conn.close()
     farmflight.install_reaper()
     stop, started = threading.Event(), threading.Event()
     t0_box = []
     th = threading.Thread(target=disturb, args=(rpc, stream, pulses, started,
-                                                stop, t0_box, 3.0),
+                                                stop, t0_box, 3.0,
+                                                args.runway),
                           daemon=True)
     th.start()
     # The blades are flown by propPitch inside the pilot, as live.
@@ -221,7 +291,8 @@ def main():
     print("ksp%s %s %s %s: %s%s" % (
         args.instance, path, ("CRUISE", "HOLD")[args.mode],
         " ".join(args.set) or "(defaults)",
-        summary(path, t0_box[0] if t0_box else None, pulses)
+        (takeoff(path, t0_box[0]) if args.runway and t0_box else "")
+        + summary(path, t0_box[0] if t0_box else None, pulses)
         if path and os.path.exists(path) else "no log",
         " TIMEOUT" if timed_out else ""))
 
