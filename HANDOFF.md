@@ -12,40 +12,42 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-05 evening: airplane -- tested on the Electric Warbird; gains measured in flight (fingerprint `b3fd31af`)
+## 2026-11-06: airplane -- runway handling, stick gate, crash guard (fingerprint `b1f8fe9b`)
 
-`airplane/` (read `airplane/CLAUDE.md`; history in
-`docs/airplane/journal.md`). The user: both modes "very oscillation
-prone"; test on the **Electric Warbird** from now on, spawned at 100 m,
-200 m/s, full throttle, propPitch on the blades, with stick input.
+`airplane/` (read `airplane/CLAUDE.md`; history `docs/airplane/journal.md`
+2026-11-06). The user: it drifts (rolls left on take-off, pitches up by
+itself); hold attitude on the runway, fewer oscillations, general; then a
+crash guard. All committed; **not pushed, how-it-works PDF not redone.**
 
-**Built:** `saves/qs_warbird` (flown there from the runway by
-`airplane/tools/airstart.py` -- an edited air-start carries a stopped rotor
-that never spins up); `airplane/tools/airfly.py` (load paused, pilot with
-`PROP_PLANE`, stick pulses through the window mod's new **`TestStick`**,
-trim gusts, per-axis summary). `launcherMod` rebuilt and installed into
-the farm and live: **the live game must be restarted** to load it.
+**Defaults now:** on the ground (situation landed/splashed/pre-launch)
+wings level, pitch held P-only (no trim), heading held both modes, only
+the yaw plant fitted; targets re-taken at lift-off. `StickGate`
+(`STICK_CONFIRM_S` 0.15, `STICK_FIRM` 0.2) against the live read-back's
+one-tick flicker. kp <= 1/rate cap (`KP_MAX` deleted). Rate loop closed on
+the current tick when longer than the mean (`tick_tau`). Crash guard
+(`GUARD`, `GUARD_FLOOR_M` 20, `GUARD_MARGIN_S` 2, `GUARD_REACT_TAUS` 3):
+wings level and pull over holds and stick when the predicted recovery
+would end too low; gear down disarms it.
 
-**Cause:** gains came from kRPC's torque model, wrong ~4x both ways on the
-Warbird (roll 3.7x low: rang, 46 deg overshoot; pitch 4.4x high: sat 10 deg
-off). **Fix (default):** `control.Plant` fits each axis's `w' = k accel u -
-d w + c` in flight (RLS, 10 s forgetting, only in the 1 s after an input
-step, trusted as far as it explains the rate); `control.pi_gains` places
-the rate loop's poles at `-1/tau` on it. Old law and `PLANT_FIT` deleted.
-Batch 5 (3 an arm, LOG15363-15382): roll reversals 0.36 v 0.98/s CRUISE,
-0.70 v 1.23/s HOLD; pitch error 0.5-0.9 v 2.9 deg; HOLD yaw 1.1 v 2.1 deg.
-Confirmed on the merged defaults (LOG15399-15409): CRUISE roll rev 0.45/s, HOLD 0.89/s; pitch ~1 deg. The surfaces' closing time stays on kRPC's figure: on the measured effect roll rang again (LOG15387-15396).
+**Measured:** `airfly --runway` (new flag), 5 flights LOG15435-15442 vs
+old LOG15423/15451: ground bank 2-3 v 6-7.5 deg, heading drift 3.4 v
+5-6.5, pitch error after lift-off 0.7 v 1-3.9 rms (old pitched to 25 deg),
+roll rev 0.7-1.2 v 1.2-1.8/s. Crash guard on the (broken, diving) save:
+6/6 survive v 0/3 without it.
 
-**Open, in order:** the user flies it live; HOLD pitch small reversals
-(~1/s); softer gust rejection (out-of-trim roll peaks 12-16 deg, no swing);
-a second airframe; roll-yaw coupling is hidden by the quality weighting,
-not measured.
+**Blocker:** `saves/qs_warbird` is invalid on the MiniSystem farm (loads at
+155 m/s, -56 deg/s pitch); `airstart.py` failed 3x (kRPC autopilot 6 m off
+altitude -- tolerance widened, unverified -- then a runway flip, then no
+prop thrust). In-air pulse comparisons need a new save first.
 
-**Traps paid:** stick pulses must be a player's size -- 0.15 for 0.6 s
-banks the Warbird 85 deg and CRUISE spirals into the sea from 100 m (a
-4 g turn cannot hold altitude there). A killed `airstart` left instances
-whose next `launch_vessel` hangs: restart the farm. `pkill -f` from a Bash
-call matches its own shell.
+**Next:** re-make qs_warbird (maybe fly the climb-out with our own pilot +
+`--runway` instead of kRPC's autopilot); then airfly pulses new v old;
+the user flies it live; HOLD pitch reversals; a second airframe; redo
+howItWorks.pdf and push.
+
+**Traps:** ksp2/ksp5 died mid-batch twice (connection refused) -- `start.sh`
+relaunches only the dead ones. Pipe a long harness to a file, not `| tail`
+(a timeout kill loses the output).
 
 ## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `570902c5`, propPitch `ca612601`)
 

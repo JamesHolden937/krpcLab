@@ -135,3 +135,50 @@ on the *measured* effect: roll tau 0.37 -> 0.26 s, roll reversals back to
 flew in batch 5. Second (LOG15399-15409): CRUISE roll err 1.3 deg, rev
 0.45/s, pitch 1.0, yaw 0.1; HOLD roll 2.1 / 0.89/s, pitch 0.9, yaw 1.1 /
 0.56/s. Swap 18-21 GB through the session (six instances).
+
+## 2026-11-06: the runway, the stick gate, long ticks, the crash guard (fingerprint `b1f8fe9b`)
+
+The user: drift (the Warbird rolls left on take-off, pitches up by
+itself); "maintain attitude on runway, reduce oscillations, general
+solution"; then "make a crash guard".
+
+**Read from the live LOG15411:** CRUISE's slip loop ran at rest (slip
+-179.6 from 0.5 m/s) and held full left rudder before the roll began; the
+live stick read-back crossed the 0.05 deadband 834 times in 400 s, mostly
+one tick wide (the farm: 3-6 a minute), and every crossing let the hold go
+and re-took its target where the plane had drifted.
+
+**Farm, `airfly --runway` (new: runway 09, full throttle, hands off).**
+Old code LOG15423, LOG15451: on the ground the pitch integral wound to
++0.13 nose-up against the tail wheel and the nose went to 25.5 deg after
+lift-off (target 12.5); roll rate flipping sign tick to tick in bursts
+(rev 1.2-1.8/s) on 0.15-0.2 s ticks, gains sized on the 0.10 s mean.
+First fix (LOG15425-15431: pitch left free on the ground, heading held,
+no fit) made the ground worse: bank 9-19, heading 12-18 deg, a ground loop
+at +/-40 deg/s yaw -- kp hit KP_MAX 20 at walking pace (kRPC's authority
+~0) and the steering is not in kRPC's yaw figure; with pitch free the
+tail lifted and the nose went to -0.6 deg.
+
+**Kept** (LOG15435-15442, 5 flights): kp held to full input at the axis's
+rate cap (KP_MAX deleted, critical ki when held), the loop closed on the
+current tick when it is longer than the mean (`tick_tau`), on the ground
+pitch held without a trim, wings level, heading held, yaw plant fitted
+there; `StickGate` (0.15 s confirm, 0.2 firm). Ground bank max 2.1-3.2,
+heading drift 3.3-3.4, pitch rate 5-6 deg/s (old: 5.7-7.5 / 4.8-6.5 /
+4.6-6.0); lift-off at 32 m/s pitch 9.5-9.9; 15 s after it pitch error
+0.6-0.9 rms (old 1.0-3.9), roll rev 0.7-1.2/s (old 1.2-1.8).
+
+**qs_warbird is broken on the MiniSystem farm:** it loads at 155 m/s
+pitching -56 deg/s (2026-11-05: 195 m/s, level). Flown on the new code
+without a guard, 3/3 went into the sea (LOG15445-15447). `airstart.py`
+could not re-make it: kRPC's autopilot sat 6 m off the altitude
+(tolerance widened 3 -> 8 m, unverified), then flipped the plane on the
+runway, then the plane never moved (prop not spun up).
+
+**Crash guard** (`GUARD`, default on): `pull_up_loss` (react 3 pitch taus
++ tick at the sink, roll level at the roll cap with the bank's lost lift,
+then an arc at min(pitch cap, g(n-1)/V)); pulls when the recovery ends
+within 20 m + 2 s of sink of `surface_altitude`; overrides holds and stick;
+gear down or on the ground disarms it. On the broken save 6/6 survived
+(LOG15453-15462, 3 CRUISE + 3 HOLD): 7 pulls at 62-108 m, sink 12-22 m/s,
+cleared climbing at 52-84 m; all ended 400-680 m up.

@@ -85,7 +85,9 @@ def fly_to(conn, args):
                 print("  t+%5.1f alt %6.1f vs %+5.1f spd %5.1f pitch %+5.1f "
                       "roll %+5.1f" % (ut - t0, alt, vs, spd, fs.pitch,
                                        fs.roll), flush=True)
-            if (airborne and abs(alt - args.alt) < 3.0 and abs(vs) < 1.5
+            # Within 8 m: the altitude law above settles ~6 m off (MiniSystem
+            # farm, 2026-11-06), and kRPC's roll swings through level.
+            if (airborne and abs(alt - args.alt) < 8.0 and abs(vs) < 1.5
                     and abs(fs.roll) < 2.0 and abs(spd - args.speed) < 2.0
                     and ut - t0 > 30.0):
                 conn.krpc.paused = True
