@@ -54,6 +54,9 @@ DEFAULT_PULSES = ("roll:0.05:6:0.5,roll:-0.05:14:1.0,roll:0.05:22:0.5,"
                   "pitch:0.1:30:0.5,pitch:-0.1:38:0.5,yaw:0.2:46:0.5,"
                   "roll_trim:0.05:52:3")
 QUIET_S = 1.0
+ROTATE_STICK = 0.5
+ROTATE_PITCH_DEG = 10.0
+ROTATE_MAX_S = 4.0
 REVERSAL_DEG_S = 2.0
 
 
@@ -68,7 +71,7 @@ def parse_pulses(text):
 
 
 def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
-            runway=False):
+            runway=False, rotate=None):
     """Unpause once the pilot has started (on the runway: full throttle,
     brakes off), then fly the pulses: ``pitch``, ``roll`` and ``yaw`` as
     the player's stick (the window mod's ``TestStick``), ``*_trim`` as the
@@ -94,6 +97,22 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
                     pass
         t0 = ut()
         t0_box.append(t0)
+        if runway and rotate:
+            # A player's rotation: stick back from ``rotate`` m/s until the
+            # nose is ROTATE_PITCH_DEG up (or ROTATE_MAX_S), then let go --
+            # the hold keeps the pitch it is left at.
+            v = conn.space_center.active_vessel
+            fl = v.flight(v.orbit.body.reference_frame)
+            speed = conn.add_stream(getattr, fl, "speed")
+            pitch = conn.add_stream(getattr, fl, "pitch")
+            while not stop.is_set() and speed() < rotate:
+                time.sleep(0.02)
+            svc.test_stick(ROTATE_STICK, 0.0, 0.0)
+            t_rot = ut()
+            while (not stop.is_set() and pitch() < ROTATE_PITCH_DEG
+                   and ut() - t_rot < ROTATE_MAX_S):
+                time.sleep(0.02)
+            svc.test_stick(0.0, 0.0, 0.0)
         events = []
         for axis, value, start, length in pulses:
             events.append((start, axis, value))
@@ -175,8 +194,12 @@ def summary(path, t0, pulses):
         return "no FLY lines"
     busy = [(s - 0.0, s + ln + QUIET_S) for _, _, s, ln in pulses]
 
+    # From 10 s before the first pulse (the take-off and climb-out, on the
+    # runway, are not a hold being disturbed).
+    start = max(2.0, min((s for _, _, s, _ in pulses), default=0.0) - 10.0)
+
     def quiet(t):
-        return not any(a <= t - t0 < b for a, b in busy) and t - t0 > 2.0
+        return not any(a <= t - t0 < b for a, b in busy) and t - t0 > start
 
     out = []
     # axis: (name, attitude index, target index, rate index)
@@ -185,7 +208,7 @@ def summary(path, t0, pulses):
                                       ("pitch", 4, 7, 10, False),
                                       ("yaw", 5, 8, 12, True)):
         stats = []
-        for sel in (quiet, lambda t: t - t0 > 2.0):
+        for sel in (quiet, lambda t: t - t0 > start):
             rs = [r for r in rows if sel(r[-1])]
             if len(rs) < 3:
                 stats.append("-")
@@ -253,6 +276,11 @@ def main():
                    "goes to full throttle, brakes off; no pulses unless "
                    "--pulses is given; the summary adds the take-off")
     p.add_argument("--craft", default="Electric Warbird")
+    p.add_argument("--rotate", type=float, default=None, metavar="M_S",
+                   help="--runway: pull the stick back (as the player) "
+                   "from this speed until the nose is %g deg up, then let go "
+                   "(a nose-wheel plane needs it; the hold keeps the pitch "
+                   "it is left at)" % ROTATE_PITCH_DEG)
     p.add_argument("--mode", type=int, default=0, help="0 CRUISE, 1 HOLD")
     p.add_argument("--seconds", type=float, default=60.0,
                    help="game seconds the pilot flies")
@@ -276,7 +304,7 @@ def main():
     t0_box = []
     th = threading.Thread(target=disturb, args=(rpc, stream, pulses, started,
                                                 stop, t0_box, 3.0,
-                                                args.runway),
+                                                args.runway, args.rotate),
                           daemon=True)
     th.start()
     # The blades are flown by propPitch inside the pilot, as live.
