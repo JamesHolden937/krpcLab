@@ -31,6 +31,9 @@ class Config:
     # (MAX_*_RATE_DEG_S): what bounds an axis with no authority.
     RATE_PHASE_MARGIN_DEG: float = 47.0
     LOOP_DELAY_TICKS: float = 1.5
+    # The share of the rate asked for that goes through the proportional
+    # term (setpoint weighting; the integral sees all of it).
+    RATE_SETPOINT_WEIGHT: float = 1.0
     RATE_TAU_MIN_S: float = 0.15
     # The control surfaces take time to move (KSP slews each by its
     # actuatorSpeed over its ctrlSurfaceRange, read from the game by the

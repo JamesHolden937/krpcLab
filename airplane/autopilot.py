@@ -455,7 +455,8 @@ class AirplanePilot:
             # tail wheel it would wind nose-up all down the runway (+0.13
             # by 41 m/s, LOG15423) and pitch the plane up at lift-off.
             u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew,
-                                   integrate=not (ground and i == 0))
+                                   integrate=not (ground and i == 0),
+                                   weight=cfg.RATE_SETPOINT_WEIGHT)
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))

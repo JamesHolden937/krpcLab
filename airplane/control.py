@@ -359,9 +359,13 @@ class RateLoop:
         return u
 
     def step(self, want, rate, kp, ki, dt, integrate=True, proportional=True,
-             slew=None):
+             slew=None, weight=1.0):
+        """``weight`` of the rate asked for goes through the proportional
+        term (the rest only through the integral): below 1 a step in what
+        is asked for no longer kicks the input, so the PI's zero does not
+        overshoot it, while a disturbance meets the full gain."""
         e = want - rate
-        p = kp * e if proportional else 0.0
+        p = kp * (weight * want - rate) if proportional else 0.0
         raw = p + self.i
         if integrate and dt > 0.0:
             di = ki * e * dt
