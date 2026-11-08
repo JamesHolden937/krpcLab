@@ -295,6 +295,29 @@ class Plant:
         self.n += 1
 
 
+# The PI loop of ``pi_gains`` (both poles at -1/tau, no damping) crosses
+# over at omega tau = sqrt(2 + sqrt(5)) with atan(2 sqrt(2 + sqrt(5))) =
+# 76.3 deg of phase margin, before any delay.
+CROSSOVER = math.sqrt(2.0 + math.sqrt(5.0))
+MARGIN_NO_DELAY_DEG = math.degrees(math.atan(2.0 * CROSSOVER))
+
+
+def tau_ticks(margin_deg, delay_ticks):
+    """The rate loop's closing time, in ticks, that keeps ``margin_deg`` of
+    phase margin through a delay of ``delay_ticks``: a delay L costs
+    ``omega L`` of phase at the crossover ``omega = CROSSOVER / tau``, so
+    ``tau = CROSSOVER L / (76.3 deg - margin)``.  The loop reads the state
+    a tick before it acts and holds its command for the next tick, so
+    about a tick and a half is the delay of any craft at any tick; at 4
+    ticks it had 32 deg of margin, and the Warbird's roll rang at +/-130
+    deg/s after a stick release (LOG15483)."""
+    room = math.radians(MARGIN_NO_DELAY_DEG - margin_deg)
+    if room <= 0.0:
+        raise ValueError("margin %.1f >= %.1f deg" % (margin_deg,
+                                                       MARGIN_NO_DELAY_DEG))
+    return CROSSOVER * delay_ticks / room
+
+
 def pi_gains(effect, damping, tau, kp_max):
     """``(kp, ki)`` for a rate loop on ``w' = effect u - damping w``
     (``effect`` rad/s^2 per unit input): PI with both closed-loop poles at
