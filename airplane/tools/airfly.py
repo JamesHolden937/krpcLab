@@ -86,6 +86,12 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
         if runway:
             c.brakes = False
             c.throttle = 1.0
+            # A jet's engines (props are flown by propPitch).
+            for e in conn.space_center.active_vessel.parts.engines:
+                try:
+                    e.active = True
+                except Exception:                       # noqa: BLE001
+                    pass
         t0 = ut()
         t0_box.append(t0)
         events = []
