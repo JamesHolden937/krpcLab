@@ -54,7 +54,7 @@ DEFAULT_PULSES = ("roll:0.05:6:0.5,roll:-0.05:14:1.0,roll:0.05:22:0.5,"
                   "pitch:0.1:30:0.5,pitch:-0.1:38:0.5,yaw:0.2:46:0.5,"
                   "roll_trim:0.05:52:3")
 QUIET_S = 1.0
-ROTATE_STICK = 0.5
+ROTATE_STICK = 1.0
 ROTATE_PITCH_DEG = 10.0
 ROTATE_MAX_S = 4.0
 REVERSAL_DEG_S = 2.0
