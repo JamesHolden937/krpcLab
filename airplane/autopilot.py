@@ -136,6 +136,10 @@ class AirplanePilot:
                                  cfg.PLANT_WINDOW_S)
                        for _ in AXES]
         self.flown = None
+        self.stiff = law.Stiffness(cfg.STIFF_FORGET_S,
+                                   math.radians(cfg.STIFF_STILL_DEG_S),
+                                   math.radians(cfg.STIFF_SPREAD_DEG),
+                                   cfg.STIFF_G_MAX)
         self.ringing = [law.Ringing(cfg.RING_REVERSALS, cfg.RING_SWING,
                                     cfg.RING_WINDOW_S, cfg.RING_RECOVER_PER_S,
                                     cfg.RING_FLOOR) for _ in AXES]
@@ -306,7 +310,8 @@ class AirplanePilot:
                  (getattr, (self.surface_flight, "mean_altitude"))]
         calls += [(getattr, (c, a)) for a in AXES]
         calls += [(getattr, (c, a + "_trim")) for a in AXES]
-        calls += [(getattr, (self.vessel, "situation"))]
+        calls += [(getattr, (self.vessel, "situation")),
+                  (getattr, (self.surface_flight, "angle_of_attack"))]
         return ask(self.conn, calls)
 
     def run_fly(self, ut):
@@ -316,6 +321,7 @@ class AirplanePilot:
         reads = list(got[8:11])
         trims = list(got[11:14])
         ground = law.on_ground(got[14])
+        alpha = math.radians(got[15]) if got[15] is not None else None
         dt = 0.0 if self.last_ut is None else max(0.0, ut - self.last_ut)
         self.last_ut = ut
         if dt > 0.0:
@@ -426,6 +432,20 @@ class AirplanePilot:
                 acc_i, u_i, w_i = self.flown[i]
                 self.plants[i].update(acc_i, u_i, w_i, rate[i], dt)
 
+        # The pitch stiffness, from the last tick's flown input in a
+        # quasi-steady hold; with it the trim also integrates the attitude
+        # error (control.Stiffness).
+        if self.flown is not None and not ground:
+            self.stiff.update(alpha, self.flown[0][1], q, dt)
+        if (cfg.ATTITUDE_TRIM and not ground and not active[0]
+                and not constant and dt > 0.0):
+            g = self.stiff.g
+            if g > 0.0:
+                lp = self.loops[0]
+                lp.i = law.clamp(
+                    lp.i + g * k_att[0] * (ttheta - theta)
+                    * max(0.0, math.cos(phi)) * dt,
+                    -lp.i_max, lp.i_max)
         out = []
         kps = []
         tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
@@ -476,7 +496,7 @@ class AirplanePilot:
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
             "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f fitq=%.2f,%.2f,%.2f "
-            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f gnd=%d%s"
+            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f gnd=%d stiff=%.2f%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
                deg(tphi), deg(ttheta), deg(tpsi) % 360.0,
@@ -488,7 +508,7 @@ class AirplanePilot:
                               else "?" for a in self.accel),
                *[pl.k for pl in self.plants], *[pl.d for pl in self.plants],
                *[pl.quality for pl in self.plants],
-               *[rg.mult for rg in self.ringing], *taus, int(ground),
+               *[rg.mult for rg in self.ringing], *taus, int(ground), self.stiff.g if self.stiff.ready else -1.0,
                " const" if constant else "")))
         self.lines = [
             "mode    : %s%s%s" % (MODES[mode], ", constant rates" if constant

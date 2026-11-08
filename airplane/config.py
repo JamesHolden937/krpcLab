@@ -89,6 +89,17 @@ class Config:
     # CRUISE's slip integral is held to this yaw rate.
     SLIP_I_MAX_DEG_S: float = 5.0
     INTEGRAL_MAX: float = 0.6
+    # Pitch stiffness (control.Stiffness): the input holding an attitude
+    # costs per radian of angle of attack, fitted in flight on the ticks
+    # with the pitch rate under STIFF_STILL_DEG_S, forgetting over
+    # STIFF_FORGET_S, trusted once the angles of attack seen spread over
+    # STIFF_SPREAD_DEG, at most STIFF_G_MAX; the pitch trim then also
+    # integrates the attitude error at g / (ATTITUDE_TAU_FACTOR tau).
+    ATTITUDE_TRIM: bool = False
+    STIFF_FORGET_S: float = 30.0
+    STIFF_STILL_DEG_S: float = 2.0
+    STIFF_SPREAD_DEG: float = 2.0
+    STIFF_G_MAX: float = 10.0
 
     # --- the player's stick -----------------------------------------------
     # A stick deflection beyond this is the player flying the axis: the

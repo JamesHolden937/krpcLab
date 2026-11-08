@@ -424,6 +424,67 @@ class Ringing:
         return False
 
 
+class Stiffness:
+    """How much input holding an attitude costs per radian of angle of
+    attack: the airframe's static stability over its control power,
+    ``K / E`` (both scale with dynamic pressure, so the ratio is the
+    airframe's), measured in flight.  In a quasi-steady hold the input
+    flown (ours, the stick and the trim) balances the stability moment:
+    ``u = u0 + g alpha``; ``g`` is fitted by least squares forgetting over
+    ``forget_s`` on the ticks with the body rate under ``still`` rad/s,
+    and is trusted (``ready``) once the angles of attack it has seen
+    spread over ``spread`` rad.
+
+    The rate loop's PI is sized on ``w' = E u`` alone; on an airframe whose
+    stability moment ``K alpha`` dwarfs what its integral can supply, an
+    attitude error is held off by the spring and the integral winds in at
+    ``1 / (tau^3 E)`` -- the KL Jet Trainer's nose fell from 8 to -4 deg
+    after its rotation with 0.05 of up input against the 0.5 it needed
+    (LOG15521).  With the spring the attitude loop's slow pole is ``E ki /
+    K``; putting it at the attitude loop's own ``p`` takes an attitude
+    integral of ``p K / E = p g`` (input per radian-second)."""
+
+    def __init__(self, forget_s, still, spread, g_max):
+        self.forget_s, self.still = forget_s, still
+        self.spread, self.g_max = spread, g_max
+        self.n = 0.0                # forgetting sums: weight, x, y, xx, xy
+        self.sx = self.sy = self.sxx = self.sxy = 0.0
+        self.lo = self.hi = None
+
+    def update(self, alpha, u, rate, dt):
+        if alpha is None or u is None or dt <= 0.0 or abs(rate) > self.still:
+            return
+        lam = math.exp(-dt / self.forget_s)
+        self.n = lam * self.n + 1.0
+        self.sx = lam * self.sx + alpha
+        self.sy = lam * self.sy + u
+        self.sxx = lam * self.sxx + alpha * alpha
+        self.sxy = lam * self.sxy + alpha * u
+        # The spread seen, decaying toward the present over forget_s.
+        f = 1.0 - lam
+        self.lo = alpha if self.lo is None else min(alpha,
+                                                     self.lo + f * (alpha - self.lo))
+        self.hi = alpha if self.hi is None else max(alpha,
+                                                     self.hi + f * (alpha - self.hi))
+
+    @property
+    def ready(self):
+        return (self.lo is not None and self.hi - self.lo >= self.spread
+                and self.n > 5.0)
+
+    @property
+    def g(self):
+        """Input per radian of angle of attack, in [0, g_max]; 0 until
+        ``ready`` (the loop then flies as it would without it)."""
+        if not self.ready:
+            return 0.0
+        var = self.sxx / self.n - (self.sx / self.n) ** 2
+        if var <= 1e-9:
+            return 0.0
+        cov = self.sxy / self.n - (self.sx / self.n) * (self.sy / self.n)
+        return clamp(cov / var, 0.0, self.g_max)
+
+
 GROUND = ("landed", "splashed", "pre_launch")
 
 

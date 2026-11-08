@@ -417,6 +417,67 @@ class TestPhaseMargin(unittest.TestCase):
             law.tau_ticks(80.0, 1.5)
 
 
+class TestStiffness(unittest.TestCase):
+    def test_fit_recovers_the_slope(self):
+        st = law.Stiffness(30.0, math.radians(2.0), math.radians(2.0), 10.0)
+        self.assertEqual(st.g, 0.0)                     # nothing seen yet
+        for k in range(600):
+            a = math.radians(1.0 + 6.0 * (k % 100) / 100.0)
+            st.update(a, 0.05 + 3.0 * a, 0.0, 0.1)
+            st.update(a, 9.0, 1.0, 0.1)                 # manoeuvring: ignored
+        self.assertTrue(st.ready)
+        self.assertAlmostEqual(st.g, 3.0, places=3)
+
+    def test_no_spread_no_trust(self):
+        st = law.Stiffness(30.0, math.radians(2.0), math.radians(2.0), 10.0)
+        for _ in range(300):
+            st.update(math.radians(3.0), 0.2, 0.0, 0.1)
+        self.assertFalse(st.ready)
+        self.assertEqual(st.g, 0.0)
+
+    @staticmethod
+    def hold(stiff_k, g, seconds=6.0, damp=1.0):
+        """Pitch attitude held at 8 deg from 0 on ``theta'' = E u - K theta
+        - 2 zeta sqrt(K) theta'`` (E 30 rad/s^2, the flight path level, a
+        short period damped at zeta = damp / 2), the rate PI sized on E alone
+        at tau 0.5 s, the attitude loop at 1 / (3 tau), its integral at
+        ``g p``; a tick of 0.1 s, the command a tick late.  The attitude's
+        error at the end and its peak overshoot (deg)."""
+        e_, dt, tau = 30.0, 0.1, 0.5
+        kp, ki = law.pi_gains(e_, 0.0, tau, 1e9)
+        p = 1.0 / (3.0 * tau)
+        loop = law.RateLoop(0.6)
+        th, q, u_late, target, over = 0.0, 0.0, 0.0, math.radians(8.0), 0.0
+        for _ in range(int(seconds / dt)):
+            want = p * (target - th)
+            loop.i = law.clamp(loop.i + g * p * (target - th) * dt, -0.6, 0.6)
+            u = loop.step(want, q, kp, ki, dt)
+            for _ in range(10):                     # the plant, finer
+                q += (e_ * u_late - stiff_k * th
+                      - damp * math.sqrt(stiff_k) * q) * dt / 10
+                th += q * dt / 10
+            u_late = u
+            over = max(over, th - target)
+        return math.degrees(target - th), math.degrees(over)
+
+    def test_attitude_integral_holds_a_stiff_airframe(self):
+        """K / E = 3 (0.5 of input holds 9.5 deg of alpha): the rate loop
+        alone is still 4+ deg short after 6 s; with g p it holds within a
+        degree, without overshooting by more than a degree."""
+        k = 90.0
+        alone, _ = self.hold(k, 0.0)
+        err, over = self.hold(k, k / 30.0)
+        self.assertGreater(alone, 4.0)
+        self.assertLess(abs(err), 1.0)
+        self.assertLess(over, 1.0)
+
+    def test_soft_airframe_measures_no_spring(self):
+        """No stiffness, g fitted ~0: the loop is the rate loop's own."""
+        err, over = self.hold(0.0, 0.0)
+        self.assertLess(abs(err), 0.5)
+        self.assertLess(over, 2.0)
+
+
 class TestStickGate(unittest.TestCase):
     def gate(self):
         return law.StickGate(0.05, 0.2, 0.15)
