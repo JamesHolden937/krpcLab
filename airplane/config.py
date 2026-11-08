@@ -19,15 +19,21 @@ class Config:
     BANK_LIMIT_DEG: float = 89.0
 
     # --- gains: from the craft, not fitted to it (control.py) ------------
-    # The rate loops close in RATE_TAU_TICKS of the loop's own measured
-    # interval (never under RATE_TAU_MIN_S): a loop cannot be faster than
-    # what it can serve.  The PI gains put both poles at -1/tau on the
-    # axis's measured response (PLANT_* below), starting from kRPC's
-    # available_torque / moment_of_inertia (the surfaces at the present q
-    # and Mach), re-read every AUTHORITY_REFRESH_S of game time.  No axis
-    # asks for more than full input for an error of its rate cap
+    # The rate loops close in a number of the loop's own measured ticks
+    # (never under RATE_TAU_MIN_S) set by the phase margin they must keep
+    # through the loop's delay -- the read a tick before the command, held
+    # a tick: LOOP_DELAY_TICKS -- (control.tau_ticks): a loop cannot be
+    # faster than what it can serve.  The PI gains put both poles at
+    # -1/tau on the axis's measured response (PLANT_* below), starting from
+    # kRPC's available_torque / moment_of_inertia (the surfaces at the
+    # present q and Mach), re-read every AUTHORITY_REFRESH_S of game time.
+    # No axis asks for more than full input for an error of its rate cap
     # (MAX_*_RATE_DEG_S): what bounds an axis with no authority.
-    RATE_TAU_TICKS: float = 4.0
+    RATE_PHASE_MARGIN_DEG: float = 47.0
+    LOOP_DELAY_TICKS: float = 1.5
+    # The share of the rate asked for that goes through the proportional
+    # term (setpoint weighting; the integral sees all of it).
+    RATE_SETPOINT_WEIGHT: float = 1.0
     RATE_TAU_MIN_S: float = 0.15
     # The control surfaces take time to move (KSP slews each by its
     # actuatorSpeed over its ctrlSurfaceRange, read from the game by the
@@ -43,8 +49,6 @@ class Config:
     # The attitude loops (and CRUISE's slip loop) close ATTITUDE_TAU_FACTOR
     # times slower than the rate loops: error / (factor x tau) is the rate
     # asked for; the slip loop's integral INTEGRAL_TAU_FACTOR slower again.
-    # (RATE_TAU_TICKS 2.5 rang more in pitch and yaw and settled roll no
-    # faster than 4: airfly batch 2026-11-05, LOG15339-15361.)
     ATTITUDE_TAU_FACTOR: float = 3.0
     # kRPC's authority is a model, wrong 4x either way on the Warbird
     # (control.Plant): each axis's response w' = k accel u - d w + c is

@@ -91,6 +91,8 @@ class AirplanePilot:
         self.actuator_call = (getattr(svc, "surface_actuators")
                               if svc is not None else None)
         self.next_authority = 0.0
+        self.tau_ticks = law.tau_ticks(cfg.RATE_PHASE_MARGIN_DEG,
+                                       cfg.LOOP_DELAY_TICKS)
         self.interval = None
         self.slip_i = 0.0
         self.last_ut = None
@@ -183,12 +185,13 @@ class AirplanePilot:
 
     def taus(self, caps):
         """Each axis's (pitch, roll, yaw) rate-loop closing time: at least
-        RATE_TAU_TICKS of the loop's own measured interval (and
+        ``tau_ticks`` (the phase margin's) of the loop's own measured
+        interval (and
         RATE_TAU_MIN_S), and no faster than its surfaces can move
         (``control.closing_time``, a step of the axis's rate cap)."""
         cfg = self.cfg
         tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
-        base = max(cfg.RATE_TAU_MIN_S, cfg.RATE_TAU_TICKS * tick)
+        base = max(cfg.RATE_TAU_MIN_S, self.tau_ticks * tick)
         # On kRPC's figure, not the measured effect: the measured effect
         # (roll ~6x kRPC's on the Warbird) shortened roll's tau 0.37 ->
         # 0.26 s and its reversals rose 0.36 -> 0.91/s (CRUISE), 0.70 ->
@@ -431,7 +434,7 @@ class AirplanePilot:
             # Closed on this tick, when it is longer than the mean one (the
             # Warbird's roll rate flipped sign tick to tick on 0.15-0.2 s
             # ticks, gains sized on 0.10, LOG15423).
-            taus[i] = law.tick_tau(taus[i], max(dt, tick), cfg.RATE_TAU_TICKS)
+            taus[i] = law.tick_tau(taus[i], max(dt, tick), self.tau_ticks)
             kp, ki = law.pi_gains(self.effect(i), self.plants[i].d, taus[i],
                                   1.0 / caps[i])
             slew = self.acts[i][0]
@@ -452,7 +455,8 @@ class AirplanePilot:
             # tail wheel it would wind nose-up all down the runway (+0.13
             # by 41 m/s, LOG15423) and pitch the plane up at lift-off.
             u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew,
-                                   integrate=not (ground and i == 0))
+                                   integrate=not (ground and i == 0),
+                                   weight=cfg.RATE_SETPOINT_WEIGHT)
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))

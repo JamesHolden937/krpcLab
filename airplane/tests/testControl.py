@@ -376,6 +376,47 @@ class TestLongTicks(unittest.TestCase):
         self.assertAlmostEqual(law.tick_tau(0.3, 0.1, 4.0), 0.4)
 
 
+class TestPhaseMargin(unittest.TestCase):
+    def overshoot(self, ticks):
+        """A 0.1 rad/s step on a pure-acceleration axis, the command a tick
+        late and held a tick (the farm's loop): the rate's peak over the
+        step, relative."""
+        accel, dt = 20.0, 0.1
+        kp, ki = law.pi_gains(accel, 0.0, ticks * dt, 1e9)
+        loop = law.RateLoop(0.6)
+        rate, u_late, peak = 0.0, 0.0, 0.0
+        for _ in range(200):
+            u = loop.step(0.1, rate, kp, ki, dt)
+            rate += accel * u_late * dt
+            u_late = u
+            peak = max(peak, rate)
+        return peak / 0.1 - 1.0
+
+    def test_margin_is_what_the_formula_says(self):
+        """The loop's phase at its crossover, with the delay, leaves the
+        margin asked for."""
+        for margin in (40.0, 47.0, 55.0):
+            tau = law.tau_ticks(margin, 1.5)
+            lo, hi = 1e-3, 100.0          # |L(jw)| = 1 by bisection
+            for _ in range(200):
+                w = 0.5 * (lo + hi)
+                mag = math.hypot(2.0 * w / tau, 1.0 / tau ** 2) / w ** 2
+                lo, hi = (w, hi) if mag > 1.0 else (lo, w)
+            phase = (-180.0 + math.degrees(math.atan(2.0 * w * tau))
+                     - math.degrees(w * 1.5))
+            self.assertAlmostEqual(phase + 180.0, margin, places=6)
+
+    def test_the_margin_takes_the_ringing_out(self):
+        """At 4 ticks (32 deg of margin) the step overshoots by more than
+        half; at the 47 deg default's ~6 ticks by under a third."""
+        self.assertGreater(self.overshoot(4.0), 0.5)
+        self.assertLess(self.overshoot(law.tau_ticks(47.0, 1.5)), 0.33)
+
+    def test_no_margin_past_the_undelayed_loop(self):
+        with self.assertRaises(ValueError):
+            law.tau_ticks(80.0, 1.5)
+
+
 class TestStickGate(unittest.TestCase):
     def gate(self):
         return law.StickGate(0.05, 0.2, 0.15)

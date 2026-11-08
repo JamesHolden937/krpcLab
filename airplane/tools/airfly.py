@@ -3,7 +3,7 @@
 air, disturb it, and say how well it held.
 
     ./airplane/tools/airfly.py --instance 0                  # CRUISE, qs_warbird
-    ./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_TAU_TICKS=6
+    ./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_PHASE_MARGIN_DEG=50
 
 The save (``airstart.py``: the Electric Warbird level at 100 m, 200 m/s,
 full throttle) is loaded paused, the pilot is started with ``--autostart``
