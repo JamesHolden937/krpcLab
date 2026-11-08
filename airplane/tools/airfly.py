@@ -104,7 +104,9 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
             v = conn.space_center.active_vessel
             fl = v.flight(v.orbit.body.reference_frame)
             speed = conn.add_stream(getattr, fl, "speed")
-            pitch = conn.add_stream(getattr, fl, "pitch")
+            # (pitch from the surface frame's flight: in the body's frame
+            # kRPC reads 75 deg on the runway)
+            pitch = conn.add_stream(getattr, v.flight(), "pitch")
             while not stop.is_set() and speed() < rotate:
                 time.sleep(0.02)
             svc.test_stick(ROTATE_STICK, 0.0, 0.0)
@@ -255,6 +257,12 @@ def launch_on_runway(instance, craft, rpc, stream):
         conn.krpc.paused = False          # a run killed while paused
     except Exception:                                   # noqa: BLE001
         pass
+    if conn.space_center.active_vessel is None:
+        # In the space centre (a fresh instance) kRPC's launch has hung on
+        # the farm: load a flight first.
+        conn.close()
+        conn = flighttest.load_paused(instance, "qs_warbird")
+        conn.krpc.paused = False
     conn.space_center.launch_vessel("SPH", craft, "Runway", recover=True)
     time.sleep(8.0)
     c = conn.space_center.active_vessel.control
