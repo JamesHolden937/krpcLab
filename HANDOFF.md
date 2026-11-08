@@ -12,42 +12,37 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-06: airplane -- runway handling, stick gate, crash guard (fingerprint `b1f8fe9b`)
+## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 
-`airplane/` (read `airplane/CLAUDE.md`; history `docs/airplane/journal.md`
-2026-11-06). The user: it drifts (rolls left on take-off, pitches up by
-itself); hold attitude on the runway, fewer oscillations, general; then a
-crash guard. All committed; **not pushed, how-it-works PDF not redone.**
+`airplane/` (read `airplane/CLAUDE.md`, "Where it stands" / "Next";
+journal 2026-11-08). The user: delete the crash guard from production;
+reduce oscillation; work for the vast majority of aircraft; build jets
+and screenshot them before flying. All committed; **not pushed;
+howItWorks.pdf not redone (crash guard still in it). Farm stopped.**
 
-**Defaults now:** on the ground (situation landed/splashed/pre-launch)
-wings level, pitch held P-only (no trim), heading held both modes, only
-the yaw plant fitted; targets re-taken at lift-off. `StickGate`
-(`STICK_CONFIRM_S` 0.15, `STICK_FIRM` 0.2) against the live read-back's
-one-tick flicker. kp <= 1/rate cap (`KP_MAX` deleted). Rate loop closed on
-the current tick when longer than the mean (`tick_tau`). Crash guard
-(`GUARD`, `GUARD_FLOOR_M` 20, `GUARD_MARGIN_S` 2, `GUARD_REACT_TAUS` 3):
-wings level and pull over holds and stick when the predicted recovery
-would end too low; gear down disarms it.
+**Done:** crash guard deleted (`GUARD*`, `pull_up_loss`). Rate-loop tau
+from a phase margin (`RATE_PHASE_MARGIN_DEG`, default 32.12 = the old 4
+ticks; 47 is the candidate). `control.Stiffness` (pitch input per rad of
+alpha, fitted in flight) and `ATTITUDE_TRIM` (off): the trim integrates the
+attitude error at g p. `RATE_SETPOINT_WEIGHT` (1 = off). Three stock jets
+(`airplane/tools/craftgen.py`, screenshots `logs/shots/craftgen/`),
+Seahawk and Suborbital hopper craft in `saves/craft/SPH`.
+`airfly --rotate`, runway launch from a loaded flight.
 
-**Measured:** `airfly --runway` (new flag), 5 flights LOG15435-15442 vs
-old LOG15423/15451: ground bank 2-3 v 6-7.5 deg, heading drift 3.4 v
-5-6.5, pitch error after lift-off 0.7 v 1-3.9 rms (old pitched to 25 deg),
-roll rev 0.7-1.2 v 1.2-1.8/s. Crash guard on the (broken, diving) save:
-6/6 survive v 0/3 without it.
+**Unmeasured:** every flag above -- one flight per cell so far. The
+trainer's sag after rotation (both margins) is the model's missing
+stability spring, which `ATTITUDE_TRIM` targets.
 
-**Blocker:** `saves/qs_warbird` is invalid on the MiniSystem farm (loads at
-155 m/s, -56 deg/s pitch); `airstart.py` failed 3x (kRPC autopilot 6 m off
-altitude -- tolerance widened, unverified -- then a runway flip, then no
-prop thrust). In-air pulse comparisons need a new save first.
+**Next:** re-fly the killed screening batch on **4 instances** (6 put
+21-28 GB in swap within two rounds and the reaper killed the batch), then
+3+ flights a cell, promote/delete `RATE_PHASE_MARGIN_DEG` 47,
+`ATTITUDE_TRIM`, `RATE_SETPOINT_WEIGHT`; PDF; push.
 
-**Next:** re-make qs_warbird (maybe fly the climb-out with our own pilot +
-`--runway` instead of kRPC's autopilot); then airfly pulses new v old;
-the user flies it live; HOLD pitch reversals; a second airframe; redo
-howItWorks.pdf and push.
-
-**Traps:** ksp2/ksp5 died mid-batch twice (connection refused) -- `start.sh`
-relaunches only the dead ones. Pipe a long harness to a file, not `| tail`
-(a timeout kill loses the output).
+**Traps:** `git commit -a` swept the user's four uncommitted doc edits
+(CLAUDE.md, docs/farmSetup.md, docs/testInstances.md,
+testInstances/README.md) into a commit once -- undone; they are still
+uncommitted, not ours. Commits take ~2 min (post-commit hook). A fresh
+instance sits in the space centre and `launch_vessel` hangs there.
 
 ## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `570902c5`, propPitch `ca612601`)
 

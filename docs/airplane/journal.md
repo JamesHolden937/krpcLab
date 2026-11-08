@@ -188,3 +188,39 @@ cleared climbing at 52-84 m; all ended 400-680 m up.
 The user: "get rid of the crash guard in the production version". `GUARD`,
 `GUARD_*`, `control.pull_up_loss`, its tests and the `hgt=`/`vs=`/`guard=`
 log fields are gone (code in `git log`, commit after 6e06ba8).
+
+## 2026-11-08: phase margin, test jets, pitch stiffness
+
+The user: delete the crash guard (done, above); reduce oscillation; make it
+work for the vast majority of aircraft; build own craft (jets), screenshot
+them before flying.
+
+- **Oscillation.** LOG15483 (Warbird, runway + pulses): after a stick
+  release roll rings +/-130 deg/s at ~1.2 Hz until `Ringing` halves the
+  gain. The PI at poles -1/tau crosses at omega tau 2.06 with 76.3 deg of
+  margin; ~1.5 ticks of delay at tau = 4 ticks leaves 32 deg. Now
+  `control.tau_ticks(RATE_PHASE_MARGIN_DEG, LOOP_DELAY_TICKS)`; default
+  32.12 (= 4 ticks) until measured. Offline step overshoot 60% (4 ticks)
+  -> 27% (47 deg, 6.0 ticks). `RATE_SETPOINT_WEIGHT` flag added (offline:
+  b 0.5 at 4 ticks, overshoot 4%), unflown.
+- **Craft.** `airplane/tools/craftgen.py`: stock parts copied from
+  existing craft files, orientations from the Warbird's wing (wing frame:
+  span -x, chord +y). Geometry probed in game (part bounding boxes).
+  `--check` launches from a loaded flight (kRPC's launch from the space
+  centre hangs on the farm; the pre-flight check also stopped once on
+  NoControlSources -- crew by name) and screenshots in free camera (the
+  first shot shows the old camera: one is discarded). The delta's wing was
+  moved 1.2 m aft after the check (AC 0.7 m ahead of the CoM).
+- **Harness.** `airfly --rotate`: the player's rotation (a nose-wheel jet
+  never rotates hands-off: the trainer ran off the runway end at 224 m/s
+  into the sea, LOG15488). `Flight.pitch` in the body frame read 75 deg on
+  the runway -- use the surface frame. Pulses at 0.05 sit on the stick
+  deadband (gate flickers); the A/B used 0.08.
+- **Batches** (LOG15498-15534, one flight a cell): see airplane/CLAUDE.md
+  "Where it stands". The trainer sags after the rotation in both margin
+  arms: kRPC's (and KSP's GetPotentialTorque's) pitch authority is real
+  (730 kNm at 6 kPa, the window mod agrees) but the airframe's stability
+  spring absorbs it; the trim needed is 0.21-0.27 in cruise and the rate
+  PI winds it at ~0.01/s. -> `control.Stiffness` + `ATTITUDE_TRIM` (off).
+- The third batch was killed by Claude Code's memory reaper (6 instances,
+  swap 17-28 GB); nothing from it. Farm stopped.

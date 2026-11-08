@@ -52,10 +52,15 @@ rate (`quality`, 0..1): `k^quality` and `quality x d`, so an axis the
 per-axis model cannot explain (HOLD's yaw, cross-controlled against a
 held bank) stays near kRPC's figure. `control.pi_gains` puts both poles of
 the rate loop at `-1/tau` on the measured plant: `kp = (2/tau - d) /
-effect` (>= 0), `ki = 1/(tau^2 effect)`. tau is `RATE_TAU_TICKS` (4) of the
-loop's own measured interval (>= 0.15 s) and the surfaces' travel (below):
-the loop is as fast as it can serve. A tick longer than the mean closes
-that tick's loop on `RATE_TAU_TICKS` of it (`control.tick_tau`): gains
+effect` (>= 0), `ki = 1/(tau^2 effect)`. tau is a number of the loop's
+own measured interval (>= 0.15 s) set by the phase margin the loop keeps
+through its delay (`control.tau_ticks`: `RATE_PHASE_MARGIN_DEG` through
+`LOOP_DELAY_TICKS` 1.5 -- read a tick before acting, the command held a
+tick; this PI crosses over at omega tau = 2.06 with 76.3 deg before any
+delay), and by the surfaces' travel (below). **The default margin, 32.12
+deg, is the old 4 ticks**: 47 deg (6.0 ticks) is unmeasured on the farm
+(see Where it stands). A tick longer than the mean closes
+that tick's loop on the same number of it (`control.tick_tau`): gains
 sized on the mean tick overshoot on a long one and the rate flips sign tick
 to tick. No axis asks for more than full input for an error of its own
 rate cap (`kp <= 1 / MAX_*_RATE`; held there, `ki` puts both poles at
@@ -103,6 +108,19 @@ part of the yaw input's effect; the gear holds pitch and bank, which would
 fit as axes that barely answer). Off the ground the pitch and heading
 targets are re-taken where the take-off left them.
 
+**Pitch stiffness** (`control.Stiffness`, always fitted; used only with
+`ATTITUDE_TRIM`, **off**): the input holding an attitude costs per radian
+of angle of attack (`g` = K/E, the airframe's static stability over its
+control power; both scale with q), fitted on the ticks with the pitch
+rate under `STIFF_STILL_DEG_S`, trusted once alpha has spread
+`STIFF_SPREAD_DEG`. With the flag, the pitch trim also integrates the
+attitude error at `g / (ATTITUDE_TAU_FACTOR tau)`: on a stiff airframe the
+rate PI (sized on E alone) winds its trim in at ~1/(tau^3 E) and the
+attitude sags (the KL Jet Trainer: nose 8 -> -4 deg after its rotation,
+0.05 of up input against the 0.5 it needed, LOG15521). Offline
+(`TestStiffness`): K/E 3, an 8 deg hold's error after 6 s 6.6 -> 0.1 deg,
+no overshoot. Log `stiff=` (-1 until trusted).
+
 **The player's stick**: kRPC adds a client's input to the player's
 (`PilotAddon.OnFlyByWire`: `ControlInputs.Add`) and KSP folds the trim into
 the stick (`FlightInputHandler`), so the player's input is the read-back
@@ -129,35 +147,45 @@ airplane's panel). Unticking it hands the props back.
 integrals, `stick=` the player's input per axis, `kp=`/`acc=`/`k=`/`d=`/
 `fitq=`/`ring=`/`tau=` the gains and where they came from.
 
-## Where it stands (2026-11-05 evening, fingerprint `b3fd31af`)
+## Where it stands (2026-11-08, fingerprint after `a8e0e27`)
 
-**Test airframe: the Electric Warbird** (the user, 2026-11-05: use it from
-now on), `saves/qs_warbird`: level at 100 m, 200 m/s, full throttle,
-propPitch on the blades. Flown on the farm by `tools/airfly.py`, stick
-inputs through the window mod's `TestStick`. On it, against the gains
-from kRPC's figure (3 flights an arm, LOG15363-15382): roll reversals
-0.36 v 0.98/s (CRUISE) and 0.70 v 1.23/s (HOLD), pitch error 0.5-0.9 v
-2.9 deg, HOLD yaw error 1.1 v 2.1 deg. The out-of-trim roll gust peaks
-12-16 deg (no swing); a full-size roll input banks it 85 deg and CRUISE,
-holding that bank in its 4 g turn, cannot hold altitude -- by design.
+**Airframes:** the Electric Warbird, the Seahawk (stock Serenity twin
+prop) and three generated stock jets (`tools/craftgen.py`: KL Jet Trainer,
+KL Jet Delta, KL Jet Canard -- Panther, Mk1 fuselage, wingConnector3 wings;
+`--check` launches and photographs them). Suborbital hopper ground-loops
+on its own (-130 deg/s yaw against full rudder from 3 m/s: its four rotors'
+torque, unchecked); Arrow-E cannot launch on the farm (no control source).
+
+**Measured (one flight per cell -- screening, not a result):** the
+Warbird's roll after a stick release rings +/-130 deg/s at ~1.2 Hz until
+`Ringing` halves the gain (LOG15483): the reason for the phase margin.
+From the runway with `airfly --rotate 60`: trainer M32/M47 both bounce
+back onto the runway after the rotation and sag (the stiffness problem
+above); M47 crashed in CRUISE and HOLD (LOG15521, 15527), M32 survived
+both (LOG15522, 15526) -- the sag, not the margin, is what kills it. The
+delta never rotated at half stick (`ROTATE_STICK` now 1.0); the canard
+rolls over on the runway at 55-170 m/s (craft or ground handling,
+unread). Warbird/Seahawk fly either arm.
 
 ## Next
 
-1. The user flies it live (needs the game restarted for the window mod).
-2. HOLD's pitch reverses ~1/s in small swings; the gust rejection is
-   softer than the old stiffer law. Both from `airfly` summaries.
-3. A second airframe (a jet; a different wing) through `airstart.py` +
-   `airfly.py --save`: the fit has only met the Warbird.
-4. Yaw is modelled per axis; roll-yaw coupling (adverse yaw, dihedral) is
-   what the quality weighting is hiding, not measuring.
+1. Fly the screening batch the memory reaper killed (scratchpad `ab3.sh`
+   pattern; 6 instances put 21-28 GB in swap within two rounds -- fly 4):
+   ATTITUDE_TRIM off/on x margin 32/47 on trainer, delta, Warbird,
+   Seahawk; then 3+ flights a cell; promote or delete both flags.
+2. Yaw has the same spring (sideslip); roll the dihedral coupling.
+3. The canard's runway roll-over; the hopper's ground loop.
+4. howItWorks.pdf (crash guard gone, margin, stiffness) and push.
 
 ## Commands
 
 ```bash
 ./airplane/tools/airstart.py --instance 0    # (re)make qs_warbird: flies it from the runway, saves
 ./airplane/tools/airfly.py --instance 0      # CRUISE from qs_warbird, stick pulses, one summary line
-./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_TAU_TICKS=6   # HOLD, an override
+./airplane/tools/airfly.py --instance 1 --mode 1 --set RATE_PHASE_MARGIN_DEG=47   # HOLD, an override
 ./airplane/tools/airfly.py --instance 2 --runway   # from runway 09: full throttle, hands off; take-off summary
+./airplane/tools/airfly.py --instance 2 --runway --rotate 60 --craft "KL Jet Trainer"   # a jet: stick back at 60 m/s
+./airplane/tools/craftgen.py --check 5       # write the jets, launch and screenshot each on ksp5 (logs/shots/craftgen/)
 ./run.sh --pilot airplane                    # live: START on the panel
 ./run.sh --pilot airplane --set MODE=1       # start in HOLD
 .venv-pypy/bin/python -m unittest airplane.tests
