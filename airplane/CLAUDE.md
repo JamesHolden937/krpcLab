@@ -103,20 +103,6 @@ part of the yaw input's effect; the gear holds pitch and bank, which would
 fit as axes that barely answer). Off the ground the pitch and heading
 targets are re-taken where the take-off left them.
 
-**Crash guard** (`GUARD`, on): in the air with the gear up, every tick
-predicts the height a recovery from here loses (`control.pull_up_loss`:
-`GUARD_REACT_TAUS` 3 pitch closing times and a tick at the present sink,
-rolling wings level at the roll rate cap while the bank's lost lift
-drops it, then the flight path pulled level at the slower of the pitch
-rate cap and `TURN_MAX_G`: an arc of radius V/w) and, when that would end
-nearer the terrain or sea (`surface_altitude`) than `GUARD_FLOOR_M` 20 m
-plus `GUARD_MARGIN_S` 2 s of the sink, overrides the holds **and the
-player's stick**: wings level, full pitch-rate pull as they come level,
-until the plane is climbing with that clearance; then the attitude it
-climbed out at is held. Disarmed on the ground and with the gear down
-(landing). Events `crash guard: pull up (...)` / `clear`; `hgt=`, `vs=`,
-`guard=` on the FLY line; the panel says CRASH GUARD.
-
 **The player's stick**: kRPC adds a client's input to the player's
 (`PilotAddon.OnFlyByWire`: `ControlInputs.Add`) and KSP folds the trim into
 the stick (`FlightInputHandler`), so the player's input is the read-back

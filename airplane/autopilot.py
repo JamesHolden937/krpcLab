@@ -80,7 +80,6 @@ class AirplanePilot:
         self.manual = [False, False, False]     # pitch, roll, yaw
         self.gates = None
         self.ground = None          # on the wheels/floats (None: not read yet)
-        self.guarding = False       # the crash guard is pulling up
         self.written = [0.0, 0.0, 0.0]
         self.loops = None
         self.plants = None
@@ -200,39 +199,6 @@ class AirplanePilot:
                                  self.acts[i][1], caps[i], cfg.SLEW_FACTOR,
                                  cfg.LAG_FACTOR) for i in range(3)]
 
-    def crash_guard(self, ut, armed, height, vs, speed, phi, tau_pitch):
-        """Whether to pull up: in the air with the gear up, when a recovery
-        from here (``control.pull_up_loss``: react, roll wings level, pull
-        the flight path level at the pitch rate cap and ``TURN_MAX_G``)
-        would end closer to the terrain or sea than ``GUARD_FLOOR_M`` plus
-        ``GUARD_MARGIN_S`` of the present sink; until the plane climbs
-        with that clearance.  Disarmed on the ground and with the gear down
-        (landing)."""
-        cfg = self.cfg
-        if not cfg.GUARD or not armed or height is None or vs is None:
-            if self.guarding:
-                self.log.event(ut, "crash guard: disarmed")
-            self.guarding = False
-            return False
-        tick = self.interval if self.interval is not None else cfg.LOOP_SLEEP_S
-        loss = law.pull_up_loss(
-            speed or 0.0, vs, phi, math.radians(cfg.MAX_ROLL_RATE_DEG_S),
-            math.radians(cfg.MAX_PITCH_RATE_DEG_S), cfg.TURN_MAX_G,
-            cfg.GUARD_REACT_TAUS * tau_pitch + tick)
-        need = cfg.GUARD_FLOOR_M + cfg.GUARD_MARGIN_S * max(0.0, -vs)
-        clear = height - loss >= need
-        if not self.guarding and not clear:
-            self.guarding = True
-            self.log.event(ut, "crash guard: pull up (height %.0f m, sink "
-                           "%.1f m/s, bank %.0f deg; recovery loses %.0f m, "
-                           "needs %.0f)" % (height, -vs, math.degrees(phi),
-                                            loss, need))
-        elif self.guarding and clear and vs > 0.0:
-            self.guarding = False
-            self.log.event(ut, "crash guard: clear (height %.0f m, climbing "
-                           "%.1f m/s)" % (height, vs))
-        return self.guarding
-
     def effect(self, i):
         """Axis i's angular acceleration per unit input (rad/s^2): kRPC's
         figure (1 where it has none) times what the fit makes of it."""
@@ -337,10 +303,7 @@ class AirplanePilot:
                  (getattr, (self.surface_flight, "mean_altitude"))]
         calls += [(getattr, (c, a)) for a in AXES]
         calls += [(getattr, (c, a + "_trim")) for a in AXES]
-        calls += [(getattr, (self.vessel, "situation")),
-                  (getattr, (self.surface_flight, "surface_altitude")),
-                  (getattr, (self.surface_flight, "vertical_speed")),
-                  (getattr, (c, "gear"))]
+        calls += [(getattr, (self.vessel, "situation"))]
         return ask(self.conn, calls)
 
     def run_fly(self, ut):
@@ -350,7 +313,6 @@ class AirplanePilot:
         reads = list(got[8:11])
         trims = list(got[11:14])
         ground = law.on_ground(got[14])
-        height, vs, gear = got[15:18]
         dt = 0.0 if self.last_ut is None else max(0.0, ut - self.last_ut)
         self.last_ut = ut
         if dt > 0.0:
@@ -417,13 +379,6 @@ class AirplanePilot:
             caps = [min(c, x) for c, x in zip(caps, lim)]
         taus = self.taus(caps)
         k_att = [1.0 / (cfg.ATTITUDE_TAU_FACTOR * t) for t in taus]
-        guard = self.crash_guard(ut, not ground and not gear, height, vs,
-                                 speed, phi, taus[0])
-        if guard:
-            # Wings level and pull, over the holds and the player's stick;
-            # the attitude it climbs out at is held after.
-            active = [False, False, False]
-            tphi, ttheta, tpsi = 0.0, theta, psi
         for i, a in enumerate(active):
             if a != self.manual[i]:
                 self.log.event(ut, "stick %s %s" % (
@@ -458,10 +413,6 @@ class AirplanePilot:
         # want/rate in the stick's order: pitch (q), roll (p), yaw (r).
         want = [want[1], want[0], want[2]]
         want = [law.clamp(w, -c, c) for w, c in zip(want, caps)]
-        if guard:
-            # The pull the guard's prediction flew, as the wings come level.
-            want[0] = math.radians(cfg.MAX_PITCH_RATE_DEG_S) * max(
-                0.0, math.cos(phi))
         rate = [q, p, r]
         # What the last tick's input did: each axis's plant, measured --
         # on the ground yaw only (the steering is part of what the yaw
@@ -505,8 +456,7 @@ class AirplanePilot:
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))
-            out.append(law.clamp(u - s, -1.0, 1.0) if active[i] or guard
-                       else u)
+            out.append(law.clamp(u - s, -1.0, 1.0) if active[i] else u)
         self.command(out)
         # The input this tick flies until the next: ours, the player's stick
         # and the trim (KSP adds all three).
@@ -522,8 +472,7 @@ class AirplanePilot:
             "want=%+6.1f,%+6.1f,%+6.1f out=%+.3f,%+.3f,%+.3f "
             "i=%+.3f,%+.3f,%+.3f stick=%s kp=%.2f,%.2f,%.2f "
             "acc=%s k=%.2f,%.2f,%.2f d=%.1f,%.1f,%.1f fitq=%.2f,%.2f,%.2f "
-            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f gnd=%d hgt=%.0f "
-            "vs=%+.1f guard=%d%s"
+            "ring=%.2f,%.2f,%.2f tau=%.2f,%.2f,%.2f gnd=%d%s"
             % (MODES[mode], speed, alt or 0.0, q_dyn or 0.0,
                deg(phi), deg(theta), deg(psi) % 360.0,
                deg(tphi), deg(ttheta), deg(tpsi) % 360.0,
@@ -536,12 +485,10 @@ class AirplanePilot:
                *[pl.k for pl in self.plants], *[pl.d for pl in self.plants],
                *[pl.quality for pl in self.plants],
                *[rg.mult for rg in self.ringing], *taus, int(ground),
-               height if height is not None else -1.0, vs or 0.0, int(guard),
                " const" if constant else "")))
         self.lines = [
             "mode    : %s%s%s" % (MODES[mode], ", constant rates" if constant
                                   else "", ", on the ground" if ground
-                                  else ", CRASH GUARD: PULL UP" if guard
                                   else ""),
             "speed   : %.1f m/s  alt %.0f m" % (speed, alt or 0.0),
             "bank    : %+.1f (hold %+.1f)" % (deg(phi), deg(tphi)),

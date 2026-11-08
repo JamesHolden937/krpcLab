@@ -397,27 +397,6 @@ class Ringing:
         return False
 
 
-def pull_up_loss(speed, vs, phi, roll_rate, pitch_rate, max_g, react_s):
-    """Height (m) a recovery from here loses before the flight path is
-    level: ``react_s`` at the present sink before anything moves, the time
-    to roll wings level at ``roll_rate`` (rad/s) sinking as now and, banked,
-    falling at ``g (1 - cos phi)`` for what the wings no longer hold up,
-    then the flight path pulled up to level at the slower of ``pitch_rate``
-    and what ``max_g`` of load turns it at (``g (n - 1) / V``): an arc of
-    radius ``V / w`` from the present path angle, ``V (1 - cos gamma) /
-    w``.  0 while climbing level-winged."""
-    sink = max(0.0, -vs)
-    t = react_s + (abs(phi) / roll_rate if roll_rate > 0.0 else 0.0)
-    fall = 0.5 * G0 * (1.0 - math.cos(phi)) * t * t
-    loss = sink * t + fall
-    v = max(speed, 1.0)
-    gamma = math.asin(clamp(-sink / v, -1.0, 1.0))
-    w = min(pitch_rate, G0 * max(0.0, max_g - 1.0) / v)
-    if w > 0.0:
-        loss += v * (1.0 - math.cos(gamma)) / w
-    return loss
-
-
 GROUND = ("landed", "splashed", "pre_launch")
 
 

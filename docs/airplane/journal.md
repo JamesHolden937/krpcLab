@@ -182,3 +182,9 @@ within 20 m + 2 s of sink of `surface_altitude`; overrides holds and stick;
 gear down or on the ground disarms it. On the broken save 6/6 survived
 (LOG15453-15462, 3 CRUISE + 3 HOLD): 7 pulls at 62-108 m, sink 12-22 m/s,
 cleared climbing at 52-84 m; all ended 400-680 m up.
+
+## 2026-11-08: the crash guard deleted
+
+The user: "get rid of the crash guard in the production version". `GUARD`,
+`GUARD_*`, `control.pull_up_loss`, its tests and the `hgt=`/`vs=`/`guard=`
+log fields are gone (code in `git log`, commit after 6e06ba8).

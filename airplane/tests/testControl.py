@@ -400,36 +400,6 @@ class TestStickGate(unittest.TestCase):
         self.assertFalse(g.update(None, 0.06))
 
 
-class TestPullUp(unittest.TestCase):
-    R60, R15 = math.radians(60.0), math.radians(15.0)
-
-    def loss(self, speed, vs, bank_deg, react=1.0):
-        return law.pull_up_loss(speed, vs, math.radians(bank_deg), self.R60,
-                                self.R15, 4.0, react)
-
-    def test_climbing_level_loses_nothing(self):
-        self.assertEqual(self.loss(150.0, 5.0, 0.0), 0.0)
-
-    def test_arc_matches_the_geometry(self):
-        """Level wings, no reaction: the path pulled up at the slower of
-        15 deg/s and 3 g of turn (at 150 m/s: 11.2 deg/s)."""
-        v, vs = 150.0, -30.0
-        w = law.G0 * 3.0 / v
-        gamma = math.asin(vs / v)
-        self.assertAlmostEqual(self.loss(v, vs, 0.0, react=0.0),
-                               v * (1.0 - math.cos(gamma)) / w)
-
-    def test_bank_and_sink_cost_more(self):
-        base = self.loss(150.0, -10.0, 0.0)
-        self.assertGreater(self.loss(150.0, -10.0, 85.0), base + 10.0)
-        self.assertGreater(self.loss(150.0, -40.0, 0.0), 4 * base)
-
-    def test_steep_dive_at_speed(self):
-        """A 30 deg dive at 200 m/s: 100 m sinking through the 1 s of
-        reaction, then a 3 g arc of 200 (1 - cos 30) / (3 g / 200) = 182."""
-        self.assertAlmostEqual(self.loss(200.0, -100.0, 0.0), 282.15, places=1)
-
-
 class TestGround(unittest.TestCase):
     def test_situations(self):
         class S:
