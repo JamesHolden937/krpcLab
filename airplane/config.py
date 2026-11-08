@@ -29,7 +29,7 @@ class Config:
     # present q and Mach), re-read every AUTHORITY_REFRESH_S of game time.
     # No axis asks for more than full input for an error of its rate cap
     # (MAX_*_RATE_DEG_S): what bounds an axis with no authority.
-    RATE_PHASE_MARGIN_DEG: float = 47.0
+    RATE_PHASE_MARGIN_DEG: float = 32.12
     LOOP_DELAY_TICKS: float = 1.5
     # The share of the rate asked for that goes through the proportional
     # term (setpoint weighting; the integral sees all of it).
