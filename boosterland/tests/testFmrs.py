@@ -76,6 +76,14 @@ class TestFmrsSaves(unittest.TestCase):
         self.assertEqual(written, text.replace("activeVessel = 1",
                                                "activeVessel = 2"))
 
+    def test_a_gap_in_the_numbers_is_skipped(self):
+        # FMRS wrote only FMRS_save_1 for a launch (live game, 2026-11-07).
+        self.write("FMRS/FMRS_save_1", save_text([ROCK, UPPER, BOOSTER], 1))
+        source, _, booster = fmrs.prepare_boostback(
+            self.dir, fmrs.SAVES, self.log, "1")
+        self.assertEqual((source, booster.name),
+                         ("FMRS/FMRS_save_1", "booster"))
+
     def test_no_booster_anywhere_raises(self):
         self.write("FMRS/FMRS_save_0", save_text([ROCK, UPPER, FAIRING], 1))
         with self.assertRaises(RuntimeError):

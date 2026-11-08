@@ -149,7 +149,7 @@ def prepare_boostback(save_dir, names, log, main_id):
     for name in names:
         path = os.path.join(save_dir, name + ".sfs")
         if not os.path.exists(path):
-            break                       # numbered in order: no more saves
+            continue                    # FMRS's numbers have gaps (no _0 here)
         save = Save.read(path)
         main = save.vessels()[save.active]
         main_name = main.name
