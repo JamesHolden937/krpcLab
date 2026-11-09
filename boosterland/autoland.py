@@ -308,6 +308,9 @@ class Autoland:
         self.prediction = None
         self.roll_up = None      # last roll reference, for continuity
         self.roll_nose = None    # the commanded nose roll_up was taken for
+        self.roll_hold = None    # rad: the roof's angle from roll_up at the
+                                 # first aim, held for the whole flight
+        self.roll_cmd = None     # the up vector actually commanded
         self.rcs = rcs_valve.Valve(cfg, logbook)
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
@@ -446,6 +449,17 @@ class Autoland:
                                              else None)
                 self.roll_up = up
                 self.roll_nose = direction
+                if up is not None and self.roll_hold is None:
+                    # Hold the roll the vehicle starts with, not the plane's:
+                    # the roof stays at its starting angle from the
+                    # trajectory plane rather than being rolled into it.
+                    self.roll_hold = roof_angle(snap, direction, up)
+                    self.log.event(snap.ut, "roll held at %.1f deg from the "
+                                   "trajectory plane (the starting roll)"
+                                   % math.degrees(self.roll_hold or 0.0))
+                if up is not None and self.roll_hold:
+                    up = rotate_about(up, direction, self.roll_hold)
+        self.roll_cmd = up
         set_autopilot_attitude(self.autopilot, direction, up,
                                self.cfg.ROLL_OFFSET_DEG)
         # The *routed* direction, not the one asked for: while the flip is
@@ -2257,7 +2271,7 @@ def attitude_fields(snap, run):
     cmd = getattr(run, "commanded_direction", None)
     if cmd is None or vec.norm(cmd) < 0.5 or snap.speed < 1.0:
         return ""
-    roll = roll_error(snap, getattr(run, "roll_up", None))
+    roll = roll_error(snap, getattr(run, "roll_cmd", None))
     rate = getattr(run, "nose_rate", None)
     spin = getattr(run, "roll_rate", None)
     inputs = getattr(snap, "inputs", None)
@@ -2299,6 +2313,31 @@ def vessel_roof(snap):
         if vec.norm(vec.sub(vec.quat_rotate(q, (0.0, 1.0, 0.0)), nose)) < 0.05:
             return vec.quat_rotate(q, (0.0, 0.0, -1.0))
     return None
+
+
+def rotate_about(v, axis, angle):
+    """``v`` rotated by ``angle`` (rad) about ``axis`` (Rodrigues).  The sense
+    is whatever ``vec.cross`` gives, which is what ``roof_angle`` measures
+    with, so the two agree in any frame handedness."""
+    k = vec.unit(axis)
+    c, s = math.cos(angle), math.sin(angle)
+    return vec.add(vec.add(vec.scale(v, c), vec.scale(vec.cross(k, v), s)),
+                   vec.scale(k, vec.dot(k, v) * (1.0 - c)))
+
+
+def roof_angle(snap, nose, up):
+    """Signed angle (rad) about ``nose`` from ``up`` to the vehicle's roof,
+    both perpendicular to the nose: ``rotate_about(up, nose, it)`` is the
+    roof.  0 when the roof is unknowable."""
+    roof = vessel_roof(snap)
+    if roof is None:
+        return 0.0
+    k = vec.unit(nose)
+    a = vec.project_out(up, k)
+    b = vec.project_out(roof, k)
+    if vec.norm(a) < 1e-6 or vec.norm(b) < 1e-6:
+        return 0.0
+    return math.atan2(vec.dot(k, vec.cross(a, b)), vec.dot(a, b))
 
 
 def roll_error(snap, up):

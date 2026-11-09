@@ -252,7 +252,9 @@ class Config:
     FLIP_VIA_VERTICAL_DEG: float = 90.0     # only turns bigger than this
     FLIP_VERTICAL_PAST_DEG: float = 10.0    # waypoint: zenith tilted this far
                                             # toward the target's side
-    ROLL_ALIGN: bool = True             # hold roll, roof in the trajectory plane
+    ROLL_ALIGN: bool = True             # hold roll: the roof at the angle from
+                                        # the trajectory plane it had at the
+                                        # first aim (Autoland.roll_hold)
     ROLL_OFFSET_DEG: float = 0.0        # roof offset from that plane (fin clocking)
     # Roll is held the whole flight (seed1-1017, 12 a cell, all six on
     # against the defaults: heavy roll error boostback/coast/burn median

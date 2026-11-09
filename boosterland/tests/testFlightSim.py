@@ -400,7 +400,6 @@ class TestClosedLoop(unittest.TestCase):
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
         snap = run.telemetry.sample(run.env)
-        log.close()
 
         # Both attitudes a little below the horizon, half a turn apart: the
         # shortest arc between them runs straight down through the nadir.
@@ -414,6 +413,7 @@ class TestClosedLoop(unittest.TestCase):
         self.assertLess(fakeksp._dot(below, zenith), 0.0)
 
         run.aim(below, snap)
+        log.close()
         commanded = vessel.auto_pilot.target_direction
         self.assertGreater(fakeksp._dot(fakeksp._unit(commanded), zenith), 0.0,
                            "commanded the nose down through the airstream")

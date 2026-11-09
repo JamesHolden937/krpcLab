@@ -857,6 +857,7 @@ class Ascent:
                 continue
         if booster is None:
             raise RuntimeError("staged, but the booster is still attached")
+        self.light_upper(ut)
         self.booster_vessel = booster
         try:
             booster.control.throttle = 0.0
@@ -871,6 +872,33 @@ class Ascent:
                        % (booster.name, self.vessel.name,
                           self.booster_thrust() / 1e3))
         self.enter(HANDOFF, ut, self.cfg.HANDOFF)
+
+    def light_upper(self, ut):
+        """Light the upper stage's engines in the same tick as the decoupler
+        when they sit in the next stage.  Left to MechJeb's autostage (turned
+        on at HANDOFF), they wait a loop tick plus its pre/post delays: the
+        upper stage coasts unpowered for a second or more beside the booster.
+        Only a stage that decouples nothing is fired."""
+        engines = list(self.vessel.parts.engines)
+        if any(e.active for e in engines):
+            return
+        nxt = self.control.current_stage - 1
+        if nxt < 0:
+            self.log.event(ut, "WARNING upper stage has no engine to light")
+            return
+        parts = self.vessel.stage_at(nxt).parts
+        if any(p.decoupler is not None for p in parts):
+            self.log.event(ut, "WARNING upper engines not lit: stage %d "
+                           "decouples something" % nxt)
+            return
+        ids = set(parts)
+        if not any(e.part in ids for e in engines):
+            self.log.event(ut, "WARNING upper engines not lit: stage %d "
+                           "holds no engine" % nxt)
+            return
+        self.control.activate_next_stage()
+        self.log.event(ut, "upper engines lit with the separation: stage %d"
+                       % nxt)
 
     def run_handoff_upper(self, ut):
         if not self.settings_checked:
