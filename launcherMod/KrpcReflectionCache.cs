@@ -15,6 +15,9 @@
 // GetType still returns the first type in AllTypes() order whose full name
 // ('+' read as '.') matches, else null.  Only GetTypes() results are reused;
 // they are rebuilt for any assembly loaded later.
+//
+// KSPLoadFixes (~/KSPLoadFixes, src/KrpcReflectionCache.cs) has the same fix; when it has
+// patched kRPC first, this copy does nothing.  It stays for the farm, which lacks KSPLoadFixes.
 
 using System;
 using System.Collections.Generic;
@@ -46,6 +49,14 @@ namespace KrpcLab
                     null, new[] { typeof(string) }, null);
                 if (allTypes == null || getType == null)
                     throw new MissingMethodException("KRPC.Utils.Reflection.AllTypes/GetType not found");
+                // KSPLoadFixes (GameData/000_KSPLoadFixes, its addon runs first) carries the same fix:
+                // this copy is only for games without it (the farm), so it never patches twice.
+                var info = Harmony.GetPatchInfo(allTypes);
+                if (info != null && info.Prefixes.Count > 0)
+                {
+                    UnityEngine.Debug.Log("[KrpcLab] kRPC reflection cache: already patched by " + info.Prefixes[0].owner + ", skipped");
+                    return;
+                }
                 var harmony = new Harmony("krpclab.krpcReflectionCache");
                 harmony.Patch(allTypes, prefix: new HarmonyMethod(typeof(KrpcReflectionCache), "AllTypesPrefix"));
                 harmony.Patch(getType, prefix: new HarmonyMethod(typeof(KrpcReflectionCache), "GetTypePrefix"));
