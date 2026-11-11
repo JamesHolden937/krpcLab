@@ -318,6 +318,15 @@ class Config:
                                             # coast walks it to zero on its
                                             # own; steering it out there is
                                             # correcting a walk, not a miss
+    AERO_STEER_AFTER_RESWEEP: bool = False  # steer from the first descent
+                                            # re-sweep (+ the settle below)
+                                            # instead of from
+                                            # AERO_STEER_MAX_ALT_M: the
+                                            # altitude only stood in for "not
+                                            # on the boostback-exit curve",
+                                            # and the fin booster re-sweeps
+                                            # near apogee, 10 km above it
+    AERO_STEER_RESWEEP_SETTLE_S: float = 5.0  # ... this long after it
     AERO_STEER_MIN_ALT_M: float = 0.0       # hold retrograde below this.  An
                                             # altitude cliff is the wrong
                                             # guard and it was measured: at
