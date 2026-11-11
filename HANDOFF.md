@@ -12,6 +12,55 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
+## 2026-11-10: boosterland -- the 6-fin booster: fins held in boostback, fins as airbrakes (fingerprint `891a3b83`)
+
+The user's live FMRS flight LOG15543 wobbled +-40 deg in boostback. The craft was rebuilt 2026-11-08:
+13 Vectors, 24 Vernors, **6 airliner tail fins at the top (authority 150%), no airbrakes**. kRPC's PID
+drove the fins at aoa 50-150 deg. Committed on main (71d3dd4), **not pushed**; farm stopped (the user
+needed the CPU). Journal not yet written for this session: write it from this section.
+
+**Defaults now:**
+- `BOOSTBACK_FINS_HELD` (common.idle `VacuumSurfaces.hold`): surfaces neutral through SEPARATION and
+  BOOSTBACK, handed back at COAST. fins1-1110, 9 an arm: boostback err median 2-3 v 18-43 deg, fast
+  impacts 0/9 v 5/9 (LOG15544-15561).
+- `FIN_BRAKES` (`autoland.brake_fins`): rings of >= 4 even, evenly spaced non-airbrake surfaces, alternate
+  `deployInvert` (set per part: the UI toggle copies to symmetry partners), deployed, deploy angle =
+  airbrake angle / `DEPLOY_MAX_DEG` x max deploy (22.5 on this fin; game: deflection = input x range x
+  authority + deploy, clamped to 1.5 x range). A pair is refused: alternated, it pitches.
+  finbrake2-1110, 10 an arm (4 instances): median **42 v 460 m**; LOG15574 1062 m = the late-brake probe
+  taken at aoa 21 read open < closed (0.74x), the law then crawled 10 deg/10 s.
+- `saves/qs_finbooster`: live `FMRS/krpclab_boostback.sfs` of LOG15543, Kerbin LANs -0.124 deg (unshifted
+  it loaded 1.3 km east on the MiniSystem farm). `sweep.py` parses quickfly's rows again (it had matched
+  nothing since the wall/rate columns were added).
+
+**Flags in, unflown:** `AERO_STEER_AFTER_RESWEEP` (+ `AERO_STEER_RESWEEP_SETTLE_S` 5): steer the coast
+from the settled first descent re-sweep instead of from `AERO_STEER_MAX_ALT_M` 25 km (the design doc says
+the altitude only stands for "not on the boostback-exit curve"; this booster re-sweeps at ~34 km).
+
+**Refuted, deleted:** `DRAG_PROBE_DESCENT` (probe boostback's drag with the vessel turned onto retrograde),
+probedesc1-1110: median ~200 v 50 m; its prediction read 1.4-1.95 km long of the first descent re-sweep on
+6/9. Cause: the probe sees the fins held neutral, the descent flies them braking. An honest boostback
+prediction needs the descent *configuration* (retrograde and brakes out), which the simulation cannot see
+while the fins are held. With fin brakes on, the real-attitude probe's post-re-sweep jump is -114..+269 m.
+
+**Next, in order:**
+1. Fly `AERO_STEER_AFTER_RESWEEP` and `AERO_STEER_MAX_AOA_DEG=20-25` v the defaults on qs_finbooster (the
+   holdable probe stops at the cap, so "holdable 10" means ">= 10"). Then promote or delete.
+2. The late-brake probe at aoa 21 (LOG15574): gate it on a tighter descent attitude, or a settled coast.
+3. Roll 15-54 deg/s in the coast on every flight, both arms: the fins, handed to kRPC at COAST, likely.
+4. `flip_authority` reads gimbal 0 (sampled while IdleGimbals has them locked) -> "turn inf s"; fixing
+   changes the flip, needs its own batch.
+5. Install KSPLoadFixes into the farm (the user approved, 2026-11-10): same KSP build and Harmony as live;
+   copy `~/KSPLoadFixes/bin/KSPLoadFixes.dll` to `GameData/000_KSPLoadFixes/Plugins/` in base/ **and every
+   clone** (hardlinked; same game everywhere); first boot builds caches; time a 6-boot before and after.
+   Applies there: ConfigParse/DirList/FastLoaderParallelRead (KSPCF), Shabby, PngDecode (KSPTextureLoader),
+   Terrain, Kopernicus, kRPC fixes.
+6. howItWorks.pdf for boosterland (fins held, fin brakes) and push.
+7. Older: qs_heavy's ~120 m residual; brakes for speed not range; legs ~13.5 s early.
+
+**Traps paid:** 6 instances of this 230-t booster reach 29 GB swap in one 10-min batch, and the memory
+reaper killed a sweep: fly 4. "FAILED rc=0 / no flights" from sweep.py was its parser, not the flights.
+
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 
 `airplane/` (read `airplane/CLAUDE.md`, "Where it stands" / "Next";
@@ -118,60 +167,6 @@ ObjectDestroyedException); a harness that can fly this plane past 55 m/s.
 after a 1000 kN thrust swing (LOG15233). The fallback must climb from zero
 (LOG15221). A propfly launch of six with an inner `&` returns at once: wait
 on the `ROT DONE` marker.
-
-## 2026-11-01: boosterland -- gimbal roll really off again; correction when the brakes are spent; the FMRS Heavy Shuttle booster (fingerprint `56a3d2b9`)
-
-Started from the user's live FMRS flight (LOG15102: Heavy Shuttle booster,
-596 m out, broke up). Committed and pushed; farm stopped. Journal:
-"2026-11-01".
-
-**Fixed (defaults):**
-- `set_gimbal_roll` -> `common.partmodule.set_field_bool_by_id`. kRPC 0.7
-  has no `Module.set_field_bool_by_id`; **from 2026-10-21 to today every
-  booster burned with roll on its gimbals** (logged "0 engines (n
-  refused)"). LOG15102 spun 100-227 deg/s in the landing burn. Refusals now
-  log the exception. Roll-off works while the gimbal's toggles are hidden.
-- `CORRECTION_SATURATED_ENTER_M` 150: with the brakes at `DEPLOY_MAX_DEG`
-  and the steered prediction long, correct above 150 m (not 1000). And no
-  correction while `late_state == "switched"` (before the opened brakes are
-  re-swept). 9 an arm, gate v off: FMRS booster median **70 v 292 m**;
-  qs_heavy 112 v 41 median, means 139 v 133, destroyed at contact 2/9 v 6/9.
-- `saves/qs_heavyshuttlebooster`: the live FMRS boostback save, booster
-  active, Kerbin orbits' LAN -9.8916 (the farm put it 10 deg east of the
-  live game; see saves/README).
-
-**Where it stands:** both boosters leave boostback on a curve swept at aoa
-20-25 deg (inside `DRAG_RESWEEP_AOA_DEG` 25); the first descent sweep says
-+400..+1200 m long *with the brakes full open*, and the first correction
-takes it to ~100-200 m. qs_heavy then ends ~120 m west on 6/9 (just under
-the gate; the landing burn does not divert it). Pre-0.7 the heavy landed
-median ~13 m. **Tip-overs are not scored**: the Heavy Shuttle booster has no
-legs and the user will fix the craft.
-
-**Next, in order:**
-1. The boostback's drag curve: probe the descent attitude (aoa ~0, what
-   `holdable` says) instead of the real one while boostback is at 20-25 deg,
-   or tighten `DRAG_RESWEEP_AOA_DEG` -- the boostback exit should land
-   inside [closed, open] of the late brakes. pd10-1016 lost boosters probing
-   at retrograde; that was before the late brakes, re-measure.
-2. The ~120 m residual after the first correction on qs_heavy.
-3. Older, still open (the 2026-10-18 list): brakes for speed not range;
-   aoa as a speedbrake; the +28 m along-track from the RCS trim; legs down
-   ~13.5 s early; pad debris; qs_hot sideways arrival.
-4. FMRS on live: LOG15102's `FATAL jump back: ConnectionError` came while
-   the panel waited -- the game closed under it, not chased.
-
-**FMRS button** (`./run.sh --pilot fmrs`, `boosterland/fmrs.py`): saves the
-live game as `krpclab_main`, finds the first `FMRS/FMRS_save_<n>` of this
-launch with a booster in flight, writes `FMRS/krpclab_boostback` with it
-active, loads it paused, flies it, then offers JUMP BACK TO MAIN MISSION
-(booster's block merged into `krpclab_main`). Landed merge unit-tested only.
-
-**Traps paid:** a swallowed exception in a mode switch reads as "0 done"
-for ten days -- log the reason. A live save on the farm may load somewhere
-else: check `pad=` on the first log line against the live log. Swap reaches
-27 GB per 10-min batch: restart between batches. Readers: `logsum.py`;
-per-flight corrections from `phase COAST -> CORRECTION`.
 
 ## 2026-11-01: spaceplane -- the approach plans in the middle of each craft's own span; the low-alpha glide is off (fingerprint `07089ff3`)
 
