@@ -83,11 +83,12 @@ _BRAKE_FINS = {}     # id(vessel) -> [(ControlSurface, invert)], set at START
 def brake_fins(vessel):
     """Control surfaces that are not airbrakes, in rings that can brake
     without turning: per part type and station along the nose, an even
-    number spaced evenly round the axis.  Sorted by azimuth, alternate fins
-    get the opposite deploy direction, so each half is the other's mirror:
-    the halves' roll moments cancel, and each half alone is symmetric under
-    a turn of 2*360/n (n >= 6) or lies on one line (n = 2, 4: the pair's side
-    forces are equal and opposite).  Stock ``ModuleControlSurface`` adds the
+    number, at least 4, spaced evenly round the axis.  Sorted by azimuth,
+    alternate fins get the opposite deploy direction: the two halves' roll
+    moments cancel, and each half (n/2 fins, 720/n apart) has no net side
+    force -- opposite fins deployed the same way make a pure roll couple.
+    Two fins cannot: alternated, both push the same way and the pair pitches
+    the vehicle.  Stock ``ModuleControlSurface`` adds the
     deploy angle, signed by ``deployInvert``, to the control deflection and
     clamps the sum to 1.5 x ``ctrlSurfaceRange`` (Assembly-CSharp,
     ``CtrlSurfaceUpdate``), so the fins still steer on top.  Returns
@@ -108,7 +109,7 @@ def brake_fins(vessel):
     found = []
     for ring in rings.values():
         n = len(ring)
-        if n < 2 or n % 2:
+        if n < 4 or n % 2:
             continue
         ring.sort(key=lambda r: r[0])
         step = 2.0 * math.pi / n

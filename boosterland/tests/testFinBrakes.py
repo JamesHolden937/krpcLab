@@ -60,6 +60,14 @@ class TestBrakeFins(unittest.TestCase):
         fins = autoland.brake_fins(_Vessel(ring(3) + brakes))
         self.assertEqual(fins, [])
 
+    def test_two_fins_left_out(self):
+        # alternated, a pair pushes one way: a pitching moment, not a brake
+        self.assertEqual(autoland.brake_fins(_Vessel(ring(2))), [])
+
+    def test_four_alternate(self):
+        fins = autoland.brake_fins(_Vessel(ring(4)))
+        self.assertEqual([inv for _, inv in fins], [False, True, False, True])
+
     def test_uneven_spacing_left_out(self):
         s = ring(4)
         s[1].part._pos = (1.24, -0.3, 2.14)   # 30 deg toward its neighbour
