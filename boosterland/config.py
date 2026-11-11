@@ -64,6 +64,12 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
+    DEPLOY_LATE_RATIO_CURVE: bool = False   # below the late switch, predict
+                                            # with the probe's open/closed
+                                            # ratio x the current closed
+                                            # curve, not the probe's absolute
+                                            # open curve (taken up to 25 deg
+                                            # off retrograde)
     FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
                                             # airbrake law (brake_fins).
