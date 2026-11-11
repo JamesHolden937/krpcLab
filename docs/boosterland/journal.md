@@ -680,3 +680,61 @@ Fresh farm, 9 an arm a save, gate v `CORRECTION_SATURATED_ENTER_M=1000`:
 Kept.  On qs_heavy six gate flights end ~120 m west, just under the gate:
 the residual after the first burn, which the landing burn does not divert.
 Tip-overs are not scored (the user is adding legs to the craft).
+
+## 2026-11-10: the 6-fin booster -- fins held in boostback, fins as airbrakes
+
+The user's live FMRS flight LOG15543 wobbled +-40 deg in boostback.  The craft
+(rebuilt 2026-11-08) has 13 Vectors, 24 Vernors and 6 airliner tail fins at
+the top (authority 150%), no airbrakes; kRPC's PID drove the fins at aoa
+50-150 deg.  `saves/qs_finbooster` is the live `FMRS/krpclab_boostback.sfs` of
+LOG15543 with the Kerbin LANs shifted -0.124 deg (unshifted it loaded 1.3 km
+east on the MiniSystem farm).  `sweep.py` had matched no rows since quickfly
+gained its wall/rate columns ("FAILED rc=0 / no flights"): fixed.
+
+- `BOOSTBACK_FINS_HELD` (promoted): surfaces neutral through SEPARATION and
+  BOOSTBACK (`common.idle.VacuumSurfaces.hold`), handed back at COAST.
+  fins1-1110, 9 an arm: boostback pointing error median 2-3 v 18-43 deg, fast
+  impacts 0/9 v 5/9 (LOG15544-15561).
+- `FIN_BRAKES` (promoted): rings of >= 4 evenly spaced non-airbrake surfaces,
+  alternate `deployInvert` set per part (the UI toggle copies to symmetry
+  partners), deployed, deploy angle = airbrake angle / `DEPLOY_MAX_DEG` x max
+  deploy (22.5 on this fin).  A pair is refused: alternated, it pitches.
+  finbrake2-1110, 10 an arm on 4 instances: median 42 v 460 m.  LOG15574
+  (1062 m): the late-brake probe read open 0.74 x closed and the law then
+  crawled.
+- `DRAG_PROBE_DESCENT` (deleted, refuted): probe boostback's drag with the
+  vessel turned onto retrograde.  probedesc1-1110: median ~200 v 50 m; its
+  prediction read 1.4-1.95 km long of the first descent re-sweep on 6/9,
+  because the probe sees the fins held neutral and the descent flies them
+  braking.
+- Trap: 6 instances of this 230-t booster reached 29 GB swap in one 10-min
+  batch and the memory reaper killed the sweep.  Fly 4.
+
+## 2026-11-11: steer angle 22; the late-brake probe's jump
+
+All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
+
+- steer1-1111 (LOG15618-15641): `AERO_STEER_MAX_AOA_DEG` 22 median 14 m,
+  worst 121 v 10's median 47, worst 1001 -- **promoted**.
+  `AERO_STEER_AFTER_RESWEEP` median 42/120, worst 1288/847 -- **deleted**.
+- probe1-1111 (LOG15642-15665): `AERO_STEER_MAX_AOA_DEG=30` median 40, worst
+  1610 (22 stays).  `DEPLOY_PROBE_FINS_HELD` (the late-brake probe set the brake
+  fins' ignorePitch/Yaw/Roll for its open and closed readings, after the nose
+  came within 5 deg of its command): median 28 v 32, ratio spread 1.5-2.5 v
+  0.9-3.0, but the prediction jump at brake opening unchanged -- **deleted**.
+  kRPC's `deflection_override` cannot do this hold: it drives `deployAngle`
+  itself (ActuatorControlAddon.InstallControlSurface sets deploy, ignore*,
+  and deployAngle = Deflection x deployAngleLimits), so it closes the brakes.
+- What the big misses are: every miss over 100 m but one had a CORRECTION
+  logged `BACKFIRING`.  The burn fires on a prediction that jumps +400..+1180 m
+  *long* within 8 s of the late brakes opening, on nearly every flight --
+  backwards, since more drag lands shorter: the handover re-sweep reads the
+  open brakes at a fraction of the probe's full curve (LOG15619: probe M2
+  Cd*A 58, handover 9.5-17).  On 22/24 flights the late solve said "open now"
+  at ~34 km, so on this booster the late law is "open at the top" plus a probe
+  that is wrong.
+- Coast roll (15-36 deg/s mean, input pinned): not reversed fins -- roll
+  acceleration per unit input has the same sign in COAST as in BOOSTBACK,
+  15x weaker (2-3 v 25-55 deg/s^2; gimbal roll is off in the coast).
+- `latesum.py`-style read (scratchpad): per flight the probe ratio, the long
+  miss before and after the switch, backfires, the end.
