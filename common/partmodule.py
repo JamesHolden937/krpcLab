@@ -81,17 +81,6 @@ def set_field_string(module, name, value):
     _table(module, "field")[name].value = str(value)
 
 
-def get_field_bool_by_id(module, field_id):
-    """A bool field by its code name, visible or not."""
-    if not _new(module):
-        return str(module.get_field_by_id(field_id)).lower() == "true"
-    key = (_key(module), "field_id")
-    got = _CACHE.get(key)
-    if got is None:
-        got = _CACHE[key] = {f.name: f for f in module.field_list}
-    return bool(got[field_id].bool_value)
-
-
 def set_field_bool_by_id(module, field_id, value):
     """Set a bool field by its code name (``enableRoll``), visible or not:
     a field the part menu hides has no gui name to find it by."""

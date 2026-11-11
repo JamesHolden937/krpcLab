@@ -1390,24 +1390,12 @@ class Autoland:
                     and self.env.in_descent_configuration(snap.velocity,
                                                           snap.direction)):
                 return
-            if self.probe_fins_held():
-                # The fins are about to be held, so the flip must be over:
-                # the probe waits for the nose to be on its command.
-                err = self.pointing_error(snap)
-                if err < 0.0 or err > cfg.DEPLOY_PROBE_ERR_DEG:
-                    return
             got = set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG, self.cfg)
             if not got:
                 self.late_state = "off"
                 self.deploy_none = True
                 self.log.event(snap.ut, "brakes: no airbrake answered, law off")
                 return
-            if self.probe_fins_held():
-                # Both readings -- open and closed -- with the steering out
-                # of the fins: kRPC holds them on the stops through the coast
-                # and the drag then reads where it happened to have them
-                # (0.69-3.34 x at one attitude, finbrake2/probedesc1-1110).
-                self.probe_hold(True, snap.ut)
             self.late_state = "full"
             self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
             self.log.event(snap.ut, "late brakes: open to %.0f to measure"
@@ -1422,7 +1410,6 @@ class Autoland:
             self.deploy_angle = cfg.DEPLOY_MIN_DEG
             if not self.env.set_full_curve(bins):
                 # No curve: the ordinary law, from the bottom of its range.
-                self.probe_release(snap.ut)
                 self.late_state = "handed"
                 self.log.event(snap.ut, "late brakes: full curve unreadable,"
                                " ordinary deploy law")
@@ -1441,7 +1428,6 @@ class Autoland:
             if swept is None or swept < self.late_resweep_ut:
                 return
             self.late_resweep_ut = None
-            self.probe_release(snap.ut)
             ratio = self.env.full_curve_ratio()
             self.log.event(snap.ut, "late brakes: Cd*A at %.0f deg is %s x"
                            " at %.0f" % (cfg.DEPLOY_MAX_DEG,
@@ -1459,52 +1445,6 @@ class Autoland:
             return
         self.late_next_ut = snap.ut + cfg.DEPLOY_LATE_STEP_S
         self.solve_late_switch(snap)
-
-    def probe_fins_held(self):
-        """Does the late-brake probe take the steering out of the fins?"""
-        return (self.cfg.DEPLOY_PROBE_FINS_HELD
-                and bool(_BRAKE_FINS.get(id(self.vessel))))
-
-    def probe_hold(self, hold, ut):
-        """Set the brake fins' axis-ignore flags (the part menu's Pitch/Yaw/
-        Roll), leaving their deploy alone: kRPC's ``deflection_override``
-        would not do, it drives ``deployAngle`` itself and so closes the
-        brakes (ActuatorControlAddon.InstallControlSurface)."""
-        saved = getattr(self, "probe_saved", None)
-        if hold == (saved is not None):
-            return
-        flags = ("ignorePitch", "ignoreYaw", "ignoreRoll")
-        done = 0
-        new_saved = []
-        for surface, _invert in _BRAKE_FINS.get(id(self.vessel), ()):
-            try:
-                module = next(m for m in surface.part.modules
-                              if m.name == "ModuleControlSurface")
-                if hold:
-                    new_saved.append((module, tuple(
-                        partmodule.get_field_bool_by_id(module, f)
-                        for f in flags)))
-                    for f in flags:
-                        partmodule.set_field_bool_by_id(module, f, True)
-                done += 1
-            except Exception:           # noqa: BLE001 -- KSP-side failure
-                pass
-        if not hold:
-            for module, values in saved:
-                for f, v in zip(flags, values):
-                    try:
-                        partmodule.set_field_bool_by_id(module, f, v)
-                    except Exception:   # noqa: BLE001
-                        pass
-        self.probe_saved = new_saved if hold else None
-        self.log.event(ut, "drag probe: brake fins %s (%d)"
-                       % ("steering held out" if hold else "steering back",
-                          done if hold else len(saved)))
-
-    def probe_release(self, ut=None):
-        if getattr(self, "probe_saved", None) is not None:
-            self.probe_hold(False, ut if ut is not None
-                            else self.conn.space_center.ut)
 
     def solve_late_switch(self, snap):
         """Bisect for the brake-opening altitude that nulls the long miss.
@@ -2344,7 +2284,6 @@ class Autoland:
                 self.idle_gimbals.update(True)      # freed for the player
             if self.fins is not None:
                 self.fins.release("shutdown")
-            self.probe_release()
             if any(self.trim_cmd):
                 self.send_translation((0.0, 0.0, 0.0))
             set_autopilot_engaged(self.autopilot, False)

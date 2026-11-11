@@ -64,15 +64,6 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
-    DEPLOY_PROBE_FINS_HELD: bool = False    # the late-brake probe takes the
-                                            # steering out of the brake fins
-                                            # for its open and closed drag
-                                            # readings, deploy untouched (kRPC pins them on the
-                                            # stops all coast, and the ratio
-                                            # read 0.69-3.34 x at one
-                                            # attitude), and waits until
-    DEPLOY_PROBE_ERR_DEG: float = 5.0       # ... the nose is this close to
-                                            # its command (the flip is over)
     FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
                                             # airbrake law (brake_fins).
