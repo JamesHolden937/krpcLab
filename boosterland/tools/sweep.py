@@ -31,7 +31,7 @@ import time
 
 INSTANCES = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "testInstances")
 LINE = re.compile(r"^\s+\d+/\d+\s+(\S+)\s+(-?[\d.]+) m\s+([\d.]+) m/s\s+c(-?\d+)"
-                  r"\s+N\s*([-+][\d.]+)\s+E\s*([-+][\d.]+)\s+(\S+)\s*$")
+                  r"\s+N\s*([-+][\d.]+)\s+E\s*([-+][\d.]+)\s+(\S+)(?:\s.*)?$")
 
 
 def live_instances():
