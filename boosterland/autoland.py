@@ -1768,7 +1768,8 @@ class Autoland:
             # curve is not re-swept yet: LOG15110 corrected on the tick they
             # opened (+395 m), and the re-sweep then read -639.
             return False
-        if (cfg.DEPLOY_LATE and self.late_state == "armed"
+        if (cfg.CORRECTION_WAIT_LATE_OPEN and cfg.DEPLOY_LATE
+                and self.late_state == "armed"
                 and self.env.late_switch_alt is not None
                 and vec.norm(snap.position) - self.env.equatorial_radius
                 <= self.env.late_switch_alt):
