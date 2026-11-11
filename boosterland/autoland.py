@@ -52,9 +52,20 @@ TOUCHDOWN = "TOUCHDOWN"
 AIRBRAKE_MODULE = "ModuleAeroSurface"   # the stock airbrake's part module
 
 
-def set_airbrake_angle(vessel, angle):
-    """Set every airbrake's deploy angle; return the angles read back."""
+def set_airbrake_angle(vessel, angle, cfg=None):
+    """Set every airbrake's deploy angle; return the angles read back.  With
+    ``cfg.FIN_BRAKES`` the brake fins (``brake_fins``) follow, at the same
+    fraction of their own range as ``angle`` is of ``DEPLOY_MAX_DEG``."""
     angles = []
+    if cfg is not None and cfg.FIN_BRAKES:
+        frac = max(0.0, min(1.0, float(angle) / cfg.DEPLOY_MAX_DEG))
+        for surface, _ in _BRAKE_FINS.get(id(vessel), ()):
+            try:
+                top = surface.max_deploy_angle * cfg.FIN_BRAKE_SHARE
+                surface.deploy_angle = top * frac
+                angles.append("%.1f" % surface.deploy_angle)
+            except Exception:       # noqa: BLE001 -- KSP-side failure
+                angles.append("refused")
     for surface in vessel.parts.control_surfaces:
         for m in surface.part.modules:
             if m.name == AIRBRAKE_MODULE and partmodule.has_field(m, "Deploy Angle"):
@@ -64,6 +75,74 @@ def set_airbrake_angle(vessel, angle):
                 except Exception:       # noqa: BLE001 -- KSP-side failure
                     angles.append("refused")
     return angles
+
+
+_BRAKE_FINS = {}     # id(vessel) -> [(ControlSurface, invert)], set at START
+
+
+def brake_fins(vessel):
+    """Control surfaces that are not airbrakes, in rings that can brake
+    without turning: per part type and station along the nose, an even
+    number spaced evenly round the axis.  Sorted by azimuth, alternate fins
+    get the opposite deploy direction, so each half is the other's mirror:
+    the halves' roll moments cancel, and each half alone is symmetric under
+    a turn of 2*360/n (n >= 6) or lies on one line (n = 2, 4: the pair's side
+    forces are equal and opposite).  Stock ``ModuleControlSurface`` adds the
+    deploy angle, signed by ``deployInvert``, to the control deflection and
+    clamps the sum to 1.5 x ``ctrlSurfaceRange`` (Assembly-CSharp,
+    ``CtrlSurfaceUpdate``), so the fins still steer on top.  Returns
+    ``[(surface, invert)]``; rings that are odd or uneven are left out."""
+    frame = vessel.reference_frame
+    rings = {}
+    for surface in vessel.parts.control_surfaces:
+        part = surface.part
+        try:
+            if any(m.name == AIRBRAKE_MODULE for m in part.modules):
+                continue
+            x, y, z = part.position(frame)
+        except Exception:               # noqa: BLE001 -- KSP-side failure
+            continue
+        key = (part.name, round(y * 2.0))       # 0.5 m stations
+        rings.setdefault(key, []).append(
+            (math.atan2(z, x), math.hypot(x, z), surface))
+    found = []
+    for ring in rings.values():
+        n = len(ring)
+        if n < 2 or n % 2:
+            continue
+        ring.sort(key=lambda r: r[0])
+        step = 2.0 * math.pi / n
+        gaps = [(ring[(i + 1) % n][0] - ring[i][0]) % (2.0 * math.pi)
+                for i in range(n)]
+        radii = [r[1] for r in ring]
+        if (max(abs(g - step) for g in gaps) > 0.15 * step
+                or max(radii) - min(radii) > 0.1 * max(radii)):
+            continue
+        found += [(r[2], i % 2 == 1) for i, r in enumerate(ring)]
+    return found
+
+
+def deploy_brake_fins(vessel, cfg):
+    """Alternate the fins' deploy direction and deploy them at the start
+    angle.  Returns the line to log."""
+    fins = brake_fins(vessel)
+    _BRAKE_FINS[id(vessel)] = fins
+    done, why = 0, None
+    for surface, invert in fins:
+        try:
+            module = next(m for m in surface.part.modules
+                          if m.name == "ModuleControlSurface")
+            partmodule.set_field_bool_by_id(module, "deployInvert", invert)
+            surface.deployed = True
+            done += 1
+        except Exception as exc:        # noqa: BLE001 -- KSP-side failure
+            why = str(exc).splitlines()[0] if str(exc) else repr(exc)
+    got = set_airbrake_angle(vessel, cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, cfg)
+    top = fins[0][0].max_deploy_angle if fins else float("nan")
+    return ("brake fins deployed: %d of %d, alternate directions, angle %s "
+            "of max %.1f x %.2f%s"
+            % (done, len(fins), "/".join(sorted(set(got))) or "n/a", top,
+               cfg.FIN_BRAKE_SHARE, " (%s)" % why if why else ""))
 
 
 def gear_parts(vessel):
@@ -142,6 +221,8 @@ def prepare_vehicle(vessel, cfg):
     lines.append("airbrakes deployed: %d, deploy angle %s (asked %.0f)"
                  % (brakes, "/".join(sorted(set(angles))) or "n/a",
                     cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+    if cfg.FIN_BRAKES:
+        lines.append(deploy_brake_fins(vessel, cfg))
     lit = 0
     for engine in vessel.parts.engines:
         try:
@@ -1259,7 +1340,7 @@ class Autoland:
         new = max(cfg.DEPLOY_MIN_DEG,
                   min(cfg.DEPLOY_MAX_DEG, angle + step))
         if abs(new - angle) >= 0.5:
-            got = set_airbrake_angle(self.vessel, new)
+            got = set_airbrake_angle(self.vessel, new, self.cfg)
             if not got:
                 self.deploy_none = True
                 self.log.event(snap.ut, "brakes: no airbrake answered, law off")
@@ -1308,7 +1389,7 @@ class Autoland:
                     and self.env.in_descent_configuration(snap.velocity,
                                                           snap.direction)):
                 return
-            got = set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG)
+            got = set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG, self.cfg)
             if not got:
                 self.late_state = "off"
                 self.deploy_none = True
@@ -1324,7 +1405,7 @@ class Autoland:
                 return
             bins = self.env.sweep_bins(snap.position, snap.velocity,
                                        snap.rotation, snap.direction)
-            set_airbrake_angle(self.vessel, cfg.DEPLOY_MIN_DEG)
+            set_airbrake_angle(self.vessel, cfg.DEPLOY_MIN_DEG, self.cfg)
             self.deploy_angle = cfg.DEPLOY_MIN_DEG
             if not self.env.set_full_curve(bins):
                 # No curve: the ordinary law, from the bottom of its range.
@@ -1421,7 +1502,7 @@ class Autoland:
             altitude = vec.norm(snap.position) - env.equatorial_radius
             if env.late_switch_alt is None or altitude > env.late_switch_alt:
                 return
-            set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG)
+            set_airbrake_angle(self.vessel, cfg.DEPLOY_MAX_DEG, self.cfg)
             self.deploy_angle = cfg.DEPLOY_MAX_DEG
             env.late_switch_alt = float("inf")  # all of it at full now
             self.late_state = "switched"

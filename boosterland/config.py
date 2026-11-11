@@ -64,6 +64,11 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
+    FIN_BRAKES: bool = False                # alternate fins deployed opposite
+                                            # ways as an airbrake, on the
+                                            # airbrake law (brake_fins)
+    FIN_BRAKE_SHARE: float = 1.0            # of the fin's max deploy angle at
+                                            # DEPLOY_MAX_DEG
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
                                             # scatter (dep1-1016)
     DEPLOY_DEADBAND_M: float = 30.0
