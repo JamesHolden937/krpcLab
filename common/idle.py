@@ -87,6 +87,14 @@ class VacuumSurfaces:
         elif self.held and q > self.off_q:
             self.release("air (q %.1f Pa)" % q)
 
+    def hold(self, why):
+        """Hold the surfaces neutral now, whatever the air (a phase that
+        should not fly them); ``release`` hands them back."""
+        if not self.held and self._set(True):
+            self.held = True
+            if self.log is not None:
+                self.log("control surfaces held neutral: %s" % why)
+
     def release(self, why="released"):
         if self.held and self._set(False) and self.log is not None:
             self.log("control surfaces handed back: %s" % why)

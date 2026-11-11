@@ -757,6 +757,12 @@ class Config:
     # when it rises (``common.idle.IdleGimbals``): a gimbal makes no torque
     # without thrust, and a nozzle swinging on the coast looks broken.
     IDLE_GIMBAL_LOCK: bool = True
+    BOOSTBACK_FINS_HELD: bool = False       # control surfaces held neutral
+                                            # through SEPARATION and BOOSTBACK,
+                                            # handed back at COAST: at aoa
+                                            # 50-150 deg kRPC's PID drives the
+                                            # fins into a +-40 deg swing
+                                            # (LOG15543, the 6-fin booster)
     LOG_INTERVAL_UT: float = 2.0            # in-game seconds between log lines
     LOG_DIR: str = "logs"
 

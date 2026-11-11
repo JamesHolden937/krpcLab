@@ -30,7 +30,7 @@ from .engines import allocate, group_engines
 from .environment import Environment
 from common.panel import ACCENT_BOOSTER, ControlPanel
 from .gui import telemetry_lines
-from common.idle import IdleGimbals
+from common.idle import IdleGimbals, VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged)
 from common import cli
@@ -294,6 +294,11 @@ class Autoland:
             self.idle_gimbals = IdleGimbals(
                 self.vessel, log=lambda text: self.log.event(
                     self.conn.space_center.ut, text))
+        self.fins = None
+        if getattr(cfg, "BOOSTBACK_FINS_HELD", False):
+            self.fins = VacuumSurfaces(
+                self.vessel, 0.0, 0.0, log=lambda text: self.log.event(
+                    self.conn.space_center.ut, text))
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
@@ -390,6 +395,11 @@ class Autoland:
         self.log.event(ut, "phase %s -> %s %s" % (self.state, state, note))
         self.state = state
         self.phase_start_ut = ut
+        if self.fins is not None:
+            if state in (SEPARATION, BOOSTBACK):
+                self.fins.hold(state.lower())
+            else:
+                self.fins.release(state.lower())
         if (state == LANDING_BURN and self.cfg.GIMBAL_ROLL_OFF
                 and self.cfg.GIMBAL_ROLL_UNTIL_BURN):
             # Boostback rolls cleanly on the gimbals at full thrust; the
@@ -2190,6 +2200,8 @@ class Autoland:
                 set_gimbal_roll(self.vessel, True)
             if self.idle_gimbals is not None:
                 self.idle_gimbals.update(True)      # freed for the player
+            if self.fins is not None:
+                self.fins.release("shutdown")
             if any(self.trim_cmd):
                 self.send_translation((0.0, 0.0, 0.0))
             set_autopilot_engaged(self.autopilot, False)
