@@ -64,9 +64,13 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
-    FIN_BRAKES: bool = False                # alternate fins deployed opposite
+    FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
-                                            # airbrake law (brake_fins)
+                                            # airbrake law (brake_fins).
+                                            # finbrake2-1110, qs_finbooster,
+                                            # 10 an arm: median 42 v 460 m,
+                                            # 9/10 within 102 m (LOG15574
+                                            # 1062: late-brake probe at aoa 21)
     FIN_BRAKE_SHARE: float = 1.0            # of the fin's max deploy angle at
                                             # DEPLOY_MAX_DEG
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track

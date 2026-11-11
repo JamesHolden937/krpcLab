@@ -5,7 +5,7 @@
 - `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
   works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
   `KSPFARM=<dir>` moves the farm.
-- NiftyNebulae's benchmark instances share the farm (`~/kspfarm/nebula`). Never run them while
+- Other projects' instances may share the farm (`~/kspfarm/<project>/`). Never run them while
   these are up.
 
 The farm is a set of headless copies of Kerbal Space Program, each with its
