@@ -708,10 +708,6 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
-    DRAG_PROBE_DESCENT: bool = False        # probe the drag curve with the
-                                            # vessel turned onto retrograde
-                                            # while it is not near there
-                                            # (Environment.probe_rotation)
     DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
                                             # off retrograde (0 = take them
                                             # all).  Measured at 20: it cannot
