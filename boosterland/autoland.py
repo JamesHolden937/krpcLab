@@ -1768,6 +1768,15 @@ class Autoland:
             # curve is not re-swept yet: LOG15110 corrected on the tick they
             # opened (+395 m), and the re-sweep then read -639.
             return False
+        if (cfg.DEPLOY_LATE and self.late_state == "armed"
+                and self.env.late_switch_alt is not None
+                and vec.norm(snap.position) - self.env.equatorial_radius
+                <= self.env.late_switch_alt):
+            # ... or the solve has just said "open now": the prediction
+            # already flies the probe's full curve and the brakes are still
+            # shut -- LOG15652 entered at 1319 m on that tick, before they
+            # opened, and the settled curve read -353.
+            return False
         if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
             return False                # ... or the legs are
         if cfg.CORRECTION_OVERSHOOT_ONLY:
