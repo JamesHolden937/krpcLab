@@ -1097,6 +1097,9 @@ class Autoland:
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
+        reswept = self.env.reswept_ut
+        self.env.steer_open = (reswept is not None and snap.ut - reswept
+                               >= self.cfg.AERO_STEER_RESWEEP_SETTLE_S)
         steer, steered = guidance.solve_steer(
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             self.cfg)
