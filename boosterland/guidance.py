@@ -284,12 +284,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # why the first grid of this had it winning by 100 m on the two saves
     # that really do overshoot and losing by 80-100 m on the two that were
     # already landing at 8 m, always to the *short* side.
-    if cfg.AERO_STEER_AFTER_RESWEEP:
-        # What the altitude stood in for: the boostback-exit prediction is
-        # not acted on, only one the descent re-sweep has replaced.
-        if not getattr(env, "steer_open", False):
-            return zero, flat
-    elif vec.norm(r) - env.target_radius > cfg.AERO_STEER_MAX_ALT_M:
+    if vec.norm(r) - env.target_radius > cfg.AERO_STEER_MAX_ALT_M:
         return zero, flat
 
     # An altitude floor is available but defaults off, because it is the

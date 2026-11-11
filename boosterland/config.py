@@ -322,15 +322,6 @@ class Config:
                                             # coast walks it to zero on its
                                             # own; steering it out there is
                                             # correcting a walk, not a miss
-    AERO_STEER_AFTER_RESWEEP: bool = False  # steer from the first descent
-                                            # re-sweep (+ the settle below)
-                                            # instead of from
-                                            # AERO_STEER_MAX_ALT_M: the
-                                            # altitude only stood in for "not
-                                            # on the boostback-exit curve",
-                                            # and the fin booster re-sweeps
-                                            # near apogee, 10 km above it
-    AERO_STEER_RESWEEP_SETTLE_S: float = 5.0  # ... this long after it
     AERO_STEER_MIN_ALT_M: float = 0.0       # hold retrograde below this.  An
                                             # altitude cliff is the wrong
                                             # guard and it was measured: at
@@ -345,12 +336,16 @@ class Config:
                                             # the solve is trusted; under this
                                             # it holds retrograde rather than
                                             # divide by nothing
-    AERO_STEER_MAX_AOA_DEG: float = 10.0    # the most the vehicle is asked to
+    AERO_STEER_MAX_AOA_DEG: float = 22.0    # the most the vehicle is asked to
                                             # hold off retrograde.  It is an
                                             # attitude limit, not a control
                                             # gain: a booster that cannot hold
-                                            # it will simply not fly it, and
+                                            # it will simply not fly it (the
+                                            # holdable probe caps it), and
                                             # the loop re-solves every tick.
+                                            # steer1-1111, qs_finbooster, 8 an
+                                            # arm: 22 median 14 m worst 121 v
+                                            # 10 median 47 worst 1001
     AERO_STEER_SOLVE_AOA_DEG: float = 4.0   # the angle the second propagation
                                             # probes, to measure metres of
                                             # miss per radian
