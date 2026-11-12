@@ -12,54 +12,71 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-10: boosterland -- the 6-fin booster: fins held in boostback, fins as airbrakes (fingerprint `891a3b83`)
+## 2026-11-11: boosterland -- fin booster: steer 22, brakes kept out in boostback, re-sweep gate 8 (fingerprint `708b082a`)
 
-The user's live FMRS flight LOG15543 wobbled +-40 deg in boostback. The craft was rebuilt 2026-11-08:
-13 Vectors, 24 Vernors, **6 airliner tail fins at the top (authority 150%), no airbrakes**. kRPC's PID
-drove the fins at aoa 50-150 deg. Committed on main (71d3dd4), **not pushed**; farm stopped (the user
-needed the CPU). Journal not yet written for this session: write it from this section.
+On `qs_finbooster` (the 5 m, 6-fin booster), 4 instances, 8 flights an arm. All committed on main, **not
+pushed**; howItWorks.pdf not redone. Journal: `docs/boosterland/journal.md` 2026-11-10 and 2026-11-11.
 
-**Defaults now:**
-- `BOOSTBACK_FINS_HELD` (common.idle `VacuumSurfaces.hold`): surfaces neutral through SEPARATION and
-  BOOSTBACK, handed back at COAST. fins1-1110, 9 an arm: boostback err median 2-3 v 18-43 deg, fast
-  impacts 0/9 v 5/9 (LOG15544-15561).
-- `FIN_BRAKES` (`autoland.brake_fins`): rings of >= 4 even, evenly spaced non-airbrake surfaces, alternate
-  `deployInvert` (set per part: the UI toggle copies to symmetry partners), deployed, deploy angle =
-  airbrake angle / `DEPLOY_MAX_DEG` x max deploy (22.5 on this fin; game: deflection = input x range x
-  authority + deploy, clamped to 1.5 x range). A pair is refused: alternated, it pitches.
-  finbrake2-1110, 10 an arm (4 instances): median **42 v 460 m**; LOG15574 1062 m = the late-brake probe
-  taken at aoa 21 read open < closed (0.74x), the law then crawled 10 deg/10 s.
-- `saves/qs_finbooster`: live `FMRS/krpclab_boostback.sfs` of LOG15543, Kerbin LANs -0.124 deg (unshifted
-  it loaded 1.3 km east on the MiniSystem farm). `sweep.py` parses quickfly's rows again (it had matched
-  nothing since the wall/rate columns were added).
+**Defaults now** (median 22-24 m on qs_finbooster, from ~47 at session start):
+- `AERO_STEER_MAX_AOA_DEG` 22 (steer1-1111: median 14 v 47, worst 121 v 1001). 30 was worse.
+- `FINS_HELD_KEEP_DEPLOY` (common.idle `VacuumSurfaces(keep_deploy=True)`): boostback holds the fins by
+  ignorePitch/Yaw/Roll instead of kRPC's `deflection_override`, which drives `deployAngle` itself and so
+  retracted the brake fins (KRPC.SpaceCenter ActuatorControlAddon). No propellant cost (71.9 v 72.4 t).
+- `DRAG_RESWEEP_AOA_DEG` 8 (was 25): the descent curve is no longer taken mid-flip, broadside (~4x high).
+  gate1-1111: median 22 v 40.
 
-**Flags in, unflown:** `AERO_STEER_AFTER_RESWEEP` (+ `AERO_STEER_RESWEEP_SETTLE_S` 5): steer the coast
-from the settled first descent re-sweep instead of from `AERO_STEER_MAX_ALT_M` 25 km (the design doc says
-the altitude only stands for "not on the boostback-exit curve"; this booster re-sweeps at ~34 km).
+**Deleted (refuted):** `AERO_STEER_AFTER_RESWEEP`, `DEPLOY_PROBE_FINS_HELD`, `DEPLOY_LATE_RATIO_CURVE`,
+`CORRECTION_WAIT_LATE_OPEN`, `CORRECTION_WAIT_BRAKE_SWEEP`, `DRAG_PROBE_DESCENT` (twice now).
+`DEPLOY_LATE=False` costs ~1 km (kept). `AERO_STEER_MAX_ALT_M=100000` (steer from apogee) did nothing.
 
-**Refuted, deleted:** `DRAG_PROBE_DESCENT` (probe boostback's drag with the vessel turned onto retrograde),
-probedesc1-1110: median ~200 v 50 m; its prediction read 1.4-1.95 km long of the first descent re-sweep on
-6/9. Cause: the probe sees the fins held neutral, the descent flies them braking. An honest boostback
-prediction needs the descent *configuration* (retrograde and brakes out), which the simulation cannot see
-while the fins are held. With fin brakes on, the real-attitude probe's post-re-sweep jump is -114..+269 m.
+**The user's goal: delete CORRECTION burns** ("if we need correction burns either the booster has a big
+problem, or the code has a big problem"). Not yet: `CORRECTION_MAX_BURNS=0` lands ~860 m long today.
+Where it comes from (wsweep1 no-correction flights): boostback exits at -150..-190, the first descent
+re-sweep at 34 km reads the same trajectory +850..+1560; the fins claw ~500 back by 15 km, pinned at the
+holdable angle (4-5 deg) below 15 km. The broadside boostback curve over-reads drag by ~1 km of range;
+probed at aoa 0 (DRAG_PROBE_DESCENT) it under-reads by ~0.8 km. Big misses with corrections on are all
+`BACKFIRING` corrections fired on a stale/jumped prediction.
+
+**Never flown:** tilt1-1111 (`DRAG_PROBE_DESCENT_TILT_DEG` 5 v 0, and 5/8 with no corrections) -- its
+launch deadlocked (below) and the user stopped the session. The flag is in, default 0. Command: see
+journal; arms base / t5 / t5+`CORRECTION_MAX_BURNS=0` / t8+`CORRECTION_MAX_BURNS=0`, 8 an arm.
 
 **Next, in order:**
-1. Fly `AERO_STEER_AFTER_RESWEEP` and `AERO_STEER_MAX_AOA_DEG=20-25` v the defaults on qs_finbooster (the
-   holdable probe stops at the cap, so "holdable 10" means ">= 10"). Then promote or delete.
-2. The late-brake probe at aoa 21 (LOG15574): gate it on a tighter descent attitude, or a settled coast.
-3. Roll 15-54 deg/s in the coast on every flight, both arms: the fins, handed to kRPC at COAST, likely.
-4. `flip_authority` reads gimbal 0 (sampled while IdleGimbals has them locked) -> "turn inf s"; fixing
-   changes the flip, needs its own batch.
-5. Install KSPLoadFixes into the farm (the user approved, 2026-11-10): same KSP build and Harmony as live;
-   copy `~/KSPLoadFixes/bin/KSPLoadFixes.dll` to `GameData/000_KSPLoadFixes/Plugins/` in base/ **and every
-   clone** (hardlinked; same game everywhere); first boot builds caches; time a 6-boot before and after.
-   Applies there: ConfigParse/DirList/FastLoaderParallelRead (KSPCF), Shabby, PngDecode (KSPTextureLoader),
-   Terrain, Kopernicus, kRPC fixes.
-6. howItWorks.pdf for boosterland (fins held, fin brakes) and push.
-7. Older: qs_heavy's ~120 m residual; brakes for speed not range; legs ~13.5 s early.
+0. **TOP PRIORITY, the user (2026-11-11): fix batches that never start, globally** ("these never start
+   issues have got us too many times ... make it a global fix"). Today alone:
+   - 1850-1938 (~45 min lost): two queued launches each waited `until ! pgrepf -c "bundle.py"`. pgrepf
+     skips only its *own* shell and ancestors, so each waiting `bash -c '... bundle.py ...'` matched the
+     *other* waiting shell's command line: a mutual deadlock, silent, the farm idle.
+   - One of them was a `( ... ) &` launched inside a foreground Bash call: it never wrote its output file;
+     its parent shell sat alive holding the loop. Use run_in_background, never `&`.
+   - 1543-1558: a launch waited on `git merge`/the post-commit hook by process name; 15 min idle.
+   - Older, same family: start.sh reports up while KSP never booted (memory "Farm start fails silently");
+     a fresh instance sits in the space centre and `launch_vessel` hangs; quickfly's deadline never
+     reached when kRPC blocks.
+   The fix must be **global** (every project, every session), not a krpcLab script patch:
+   - Waiting on another job by matching process command lines is the bug. Replace it with real
+     synchronisation: the post-commit hook (and bundle.py) hold an `flock` on a known lock file
+     (e.g. `.git/krpclab-bundle.lock`); a launch waits with `flock` on it, with a timeout.
+   - `pgrepf` (~/.local/bin) should also skip other `bash -c` wrapper shells whose argv merely *contains*
+     the pattern (match the executable/argv[0..1], not the whole eval'd script text), or offer a mode
+     that does; check `pkillf` too.
+   - One launcher for farm batches (all projects using ~/kspfarm) that refuses to queue behind another,
+     writes its output file on its first line, and fails loudly if the first flight has not started
+     within N minutes (a start deadline, not an end-only notification).
+   - A global hook/check (`~/.claude/hooks`, like checkOutput.sh): a background job whose output file
+     is still empty after N minutes gets reported, so "silently waiting" cannot last 45 min.
+   Read `~/.claude/docs/editingClaudeMd.md` before touching global CLAUDE.md; test hooks on scratch files.
+1. tilt1's result. If no-correction comes within ~2x of the defaults, delete the CORRECTION phase.
+2. `qs_heavyshuttlebooster` loads 388 km from the pad on the MiniSystem farm (LAN shift fitted on stock):
+   re-shift it, then re-check today's defaults on it (gate 8, keep-deploy, steer 22).
+3. The user's live small booster (LOG15614-15617, 27 t): leg clearance measured 40.8 m once at start,
+   true ~6 m; the burn hovers ~36 m up and drops. Re-measure the clearance after separation/each phase.
+4. Coast roll 15-36 deg/s: not reversed fins (same sign as boostback, 15x weaker without gimbal roll).
+5. `flip_authority` reads gimbal 0 -> "turn inf s". KSPLoadFixes into the farm (approved 2026-11-10).
+6. howItWorks.pdf for boosterland; push.
 
-**Traps paid:** 6 instances of this 230-t booster reach 29 GB swap in one 10-min batch, and the memory
-reaper killed a sweep: fly 4. "FAILED rc=0 / no flights" from sweep.py was its parser, not the flights.
+**Traps paid:** see item 0 (never-starting launches). Farm stopped at handoff. `qs_heavyshuttlebooster`
+results today are not measurements (see 2).
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 

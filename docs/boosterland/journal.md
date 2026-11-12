@@ -776,3 +776,7 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
 - hsgate1-1111: `qs_heavyshuttlebooster` loads 388 km from the pad on the
   MiniSystem farm (its LAN shift was fitted on the stock system) -- not a
   measurement; the save needs re-shifting.
+- tilt1-1111 never flew: two queued launches deadlocked on `until ! pgrepf -c
+  "bundle.py"` (each matched the other waiting shell's command line),
+  1850-1938.  The user stopped the session and made a global fix for
+  never-starting batches the top priority (HANDOFF item 0).
