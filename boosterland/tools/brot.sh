@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # boosterland/tools/brot.sh TAG "name:SET" ... -- every (arm, save) once per instance, rotated
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 TAG=$1; shift; ARMS=("$@"); P=$(cd "$(dirname "$0")/../.." && pwd); OUT=$P/logs/rot-$TAG.txt; : > "$OUT"
 SAVES=(${SAVES_LIST:-qs_heavy quicksave}); NS=${#SAVES[@]}; NA=${#ARMS[@]}; NC=$((NA*NS))
 LAPS=${LAPS:-1}

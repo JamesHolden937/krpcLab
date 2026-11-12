@@ -37,6 +37,7 @@
 # identical their difference lists look -- which is how three rounds of one
 # batch came to be three experiments when config.py was edited underneath a
 # running farm.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

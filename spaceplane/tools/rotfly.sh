@@ -5,6 +5,7 @@
 # time-scale governor holds a higher multiplier.  TS (default 20) is only the
 # ceiling: the governor holds each phase to what its control interval allows,
 # and the `loop rate` line at the end of every log says whether it did.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -u
 busy=$(ps -eo args | grep -cE '^[^ ]*python[^ ]* (spaceplane/tools/quickglide|-m spaceplane\.autopilot|[^ ]*krpcLab\.py --pilot spaceplane)')
 if [ "$busy" -gt 0 ]; then echo "refusing: $busy flight process(es) already running" >&2; exit 1; fi

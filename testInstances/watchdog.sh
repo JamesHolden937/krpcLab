@@ -36,11 +36,13 @@ instances() {
   ls -d "$HERE"/ksp[0-9]* 2>/dev/null | sed 's#.*/ksp##' | grep -E '^[0-9]+$'
 }
 
+. "$HERE/procs.sh"
+
 port_of() { cat "$HERE/ksp$1/.rpc_port" 2>/dev/null; }
 
 alive() {
   local n="$1" port
-  pgrep -f "ksp$n/KSP_x64.exe" >/dev/null 2>&1 || return 1
+  game_pid "$n" >/dev/null || return 1
   port="$(port_of "$n")"
   [ -n "$port" ] || return 0          # process up, port not named: not dead
   ss -ltn 2>/dev/null | grep -q ":$port " || return 1
@@ -194,7 +196,11 @@ supervise() {
         say "ksp$n is gone ($(verdict)) -- relaunching"
       fi
       "$HERE/stop.sh" "$n" >/dev/null 2>&1
-      setsid "$HERE/kwinRun.sh" "$n" >/dev/null 2>&1 </dev/null &
+      # In the instance's own scope, as start.sh does, so stop.sh's scope
+      # stop takes all of it (procs.sh finds it either way).
+      systemctl --user stop "ksp$n-boosterland.scope" 2>/dev/null
+      systemd-run --user --scope --collect --unit="ksp$n-boosterland" \
+          -- "$HERE/kwinRun.sh" "$n" >"$HERE/ksp$n-boot.log" 2>&1 </dev/null &
       launched[$n]="$now"
     done
     sleep "$INTERVAL"

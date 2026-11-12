@@ -26,6 +26,7 @@
 #   md5sum testInstances/ksp*/saves/default/qs_plane.sfs | awk '{print $1}' | sort -u | wc -l
 #   swapon --show                                  # after the batch, not just before
 #
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

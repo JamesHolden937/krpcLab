@@ -3,6 +3,7 @@
 # --set list, launched together.  TEMPORARY TEST HARNESS: ladder.py flies one
 # configuration across the farm, this flies a different one on each, which is
 # what a coarse bracket of a single knob wants.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 SAVE="${SAVE:-qs_shuttle2_rigoff}"

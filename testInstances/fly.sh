@@ -7,6 +7,7 @@
 #   ./fly.sh 1 -n 3 --set AIM_BIAS_EAST_M=0
 #   ./fly.sh 2 --compare DRAG_WARMUP_SAMPLES=1,4 -n 2
 #
+. "$(dirname "${BASH_SOURCE[0]}")/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ="$(dirname "$HERE")"

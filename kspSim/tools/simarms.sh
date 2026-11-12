@@ -6,6 +6,7 @@
 # space-separated --set arguments, e.g. "HAC_WEAVE_MAX_DEG=75 HAC_SPLIT_BRAKE=True".
 # Output: one line per flight, prefixed "armN", as quickglide prints it.
 # Screening only (kspSim/CLAUDE.md): confirm on the farm.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 SAVE=$1; K=$2; shift 2
 cd "$(dirname "$0")/../.."
 NA=$#

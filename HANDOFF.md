@@ -42,36 +42,24 @@ launch deadlocked (below) and the user stopped the session. The flag is in, defa
 journal; arms base / t5 / t5+`CORRECTION_MAX_BURNS=0` / t8+`CORRECTION_MAX_BURNS=0`, 8 an arm.
 
 **Next, in order:**
-0. **TOP PRIORITY, the user (2026-11-11): fix batches that never start, globally** ("these never start
-   issues have got us too many times ... make it a global fix"). Today alone:
-   - 1850-1938 (~45 min lost): two queued launches each waited `until ! pgrepf -c "bundle.py"`. pgrepf
-     skips only its *own* shell and ancestors, so each waiting `bash -c '... bundle.py ...'` matched the
-     *other* waiting shell's command line: a mutual deadlock, silent, the farm idle.
-   - One of them was a `( ... ) &` launched inside a foreground Bash call: it never wrote its output file;
-     its parent shell sat alive holding the loop. Use run_in_background, never `&`.
-   - 1543-1558: a launch waited on `git merge`/the post-commit hook by process name; 15 min idle.
-   - Older, same family: start.sh reports up while KSP never booted (memory "Farm start fails silently");
-     a fresh instance sits in the space centre and `launch_vessel` hangs; quickfly's deadline never
-     reached when kRPC blocks.
-   - **The stop side too:** at handoff `testInstances/stop.sh` printed "remaining: 0 gamescope, 0
-     wineserver, 0 compositor" and exited, while all four `kwinRun.sh` instances (KSP_x64.exe under
-     `kwin_wayland --virtual`) ran on at ~300% CPU each for 50 min, until the user asked why the CPU
-     was at 84%. stop.sh neither stops nor counts kwinRun instances. The fix: stop.sh counts and kills
-     every KSP_x64.exe under testInstances, its wineservers and the `ksp<n>-wl` kwins, and exits non-zero
-     if any survive.
-   The fix must be **global** (every project, every session), not a krpcLab script patch:
-   - Waiting on another job by matching process command lines is the bug. Replace it with real
-     synchronisation: the post-commit hook (and bundle.py) hold an `flock` on a known lock file
-     (e.g. `.git/krpclab-bundle.lock`); a launch waits with `flock` on it, with a timeout.
-   - `pgrepf` (~/.local/bin) should also skip other `bash -c` wrapper shells whose argv merely *contains*
-     the pattern (match the executable/argv[0..1], not the whole eval'd script text), or offer a mode
-     that does; check `pkillf` too.
-   - One launcher for farm batches (all projects using ~/kspfarm) that refuses to queue behind another,
-     writes its output file on its first line, and fails loudly if the first flight has not started
-     within N minutes (a start deadline, not an end-only notification).
-   - A global hook/check (`~/.claude/hooks`, like checkOutput.sh): a background job whose output file
-     is still empty after N minutes gets reported, so "silently waiting" cannot last 45 min.
-   Read `~/.claude/docs/editingClaudeMd.md` before touching global CLAUDE.md; test hooks on scratch files.
+0. **DONE 2026-11-11 evening (the user's top priority): batches that never start, fixed globally.**
+   Tested on the farm; details `docs/testInstances.md` "Batches that never start".
+   - `stop.sh` never found the games: Proton names them `X:\...\kspN\KSP_x64.exe`, so it killed
+     only umu-run. `testInstances/procs.sh` (`inst_pids`/`game_pid`: scope cgroup, WINEPREFIX, both
+     path forms, descendants) is used by stop/start/watchdog/miniSystem. `stop.sh` exits 1 naming
+     survivors. Its first run also cleared ksp1-3's leaked dbus sets. The watchdog relaunches into the
+     instance's scope.
+   - `~/.local/bin/farmlaunch`: every batch script sources `testInstances/farmGuard.sh` and re-execs
+     under it (lock `kspfarm`). First line at once; **exit 75 = refused, another batch holds the farm**
+     (launch after its notice); **124 = no `logs/LOG*` within 900 s**. A python harness run directly is
+     not guarded: wrap it in `farmlaunch --started-glob 'logs/LOG*' --`.
+   - `pgrepf` skips `sh -c` wrapper shells, also behind timeout, nohup, setsid etc.
+   - `bundle.py` waits on its flock with a bound (600 s) and re-checks staleness under it. Nothing
+     waits for the bundle or hook by name.
+   - Harness kRPC connections are bounded (`farmflight.bounded`, 300 s per call).
+   - The global hook `bgStartWatch.py` (armed by `checkOutput.sh`) kills a background job still
+     silent after 600 s and writes why into its output. A waiter must echo a first line; a job under
+     farmlaunch is left to farmlaunch's own deadline.
 1. tilt1's result. If no-correction comes within ~2x of the defaults, delete the CORRECTION phase.
 2. `qs_heavyshuttlebooster` loads 388 km from the pad on the MiniSystem farm (LAN shift fitted on stock):
    re-shift it, then re-check today's defaults on it (gate 8, keep-deploy, steer 22).
@@ -81,7 +69,8 @@ journal; arms base / t5 / t5+`CORRECTION_MAX_BURNS=0` / t8+`CORRECTION_MAX_BURNS
 5. `flip_authority` reads gimbal 0 -> "turn inf s". KSPLoadFixes into the farm (approved 2026-11-10).
 6. howItWorks.pdf for boosterland; push.
 
-**Traps paid:** see item 0 (never-starting launches). Farm stopped at handoff. `qs_heavyshuttlebooster`
+**Traps paid:** item 0, now fixed. `cmd | tail` on a background job keeps its output empty until the
+end; that is fine under farmlaunch, and otherwise bgStartWatch kills it at 600 s. Farm stopped at handoff. `qs_heavyshuttlebooster`
 results today are not measurements (see 2).
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)

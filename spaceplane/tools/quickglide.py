@@ -51,7 +51,7 @@ def connect(name, rpc, stream, tries=40):
             if rpc:
                 kwargs["rpc_port"] = rpc
                 kwargs["stream_port"] = stream
-            return krpc.connect(**kwargs)
+            return farmflight.bounded(krpc.connect(**kwargs))
         except Exception as exc:                        # noqa: BLE001
             last = exc
             time.sleep(3.0)
@@ -85,9 +85,9 @@ def set_paused(rpc, stream, paused, settle=0.5):
     every frame -- so the answer is the clock, not the flag.
     """
     try:
-        conn = krpc.connect(name="quickglide-pause", rpc_port=rpc,
-                            stream_port=stream) if rpc else \
-            krpc.connect(name="quickglide-pause")
+        conn = farmflight.bounded(krpc.connect(
+            name="quickglide-pause", rpc_port=rpc, stream_port=stream)
+            if rpc else krpc.connect(name="quickglide-pause"), 60)
     except Exception:                                   # noqa: BLE001
         return None
     try:
@@ -120,9 +120,9 @@ def clock_is_running(rpc, stream, seconds=3.0):
     obeys it (see ``set_paused``), so the clock is the test.
     """
     try:
-        conn = krpc.connect(name="quickglide-clock", rpc_port=rpc,
-                            stream_port=stream) if rpc else \
-            krpc.connect(name="quickglide-clock")
+        conn = farmflight.bounded(krpc.connect(
+            name="quickglide-clock", rpc_port=rpc, stream_port=stream)
+            if rpc else krpc.connect(name="quickglide-clock"), 60)
     except Exception:                                   # noqa: BLE001
         return None
     try:

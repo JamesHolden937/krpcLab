@@ -2,6 +2,7 @@
 # ascent/tools/srot.sh TAG "name:SET" ... -- every (arm, save) once per instance, rotated.
 # SAVES_LIST (default: the three stacks), LAPS (default 1).  Writes logs/rot-TAG.txt,
 # ending "ROT DONE".
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 TAG=$1; shift; ARMS=("$@"); [ ${#ARMS[@]} -eq 0 ] && ARMS=("def:")
 P=$(cd "$(dirname "$0")/../.." && pwd); OUT=$P/logs/rot-$TAG.txt; : > "$OUT"
 SAVES=(${SAVES_LIST:-qs_stack qs_stack_small qs_stack_stretch}); NS=${#SAVES[@]}; NA=${#ARMS[@]}; NC=$((NA*NS))

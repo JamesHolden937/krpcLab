@@ -5,6 +5,7 @@
 # Each instance is a kspSim server on 50200+2i; results go to stdout, one
 # line per flight, exactly as the harness (quickglide.py, or quickfly.py for
 # PILOT=booster) prints them.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 SAVE=$1; N=$2; K=$3; shift 3
 cd "$(dirname "$0")/../.."
 OUT=$(mktemp -d)

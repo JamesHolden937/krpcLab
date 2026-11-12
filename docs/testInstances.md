@@ -163,6 +163,41 @@ running; `pkillf -9 spaceplane.autopilot` before measuring anything.
 (`pgrepf`/`pkillf` are `pgrep -f`/`pkill -f` that skip the calling shell,
 `~/.local/bin`; a global Claude Code hook refuses the raw `-f` forms.)
 
+**Batches that never start, and a stop that does not stop (fixed 2026-11-11).**
+One afternoon lost ~1 h to launches that were silently waiting on something that
+would never happen, and the farm then ran on for 50 min after `stop.sh` said it
+had stopped:
+
+- Two queued launches each waited `until ! pgrepf -c bundle.py`. `pgrepf` skipped
+  only its own shell, so each matched the *other* waiting `bash -c` -- a mutual
+  deadlock with the farm idle. `pgrepf` now skips every `sh -c SCRIPT` wrapper
+  (also behind timeout/nohup/setsid/env/flock). More to the point, **nothing
+  waits for the bundle by name any more**: `tools/bundle.py` builds under an
+  flock on `dist/krpcLab.py.lock` (bounded, `KRPCLAB_BUNDLE_LOCK_TIMEOUT`, 600
+  s), which the post-commit hook's build holds too, and every harness's
+  `bundle.ensure()` waits on that lock and re-checks staleness inside it. Launch;
+  don't wait for the hook.
+- **Every batch script runs under `~/.local/bin/farmlaunch`** (`farmGuard.sh`,
+  sourced first by `fly.sh`, `brot.sh`, `srot.sh`, `rotfly.sh`, `savefly.sh`,
+  `multirot.sh`, `armfly.sh`, `pairfly.sh`, `farmfly.sh`, `simfly.sh`,
+  `simarms.sh`). Its first output line is written at once, it **refuses (exit
+  75) instead of queueing** when another batch holds the `kspfarm` lock, and it
+  kills the batch (exit 124, "NOT STARTED") if no `logs/LOG<n>` appears within
+  `FARM_START_DEADLINE` (900 s). Nested scripts see `FARMLAUNCH` and don't
+  re-lock. A python harness run directly (`quickfly.py`, `quickglide.py`) is not
+  guarded: wrap it, `farmlaunch --started-glob 'logs/LOG*' -- ./x.py ...`.
+- The global Claude hook `bgStartWatch` kills any background job whose output is
+  still empty after 600 s and writes why into that output.
+- **`stop.sh` never found the games.** Under Proton the game is
+  `X:\krpcLab\testInstances\kspN\KSP_x64.exe`: backslashes. Its
+  `pgrep -f "kspN/KSP_x64.exe"` matched only umu-run and Proton's python wrapper,
+  so it killed those, printed "remaining: 0", and left every KSP_x64.exe (and
+  each instance's dbus set, for days) running. `procs.sh` (`inst_pids N`,
+  `game_pid N`) finds an instance by its systemd scope, `WINEPREFIX` or either
+  path form, plus descendants; `stop.sh` stops the scope, TERMs/KILLs what is
+  left, and **exits 1 naming survivors**. `start.sh`, `watchdog.sh` and
+  `miniSystem.sh` use `game_pid` too.
+
 **Three ways a batch lies about itself, all paid for in one session:**
 
 - `pkill -f spaceplane.autopilot` **matches the shell running it.** The
@@ -439,8 +474,8 @@ journalctl --user -b --since "-10min" | grep -E "systemd\[.*\]:.*(Started|Consum
   `KSP_x64.exe`, gamescope and wineserver but **never `kwin_wayland
   --virtual`**, so each stop/start cycle orphaned one per instance, each still
   holding the `kspN-wl` socket the next needs. `stop.sh` kills them now and
-  reports a compositor count — **check it is 0 before calling a restart
-  clean.** The general lesson: a failure that resembles a known unexplained one
+  exits non-zero if anything of an instance survives — **check its exit
+  status before calling a restart clean.** The general lesson: a failure that resembles a known unexplained one
   is not thereby explained by it.
 
 **`watchdog.sh` is the answer to all of them, because it does not ask which

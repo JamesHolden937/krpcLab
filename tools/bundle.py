@@ -711,16 +711,47 @@ def stale(out=DEFAULT):
     return any(os.path.getmtime(f) > built for f in sources())
 
 
-def write(out=DEFAULT, test=True):
+LOCK_TIMEOUT_S = float(os.environ.get("KRPCLAB_BUNDLE_LOCK_TIMEOUT", "600"))
+
+
+def write(out=DEFAULT, test=True, if_stale=False):
     """Build, write atomically, read back and (``test``) selftest.
 
-    Under a lock: a farm batch starts six harnesses at once, and each one
-    asks for a fresh bundle."""
+    Under ``<out>.lock`` (flock): a farm batch starts six harnesses at once,
+    each asking for a fresh bundle, and the post-commit hook builds one too.
+    **This lock is the only synchronisation with a build in progress**:
+    anything that needs the bundle calls ``ensure`` (which waits here), and
+    never waits for the hook or another build by matching process names --
+    two launches doing that matched each other's waiting shells and
+    deadlocked for 45 min (2026-11-11).  The wait is bounded
+    (``KRPCLAB_BUNDLE_LOCK_TIMEOUT``, 600 s) and fails naming the holder.
+    ``if_stale``: re-checked under the lock, so harnesses queued behind one
+    build do not each rebuild."""
     import fcntl
+    import time
     out = os.path.abspath(out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out + ".lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with open(out + ".lock", "a+") as lock:
+        deadline = time.time() + LOCK_TIMEOUT_S
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() > deadline:
+                    lock.seek(0)
+                    raise SystemExit(
+                        "bundle: %s.lock still held after %.0f s (last "
+                        "recorded holder: %s)"
+                        % (out, LOCK_TIMEOUT_S,
+                           lock.read().strip() or "an unknown process"))
+                time.sleep(0.2)
+        lock.seek(0)
+        lock.truncate()
+        lock.write("pid %d (%s)\n" % (os.getpid(), " ".join(sys.argv)[:200]))
+        lock.flush()
+        if if_stale and not stale(out):
+            return out, 0, ""
         body, _, count = build()
         tmp = "%s.%d.tmp" % (out, os.getpid())
         with open(tmp, "w", encoding="utf-8") as handle:
@@ -740,9 +771,10 @@ def write(out=DEFAULT, test=True):
 
 def ensure(out=DEFAULT):
     """The bundle's path, rebuilt first if any source is newer: what every
-    launcher flies, so an uncommitted edit flies too."""
+    launcher flies, so an uncommitted edit flies too.  Waits for a build
+    already in progress (``write``'s lock) rather than starting a second."""
     if stale(out):
-        write(out, test=False)
+        write(out, test=False, if_stale=True)
     return out
 
 
@@ -822,7 +854,8 @@ def main(argv=None):
         if not args.quiet:
             print("%s  up to date" % out)
         return 0
-    out, count, note = write(out, test=not args.no_selftest)
+    out, count, note = write(out, test=not args.no_selftest,
+                             if_stale=args.if_stale)
     if args.suite:
         note = (note + "  " if note else "") + suite(out)
     if not args.quiet:

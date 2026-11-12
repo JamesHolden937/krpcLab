@@ -2,6 +2,7 @@
 # spaceplane/tools/multirot.sh TAG CYCLES "save|SET=1;SET2=2" ...
 # 2 rounds per farm start (the farm restarted between cycles); the arm list
 # is rotated by 2 per cycle so the rotation continues across restarts.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -u
 TAG=$1; C=$2; shift 2
 ARMS=("$@"); NA=${#ARMS[@]}

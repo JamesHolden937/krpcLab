@@ -62,6 +62,25 @@ def command(args, pilot, module, overrides):
     return argv
 
 
+HARNESS_CALL_TIMEOUT_S = float(os.environ.get("KRPCLAB_HARNESS_CALL_TIMEOUT",
+                                              "300"))
+
+
+def bounded(conn, seconds=None):
+    """``conn`` with a timeout on every RPC its harness makes: a game that
+    stops answering (a scene stuck loading, the space centre, a dead
+    instance whose socket stays open) raises ``socket.timeout`` after
+    ``seconds`` (``KRPCLAB_HARNESS_CALL_TIMEOUT``, 300 s: longer than a save
+    load) instead of blocking the harness for ever -- the flight's own wall
+    timeout cannot help while the harness itself is stuck in a call before
+    or after it.  The RPC socket only: the stream thread's reads must not
+    time out.  For harness connections, never a flight's."""
+    sock = getattr(getattr(conn, "_rpc_connection", None), "_socket", None)
+    if sock is not None:
+        sock.settimeout(HARNESS_CALL_TIMEOUT_S if seconds is None else seconds)
+    return conn
+
+
 def install_reaper():
     """Reap the flight on SIGTERM and SIGINT, not just on the normal path.
 

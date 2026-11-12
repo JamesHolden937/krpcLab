@@ -27,15 +27,10 @@ launch() {
   started[$N]=$(date +%s)
 }
 port_up() { local p; p="$(cat "$HERE/ksp$1/.rpc_port" 2>/dev/null)"; [ -n "$p" ] && ss -ltn | grep -q ":$p "; }
-# Skipping shells, as stop.sh does: `pgrep -f` also matches any caller whose
-# own command line names the exe, and that would pass a dead instance as live.
-game_running() {
-  local p
-  for p in $(pgrep -f "ksp$1/KSP_x64.exe" 2>/dev/null); do
-    grep -qa bash /proc/$p/comm 2>/dev/null || return 0
-  done
-  return 1
-}
+# The game process itself, found by procs.sh (Proton names it with
+# backslashes, so a path match on the command line finds only its wrappers).
+. "$HERE/procs.sh"
+game_running() { game_pid "$1" >/dev/null; }
 declare -A started tries
 want=()
 for N in "$@"; do

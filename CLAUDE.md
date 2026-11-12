@@ -159,7 +159,11 @@ rather than a stored plan.
 # and a session that flies nothing measures nothing.  Standing procedure:
 # `cd testInstances && ./start.sh` (six, 0-5; it returns
 # when every port is up, relaunching boot crashes), fly; `./stop.sh` when the
-# suite has to run or the session ends.
+# suite has to run or the session ends (exit 1 = something survived it).
+# Every batch script runs under farmlaunch (testInstances/farmGuard.sh): exit 75
+# = another batch holds the farm (launch after its notice, never a wait loop on
+# its name); 124 = no LOG<n> within 900 s.  Never wait for the bundle or the
+# post-commit hook: bundle.ensure() waits on its lock.
 #
 # **Six instances (0-5), and never beside the test suite.**  Six put 8-13 GB
 # into zram at ~4 GB each; a seventh saturated the CPU at boot (2026-10-02).

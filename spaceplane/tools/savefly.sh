@@ -2,6 +2,7 @@
 # savefly.sh ROUNDS OUT "sets A" "sets B" ... : instance i flies ${SAVE:-qs_s2_hac}<i>
 # (an arm may carry SAVE=<prefix> to fly its own saves);
 # the arm alternates by (round + i) so every save sees every arm.
+. "$(dirname "${BASH_SOURCE[0]}")/../../testInstances/farmGuard.sh"   # farmlaunch: no queueing, start deadline
 set -u
 # Each save is pinned to one instance, so every arm sees every save -- rotfly.sh
 # with more arms than instances flies only some of them (rot-flarep2-1003).

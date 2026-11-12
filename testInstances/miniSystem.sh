@@ -20,7 +20,10 @@ KSPFARM="${KSPFARM:-$HOME/kspfarm}"; BASE="$KSPFARM/base"
 LIVE="${KSP_SRC:-$HOME/Kerbal Space Program}/GameData"
 MINI="${MINISYSTEM:-$HOME/minisystem}/GameData/MiniSystem"
 [ -f "$MINI/MiniSystem.cfg" ] || { echo "no $MINI/MiniSystem.cfg (run ~/minisystem/tools/genPatch.py)" >&2; exit 1; }
-if pgrepf -c 'ksp[0-9]/KSP_x64.exe' >/dev/null; then echo "farm is running -- ./stop.sh first" >&2; exit 1; fi
+. "$HERE/procs.sh"
+for N in $(farm_instances); do
+  if game_pid "$N" >/dev/null; then echo "farm is running (ksp$N) -- ./stop.sh first" >&2; exit 1; fi
+done
 STOCK=0; [ "${1:-}" = --stock ] && { STOCK=1; shift; }
 [ $# -eq 0 ] && set -- 0 1 2 3 4 5
 if [ $STOCK = 1 ]; then
