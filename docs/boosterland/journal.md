@@ -878,3 +878,20 @@ Goal (the user): remove every constant that can be derived.  4 instances,
   many) and read the lift beside the torque; the angle of peak lift per Mach
   bin replaces `AERO_STEER_MAX_AOA_DEG` (22) as the wing's ceiling.  Unmeasured
   = no steering.  peak1-1112.
+- peak1-1112 (8 an arm per save): defaults fin 38 / heavy 84 (all 44, mean
+  63, worst 135) v `AERO_STEER_LIFT_PEAK` fin 37 / heavy 102 (40, 61, 146).
+  The probed lift peaks at 46-51 deg on both boosters (crossflow shape:
+  11:-29 22:-77 34:-123 45:-148 56:-142 68:-108 79:-57 90:~0); the 22 deg cap
+  bound on 6 ticks in 16 flights, so it was not a lever here.  **Promoted**
+  (derived, holds on any airframe): `AERO_STEER_MAX_AOA_DEG` and the
+  `AERO_STEER_HOLDABLE` flag deleted; probes 8 to 90 deg; unmeasured = no
+  steering.  fakeksp got a zero-torque probe.  Also merged unflown: the
+  unsteered coast holds plain retrograde (`COAST_STEER_GAIN`,
+  `COAST_MAX_TILT_DEG` deleted).
+- conf1-1112 (new defaults, 12 per save, fingerprint 680d8568): fin 14 17 29 33
+  38 49 57 62 66 74 82 **2595**; heavy 10 13 14 28 43 44 45 86 88 88 103 110.
+  Median 47.  LOG16157 (2595 m, 134 m/s): a **boostback departure** -- err
+  65-77 deg and roll 114 deg off at full throttle, vs rising 358 -> 481 m/s,
+  cross swinging to -18 km; the heading was held at cross -2860 and the burn
+  ended at cross +2855, beyond anything the coast can trim.  Boostback code is
+  unchanged today; ~1 in 60 fin flights.  Open.

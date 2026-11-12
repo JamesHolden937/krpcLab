@@ -12,54 +12,52 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-11 night: boosterland -- tilt 16, no corrections; generality pass under way
+## 2026-11-12: boosterland -- constants out: wing gated on the re-sweep, lift-peak ceiling, CORRECTION deleted
 
-On `qs_finbooster` (the user's Heavy Shuttle booster, rebuilt 2026-11-08: ~230 t, 13 Vectors, 24 Vernors,
-6 airliner tail fins as brake fins, no legs, no airbrakes), 4 instances, 8 flights an arm. Journal:
-`docs/boosterland/journal.md` "2026-11-11 night". Committed and pushed; howItWorks.pdf redone.
+The user: keep working on the booster lander, removing every constant that can be derived. On `qs_finbooster` and
+`qs_heavyshuttlebooster` (its first MiniSystem flights), 4 instances. Journal: `docs/boosterland/journal.md`
+"2026-11-12". All committed and pushed; howItWorks.pdf redone; farm stopped. **Defaults fingerprint 680d8568.**
 
-**Defaults now** (commit "DRAG_PROBE_DESCENT_TILT_DEG 16 and CORRECTION_MAX_BURNS 0"):
-- `DRAG_PROBE_DESCENT_TILT_DEG` 16: boostback probes drag at retrograde tilted 16 deg. tilt1-3: 8 -> ~140 m,
-  12 -> ~80, 16 -> median ~45 worst 112 over 16 flights, 20 -> worse. Still a constant: the best tilt is
-  above the 4-8 deg the descent flies, so it stands in for more than the angle.
-- `CORRECTION_MAX_BURNS` 0: corrections only backfired on top of the tilt (old defaults: 942/1146 m tails).
-  The CORRECTION phase code is still in; delete it once the other boosters land without it (breadth1).
-- Leg clearance re-read on every phase change (LOG15614: 40.8 m at connect, ~6 m true).
-- `qs_heavyshuttlebooster` re-shifted for MiniSystem (Kerbin LANs +39.61 deg); first flown in breadth1.
+**conf1-1112 (the defaults now, 12 per save):** fin median ~50, heavy 44, all 47; one fin flight 2595 m (below).
 
-**Flags in, being measured:** `AERO_STEER_GATE` alt/resweep/none (the 25 km steering cliff); `DRAG_AOA_TERM`
-(refuted as built, median ~420 long: kda reads ~5x what crossflow can make and `fins settled` latched
-mid-flip -- one fix attempt, then delete); `PAD_FROM_LAUNCH` (target = launch site from launcherMod's
-launch record / launchedFrom spawn point; the farm's LaunchPad spawn point is 0.5 m from PAD_LAT/LON --
-promote); `DRAG_OBSERVED_SCALE` (merged, off, never flown on the farm; fakeksp reads scale 0.91-1.06): the coast's
-own deceleration sets the drag curve's level; meant to replace the tilt constant.
+**Promoted (measured, breadth2/peak1-1112):**
+- The coast's wing acts once the descent re-sweep has replaced the boostback curve: median 34 v 56, heavy 24 v 65.
+  `AERO_STEER_MAX_ALT_M` (25 km) and `AERO_STEER_GATE` deleted.
+- Target = the launch site (window mod's launch record / launchedFrom spawn point) when on this body
+  (`PAD_FROM_LAUNCH` deleted; equal to PAD_LAT/LON on the farm, 0.5 m apart).
+- The wing's ceiling = the probed angle of peak lift (46-51 deg on both), capping the holdable angle; probes 8 to
+  90 deg every 2 s; unmeasured = no steering. `AERO_STEER_MAX_AOA_DEG` (22) and `AERO_STEER_HOLDABLE` deleted.
+  Equal on the miss (40 v 44): the 22 cap almost never bound on these two.
 
-**New, logging only:** touchdown limits (`common/touchdown.py`, launcherMod `KrpcLabLegs.Legs`): part impact
-tolerance at start; for legs, the live spring/damper (reflection) -> vertical limit (damper jump in one tick
-v `ModuleWheelDamage.impactTolerance`, stroke bottoming) and lateral topple limit (stuck foot, suspension
-tilt; sliding-tip test). A guessed damper gave LT-2 ~2 m/s -- unverified; read live values on qs_heavy, then
-drop tests (savegen at set vs/hs over the pad) to measure the real limits.
+**Deleted:** the CORRECTION phase and its 22 constants (tilt4: 0 burns fired at tilt 16; earlier they only
+backfired); `DRAG_OBSERVED_SCALE` (tilt 0: km short), `DRAG_AOA_TERM`; knobs at null (`SEPARATION_MIN_COAST_S`,
+`BOOSTBACK_EXIT_S`, `BOOSTBACK_PITCH_DEG`, `BOOSTBACK_MIN_THROTTLE`, `LANDING_DIVERT_LEAD`, `LANDING_MAX_EARLY_M`,
+`LANDING_DIVERT_MIN_THROTTLE`, `LANDING_DIVERT_DEMAND_M_S2`, `FIN_BRAKE_SHARE`); `COAST_STEER_GAIN`/`COAST_MAX_TILT_DEG`
+(unsteered coast is plain retrograde); `LANDING_GOAROUND_ALT_M` (the ascent throttle cut now applies below
+`LANDING_NULL_ALT_M`, where the attitude law holds thrust vertical). The last two are unflown except in conf1.
 
-**Deleted:** `AERO_STEER_MIN_ALT_M`, `CORRECTION_MAX_ALT_M`, `CORRECTION_FREE_AIM_ALT_M`, `BOOSTBACK_UNDERSHOOT_M`,
-`DRAG_PROBE_MAX_AOA_DEG` (parked-off cliffs).
+**Measured, kept:**
+- `DRAG_PROBE_DESCENT_TILT_DEG` 16: tilt 0 lands ~1 km past the pad on the fin (tilt4). It stands in for the
+  boostback-exit drag being taken broadside (~2x the descent curve); nothing else predicts the descent's drag at
+  boostback yet.
+- `BOOSTBACK_TOLERANCE_M` 190: the miss is insensitive over 20-190 (tol1: medians 37-42 fin, 77-98 heavy). The
+  coast absorbs it; the exit long (~-176) cancels the re-sweep's ~+200 m jump. It cannot be the wing's reach:
+  the lift slope is first measured in COAST.
 
-**The user's priority: generality** -- no altitude/distance cliffs fitted to one booster or Kerbin. Queue:
-1. **Re-fly breadth1** -- it died when the machine suspended (fixed, see Traps); only 3 finbooster cells
-   flew: new 10 31 41 51, gate none 34 52 91 93, resweep 29 30 54 62. Command in the journal; arms new x2,
-   gate none, gate resweep, old (`DRAG_PROBE_DESCENT_TILT_DEG=0,CORRECTION_MAX_BURNS=3`) x2, saves
-   qs_finbooster,qs_heavyshuttlebooster, 4 instances. Then delete CORRECTION if the heavy agrees.
-2. `DRAG_OBSERVED_SCALE` (tilt 16 and tilt 0) -- if it lets tilt go to 0, delete the tilt constant.
-3. `BOOSTBACK_TOLERANCE_M` 190 -> the span the coast's steering can still reach (user agreed), once the
-   boostback-exit prediction is right.
-4. Landing heights by time-to-go/stopping distance (`LANDING_NULL_ALT_M`, `LANDING_DIVERT_MAX_ALT_M`,
-   `LANDING_MAX_EARLY_M`, `GEAR_DEPLOY_ALT_M`, `LANDING_GOAROUND_ALT_M`, `LANDING_UPRIGHT_ALT_M`, flare).
-5. Vehicle-property angles (`AERO_STEER_MAX_AOA_DEG`, tilt caps, `DEPLOY_MAX/MIN_DEG` from part limits),
-   durations (`BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`), `TERRAIN_MAX_M` (also bounds landing_height).
-6. Older: live small booster re-check (clearance fix), coast roll, flip_authority gimbal 0, howItWorks.pdf.
+**Open, in order:**
+1. **Boostback departure** (LOG16157): err 65-77 deg, roll 114 deg off at full throttle after the flip; the held
+   heading took cross -2860 and the coast cannot trim km. ~1 in 60 fin flights. Gate throttle on pointing error
+   after the flip, or re-take the heading when cross is not small.
+2. LOG16045-type: the wing saturates below 9 km (cmd 12-18 v hold ~7) after a slow flip settle (54 s).
+3. The tilt constant: derive the descent drag at boostback (what the 16 deg covers beyond the 4-8 deg flown).
+4. Landing heights by time-to-go (`LANDING_NULL_ALT_M` 250, `LANDING_DIVERT_MAX_ALT_M`, `GEAR_DEPLOY_ALT_M`,
+   `LANDING_UPRIGHT_ALT_M` -- a linear cone over the 2+0.5h profile has no slew-rate solution below 14 deg/s, so
+   not that way), flare; `BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`, `TERRAIN_MAX_M`.
+5. Re-fly the small boosters (qs_hot, qs_heavy) on MiniSystem: nothing but the two big ones flew today.
 
-**Traps:** stopping and restarting the farm inside one turn let an earlier turn's nosleep watcher release
-the inhibitor and the machine slept mid-batch (fixed: nosleepStart.sh stops the watcher). A sweep's `m/s` column is the speed at the end of the run, not at contact. 6 instances of this
-230-t booster reach 29 GB swap: fly 4, restart between batches (swap 11-12 GB after one).
+**Traps:** sweep.py must run under `farmlaunch` (else every flight exits 75) and its output must reach the
+background job's stdout (tee), or bgStartWatch kills it at 600 s. The full suite won't run from a git worktree
+(kspSim tests import from the main tree): merge, then run it in main. A sweep's `corrections` column now always 0.
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 
