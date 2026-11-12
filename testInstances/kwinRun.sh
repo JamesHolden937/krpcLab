@@ -27,6 +27,13 @@ PREFIX="$HERE/prefix$N"
 # the smallest size that is readable.  Override with RES=WxH to compare.
 RES="${RES:-160x100}"; W="${RES%x*}"; H="${RES#*x}"
 
+# **No sound device.**  Every volume is 0, but the game still opens one and
+# FMOD mixes every engine and effect source each frame on its own thread.
+# With wine's audio drivers disabled it gets no device and mixes nothing.
+# Nothing here listens.  An instance that should keep sound (a recording)
+# gets a file named .audio in its directory.
+AUDIO_LINE='export WINEDLLOVERRIDES="winepulse.drv,winealsa.drv=d${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"'
+[ -e "$DIR/.audio" ] && AUDIO_LINE='# .audio present: sound driver kept'
 cat > "$DIR/.inner.sh" <<INNER
 #!/usr/bin/env bash
 set -euo pipefail
@@ -36,6 +43,7 @@ export WINEPREFIX="$PREFIX"
 export __GL_SHADER_DISK_CACHE=1 __GL_SHADER_DISK_CACHE_PATH="$PREFIX/nvcache"
 export DXVK_STATE_CACHE=1 DXVK_STATE_CACHE_PATH="$PREFIX"
 export WINEDEBUG=-all
+$AUDIO_LINE
 mkdir -p "\$__GL_SHADER_DISK_CACHE_PATH"
 cd "$DIR"
 exec umu-run "$DIR/KSP_x64.exe" -force-d3d11 ${KSP_EXTRA:-} \\

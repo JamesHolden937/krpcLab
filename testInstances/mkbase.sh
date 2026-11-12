@@ -262,6 +262,19 @@ set_key COMET_SHOW_GEYSERS        False
 set_key COMET_SHOW_NEAR_DUST      False
 set_key FLT_VESSEL_LABELS         False
 set_key KERBNET_BACKGROUND_FLUFF  False
+# Not graphics, and none feeds physics or kRPC (nothing in this repo reads
+# stock delta-v, persistent.sfs or the update check).  Measured neutral on
+# results and on CPU per physics step (2026-11-11, ksp0-3 A/B); kept because
+# each removes main-thread or disk work a long batch would otherwise do:
+# delta-v stage simulation, a whole-save autosave every 5 min plus 5 backups,
+# temperature gauges, a network call at boot.  Sound is off in kwinRun.sh.
+set_key DELTAV_CALCULATIONS_ENABLED False
+set_key DELTAV_APP_ENABLED        False
+set_key AUTOSAVE_INTERVAL         100000000
+set_key AUTOSAVE_SHORT_INTERVAL   100000000
+set_key SAVE_BACKUPS              0
+set_key TEMPERATURE_GAUGES_MODE   0
+set_key CHECK_FOR_UPDATES         False
 set_key CELESTIAL_BODIES_CAST_SHADOWS False
 set_key PLANET_SCATTER            False
 set_key PLANET_SCATTER_FACTOR     0
