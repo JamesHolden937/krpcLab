@@ -866,3 +866,15 @@ Goal (the user): remove every constant that can be derived.  4 instances,
   past its hold limit (cmd 12-18 v hold ~7) below 9 km and the miss opened in
   the last 20 s.  Boostback exits at long ~-176 and the re-sweep moves the
   prediction ~+200 m: `BOOSTBACK_TOLERANCE_M` 190 is cancelling that jump.
+- tol1-1112 (`BOOSTBACK_TOLERANCE_M`, 6 an arm per save): 190 fin 37 / heavy
+  98 (all 71); 90: 36 / 84 (42); 20: 42 / 77 (49); means 71 61 59, worst
+  167 160 138.  **The miss is insensitive to it**: the coast (wing from the
+  re-sweep, RCS trim) absorbs whatever the boostback leaves.  The taper is
+  asymptotic: at 20 the tail is 7-13 s of near-zero throttle against 3.5 s at
+  190.  Left at 190.  It cannot be the wing's reach yet: the lift slope is
+  first measured in COAST (`cla=-` all boostback).
+- `FIN_BRAKE_SHARE` (1.0, a multiply by one) deleted.
+- `AERO_STEER_LIFT_PEAK` (flag): the hold probes run to 90 deg (twice as
+  many) and read the lift beside the torque; the angle of peak lift per Mach
+  bin replaces `AERO_STEER_MAX_AOA_DEG` (22) as the wing's ceiling.  Unmeasured
+  = no steering.  peak1-1112.
