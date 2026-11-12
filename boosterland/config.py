@@ -46,7 +46,6 @@ class Config:
     # --- Sequencing -------------------------------------------------------
     SEPARATION_COAST_S: float = 3.0     # drift before the flip, scan disabled
     SEPARATION_CLEARANCE_SCAN: bool = True  # flip when clear, not on a timer
-    SEPARATION_MIN_COAST_S: float = 0.0     # never flip sooner than this
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
     AIRBRAKE_DEPLOY_ANGLE_DEG: float = 60.0  # every airbrake, deployed at START.
                                             # new1-1016 medians, 90 -> 60:
@@ -167,30 +166,8 @@ class Config:
 
     # --- Boostback --------------------------------------------------------
     BOOSTBACK_EXIT_TICKS: int = 4           # consecutive ticks under tolerance
-    BOOSTBACK_EXIT_S: float = 0.0           # ... and this much *game* time
-                                            # under it as well.  Ticks are
-                                            # wall-clock paced, so a loaded
-                                            # machine makes a tick count a
-                                            # different amount of burn; game
-                                            # seconds are the same burn on
-                                            # any machine.  0 = ticks only.
     BOOSTBACK_TOLERANCE_M: float = 190.0    # stop burning inside this miss
-    BOOSTBACK_PITCH_DEG: float = 0.0        # aim above local horizon
     BOOSTBACK_TAPER_DV: float = 60.0        # throttle down under this dv left
-    BOOSTBACK_MIN_THROTTLE: float = 0.0     # let the taper reach zero.  At 0.05
-                                            # the last tick of a burn is not
-                                            # small: 0.05 throttle with ~130 s
-                                            # of flight left still moves the
-                                            # predicted miss over 100 m per
-                                            # second of burn, so *which tick*
-                                            # ends the burn is worth tens of
-                                            # metres.  With no floor the miss
-                                            # decays with a ~3 s time constant
-                                            # and the burn ends where the
-                                            # throttle is already nothing, so
-                                            # the exit tick stops mattering.
-                                            # Boostback and CORRECTION share
-                                            # this law, so it fixes both.
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
     BOOSTBACK_HEADING_HOLD: bool = True     # in the taper, hold the aim
                                             # taken at its first tick and burn
@@ -479,8 +456,6 @@ class Config:
     COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
                                             # means the axis sign is wrong:
                                             # flip it once, then give up
-    LANDING_DIVERT_LEAD: float = 0.0        # extra trigger height per m of miss
-    LANDING_MAX_EARLY_M: float = 1500.0     # cap on that early start
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_DIVERT_ON_PREDICTION: bool = True    # steer on the propagator's
@@ -500,8 +475,6 @@ class Config:
                                             # vertical for the last few m
     LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_command
     LANDING_DIVERT_MIN_ACCEL: float = 1.0   # thrust needed before steering means anything
-    LANDING_DIVERT_MIN_THROTTLE: float = 0.0    # 0: see run_landing_burn, it hovers
-    LANDING_DIVERT_DEMAND_M_S2: float = 1.0     # lateral demand worth lighting it for
     LANDING_DIVERT_THROTTLE_BUDGET: bool = True  # never tilt into the
                                             # braking: cap the tilt at the
                                             # angle the *spare* throttle can

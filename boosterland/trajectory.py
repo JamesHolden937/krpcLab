@@ -149,22 +149,12 @@ def stopping_distance(speed, net_accel):
     return speed * speed / (2.0 * net_accel)
 
 
-def landing_burn_state(env, r, v, max_accel, cfg, height=None, miss=0.0):
+def landing_burn_state(env, r, v, max_accel, cfg, height=None):
     """(height, height needed to stop, net decel) right now.
 
     ``height`` defaults to the height above the pad's radius, but the caller
     should pass the terrain-relative leg height when it has one: the pad radius
     is only the ground under the booster when it is coming down on the pad.
-
-    ``miss`` buys an early start, in proportion to how far off the prediction
-    is, so a burn that would otherwise begin at the last possible metre has
-    time left to translate.  ``LANDING_DIVERT_LEAD`` defaults to 0: the burn's
-    divert (``LANDING_MAX_TILT_DEG``, ``terminal_command``) works inside the
-    burn the trigger already gives it, and an early trigger only moves the
-    phase change away from the moment the engines light.  LOG7 showed
-    what that costs in legibility -- LANDING_BURN was announced at 2272 m and
-    the throttle then sat at zero for eight seconds and 1900 m of fall.  Raise
-    it alongside the tilt if the divert is ever re-enabled.
     """
     if height is None:
         height = vec.norm(r) - env.target_radius
@@ -173,7 +163,6 @@ def landing_burn_state(env, r, v, max_accel, cfg, height=None, miss=0.0):
     net = max_accel * cfg.LANDING_THROTTLE_CAP - g
     needed = stopping_distance(speed, net) * cfg.SUICIDE_MARGIN
     needed += speed * cfg.SUICIDE_REACTION_S
-    needed += min(miss * cfg.LANDING_DIVERT_LEAD, cfg.LANDING_MAX_EARLY_M)
     return height, needed, net
 
 

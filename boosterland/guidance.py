@@ -90,15 +90,11 @@ def boostback_solution(env, r, v, mass, max_accel, isp, prediction, cfg):
     horizontal_miss = vec.project_out(miss, up)
     distance = vec.norm(horizontal_miss)
 
-    # Burn opposite the miss, optionally pitched up off the local horizon.
+    # Burn opposite the miss.
     if distance > 1e-6:
         aim = vec.scale(vec.unit(horizontal_miss), -1.0)
     else:
         aim = vec.scale(vec.unit(v), -1.0)
-    pitch = math.radians(cfg.BOOSTBACK_PITCH_DEG)
-    if pitch:
-        aim = vec.unit(vec.add(vec.scale(aim, math.cos(pitch)),
-                               vec.scale(up, math.sin(pitch))))
 
     time_left = max(1.0, prediction.time_to_land)
     dv = distance / time_left
@@ -113,8 +109,7 @@ def boostback_solution(env, r, v, mass, max_accel, isp, prediction, cfg):
     if dv >= cfg.BOOSTBACK_TAPER_DV:
         throttle = 1.0
     else:
-        throttle = vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV,
-                             cfg.BOOSTBACK_MIN_THROTTLE, 1.0)
+        throttle = vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV, 0.0, 1.0)
 
     return BoostbackSolution(aim=aim, miss=miss, miss_distance=distance,
                              dv=dv, burn_time=burn_time, throttle=throttle)
@@ -146,8 +141,7 @@ def held_boostback(env, r, prediction, heading, cfg):
         return 0.0, remaining
     if dv >= cfg.BOOSTBACK_TAPER_DV:
         return 1.0, remaining
-    return vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV,
-                     cfg.BOOSTBACK_MIN_THROTTLE, 1.0), remaining
+    return vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV, 0.0, 1.0), remaining
 
 
 def rcs_trim_command(cross, left, cfg):

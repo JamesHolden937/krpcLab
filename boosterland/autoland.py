@@ -858,7 +858,7 @@ class Autoland:
             accel = vec.scale(vec.unit(solution.aim), snap.max_accel)
             blocker = self.proximity.check(snap.ut, snap.position,
                                            snap.velocity, accel)
-            clear = blocker is None and elapsed >= cfg.SEPARATION_MIN_COAST_S
+            clear = blocker is None
             expired = elapsed >= cfg.SEPARATION_MAX_COAST_S
         else:
             clear = elapsed >= cfg.SEPARATION_COAST_S
@@ -973,11 +973,9 @@ class Autoland:
         # loaded machine than on an idle one -- which is the one thing a
         # comparison between two flights must not depend on.  Requiring game
         # seconds as well pins the debounce to the vehicle rather than to the
-        # host; BOOSTBACK_EXIT_S at 0 leaves the tick count alone in charge.
         held = (snap.ut - self.boostback_under_since
                 if self.boostback_under_since is not None else 0.0)
-        if (self.boostback_under >= self.cfg.BOOSTBACK_EXIT_TICKS
-                and held >= self.cfg.BOOSTBACK_EXIT_S):
+        if self.boostback_under >= self.cfg.BOOSTBACK_EXIT_TICKS:
             self.set_throttle(0.0)
             # `held` and the tick count go in the event because the debounce
             # is the one thing here that is paced by the *host* rather than
@@ -1161,7 +1159,7 @@ class Autoland:
         distance = self.miss_distance()
         height, needed, _ = trajectory.landing_burn_state(
             self.env, snap.position, snap.velocity, snap.max_accel, self.cfg,
-            height=snap.landing_height, miss=distance)
+            height=snap.landing_height)
         self.extra_lines = [
             "miss    : %8.0f m" % distance,
             "burn alt: %8.0f m" % needed,
@@ -2018,14 +2016,6 @@ class Autoland:
                                             self.cfg,
                                             height=snap.landing_height)
         throttle = command.throttle
-        # The vertical profile commands zero throttle for the first seconds of
-        # the burn, which is exactly when the divert has the most lateral
-        # speed to take out and the most time to do it in -- and with the
-        # engines shut it can do neither.  On the 30 km/40 km entry state the
-        # burn opens 45 m from the pad carrying 24.7 m/s sideways and is 90 m
-        # past it by the time the profile lights the engines.  So when the
-        # steering law has real work to do, hold enough thrust to steer with;
-        # landing_throttle's feedback trim absorbs the early braking.
         zem = (trajectory.miss_vector(self.env, prediction)
                if self.cfg.LANDING_DIVERT_ON_PREDICTION else None)
         budget = self.tilt_budget(throttle)
@@ -2033,12 +2023,6 @@ class Autoland:
             self.env, snap.position, snap.velocity, snap.landing_height,
             prediction.time_to_land, throttle * snap.max_accel, self.cfg, zem,
             budget)
-        if steer.demand > self.cfg.LANDING_DIVERT_DEMAND_M_S2:
-            throttle = max(throttle, self.cfg.LANDING_DIVERT_MIN_THROTTLE)
-            steer = guidance.terminal_command(
-                self.env, snap.position, snap.velocity, snap.landing_height,
-                prediction.time_to_land, throttle * snap.max_accel, self.cfg,
-                zem, self.tilt_budget(throttle))
         # Thrust tilted off retrograde brakes with only its cosine, and the
         # vertical profile above sized the throttle as though all of it were
         # braking.  Left alone, a divert quietly under-brakes for exactly as

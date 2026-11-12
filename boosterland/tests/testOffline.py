@@ -481,7 +481,7 @@ class TestGuidance(unittest.TestCase):
         solution = guidance.boostback_solution(env, r, v, 4e4, 20.0, 280.0,
                                                prediction, cfg)
         self.assertLess(solution.throttle, 1.0)
-        self.assertGreaterEqual(solution.throttle, cfg.BOOSTBACK_MIN_THROTTLE)
+        self.assertGreaterEqual(solution.throttle, 0.0)
 
     def test_the_propagator_and_the_control_loop_share_one_throttle_law(self):
         """``guidance.landing_throttle`` is a wrapper, not a second opinion.
@@ -541,37 +541,6 @@ class TestGuidance(unittest.TestCase):
         near_pad = guidance.landing_throttle(env, low, (-5.0, 0.0, 0.0), 25.0, cfg)
         self.assertGreater(fast.target_speed, near_pad.target_speed)
         self.assertAlmostEqual(near_pad.target_speed, cfg.TOUCHDOWN_SPEED)
-
-    def test_burn_trigger_starts_earlier_when_the_miss_is_large(self):
-        """A late, saturated burn has no time to translate sideways.
-
-        The trigger buys that time back by lighting the engines higher in
-        proportion to how far the prediction is from the pad.  The lead is off
-        by default -- the landing burn flies straight retrograde and has
-        nowhere to translate to -- so this sets it to exercise the mechanism.
-        """
-        env = FakeEnv()
-        cfg = Config()
-        cfg.LANDING_DIVERT_LEAD = 1.0
-        r, v = state_above_pad(5000.0), (-250.0, 0.0, 0.0)
-        _, on_target, _ = trajectory.landing_burn_state(
-            env, r[0], v, 25.0, cfg, miss=0.0)
-        _, off_target, _ = trajectory.landing_burn_state(
-            env, r[0], v, 25.0, cfg, miss=1500.0)
-        self.assertGreater(off_target, on_target)
-        self.assertAlmostEqual(off_target - on_target,
-                               cfg.LANDING_MAX_EARLY_M, places=6)
-
-    def test_burn_trigger_has_no_divert_lead_by_default(self):
-        """With no divert to make time for, the phase starts when it burns."""
-        env = FakeEnv()
-        cfg = Config()
-        r, v = state_above_pad(5000.0), (-250.0, 0.0, 0.0)
-        _, on_target, _ = trajectory.landing_burn_state(
-            env, r[0], v, 25.0, cfg, miss=0.0)
-        _, off_target, _ = trajectory.landing_burn_state(
-            env, r[0], v, 25.0, cfg, miss=1500.0)
-        self.assertAlmostEqual(off_target, on_target)
 
     def test_the_landing_burn_kills_lateral_speed_it_cannot_null_late(self):
         """The half LOG7's divert was missing.
