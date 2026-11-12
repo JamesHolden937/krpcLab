@@ -127,11 +127,6 @@ class Config:
     # once inside ``OFF`` for ``SETTLE_S``.  The deadband is what stops the
     # relay switching at the frequency of the oscillation it is damping.
     #
-    # Wide enough not to interfere with the phases that steer: the correction
-    # burn lights the gimbal when it is more than ``CORRECTION_ALIGN_DEG``
-    # (20) off and not coming round, so the thrusters are long since open by
-    # the time that test is reached.
-    #
     # **And in COAST demand is saturation, not error** -- the shuttle's air
     # rule, in the booster's air phase (the flip, burns and landing keep
     # the error relay, as the shuttle's non-air phases do).  A pointing error says only that the nose is not where it
@@ -154,8 +149,7 @@ class Config:
     # No dynamic-pressure ceiling on this vehicle: the spaceplane shuts its
     # thrusters off in thick air because its control surfaces own the
     # attitude there, and a booster's do not -- the descent is flown on RCS,
-    # reaction wheels and the gimbal, which is the whole reason
-    # ``CORRECTION_GIMBAL_THROTTLE`` exists.  0 disables the test, and the
+    # reaction wheels and the gimbal.  0 disables the test, and the
     # snapshot carries no dynamic pressure to make it with anyway.
     RCS_Q_MAX_PA: float = 0.0
 
@@ -261,9 +255,8 @@ class Config:
                                             # as well as tilting it, so the
                                             # cross-track miss has an actuator
                                             # too.  Nothing else in the flight
-                                            # can move it: CORRECTION tilts off
-                                            # retrograde, which is a downrange
-                                            # lever, and the landing burn has
+                                            # can move it but the RCS trim, and
+                                            # the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
     AERO_STEER_DEADBAND_M: float = 2.0      # ... and do not steer against a
@@ -332,79 +325,6 @@ class Config:
     # --- Coast ------------------------------------------------------------
     COAST_STEER_GAIN: float = 0.0006        # degrees of tilt per metre of miss
     COAST_MAX_TILT_DEG: float = 12.0
-
-    # --- Mid-course correction (trims the miss the coast opens up) ---------
-    CORRECTION_ENTER_M: float = 1000.0      # start correcting above this miss.
-                                            # Only a disturbance the air cannot
-                                            # steer out: a correction starts
-                                            # from COAST's *steered* miss and
-                                            # is judged on an unsteered one, so
-                                            # below this every burn backfired
-                                            # (noc1-1016: corrections off v 60,
-                                            # 6 a cell -- heavy 0 v 3 lost,
-                                            # mean 547 v 741; quicksave mean
-                                            # 98 v 342, worst 235 v 1088).  At
-                                            # 1000 a 25 m/s mid-coast shove is
-                                            # still caught in the sim (151-210 m
-                                            # v 1094-2886 with none).  Was 60;
-                                            # the history below is of that.
-                                            # 1200 was set when the predicted
-                                            # miss walked by ~1 km through the
-                                            # coast (failure 11) -- the gate
-                                            # has to sit above the prediction
-                                            # noise.  The re-swept drag curve
-                                            # removes that walk, so the gate
-                                            # can come back down to where the
-                                            # miss it is meant to catch lives;
-                                            # see CLAUDE.md failure 14.
-    CORRECTION_SATURATED_ENTER_M: float = 150.0  # ... but this, once the
-                                            # brakes are full open and it is
-                                            # still long: the air has nothing
-                                            # left to steer with, so the
-                                            # reason for the 1000 m gate is
-                                            # gone.  LOG15102 (FMRS Heavy
-                                            # Shuttle booster) coasted 100 s
-                                            # at +600 m with brakes at 90,
-                                            # lift tracking 0.06, and landed
-                                            # 596 m out.  See
-                                            # Autoland.brakes_saturated_long
-    CORRECTION_EXIT_M: float = 15.0         # hysteresis: stop below this miss.
-                                            # Must stay well under
-                                            # CORRECTION_ENTER_M -- at 100
-                                            # against a 60 m gate the phase
-                                            # enters and exits on the same
-                                            # tick, doing nothing and spending
-                                            # a relight to do it.
-    CORRECTION_SETTLE_S: float = 0.0        # wait this long after the first
-                                            # descent re-sweep before
-                                            # correcting.  One re-sweep is not
-                                            # a converged curve -- failure 14
-                                            # is that the *repeats* are the
-                                            # mechanism -- so a burn fired two
-                                            # seconds after the first one is
-                                            # acting on a prediction that is
-                                            # still being replaced.  0 = off.
-    CORRECTION_MIN_ALT_M: float = 6000.0    # never correct lower than this
-    CORRECTION_MIN_TTL_S: float = 15.0      # nor with less flight time left
-    CORRECTION_MAX_THROTTLE: float = 0.40
-    CORRECTION_ALIGN_DEG: float = 20.0      # full correction thrust inside this
-    CORRECTION_GIMBAL_THROTTLE: float = 0.25    # thrust for gimbal when stuck
-    CORRECTION_STUCK_RATE_DEG_S: float = 3.0    # turning slower than this is stuck
-    CORRECTION_MAX_TILT_DEG: float = 50.0   # steering authority off retrograde
-    CORRECTION_TILT_GAIN: float = 0.12      # degrees of tilt per metre of miss
-    CORRECTION_MAX_BURN_S: float = 45.0     # per-burn guard
-    CORRECTION_COOLDOWN_S: float = 20.0     # settle before judging the miss again
-    CORRECTION_OVERSHOOT_ONLY: bool = True   # never enter on a short miss
-    CORRECTION_MAX_BURNS: int = 0           # none: tilt1-3-1111, with the probe
-                                            # tilted 16 deg the corrections only
-                                            # backfire (was 3)
-    CORRECTION_PROBE_DV: float = 5.0        # dv used to test which way a burn moves
-    CORRECTION_ABORT_RATIO: float = 1.3     # abort if the miss grows this much
-    CORRECTION_ABORT_GRACE_S: float = 3.0   # ... after this long, so a turn can settle
-    CORRECTION_ABORT_FLOOR_M: float = 60.0  # ... and never on less growth than
-                                            # this past the best (prediction
-                                            # noise; was the old 60 m gate)
-    CORRECTION_MIN_GRADIENT: float = 0.5    # metres of miss closed per m/s, minimum
 
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop

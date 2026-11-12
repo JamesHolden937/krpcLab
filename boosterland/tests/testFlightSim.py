@@ -156,17 +156,10 @@ class TestClosedLoop(unittest.TestCase):
 
         LOG7's booster passed 127 m from the pad at 8.5 km still carrying
         72 m/s of horizontal velocity, and coasted a kilometre past it.  The
-        CORRECTION that should have caught that spent 36 s commanding an
-        attitude 45-72 deg off retrograde -- unreachable in that airstream --
-        with the throttle closed, and timed out.
-
-        This asserts where the booster ends up, and deliberately not that
-        CORRECTION ran.  It used to: with a single scalar Cd*A the coast
-        reliably opened a few hundred metres of miss for the phase to trim,
-        and now that the propagator interpolates a Mach curve this state flies
-        the whole coast inside CORRECTION_ENTER_M and never needs it.  The
-        phase itself is covered by the mid-coast-kick and stuck-turn tests
-        below, which put a miss in front of it that no prediction can avoid.
+        correction burn of the time spent 36 s commanding an attitude 45-72
+        deg off retrograde -- unreachable in that airstream -- with the
+        throttle closed, and timed out.  This asserts where the booster ends
+        up.
         """
         vessel = self.make_log7_booster()
         run, log_path = fly(vessel, self.tmp.name)
@@ -487,159 +480,6 @@ class TestClosedLoop(unittest.TestCase):
         self.assertLess(vessel.impact_speed, 6.0,
                         "hit at %.1f m/s" % vessel.impact_speed)
 
-    def test_a_correction_that_deepens_the_miss_is_cut(self):
-        """LOG2/LOG3: two burns that reported "helping" all the way out to 1.6 km.
-
-        Both flights lit CORRECTION on a few hundred metres of coast drift and
-        both burns walked the miss steadily the wrong way -- 335 -> 855 and
-        927 -> 1596 -- while ``correction_gradient`` reported a healthy
-        positive gradient every tick.  The gradient is one 5 m/s probe through
-        a propagation, and low in the atmosphere it is linearised through drag
-        that goes as v^2, so it held over the probe and not over the ~40 m/s
-        the burn spent.  The phase watched the prediction and never the
-        measurement.  This replays LOG3's own miss trace.
-        """
-        vessel = self.make_booster()
-        conn = fakeksp.install(vessel)
-        from boosterland import autoland
-
-        cfg = Config()
-        cfg.LOG_DIR = self.tmp.name
-        log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
-        run = autoland.Autoland(conn, cfg, log)
-        run.state = "CORRECTION"
-        run.phase_start_ut = 0.0
-        run.correction_start_miss = 335.0
-
-        # Inside the grace period nothing is judged: a burn that has to swing
-        # the nose round first legitimately gives ground before it takes any.
-        self.assertFalse(run.correction_making_it_worse(1.0, 583.0))
-        # LOG3's first burn, at the tick the grace period expires.
-        self.assertTrue(run.correction_making_it_worse(3.0, 583.0))
-        # LOG3's second burn.
-        run.correction_start_miss = 927.0
-        run.correction_best_miss = None
-        self.assertTrue(run.correction_making_it_worse(6.0, 1254.0))
-        # A burn that is working is never cut, however far it still has to go.
-        run.correction_best_miss = None
-        self.assertFalse(run.correction_making_it_worse(6.0, 800.0))
-        # Nor is one whose prediction has gone briefly noisy inside the ratio.
-        run.correction_best_miss = None
-        self.assertFalse(run.correction_making_it_worse(6.0, 1100.0))
-        # A prediction that is not a number cannot condemn a burn.
-        self.assertFalse(run.correction_making_it_worse(6.0, float("nan")))
-        # ... but one that closed the miss and then reopened it past the
-        # abort ratio is: LOG10237's second burn, 900 -> 314 -> 1068.
-        run.correction_start_miss = 900.0
-        run.correction_best_miss = None
-        self.assertFalse(run.correction_making_it_worse(6.0, 314.0))
-        self.assertFalse(run.correction_making_it_worse(7.0, 380.0))
-        self.assertTrue(run.correction_making_it_worse(8.0, 430.0))
-        log.close()
-
-    def test_coast_drift_is_corrected_before_the_landing_burn(self):
-        """A mid-coast shove must be flown out, not carried to the ground.
-
-        This is the LOG3 failure in miniature: boostback finishes on target,
-        the coast opens a kilometres-wide miss, and the landing burn is far too
-        short to translate that far.  The correction phase exists to catch it.
-        """
-        vessel = self.make_booster()
-        conn = fakeksp.install(vessel)
-        from boosterland import autoland
-
-        cfg = Config()
-        cfg.LOG_DIR = self.tmp.name
-        cfg.CORRECTION_MAX_BURNS = 3      # the phase itself, off by default
-        log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
-        run = autoland.Autoland(conn, cfg, log)
-        run.gui.conn.krpc_lab_launcher.click("start")
-
-        kicked = False
-
-        def advance(_seconds):
-            vessel.step(SIM_DT)
-            conn.space_center.ut += SIM_DT
-
-        with mock.patch("boosterland.autoland.time.sleep", advance):
-            deadline = conn.space_center.ut + 1200.0
-            while not run.finished and conn.space_center.ut < deadline:
-                run.tick()
-                if not kicked and run.state == "COAST":
-                    # ~2 km of downrange error, the size LOG3 accumulated --
-                    # an overshoot: CORRECTION_OVERSHOOT_ONLY leaves a short
-                    # miss alone, since in the game a burn only shortens.
-                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, -25.0))
-                    kicked = True
-                advance(cfg.LOOP_SLEEP_S)
-        run.shutdown("test complete")
-        log.close()
-
-        self.assertTrue(kicked)
-        self.assertGreater(run.corrections, 0, "never tried to correct")
-        distance = trajectory.surface_distance(run.env, vessel.r, run.env.target)
-        self.assertLess(distance, 500.0,
-                        "landed %.0f m from the pad" % distance)
-        self.assertIn("CORRECTION", open(log.path).read())
-
-    def test_correction_burns_for_gimbal_when_it_cannot_point(self):
-        """Pointed the wrong way is a reason to light the engines, not wait.
-
-        A booster falling through thick air has very little authority on RCS
-        and reaction wheels; the gimbal is where the authority is, and it
-        only exists while something is coming out of the engines.  LOG7 held
-        the throttle shut for 36 s waiting for an attitude it could not reach
-        unpowered, timed the burn out having done nothing, and let the miss
-        grow 341 -> 966 m.
-        """
-        vessel = self.make_booster()
-        conn = fakeksp.install(vessel)
-        from boosterland import autoland
-
-        cfg = Config()
-        cfg.LOG_DIR = self.tmp.name
-        cfg.CORRECTION_MAX_BURNS = 3      # the phase itself, off by default
-        log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
-        run = autoland.Autoland(conn, cfg, log)
-        run.gui.conn.krpc_lab_launcher.click("start")
-
-        def advance(_seconds):
-            vessel.step(SIM_DT)
-            conn.space_center.ut += SIM_DT
-
-        kicked = False
-        with mock.patch("boosterland.autoland.time.sleep", advance):
-            deadline = conn.space_center.ut + 1200.0
-            while not run.finished and conn.space_center.ut < deadline:
-                run.tick()
-                if not kicked and run.state == "COAST":
-                    vessel.v = fakeksp._add(vessel.v, (0.0, 0.0, -25.0))
-                    kicked = True
-                if run.state == "CORRECTION":
-                    break
-                advance(cfg.LOOP_SLEEP_S)
-        self.assertEqual(run.state, "CORRECTION", "never entered the phase")
-
-        # Pin it somewhere it certainly was not asked to point, and hold it
-        # there: an attitude error that is not closing is the definition of
-        # stuck, and it takes two ticks to measure that.
-        with mock.patch.object(fakeksp.Vessel, "_slew", lambda *a: None):
-            vessel.pointing = fakeksp._scale(
-                fakeksp._unit(vessel.auto_pilot.target_direction), -1.0)
-            for _ in range(2):
-                run.tick()
-                advance(cfg.LOOP_SLEEP_S)
-            self.assertEqual(run.state, "CORRECTION")
-            self.assertAlmostEqual(vessel.control.throttle,
-                                   cfg.CORRECTION_GIMBAL_THROTTLE, places=6,
-                                   msg="waited for an attitude it cannot reach")
-
-            cfg.CORRECTION_GIMBAL_THROTTLE = 0.0
-            run.tick()
-            log.close()
-            self.assertEqual(vessel.control.throttle, 0.0,
-                             "the gimbal burn cannot be turned off")
-
     def test_it_steers_the_coast_with_the_air(self):
         """A booster with a wing flies to the pad on it.
 
@@ -706,44 +546,6 @@ class TestClosedLoop(unittest.TestCase):
         self.assertTrue(all(abs(a) < 1e-6 for a in angles),
                         "steered a vehicle that has no measurable lift")
         self.assertLess(vessel.impact_speed, 5.0)
-
-    def test_correction_does_not_burn_while_it_is_coming_round(self):
-        """Mid-turn is not stuck, and burning through it costs accuracy.
-
-        The gimbal burn is inefficient on purpose; it has to stay off a
-        vehicle whose RCS is closing the error perfectly well, or every
-        correction pays for authority it did not need.
-        """
-        fakeksp.install(self.make_booster())     # the fake krpc, not the real one
-        from boosterland import autoland
-
-        cfg = Config()
-        run = autoland.Autoland.__new__(autoland.Autoland)
-        run.cfg = cfg
-        run.correction_align = None
-
-        self.assertFalse(run.turning_too_slowly(None),
-                         "burned before it had measured anything")
-        brisk = cfg.CORRECTION_STUCK_RATE_DEG_S + 5.0
-        self.assertFalse(run.turning_too_slowly(brisk),
-                         "burned while the error was closing fast")
-        self.assertTrue(run.turning_too_slowly(0.1), "did not notice it was stuck")
-        self.assertTrue(run.turning_too_slowly(-4.0), "losing ground counts too")
-
-        cfg.CORRECTION_GIMBAL_THROTTLE = 0.0
-        self.assertFalse(run.turning_too_slowly(0.1),
-                         "the gimbal burn cannot be turned off")
-
-    def test_the_alignment_rate_needs_two_ticks(self):
-        fakeksp.install(self.make_booster())
-        from boosterland import autoland
-
-        run = autoland.Autoland.__new__(autoland.Autoland)
-        run.correction_align = None
-        self.assertIsNone(run.alignment_rate(100.0, 60.0))
-        self.assertAlmostEqual(run.alignment_rate(102.0, 40.0), 10.0)
-        self.assertAlmostEqual(run.alignment_rate(103.0, 45.0), -5.0)
-        self.assertIsNone(run.alignment_rate(103.0, 45.0), "no time passed")
 
     def test_a_broken_terrain_sensor_does_not_end_the_flight(self):
         """The LOG5 failure: ``surface_altitude`` stuck at about -7e17 m.

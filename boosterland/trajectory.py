@@ -427,41 +427,6 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None):
     return r, v, t, steps
 
 
-def miss_gradient(env, r, v, mass, aim, cfg, probe_dv, max_accel=0.0):
-    """Change in predicted miss per m/s of dv spent along ``aim``.
-
-    Negative means burning that way walks the landing point toward the pad;
-    positive means it walks away.  Steering that is constrained to point near
-    retrograde -- which is all a booster can hold in thick air -- can only ever
-    make the vehicle land *shorter*, so for an undershoot every reachable
-    direction is the wrong one.  Without this check the correction burns anyway
-    and digs in: a 25 m/s coast kick took the predicted miss from 2591 m to
-    17277 m over three burns, each one "correcting" harder than the last.
-
-    ``max_accel`` at 0 makes both propagations ballistic, which is cheap and
-    was the original behaviour.  **It is also why low corrections backfired.**
-    A ballistic propagation from 30 km is a fair description of what the
-    booster is about to do, because the landing burn is a small tail on a long
-    coast.  From 10 km it is not a description of anything: nearly all of the
-    remaining flight *is* the burn, and the burn eats horizontal speed, so a
-    ballistic probe measures the sensitivity of a trajectory the vehicle will
-    never fly.  Two round-2 flights show the cost -- corrections entered at
-    9-11 km reported ``grad`` of 12.5 and 14.5 (comfortably "helping") on
-    every tick while the miss ran 400 -> 527 and 445 -> 585, and both were cut
-    by ``correction_making_it_worse`` rather than by the gradient that was
-    supposed to see it coming.  Passing the vehicle's real acceleration makes
-    both propagations fly the burn, which is what the vehicle is going to do.
-    """
-    direction = vec.unit(aim)
-    if vec.norm(direction) < 1e-9 or probe_dv <= 0.0:
-        return 0.0
-    here = predict_landing(env, r, v, mass, max_accel, cfg)
-    there = predict_landing(env, r, vec.add(v, vec.scale(direction, probe_dv)),
-                            mass, max_accel, cfg)
-    return (surface_distance(env, there.position, env.target)
-            - surface_distance(env, here.position, env.target)) / probe_dv
-
-
 def miss_vector(env, prediction):
     """Predicted touchdown minus target, as a vector in the body frame."""
     return vec.sub(prediction.position, env.target)

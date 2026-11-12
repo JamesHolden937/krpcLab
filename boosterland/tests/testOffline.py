@@ -919,38 +919,6 @@ class TestDescentAwareDragProbe(unittest.TestCase):
         self.assertEqual(alts, sorted(alts, reverse=True))
 
 
-class TestGradientProbe(unittest.TestCase):
-    """The gradient decides whether a correction burn happens at all, and it
-    was measured lying at low altitude -- see trajectory.miss_gradient."""
-
-    def test_the_probe_can_fly_the_landing_burn(self):
-        env = FakeEnv(atmosphere=True)
-        env.drag_area = 15.0
-        cfg = Config()
-        r, v = state_above_pad(9000.0, (0.0, 0.0, 300.0))
-        aim = vec.unit(vec.scale(v, -1.0))
-        ballistic = trajectory.miss_gradient(env, r, v, 20000.0, aim, cfg,
-                                             cfg.CORRECTION_PROBE_DV)
-        powered = trajectory.miss_gradient(env, r, v, 20000.0, aim, cfg,
-                                           cfg.CORRECTION_PROBE_DV,
-                                           max_accel=20.0)
-        # Low down, nearly all of the remaining flight is the burn, so the two
-        # answers are not the same question.  Which is the point: the
-        # ballistic one measures a trajectory the vehicle will never fly.
-        self.assertNotAlmostEqual(ballistic, powered, places=2)
-
-    def test_the_default_is_still_ballistic(self):
-        env = FakeEnv(atmosphere=True)
-        env.drag_area = 15.0
-        cfg = Config()
-        r, v = state_above_pad(9000.0, (0.0, 0.0, 300.0))
-        aim = vec.unit(vec.scale(v, -1.0))
-        self.assertAlmostEqual(
-            trajectory.miss_gradient(env, r, v, 20000.0, aim, cfg, 5.0),
-            trajectory.miss_gradient(env, r, v, 20000.0, aim, cfg, 5.0,
-                                     max_accel=0.0), places=9)
-
-
 class TestTerminalOnPrediction(unittest.TestCase):
     """Steering the landing burn on the propagator's answer rather than on a
     straight line drawn through the current state."""
@@ -1097,70 +1065,6 @@ class TestNoGoAround(unittest.TestCase):
         cmd = guidance.landing_throttle(self.env, r, v, 34.0, self.cfg,
                                         height=20.0)
         self.assertEqual(cmd.throttle, 0.0)
-
-
-class TestCorrectionAltitudeWindow(unittest.TestCase):
-    """CORRECTION waits for the same settled prediction the wing waits for.
-
-    Up at the boostback exit the predicted miss is the drag curve's walk and
-    not a miss (see failure 13 and the wing's re-sweep gate).  LOG542
-    entered CORRECTION at 238 m up there and came out at 795 -- the abort
-    guard caught the burn, but 795 m is more than the wing can close in the
-    descent that is left, and it landed 112 m out where its sibling flights
-    on the same config landed at 3 m.
-    """
-
-    def run_with(self, height):
-        run = object.__new__(autoland_module.Autoland)
-        run.cfg = Config()
-        run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
-        run.late_state = "handed"       # the brakes and legs are not being
-        run.gear_timing = "done"        # measured: the window alone decides
-        snap = SimpleNamespace(max_accel=18.0, landing_height=height)
-        prediction = SimpleNamespace(time_to_land=120.0)
-        return run, snap, prediction
-
-    def test_it_will_not_correct_below_the_window(self):
-        run, snap, prediction = self.run_with(
-            Config().CORRECTION_MIN_ALT_M - 1000.0)
-        self.assertFalse(run.correction_worthwhile(snap, prediction, 500.0))
-
-class TestCorrectionWithBrakesSaturated(unittest.TestCase):
-    """A long miss the open brakes cannot close is corrected below 1000 m.
-
-    LOG15102 coasted from apogee to the ground +600 m long with the brakes at
-    90 deg and no lift: under ``CORRECTION_ENTER_M`` nothing ever acted on it.
-    """
-
-    def run_with(self, angle, beyond):
-        run = object.__new__(autoland_module.Autoland)
-        run.cfg = Config()
-        run.cfg.CORRECTION_MAX_BURNS = 3  # the phase itself, off by default
-        run.late_state = "handed"
-        run.gear_timing = "done"
-        run.deploy_angle = angle
-        run.corrections = 0
-        run.correction_ready_ut = 0.0
-        run.correction_gradient = lambda snap, prediction: 1.0
-        target = (600000.0, 0.0, 0.0)
-        run.env = SimpleNamespace(target=target)
-        snap = SimpleNamespace(max_accel=18.0, landing_height=20000.0, ut=0.0,
-                               position=(620000.0, 0.0, -30000.0))
-        prediction = SimpleNamespace(time_to_land=90.0,
-                                     position=(600000.0, 0.0, beyond))
-        return run, snap, prediction
-
-    def test_long_with_full_brakes_corrects(self):
-        run, snap, prediction = self.run_with(90.0, 600.0)
-        self.assertTrue(run.correction_worthwhile(snap, prediction, 600.0))
-
-    def test_long_with_brakes_to_spare_waits(self):
-        run, snap, prediction = self.run_with(60.0, 600.0)
-        self.assertFalse(run.correction_worthwhile(snap, prediction, 600.0))
-
-    def test_short_with_full_brakes_waits(self):
-        run, snap, prediction = self.run_with(90.0, -600.0)
-        self.assertFalse(run.correction_worthwhile(snap, prediction, 600.0))
 
 
 class TestTouchdownBackstop(unittest.TestCase):
@@ -1314,8 +1218,8 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
 
     `solve_steer` used to solve the downrange miss alone, because the lift
     plane was the trajectory plane.  Cross-track then had no actuator
-    anywhere: CORRECTION tilts off retrograde, which is a downrange lever,
-    and the landing burn has ten metres of authority.  Measured over 20
+    anywhere: the landing burn is held upright
+    and has ten metres of authority.  Measured over 20
     flights of the five saves, the cross-track miss sat at 15-28 m and did
     not move from 28 km down.
     """
@@ -1553,56 +1457,6 @@ class TestTerminalVelocityNulling(unittest.TestCase):
                                         self.cfg, (0.0, 0.0, 400.0))
         lean = vec.project_out(cmd.direction, vec.unit(vec.scale(v, -1.0)))
         self.assertLess(lean[2], 0.0, "leaned away from the overshoot")
-
-
-class TestCorrectionBackfire(unittest.TestCase):
-    """A burn that makes the miss worse is ended, and the phase may re-enter."""
-
-    def make_run(self):
-        run = object.__new__(autoland_module.Autoland)
-        run.cfg = Config()
-        run.cfg.CORRECTION_MAX_BURNS = 3  # the phase itself, off by default
-        run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
-        run.late_state = "handed"       # the brakes and legs are not being
-        run.gear_timing = "done"        # measured: the window alone decides
-        run.cfg.CORRECTION_ABORT_GRACE_S = 3.0
-        run.corrections = 1
-        run.correction_ready_ut = 0.0
-        run.correction_start_miss = 200.0
-        run.phase_start_ut = 0.0
-        return run
-
-    def test_a_backfire_is_recognised_after_the_grace_period(self):
-        run = self.make_run()
-        # Inside the grace period a burn is allowed to give ground: it has to
-        # swing the nose round before it takes any.
-        self.assertFalse(run.correction_making_it_worse(1.0, 900.0))
-        self.assertTrue(run.correction_making_it_worse(10.0, 900.0))
-        self.assertFalse(run.correction_making_it_worse(10.0, 210.0))
-
-    def test_the_phase_may_re_enter(self):
-        run = self.make_run()
-        snap = _snapshot_for_correction()
-        run.correction_gradient = lambda *a: 99.0
-        self.assertTrue(run.correction_worthwhile(snap, _prediction(), 5000.0))
-
-
-def _prediction():
-    return trajectory.Prediction(position=(KERBIN_R, 0.0, 0.0),
-                                 time_to_land=120.0, burn_time=10.0,
-                                 burn_altitude=800.0, entry_speed=200.0,
-                                 powered=True, steps=10)
-
-
-def _snapshot_for_correction():
-    r, v = state_above_pad(20000.0, (0.0, 0.0, 300.0))
-    return Snapshot(ut=100.0, position=r, velocity=v, direction=(1.0, 0.0, 0.0),
-                    rotation=(0.0, 0.0, 0.0, 1.0), mass=20000.0,
-                    available_thrust=4.0e5, max_thrust=4.0e5, isp=300.0,
-                    surface_altitude=20000.0, vertical_speed=-100.0,
-                    horizontal_speed=300.0, throttle=0.0, situation=None,
-                    height_above_pad=20000.0, mean_altitude=20000.0,
-                    leg_clearance=7.0)
 
 
 class TestConfig(unittest.TestCase):

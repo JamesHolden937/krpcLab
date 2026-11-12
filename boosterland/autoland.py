@@ -3,8 +3,6 @@
 Phase machine::
 
     STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
-                                            ^        |
-                                            +- CORRECTION
 
 Each tick re-predicts the touchdown point from the current state (see
 :mod:`boosterland.trajectory`); every phase transition and every steering
@@ -45,7 +43,6 @@ STANDBY = "STANDBY"
 SEPARATION = "SEPARATION"
 BOOSTBACK = "BOOSTBACK"
 COAST = "COAST"
-CORRECTION = "CORRECTION"
 LANDING_BURN = "LANDING_BURN"
 TOUCHDOWN = "TOUCHDOWN"
 
@@ -432,7 +429,6 @@ class Autoland:
         self.rcs_held = False           # LANDING_RCS_HELD has opened it
         self.nose_block_logged = False  # nose_blocked has said so
         self.autopilot_engaged = False
-        self.correction_align = None    # (ut, align) from the last tick
         self.autopilot_retries = 0
         self.extra_lines = ["press START AUTOLAND"]
         self.gear_deployed = False
@@ -454,16 +450,12 @@ class Autoland:
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
-        self.corrections = 0
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
         self.deploy_record = None       # (angle, curve, ut) at the last step
         self.deploy_k = None            # d ln(Cd*A) / d angle, per degree
         self.deploy_resweep_ut = None   # re-sweep once the brakes have moved
         self.deploy_none = False        # no airbrake answered: law off
-        self.correction_ready_ut = 0.0
-        self.correction_start_miss = None   # the miss the running burn began at
-        self.correction_best_miss = None    # ... and the least it has reached
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
@@ -517,10 +509,9 @@ class Autoland:
             # Boostback rolls cleanly on the gimbals at full thrust; the
             # burn is where kRPC's uncredited gimbal roll spun the heavy.
             self.log.event(ut, set_gimbal_roll(self.vessel, False))
-        self.correction_align = None    # each burn judges its own turn
         # A steering command carried through another phase is not a steady
-        # one: the first COAST tick after a correction would otherwise read
-        # the correction's 50-degree tilt as "held" (LOG10244: 87.9).
+        # one: the first COAST tick after a tilted burn would read the tilt
+        # as "held".
         self.steer_history = []
 
     def predict(self, snap, powered, steer=None):
@@ -936,9 +927,7 @@ class Autoland:
         #
         # The test is on the *signed* longitudinal miss, and that half is not
         # cosmetic.  Every actuator after this phase can only make the booster
-        # land *shorter*: CORRECTION steers within
-        # CORRECTION_MAX_TILT_DEG of retrograde and is gated on a gradient
-        # that refuses a burn which lengthens, and the landing burn thrusts
+        # land *shorter*: the landing burn thrusts
         # straight anti-velocity by design (failure 5).  So an overshoot at
         # the boostback exit is a miss the rest of the flight can trim, and an
         # undershoot is a miss nothing can touch -- boostback is the last
@@ -1120,8 +1109,7 @@ class Autoland:
         self.measure_tracking(snap)
         # Fly the air first, and only then think about the engines.  A booster
         # falling through 30 km of thickening atmosphere with its grid fins out
-        # is a wing, and a wing costs no propellant, no relight and none of the
-        # three burns CORRECTION is rationed to -- see guidance.solve_steer.
+        # is a wing, and a wing costs no propellant, and no relight -- see guidance.solve_steer.
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
@@ -1174,18 +1162,12 @@ class Autoland:
             self.enter(LANDING_BURN, snap.ut,
                        "h=%.0f needed=%.0f miss=%.0f"
                        % (height, needed, distance))
-        elif self.correction_worthwhile(snap, prediction, distance):
-            self.corrections += 1
-            self.correction_start_miss = distance
-            self.correction_best_miss = distance
-            self.enter(CORRECTION, snap.ut, "miss=%.0fm" % distance)
 
     def run_rcs_trim(self, snap):
         """Translate on the RCS thrusters to walk the cross-track miss to 0.
 
         On the heavy nothing else moves it: the wing reads no lift worth
-        steering on, CORRECTION is a downrange lever and is rarely flown,
-        and the landing burn is held upright.  So the cross-track the
+        steering on, and the landing burn is held upright.  So the cross-track the
         boostback ended with -- and whatever the flip's thrusters added --
         was the touchdown miss.  A sideways dv moves the touchdown by dv
         times the time left, so at coast entry 100 m is ~0.7 m/s: a second
@@ -1526,7 +1508,7 @@ class Autoland:
         """Open the brakes where the solve said; hand over once re-swept."""
         cfg, env = self.cfg, self.env
         if self.late_state == "armed":
-            if self.state not in (COAST, CORRECTION, LANDING_BURN):
+            if self.state not in (COAST, LANDING_BURN):
                 return
             altitude = vec.norm(snap.position) - env.equatorial_radius
             if env.late_switch_alt is None or altitude > env.late_switch_alt:
@@ -1702,241 +1684,6 @@ class Autoland:
                            "%.1f -> lift scaled by %.2f"
                            % (sum(values) / len(values), held,
                               self.env.aoa_tracking ** 2))
-
-    def alignment_rate(self, ut, align):
-        """Degrees per second the attitude error is closing, or None.
-
-        None on the first tick of a burn, when there is nothing to compare
-        against yet.
-        """
-        previous = self.correction_align
-        self.correction_align = (ut, align)
-        if previous is None or ut <= previous[0]:
-            return None
-        return (previous[1] - align) / (ut - previous[0])
-
-    def turning_too_slowly(self, rate):
-        """Is the vehicle failing to come round, rather than merely mid-turn?
-
-        Unknown (the first tick) counts as turning: give RCS a tick to show
-        what it can do before spending propellant on the answer.
-        """
-        return (self.cfg.CORRECTION_GIMBAL_THROTTLE > 0.0 and rate is not None
-                and rate < self.cfg.CORRECTION_STUCK_RATE_DEG_S)
-
-    def correction_making_it_worse(self, ut, distance):
-        """Has the running burn actually deepened the miss it was lit to close?
-
-        ``correction_gradient`` is a *prediction* -- one 5 m/s probe, linearised
-        through a propagation -- and low in the atmosphere it is linearised
-        through drag that goes as v^2, so it holds over the probe and not over
-        the 40 m/s the burn goes on to spend.  LOG2 and LOG3 both flew two
-        burns that reported the burn helping (``grad=15.99``, ``grad=13.23``)
-        every tick while the miss ran 335 -> 855 and 927 -> 1596, and put the
-        booster 1.7 km out; nothing in the phase was watching the one number
-        that was disagreeing with the gradient the whole way.
-
-        So this is the measurement rather than the prediction: the miss the
-        burn started at, against the miss it has now.  The grace period is
-        what keeps it from firing on the turn -- a burn that has to swing the
-        nose round first legitimately gives ground before it takes any, and in
-        the sim a working correction opens by about 0.4% before closing.  At
-        1.3x it is far outside that and still cuts both of the real burns
-        inside their first few seconds.
-        """
-        if self.correction_start_miss is None or distance != distance:
-            return False
-        best = getattr(self, "correction_best_miss", None)
-        best = min(self.correction_start_miss if best is None else best,
-                   distance)
-        self.correction_best_miss = best
-        if ut - self.phase_start_ut < self.cfg.CORRECTION_ABORT_GRACE_S:
-            return False
-        # Against the *best* miss the burn has reached, not the one it began
-        # at.  A burn that closes the miss and then keeps going opens it
-        # again, and measured against its start it is allowed to undo all of
-        # its own work and 30% more: LOG10237's second burn took 900 m to
-        # 314, burned on for 25 s at a gradient that still read "helping",
-        # and stopped at 1068 having spent 7 t of a heavy booster's landing
-        # propellant.  The best-so-far is the start until the burn improves
-        # on it, so a burn that never helps is cut as before.  The floor of
-        # a floor of CORRECTION_ABORT_FLOOR_M above the best keeps a burn that has nearly closed
-        # the miss from being called a backfire on prediction noise.
-        return distance > max(best * self.cfg.CORRECTION_ABORT_RATIO,
-                              best + self.cfg.CORRECTION_ABORT_FLOOR_M)
-
-    def correction_gradient(self, snap, prediction):
-        """Metres of miss closed per m/s burned along the correction attitude.
-
-        Returned positive when the burn helps.  The steering is bounded to what
-        the vehicle can actually hold (see guidance.correction_attitude), so
-        there are geometries -- an undershoot, mostly -- where nothing reachable
-        improves the answer.  Burning then makes it worse, so this is checked
-        before entering CORRECTION and every tick while it runs.
-        """
-        aim = guidance.correction_attitude(self.env, snap.position,
-                                           snap.velocity, prediction, self.cfg,
-                                           snap.landing_height)
-        return -trajectory.miss_gradient(
-            self.env, snap.position, snap.velocity, snap.mass, aim, self.cfg,
-            self.cfg.CORRECTION_PROBE_DV, 0.0)
-
-    def correction_worthwhile(self, snap, prediction, distance):
-        """Is there enough miss, altitude and time left to be worth a burn?
-
-        The coast is where the error grows: drag and the rotating frame keep
-        acting on the booster for a minute or more after boostback ends, and
-        nothing about pointing retrograde corrects for that.  A short, gentle
-        burn high up is far cheaper than trying to translate kilometres during
-        the landing burn, which has seconds and a tilt limit to work with.
-        """
-        cfg = self.cfg
-        if cfg.DEPLOY_LATE and self.late_state in (None, "full", "settling",
-                                                  "switched"):
-            # The brakes are being measured, or have just opened and the
-            # curve is not re-swept yet: LOG15110 corrected on the tick they
-            # opened (+395 m), and the re-sweep then read -639.
-            return False
-        if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
-            return False                # ... or the legs are
-        if cfg.CORRECTION_OVERSHOOT_ONLY:
-            # CORRECTION steers within CORRECTION_MAX_TILT_DEG of retrograde,
-            # so in the game it only ever shortens: entered on a *short* miss
-            # it deepened it every time (vert1-1016 LOG10435: 1152 -> 1499,
-            # 1003 -> 2320, 1785 -> 2382, splashed 2 km short).
-            long, cross = trajectory.miss_components(
-                self.env, prediction.position, self.env.target, snap.position)
-            if long == long and long < 0.0 and abs(long) >= abs(cross):
-                return False
-        enter = cfg.CORRECTION_ENTER_M
-        if self.brakes_saturated_long(snap, prediction):
-            enter = min(enter, cfg.CORRECTION_SATURATED_ENTER_M)
-        return (distance > enter
-                and snap.max_accel > 0.0
-                and snap.landing_height > cfg.CORRECTION_MIN_ALT_M
-                and prediction.time_to_land > cfg.CORRECTION_MIN_TTL_S
-                and self.corrections < cfg.CORRECTION_MAX_BURNS
-                and snap.ut >= self.correction_ready_ut
-                and self.settled_enough_to_correct(snap)
-                and self.correction_gradient(snap, prediction)
-                > cfg.CORRECTION_MIN_GRADIENT)
-
-    def brakes_saturated_long(self, snap, prediction):
-        """Is the prediction long with the airbrakes already full open?
-
-        ``CORRECTION_ENTER_M`` is high because below it the air steers the
-        miss out and a burn fights it.  That only holds while the air has
-        authority left: with the brakes at ``DEPLOY_MAX_DEG`` they cannot
-        shorten any further, and the prediction this is handed is COAST's
-        steered one, so whatever lift the vehicle can make is already in it.
-        A long miss then stays long all the way to the landing burn, which
-        has seconds to move it (LOG15102: +600 m from apogee to the ground).
-        """
-        cfg = self.cfg
-        angle = getattr(self, "deploy_angle", None)
-        if not cfg.DEPLOY_LAW or angle is None or angle < cfg.DEPLOY_MAX_DEG:
-            return False
-        long, cross = trajectory.miss_components(
-            self.env, prediction.position, self.env.target, snap.position)
-        return long == long and long > 0.0 and long >= abs(cross)
-
-    def settled_enough_to_correct(self, snap):
-        """Has the drag curve stopped moving under the prediction?
-
-        The first descent re-sweep throws the whole broadside curve away and
-        re-probes it, and the prediction jumps when it does.  That jump is
-        not the booster moving, and a correction fired on it is failure 11's
-        mistake with a newer cause: four flights of one save all entered
-        CORRECTION between 2 and 12 s after the re-sweep, on misses of
-        350-400 m that the settled curve did not agree with.
-
-        One re-sweep is not a converged curve either -- failure 14 measured
-        that the *repeats* are what converge it, because the first one probes
-        at altitudes derived from the curve it is replacing.  So the gate is
-        time since that first re-sweep, not the re-sweep itself.
-
-        0 disables it, which is the behaviour every flight before this had.
-        """
-        settle = self.cfg.CORRECTION_SETTLE_S
-        if settle <= 0.0:
-            return True
-        reswept = getattr(self.env, "reswept_ut", None)
-        if reswept is None:
-            # No descent re-sweep yet, so the curve is still the broadside
-            # one.  That is the least trustworthy prediction of the flight.
-            return False
-        return snap.ut - reswept >= settle
-
-    def run_correction(self, snap):
-        """A throttled-down boostback: same law, gentler, mid-flight."""
-        self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
-                              snap.rotation, snap.direction)
-        prediction = self.predict(snap, powered=True)
-        solution = guidance.boostback_solution(
-            self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
-            snap.isp, prediction, self.cfg)
-        # Same dv/throttle law as boostback, but steered off retrograde rather
-        # than along the horizontal miss -- see guidance.correction_attitude.
-        aim = guidance.correction_attitude(self.env, snap.position,
-                                           snap.velocity, prediction, self.cfg,
-                                           snap.landing_height)
-        self.aim(aim, snap)
-
-        align = vec.angle_between(snap.direction, aim)
-        distance = self.miss_distance()
-        elapsed = snap.ut - self.phase_start_ut
-        cfg = self.cfg
-
-        rate = self.alignment_rate(snap.ut, align)
-        gradient = self.correction_gradient(snap, prediction)
-        backfiring = self.correction_making_it_worse(snap.ut, distance)
-        done = (distance <= cfg.CORRECTION_EXIT_M
-                or elapsed > cfg.CORRECTION_MAX_BURN_S
-                or snap.landing_height <= cfg.CORRECTION_MIN_ALT_M
-                or prediction.time_to_land <= cfg.CORRECTION_MIN_TTL_S
-                or gradient <= 0.0
-                or backfiring)
-        if done:
-            self.set_throttle(0.0)
-            # Let the trajectory (and the drag estimate) settle before judging
-            # the miss again, or the phase flaps in and out on prediction noise.
-            self.correction_ready_ut = snap.ut + cfg.CORRECTION_COOLDOWN_S
-            self.enter(COAST, snap.ut, "miss=%.0fm burns=%d grad=%.2f%s"
-                       % (distance, self.corrections, gradient,
-                          " BACKFIRING from %.0fm" % self.correction_start_miss
-                          if backfiring else ""))
-        elif align > cfg.CORRECTION_ALIGN_DEG and self.turning_too_slowly(rate):
-            # Still a long way off the aim and not getting there: light the
-            # engines anyway, gently, and let the gimbal do the turning.  A
-            # booster falling through thick air has very little authority on
-            # RCS and reaction wheels alone, and holding the throttle shut
-            # until it is pointed is how LOG7 spent 36 s and a whole
-            # correction burn achieving nothing while the miss grew
-            # 341 -> 966 m unopposed.  The thrust is inefficient by
-            # definition -- cos(align) useful at best, pushing sideways with
-            # the rest -- but a burn that happens beats a burn that waits for
-            # an attitude the vehicle cannot reach unpowered.
-            #
-            # The rate test is what keeps the waste off a vehicle that is
-            # simply mid-turn: RCS coming round at a decent clip needs no
-            # help, and burning through that turn costs accuracy for nothing.
-            # Set CORRECTION_GIMBAL_THROTTLE to 0 to hold thrust regardless.
-            self.set_throttle(min(cfg.CORRECTION_GIMBAL_THROTTLE,
-                                  cfg.CORRECTION_MAX_THROTTLE))
-        elif align > cfg.CORRECTION_ALIGN_DEG:
-            self.set_throttle(0.0)
-        else:
-            self.set_throttle(min(solution.throttle,
-                                  cfg.CORRECTION_MAX_THROTTLE))
-
-        self.extra_lines = [
-            "miss    : %8.0f m" % distance,
-            "dv left : %8.1f m/s" % solution.dv,
-            "align   : %8.1f deg" % align,
-            "closing : %8.1f deg/s" % (rate if rate is not None else float("nan")),
-            "m per dv: %8.2f m" % gradient,
-            "ttl     : %8.0f s" % prediction.time_to_land,
-        ]
 
     def log_attitude_tune(self, snap):
         """Say what kRPC's attitude controller is tuned to, once at the burn's
@@ -2200,7 +1947,7 @@ class Autoland:
         # that somehow reaches the ground without the phase.
         why = None
         if self.cfg.GEAR_TIMED and self.gear_timing == "done":
-            if self.state not in (COAST, CORRECTION, LANDING_BURN):
+            if self.state not in (COAST, LANDING_BURN):
                 return
             t_go = self.time_to_ground(snap)
             if t_go is None or t_go > self.gear_lead():
@@ -2211,7 +1958,7 @@ class Autoland:
             return
         elif self.cfg.GEAR_ON_LANDING_BURN and self.state == LANDING_BURN:
             why = "landing burn"
-        elif self.state in (COAST, CORRECTION, LANDING_BURN) \
+        elif self.state in (COAST, LANDING_BURN) \
                 and snap.height_above_pad <= self.cfg.GEAR_DEPLOY_ALT_M:
             why = "%.0f m" % self.cfg.GEAR_DEPLOY_ALT_M
         if why is None:
@@ -2318,7 +2065,6 @@ class Autoland:
             SEPARATION: self.run_separation,
             BOOSTBACK: self.run_boostback,
             COAST: self.run_coast,
-            CORRECTION: self.run_correction,
             LANDING_BURN: self.run_landing_burn,
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
@@ -2433,7 +2179,7 @@ def engine_fields(state, run):
     cluster is split (a single group would just repeat `thr=`)."""
     cluster = run.cluster
     if (cluster is None or len(cluster.groups) < 2
-            or state not in ("BOOSTBACK", "CORRECTION", "LANDING_BURN")):
+            or state not in ("BOOSTBACK", "LANDING_BURN")):
         return ""
     got = cluster.delivered()
     return " eng=%s" % got if got else ""

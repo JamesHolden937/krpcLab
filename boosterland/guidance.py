@@ -305,9 +305,8 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # Two axes.  The wing is a cylinder in crossflow and the vehicle is
     # axisymmetric, so the same measured slope applies whichever way the lift
     # is rolled -- which means the *cross-track* miss has an actuator too, and
-    # it is the same one.  Nothing else in this flight can move it: CORRECTION
-    # tilts off retrograde, which is a downrange lever, and the landing burn
-    # has ten metres of authority.  Cross-track errors of 15-28 m were the
+    # it is the same one.  Nothing else in this flight can move it but the RCS
+    # trim, and the landing burn has ten metres of authority.  Cross-track errors of 15-28 m were the
     # single largest surviving term when this was written, and they sat
     # unchanged from 28 km to the ground.
     #
@@ -413,30 +412,6 @@ def steer_for(normal, v, u, slope=None, hold=None):
     if abs(phi) > 1e-12 and vec.norm(axis) > 0.0:
         normal = vec.quat_rotate(vec.quat_axis_angle(axis, phi), normal)
     return trajectory.Steer(aoa, normal, slope, hold)
-
-
-def correction_attitude(env, r, v, prediction, cfg, height=None):
-    """Steer a mid-flight correction *relative to retrograde*.
-
-    A tilt bounded off retrograde can only make the booster land *shorter*;
-    an undershoot is the wing's to fix, not this phase's.
-
-    Boostback aims along the horizontal miss vector, which is the right answer
-    when the booster is above the atmosphere with time to turn.  It is the
-    wrong answer during the coast: by then the vehicle is falling steeply
-    through thick air, retrograde is 45-70 deg off horizontal, and a purely
-    horizontal command is an attitude it cannot hold.  LOG7 shows the cost --
-    CORRECTION held the throttle closed for 36 s waiting for an alignment that
-    was never going to happen, timed out, and let the miss grow 341 -> 966 m.
-
-    Tilting off retrograde instead is always reachable, and it is not much
-    weaker: retrograde thrust already works against a downrange overshoot, so
-    the tilt only has to bias it.
-    """
-    miss = miss_vector(env, prediction)
-    return _tilt_from_retrograde(env, r, v, miss,
-                                 cfg.CORRECTION_MAX_TILT_DEG,
-                                 cfg.CORRECTION_TILT_GAIN)
 
 
 @dataclass
