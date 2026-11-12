@@ -251,7 +251,8 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
 
     def fly(u):
         """Propagate under the steering vector ``u``, in plane coordinates."""
-        steer = steer_for(normal, v, u, env.lift_slope_at, holdable(env, cfg))
+        steer = steer_for(normal, v, u, env.lift_slope_at, holdable(env, cfg),
+                          aoa_drag(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -284,17 +285,20 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # why the first grid of this had it winning by 100 m on the two saves
     # that really do overshoot and losing by 80-100 m on the two that were
     # already landing at 8 m, always to the *short* side.
-    if vec.norm(r) - env.target_radius > cfg.AERO_STEER_MAX_ALT_M:
-        return zero, flat
+    gate = cfg.AERO_STEER_GATE
+    if gate == "resweep":
+        # What the altitude stood in for, as an event: act only on a
+        # prediction the descent-attitude re-sweep has replaced.  A booster
+        # that never climbs past AERO_STEER_MAX_ALT_M would otherwise steer
+        # on the boostback-exit curve from the start.
+        if getattr(env, "reswept_ut", None) is None:
+            return zero, flat
+    elif gate == "alt":
+        if vec.norm(r) - env.target_radius > cfg.AERO_STEER_MAX_ALT_M:
+            return zero, flat
+    elif gate != "none":
+        raise ValueError("AERO_STEER_GATE %r" % gate)
 
-    # An altitude floor is available but defaults off, because it is the
-    # wrong shape of guard and that was measured.  Cutting the steering below
-    # 2 km cost `quicksave` 13 m (5/5 m became 18/19) while the flights it
-    # was meant to save were saved by the check at the bottom of this
-    # function instead.  The last two kilometres do real work; what they must
-    # not do is saturate.
-    if vec.norm(r) - env.target_radius <= cfg.AERO_STEER_MIN_ALT_M:
-        return zero, flat
     if math.hypot(m0[0], m0[1]) <= cfg.AERO_STEER_DEADBAND_M:
         # Already on the pad.  Commanding an angle against sub-metre noise is
         # how the solve spends its authority on nothing.
@@ -384,7 +388,7 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     for scale in (1.0, 0.5):
         trial = (u[0] * scale, u[1] * scale)
         steer = steer_for(normal, v, trial, env.lift_slope_at,
-                         holdable(env, cfg))
+                         holdable(env, cfg), aoa_drag(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -405,7 +409,14 @@ def holdable(env, cfg):
     return None
 
 
-def steer_for(normal, v, u, slope=None, hold=None):
+def aoa_drag(env, cfg):
+    """The propagator's drag-per-angle lookup, if it is being charged."""
+    if cfg.DRAG_AOA_TERM:
+        return getattr(env, "drag_aoa_at", None)
+    return None
+
+
+def steer_for(normal, v, u, slope=None, hold=None, drag=None):
     """A :class:`trajectory.Steer` flying the plane-coordinate command ``u``.
 
     ``u`` is ``(in_plane, out_of_plane)`` radians of angle of attack.  The
@@ -418,33 +429,19 @@ def steer_for(normal, v, u, slope=None, hold=None):
     """
     aoa = math.hypot(u[0], u[1])
     if aoa < 1e-12:
-        return trajectory.Steer(0.0, normal, slope, hold)
+        return trajectory.Steer(0.0, normal, slope, hold, drag)
     phi = math.atan2(u[1], u[0])
     axis = vec.unit(v)
     if abs(phi) > 1e-12 and vec.norm(axis) > 0.0:
         normal = vec.quat_rotate(vec.quat_axis_angle(axis, phi), normal)
-    return trajectory.Steer(aoa, normal, slope, hold)
+    return trajectory.Steer(aoa, normal, slope, hold, drag)
 
 
 def correction_attitude(env, r, v, prediction, cfg, height=None):
     """Steer a mid-flight correction *relative to retrograde*.
 
-    ...except up high, where it steers like boostback and can therefore
-    correct in **both** directions.  That asymmetry is worth the extra
-    parameter: a tilt bounded off retrograde can only ever make the booster
-    land *shorter*, so an undershoot is a miss no phase after boostback can
-    touch, and `qs_steep` lands ~130 m short for exactly that reason -- the
-    prediction says so at 34 km, with the vehicle in thin air and holding
-    fuel, and CORRECTION declines because ``miss_gradient`` correctly reports
-    that its own steering would make things worse.  Above
-    ``CORRECTION_FREE_AIM_ALT_M`` the air is thin enough that the vehicle can
-    hold the horizontal attitude that LOG7 proved it cannot hold at 8 km
-    (failure 6), so the aim there is boostback's: opposite the horizontal
-    miss, which points prograde for an undershoot and retrograde for an
-    overshoot.  The gradient gate is unchanged and still refuses a burn that
-    does not help, so this widens what the phase *can* fix without widening
-    what it will attempt.  0 disables it and every correction steers off
-    retrograde.
+    A tilt bounded off retrograde can only make the booster land *shorter*;
+    an undershoot is the wing's to fix, not this phase's.
 
     Boostback aims along the horizontal miss vector, which is the right answer
     when the booster is above the atmosphere with time to turn.  It is the
@@ -459,11 +456,6 @@ def correction_attitude(env, r, v, prediction, cfg, height=None):
     the tilt only has to bias it.
     """
     miss = miss_vector(env, prediction)
-    free = cfg.CORRECTION_FREE_AIM_ALT_M
-    if free > 0.0 and height is not None and height >= free:
-        horizontal = vec.project_out(miss, vec.unit(r))
-        if vec.norm(horizontal) > 1e-6:
-            return vec.scale(vec.unit(horizontal), -1.0)
     return _tilt_from_retrograde(env, r, v, miss,
                                  cfg.CORRECTION_MAX_TILT_DEG,
                                  cfg.CORRECTION_TILT_GAIN)

@@ -170,39 +170,6 @@ class Config:
                                             # seconds are the same burn on
                                             # any machine.  0 = ticks only.
     BOOSTBACK_TOLERANCE_M: float = 190.0    # stop burning inside this miss
-    BOOSTBACK_UNDERSHOOT_M: float = 1e9     # the deepest undershoot the exit
-                                            # will accept, and it is off (a
-                                            # number no flight can reach) on
-                                            # purpose.  The idea was that
-                                            # every phase after boostback can
-                                            # only shorten the flight, so the
-                                            # burn should never stop while the
-                                            # prediction is still short of the
-                                            # pad.  That reads the geometry
-                                            # backwards: boostback approaches
-                                            # the pad *from* the undershoot
-                                            # side -- long runs from -113 km
-                                            # up towards 0 -- so the tolerance
-                                            # band is a deliberate lead, and
-                                            # the coast then spends it.
-                                            # Requiring long >= 0 makes the
-                                            # burn eat the whole lead: the
-                                            # taper decays with a ~3 s time
-                                            # constant, so the last 190 m cost
-                                            # 36 s of burn, boostback ended at
-                                            # miss=0 far lower and slower, and
-                                            # the coast re-opened 500 m the
-                                            # corrections could not close.
-                                            # Measured in game at bias 0:
-                                            # 236-885 m from the pad on every
-                                            # save (671/816/885 quicksave,
-                                            # 653/853/449 qs_hot), against
-                                            # 5-33 m for the same flights with
-                                            # this off.  The sim liked it --
-                                            # 4/75/19/5 m over the four entry
-                                            # states -- which is the trap
-                                            # CLAUDE.md's "Measured in game"
-                                            # section is about.
     BOOSTBACK_PITCH_DEG: float = 0.0        # aim above local horizon
     BOOSTBACK_TAPER_DV: float = 60.0        # throttle down under this dv left
     BOOSTBACK_MIN_THROTTLE: float = 0.0     # let the taper reach zero.  At 0.05
@@ -322,6 +289,12 @@ class Config:
                                             # lever, and the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
+    AERO_STEER_GATE: str = "alt"            # when the wing may act: "alt"
+                                            # (below AERO_STEER_MAX_ALT_M),
+                                            # "resweep" (once the descent
+                                            # drag re-sweep has replaced the
+                                            # boostback curve), "none" (all
+                                            # coast).  Being measured
     AERO_STEER_MAX_ALT_M: float = 25000.0   # ... and hold retrograde *above*
                                             # this, until the drag re-sweep
                                             # has settled the prediction.  At
@@ -330,13 +303,6 @@ class Config:
                                             # coast walks it to zero on its
                                             # own; steering it out there is
                                             # correcting a walk, not a miss
-    AERO_STEER_MIN_ALT_M: float = 0.0       # hold retrograde below this.  An
-                                            # altitude cliff is the wrong
-                                            # guard and it was measured: at
-                                            # 2000 it cost `quicksave` 13 m,
-                                            # and guidance.verified catches
-                                            # the flights it was meant to
-                                            # save.  0 = off
     AERO_STEER_DEADBAND_M: float = 2.0      # ... and do not steer against a
                                             # miss already this small
     AERO_STEER_MIN_AUTHORITY_M: float = 1.0  # metres the air must be able to
@@ -455,81 +421,12 @@ class Config:
                                             # seconds after the first one is
                                             # acting on a prediction that is
                                             # still being replaced.  0 = off.
-    CORRECTION_MAX_ALT_M: float = 1e9       # ... nor higher than this.  OFF,
-                                            # and measured: see below.  It was
-                                            # 25000 for one grid, on the
-                                            # reasoning that CORRECTION should
-                                            # wait for a settled prediction the
-                                            # way the wing does, and it is a
-                                            # clear regression -- `qs_north`
-                                            # 4/5 m became 118/141/107 and
-                                            # `qs_cold` 3/3 became 42/58/20.
-                                            # CORRECTION's early burns take the
-                                            # first bite out of the ~180 m
-                                            # boostback lead even though the
-                                            # prediction they act on has not
-                                            # settled, and the wing cannot
-                                            # close that much on its own: the
-                                            # regressed flights read coast
-                                            # entry -182 -> burn entry -120.
-                                            # One backfire in ten flights is
-                                            # cheaper than removing the phase.
-                                            # ... nor higher than this, for
-                                            # the same reason the wing waits:
-                                            # up at the boostback exit the
-                                            # predicted miss is still the
-                                            # drag curve's walk and not a
-                                            # miss, and a burn spent on it is
-                                            # a burn spent on nothing.  LOG542
-                                            # entered at 238 m up there and
-                                            # came out at 795 -- the abort
-                                            # guard caught it, but 795 m is
-                                            # more than the wing can close in
-                                            # the descent that is left, and
-                                            # it landed 112 m out where its
-                                            # sibling flights landed at 3.
-                                            # Keep it at or below
-                                            # AERO_STEER_MAX_ALT_M
     CORRECTION_MIN_ALT_M: float = 6000.0    # never correct lower than this
     CORRECTION_MIN_TTL_S: float = 15.0      # nor with less flight time left
     CORRECTION_MAX_THROTTLE: float = 0.40
     CORRECTION_ALIGN_DEG: float = 20.0      # full correction thrust inside this
     CORRECTION_GIMBAL_THROTTLE: float = 0.25    # thrust for gimbal when stuck
     CORRECTION_STUCK_RATE_DEG_S: float = 3.0    # turning slower than this is stuck
-    CORRECTION_FREE_AIM_ALT_M: float = 0.0  # above this, a correction aims
-                                            # like boostback -- opposite the
-                                            # horizontal miss -- instead of
-                                            # tilting off retrograde, so it
-                                            # can lengthen the flight as well
-                                            # as shorten it.  **Off**, and the
-                                            # reasoning behind it is still
-                                            # sound, which is why the knob is
-                                            # here.  Everything after
-                                            # boostback is one-sided, so an
-                                            # undershoot is a miss nothing can
-                                            # touch -- qs_steep lands ~130 m
-                                            # short and the prediction says so
-                                            # at 34 km, in thin air, with fuel
-                                            # aboard, while CORRECTION
-                                            # declines because miss_gradient
-                                            # correctly reports its own
-                                            # steering would make things
-                                            # worse.  At 25000 it does fire
-                                            # and it is worth a little on
-                                            # qs_hot (52, 53 m against 67,
-                                            # 47), but on quicksave it
-                                            # destroys a flight that was
-                                            # landing at 6 and 12 m: 142 m
-                                            # west and 223 m *east* on the
-                                            # same config, which is a burn
-                                            # over-correcting through the pad
-                                            # and out the other side.  Full
-                                            # horizontal authority with
-                                            # boostback's dv law is too much
-                                            # gain for a 100 m miss; the idea
-                                            # needs a law sized for the job
-                                            # rather than the gate opened
-                                            # wider.  See failure 16.
     CORRECTION_MAX_TILT_DEG: float = 50.0   # steering authority off retrograde
     CORRECTION_TILT_GAIN: float = 0.12      # degrees of tilt per metre of miss
     CORRECTION_MAX_BURN_S: float = 45.0     # per-burn guard
@@ -711,18 +608,22 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
+    DRAG_AOA_TERM: bool = False             # drag as Cd*A(M) at aoa 0 plus
+                                            # k(M) x aoa^2, k measured by the
+                                            # lift probe (its drag part less a
+                                            # retrograde probe); every Cd*A
+                                            # probe taken at retrograde, the
+                                            # steering's angle charged by the
+                                            # propagator.  Being measured
+    DRAG_RESWEEP_INPUT_MAX: float = 0.3     # DRAG_AOA_TERM: the descent
+                                            # re-sweep waits for COAST with
+                                            # pitch/yaw input inside this
+                                            # (fins near trim), in place of
+                                            # DRAG_RESWEEP_AOA_DEG
     DRAG_PROBE_DESCENT_TILT_DEG: float = 0.0  # > 0: probe drag off the
                                             # descent attitude at retrograde
                                             # tilted this far, the angle the
                                             # descent flies (0 = real attitude)
-    DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
-                                            # off retrograde (0 = take them
-                                            # all).  Measured at 20: it cannot
-                                            # help the decision that needs it,
-                                            # because nothing has been probed
-                                            # at a descent attitude yet when
-                                            # boostback exits.  See
-                                            # Environment.sample_is_clean.
     DRAG_RESWEEP_AOA_DEG: float = 8.0       # re-probe the *whole* curve the
                                             # first time the vehicle is this
                                             # near the attitude the descent
