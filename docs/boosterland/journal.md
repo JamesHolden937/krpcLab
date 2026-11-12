@@ -780,3 +780,23 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   "bundle.py"` (each matched the other waiting shell's command line),
   1850-1938.  The user stopped the session and made a global fix for
   never-starting batches the top priority (HANDOFF item 0).
+
+## 2026-11-11 night: the descent-tilt probe; leg clearance re-measured
+
+All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
+
+- tilt1-1111 (`DRAG_PROBE_DESCENT_TILT_DEG`, boostback probes drag at
+  retrograde tilted in the trajectory plane): defaults 5 6 21 22 32 44 85 194
+  (median ~27); tilt 5 with corrections median ~230, all long (E+); tilt 5
+  no corrections 17 102 110 111 172 197 274 295 (median ~140); tilt 8 no
+  corrections 1 27 29 30 111 130 256 575 (median ~70).  No-correction misses
+  were ~860 on the broadside curve (wsweep1): the tilt takes out most of the
+  boostback-exit error.  Still long, shrinking with tilt; with corrections on
+  the tilt is worse (the corrections backfire on it).
+- Leg clearance: now re-read from the bounding box on every phase change
+  (`Telemetry.remeasure_leg_clearance`).  The live small booster (LOG15614)
+  read 40.8 m at connect, ~6 m true, and hovered ~36 m up at the end of its
+  burn.  Not yet flown on a booster whose reading changes.
+- `qs_heavyshuttlebooster`: Kerbin orbits' LAN +39.61 deg more
+  (360 x UT x (1/21349.47 - 1/21549.43) at UT 253164.8), for MiniSystem's
+  faster sidereal rotation; it loaded 388 km off.
