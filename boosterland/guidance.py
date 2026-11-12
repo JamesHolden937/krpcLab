@@ -158,23 +158,10 @@ def rcs_trim_command(cross, left, cfg):
     return vec.scale(vec.unit(left), -math.copysign(level, cross))
 
 
-def _tilt_from_retrograde(env, r, v, miss, max_tilt_deg, gain):
-    """Retrograde, tilted to push the predicted landing point onto the pad."""
-    retrograde = vec.unit(vec.scale(v, -1.0))
-    if vec.norm(retrograde) < 1e-9:
-        return vec.unit(r)
-    distance = vec.norm(vec.project_out(miss, vec.unit(r)))
-    if distance < 1e-3:
-        return retrograde
-    correction = vec.unit(vec.project_out(vec.scale(miss, -1.0), retrograde))
-    tilt = math.radians(min(max_tilt_deg, gain * distance))
-    return vec.unit(vec.add(retrograde, vec.scale(correction, math.tan(tilt))))
-
-
-def coast_attitude(env, r, v, prediction, cfg):
-    """Retrograde hold during the ballistic arc, with a light aero bias."""
-    return _tilt_from_retrograde(env, r, v, miss_vector(env, prediction),
-                                 cfg.COAST_MAX_TILT_DEG, cfg.COAST_STEER_GAIN)
+def coast_attitude(v):
+    """Retrograde: the unsteered coast leaves the miss to the wing, which acts
+    once the descent re-sweep has made the prediction worth acting on."""
+    return vec.unit(vec.scale(v, -1.0))
 
 
 def steering_plane(r, v):

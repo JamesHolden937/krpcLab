@@ -1126,9 +1126,7 @@ class Autoland:
         else:
             self.steer = None
             prediction = self.predict(snap, powered=True)
-            self.aim(guidance.coast_attitude(self.env, snap.position,
-                                             snap.velocity, prediction,
-                                             self.cfg), snap)
+            self.aim(guidance.coast_attitude(snap.velocity), snap)
 
         distance = self.miss_distance()
         height, needed, _ = trajectory.landing_burn_state(

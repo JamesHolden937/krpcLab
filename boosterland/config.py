@@ -328,10 +328,6 @@ class Config:
                                             # aerodynamic moment; the rest is
                                             # left for disturbances
 
-    # --- Coast ------------------------------------------------------------
-    COAST_STEER_GAIN: float = 0.0006        # degrees of tilt per metre of miss
-    COAST_MAX_TILT_DEG: float = 12.0
-
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
