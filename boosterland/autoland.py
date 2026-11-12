@@ -16,7 +16,7 @@ the in-game panel.
 import math
 import sys
 import time
-from dataclasses import fields
+from dataclasses import fields, replace
 
 import krpc
 
@@ -34,6 +34,7 @@ from common.idle import IdleGimbals, VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged)
 from common import cli
+from common.launchsite import launch_site
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
@@ -382,6 +383,23 @@ class Autoland:
                 self.vessel, 0.0, 0.0, log=lambda text: self.log.event(
                     self.conn.space_center.ut, text),
                 keep_deploy=cfg.FINS_HELD_KEEP_DEPLOY)
+        site = launch_site(conn)
+        if site is None:
+            logbook.event(ut, "launch site unknown; pad from PAD_LAT/PAD_LON")
+        else:
+            dlat = math.radians(site["lat"] - cfg.PAD_LAT)
+            dlon = math.radians(site["lon"] - cfg.PAD_LON)
+            off = self.body.equatorial_radius * math.hypot(
+                dlat, dlon * math.cos(math.radians(cfg.PAD_LAT)))
+            use = cfg.PAD_FROM_LAUNCH and site["body"] == self.body.name
+            logbook.event(ut, "launch site (%s %s on %s): %.6f %.6f, %.1f m "
+                          "from PAD_LAT/PAD_LON%s"
+                          % (site["source"], site["site"] or "-", site["body"],
+                             site["lat"], site["lon"], off,
+                             " -- targeted" if use else ""))
+            if use:
+                cfg = self.cfg = replace(cfg, PAD_LAT=site["lat"],
+                                         PAD_LON=site["lon"])
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
