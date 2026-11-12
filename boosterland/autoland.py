@@ -478,6 +478,7 @@ class Autoland:
         self.log.event(ut, "phase %s -> %s %s" % (self.state, state, note))
         self.state = state
         self.phase_start_ut = ut
+        self.telemetry.remeasure_leg_clearance(ut, state.lower())
         if self.fins is not None:
             if state in (SEPARATION, BOOSTBACK):
                 self.fins.hold(state.lower())

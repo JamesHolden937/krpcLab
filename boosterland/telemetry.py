@@ -234,6 +234,31 @@ class Telemetry:
             self.log.event(ut, "leg clearance %.2f m (COM to feet)" % clearance)
         return clearance
 
+    def remeasure_leg_clearance(self, ut, why=""):
+        """Re-read the COM-to-feet offset; keep the old one if the box is junk.
+
+        The first reading is taken at connect, which on an FMRS or live
+        separation can still see the whole stack: the live small booster
+        (LOG15614) read 40.8 m against ~6 m true and hovered ~36 m up at
+        the end of its burn.  Staging, legs and propellant all move it, so
+        every phase change reads it again.
+        """
+        try:
+            lower, _upper = self.vessel.bounding_box(self.vessel.reference_frame)
+            clearance = max(0.0, -lower[1]) + self.cfg.LEG_CLEARANCE_MARGIN_M
+        except Exception:                                   # noqa: BLE001
+            return self.leg_clearance
+        if not math.isfinite(clearance) or clearance > self.cfg.LEG_CLEARANCE_MAX_M:
+            return self.leg_clearance
+        old = self.leg_clearance
+        if old is None or abs(clearance - old) > 0.1:
+            self.leg_clearance = clearance
+            if self.log is not None:
+                self.log.event(ut, "leg clearance %s -> %.2f m (COM to feet%s)"
+                               % ("none" if old is None else "%.2f" % old,
+                                  clearance, ", " + why if why else ""))
+        return self.leg_clearance
+
     def _surface_altitude(self, ut, raw, mean_altitude, height_above_pad):
         """The terrain sensor, or the pad radius when it is talking nonsense.
 
