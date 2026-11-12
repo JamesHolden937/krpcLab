@@ -711,6 +711,10 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
+    DRAG_PROBE_DESCENT_TILT_DEG: float = 0.0  # > 0: probe drag off the
+                                            # descent attitude at retrograde
+                                            # tilted this far, the angle the
+                                            # descent flies (0 = real attitude)
     DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
                                             # off retrograde (0 = take them
                                             # all).  Measured at 20: it cannot

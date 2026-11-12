@@ -228,7 +228,7 @@ class Environment:
         altitude = vec.norm(position) - self.equatorial_radius
         direction = self.probe_direction(velocity, nose)
         c = self.speed_of_sound(altitude)
-        rotation, _ = self.probe_rotation(rotation, velocity, nose)
+        rotation, _ = self.probe_rotation(rotation, velocity, nose, position)
         return [self._probe_bin(position, direction, i, altitude, c, rotation)
                 for i in range(self._bins)]
 
@@ -402,15 +402,37 @@ class Environment:
             return tuple(position)
         return vec.scale(position, (self.equatorial_radius + altitude) / radius)
 
-    def probe_rotation(self, rotation, velocity, nose):
+    def probe_rotation(self, rotation, velocity, nose, position=None):
         """The attitude to evaluate the aerodynamic probe at: the real one.
 
         Returns ``(rotation, clean)``, ``clean`` from ``sample_is_clean``.
         Probing the vessel turned onto retrograde instead was refuted twice:
         pd10-1016 (3 of 4 heavies lost) and keep1/gate1-1111 (median ~200 v
         22 on the fin booster, even with the brake fins kept deployed).
+
+        ``DRAG_PROBE_DESCENT_TILT_DEG`` > 0 evaluates the vessel at the
+        descent's *flown* attitude instead: retrograde tilted that far in the
+        trajectory plane, whenever it is not already within
+        ``DRAG_RESWEEP_AOA_DEG`` of retrograde.  The broadside curve reads
+        the boostback-exit trajectory ~1 km long of the descent re-sweep, the
+        curve at aoa 0 ~0.8 km short, and the descent flies at aoa 4-8.
         """
-        return tuple(rotation), self.sample_is_clean(velocity, nose)
+        tilt = self.cfg.DRAG_PROBE_DESCENT_TILT_DEG
+        if (tilt <= 0.0 or nose is None or vec.norm(velocity) < 1e-6
+                or self.in_descent_configuration(velocity, nose)):
+            return tuple(rotation), self.sample_is_clean(velocity, nose)
+        retrograde = vec.scale(vec.unit(velocity), -1.0)
+        up = (vec.project_out(vec.unit(position), retrograde)
+              if position is not None else None)
+        if up is None or vec.norm(up) < 1e-6:
+            return tuple(rotation), self.sample_is_clean(velocity, nose)
+        a = math.radians(tilt)
+        target = vec.unit(vec.add(vec.scale(retrograde, math.cos(a)),
+                                  vec.scale(vec.unit(up), math.sin(a))))
+        turned = vec.rotation_onto(rotation, nose, target)
+        if turned is None:
+            return tuple(rotation), self.sample_is_clean(velocity, nose)
+        return turned, True
 
     def in_descent_configuration(self, velocity, nose):
         """Is the vehicle sitting the way it will sit all the way down?
@@ -804,7 +826,8 @@ class Environment:
             return self.drag_area
         direction = self.probe_direction(velocity, nose)
         c = self.speed_of_sound(altitude)
-        rotation, clean = self.probe_rotation(rotation, velocity, nose)
+        rotation, clean = self.probe_rotation(rotation, velocity, nose,
+                                              position)
 
         descent = self.in_descent_configuration(velocity, nose)
         # Once is not enough, and the reason is circular.  The descent-altitude
