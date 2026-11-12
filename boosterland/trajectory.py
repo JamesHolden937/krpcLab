@@ -82,11 +82,6 @@ class Steer:
     hold: object = None         # (speed, altitude) -> the most the vehicle
                                 # can hold, radians, or None; the lift is
                                 # credited at no more than that
-    drag: object = None         # (speed, altitude) -> extra Cd*A per radian
-                                # squared of angle off retrograde, or None
-                                # (DRAG_AOA_TERM): the drag of the angle the
-                                # steering flies, charged at the same angle
-                                # the lift is
 
 
 def lift_direction(steer, v):
@@ -110,16 +105,6 @@ def acceleration(env, r, v, mass, drag, steer=None):
         if rho > 0.0:
             speed = vec.norm(v)
             drag_area = drag(speed, altitude) if speed > 0.0 else 0.0
-            if (speed > 0.0 and steer is not None and steer.aoa
-                    and steer.drag is not None):
-                extra = steer.drag(speed, altitude)
-                if extra:
-                    aoa = steer.aoa
-                    if steer.hold is not None:
-                        most = steer.hold(speed, altitude)
-                        if most is not None and abs(aoa) > most:
-                            aoa = most
-                    drag_area += extra * aoa * aoa
             if speed > 0.0 and drag_area > 0.0:
                 # a_drag = -(1/2) rho Cd A |v| v / m
                 q = 0.5 * rho * drag_area * speed / mass

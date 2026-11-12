@@ -93,15 +93,6 @@ class Environment:
         self._lift_machs = []
         self._lift_areas = []
         self.lift_slope = None          # the value at the current Mach, logged
-        self.observed_scale = 1.0       # DRAG_OBSERVED_SCALE: flown / probed
-        self.observed_samples = 0
-        # Extra Cd*A per radian squared off retrograde (DRAG_AOA_TERM): the
-        # drag part of the lift probe, less a probe at retrograde.
-        self._drag_aoa = [None] * self._bins
-        self._drag_aoa_machs = []
-        self._drag_aoa_areas = []
-        self.drag_aoa = None            # the value at the current Mach, logged
-        self._last_tilt_drag = None
         # The fraction of a commanded angle of attack the vehicle actually
         # holds; see ``record_tracking``.  1 until measured.
         self.aoa_tracking = 1.0
@@ -203,42 +194,6 @@ class Environment:
 
     # -- the drag curve ----------------------------------------------------
     def drag_area_at(self, speed, altitude):
-        """The probed curve times the scale the flight itself measured.
-
-        ``DRAG_OBSERVED_SCALE``: the probe gives the curve's shape over Mach;
-        its level, at the attitude and fin state the descent really flies, is
-        the coast's own deceleration (:meth:`observe_drag`).  1 until observed.
-        """
-        return self.probed_drag_area_at(speed, altitude) * self.observed_scale
-
-    def observe_drag(self, ut, mass, r, v, a_drag):
-        """Fold one observed drag deceleration (m/s^2 along -v) into the scale.
-
-        Returns the observed Cd*A, or None when the air is too thin for the
-        deceleration to stand out of the differencing noise.
-        """
-        cfg = self.cfg
-        speed = vec.norm(v)
-        altitude = vec.norm(r) - self.equatorial_radius
-        rho = self.density(altitude)
-        probed = self.probed_drag_area_at(speed, altitude)
-        if speed < 20.0 or rho <= 0.0 or not probed or probed <= 0.0:
-            return None
-        q = 0.5 * rho * speed * speed
-        expected = q * probed / mass
-        if expected < cfg.DRAG_OBSERVE_MIN_ACCEL:
-            return None
-        observed = a_drag * mass / q
-        ratio = observed / probed
-        if not (0.2 <= ratio <= 5.0):
-            return None
-        w = cfg.DRAG_OBSERVE_SMOOTHING
-        self.observed_scale = (ratio if self.observed_samples == 0
-                               else self.observed_scale * (1.0 - w) + ratio * w)
-        self.observed_samples += 1
-        return observed
-
-    def probed_drag_area_at(self, speed, altitude):
         """Cd*A at this speed and altitude, interpolated over the Mach curve.
 
         A single scalar Cd*A is not good enough to aim a boostback burn with.
@@ -463,14 +418,6 @@ class Environment:
         curve at aoa 0 ~0.8 km short, and the descent flies at aoa 4-8.
         """
         tilt = self.cfg.DRAG_PROBE_DESCENT_TILT_DEG
-        if self.cfg.DRAG_AOA_TERM and nose is not None \
-                and vec.norm(velocity) >= 1e-6:
-            # The curve is the aoa-0 curve; the steering's angle is charged
-            # by the propagator from drag_aoa_at.
-            straight = vec.rotation_onto(rotation, nose,
-                                         vec.scale(vec.unit(velocity), -1.0))
-            if straight is not None:
-                return straight, True
         if (tilt <= 0.0 or nose is None or vec.norm(velocity) < 1e-6
                 or self.in_descent_configuration(velocity, nose)):
             return tuple(rotation), self.sample_is_clean(velocity, nose)
@@ -497,12 +444,6 @@ class Environment:
         and defaults to keeping all of them, while this one decides when the
         whole curve is worth taking again.
         """
-        if self.cfg.DRAG_AOA_TERM:
-            # Every probe is turned to retrograde, so the attitude no longer
-            # matters; what the angle also stood in for is the fins: the
-            # probe sees them as they are, and mid-flip they are at full
-            # deflection.  So: coasting, with the inputs settled.
-            return bool(getattr(self, "fins_settled", False))
         limit = self.cfg.DRAG_RESWEEP_AOA_DEG
         if limit <= 0.0 or nose is None:
             return False
@@ -621,51 +562,7 @@ class Environment:
         if force is None:
             return None
         q = 0.5 * rho * speed * speed
-        self._last_tilt_drag = (-vec.dot(force, vec.unit(velocity)) / q, aoa,
-                                retrograde)
         return vec.dot(force, side) / (q * aoa * abs(aoa))
-
-    def drag_aoa_at(self, speed, altitude):
-        """Extra Cd*A per radian squared of *commanded* angle, at this Mach.
-
-        Scaled by tracking squared exactly as ``lift_slope_at`` is: the
-        vehicle holds a fraction of what it is told.  None until measured.
-        """
-        if not self._drag_aoa_machs:
-            return None
-        k = self._interp_curve(self._drag_aoa_machs, self._drag_aoa_areas,
-                               self.mach(speed, altitude))
-        return max(0.0, k) * self.aoa_tracking * self.aoa_tracking
-
-    def _refresh_drag_aoa(self, position, velocity, rotation, nose, index):
-        """The drag the lift probe's angle added, against retrograde."""
-        tilt, self._last_tilt_drag = self._last_tilt_drag, None
-        if tilt is None:
-            return
-        tilted_cda, aoa, retrograde = tilt
-        straight = vec.rotation_onto(rotation, nose, retrograde)
-        if straight is None:
-            return
-        force = self._probe_force(position, velocity, straight)
-        if force is None:
-            return
-        speed = vec.norm(velocity)
-        altitude = vec.norm(position) - self.equatorial_radius
-        q = 0.5 * self.density(altitude) * speed * speed
-        if q <= 0.0:
-            return
-        base = -vec.dot(force, vec.unit(velocity)) / q
-        sample = (tilted_cda - base) / (aoa * aoa)
-        previous = self._drag_aoa[index]
-        w = self.cfg.DRAG_SMOOTHING
-        self._drag_aoa[index] = (sample if previous is None
-                                 else previous * (1.0 - w) + sample * w)
-        self._drag_aoa_machs, self._drag_aoa_areas = [], []
-        for i, value in enumerate(self._drag_aoa):
-            if value is not None:
-                self._drag_aoa_machs.append(self._bin_mach(i))
-                self._drag_aoa_areas.append(value)
-        self.drag_aoa = self._drag_aoa[index]
 
     def lift_slope_at(self, speed, altitude):
         """Cl*A per radian squared of *commanded* angle, at this Mach.
@@ -728,8 +625,6 @@ class Environment:
                 self._lift_machs.append(self._bin_mach(i))
                 self._lift_areas.append(value)
         self.lift_slope = self._lift[index]
-        if self.cfg.DRAG_AOA_TERM:
-            self._refresh_drag_aoa(position, velocity, rotation, nose, index)
 
     def _probe_torque(self, position, velocity, rotation):
         try:

@@ -1103,7 +1103,7 @@ class TestCorrectionAltitudeWindow(unittest.TestCase):
     """CORRECTION waits for the same settled prediction the wing waits for.
 
     Up at the boostback exit the predicted miss is the drag curve's walk and
-    not a miss (see failure 13 and the wing's AERO_STEER_MAX_ALT_M).  LOG542
+    not a miss (see failure 13 and the wing's re-sweep gate).  LOG542
     entered CORRECTION at 238 m up there and came out at 795 -- the abort
     guard caught the burn, but 795 m is more than the wing can close in the
     descent that is left, and it landed 112 m out where its sibling flights
@@ -1328,8 +1328,8 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
         self.cfg = Config()
         self.cfg.AERO_STEER = True
         # These tests are about the solver, not about when it is allowed to
-        # run; the altitude window has its own test below.
-        self.cfg.AERO_STEER_MAX_ALT_M = 1e9
+        # run; the re-sweep gate has its own test below.
+        self.env.reswept_ut = 0.0
 
     def entry(self):
         """High and fast enough that a minute of air is still to come."""
@@ -1432,16 +1432,16 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
         out an error that was going to correct itself -- worth -80 to -100 m
         on the two saves that were already landing at 8 m.
         """
-        self.cfg.AERO_STEER_MAX_ALT_M = 25000.0
+        self.env.reswept_ut = None
         self.env.target = (KERBIN_R, 900.0, 0.0)
         r = (KERBIN_R + 33000.0, 0.0, 12000.0)      # a boostback exit
         v = (-250.0, 0.0, -350.0)
         steer, _ = guidance.solve_steer(self.env, r, v, 20000.0, 18.0,
                                         self.cfg)
         self.assertEqual(steer.aoa, 0.0)
-        # ... and once it is down in the window, it steers.
-        low = (KERBIN_R + 20000.0, 0.0, 8000.0)
-        steer, _ = guidance.solve_steer(self.env, low, v, 20000.0, 18.0,
+        # ... and once the descent re-sweep has replaced the curve, it steers.
+        self.env.reswept_ut = 1.0
+        steer, _ = guidance.solve_steer(self.env, r, v, 20000.0, 18.0,
                                         self.cfg)
         self.assertGreater(abs(steer.aoa), 0.0)
 

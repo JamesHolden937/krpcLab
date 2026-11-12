@@ -657,13 +657,6 @@ class TestClosedLoop(unittest.TestCase):
         """
         cfg = Config()
         cfg.AERO_STEER = True
-        # In game the wing is held off until AERO_STEER_MAX_ALT_M, because up
-        # at the boostback exit the predicted miss is still failure 13's walk
-        # rather than a miss, and an unsteered coast closes it by itself.  The
-        # fake has no walk to wait for -- no transonic curve, no re-sweep, and
-        # a Cd*A the propagator already agrees with -- so the gate here would
-        # only be throwing away the altitude this test is about.
-        cfg.AERO_STEER_MAX_ALT_M = 1e9
         vessel = fakeksp.Vessel((fakeksp.RADIUS + 45000.0, 0.0, 25000.0),
                                 (250.0, 0.0, 1100.0), mass=60000.0,
                                 thrust=1.6e6, isp=290.0, atmosphere=True,

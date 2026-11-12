@@ -392,7 +392,7 @@ class Autoland:
             dlon = math.radians(site["lon"] - cfg.PAD_LON)
             off = self.body.equatorial_radius * math.hypot(
                 dlat, dlon * math.cos(math.radians(cfg.PAD_LAT)))
-            use = cfg.PAD_FROM_LAUNCH and site["body"] == self.body.name
+            use = site["body"] == self.body.name
             logbook.event(ut, "launch site (%s %s on %s): %.6f %.6f, %.1f m "
                           "from PAD_LAT/PAD_LON%s"
                           % (site["source"], site["site"] or "-", site["body"],
@@ -438,8 +438,6 @@ class Autoland:
         self.gear_deployed = False
         self.touchdown_record = None    # the 2 s sign-off, held for the watch
         self.touchdown_tilt = 0.0       # most the nose leaned off vertical
-        self.drag_obs_hist = []         # (ut, r, v) for DRAG_OBSERVED_SCALE
-        self.drag_obs_logged = -1e9
         self.landing_limits = None      # read once, legs out (False = tried)
         self.gear_down_ut = None
         self.gear_timing = None         # GEAR_TIMED: None, deploying,
@@ -1109,18 +1107,6 @@ class Autoland:
 
     def run_coast(self, snap):
         self.set_throttle(0.0)
-        if self.cfg.DRAG_OBSERVED_SCALE:
-            self.observe_drag(snap)
-        if self.cfg.DRAG_AOA_TERM:
-            inputs = snap.inputs
-            settled = (inputs is None or max(abs(x) for x in inputs[:2])
-                       <= self.cfg.DRAG_RESWEEP_INPUT_MAX)
-            if settled and not getattr(self.env, "fins_settled", False):
-                # Latched: the descent steers the inputs to their stops later.
-                self.env.fins_settled = True
-                self.log.event(snap.ut, "fins settled: inputs %s"
-                               % ("unread" if inputs is None else
-                                  "%+.2f/%+.2f" % inputs[:2]))
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
@@ -2099,45 +2085,6 @@ class Autoland:
                           "a sliding foot can tip it (friction x h > b)"
                           if lim["slide_tips"] else "sliding cannot tip it"))
 
-    def observe_drag(self, snap):
-        """The drag the coast is really flying, from its own velocity change.
-
-        The velocity is differenced over ``DRAG_OBSERVE_WINDOW_S``; what the
-        propagator's gravity, Coriolis and centrifugal terms do not explain,
-        along -v, is drag (lift and the RCS trim act across v).  Thrust
-        contaminates it, so a tick with the throttle open restarts the window.
-        """
-        hist = self.drag_obs_hist
-        if snap.throttle > 0.0:
-            hist.clear()
-            return
-        hist.append((snap.ut, tuple(snap.position), tuple(snap.velocity)))
-        while len(hist) > 2 and hist[-1][0] - hist[1][0] >= self.cfg.DRAG_OBSERVE_WINDOW_S:
-            hist.pop(0)
-        t0, r0, v0 = hist[0]
-        t1, r1, v1 = hist[-1]
-        dt = t1 - t0
-        if dt < self.cfg.DRAG_OBSERVE_WINDOW_S:
-            return
-        r = vec.scale(vec.add(r0, r1), 0.5)
-        v = vec.scale(vec.add(v0, v1), 0.5)
-        if vec.norm(v) < 1e-6:
-            return
-        a_meas = vec.scale(vec.sub(v1, v0), 1.0 / dt)
-        a_model = trajectory.acceleration(self.env, r, v, snap.mass,
-                                          lambda speed, altitude: 0.0)
-        a_drag = -vec.dot(vec.sub(a_meas, a_model), vec.unit(v))
-        before = self.env.observed_scale
-        got = self.env.observe_drag(snap.ut, snap.mass, r, v, a_drag)
-        hist[:] = [hist[-1]]
-        if got is not None and (self.env.observed_samples == 1
-                                or abs(self.env.observed_scale - before) > 0.05
-                                or snap.ut - self.drag_obs_logged > 10.0):
-            self.drag_obs_logged = snap.ut
-            self.log.event(snap.ut, "drag observed: Cd*A %.2f, scale %.2f "
-                           "(%d samples)" % (got, self.env.observed_scale,
-                                             self.env.observed_samples))
-
     def log_touchdown(self, snap):
         """Contact speed against the limit measured before the flight."""
         lim = self.landing_limits or None
@@ -2474,9 +2421,7 @@ def compact_line(state, snap, prediction, run):
                if run.env.lift_slope is not None else "     -",
                run.env.aoa_tracking,
                (" can=%.1f" % run.env.holdable_deg
-                if run.env.holdable_deg is not None else "")
-               + (" kda=%.1f" % run.env.drag_aoa
-                  if getattr(run.env, "drag_aoa", None) is not None else ""))
+                if run.env.holdable_deg is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
                if any(getattr(run, "trim_cmd", (0.0,))) else ""))

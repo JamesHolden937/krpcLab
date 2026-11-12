@@ -245,8 +245,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
 
     def fly(u):
         """Propagate under the steering vector ``u``, in plane coordinates."""
-        steer = steer_for(normal, v, u, env.lift_slope_at, holdable(env, cfg),
-                          aoa_drag(env, cfg))
+        steer = steer_for(normal, v, u, env.lift_slope_at, holdable(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -279,19 +278,11 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # why the first grid of this had it winning by 100 m on the two saves
     # that really do overshoot and losing by 80-100 m on the two that were
     # already landing at 8 m, always to the *short* side.
-    gate = cfg.AERO_STEER_GATE
-    if gate == "resweep":
-        # What the altitude stood in for, as an event: act only on a
-        # prediction the descent-attitude re-sweep has replaced.  A booster
-        # that never climbs past AERO_STEER_MAX_ALT_M would otherwise steer
-        # on the boostback-exit curve from the start.
-        if getattr(env, "reswept_ut", None) is None:
-            return zero, flat
-    elif gate == "alt":
-        if vec.norm(r) - env.target_radius > cfg.AERO_STEER_MAX_ALT_M:
-            return zero, flat
-    elif gate != "none":
-        raise ValueError("AERO_STEER_GATE %r" % gate)
+    # So the wing acts only on a prediction the descent-attitude re-sweep has
+    # replaced: an event, not an altitude, so it holds on any booster and any
+    # body (breadth2-1112: median 34 v 56 under a 25 km gate, the heavy 24 v 65).
+    if getattr(env, "reswept_ut", None) is None:
+        return zero, flat
 
     if math.hypot(m0[0], m0[1]) <= cfg.AERO_STEER_DEADBAND_M:
         # Already on the pad.  Commanding an angle against sub-metre noise is
@@ -382,7 +373,7 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     for scale in (1.0, 0.5):
         trial = (u[0] * scale, u[1] * scale)
         steer = steer_for(normal, v, trial, env.lift_slope_at,
-                         holdable(env, cfg), aoa_drag(env, cfg))
+                         holdable(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
@@ -403,14 +394,7 @@ def holdable(env, cfg):
     return None
 
 
-def aoa_drag(env, cfg):
-    """The propagator's drag-per-angle lookup, if it is being charged."""
-    if cfg.DRAG_AOA_TERM:
-        return getattr(env, "drag_aoa_at", None)
-    return None
-
-
-def steer_for(normal, v, u, slope=None, hold=None, drag=None):
+def steer_for(normal, v, u, slope=None, hold=None):
     """A :class:`trajectory.Steer` flying the plane-coordinate command ``u``.
 
     ``u`` is ``(in_plane, out_of_plane)`` radians of angle of attack.  The
@@ -423,12 +407,12 @@ def steer_for(normal, v, u, slope=None, hold=None, drag=None):
     """
     aoa = math.hypot(u[0], u[1])
     if aoa < 1e-12:
-        return trajectory.Steer(0.0, normal, slope, hold, drag)
+        return trajectory.Steer(0.0, normal, slope, hold)
     phi = math.atan2(u[1], u[0])
     axis = vec.unit(v)
     if abs(phi) > 1e-12 and vec.norm(axis) > 0.0:
         normal = vec.quat_rotate(vec.quat_axis_angle(axis, phi), normal)
-    return trajectory.Steer(aoa, normal, slope, hold, drag)
+    return trajectory.Steer(aoa, normal, slope, hold)
 
 
 def correction_attitude(env, r, v, prediction, cfg, height=None):

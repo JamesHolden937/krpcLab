@@ -16,11 +16,6 @@ class Config:
     # --- Target -----------------------------------------------------------
     PAD_LAT: float = -0.097162          # KSC launchpad
     PAD_LON: float = -74.557679
-    PAD_FROM_LAUNCH: bool = False       # target where this vessel launched
-                                        # (common.launchsite: the window mod's
-                                        # launch record, else its launchedFrom
-                                        # site) instead of PAD_LAT/PAD_LON.
-                                        # Logged either way, with the offset
     PAD_ALT_OFFSET_M: float = 0.0       # aim point above pad surface
     # Aim off the pad to cancel a *measured*, repeatable miss -- see
     # Environment.__init__.  Reporting stays against PAD_LAT/PAD_LON, so the
@@ -271,20 +266,6 @@ class Config:
                                             # lever, and the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
-    AERO_STEER_GATE: str = "alt"            # when the wing may act: "alt"
-                                            # (below AERO_STEER_MAX_ALT_M),
-                                            # "resweep" (once the descent
-                                            # drag re-sweep has replaced the
-                                            # boostback curve), "none" (all
-                                            # coast).  Being measured
-    AERO_STEER_MAX_ALT_M: float = 25000.0   # ... and hold retrograde *above*
-                                            # this, until the drag re-sweep
-                                            # has settled the prediction.  At
-                                            # the boostback exit the miss
-                                            # reads ~-175 m and an unsteered
-                                            # coast walks it to zero on its
-                                            # own; steering it out there is
-                                            # correcting a walk, not a miss
     AERO_STEER_DEADBAND_M: float = 2.0      # ... and do not steer against a
                                             # miss already this small
     AERO_STEER_MIN_AUTHORITY_M: float = 1.0  # metres the air must be able to
@@ -588,27 +569,6 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
-    DRAG_OBSERVED_SCALE: bool = False       # scale the probed Cd*A curve by
-                                            # the coast's measured deceleration
-                                            # (velocity change less gravity,
-                                            # Coriolis and centrifugal) over
-                                            # the probed value: the probe gives
-                                            # the shape, the flight the level
-    DRAG_OBSERVE_WINDOW_S: float = 1.0      # ... differenced over this span
-    DRAG_OBSERVE_MIN_ACCEL: float = 0.5     # ... where drag is at least this
-    DRAG_OBSERVE_SMOOTHING: float = 0.2     # ... EMA weight of one sample
-    DRAG_AOA_TERM: bool = False             # drag as Cd*A(M) at aoa 0 plus
-                                            # k(M) x aoa^2, k measured by the
-                                            # lift probe (its drag part less a
-                                            # retrograde probe); every Cd*A
-                                            # probe taken at retrograde, the
-                                            # steering's angle charged by the
-                                            # propagator.  Being measured
-    DRAG_RESWEEP_INPUT_MAX: float = 0.3     # DRAG_AOA_TERM: the descent
-                                            # re-sweep waits for COAST with
-                                            # pitch/yaw input inside this
-                                            # (fins near trim), in place of
-                                            # DRAG_RESWEEP_AOA_DEG
     DRAG_PROBE_DESCENT_TILT_DEG: float = 16.0  # > 0: probe drag off the
                                             # descent attitude at retrograde
                                             # tilted this far, the angle the
