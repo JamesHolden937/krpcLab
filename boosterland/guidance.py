@@ -239,23 +239,20 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
                                                  env.target, r)
         return steer, prediction, (long, cross)
 
-    limit = math.radians(cfg.AERO_STEER_MAX_AOA_DEG)
     hold = holdable(env, cfg)
     most = hold(vec.norm(v), vec.norm(r) - env.equatorial_radius) \
         if hold is not None else None
-    if cfg.AERO_STEER_LIFT_PEAK:
-        # The hold limit is already capped at the lift peak; unmeasured is
-        # not a licence to steer.
-        if most is None:
-            return None, None
-        limit = most
-    if most is not None:
-        # Command no more than the vehicle can hold here.  The probes below
+    if most is None:
+        # Command no more than the vehicle can hold here, and no more than
+        # its angle of peak lift (Environment.holdable_aoa): past that, more
+        # angle is less lift and the solve's model runs backwards.  An
+        # unmeasured limit is not a licence to steer.  The probes below
         # still measure the sensitivity at their own angle, and the
         # propagator caps each of them at the hold limit step by step.
-        limit = min(limit, most)
+        return None, None
+    limit = most
     probe = math.radians(cfg.AERO_STEER_SOLVE_AOA_DEG)
-    if most is not None and most > 1e-3:
+    if most > 1e-3:
         # A probe past the limit would be capped by the propagator and
         # under-read the sensitivity by (most / probe)^2.
         probe = min(probe, most)
@@ -380,10 +377,8 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
 
 
 def holdable(env, cfg):
-    """The propagator's hold limit, if the vehicle's is being computed."""
-    if cfg.AERO_STEER_HOLDABLE:
-        return getattr(env, "holdable_aoa", None)
-    return None
+    """The propagator's hold limit (capped at the lift peak), or None."""
+    return getattr(env, "holdable_aoa", None)
 
 
 def steer_for(normal, v, u, slope=None, hold=None):

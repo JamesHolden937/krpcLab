@@ -100,7 +100,7 @@ class Environment:
         # The restoring moment per unit of dynamic pressure at each probe
         # angle, per Mach bin; see ``refresh_holdable``.
         self._hold = [None] * self._bins
-        # AERO_STEER_LIFT_PEAK: the angle of most lift, per Mach bin.
+        # The angle of most lift, per Mach bin: the wing's ceiling.
         self._lift_peak = [None] * self._bins
         self._hold_fixed = 0.0          # N m: wheels + RCS, the most seen
         self._hold_rcs = 0.0
@@ -659,7 +659,7 @@ class Environment:
         the restoring component per pascal of dynamic pressure.
         """
         cfg = self.cfg
-        if not (cfg.AERO_STEER and cfg.AERO_STEER_HOLDABLE) or nose is None:
+        if not cfg.AERO_STEER or nose is None:
             return
         if self._next_hold_ut is not None and ut < self._next_hold_ut:
             return
@@ -675,11 +675,8 @@ class Environment:
             return
         side = vec.unit(vec.cross(vec.unit(normal), velocity))
         retrograde = vec.scale(vec.unit(velocity), -1.0)
-        top = math.radians(cfg.AERO_STEER_MAX_AOA_DEG)
+        top = math.pi / 2.0
         n = max(1, int(cfg.AERO_STEER_HOLD_PROBES))
-        peak = cfg.AERO_STEER_LIFT_PEAK
-        if peak:
-            top, n = math.pi / 2.0, 2 * n
         curve = []
         lifts = []
         for i in range(1, n + 1):
@@ -698,11 +695,10 @@ class Environment:
             if vec.norm(axis) < 1e-9:
                 return
             curve.append((aoa, vec.dot(torque, vec.unit(axis)) / q))
-            if peak:
-                force = self._probe_force(position, velocity, turned)
-                if force is None:
-                    return
-                lifts.append((aoa, vec.dot(force, side) / q))
+            force = self._probe_force(position, velocity, turned)
+            if force is None:
+                return
+            lifts.append((aoa, vec.dot(force, side) / q))
         wheels = self._control_torque("available_reaction_wheel_torque")
         rcs = self._control_torque("available_rcs_torque")
         surface = self._control_torque("available_control_surface_torque")
@@ -714,15 +710,14 @@ class Environment:
         self._hold_surface = surface / q
         index = self._bin_index(self.mach(speed, altitude))
         self._hold[index] = curve
-        if peak:
-            first = self._lift_peak[index] is None
-            self._lift_peak[index] = lift_peak(lifts)
-            if first and self._lift_peak[index] is not None:
-                self.logbook.event(ut, "lift peak at M%.2f: %.1f deg (%s)"
-                                   % (self.mach(speed, altitude),
-                                      math.degrees(self._lift_peak[index]),
-                                      " ".join("%.0f:%.0f" % (math.degrees(a), l)
-                                               for a, l in lifts)))
+        first = self._lift_peak[index] is None
+        self._lift_peak[index] = lift_peak(lifts)
+        if first and self._lift_peak[index] is not None:
+            self.logbook.event(ut, "lift peak at M%.2f: %.1f deg (%s)"
+                               % (self.mach(speed, altitude),
+                                  math.degrees(self._lift_peak[index]),
+                                  " ".join("%.0f:%.0f" % (math.degrees(a), l)
+                                           for a, l in lifts)))
         held = self.holdable_aoa(speed, altitude)
         self.holdable_deg = math.degrees(held) if held is not None else None
         if cfg.DIAG_STATE:
@@ -750,14 +745,11 @@ class Environment:
         curve = self._hold[min(filled, key=lambda i: abs(i - here))]
         rho = self.density(altitude)
         q = 0.5 * rho * speed * speed
-        if self.cfg.AERO_STEER_LIFT_PEAK:
-            peaks = [i for i, p in enumerate(self._lift_peak) if p is not None]
-            if not peaks:
-                return None
-            top = self._lift_peak[min(peaks, key=lambda i: abs(i - here))]
-            curve = [(a, m) for a, m in curve if a <= top]
-        else:
-            top = math.radians(self.cfg.AERO_STEER_MAX_AOA_DEG)
+        peaks = [i for i, p in enumerate(self._lift_peak) if p is not None]
+        if not peaks:
+            return None
+        top = self._lift_peak[min(peaks, key=lambda i: abs(i - here))]
+        curve = [(a, m) for a, m in curve if a <= top]
         if q <= 0.0:
             return top
         budget = self.cfg.AERO_STEER_HOLD_MARGIN * (

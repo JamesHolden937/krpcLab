@@ -228,6 +228,12 @@ class Flight:
             nose = _quat_rotate(rotation, self.vessel.pointing)
         return self.vessel.true_aero(position, velocity, wobble, nose)
 
+    def simulate_aerodynamic_torque_at(self, body, position, velocity,
+                                       rotation, centre):
+        """A point mass: the air turns nothing, so any angle can be held
+        and the wing's ceiling is its lift peak alone."""
+        return (0.0, 0.0, 0.0)
+
 
 class Situation:
     landed = "landed"
@@ -329,6 +335,12 @@ class Vessel:
             return ((-1.8, -6.998429e17, -1.8), (1.8, self.bottom, 1.8))
         # +y is through the nose, so the lower corner is the tail.
         return ((-1.8, -self.bottom, -1.8), (1.8, self.bottom, 1.8))
+
+    # Attitude authority, (positive, negative) per axis; refresh_holdable
+    # reads the weaker tilt axis of each.
+    available_reaction_wheel_torque = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    available_rcs_torque = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    available_control_surface_torque = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
     @property
     def available_thrust(self):

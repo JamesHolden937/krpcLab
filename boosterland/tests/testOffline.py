@@ -42,6 +42,10 @@ class FakeEnv:
         self.omega = (0.0, 2.9089e-4, 0.0) if rotating else (0.0, 0.0, 0.0)
         self.drag_area = 0.0
         self.lift_slope = 0.0
+        self.hold_deg = 22.0            # what refresh_holdable would measure
+
+    def holdable_aoa(self, speed, altitude):
+        return math.radians(self.hold_deg)
 
     def density(self, altitude):
         if altitude >= self.atmosphere_depth or self.atmosphere_depth == 0.0:
@@ -1280,7 +1284,7 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
         steer, _ = guidance.solve_steer(self.env, r, v, 20000.0, 18.0,
                                         self.cfg)
         self.assertLessEqual(abs(math.degrees(steer.aoa)),
-                             self.cfg.AERO_STEER_MAX_AOA_DEG + 1e-6)
+                             self.env.hold_deg + 1e-6)
 
     def test_it_does_not_steer_against_a_miss_already_closed(self):
         r, v = self.entry()

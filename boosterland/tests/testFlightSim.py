@@ -522,8 +522,8 @@ class TestClosedLoop(unittest.TestCase):
                   for line in open(log_path) if "aoa=" in line]
         self.assertTrue(any(abs(a) > 1.0 for a in angles),
                         "never actually commanded an angle of attack")
-        self.assertTrue(all(abs(a) <= cfg.AERO_STEER_MAX_AOA_DEG + 1e-6
-                            for a in angles), "flew past the attitude limit")
+        self.assertTrue(all(abs(a) <= 90.0 for a in angles),
+                        "flew past broadside")
 
     def test_a_booster_with_no_wing_is_not_steered(self):
         """No measured lift, no commanded angle -- and no worse a landing.

@@ -264,22 +264,6 @@ class Config:
                                             # the solve is trusted; under this
                                             # it holds retrograde rather than
                                             # divide by nothing
-    AERO_STEER_MAX_AOA_DEG: float = 22.0    # the most the vehicle is asked to
-                                            # hold off retrograde.  It is an
-                                            # attitude limit, not a control
-                                            # gain: a booster that cannot hold
-                                            # it will simply not fly it (the
-                                            # holdable probe caps it), and
-                                            # the loop re-solves every tick.
-                                            # steer1-1111, qs_finbooster, 8 an
-                                            # arm: 22 median 14 m worst 121 v
-                                            # 10 median 47 worst 1001
-    AERO_STEER_LIFT_PEAK: bool = False      # the most the wing is asked for is
-                                            # the angle of peak lift, probed
-                                            # with the hold torque out to 90
-                                            # deg per Mach bin, in place of
-                                            # AERO_STEER_MAX_AOA_DEG.  Being
-                                            # measured
     AERO_STEER_SOLVE_AOA_DEG: float = 4.0   # the angle the second propagation
                                             # probes, to measure metres of
                                             # miss per radian
@@ -306,22 +290,12 @@ class Config:
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
     AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a
                                             # vehicle with no air at all
-    AERO_STEER_HOLDABLE: bool = True        # compute the angle the booster
-                                            # *can* hold before asking for it:
-                                            # the aerodynamic restoring moment
-                                            # (simulate_aerodynamic_torque_at,
-                                            # at the vessel as it is now)
-                                            # against the control torque.  The
-                                            # solve commands no more, and the
-                                            # propagator credits lift only up
-                                            # to it at each step's q and Mach.
-                                            # The tracking measurement stays
-                                            # as the thing that disagrees.
-    AERO_STEER_HOLD_PROBES: int = 4         # torque probes per refresh, at
-                                            # evenly spaced angles up to
-                                            # AERO_STEER_MAX_AOA_DEG (twice
-                                            # as many, to 90, with
-                                            # AERO_STEER_LIFT_PEAK)
+    AERO_STEER_HOLD_PROBES: int = 8         # torque and lift probes per
+                                            # refresh, evenly spaced to 90 deg
+                                            # off retrograde: the hold limit,
+                                            # and the angle of peak lift that
+                                            # caps it (Environment.
+                                            # refresh_holdable)
     AERO_STEER_HOLD_PROBE_S: float = 2.0    # game seconds between refreshes
     AERO_STEER_HOLD_MARGIN: float = 0.7     # fraction of the control torque
                                             # a steady hold may spend on the
