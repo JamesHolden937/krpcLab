@@ -16,7 +16,7 @@
 
 On `qs_finbooster` (the user's Heavy Shuttle booster, rebuilt 2026-11-08: ~230 t, 13 Vectors, 24 Vernors,
 6 airliner tail fins as brake fins, no legs, no airbrakes), 4 instances, 8 flights an arm. Journal:
-`docs/boosterland/journal.md` "2026-11-11 night". Committed on main, not pushed; howItWorks.pdf not redone.
+`docs/boosterland/journal.md` "2026-11-11 night". Committed and pushed; howItWorks.pdf redone.
 
 **Defaults now** (commit "DRAG_PROBE_DESCENT_TILT_DEG 16 and CORRECTION_MAX_BURNS 0"):
 - `DRAG_PROBE_DESCENT_TILT_DEG` 16: boostback probes drag at retrograde tilted 16 deg. tilt1-3: 8 -> ~140 m,
@@ -31,8 +31,8 @@ On `qs_finbooster` (the user's Heavy Shuttle booster, rebuilt 2026-11-08: ~230 t
 (refuted as built, median ~420 long: kda reads ~5x what crossflow can make and `fins settled` latched
 mid-flip -- one fix attempt, then delete); `PAD_FROM_LAUNCH` (target = launch site from launcherMod's
 launch record / launchedFrom spawn point; the farm's LaunchPad spawn point is 0.5 m from PAD_LAT/LON --
-promote); `DRAG_OBSERVED_SCALE` in worktree `.wt-obs` (unmerged, untested on the farm): the coast's own
-deceleration sets the drag curve's level; meant to replace the tilt constant.
+promote); `DRAG_OBSERVED_SCALE` (merged, off, never flown on the farm; fakeksp reads scale 0.91-1.06): the coast's
+own deceleration sets the drag curve's level; meant to replace the tilt constant.
 
 **New, logging only:** touchdown limits (`common/touchdown.py`, launcherMod `KrpcLabLegs.Legs`): part impact
 tolerance at start; for legs, the live spring/damper (reflection) -> vertical limit (damper jump in one tick
@@ -44,7 +44,10 @@ drop tests (savegen at set vs/hs over the pad) to measure the real limits.
 `DRAG_PROBE_MAX_AOA_DEG` (parked-off cliffs).
 
 **The user's priority: generality** -- no altitude/distance cliffs fitted to one booster or Kerbin. Queue:
-1. breadth1 result (new v old defaults, gates, both boosters) -> delete CORRECTION if the heavy agrees.
+1. **Re-fly breadth1** -- it died when the machine suspended (fixed, see Traps); only 3 finbooster cells
+   flew: new 10 31 41 51, gate none 34 52 91 93, resweep 29 30 54 62. Command in the journal; arms new x2,
+   gate none, gate resweep, old (`DRAG_PROBE_DESCENT_TILT_DEG=0,CORRECTION_MAX_BURNS=3`) x2, saves
+   qs_finbooster,qs_heavyshuttlebooster, 4 instances. Then delete CORRECTION if the heavy agrees.
 2. `DRAG_OBSERVED_SCALE` (tilt 16 and tilt 0) -- if it lets tilt go to 0, delete the tilt constant.
 3. `BOOSTBACK_TOLERANCE_M` 190 -> the span the coast's steering can still reach (user agreed), once the
    boostback-exit prediction is right.
@@ -54,7 +57,8 @@ drop tests (savegen at set vs/hs over the pad) to measure the real limits.
    durations (`BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`), `TERRAIN_MAX_M` (also bounds landing_height).
 6. Older: live small booster re-check (clearance fix), coast roll, flip_authority gimbal 0, howItWorks.pdf.
 
-**Traps:** a sweep's `m/s` column is the speed at the end of the run, not at contact. 6 instances of this
+**Traps:** stopping and restarting the farm inside one turn let an earlier turn's nosleep watcher release
+the inhibitor and the machine slept mid-batch (fixed: nosleepStart.sh stops the watcher). A sweep's `m/s` column is the speed at the end of the run, not at contact. 6 instances of this
 230-t booster reach 29 GB swap: fly 4, restart between batches (swap 11-12 GB after one).
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)

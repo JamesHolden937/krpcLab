@@ -818,3 +818,10 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   settled` latched 7 s into the coast at 149 deg off retrograde, so the
   re-sweep was taken mid-flip.  The model is untested; its measurement is
   wrong.  One fix attempt, then promote or delete.
+- breadth1-1111 (LOG15970-15981): the machine suspended at 23:35, 11 min in --
+  a nosleep watcher left by an earlier turn released the inhibitor when the
+  farm was stopped for tests, and the farm was restarted inside the same turn
+  (fixed in `~/.claude/hooks/nosleepStart.sh`: a prompt stops any leftover
+  watcher).  Three qs_finbooster cells finished before it: new defaults 10 31
+  41 51; `AERO_STEER_GATE=none` 34 52 91 93; `resweep` 29 30 54 62.  4 a cell,
+  not a measurement.  `qs_heavyshuttlebooster` never flew.
