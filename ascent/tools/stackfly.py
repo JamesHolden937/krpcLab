@@ -41,8 +41,9 @@ def instance_ports(n):
 
 
 def connect(args, name):
-    return krpc.connect(name=name, address=args.address,
-                        rpc_port=args.rpc_port, stream_port=args.stream_port)
+    return farmflight.bounded(krpc.connect(
+        name=name, address=args.address,
+        rpc_port=args.rpc_port, stream_port=args.stream_port))
 
 
 def load_save(args):
