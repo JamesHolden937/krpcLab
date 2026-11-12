@@ -1459,6 +1459,24 @@ class TestTerminalVelocityNulling(unittest.TestCase):
         self.assertLess(lean[2], 0.0, "leaned away from the overshoot")
 
 
+class TestLiftPeak(unittest.TestCase):
+    """AERO_STEER_LIFT_PEAK: the wing's ceiling is where lift stops growing."""
+
+    def test_the_peak_of_a_crossflow_curve_is_found(self):
+        # Cylinder crossflow: lift ~ sin^2(a) cos(a), peak at atan(sqrt 2).
+        angles = [math.radians(90.0 * i / 8) for i in range(1, 9)]
+        lifts = [(a, -500.0 * math.sin(a) ** 2 * math.cos(a)) for a in angles]
+        peak = environment.lift_peak(lifts)
+        self.assertAlmostEqual(math.degrees(peak), 54.7, delta=3.0)
+
+    def test_lift_still_growing_peaks_at_the_last_probe(self):
+        lifts = [(math.radians(a), a * a) for a in (10.0, 20.0, 30.0)]
+        self.assertAlmostEqual(environment.lift_peak(lifts), math.radians(30.0))
+
+    def test_nothing_probed_is_no_answer(self):
+        self.assertIsNone(environment.lift_peak([]))
+
+
 class TestConfig(unittest.TestCase):
     def test_overrides_are_type_coerced(self):
         cfg = apply_overrides(Config(), ["BOOSTBACK_TOLERANCE_M=250",

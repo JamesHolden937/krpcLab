@@ -60,7 +60,7 @@ def set_airbrake_angle(vessel, angle, cfg=None):
         frac = max(0.0, min(1.0, float(angle) / cfg.DEPLOY_MAX_DEG))
         for surface, _ in _BRAKE_FINS.get(id(vessel), ()):
             try:
-                top = surface.max_deploy_angle * cfg.FIN_BRAKE_SHARE
+                top = surface.max_deploy_angle
                 surface.deploy_angle = top * frac
                 angles.append("%.1f" % surface.deploy_angle)
             except Exception:       # noqa: BLE001 -- KSP-side failure
@@ -140,9 +140,9 @@ def deploy_brake_fins(vessel, cfg):
     got = set_airbrake_angle(vessel, cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, cfg)
     top = fins[0][0].max_deploy_angle if fins else float("nan")
     return ("brake fins deployed: %d of %d, alternate directions, angle %s "
-            "of max %.1f x %.2f%s"
+            "of max %.1f%s"
             % (done, len(fins), "/".join(sorted(set(got))) or "n/a", top,
-               cfg.FIN_BRAKE_SHARE, " (%s)" % why if why else ""))
+               " (%s)" % why if why else ""))
 
 
 def gear_parts(vessel):

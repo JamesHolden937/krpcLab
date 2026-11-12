@@ -256,6 +256,12 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     hold = holdable(env, cfg)
     most = hold(vec.norm(v), vec.norm(r) - env.equatorial_radius) \
         if hold is not None else None
+    if cfg.AERO_STEER_LIFT_PEAK:
+        # The hold limit is already capped at the lift peak; unmeasured is
+        # not a licence to steer.
+        if most is None:
+            return None, None
+        limit = most
     if most is not None:
         # Command no more than the vehicle can hold here.  The probes below
         # still measure the sensitivity at their own angle, and the
