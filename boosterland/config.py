@@ -615,6 +615,15 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
+    DRAG_OBSERVED_SCALE: bool = False       # scale the probed Cd*A curve by
+                                            # the coast's measured deceleration
+                                            # (velocity change less gravity,
+                                            # Coriolis and centrifugal) over
+                                            # the probed value: the probe gives
+                                            # the shape, the flight the level
+    DRAG_OBSERVE_WINDOW_S: float = 1.0      # ... differenced over this span
+    DRAG_OBSERVE_MIN_ACCEL: float = 0.5     # ... where drag is at least this
+    DRAG_OBSERVE_SMOOTHING: float = 0.2     # ... EMA weight of one sample
     DRAG_AOA_TERM: bool = False             # drag as Cd*A(M) at aoa 0 plus
                                             # k(M) x aoa^2, k measured by the
                                             # lift probe (its drag part less a
