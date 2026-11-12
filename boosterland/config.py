@@ -417,11 +417,6 @@ class Config:
     LANDING_FLARE_ALT_M: float = 12.0       # this low and this slow, hover
     LANDING_FLARE_SPEED: float = 8.0        # thrust is all that can be wanted
     LANDING_FLARE_MARGIN: float = 0.12      # ... plus this much to settle with
-    LANDING_GOAROUND_ALT_M: float = 60.0    # below this, thrusting while
-                                            # ascending is always wrong; see
-                                            # trajectory.landing_command and
-                                            # LOG429, which left the ground at
-                                            # 101 m/s from 11 m up
     HOVER_CUT_ALT_M: float = 3.0            # ... or this low and not descending
     TOUCHDOWN_HOVER_VS: float = -0.5        # what counts as "not descending"
     LEG_CLEARANCE_MARGIN_M: float = 0.5     # padding under the bounding box

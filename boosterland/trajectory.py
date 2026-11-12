@@ -223,9 +223,15 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     # and any thrust at all is making things worse, so there is nothing to
     # trade away by cutting it -- the vehicle falls back onto a profile that
     # knows what to do with it.
+    #
+    # "This low" is where the attitude law stops pointing retrograde:
+    # below ``LANDING_NULL_ALT_M`` the thrust is held near vertical, and
+    # vertical outright once the vehicle climbs (guidance.terminal_command),
+    # so thrust there while ascending only adds climb.  Above it the nose is
+    # retrograde and a climbing booster's thrust still brakes it.
     if (vertical_speed is not None
             and vertical_speed >= 0.0
-            and height <= cfg.LANDING_GOAROUND_ALT_M):
+            and height <= cfg.LANDING_NULL_ALT_M):
         throttle = 0.0
     # The same floor bites a metre up without any ascent to give it away, and
     # there it is worse, because the vehicle is about to touch.  LOG446 was

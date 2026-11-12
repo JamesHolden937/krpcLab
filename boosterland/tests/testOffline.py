@@ -1021,7 +1021,7 @@ class TestNoGoAround(unittest.TestCase):
         self.assertEqual(self.command(0.3, 7.4, +1.0), 0.0)
 
     def test_it_cuts_the_moment_the_descent_is_arrested(self):
-        low = self.cfg.LANDING_GOAROUND_ALT_M - 10.0
+        low = self.cfg.LANDING_NULL_ALT_M - 10.0
         self.assertEqual(self.command(low, 5.0, 0.0), 0.0)
         self.assertEqual(self.command(low, 35.0, +2.0), 0.0)
 
@@ -1034,7 +1034,7 @@ class TestNoGoAround(unittest.TestCase):
         """High up, an ascending vehicle is a different situation entirely."""
         # Fast enough to be *above* the profile, so the throttle is
         # genuinely open and the guard is the only thing that could shut it.
-        high = self.cfg.LANDING_GOAROUND_ALT_M + 500.0
+        high = self.cfg.LANDING_NULL_ALT_M + 500.0
         self.assertGreater(self.command(high, 220.0, +5.0), 0.0)
 
     def test_a_slow_arrival_a_metre_up_gets_a_hover_and_no_more(self):
