@@ -57,15 +57,48 @@ class VacuumSurfaces:
 
     NEUTRAL = 0.003
 
-    def __init__(self, vessel, on_q, off_q, log=None):
+    FLAGS = ("ignorePitch", "ignoreYaw", "ignoreRoll")
+
+    def __init__(self, vessel, on_q, off_q, log=None, keep_deploy=False):
         self.vessel = vessel
         self.on_q = float(on_q)
         self.off_q = float(off_q)
         self.log = log
         self.held = False
         self.suspended = False
+        # Hold by the part menu's Pitch/Yaw/Roll ignore flags instead of
+        # kRPC's deflection_override, which drives deployAngle itself and so
+        # retracts a deployed surface (ActuatorControlAddon).  A surface
+        # deployed as a brake stays deployed; it just stops steering.
+        self.keep_deploy = keep_deploy
+        self._saved = None
+
+    def _set_flags(self, hold):
+        from common import partmodule
+        try:
+            if hold:
+                saved = []
+                for cs in self.vessel.parts.control_surfaces:
+                    module = next(m for m in cs.part.modules
+                                  if m.name == "ModuleControlSurface")
+                    saved.append((module, tuple(
+                        partmodule.get_field_bool_by_id(module, f)
+                        for f in self.FLAGS)))
+                    for f in self.FLAGS:
+                        partmodule.set_field_bool_by_id(module, f, True)
+                self._saved = saved
+            else:
+                for module, values in self._saved or ():
+                    for f, v in zip(self.FLAGS, values):
+                        partmodule.set_field_bool_by_id(module, f, v)
+                self._saved = None
+        except Exception:                               # noqa: BLE001
+            return False
+        return True
 
     def _set(self, hold):
+        if self.keep_deploy:
+            return self._set_flags(hold)
         try:
             for cs in self.vessel.parts.control_surfaces:
                 cs.deflection_override = hold

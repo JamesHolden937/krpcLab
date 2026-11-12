@@ -73,6 +73,7 @@ class Environment:
         self._curve_areas = []
         self._curve_swept = False
         self._reswept = False           # curve re-taken at a descent attitude
+        self._rotation_warned = False
         self.reswept_ut = None          # ... and when, for the CORRECTION gate
         self._last_sweep_ut = None      # ... and when that last happened
         self._next_curve_bin = 0
@@ -406,10 +407,30 @@ class Environment:
         """The attitude to evaluate the aerodynamic probe at: the real one.
 
         Returns ``(rotation, clean)``, ``clean`` from ``sample_is_clean``.
-        Probing the vessel turned onto retrograde instead (the attitude the
-        descent is flown at) lost 3 of 4 heavy boosters in game (pd10-1016).
+
+        With ``DRAG_PROBE_DESCENT`` the vessel is evaluated turned onto
+        retrograde -- the attitude the descent is flown at -- whenever it is
+        not already within ``DRAG_RESWEEP_AOA_DEG`` of it.  Boostback's exit
+        is decided *during* boostback, before any bin has been probed at a
+        descent attitude, and the broadside curve reads the transonic bins
+        1.3x high (LOG53): the prediction lands short, boostback stops early
+        and the booster flies long.  pd10-1016 lost 3 of 4 heavies with it,
+        in a week every configuration of that booster ended ~600 m short.
         """
-        return tuple(rotation), self.sample_is_clean(velocity, nose)
+        if (not self.cfg.DRAG_PROBE_DESCENT or nose is None
+                or self.in_descent_configuration(velocity, nose)
+                or vec.norm(velocity) < 1e-6):
+            return tuple(rotation), self.sample_is_clean(velocity, nose)
+        retrograde = vec.scale(vec.unit(velocity), -1.0)
+        turned = vec.rotation_onto(rotation, nose, retrograde)
+        if turned is None:
+            if not self._rotation_warned:
+                self._rotation_warned = True
+                self.logbook.event(
+                    0.0, "descent-attitude probe unavailable: could not verify "
+                         "a rotation onto retrograde; using the real attitude")
+            return tuple(rotation), self.sample_is_clean(velocity, nose)
+        return turned, True
 
     def in_descent_configuration(self, velocity, nose):
         """Is the vehicle sitting the way it will sit all the way down?

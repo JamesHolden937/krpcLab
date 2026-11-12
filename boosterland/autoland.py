@@ -380,7 +380,8 @@ class Autoland:
         if getattr(cfg, "BOOSTBACK_FINS_HELD", False):
             self.fins = VacuumSurfaces(
                 self.vessel, 0.0, 0.0, log=lambda text: self.log.event(
-                    self.conn.space_center.ut, text))
+                    self.conn.space_center.ut, text),
+                keep_deploy=cfg.FINS_HELD_KEEP_DEPLOY)
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)

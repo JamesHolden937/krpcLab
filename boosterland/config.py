@@ -64,6 +64,11 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
+    FINS_HELD_KEEP_DEPLOY: bool = False     # BOOSTBACK_FINS_HELD holds the
+                                            # surfaces by their ignore flags,
+                                            # so brake fins stay deployed and
+                                            # boostback's drag probe sees the
+                                            # descent configuration
     FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
                                             # airbrake law (brake_fins).
@@ -703,6 +708,10 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
+    DRAG_PROBE_DESCENT: bool = False        # probe the drag curve with the
+                                            # vessel turned onto retrograde
+                                            # while it is not near there
+                                            # (Environment.probe_rotation)
     DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
                                             # off retrograde (0 = take them
                                             # all).  Measured at 20: it cannot
