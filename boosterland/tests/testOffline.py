@@ -1166,6 +1166,7 @@ class TestCorrectionWithBrakesSaturated(unittest.TestCase):
     def run_with(self, angle, beyond):
         run = object.__new__(autoland_module.Autoland)
         run.cfg = Config()
+        run.cfg.CORRECTION_MAX_BURNS = 3  # the phase itself, off by default
         run.late_state = "handed"
         run.gear_timing = "done"
         run.deploy_angle = angle
@@ -1591,6 +1592,7 @@ class TestCorrectionBackfire(unittest.TestCase):
     def make_run(self):
         run = object.__new__(autoland_module.Autoland)
         run.cfg = Config()
+        run.cfg.CORRECTION_MAX_BURNS = 3  # the phase itself, off by default
         run.cfg.CORRECTION_OVERSHOOT_ONLY = False   # no env here; gate tested by the flight sim
         run.late_state = "handed"       # the brakes and legs are not being
         run.gear_timing = "done"        # measured: the window alone decides

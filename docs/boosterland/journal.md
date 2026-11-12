@@ -800,3 +800,21 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
 - `qs_heavyshuttlebooster`: Kerbin orbits' LAN +39.61 deg more
   (360 x UT x (1/21349.47 - 1/21549.43) at UT 253164.8), for MiniSystem's
   faster sidereal rotation; it loaded 388 km off.
+- tilt2-1111 (no corrections unless noted): defaults (with corrections)
+  12 23 25 39 41 52 53 56; tilt 8 median ~140; 12 ~80; **16: 25 31 32 38
+  43 47 64 96** -- the defaults' median with no correction burns, long bias
+  gone.
+- tilt3-1111: defaults 2 11 15 16 21 54 88 942 1146 (two backfired km
+  misses); tilt 16 26 35 36 46 67 82 86 112 (16 flights over tilt2+3: median
+  ~45, worst 112); tilt 20 median ~55, worst 412.  **Promoted: tilt 16 and
+  `CORRECTION_MAX_BURNS` 0** (the phase's code stays until the other boosters
+  are flown without it).  The best tilt is above the 4-8 deg the descent
+  flies, so it stands in for more than the angle.
+- `DRAG_AOA_TERM` (drag = aoa-0 curve + k(M) aoa^2, k from the lift probe's
+  drag part minus a retrograde probe): median ~420, all long; with
+  `AERO_STEER_GATE=none` ~240-400 long and one lost (6.4 km, 504 m/s).
+  LOG15961: kda 600-1240 /rad^2, i.e. ~24 m^2 extra at the probe's 8 deg on
+  a Cd*A of 6-12 -- ~5x what crossflow on this cylinder can make; and `fins
+  settled` latched 7 s into the coast at 149 deg off retrograde, so the
+  re-sweep was taken mid-flip.  The model is untested; its measurement is
+  wrong.  One fix attempt, then promote or delete.

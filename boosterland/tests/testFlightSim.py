@@ -550,6 +550,7 @@ class TestClosedLoop(unittest.TestCase):
 
         cfg = Config()
         cfg.LOG_DIR = self.tmp.name
+        cfg.CORRECTION_MAX_BURNS = 3      # the phase itself, off by default
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
         run.gui.conn.krpc_lab_launcher.click("start")
@@ -597,6 +598,7 @@ class TestClosedLoop(unittest.TestCase):
 
         cfg = Config()
         cfg.LOG_DIR = self.tmp.name
+        cfg.CORRECTION_MAX_BURNS = 3      # the phase itself, off by default
         log = Logbook(cfg.LOG_DIR, cfg.LOG_INTERVAL_UT)
         run = autoland.Autoland(conn, cfg, log)
         run.gui.conn.krpc_lab_launcher.click("start")

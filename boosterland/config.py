@@ -437,7 +437,9 @@ class Config:
     CORRECTION_MAX_BURN_S: float = 45.0     # per-burn guard
     CORRECTION_COOLDOWN_S: float = 20.0     # settle before judging the miss again
     CORRECTION_OVERSHOOT_ONLY: bool = True   # never enter on a short miss
-    CORRECTION_MAX_BURNS: int = 3           # engines have limited relights
+    CORRECTION_MAX_BURNS: int = 0           # none: tilt1-3-1111, with the probe
+                                            # tilted 16 deg the corrections only
+                                            # backfire (was 3)
     CORRECTION_PROBE_DV: float = 5.0        # dv used to test which way a burn moves
     CORRECTION_ABORT_RATIO: float = 1.3     # abort if the miss grows this much
     CORRECTION_ABORT_GRACE_S: float = 3.0   # ... after this long, so a turn can settle
@@ -625,7 +627,7 @@ class Config:
                                             # pitch/yaw input inside this
                                             # (fins near trim), in place of
                                             # DRAG_RESWEEP_AOA_DEG
-    DRAG_PROBE_DESCENT_TILT_DEG: float = 0.0  # > 0: probe drag off the
+    DRAG_PROBE_DESCENT_TILT_DEG: float = 16.0  # > 0: probe drag off the
                                             # descent attitude at retrograde
                                             # tilted this far, the angle the
                                             # descent flies (0 = real attitude)
