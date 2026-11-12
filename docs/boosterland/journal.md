@@ -738,3 +738,9 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   15x weaker (2-3 v 25-55 deg/s^2; gimbal roll is off in the coast).
 - `latesum.py`-style read (scratchpad): per flight the probe ratio, the long
   miss before and after the switch, backfires, the end.
+- late1-1111 (LOG15666-15681): `DEPLOY_LATE=False` (ordinary deploy law, no
+  probe) median ~1000 m, all ~1 km to the same side (E-678..-1235), v the
+  late law's 31/82.  The late law carries the range: kept.  The open-now
+  correction guard goes behind `CORRECTION_WAIT_LATE_OPEN` (21 of 48 flights
+  entered a correction on the tick the solve said open now, most exiting at
+  once on a negative gradient).
