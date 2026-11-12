@@ -19,10 +19,12 @@ run.sh --pilot booster -> boosterland.autoland (phase machine, the only kRPC-awa
             `-- common/logbook.py  numbered log files, ut-gated (shared)
 ```
 
-**Guidance acts on the miss in two places.** Boostback removes the bulk of it;
-CORRECTION trims what the coast re-opens. The landing burn used to divert the
-remainder and no longer does — that landed the booster sideways (failure 5).
-Whatever miss survives CORRECTION is the miss you get.
+**Guidance acts on the miss in three places, and only one of them burns.**
+Boostback removes the bulk of it; the coast steers the rest out on the air
+(the solved angle of attack, once the descent re-sweep has replaced the
+boostback curve) and nulls the cross-track on RCS translation. The landing
+burn nulls lateral speed only -- diverting there landed the booster sideways
+(failure 5). Whatever miss survives the coast is the miss you get.
 
 **One prediction drives everything.** Each tick propagates the current state to
 touchdown and every phase decision — burn direction, throttle, when to stop
@@ -117,42 +119,6 @@ ground is *higher* than the pad, and the booster is over lower ground on every
 flight that misses. The COM-to-feet offset is re-measured every tick until
 `Vessel.bounding_box` returns a believable length (failure 4).
 
-### Burning for the gimbal
-
-CORRECTION holds full thrust until it is within `CORRECTION_ALIGN_DEG` of the
-aim, which is right when the vehicle is mid-turn and wrong when it cannot get
-there at all: LOG7 spent 36 s commanding an attitude 45-72° away, timed the
-burn out having done nothing, and let the miss grow 341 -> 966 m. Grid fins and
-RCS are not much authority against an airstream; the gimbal is, and it only
-exists while something is coming out of the engines.
-
-So when the error is large *and not closing* — `Autoland.alignment_rate` under
-`CORRECTION_STUCK_RATE_DEG_S` (3 °/s) — the throttle goes to
-`CORRECTION_GIMBAL_THROTTLE` (0.25) rather than zero, and the vehicle turns
-under power. The thrust is inefficient by construction (`cos(align)` useful at
-best); that is the trade being made deliberately.
-
-**The rate test is the whole design.** Burning whenever the vehicle is merely
-off-aim was measured and is worse everywhere — it spends propellant on a turn
-RCS was already making. With the gate it fires only when genuinely stuck: in
-the mid-coast-kick regression on a 5 °/s vehicle it fires for a single tick and
-takes the landing from 55 m to 14 m, and on vehicles that turn well it never
-fires at all. This is the one change here whose sign depends on the vehicle:
-
-| vehicle | gimbal burn off | on |
-|---|---|---|
-| `gimbal_deg_s=25`, 45-8 °/s | 100 mean / 98 median | 99 / 85 |
-| `gimbal_deg_s=25`, 10-5 °/s (sluggish) | 84 / 85 | 84 / 83 |
-| no gimbal modelled | 62 / 58 | 78 / 77 |
-
-The last row is a vehicle where thrust buys no authority at all, so the burn is
-pure cost — that is what a false premise looks like, not an argument against
-it. `fakeksp.Vessel(gimbal_deg_s=...)` adds turn rate in proportion to
-throttle; the default of 0 keeps every other test measuring the cost only. The
-fake has no aerodynamic torque, so its RCS is never overwhelmed — the failure
-this exists for is one the sim cannot reproduce. Set
-`CORRECTION_GIMBAL_THROTTLE` to 0 for the old hold-thrust behaviour.
-
 ### The RCS valve is a relay, not a phase property
 
 RCS used to be switched on at START and left on for the whole flight. Every
@@ -175,7 +141,7 @@ control surfaces that take over in thick air.
 ### Big turns go over the top
 
 kRPC's autopilot rotates along the shortest arc. For the 150°-plus turns in
-this profile (the boostback flip, and boostback into COAST or CORRECTION) the
+this profile (the boostback flip, and boostback into COAST) the
 two vectors are near enough to opposite that the arc is a coin toss, and it can
 swing the nose *down* through the airstream — engines into the flow, and the
 half the vehicle has least authority to recover from.
@@ -290,8 +256,6 @@ of clearance the booster does not have.
 
 ```
 STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
-                                       ^  |
-                                       +--+ CORRECTION
 ```
 
 - **STANDBY** — idle until the in-game START button; then RCS on, every airbrake
@@ -312,23 +276,6 @@ STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
   `landing_burn_state` for the trigger. With `AERO_STEER` it instead flies a
   *solved* angle of attack and steers on the air, the only two-way actuator in
   the flight — see "Flying the coast as a wing".
-- **CORRECTION** — a throttled-down boostback (boostback's dv/throttle law,
-  capped at `CORRECTION_MAX_THROTTLE`) entered from COAST when the predicted
-  miss exceeds `CORRECTION_ENTER_M` (60 m; `CORRECTION_EXIT_M` must stay well
-  under it — the gate was 1200 while the prediction still walked through the
-  coast (failure 14), then 300, then 60 once the burns stopped being quantised
-  (failure 15)) while there is still altitude and flight time to use it. It
-  steers with `guidance.correction_attitude`, **not** boostback's aim: a tilt
-  off retrograde bounded by `CORRECTION_MAX_TILT_DEG`, because a falling
-  booster cannot hold boostback's horizontal attitude in thick air (failure 6).
-  When it is off the aim *and not getting there* it lights the engines at
-  `CORRECTION_GIMBAL_THROTTLE` instead of waiting; see "Burning for the
-  gimbal". Both entry and every tick are gated on
-  `Autoland.correction_gradient` — the metres of miss a m/s of burn actually
-  closes, measured by propagating twice — so a burn that would make things
-  worse never happens. Returns to COAST under `CORRECTION_EXIT_M`, then holds
-  off for `CORRECTION_COOLDOWN_S` so the phase cannot flap on prediction noise;
-  `CORRECTION_MAX_BURNS` bounds the relights. Set it to 0 to disable.
 - **LANDING_BURN** — drops the gear on the first tick (`GEAR_ON_LANDING_BURN`;
   `GEAR_DEPLOY_ALT_M` is only a backstop, and `GEAR_ACTION_GROUP` fires an
   extra group for legs not on the stock Gear group). Throttle is a
@@ -389,9 +336,9 @@ failure the sim is structurally unable to show.
 retrograde. It is **on by default** and is the largest single win in the file.
 
 The case for it is the shape of what failure 16 left behind. Every other
-actuator is the engine: CORRECTION spends propellant and a relight, steers
-within `CORRECTION_MAX_TILT_DEG` of retrograde and is gated against lengthening
-the flight, and the landing burn thrusts straight anti-velocity. So the
+actuator was the engine: the old mid-course correction burn spent propellant and a
+relight, steered near retrograde and was gated against lengthening the flight,
+and the landing burn thrusts straight anti-velocity. So the
 guidance could only land the booster *shorter*, and an undershoot was a miss
 nothing could touch — which is what `qs_steep` kept doing, 130-160 m short,
 with the prediction saying so from 34 km with fuel aboard. Meanwhile the
@@ -438,7 +385,7 @@ about angles the vehicle is not holding):
 *downrange* miss, with the lift plane fixed to `cross(r, v)`. Read the `cross=`
 column of any flight and that is half the error going unopposed — 15-28 m
 across 20 flights, and *not moving* from 28 km to the ground. Nothing else can
-touch it: CORRECTION's tilt is a downrange lever and the landing burn has ~10 m
+touch it but the RCS trim, and the landing burn has ~10 m
 of authority. On a 20 m pad that term alone is the whole budget.
 `AERO_STEER_CROSS` probes in-plane and out-of-plane, builds the 2x2 sensitivity
 in the quadratic variable the plant is linear in, and inverts it to null `long`
@@ -504,30 +451,15 @@ predicts `long=-181`, the *unsteered* coast walks it to `-5`, and the booster
 lands 13 m out — that -181 is not a miss, it is what is left of failure 13's
 walk, which the re-sweep clears a few tens of seconds later. A wing that acts
 on it faithfully steers out an error that was going to correct itself.
-`AERO_STEER_MAX_ALT_M` is the fix and it is one comparison.
+The wing therefore acts only once the descent-attitude re-sweep has replaced
+the boostback curve (`env.reswept_ut`): the event the old 25 km
+`AERO_STEER_MAX_ALT_M` stood in for, so it holds on a booster or a body where
+that altitude means nothing (breadth2-1112: median 34 v 56; the heavy 24 v 65).
 
-**CORRECTION had to learn the same lesson, and the symmetry is wrong.** Ten
-flights at the defaults came in at 2-6 m and one at 112, whose burn ran at
-25-27 km — above where the wing starts — on exactly the walk the wing declines
-to chase (`miss=238` -> `795` in three seconds, cut by
-`CORRECTION_ABORT_RATIO` as designed, but 795 m is more than the wing's ~300 m
-of authority can undo). `CORRECTION_MAX_ALT_M` closes that window and is a
-clear regression:
-
-| save | ceiling off | ceiling at 25 km |
-|---|---|---|
-| `qs_north` | 4, 5 | **118, 141, 107** |
-| `qs_cold` | 3, 3 | **42, 58, 20** |
-| `quicksave` | 2, 6 | 5, 3, 13 |
-
-The reason is authority: regressed flights go `coast entry -182 -> burn entry
--120`, good ones `-174 -> -16`. CORRECTION's early burns take the first bite
-out of the ~180 m boostback lead — acting on an unsettled prediction and still
-usefully, because the bulk of that lead is real — and the wing cannot close
-180 m alone. One backfire in ten flights is cheaper than removing the phase, so
-the knob is left in at 1e9 (off). **The wing waits because it is a trim and the
-walk is the same size as its authority; CORRECTION does not, because the miss
-it removes is ten times larger than the walk on top of it.**
+**The mid-course correction phase is gone** (2026-11-12). With the probe
+tilted 16 deg the boostback exit is close enough that corrections never fired
+(tilt4-1112: 0 burns in 6 fin flights, 1 in 6 heavy, medians 48 v 51) and
+earlier only backfired (942 and 1146 m tails, tilt3-1111).
 
 Two things still worth watching in a log, from when this was n=1: whether the
 vehicle holds the commanded angle in thick air (`aoa=` against what the

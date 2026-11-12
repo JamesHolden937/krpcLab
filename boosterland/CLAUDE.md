@@ -18,8 +18,6 @@ see the root HANDOFF.md. The root
 
 ```
 STANDBY -> SEPARATION -> BOOSTBACK -> COAST -> LANDING_BURN -> TOUCHDOWN
-                                       ^  |
-                                       +--+ CORRECTION
 ```
 
 `autoland.py` is the phase machine and the only kRPC-aware control code;
@@ -54,11 +52,11 @@ multiplier for it, and what the loop achieved is not logged.
 ./testInstances/fly.sh 0 -n 3 --timescale 4    # ... on farm instance 0
 ./boosterland/tools/quickfly.py -n 1 --set DIAG_STATE=True   # log enough to replay it
 ./boosterland/tools/replay.py logs/LOG53 --curve-from -1     # re-propagate a real flight offline
-./boosterland/tools/sweep.py -n 2 --saves quicksave,qs_hot --compare CORRECTION_ENTER_M=300,1200
+./boosterland/tools/sweep.py -n 2 --saves quicksave,qs_hot --compare BOOSTBACK_TOLERANCE_M=90,190
 ./boosterland/tools/sweep.py -n 2 --saves quicksave --configs "a:X=1;b:X=1,Y=2" --out raw.json
 ./boosterland/tools/logsum.py --trace logs/LOG25   # one line per flight, plus the miss trace
 ./boosterland/tools/padfix.py                  # measure the pad's coordinates from the game
 
 python3 -m unittest boosterland.tests.testFlightSim   # closed-loop flight only
-python3 -m unittest boosterland.tests.testOffline.TestGuidance.test_boostback_burns_against_the_miss
+python3 -m unittest boosterland.tests.testOffline.TestGuidance
 ```

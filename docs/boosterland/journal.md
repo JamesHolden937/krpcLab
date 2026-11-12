@@ -854,3 +854,15 @@ Goal (the user): remove every constant that can be derived.  4 instances,
   below `LANDING_NULL_ALT_M`, where the attitude law holds the thrust near
   vertical (so thrust while climbing only adds climb); above it the nose is
   retrograde and still brakes.
+- tilt4-1112 (6 an arm per save, resweep gate default): defaults fin 17 22 40
+  46 56 569 / heavy 7 46 59 75 84 89 (median 51); **tilt 0 fin 404-1360, every
+  one 1 km past the pad (E-)**, heavy median 142; tilt 0 + corrections 134;
+  tilt 16 + corrections 48 -- with 0 correction burns on the fin and 1 on the
+  heavy, i.e. the defaults' law.  **CORRECTION deleted** (the phase, its 22
+  constants, `miss_gradient`).  The tilt constant stays: what it stands in for
+  is the boostback-exit drag being taken broadside (~2x the descent curve),
+  and nothing else yet predicts the descent's drag at boostback.
+  LOG16045 (569): the flip settled after 54.6 s (others 18-36), the wing ran
+  past its hold limit (cmd 12-18 v hold ~7) below 9 km and the miss opened in
+  the last 20 s.  Boostback exits at long ~-176 and the re-sweep moves the
+  prediction ~+200 m: `BOOSTBACK_TOLERANCE_M` 190 is cancelling that jump.
