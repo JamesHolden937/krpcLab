@@ -432,7 +432,6 @@ class Autoland:
         self.deploy_record = None       # (angle, curve, ut) at the last step
         self.deploy_k = None            # d ln(Cd*A) / d angle, per degree
         self.deploy_resweep_ut = None   # re-sweep once the brakes have moved
-        self.deploy_moved_ut = None     # ... and when they last did
         self.deploy_none = False        # no airbrake answered: law off
         self.correction_ready_ut = 0.0
         self.correction_start_miss = None   # the miss the running burn began at
@@ -1349,7 +1348,6 @@ class Autoland:
                 self.log.event(snap.ut, "brakes: no airbrake answered, law off")
                 return
             self.deploy_resweep_ut = snap.ut + cfg.DEPLOY_SETTLE_S
-            self.deploy_moved_ut = snap.ut
             self.log.event(
                 snap.ut, "brakes %.0f -> %.0f %s long=%+.0f S=%.0f k=%s"
                 " (read %s)" % (angle, new, how, long, sens,
@@ -1771,12 +1769,6 @@ class Autoland:
             # curve is not re-swept yet: LOG15110 corrected on the tick they
             # opened (+395 m), and the re-sweep then read -639.
             return False
-        if cfg.CORRECTION_WAIT_BRAKE_SWEEP and self.deploy_moved_ut is not None:
-            # ... or the brakes have stepped and the drag has not been
-            # re-measured since: the prediction is of brakes nobody flies.
-            swept = self.env.last_sweep_ut()
-            if swept is None or swept < self.deploy_moved_ut + cfg.DEPLOY_SETTLE_S:
-                return False
         if cfg.GEAR_TIMED and self.gear_timing in ("deploying", "retracting"):
             return False                # ... or the legs are
         if cfg.CORRECTION_OVERSHOOT_ONLY:

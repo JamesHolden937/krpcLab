@@ -493,11 +493,6 @@ class Config:
     CORRECTION_MIN_ALT_M: float = 6000.0    # never correct lower than this
     CORRECTION_MIN_TTL_S: float = 15.0      # nor with less flight time left
     CORRECTION_MAX_THROTTLE: float = 0.40
-    CORRECTION_WAIT_BRAKE_SWEEP: bool = False  # no correction between a brake
-                                            # step and the drag re-sweep
-                                            # after it (LOG15818: entered at
-                                            # 601 on the stale curve 1.6 s
-                                            # after 70 -> 90; settled +169)
     CORRECTION_ALIGN_DEG: float = 20.0      # full correction thrust inside this
     CORRECTION_GIMBAL_THROTTLE: float = 0.25    # thrust for gimbal when stuck
     CORRECTION_STUCK_RATE_DEG_S: float = 3.0    # turning slower than this is stuck

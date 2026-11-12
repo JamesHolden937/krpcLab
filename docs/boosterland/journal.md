@@ -765,3 +765,14 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   70 -> 90 and CORRECTION entered 1.6 s later at 601 m, before the drag
   re-sweep after the step (steered prediction the tick before: +43; after:
   +169); the burn backfired to 806.  New flag `CORRECTION_WAIT_BRAKE_SWEEP`.
+- wsweep1-1111 (LOG15826-15849): new defaults median 24 (2 67 21 21 21 28 28
+  42); `CORRECTION_WAIT_BRAKE_SWEEP` median 72, worst 918 -- **deleted**; no
+  corrections ~860.  No-correction flights: boostback exit reads -150..-190,
+  the first descent re-sweep (aoa <= 8, 34 km) reads the same trajectory
+  +850..+1560; the fins take back ~500 by 15 km.  gate1's probe arm read the
+  re-sweep at -725..-840 instead: the broadside boostback curve over-reads
+  drag by ~1 km of range, the curve probed at retrograde under-reads it by
+  ~0.8 km.  The descent flies at aoa 4-8.
+- hsgate1-1111: `qs_heavyshuttlebooster` loads 388 km from the pad on the
+  MiniSystem farm (its LAN shift was fitted on the stock system) -- not a
+  measurement; the save needs re-shifting.
