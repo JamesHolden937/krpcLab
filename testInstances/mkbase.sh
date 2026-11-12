@@ -244,7 +244,24 @@ set_key ANTI_ALIASING             0
 # so the first boot after changing it rebuilds ~370 MB per instance, once.
 set_key TEXTURE_QUALITY           "${TEXTURE_QUALITY:-3}"
 set_key SHADOWS_QUALITY           0
-set_key LIGHT_QUALITY             8
+set_key LIGHT_QUALITY             0
+# Render-only, like the lines above: none touches a collider, a PQS mesh (the
+# TERRAIN preset at the bottom of settings.cfg is separate and stays High, as
+# in the live game: its maxSubdivision sets the PQS quads the ground colliders
+# are built from, so lowering it changes touchdowns, wheel contact and
+# terrain height under the vessel), a part module's physics
+# or kRPC's telemetry.  SURFACE_FX is engine-exhaust dust; the highlights are
+# mouse-over part outlines; reflection probes only feed shaders.
+set_key TERRAIN_SHADER_QUALITY    0
+set_key REFLECTION_PROBE_REFRESH_MODE 0
+set_key REFLECTION_PROBE_TEXTURE_RESOLUTION 0
+set_key SURFACE_FX                False
+set_key HIGHLIGHT_FX              False
+set_key INFLIGHT_HIGHLIGHT        False
+set_key COMET_SHOW_GEYSERS        False
+set_key COMET_SHOW_NEAR_DUST      False
+set_key FLT_VESSEL_LABELS         False
+set_key KERBNET_BACKGROUND_FLUFF  False
 set_key CELESTIAL_BODIES_CAST_SHADOWS False
 set_key PLANET_SCATTER            False
 set_key PLANET_SCATTER_FACTOR     0
