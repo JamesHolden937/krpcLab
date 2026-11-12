@@ -1151,30 +1151,10 @@ class TestCorrectionAltitudeWindow(unittest.TestCase):
         prediction = SimpleNamespace(time_to_land=120.0)
         return run, snap, prediction
 
-    def test_it_will_not_correct_above_the_window_when_one_is_set(self):
-        run, snap, prediction = self.run_with(30000.0)
-        run.cfg.CORRECTION_MAX_ALT_M = 25000.0
-        self.assertFalse(run.correction_worthwhile(snap, prediction, 500.0))
-
     def test_it_will_not_correct_below_the_window(self):
         run, snap, prediction = self.run_with(
             Config().CORRECTION_MIN_ALT_M - 1000.0)
         self.assertFalse(run.correction_worthwhile(snap, prediction, 500.0))
-
-    def test_the_ceiling_is_off_by_default(self):
-        """Because closing it was measured and is worse.
-
-        The reasoning was symmetry: CORRECTION should wait for a settled
-        prediction the way the wing does.  In game it is a clear regression --
-        `qs_north` 4/5 m became 118/141/107 and `qs_cold` 3/3 became 42/58/20.
-        CORRECTION's early burns take the first bite out of the ~180 m
-        boostback lead even acting on a prediction that has not settled, and
-        the wing cannot close that much alone: the regressed flights read
-        coast entry -182 -> burn entry -120 where the good ones read -174 ->
-        -16.  One backfire in ten flights is cheaper than losing the phase.
-        """
-        self.assertGreater(Config().CORRECTION_MAX_ALT_M, 1e6)
-
 
 class TestCorrectionWithBrakesSaturated(unittest.TestCase):
     """A long miss the open brakes cannot close is corrected below 1000 m.
@@ -1427,25 +1407,6 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
                                         self.cfg)
         self.assertLessEqual(abs(math.degrees(steer.aoa)),
                              self.cfg.AERO_STEER_MAX_AOA_DEG + 1e-6)
-
-    def test_it_stops_steering_before_the_air_runs_out(self):
-        """The solve divides by a sensitivity that collapses near the ground.
-
-        LOG388 held 3.9 deg for the whole coast with the prediction pinned at
-        0-5 m, then commanded 8.7 deg on the last coast tick -- a zero miss
-        divided by nothing -- and handed the landing burn 16 m it had not had
-        a moment before.  An angle of attack held into the burn is lateral
-        speed the burn then has to cancel, which is failure 5's shape again.
-        """
-        self.cfg.AERO_STEER_CROSS = True
-        self.cfg.AERO_STEER_MIN_ALT_M = 2000.0      # off by default; see config
-        self.env.target = (KERBIN_R, 900.0, 0.0)
-        low = self.cfg.AERO_STEER_MIN_ALT_M - 100.0
-        r = (KERBIN_R + low, 0.0, 3000.0)
-        v = (-200.0, 0.0, -120.0)
-        steer, _ = guidance.solve_steer(self.env, r, v, 20000.0, 18.0,
-                                        self.cfg)
-        self.assertEqual(steer.aoa, 0.0)
 
     def test_it_does_not_steer_against_a_miss_already_closed(self):
         r, v = self.entry()

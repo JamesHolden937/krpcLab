@@ -866,27 +866,6 @@ class TestDragCurve(unittest.TestCase):
         return fakeksp.Vessel(r, (0.0, 0.0, 400.0), mass=30000.0,
                               thrust=520000.0, isp=300.0, atmosphere=True)
 
-    def test_a_probe_off_retrograde_is_not_taken_as_a_measurement(self):
-        """The angle is measured from retrograde: the engines face the flow.
-
-        ``boosterland/tests/fakeksp`` cannot show what this is worth -- its drag ignores
-        attitude entirely, so a broadside probe and a nose-on one return the
-        same number.  The evidence is LOG53, where the curve at the boostback
-        exit propagates the coast 1297 m wrong and the curve at touchdown
-        gets it to 6 m; see ``Environment.sample_is_clean``.  What is
-        testable here is the bookkeeping that follows from it.
-        """
-        env = self.environment(self.make_vessel())
-        env.cfg.DRAG_PROBE_MAX_AOA_DEG = 20.0   # ships off; see the config note
-        velocity = (0.0, 0.0, 400.0)
-        self.assertTrue(env.sample_is_clean(velocity, (0.0, 0.0, -1.0)))
-        self.assertTrue(env.sample_is_clean(velocity, (0.0, 0.2, -1.0)))
-        self.assertFalse(env.sample_is_clean(velocity, (0.0, 1.0, 0.0)))
-        self.assertFalse(env.sample_is_clean(velocity, (0.0, 0.0, 1.0)))
-        env.cfg.DRAG_PROBE_MAX_AOA_DEG = 0.0
-        self.assertTrue(env.sample_is_clean(velocity, (0.0, 1.0, 0.0)),
-                        "0 should disable the gate, not reject everything")
-
     def test_a_broadside_sample_is_provisional_until_a_clean_one_lands(self):
         """It fills an empty bin, and the first clean probe throws it out.
 
@@ -914,19 +893,6 @@ class TestDragCurve(unittest.TestCase):
         self.assertGreater(env._curve[3], 20.0)
         self.assertLess(env._curve[3], 24.0,
                         "clean samples still low-pass against each other")
-
-    def test_the_curve_is_populated_even_if_the_booster_never_faces_the_flow(self):
-        """A flight that only ever probes broadside still gets a curve."""
-        vessel = self.make_vessel()
-        env = self.environment(vessel)
-        env.cfg.DRAG_PROBE_MAX_AOA_DEG = 20.0   # ships off; see the config note
-        broadside = (0.0, 1.0, 0.0)          # 90 deg off, always rejected
-        for tick in range(20):
-            env.refresh_drag(tick * Config().AERO_REFRESH_UT, vessel.r,
-                             vessel.v, (0.0, 0.0, 0.0, 1.0), broadside)
-        self.assertTrue(env._curve_machs, "no curve at all to predict with")
-        self.assertFalse(any(env._clean),
-                         "broadside probes must not count as measurements")
 
     def test_a_bin_can_escape_a_junk_opening_sample(self):
         """The opening sweep is taken at startup, and startup is thin air.

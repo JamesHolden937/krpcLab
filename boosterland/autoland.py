@@ -930,7 +930,7 @@ class Autoland:
         closed = (remaining <= self.cfg.BOOSTBACK_TOLERANCE_M
                   if remaining is not None
                   else distance <= self.cfg.BOOSTBACK_TOLERANCE_M)
-        under = closed and long >= -self.cfg.BOOSTBACK_UNDERSHOOT_M
+        under = closed
         if under:
             self.boostback_under += 1
             if self.boostback_under_since is None:
@@ -1081,6 +1081,16 @@ class Autoland:
 
     def run_coast(self, snap):
         self.set_throttle(0.0)
+        if self.cfg.DRAG_AOA_TERM:
+            inputs = snap.inputs
+            settled = (inputs is None or max(abs(x) for x in inputs[:2])
+                       <= self.cfg.DRAG_RESWEEP_INPUT_MAX)
+            if settled and not getattr(self.env, "fins_settled", False):
+                # Latched: the descent steers the inputs to their stops later.
+                self.env.fins_settled = True
+                self.log.event(snap.ut, "fins settled: inputs %s"
+                               % ("unread" if inputs is None else
+                                  "%+.2f/%+.2f" % inputs[:2]))
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
@@ -1787,7 +1797,6 @@ class Autoland:
         return (distance > enter
                 and snap.max_accel > 0.0
                 and snap.landing_height > cfg.CORRECTION_MIN_ALT_M
-                and snap.landing_height <= cfg.CORRECTION_MAX_ALT_M
                 and prediction.time_to_land > cfg.CORRECTION_MIN_TTL_S
                 and self.corrections < cfg.CORRECTION_MAX_BURNS
                 and snap.ut >= self.correction_ready_ut
@@ -2339,8 +2348,10 @@ def compact_line(state, snap, prediction, run):
                "%6.2f" % run.env.lift_slope
                if run.env.lift_slope is not None else "     -",
                run.env.aoa_tracking,
-               " can=%.1f" % run.env.holdable_deg
-               if run.env.holdable_deg is not None else "")
+               (" can=%.1f" % run.env.holdable_deg
+                if run.env.holdable_deg is not None else "")
+               + (" kda=%.1f" % run.env.drag_aoa
+                  if getattr(run.env, "drag_aoa", None) is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
                if any(getattr(run, "trim_cmd", (0.0,))) else ""))
