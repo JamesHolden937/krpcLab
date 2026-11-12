@@ -64,11 +64,14 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
-    FINS_HELD_KEEP_DEPLOY: bool = False     # BOOSTBACK_FINS_HELD holds the
+    FINS_HELD_KEEP_DEPLOY: bool = True      # BOOSTBACK_FINS_HELD holds the
                                             # surfaces by their ignore flags,
                                             # so brake fins stay deployed and
                                             # boostback's drag probe sees the
-                                            # descent configuration
+                                            # descent configuration.
+                                            # keep1/gate1-1111: median 34-40
+                                            # v 49 (kRPC's override retracts
+                                            # them: it drives deployAngle)
     FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
                                             # airbrake law (brake_fins).
@@ -490,6 +493,11 @@ class Config:
     CORRECTION_MIN_ALT_M: float = 6000.0    # never correct lower than this
     CORRECTION_MIN_TTL_S: float = 15.0      # nor with less flight time left
     CORRECTION_MAX_THROTTLE: float = 0.40
+    CORRECTION_WAIT_BRAKE_SWEEP: bool = False  # no correction between a brake
+                                            # step and the drag re-sweep
+                                            # after it (LOG15818: entered at
+                                            # 601 on the stale curve 1.6 s
+                                            # after 70 -> 90; settled +169)
     CORRECTION_ALIGN_DEG: float = 20.0      # full correction thrust inside this
     CORRECTION_GIMBAL_THROTTLE: float = 0.25    # thrust for gimbal when stuck
     CORRECTION_STUCK_RATE_DEG_S: float = 3.0    # turning slower than this is stuck
@@ -708,10 +716,6 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
-    DRAG_PROBE_DESCENT: bool = False        # probe the drag curve with the
-                                            # vessel turned onto retrograde
-                                            # while it is not near there
-                                            # (Environment.probe_rotation)
     DRAG_PROBE_MAX_AOA_DEG: float = 0.0     # ignore Cd*A probes taken this far
                                             # off retrograde (0 = take them
                                             # all).  Measured at 20: it cannot
@@ -720,7 +724,7 @@ class Config:
                                             # at a descent attitude yet when
                                             # boostback exits.  See
                                             # Environment.sample_is_clean.
-    DRAG_RESWEEP_AOA_DEG: float = 25.0      # re-probe the *whole* curve the
+    DRAG_RESWEEP_AOA_DEG: float = 8.0       # re-probe the *whole* curve the
                                             # first time the vehicle is this
                                             # near the attitude the descent
                                             # is flown at.  The opening sweep
@@ -730,6 +734,10 @@ class Config:
                                             # to fly a nose-on descent; see
                                             # Environment.refresh_drag and
                                             # CLAUDE.md failure 13.  0 = off.
+                                            # At 25 the "descent" curve was
+                                            # taken mid-flip, broadside, ~4x
+                                            # high; gate1-1111: 8 median 22 v
+                                            # 40 (fin booster)
     DRAG_RESWEEP_INTERVAL_S: float = 10.0   # re-probe the whole curve this
                                             # often (in-game seconds) while
                                             # the vehicle is in its descent

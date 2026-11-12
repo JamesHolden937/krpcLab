@@ -756,3 +756,12 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   +800-900 for 45 s; at 22.6 km aoa 5.7 takes it +788 -> +35 in 6 s; then it
   drifts to +316 as the holdable angle shrinks 22 -> 4.6 deg and tracking
   reads 0.7-0.85.  The fins have the authority; the steering is not using it.
+- gate1-1111 (LOG15794-15825), all with `FINS_HELD_KEEP_DEPLOY`:
+  `DRAG_RESWEEP_AOA_DEG` 8 median 22 (22 18 27 21 31 24 857 6) v 25's 40 --
+  **promoted**, with `FINS_HELD_KEEP_DEPLOY`.  + `DRAG_PROBE_DESCENT` median
+  ~200 -- **deleted** (refuted twice now).  + no corrections ~290.  Measured
+  at aoa 4-7 the brake fins' open/closed ratio reads 0.83-1.43, not the ~2 the
+  broadside probes read.  LOG15818 (857 m): the ordinary brake law stepped
+  70 -> 90 and CORRECTION entered 1.6 s later at 601 m, before the drag
+  re-sweep after the step (steered prediction the tick before: +43; after:
+  +169); the burn backfired to 806.  New flag `CORRECTION_WAIT_BRAKE_SWEEP`.
