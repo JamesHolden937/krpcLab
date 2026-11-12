@@ -12,66 +12,50 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-11: boosterland -- fin booster: steer 22, brakes kept out in boostback, re-sweep gate 8 (fingerprint `708b082a`)
+## 2026-11-11 night: boosterland -- tilt 16, no corrections; generality pass under way
 
-On `qs_finbooster` (the 5 m, 6-fin booster), 4 instances, 8 flights an arm. All committed on main, **not
-pushed**; howItWorks.pdf not redone. Journal: `docs/boosterland/journal.md` 2026-11-10 and 2026-11-11.
+On `qs_finbooster` (the user's Heavy Shuttle booster, rebuilt 2026-11-08: ~230 t, 13 Vectors, 24 Vernors,
+6 airliner tail fins as brake fins, no legs, no airbrakes), 4 instances, 8 flights an arm. Journal:
+`docs/boosterland/journal.md` "2026-11-11 night". Committed on main, not pushed; howItWorks.pdf not redone.
 
-**Defaults now** (median 22-24 m on qs_finbooster, from ~47 at session start):
-- `AERO_STEER_MAX_AOA_DEG` 22 (steer1-1111: median 14 v 47, worst 121 v 1001). 30 was worse.
-- `FINS_HELD_KEEP_DEPLOY` (common.idle `VacuumSurfaces(keep_deploy=True)`): boostback holds the fins by
-  ignorePitch/Yaw/Roll instead of kRPC's `deflection_override`, which drives `deployAngle` itself and so
-  retracted the brake fins (KRPC.SpaceCenter ActuatorControlAddon). No propellant cost (71.9 v 72.4 t).
-- `DRAG_RESWEEP_AOA_DEG` 8 (was 25): the descent curve is no longer taken mid-flip, broadside (~4x high).
-  gate1-1111: median 22 v 40.
+**Defaults now** (commit "DRAG_PROBE_DESCENT_TILT_DEG 16 and CORRECTION_MAX_BURNS 0"):
+- `DRAG_PROBE_DESCENT_TILT_DEG` 16: boostback probes drag at retrograde tilted 16 deg. tilt1-3: 8 -> ~140 m,
+  12 -> ~80, 16 -> median ~45 worst 112 over 16 flights, 20 -> worse. Still a constant: the best tilt is
+  above the 4-8 deg the descent flies, so it stands in for more than the angle.
+- `CORRECTION_MAX_BURNS` 0: corrections only backfired on top of the tilt (old defaults: 942/1146 m tails).
+  The CORRECTION phase code is still in; delete it once the other boosters land without it (breadth1).
+- Leg clearance re-read on every phase change (LOG15614: 40.8 m at connect, ~6 m true).
+- `qs_heavyshuttlebooster` re-shifted for MiniSystem (Kerbin LANs +39.61 deg); first flown in breadth1.
 
-**Deleted (refuted):** `AERO_STEER_AFTER_RESWEEP`, `DEPLOY_PROBE_FINS_HELD`, `DEPLOY_LATE_RATIO_CURVE`,
-`CORRECTION_WAIT_LATE_OPEN`, `CORRECTION_WAIT_BRAKE_SWEEP`, `DRAG_PROBE_DESCENT` (twice now).
-`DEPLOY_LATE=False` costs ~1 km (kept). `AERO_STEER_MAX_ALT_M=100000` (steer from apogee) did nothing.
+**Flags in, being measured:** `AERO_STEER_GATE` alt/resweep/none (the 25 km steering cliff); `DRAG_AOA_TERM`
+(refuted as built, median ~420 long: kda reads ~5x what crossflow can make and `fins settled` latched
+mid-flip -- one fix attempt, then delete); `PAD_FROM_LAUNCH` (target = launch site from launcherMod's
+launch record / launchedFrom spawn point; the farm's LaunchPad spawn point is 0.5 m from PAD_LAT/LON --
+promote); `DRAG_OBSERVED_SCALE` in worktree `.wt-obs` (unmerged, untested on the farm): the coast's own
+deceleration sets the drag curve's level; meant to replace the tilt constant.
 
-**The user's goal: delete CORRECTION burns** ("if we need correction burns either the booster has a big
-problem, or the code has a big problem"). Not yet: `CORRECTION_MAX_BURNS=0` lands ~860 m long today.
-Where it comes from (wsweep1 no-correction flights): boostback exits at -150..-190, the first descent
-re-sweep at 34 km reads the same trajectory +850..+1560; the fins claw ~500 back by 15 km, pinned at the
-holdable angle (4-5 deg) below 15 km. The broadside boostback curve over-reads drag by ~1 km of range;
-probed at aoa 0 (DRAG_PROBE_DESCENT) it under-reads by ~0.8 km. Big misses with corrections on are all
-`BACKFIRING` corrections fired on a stale/jumped prediction.
+**New, logging only:** touchdown limits (`common/touchdown.py`, launcherMod `KrpcLabLegs.Legs`): part impact
+tolerance at start; for legs, the live spring/damper (reflection) -> vertical limit (damper jump in one tick
+v `ModuleWheelDamage.impactTolerance`, stroke bottoming) and lateral topple limit (stuck foot, suspension
+tilt; sliding-tip test). A guessed damper gave LT-2 ~2 m/s -- unverified; read live values on qs_heavy, then
+drop tests (savegen at set vs/hs over the pad) to measure the real limits.
 
-**Never flown:** tilt1-1111 (`DRAG_PROBE_DESCENT_TILT_DEG` 5 v 0, and 5/8 with no corrections) -- its
-launch deadlocked (below) and the user stopped the session. The flag is in, default 0. Command: see
-journal; arms base / t5 / t5+`CORRECTION_MAX_BURNS=0` / t8+`CORRECTION_MAX_BURNS=0`, 8 an arm.
+**Deleted:** `AERO_STEER_MIN_ALT_M`, `CORRECTION_MAX_ALT_M`, `CORRECTION_FREE_AIM_ALT_M`, `BOOSTBACK_UNDERSHOOT_M`,
+`DRAG_PROBE_MAX_AOA_DEG` (parked-off cliffs).
 
-**Next, in order:**
-0. **DONE 2026-11-11 evening (the user's top priority): batches that never start, fixed globally.**
-   Tested on the farm; details `docs/testInstances.md` "Batches that never start".
-   - `stop.sh` never found the games: Proton names them `X:\...\kspN\KSP_x64.exe`, so it killed
-     only umu-run. `testInstances/procs.sh` (`inst_pids`/`game_pid`: scope cgroup, WINEPREFIX, both
-     path forms, descendants) is used by stop/start/watchdog/miniSystem. `stop.sh` exits 1 naming
-     survivors. Its first run also cleared ksp1-3's leaked dbus sets. The watchdog relaunches into the
-     instance's scope.
-   - `~/.local/bin/farmlaunch`: every batch script sources `testInstances/farmGuard.sh` and re-execs
-     under it (lock `kspfarm`). First line at once; **exit 75 = refused, another batch holds the farm**
-     (launch after its notice); **124 = no `logs/LOG*` within 900 s**. A python harness run directly is
-     not guarded: wrap it in `farmlaunch --started-glob 'logs/LOG*' --`.
-   - `pgrepf` skips `sh -c` wrapper shells, also behind timeout, nohup, setsid etc.
-   - `bundle.py` waits on its flock with a bound (600 s) and re-checks staleness under it. Nothing
-     waits for the bundle or hook by name.
-   - Harness kRPC connections are bounded (`farmflight.bounded`, 300 s per call).
-   - The global hook `bgStartWatch.py` (armed by `checkOutput.sh`) kills a background job still
-     silent after 600 s and writes why into its output. A waiter must echo a first line; a job under
-     farmlaunch is left to farmlaunch's own deadline.
-1. tilt1's result. If no-correction comes within ~2x of the defaults, delete the CORRECTION phase.
-2. `qs_heavyshuttlebooster` loads 388 km from the pad on the MiniSystem farm (LAN shift fitted on stock):
-   re-shift it, then re-check today's defaults on it (gate 8, keep-deploy, steer 22).
-3. The user's live small booster (LOG15614-15617, 27 t): leg clearance measured 40.8 m once at start,
-   true ~6 m; the burn hovers ~36 m up and drops. Re-measure the clearance after separation/each phase.
-4. Coast roll 15-36 deg/s: not reversed fins (same sign as boostback, 15x weaker without gimbal roll).
-5. `flip_authority` reads gimbal 0 -> "turn inf s". KSPLoadFixes into the farm (approved 2026-11-10).
-6. howItWorks.pdf for boosterland; push.
+**The user's priority: generality** -- no altitude/distance cliffs fitted to one booster or Kerbin. Queue:
+1. breadth1 result (new v old defaults, gates, both boosters) -> delete CORRECTION if the heavy agrees.
+2. `DRAG_OBSERVED_SCALE` (tilt 16 and tilt 0) -- if it lets tilt go to 0, delete the tilt constant.
+3. `BOOSTBACK_TOLERANCE_M` 190 -> the span the coast's steering can still reach (user agreed), once the
+   boostback-exit prediction is right.
+4. Landing heights by time-to-go/stopping distance (`LANDING_NULL_ALT_M`, `LANDING_DIVERT_MAX_ALT_M`,
+   `LANDING_MAX_EARLY_M`, `GEAR_DEPLOY_ALT_M`, `LANDING_GOAROUND_ALT_M`, `LANDING_UPRIGHT_ALT_M`, flare).
+5. Vehicle-property angles (`AERO_STEER_MAX_AOA_DEG`, tilt caps, `DEPLOY_MAX/MIN_DEG` from part limits),
+   durations (`BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`), `TERRAIN_MAX_M` (also bounds landing_height).
+6. Older: live small booster re-check (clearance fix), coast roll, flip_authority gimbal 0, howItWorks.pdf.
 
-**Traps paid:** item 0, now fixed. `cmd | tail` on a background job keeps its output empty until the
-end; that is fine under farmlaunch, and otherwise bgStartWatch kills it at 600 s. Farm stopped at handoff. `qs_heavyshuttlebooster`
-results today are not measurements (see 2).
+**Traps:** a sweep's `m/s` column is the speed at the end of the run, not at contact. 6 instances of this
+230-t booster reach 29 GB swap: fly 4, restart between batches (swap 11-12 GB after one).
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 
