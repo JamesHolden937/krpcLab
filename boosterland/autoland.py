@@ -35,6 +35,7 @@ from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged)
 from common import cli
 from common.launchsite import launch_site
+from common.touchdown import landing_limits, read_legs, touchdown_limit
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
@@ -401,6 +402,13 @@ class Autoland:
                 cfg = self.cfg = replace(cfg, PAD_LAT=site["lat"],
                                          PAD_LON=site["lon"])
         self.env = Environment(conn, self.vessel, self.body, cfg, logbook, ut)
+        # Before the flight: one call per part is a stall no phase can afford.
+        self.touchdown_limit = touchdown_limit(self.vessel)
+        if self.touchdown_limit is None:
+            logbook.event(ut, "touchdown limit unreadable")
+        else:
+            logbook.event(ut, "touchdown limit %.1f m/s (%s, weakest of %d "
+                          "that touch)" % self.touchdown_limit)
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
         self.proximity = ProximityScan(conn, self.vessel, self.frame, cfg,
@@ -430,6 +438,8 @@ class Autoland:
         self.gear_deployed = False
         self.touchdown_record = None    # the 2 s sign-off, held for the watch
         self.touchdown_tilt = 0.0       # most the nose leaned off vertical
+        self.landing_limits = None      # read once, legs out (False = tried)
+        self.gear_down_ut = None
         self.gear_timing = None         # GEAR_TIMED: None, deploying,
                                         # retracting, done or failed
         self.gear_items = []
@@ -1613,6 +1623,7 @@ class Autoland:
             if all(d is not None for d in self.gear_done):
                 times = [d for d in self.gear_done if d is not False]
                 self.gear_deploy_s = max(times) if times else None
+                self.read_landing_limits(snap, "gear timing")
                 self.fire_gear(False)
                 self.gear_timing = "retracting"
                 self.gear_t1 = snap.ut
@@ -2055,6 +2066,70 @@ class Autoland:
             self.set_throttle(0.0)
             self.enter(TOUCHDOWN, snap.ut, "legs=%.1fm vs=%.1f"
                        % (snap.legs_altitude, snap.vertical_speed))
+            self.log_touchdown(snap)
+
+    def read_landing_limits(self, snap, why):
+        """The legs' live suspension, deployed, as touchdown limits: once.
+
+        One kRPC call (the window mod's ``KrpcLabLegs.Legs``) while the legs
+        are out -- the gear-timing cycle in the coast, or after gear down.
+        """
+        legs = read_legs(self.conn)
+        self.landing_limits = False
+        if not legs:
+            self.log.event(snap.ut, "landing limits: no legs read (%s)" % why)
+            return
+        try:
+            moi = self.vessel.moment_of_inertia
+            transverse = min(moi[0], moi[2])
+            g = self.body.surface_gravity
+        except Exception:                                   # noqa: BLE001
+            self.log.event(snap.ut, "landing limits: no inertia (%s)" % why)
+            return
+        lim = landing_limits(snap.mass, transverse, g, legs)
+        leg = legs[0]
+        self.log.event(snap.ut, "legs (%s): %d x %s spring %.0f damper %.0f "
+                       "travel %.2f impact %.0f crash %.0f friction %.2f%s"
+                       % (why, len(legs), leg["title"], leg["spring"],
+                          leg["damper"], leg["travel"], leg["impact_tol"],
+                          leg["crash_tol"], leg["friction"],
+                          "" if all(l["deployed"] for l in legs)
+                          else " (not all deployed)"))
+        if lim is None:
+            self.log.event(snap.ut, "landing limits: fewer than 3 feet")
+            return
+        self.landing_limits = lim
+        self.log.event(snap.ut, "landing limits: vertical %s m/s (damper %s, "
+                       "stroke %.1f), lateral %.1f m/s stuck; COM %.1f m over a "
+                       "%.1f m support margin, %.1f deg suspension tilt; %s"
+                       % ("%.1f" % lim["vertical"] if lim["vertical"] else "?",
+                          "%.1f" % lim["vertical_damper"]
+                          if lim.get("vertical_damper") else "?",
+                          lim.get("vertical_bottom", float("nan")),
+                          lim["lateral"], lim["h"], lim["b"],
+                          lim.get("tilt_deg", float("nan")),
+                          "a sliding foot can tip it (friction x h > b)"
+                          if lim["slide_tips"] else "sliding cannot tip it"))
+
+    def log_touchdown(self, snap):
+        """Contact speed against the limit measured before the flight."""
+        lim = self.landing_limits or None
+        if lim and lim.get("vertical"):
+            self.log.event(snap.ut, "touchdown vs %.1f / hs %.1f m/s against legs' "
+                           "vertical %.1f / lateral %.1f -- %s"
+                           % (snap.vertical_speed, snap.horizontal_speed,
+                              lim["vertical"], lim["lateral"],
+                              "HARD" if (-snap.vertical_speed > lim["vertical"]
+                                         or snap.horizontal_speed > lim["lateral"])
+                              else "within"))
+            return
+        if self.touchdown_limit is None:
+            return
+        tol = self.touchdown_limit[0]
+        self.log.event(snap.ut, "touchdown %.1f m/s (vs %.1f, hs %.1f) against "
+                       "limit %.1f m/s -- %s"
+                       % (snap.speed, snap.vertical_speed, snap.horizontal_speed,
+                          tol, "HARD" if snap.speed > tol else "within"))
 
     def tilt_budget(self, throttle):
         """How far the burn may tilt without stealing braking, in degrees.
@@ -2139,6 +2214,10 @@ class Autoland:
     # -- main loop ---------------------------------------------------------
     def landing_gear(self, snap):
         if self.gear_deployed:
+            if (self.landing_limits is None and self.gear_down_ut is not None
+                    and self.gear_deploy_s is not None
+                    and snap.ut - self.gear_down_ut > self.gear_deploy_s + 0.5):
+                self.read_landing_limits(snap, "gear down")
             return
         # The burn is the last thing that happens, so anything the legs are
         # going to cost -- drag, and a bin of the curve written without them
@@ -2165,6 +2244,7 @@ class Autoland:
             return
         self.fire_gear(True)
         self.gear_deployed = True
+        self.gear_down_ut = snap.ut
         self.log.event(snap.ut, "gear down at %.0f m (%s)"
                        % (snap.height_above_pad, why))
 
