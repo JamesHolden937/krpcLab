@@ -825,3 +825,32 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   watcher).  Three qs_finbooster cells finished before it: new defaults 10 31
   41 51; `AERO_STEER_GATE=none` 34 52 91 93; `resweep` 29 30 54 62.  4 a cell,
   not a measurement.  `qs_heavyshuttlebooster` never flew.
+
+## 2026-11-12: breadth2 -- the wing waits for the re-sweep; launch-site pad; drag-level and drag-aoa models deleted
+
+Goal (the user): remove every constant that can be derived.  4 instances,
+`qs_finbooster` and `qs_heavyshuttlebooster` (its first MiniSystem flights).
+
+- breadth2-1112 (4 an arm per save, LOG after 15981): defaults fin 23 28 32 85
+  / heavy 50 63 67 102 (all E+ ~90, long), median 56 over 8;
+  `AERO_STEER_GATE=none` 52; **`resweep` fin 33 35 44 131 / heavy 20 21 27 107,
+  median 34** (with breadth1's four, fin median ~39 v ~31: a wash on the fin,
+  the heavy's long bias gone); old (tilt 0 + 3 corrections) 39;
+  **`PAD_FROM_LAUNCH` 47** (same as defaults; the farm pad is 0.5 m from
+  PAD_LAT/LON); `DRAG_OBSERVED_SCALE` tilt 16: 78 (heavy 350); tilt 0: **762,
+  every fin flight 1-2 km short**.
+- Promoted: the wing acts once the descent-attitude re-sweep has replaced the
+  boostback curve (an event, not `AERO_STEER_MAX_ALT_M` 25 km -- deleted with
+  the `AERO_STEER_GATE` choice); the pad is the launch site when the game
+  knows it.
+- Deleted: `DRAG_OBSERVED_SCALE` (the level the coast's deceleration reads is
+  not the level the propagator needs: it scaled a curve already taken at the
+  wrong attitude), `DRAG_AOA_TERM` (median ~420 long, its kda ~5x what
+  crossflow can make), and eight knobs parked at null (`SEPARATION_MIN_COAST_S`,
+  `BOOSTBACK_EXIT_S`, `BOOSTBACK_PITCH_DEG`, `BOOSTBACK_MIN_THROTTLE`,
+  `LANDING_DIVERT_LEAD`, `LANDING_MAX_EARLY_M`, `LANDING_DIVERT_MIN_THROTTLE`,
+  `LANDING_DIVERT_DEMAND_M_S2`).
+- `LANDING_GOAROUND_ALT_M` (60) deleted: the throttle cut on an ascent applies
+  below `LANDING_NULL_ALT_M`, where the attitude law holds the thrust near
+  vertical (so thrust while climbing only adds climb); above it the nose is
+  retrograde and still brakes.
