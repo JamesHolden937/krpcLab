@@ -744,3 +744,15 @@ All on `qs_finbooster`, 4 instances, 8 flights an arm (two cells of 4).
   correction guard goes behind `CORRECTION_WAIT_LATE_OPEN` (21 of 48 flights
   entered a correction on the tick the solve said open now, most exiting at
   once on a negative gradient).
+- wait1-1111 (LOG15682-15697): `CORRECTION_WAIT_LATE_OPEN` median 26/36 worst
+  140/70 v 22/42 worst 35/50 -- **deleted**.
+- nocorr1-1111 (LOG15698-15729), the user's proposal "delete the correction
+  burns; needing them means the booster or the code has a big problem":
+  defaults median 36 worst 140; `CORRECTION_MAX_BURNS=0` median ~680 worst 987;
+  `DEPLOY_LATE_RATIO_CURVE` (late switch predicted with the probe's ratio x the
+  current closed curve) median 50 worst 67 -- **deleted**; both median ~850.
+  Corrections carry ~600 m today.  LOG15707 (no corrections, 599 m) is why:
+  no steering above `AERO_STEER_MAX_ALT_M` 25 km while the prediction reads
+  +800-900 for 45 s; at 22.6 km aoa 5.7 takes it +788 -> +35 in 6 s; then it
+  drifts to +316 as the holdable angle shrinks 22 -> 4.6 deg and tracking
+  reads 0.7-0.85.  The fins have the authority; the steering is not using it.

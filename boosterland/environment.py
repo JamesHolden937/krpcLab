@@ -81,7 +81,6 @@ class Environment:
         # altitude below which the propagator flies it: the brakes are going
         # to open there, so every prediction has to know it.  None = no switch.
         self._full_machs, self._full_areas = [], []
-        self.full_ratio = None          # median open/closed, DEPLOY_LATE_RATIO_CURVE
         self.late_switch_alt = None
         self._replace_next = False      # the next sweep replaces, not blends
         self._descent_profile = ()      # (speed, altitude) down to the pad
@@ -214,17 +213,6 @@ class Environment:
         """
         if (self.late_switch_alt is not None and self._full_machs
                 and altitude <= self.late_switch_alt):
-            ratio = getattr(self, "full_ratio", None)
-            if (self.cfg.DEPLOY_LATE_RATIO_CURVE and ratio is not None
-                    and self._curve_machs):
-                # The full curve is absolute at the probe's attitude, which
-                # the descent gate lets be 25 deg off: broadside drag inflates
-                # every bin (LOG15619: M2 58 at the probe, 9.5 open at aoa 5).
-                # The ratio was taken at one attitude, so it is clean; the
-                # closed curve keeps being re-swept at the real one.
-                return ratio * self._interp_curve(
-                    self._curve_machs, self._curve_areas,
-                    self.mach(speed, altitude))
             return self._interp_curve(self._full_machs, self._full_areas,
                                       self.mach(speed, altitude))
         if not self._curve_machs:
@@ -258,8 +246,7 @@ class Environment:
         ratios = sorted(full[m] / a for m, a in zip(self._curve_machs,
                                                     self._curve_areas)
                         if m in full and a > 0.0)
-        self.full_ratio = ratios[len(ratios) // 2] if ratios else None
-        return self.full_ratio
+        return ratios[len(ratios) // 2] if ratios else None
 
     @staticmethod
     def _interp_curve(machs, values, mach):

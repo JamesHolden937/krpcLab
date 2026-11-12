@@ -64,12 +64,6 @@ class Config:
                                             # a step (the brakes animate)
     DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
     DEPLOY_MAX_DEG: float = 90.0
-    DEPLOY_LATE_RATIO_CURVE: bool = False   # below the late switch, predict
-                                            # with the probe's open/closed
-                                            # ratio x the current closed
-                                            # curve, not the probe's absolute
-                                            # open curve (taken up to 25 deg
-                                            # off retrograde)
     FIN_BRAKES: bool = True                 # alternate fins deployed opposite
                                             # ways as an airbrake, on the
                                             # airbrake law (brake_fins).
@@ -491,10 +485,6 @@ class Config:
     CORRECTION_MIN_ALT_M: float = 6000.0    # never correct lower than this
     CORRECTION_MIN_TTL_S: float = 15.0      # nor with less flight time left
     CORRECTION_MAX_THROTTLE: float = 0.40
-    CORRECTION_WAIT_LATE_OPEN: bool = False  # no correction on the tick the
-                                            # late solve says "open now"
-                                            # (the prediction flies the full
-                                            # curve, the brakes are shut)
     CORRECTION_ALIGN_DEG: float = 20.0      # full correction thrust inside this
     CORRECTION_GIMBAL_THROTTLE: float = 0.25    # thrust for gimbal when stuck
     CORRECTION_STUCK_RATE_DEG_S: float = 3.0    # turning slower than this is stuck
