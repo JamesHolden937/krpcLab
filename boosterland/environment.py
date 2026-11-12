@@ -93,6 +93,8 @@ class Environment:
         self._lift_machs = []
         self._lift_areas = []
         self.lift_slope = None          # the value at the current Mach, logged
+        self.observed_scale = 1.0       # DRAG_OBSERVED_SCALE: flown / probed
+        self.observed_samples = 0
         # Extra Cd*A per radian squared off retrograde (DRAG_AOA_TERM): the
         # drag part of the lift probe, less a probe at retrograde.
         self._drag_aoa = [None] * self._bins
@@ -201,6 +203,42 @@ class Environment:
 
     # -- the drag curve ----------------------------------------------------
     def drag_area_at(self, speed, altitude):
+        """The probed curve times the scale the flight itself measured.
+
+        ``DRAG_OBSERVED_SCALE``: the probe gives the curve's shape over Mach;
+        its level, at the attitude and fin state the descent really flies, is
+        the coast's own deceleration (:meth:`observe_drag`).  1 until observed.
+        """
+        return self.probed_drag_area_at(speed, altitude) * self.observed_scale
+
+    def observe_drag(self, ut, mass, r, v, a_drag):
+        """Fold one observed drag deceleration (m/s^2 along -v) into the scale.
+
+        Returns the observed Cd*A, or None when the air is too thin for the
+        deceleration to stand out of the differencing noise.
+        """
+        cfg = self.cfg
+        speed = vec.norm(v)
+        altitude = vec.norm(r) - self.equatorial_radius
+        rho = self.density(altitude)
+        probed = self.probed_drag_area_at(speed, altitude)
+        if speed < 20.0 or rho <= 0.0 or not probed or probed <= 0.0:
+            return None
+        q = 0.5 * rho * speed * speed
+        expected = q * probed / mass
+        if expected < cfg.DRAG_OBSERVE_MIN_ACCEL:
+            return None
+        observed = a_drag * mass / q
+        ratio = observed / probed
+        if not (0.2 <= ratio <= 5.0):
+            return None
+        w = cfg.DRAG_OBSERVE_SMOOTHING
+        self.observed_scale = (ratio if self.observed_samples == 0
+                               else self.observed_scale * (1.0 - w) + ratio * w)
+        self.observed_samples += 1
+        return observed
+
+    def probed_drag_area_at(self, speed, altitude):
         """Cd*A at this speed and altitude, interpolated over the Mach curve.
 
         A single scalar Cd*A is not good enough to aim a boostback burn with.
