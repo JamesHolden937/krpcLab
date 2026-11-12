@@ -16,6 +16,11 @@ class Config:
     # --- Target -----------------------------------------------------------
     PAD_LAT: float = -0.097162          # KSC launchpad
     PAD_LON: float = -74.557679
+    PAD_FROM_LAUNCH: bool = False       # target where this vessel launched
+                                        # (common.launchsite: the window mod's
+                                        # launch record, else its launchedFrom
+                                        # site) instead of PAD_LAT/PAD_LON.
+                                        # Logged either way, with the offset
     PAD_ALT_OFFSET_M: float = 0.0       # aim point above pad surface
     # Aim off the pad to cancel a *measured*, repeatable miss -- see
     # Environment.__init__.  Reporting stays against PAD_LAT/PAD_LON, so the
