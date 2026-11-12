@@ -53,6 +53,12 @@ journal; arms base / t5 / t5+`CORRECTION_MAX_BURNS=0` / t8+`CORRECTION_MAX_BURNS
    - Older, same family: start.sh reports up while KSP never booted (memory "Farm start fails silently");
      a fresh instance sits in the space centre and `launch_vessel` hangs; quickfly's deadline never
      reached when kRPC blocks.
+   - **The stop side too:** at handoff `testInstances/stop.sh` printed "remaining: 0 gamescope, 0
+     wineserver, 0 compositor" and exited, while all four `kwinRun.sh` instances (KSP_x64.exe under
+     `kwin_wayland --virtual`) ran on at ~300% CPU each for 50 min, until the user asked why the CPU
+     was at 84%. stop.sh neither stops nor counts kwinRun instances. The fix: stop.sh counts and kills
+     every KSP_x64.exe under testInstances, its wineservers and the `ksp<n>-wl` kwins, and exits non-zero
+     if any survive.
    The fix must be **global** (every project, every session), not a krpcLab script patch:
    - Waiting on another job by matching process command lines is the bug. Replace it with real
      synchronisation: the post-commit hook (and bundle.py) hold an `flock` on a known lock file
