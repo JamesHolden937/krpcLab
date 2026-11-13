@@ -650,8 +650,18 @@ class Autoland:
                                    % math.degrees(self.roll_hold or 0.0))
                 if up is not None and self.roll_hold:
                     up = rotate_about(up, direction, self.roll_hold)
-                if (up is not None and self.roll_order > 1
-                        and self.state in (COAST, LANDING_BURN, TOUCHDOWN)):
+                late = self.state in (COAST, LANDING_BURN, TOUCHDOWN)
+                if up is not None and late and self.roll_order >= 3:
+                    # Three or more equal surfaces round the axis lift and
+                    # brake the same at any roll, and the steering is the
+                    # nose's: the roll angle is worth nothing, only its
+                    # rate.  kRPC with no target roll drives the rate to
+                    # zero (the inner loop alone).  Held to an angle, its
+                    # attitude loop runs on the credited torque, 10-30x the
+                    # fins' (rolltune.py), and rang at ~100 deg/s
+                    # (LOG16195-16198).
+                    up = None
+                if (up is not None and late and self.roll_order > 1):
                     # The vehicle looks the same every 360/n deg of roll:
                     # hold the equivalent roof nearest its own, so the roll
                     # error is never more than 180/n and nothing winds up
@@ -881,9 +891,14 @@ class Autoland:
                     self.roll_order = roll_symmetry(self.vessel)
                 except Exception as exc:            # noqa: BLE001
                     self.log.event(snap.ut, "roll symmetry unread: %r" % exc)
-                self.log.event(snap.ut, "roll symmetry: %d-fold (the roof is "
-                               "held at the nearest of %d from the coast)"
-                               % (self.roll_order, self.roll_order))
+                self.log.event(snap.ut, "roll symmetry: %d-fold (from the "
+                               "coast: %s)" % (self.roll_order,
+                                               "roll rate damped, angle free"
+                                               if self.roll_order >= 3 else
+                                               "the nearest of %d roofs held"
+                                               % self.roll_order
+                                               if self.roll_order > 1
+                                               else "roll held"))
             if self.cfg.ENGINE_ALLOCATION:
                 self.cluster = EngineCluster(self.vessel, self.cfg)
                 self.log.event(snap.ut, self.cluster.describe())

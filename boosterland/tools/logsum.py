@@ -81,7 +81,7 @@ def roll_table(path):
     import re
     bands = {}
     for line in open(path):
-        if "alt=" not in line or "roll=" not in line:
+        if "alt=" not in line or " r=" not in line:
             continue
         phase = line[13:26].strip()
         if phase not in ("COAST", "LANDING_BURN"):
@@ -89,7 +89,7 @@ def roll_table(path):
         d = dict(re.findall(r"(\w+)=\s*([^\s]+)", line))
         try:
             alt = float(d["alt"])
-            err = float(d["roll"])
+            err = float(d.get("roll", "nan"))     # none while roll is free
             rate = abs(float(d.get("r", "nan")))
             u = abs(float(d["in"].split("/")[2])) if "in" in d else float("nan")
         except (KeyError, ValueError):
