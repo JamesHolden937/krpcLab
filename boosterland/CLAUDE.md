@@ -36,7 +36,15 @@ Saves: `quicksave`, `qs_hot`, `qs_cold`, `qs_steep`, `qs_north` (18 parts,
 no legs, flying at 21 km after separation; `tools/savegen.py` makes more);
 `qs_heavy` (99 t, five engines, six LT-2 legs); `qs_heavyshuttlebooster` (the
 user's live FMRS Heavy Shuttle booster: 227 t, 13 Vectors, no legs -- tip-overs
-are not scored on it).
+are not scored on it); `qs_finbooster`, `qs_finbooster2` (the user's 6-fin
+boosters, saves/README.md).
+
+**Attitude from the coast on** (`rolltune.py`): kRPC's auto-tune is off; roll
+gains come from the roll effect fitted in flight (stock credits tail fins with
+~100x their roll), a craft whose surfaces are >= 3-fold symmetric
+(`autoland.symmetry_order`) has its roll angle left free and only the rate
+damped, and pitch/yaw keep the bandwidth kRPC had reached at the coast's
+start, dropped to kRPC's oscillation floor while it latches.
 
 `boosterland/data/gearTimes.json` is the leg deploy-time cache (gitignored,
 written in flight; delete it and the next flight re-times its legs).

@@ -12,52 +12,58 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-12: boosterland -- constants out: wing gated on the re-sweep, lift-peak ceiling, CORRECTION deleted
+## 2026-11-13: boosterland + ascent -- the fin booster's roll; the ascent's landing budget
 
-The user: keep working on the booster lander, removing every constant that can be derived. On `qs_finbooster` and
-`qs_heavyshuttlebooster` (its first MiniSystem flights), 4 instances. Journal: `docs/boosterland/journal.md`
-"2026-11-12". All committed and pushed; howItWorks.pdf redone; farm stopped. **Defaults fingerprint 680d8568.**
+The user (live LOG16183/16184, a modified fin booster, now `saves/qs_finbooster2`): it oscillates a lot, mostly
+roll in the unpowered descent; it ran short of fuel in the burn; it must work with every engine gimballing (they
+had turned the outer ring's gimbals down -- not in any save, all 13 flew at 100). Journal:
+`docs/boosterland/journal.md` "2026-11-12 night". **Defaults fingerprint 7cd7531a.** All committed and pushed;
+**howItWorks.pdf (boosterland, ascent) not redone**. Farm stopped.
 
-**conf1-1112 (the defaults now, 12 per save):** fin median ~50, heavy 44, all 47; one fin flight 2595 m (below).
+**Fuel (ascent, unflown in an ascent):** the separation budget assumed a sea-level terminal-speed landing (405
+m/s); the booster lit at 680 m/s and needed ~850. `ascent/budget.fall` falls through the body's density on the
+stack's Cd*A table (taken at liftoff, every ascent type) and lights where boosterland's law does: 833 m/s for
+that state. `LANDING_CD` deleted. The farm saves start from the old separation and still land at dry mass.
 
-**Promoted (measured, breadth2/peak1-1112):**
-- The coast's wing acts once the descent re-sweep has replaced the boostback curve: median 34 v 56, heavy 24 v 65.
-  `AERO_STEER_MAX_ALT_M` (25 km) and `AERO_STEER_GATE` deleted.
-- Target = the launch site (window mod's launch record / launchedFrom spawn point) when on this body
-  (`PAD_FROM_LAUNCH` deleted; equal to PAD_LAT/LON on the farm, 0.5 m apart).
-- The wing's ceiling = the probed angle of peak lift (46-51 deg on both), capping the holdable angle; probes 8 to
-  90 deg every 2 s; unmeasured = no steering. `AERO_STEER_MAX_AOA_DEG` (22) and `AERO_STEER_HOLDABLE` deleted.
-  Equal on the miss (40 v 44): the 22 cap almost never bound on these two.
-
-**Deleted:** the CORRECTION phase and its 22 constants (tilt4: 0 burns fired at tilt 16; earlier they only
-backfired); `DRAG_OBSERVED_SCALE` (tilt 0: km short), `DRAG_AOA_TERM`; knobs at null (`SEPARATION_MIN_COAST_S`,
-`BOOSTBACK_EXIT_S`, `BOOSTBACK_PITCH_DEG`, `BOOSTBACK_MIN_THROTTLE`, `LANDING_DIVERT_LEAD`, `LANDING_MAX_EARLY_M`,
-`LANDING_DIVERT_MIN_THROTTLE`, `LANDING_DIVERT_DEMAND_M_S2`, `FIN_BRAKE_SHARE`); `COAST_STEER_GAIN`/`COAST_MAX_TILT_DEG`
-(unsteered coast is plain retrograde); `LANDING_GOAROUND_ALT_M` (the ascent throttle cut now applies below
-`LANDING_NULL_ALT_M`, where the attitude law holds thrust vertical). The last two are unflown except in conf1.
-
-**Measured, kept:**
-- `DRAG_PROBE_DESCENT_TILT_DEG` 16: tilt 0 lands ~1 km past the pad on the fin (tilt4). It stands in for the
-  boostback-exit drag being taken broadside (~2x the descent curve); nothing else predicts the descent's drag at
-  boostback yet.
-- `BOOSTBACK_TOLERANCE_M` 190: the miss is insensitive over 20-190 (tol1: medians 37-42 fin, 77-98 heavy). The
-  coast absorbs it; the exit long (~-176) cancels the re-sweep's ~+200 m jump. It cannot be the wing's reach:
-  the lift slope is first measured in COAST.
+**Roll (defaults now):** stock credits the tail fins with ~100x their roll (kRPC 100-116 rad/s^2 per unit v
+fitted 0.75-1.6), so auto-tune's roll loop barely pushed: 70-110 deg/s spins below 20 km.
+- `ROLL_TUNE`: from the coast, auto-tune off; roll gains from `common.rateplant.Plant`'s fitted effect
+  (`pi_gains`, closing time slowed to the fins' slew, re-read at 1 Hz); pitch/yaw keep the bandwidth kRPC had
+  at coast entry (gain x credited accel), dropped to kRPC's oscillation floor while it latches pitch/yaw.
+- `ROLL_SYMMETRY`: n from the surface rings (6); n >= 3: roll angle free from the coast, only the rate damped
+  (kRPC target roll NaN); n = 2: nearest of 2 roofs.
+- Result (attitude4/5-1113, 18 an arm over qs_finbooster/qs_finbooster2): coast/burn roll rate p90 ~0-18 v
+  50-105 deg/s, coast nose rate ~1-7 v 5-25; **miss median 51.5 v 39.5** (one 272 m). Kept on the user's
+  ask; the fin2 save's own 6-flight old arms span 28-70.
+- `common/rateplant.py`: `Plant`, `actuators`, `closing_time`, `pi_gains`, `authority`, `clamp` moved from
+  airplane/control.py (airplane imports them back). launcherMod's `SurfaceActuators` also lists gimbals
+  (`gimbalResponseSpeed`, kind 2: lag 1/speed; built and installed in farm + live).
+- Tools: `logsum.py --roll` (per phase/4 km: roll error, |r| p90, nose w p90, input, fit); `KRPC_AP_DIAG`
+  (kRPC's per-tick record -> LOG<n>.ap.csv, 3000 ticks from the coast or `KRPC_AP_DIAG_BELOW_M`).
+- Deleted after measuring: `ATTITUDE_LAG_PACE` (time to peak from actuator lag: boostback cross very
+  repeatable but holdable aoa fell to ~12 and the miss 201 v 88), `ROLL_FREE_IN_BURN` (held in the burn 65
+  v 44).
 
 **Open, in order:**
-1. **Boostback departure** (LOG16157): err 65-77 deg, roll 114 deg off at full throttle after the flip; the held
-   heading took cross -2860 and the coast cannot trim km. ~1 in 60 fin flights. Gate throttle on pointing error
-   after the flip, or re-take the heading when cross is not small.
-2. LOG16045-type: the wing saturates below 9 km (cmd 12-18 v hold ~7) after a slow flip settle (54 s).
-3. The tilt constant: derive the descent drag at boostback (what the 16 deg covers beyond the 4-8 deg flown).
-4. Landing heights by time-to-go (`LANDING_NULL_ALT_M` 250, `LANDING_DIVERT_MAX_ALT_M`, `GEAR_DEPLOY_ALT_M`,
-   `LANDING_UPRIGHT_ALT_M` -- a linear cone over the 2+0.5h profile has no slew-rate solution below 14 deg/s, so
-   not that way), flare; `BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`, `TERRAIN_MAX_M`.
-5. Re-fly the small boosters (qs_hot, qs_heavy) on MiniSystem: nothing but the two big ones flew today.
+1. The ~12 m median cost and the outliers: compare pitch/yaw in the landing burn (nose w p90 30-70 on some
+   new fin2 flights) and the `holdable aoa` probe, which now runs at whatever roll the booster has (12 v 45
+   deg between flights).
+2. `PITCH_YAW_TUNE` (branch `pyTune`, unflown): pitch/yaw fitted and capped as roll is.
+3. qs_finbooster's boostback roll (|r| p90 115-195, before the coast: gimbals roll there).
+4. Fly an ascent on the new budget (live: the user's Heavy Shuttle); re-fly qs_heavy/qs_heavyshuttlebooster
+   with the roll tune (airbrakes, no fins: n from the airbrake ring).
+5. Carried from 2026-11-12: boostback departure (LOG16157: err 65-77 deg after the flip, held heading took
+   cross -2860; gate throttle on pointing error, or re-take the heading); the wing saturating below 9 km after
+   a slow flip settle (LOG16045); `DRAG_PROBE_DESCENT_TILT_DEG` 16 stands in for the boostback-exit drag
+   (derive it); landing heights by time-to-go (`LANDING_NULL_ALT_M`, `LANDING_DIVERT_MAX_ALT_M`,
+   `GEAR_DEPLOY_ALT_M`, `LANDING_UPRIGHT_ALT_M`), `BOOSTBACK_MAX_BURN_S`, `PREDICT_MAX_TIME_S`, `TERRAIN_MAX_M`;
+   `BOOSTBACK_TOLERANCE_M` 190 is insensitive over 20-190; re-fly qs_hot/qs_heavy on MiniSystem.
 
-**Traps:** sweep.py must run under `farmlaunch` (else every flight exits 75) and its output must reach the
-background job's stdout (tee), or bgStartWatch kills it at 600 s. The full suite won't run from a git worktree
-(kspSim tests import from the main tree): merge, then run it in main. A sweep's `corrections` column now always 0.
+**Traps:** kRPC's diagnostic buffer keeps the *first* 3000 ticks after it is enabled. kRPC resets
+time_to_peak after it is set (read it back). With auto-tune off kRPC's mitigation no longer reaches the gains.
+The roll rate `r=` has the opposite sense to kRPC's roll input. Swap sat at 7.5-8 GB even after a farm
+restart this session. sweep.py must run under `farmlaunch` with its output tee'd to the job's stdout. The
+full suite won't run from a git worktree (kspSim tests import the main tree): merge, then run it in main.
 
 ## 2026-11-08: airplane -- crash guard deleted; phase margin; test jets; pitch stiffness (fingerprint after `a8e0e27`)
 
