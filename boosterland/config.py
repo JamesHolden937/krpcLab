@@ -228,6 +228,24 @@ class Config:
     ROLL_PLANE_MIN_HS_MPS: float = 5.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)
+    # kRPC's roll gains from the roll the booster measures it gets per unit
+    # input, from the coast on (boosterland/rolltune.py): stock credits the
+    # fins with ~150-300x their roll (LOG16185/16186), so auto-tune's roll
+    # loop barely pushed and the booster spun 70-110 deg/s below 20 km.
+    ROLL_TUNE: bool = True
+    ROLL_TUNE_READ_S: float = 1.0       # kRPC's torque and inertia re-read
+    # The fit (common.rateplant.Plant), as the airplane's PLANT_*, with k
+    # allowed down to 1/1024 of kRPC's figure.
+    ROLL_PLANT_FORGET_S: float = 10.0
+    ROLL_PLANT_P_MAX: float = 100.0
+    ROLL_PLANT_K_MIN: float = 1.0 / 1024.0
+    ROLL_PLANT_K_MAX: float = 16.0
+    ROLL_PLANT_D_MAX: float = 20.0
+    ROLL_PLANT_EXCITE: float = 0.01
+    ROLL_PLANT_WINDOW_S: float = 1.0
+    ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
+    ROLL_LAG_FACTOR: float = 3.0
+    ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
 
     # --- Aerodynamic steering (flying the coast as a wing) -----------------
     AERO_STEER: bool = True                 # steer the coast with an angle of
