@@ -246,6 +246,12 @@ class Config:
     ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
     ROLL_LAG_FACTOR: float = 3.0
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
+    # From the coast on, the roof is held at the nearest of the n roll
+    # orientations the aerodynamic surfaces look the same in (autoland.
+    # symmetry_order: 6 for the fin booster), so the roll error stays under
+    # 180/n deg; a slot is left once another is nearer by this fraction.
+    ROLL_SYMMETRY: bool = True
+    ROLL_SLOT_HYSTERESIS: float = 0.15
 
     # --- Aerodynamic steering (flying the coast as a wing) -----------------
     AERO_STEER: bool = True                 # steer the coast with an angle of

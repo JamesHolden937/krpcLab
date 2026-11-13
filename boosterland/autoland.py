@@ -123,6 +123,63 @@ def brake_fins(vessel):
     return found
 
 
+def symmetry_order(parts):
+    """The roll symmetry the vehicle's aerodynamic surfaces have, from
+    ``[(key, azimuth rad, radius m)]`` (key: part type and station): the gcd
+    of the sizes of the evenly spaced rings, each ring of 2 or more; 1 when
+    any off-axis surface is not in such a ring.  Surfaces on the axis do not
+    count."""
+    rings = {}
+    for key, az, radius in parts:
+        if radius < 0.1:
+            continue
+        rings.setdefault(key, []).append((az, radius))
+    order = 0
+    for ring in rings.values():
+        n = len(ring)
+        if n < 2:
+            return 1
+        ring.sort()
+        step = 2.0 * math.pi / n
+        gaps = [(ring[(i + 1) % n][0] - ring[i][0]) % (2.0 * math.pi)
+                for i in range(n)]
+        radii = [r[1] for r in ring]
+        if (max(abs(g - step) for g in gaps) > 0.15 * step
+                or max(radii) - min(radii) > 0.1 * max(radii)):
+            return 1
+        order = math.gcd(order, n)
+    return max(1, order)
+
+
+def roll_symmetry(vessel):
+    """``symmetry_order`` of the vessel's control surfaces and airbrakes."""
+    frame = vessel.reference_frame
+    parts = []
+    for surface in vessel.parts.control_surfaces:
+        try:
+            part = surface.part
+            x, y, z = part.position(frame)
+        except Exception:               # noqa: BLE001 -- KSP-side failure
+            continue
+        parts.append(((part.name, round(y * 2.0)), math.atan2(z, x),
+                      math.hypot(x, z)))
+    return symmetry_order(parts)
+
+
+def nearest_slot(angle, slot, current, hysteresis):
+    """The multiple of ``slot`` (rad) to hold the roof at, the vehicle's
+    roof ``angle`` (rad) from the reference: the nearest one, but the
+    ``current`` index is kept until another is nearer by ``hysteresis`` of
+    a slot, so the command does not chatter at the midpoint."""
+    near = round(angle / slot)
+    if current is None:
+        return near
+    if abs(angle - near * slot) + hysteresis * slot < abs(angle
+                                                          - current * slot):
+        return near
+    return current
+
+
 def deploy_brake_fins(vessel, cfg):
     """Alternate the fins' deploy direction and deploy them at the start
     angle.  Returns the line to log."""
@@ -480,6 +537,8 @@ class Autoland:
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
         self.roll_tune = None           # RollTune, from the coast on
+        self.roll_order = 1             # roll symmetry (ROLL_SYMMETRY)
+        self.roll_slot = None           # which of its equivalent roofs
         self.prev_nose = None           # (ut, direction) of the last tick
         self.nose_rate = None           # deg/s, see track_nose_rate
         self.prev_cmd = None            # (ut, commanded direction)
@@ -590,6 +649,18 @@ class Autoland:
                                    % math.degrees(self.roll_hold or 0.0))
                 if up is not None and self.roll_hold:
                     up = rotate_about(up, direction, self.roll_hold)
+                if (up is not None and self.roll_order > 1
+                        and self.state in (COAST, LANDING_BURN, TOUCHDOWN)):
+                    # The vehicle looks the same every 360/n deg of roll:
+                    # hold the equivalent roof nearest its own, so the roll
+                    # error is never more than 180/n and nothing winds up
+                    # through the air the fins cannot use (LOG16194: input
+                    # pinned 8 s at 32 km, error through 180 deg).
+                    slot = 2.0 * math.pi / self.roll_order
+                    self.roll_slot = nearest_slot(
+                        roof_angle(snap, direction, up), slot, self.roll_slot,
+                        self.cfg.ROLL_SLOT_HYSTERESIS)
+                    up = rotate_about(up, direction, self.roll_slot * slot)
         self.roll_cmd = up
         set_autopilot_attitude(self.autopilot, direction, up,
                                self.cfg.ROLL_OFFSET_DEG)
@@ -804,6 +875,14 @@ class Autoland:
             self.rcs_permitted = True   # allowed from here; see ``update_rcs``
             for line in prepare_vehicle(self.vessel, self.cfg):
                 self.log.event(snap.ut, line)
+            if self.cfg.ROLL_SYMMETRY:
+                try:
+                    self.roll_order = roll_symmetry(self.vessel)
+                except Exception as exc:            # noqa: BLE001
+                    self.log.event(snap.ut, "roll symmetry unread: %r" % exc)
+                self.log.event(snap.ut, "roll symmetry: %d-fold (the roof is "
+                               "held at the nearest of %d from the coast)"
+                               % (self.roll_order, self.roll_order))
             if self.cfg.ENGINE_ALLOCATION:
                 self.cluster = EngineCluster(self.vessel, self.cfg)
                 self.log.event(snap.ut, self.cluster.describe())

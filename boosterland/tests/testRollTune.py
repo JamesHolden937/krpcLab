@@ -4,6 +4,7 @@ import math
 import unittest
 
 from boosterland import rolltune
+from boosterland.autoland import nearest_slot, symmetry_order
 
 
 class TestRollTune(unittest.TestCase):
@@ -30,6 +31,41 @@ class TestRollTune(unittest.TestCase):
         self.assertAlmostEqual(cap * cap / (2 * 1.5), math.radians(5.0))
         self.assertEqual(rolltune.rate_cap(1e6, 5.0, 1.0), 1.0)
         self.assertEqual(rolltune.rate_cap(None, 5.0, 1.0), 1.0)
+
+
+class TestRollSymmetry(unittest.TestCase):
+    @staticmethod
+    def ring(n, key="fin", radius=4.0, phase=0.3):
+        return [(key, phase + 2 * math.pi * i / n, radius) for i in range(n)]
+
+    def test_six_fins(self):
+        self.assertEqual(symmetry_order(self.ring(6)), 6)
+
+    def test_rings_combine_by_gcd(self):
+        parts = self.ring(6) + self.ring(4, key="brake", radius=2.0)
+        self.assertEqual(symmetry_order(parts), 2)
+
+    def test_a_lone_fin_breaks_it(self):
+        parts = self.ring(6) + [("tail", 1.0, 3.0)]
+        self.assertEqual(symmetry_order(parts), 1)
+
+    def test_uneven_ring_breaks_it(self):
+        parts = self.ring(4)
+        parts[1] = ("fin", parts[1][1] + 0.5, 4.0)
+        self.assertEqual(symmetry_order(parts), 1)
+
+    def test_on_axis_parts_do_not_count(self):
+        self.assertEqual(symmetry_order(self.ring(3) + [("x", 0.0, 0.0)]), 3)
+        self.assertEqual(symmetry_order([]), 1)
+
+    def test_slot_hysteresis(self):
+        slot = math.radians(60)
+        self.assertEqual(nearest_slot(math.radians(20), slot, None, 0.15), 0)
+        # past the midpoint but inside the hysteresis: kept
+        self.assertEqual(nearest_slot(math.radians(33), slot, 0, 0.15), 0)
+        # well past it: the next slot
+        self.assertEqual(nearest_slot(math.radians(40), slot, 0, 0.15), 1)
+        self.assertEqual(nearest_slot(math.radians(-100), slot, 0, 0.15), -2)
 
 
 if __name__ == "__main__":
