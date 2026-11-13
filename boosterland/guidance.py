@@ -376,6 +376,143 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     return zero, flat
 
 
+def back_branch(polar, top):
+    """The far side of the lift peak, as ``(peak, top, sign, lift_at)``.
+
+    ``polar`` is ``[(aoa, lift/q, drag/q)]`` from aoa 0; ``top`` is the most
+    the booster may fly.  Past the peak, more angle is less lift and more
+    drag, so every lift the wing can make is available at the *draggiest*
+    angle that makes it.  None when there is no far side to fly: the peak
+    is not inside the probed range, or ``top`` does not reach past it.
+    """
+    if not polar or len(polar) < 3:
+        return None
+    sign = -1.0 if sum(l for _, l, _ in polar) < 0.0 else 1.0
+    k = max(range(len(polar)), key=lambda i: sign * polar[i][1])
+    peak = polar[k][0]
+    top = min(top, polar[-1][0])
+    if top <= peak:
+        return None
+
+    def lift_at(aoa):
+        return sign * trajectory.polar_point(polar, aoa)[0]
+
+    return peak, top, sign, lift_at
+
+
+def lift_command(branch, ell, last):
+    """The plane-coordinate aoa vector that makes the lift vector ``ell``.
+
+    ``ell`` is ``(in_plane, out_of_plane)`` m^2 of lift (lift/q), the
+    variable the miss is near-linear in.  Its size picks the angle on the
+    back branch (bisection: the lift there falls monotonically from the peak
+    to ``top``); its direction picks which way the nose tilts -- against
+    the lift when the polar's sign says tilting one way lifts the other.
+    Below the lift ``top`` still makes, the angle is ``top`` and the lift
+    is what it is.  ``last`` is the tilt direction to keep while ``ell`` is
+    too small to have one.  Returns ``(u, direction)``.
+    """
+    peak, top, sign, lift_at = branch
+    mag = math.hypot(ell[0], ell[1])
+    if mag < 1e-9:
+        e = last
+    else:
+        e = (sign * ell[0] / mag, sign * ell[1] / mag)
+    most = lift_at(peak)
+    if mag >= most:
+        aoa = peak
+    elif mag <= lift_at(top):
+        aoa = top
+    else:
+        lo, hi = peak, top                  # lift_at(lo) > mag > lift_at(hi)
+        for _ in range(30):
+            mid = 0.5 * (lo + hi)
+            if lift_at(mid) > mag:
+                lo = mid
+            else:
+                hi = mid
+        aoa = 0.5 * (lo + hi)
+    return (aoa * e[0], aoa * e[1]), e
+
+
+def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
+    """Fall far off retrograde for drag, with the lift steered onto the pad.
+
+    The fin boosters' polar has lift peaking at 44-49 deg and falling to ~0
+    at 90, while drag keeps rising toward broadside.  So any lift the solve
+    asks for is flown at the largest angle (most drag) that makes it, up to
+    what the controls hold (``Environment.torque_limit_aoa``) and
+    ``HIGH_AOA_MAX_DEG``.  The miss is solved over the *lift vector*: three
+    propagations (no lift, and ``HIGH_AOA_SOLVE_FRACTION`` of the peak lift
+    along each axis) give a 2x2 sensitivity, inverted for the lift that
+    nulls the miss, then checked by ``verified``-style halving.  Every
+    propagation flies the polar and the flip back to retrograde
+    ``flip_s`` before the burn would light.
+
+    Returns ``(steer, prediction, direction)``, or ``(None, None, last)``
+    when the vehicle cannot fly it here: no polar, no far side within the
+    torque limit, a lift at ``top`` above ``HIGH_AOA_MIN_LIFT_FRACTION`` of
+    the peak (no near-zero-lift attitude to rest at), or a best miss over
+    ``HIGH_AOA_MAX_MISS_M``.
+    """
+    normal = steering_plane(r, v)
+    if normal is None or flip_s is None or flip_s <= 0.0:
+        return None, None, last
+    speed = vec.norm(v)
+    altitude = vec.norm(r) - env.equatorial_radius
+    polar = env.polar_at(speed, altitude)
+    limit = env.torque_limit_aoa(speed, altitude)
+    if not polar or limit is None:
+        return None, None, last
+    branch = back_branch(polar, min(limit,
+                                    math.radians(cfg.HIGH_AOA_MAX_DEG)))
+    if branch is None:
+        return None, None, last
+    peak, top, sign, lift_at = branch
+    most = lift_at(peak)
+    if most <= 0.0 or lift_at(top) > cfg.HIGH_AOA_MIN_LIFT_FRACTION * most:
+        return None, None, last
+    if last is None:
+        last = (1.0, 0.0)
+
+    def fly(ell):
+        u, e = lift_command(branch, ell, last)
+        steer = steer_for(normal, v, u)
+        steer = trajectory.Steer(steer.aoa, steer.normal, polar=env.polar_at,
+                                 flip_s=flip_s)
+        prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
+                                                cfg, steer=steer)
+        long, cross = trajectory.miss_components(env, prediction.position,
+                                                 env.target, r)
+        return steer, prediction, (long, cross), e
+
+    zero, flat, m0, e0 = fly((0.0, 0.0))
+    best = (math.hypot(m0[0], m0[1]), zero, flat, e0)
+    if best[0] > cfg.AERO_STEER_DEADBAND_M:
+        p = cfg.HIGH_AOA_SOLVE_FRACTION * most
+        _, _, m1, _ = fly((p, 0.0))
+        _, _, m2, _ = fly((0.0, p))
+        j = ((m1[0] - m0[0]) / p, (m2[0] - m0[0]) / p,
+             (m1[1] - m0[1]) / p, (m2[1] - m0[1]) / p)
+        det = j[0] * j[3] - j[1] * j[2]
+        if abs(det) > 1e-12:
+            ell = ((-j[3] * m0[0] + j[1] * m0[1]) / det,
+                   (j[2] * m0[0] - j[0] * m0[1]) / det)
+            size = math.hypot(ell[0], ell[1])
+            if size > most:
+                ell = (ell[0] * most / size, ell[1] * most / size)
+            for scale in (1.0, 0.5):
+                trial = (ell[0] * scale, ell[1] * scale)
+                steer, prediction, m, e = fly(trial)
+                miss = math.hypot(m[0], m[1])
+                if miss < best[0]:
+                    best = (miss, steer, prediction, e)
+                    break
+    if best[0] > cfg.HIGH_AOA_MAX_MISS_M:
+        return None, None, last
+    return best[1], best[2], best[3]
+
+
 def holdable(env, cfg):
     """The propagator's hold limit (capped at the lift peak), or None."""
     return getattr(env, "holdable_aoa", None)

@@ -102,6 +102,13 @@ class Environment:
         self._hold = [None] * self._bins
         # The angle of most lift, per Mach bin: the wing's ceiling.
         self._lift_peak = [None] * self._bins
+        # (aoa, lift/q, drag/q) per Mach bin, aoa 0 to 90 deg: the polar the
+        # high-aoa descent flies (guidance.solve_high_aoa).
+        self._polar = [None] * self._bins
+        # HIGH_AOA_DESCENT: while the booster flies far off retrograde, the
+        # Mach curve is probed nose-first and the polar's drag ratio carries
+        # the angle (trajectory.acceleration).
+        self.drag_nose_first = False
         self._hold_fixed = 0.0          # N m: wheels + RCS, the most seen
         self._hold_rcs = 0.0
         self._hold_surface = 0.0        # N m per Pa: control surfaces
@@ -419,6 +426,12 @@ class Environment:
         the boostback-exit trajectory ~1 km long of the descent re-sweep, the
         curve at aoa 0 ~0.8 km short, and the descent flies at aoa 4-8.
         """
+        if (self.drag_nose_first and nose is not None
+                and vec.norm(velocity) > 1e-6):
+            turned = vec.rotation_onto(rotation, nose,
+                                       vec.scale(vec.unit(velocity), -1.0))
+            if turned is not None:
+                return turned, True
         tilt = self.cfg.DRAG_PROBE_DESCENT_TILT_DEG
         if (tilt <= 0.0 or nose is None or vec.norm(velocity) < 1e-6
                 or self.in_descent_configuration(velocity, nose)):
@@ -679,6 +692,14 @@ class Environment:
         n = max(1, int(cfg.AERO_STEER_HOLD_PROBES))
         curve = []
         lifts = []
+        polar = []
+        nose_first = vec.rotation_onto(rotation, nose, retrograde)
+        if nose_first is None:
+            return
+        force = self._probe_force(position, velocity, nose_first)
+        if force is None:
+            return
+        polar.append((0.0, 0.0, -vec.dot(force, vec.unit(velocity)) / q))
         for i in range(1, n + 1):
             aoa = top * i / n
             tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),
@@ -699,6 +720,8 @@ class Environment:
             if force is None:
                 return
             lifts.append((aoa, vec.dot(force, side) / q))
+            polar.append((aoa, lifts[-1][1],
+                          -vec.dot(force, vec.unit(velocity)) / q))
         wheels = self._control_torque("available_reaction_wheel_torque")
         rcs = self._control_torque("available_rcs_torque")
         surface = self._control_torque("available_control_surface_torque")
@@ -710,14 +733,28 @@ class Environment:
         self._hold_surface = surface / q
         index = self._bin_index(self.mach(speed, altitude))
         self._hold[index] = curve
+        self._polar[index] = polar
         first = self._lift_peak[index] is None
         self._lift_peak[index] = lift_peak(lifts)
         if first and self._lift_peak[index] is not None:
+            # aoa:lift/drag, both per pascal (m^2), drag along -v.
             self.logbook.event(ut, "lift peak at M%.2f: %.1f deg (%s)"
                                % (self.mach(speed, altitude),
                                   math.degrees(self._lift_peak[index]),
-                                  " ".join("%.0f:%.0f" % (math.degrees(a), l)
-                                           for a, l in lifts)))
+                                  " ".join("%.0f:%.0f/%.0f"
+                                           % (math.degrees(a), l, d)
+                                           for a, l, d in polar)))
+            limit = self.torque_limit_aoa(speed, altitude)
+            self.logbook.event(ut, "torque limit at M%.2f: %s deg (moment/q "
+                               "%s; budget/q %.0f)"
+                               % (self.mach(speed, altitude),
+                                  "%.1f" % math.degrees(limit)
+                                  if limit is not None else "-",
+                                  " ".join("%.0f:%.0f" % (math.degrees(a), m)
+                                           for a, m in curve),
+                                  cfg.AERO_STEER_HOLD_MARGIN
+                                  * (self._hold_fixed / q
+                                     + self._hold_surface)))
         held = self.holdable_aoa(speed, altitude)
         self.holdable_deg = math.degrees(held) if held is not None else None
         if cfg.DIAG_STATE:
@@ -764,6 +801,45 @@ class Environment:
                     moment - last_m)
             last_a, last_m = aoa, max(last_m, moment)
         return top
+
+    def _nearest(self, table, speed, altitude):
+        filled = [i for i, c in enumerate(table) if c]
+        if not filled:
+            return None
+        here = self._bin_index(self.mach(speed, altitude))
+        return table[min(filled, key=lambda i: abs(i - here))]
+
+    def polar_at(self, speed, altitude):
+        """[(aoa, lift/q, drag/q)] of the nearest probed Mach bin, or None."""
+        return self._nearest(self._polar, speed, altitude)
+
+    def torque_limit_aoa(self, speed, altitude):
+        """Radians the controls can hold off retrograde here, or None.
+
+        ``holdable_aoa`` without its cap at the lift peak: the angle where
+        the aerodynamic moment meets ``AERO_STEER_HOLD_MARGIN`` of the
+        control torque, over the whole probed curve to 90 deg.  The high-aoa
+        descent flies the far side of the lift peak, where only the torque
+        binds.
+        """
+        curve = self._nearest(self._hold, speed, altitude)
+        if not curve:
+            return None
+        rho = self.density(altitude)
+        q = 0.5 * rho * speed * speed
+        if q <= 0.0:
+            return curve[-1][0]
+        budget = self.cfg.AERO_STEER_HOLD_MARGIN * (
+            self._hold_fixed + self._hold_surface * q) / q
+        last_a, last_m = 0.0, 0.0
+        for aoa, moment in curve:
+            if moment > budget:
+                if moment <= last_m:
+                    return last_a
+                return last_a + (aoa - last_a) * (budget - last_m) / (
+                    moment - last_m)
+            last_a, last_m = aoa, max(last_m, moment)
+        return curve[-1][0]
 
     def _probe_bin(self, position, direction, index, altitude, c, rotation):
         """Probe one Mach bin, in the air that bin is going to be used in.

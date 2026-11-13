@@ -326,6 +326,24 @@ class Config:
                                             # aerodynamic moment; the rest is
                                             # left for disturbances
 
+    # --- High-aoa descent (measuring) -----------------------------------
+    # From the drag re-sweep until the flip back, fly the far side of the
+    # lift peak: every lift the solve wants at the most drag that makes it,
+    # to reach the landing burn slower (guidance.solve_high_aoa).  The fin
+    # boosters' polar peaks at 44-49 deg with lift ~0 at 90 (attitude4/5-1113).
+    HIGH_AOA_DESCENT: bool = False
+    HIGH_AOA_MAX_DEG: float = 90.0          # the most it flies; the probed
+                                            # polar ends at 90
+    HIGH_AOA_MIN_LIFT_FRACTION: float = 0.25  # usable only if the angle it
+                                            # rests at makes under this much
+                                            # of the peak lift
+    HIGH_AOA_SOLVE_FRACTION: float = 0.1    # sensitivity probes, of peak lift
+    HIGH_AOA_MAX_MISS_M: float = 100.0      # worse than this: fly the
+                                            # ordinary coast instead
+    HIGH_AOA_FLIP_MARGIN: float = 1.5       # the flip back to retrograde is
+                                            # given this times the angle over
+                                            # the coast flip's measured rate
+
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
