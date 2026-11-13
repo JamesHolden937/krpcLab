@@ -85,7 +85,6 @@ class Path:
     end_angle: float = 0.0      # deg
     orbit: float = 80000.0      # m, apoapsis and circular target
     reserve: float = 0.15       # RESERVE_FRACTION
-    landing_cd: float = 1.0
     flip_rate_deg: float = 30.0
 
 
@@ -176,6 +175,7 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
     the body, so the pad's own angle omega*t comes off."""
     R = world.body.radius
     mu = world.body.mu
+    fall_cda = ((lambda h, v: cda_at(craft, h, v)) if craft.cda else None)
     r, theta = R, 0.0
     vr, vt = 0.0, world.omega * R
     b = craft.booster
@@ -212,8 +212,9 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
                                 isp_vac=b.isp_vac, isp_sl=b.isp_sl,
                                 radius=b.radius, gimbal_accel=b.gimbal_accel,
                                 fixed_accel=b.fixed_accel)
-            rec = budget.recovery(world.body, bb, state, cd=path.landing_cd,
-                                  flip_rate_deg=path.flip_rate_deg)
+            rec = budget.recovery(world.body, bb, state,
+                                  flip_rate_deg=path.flip_rate_deg,
+                                  cda=fall_cda)
             need = rec.propellant - rec.propellant_left
             if (h > 1000.0 and rec.propellant_left
                     <= path.reserve * need) or b_prop <= 0.0:

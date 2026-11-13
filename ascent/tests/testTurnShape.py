@@ -8,8 +8,9 @@ MU, R = 3.5316e12, 600070.0
 
 def kerbin():
     pres = [math.exp(-k * 1000.0 / 5600.0) for k in range(71)] + [0.0]
-    return ts.World(budget.Body(MU, R, 1.225), 2 * math.pi / 21549.425,
-                    pres, [1.225 * p for p in pres])
+    dens = [1.225 * p for p in pres]
+    return ts.World(budget.Body(MU, R, 1.225, tuple(dens), 1000.0),
+                    2 * math.pi / 21549.425, pres, dens)
 
 
 def stack():

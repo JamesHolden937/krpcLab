@@ -347,8 +347,18 @@ class Ascent:
             rho = 1.2 if self.body.has_atmosphere else 0.0
         self.pad_pressure = (self.body.pressure_at(pad_alt) / ATM
                              if self.body.has_atmosphere else 0.0)
+        # The booster's fall is taken through the body's own air: density
+        # every km from the pad to the top of the atmosphere.
+        depth = (self.body.atmosphere_depth if self.body.has_atmosphere
+                 else 0.0)
+        n = int(max(0.0, depth - pad_alt) / 1000.0) + 2 if rho > 0.0 else 0
+        profile = tuple(self.body.density_at(pad_alt + k * 1000.0)
+                        for k in range(n))
         self.model_body = budget.Body(self.body.gravitational_parameter,
-                                      vec.norm(self.pad), rho)
+                                      vec.norm(self.pad), rho, profile,
+                                      1000.0)
+        self.fall_cda = None    # the stack's Cd*A(height, speed), once taken
+        self._drag = None
         logbook.event(ut, "pad: lat %.6f lon %.6f r=%.1f rho=%.3f p=%.3f atm"
                       % (bcfg.PAD_LAT, bcfg.PAD_LON, vec.norm(self.pad), rho,
                          self.pad_pressure))
@@ -469,8 +479,8 @@ class Ascent:
                            fixed_accel=fixed)
         state = self.geometry(r, v)
         rec = budget.recovery(self.model_body, b, state,
-                              cd=self.cfg.LANDING_CD,
-                              flip_rate_deg=self.cfg.FLIP_RATE_DEG_S)
+                              flip_rate_deg=self.cfg.FLIP_RATE_DEG_S,
+                              cda=self.fall_cda)
         return rec, state, b
 
     def booster_thrust(self):
@@ -601,6 +611,7 @@ class Ascent:
                               self._thrust_sl / 1e3, self._isp[0],
                               self._isp[1], self.stack.dry / 1e3,
                               [len(g) for g in self.stack.groups]))
+            self.drag_table()
             if self.cfg.ASCENT_TYPE == 0:
                 self.solve_turn_shape(ut)
             self.enter(ASCENT, ut, "liftoff")
@@ -639,6 +650,51 @@ class Ascent:
         self.lit_ut = waited
         self.log.event(ut, "launch: staged to %d" % self.control.current_stage)
 
+    def drag_table(self):
+        """The stack's Cd*A (m^2) at zero angle of attack on a grid of
+        heights and speeds, the vessel as it stands: the turn-shape solve's
+        drag, and the booster's fall in ``budget.fall`` (``fall_cda``).
+        Taken once, at liftoff."""
+        if self._drag is not None:
+            return self._drag
+        cfg, body, frame = self.cfg, self.body, self.frame
+        pad_alt = self.pad_alt
+        # drag at zero angle of attack, the vessel as it stands
+        flight = self.vessel.flight(frame)
+        up = vec.unit(self.vessel.position(frame))
+        rot = self.vessel.rotation(frame)
+        heights = [float(x) for x in cfg.DRAG_HEIGHTS_M.split(",")]
+        speeds = [float(x) for x in cfg.DRAG_SPEEDS_MS.split(",")]
+        r_pad = vec.norm(self.pad)
+        table = []
+        for h in heights:
+            pos = vec.scale(up, r_pad + h)
+            rho = body.density_at(pad_alt + h)
+            row = []
+            for v in speeds:
+                vel = vec.scale(up, v)
+                cda = None
+                if rho > 1e-6:
+                    try:
+                        force = flight.simulate_aerodynamic_force_at(
+                            body, pos, vel, rot)
+                        d = -vec.dot(force, up)
+                        if d > 0.0:
+                            cda = d / (0.5 * rho * v * v)
+                    except Exception:   # noqa: BLE001
+                        pass
+                row.append(cda)
+            table.append(row)
+        for i, row in enumerate(table):     # fill gaps from the row below
+            for j, c in enumerate(row):
+                if c is None:
+                    row[j] = table[i - 1][j] if i else 0.0
+        self._drag = (heights, speeds, table)
+        craft = turnshape.Craft(None, None, 0.0, 0.0, None, False,
+                                heights, speeds, table)
+        self.fall_cda = (lambda h, v: turnshape.cda_at(craft, h, v))
+        return self._drag
+
     def solve_turn_shape(self, ut):
         """Set MechJeb's classic turn shape to the one ``turnshape.solve``
         finds for this craft (see ``Config.TURN_SHAPE``)."""
@@ -673,36 +729,7 @@ class Ascent:
                          for n in PROPELLANTS)
         upper_mass = self.vessel.mass - booster.mass
         upper_prop = max(0.0, total_prop - stack.propellant())
-        # drag at zero angle of attack, the vessel as it stands
-        flight = self.vessel.flight(frame)
-        up = vec.unit(self.vessel.position(frame))
-        rot = self.vessel.rotation(frame)
-        heights = [float(x) for x in cfg.DRAG_HEIGHTS_M.split(",")]
-        speeds = [float(x) for x in cfg.DRAG_SPEEDS_MS.split(",")]
-        r_pad = vec.norm(self.pad)
-        table = []
-        for h in heights:
-            pos = vec.scale(up, r_pad + h)
-            rho = body.density_at(pad_alt + h)
-            row = []
-            for v in speeds:
-                vel = vec.scale(up, v)
-                cda = None
-                if rho > 1e-6:
-                    try:
-                        force = flight.simulate_aerodynamic_force_at(
-                            body, pos, vel, rot)
-                        d = -vec.dot(force, up)
-                        if d > 0.0:
-                            cda = d / (0.5 * rho * v * v)
-                    except Exception:   # noqa: BLE001
-                        pass
-                row.append(cda)
-            table.append(row)
-        for i, row in enumerate(table):     # fill gaps from the row below
-            for j, c in enumerate(row):
-                if c is None:
-                    row[j] = table[i - 1][j] if i else 0.0
+        heights, speeds, table = self.drag_table()
         depth = body.atmosphere_depth if body.has_atmosphere else 0.0
         step = 1000.0
         n = int(max(0.0, depth - pad_alt) / step) + 2
@@ -723,7 +750,6 @@ class Ascent:
                               end_angle=a.turn_end_angle,
                               orbit=cfg.ORBIT_ALT_M - pad_alt,
                               reserve=cfg.RESERVE_FRACTION,
-                              landing_cd=cfg.LANDING_CD,
                               flip_rate_deg=cfg.FLIP_RATE_DEG_S)
         craft = turnshape.Craft(
             booster, b_engines, upper_mass, upper_prop, u_engines,

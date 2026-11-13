@@ -21,15 +21,19 @@ small.  The heavy booster's real boostback (LOG12758: separated at 22.6 km,
 25.5 km out, 791 m/s away and 394 up) burned 1251 m/s; this model gives
 within a few percent of that (``tests/testBudget``).
 
-**Landing.**  The booster falls tail first at its terminal velocity and the
-landing burn takes that out at full thrust: ``dv = v_t * a / (a - g)``, the
-gravity loss of a constant-thrust stop.  ``v_t`` comes from the booster's
-own mass and frontal area at the pad's air density, with a drag coefficient
-from ``Config`` (1.0: a bare cylinder falls faster than one with airbrakes
-open, so the estimate errs towards keeping propellant).  It is capped by the
-speed a vacuum fall from the apex would reach, for bodies with thin or no
-air.  The heavy fell at ~242 m/s and burned ~330 m/s stopping; the model
-gives 294 and 334.
+**Landing.**  The booster falls from the boostback's burn-out through the
+atmosphere (``fall``: the body's own density profile, gravity, the
+horizontal speed the boostback left it), and the landing burn is the one
+boosterland flies: lit at the height its law asks for
+(``trajectory.landing_burn_state``: the stopping distance at
+``LANDING_THROTTLE_CAP`` x ``SUICIDE_MARGIN``, plus ``SUICIDE_REACTION_S`` of
+speed), then a constant deceleration to the ground.  Over that height the
+burn's dv is the speed plus the gravity it holds up: ``v + 2 g s H / v``,
+``s`` the vertical share of the velocity.  The fall's drag is the craft's
+own Cd*A at the speed (``cda``: the ascent's zero-alpha table of the
+stack), else ``cd`` times the frontal area.  The Heavy Shuttle booster
+(LOG16184) lit at 5.2 km doing 680 m/s and needed ~850 m/s; a sea-level
+terminal speed put it at 405 and the booster flamed out at 29 m.
 
 The two burns spend propellant at their own Isp -- vacuum for the boostback,
 the pad's for the landing -- and ``recovery`` returns the propellant left
@@ -43,7 +47,13 @@ from boosterland.guidance import drift_rate, flip_throttle
 
 from boosterland.config import Config as _BoosterConfig
 
-FLIP_ALIGN_DEG = _BoosterConfig().FLIP_ALIGN_DEG    # the flip is over inside
+_BCFG = _BoosterConfig()
+FLIP_ALIGN_DEG = _BCFG.FLIP_ALIGN_DEG    # the flip is over inside
+# boosterland's landing law (trajectory.landing_burn_state), which the
+# budget has to fly:
+LANDING_THROTTLE_CAP = _BCFG.LANDING_THROTTLE_CAP
+SUICIDE_MARGIN = _BCFG.SUICIDE_MARGIN
+SUICIDE_REACTION_S = _BCFG.SUICIDE_REACTION_S
 
 G0 = 9.80665
 
@@ -68,6 +78,10 @@ class Body:
     mu: float               # m^3/s^2
     radius: float           # m, to the pad's surface
     density_pad: float      # kg/m^3 at the pad
+    # kg/m^3 every ``step`` m above the pad, from 0 up; required when
+    # density_pad > 0 (the fall's drag is taken at its height)
+    density: tuple = ()
+    step: float = 1000.0
 
 
 @dataclass
@@ -187,39 +201,71 @@ def boostback(body, booster, state, flip_rate_deg=30.0, dt=0.1,
     return dv, m_after, t, State(h, x, u, 0.0, w)
 
 
-def terminal_speed(body, booster, mass, cd):
+def density(body, height):
+    if body.density_pad <= 0.0:
+        return 0.0
+    table = body.density
+    if not table:
+        raise ValueError("budget.Body has air but no density profile")
+    k = max(0.0, height) / body.step
+    i = int(k)
+    if i >= len(table) - 1:
+        return table[-1]
+    f = k - i
+    return table[i] * (1.0 - f) + table[i + 1] * f
+
+
+def ignition(speed, accel, g):
+    """The height boosterland lights the landing burn at, for a booster at
+    ``speed`` with ``accel`` of full thrust; None when the engines cannot
+    hold it up."""
+    net = accel * LANDING_THROTTLE_CAP - g
+    if net <= 0.0:
+        return None
+    return (speed * speed / (2.0 * net) * SUICIDE_MARGIN
+            + speed * SUICIDE_REACTION_S)
+
+
+def fall(body, booster, mass, after, cd, cda=None, dt=0.5, max_s=900.0):
+    """Fall from the boostback's burn-out to the landing burn's ignition.
+    Returns (dv of the landing burn, the speed it lights at, its height)."""
     area = math.pi * booster.radius * booster.radius
-    g = gravity(body, 0.0)
-    if body.density_pad <= 0.0 or area <= 0.0 or cd <= 0.0:
-        return float("inf")
-    return math.sqrt(2.0 * mass * g / (body.density_pad * cd * area))
-
-
-def landing_dv(body, booster, mass, apex, cd):
-    """dv of the landing burn for a booster of ``mass`` falling from
-    ``apex``.  Returns (dv, the speed it starts from)."""
-    g = gravity(body, 0.0)
-    v_vacuum = math.sqrt(2.0 * g * max(0.0, apex))
-    v = min(v_vacuum, terminal_speed(body, booster, mass, cd))
     a = booster.thrust_sl / max(1.0, mass)
-    if a <= g:
-        return float("inf"), v
-    return v * a / (a - g), v
+    h, u, w = after.height, abs(after.v_away), after.v_up
+    t = 0.0
+    while t < max_s:
+        g = gravity(body, h)
+        v = math.hypot(u, w)
+        if w < 0.0 or h <= 0.0:
+            need = ignition(v, a, g)
+            if need is None:
+                return float("inf"), v, h
+            if h <= need or h <= 0.0:
+                s = -w / max(1e-9, v)
+                height = max(need, 1e-6)
+                return v + 2.0 * g * s * height / max(1e-9, v), v, h
+        rho = density(body, h)
+        if rho > 0.0 and v > 0.0:
+            k = cda(h, v) if cda is not None else cd * area
+            d = 0.5 * rho * v * k / mass        # drag / speed
+            u -= d * u * dt
+            w -= d * w * dt
+        w -= g * dt
+        h += w * dt
+        t += dt
+    return float("inf"), math.hypot(u, w), h
 
 
-def recovery(body, booster, state, cd=1.0, flip_rate_deg=30.0):
+def recovery(body, booster, state, cd=1.0, flip_rate_deg=30.0, cda=None):
     """The propellant the booster would land with if it separated in
-    ``state``."""
+    ``state``.  ``cda(height, speed)``: the falling booster's Cd*A, m^2
+    (None: ``cd`` x the frontal area)."""
     propellant = booster.mass - booster.dry_mass
     bb_dv, m1, burn_s, after = boostback(body, booster, state, flip_rate_deg)
     g = gravity(body, after.height)
     apex = after.height + max(0.0, after.v_up) ** 2 / (2.0 * g)
-    # The landing burn's own mass: iterate once, starting from the dry mass
-    # plus what the burn will use -- the stop is short, so one pass is enough.
-    land_dv, v_t = landing_dv(body, booster, m1, apex, cd)
+    land_dv, v_t, _ = fall(body, booster, m1, after, cd, cda)
     if math.isfinite(land_dv):
-        m2 = m1 * math.exp(-land_dv / (booster.isp_sl * G0))
-        land_dv, v_t = landing_dv(body, booster, 0.5 * (m1 + m2), apex, cd)
         m2 = m1 * math.exp(-land_dv / (booster.isp_sl * G0))
     else:
         m2 = -float("inf")

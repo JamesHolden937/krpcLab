@@ -77,10 +77,6 @@ class Config:
     # booster's own gimbal, RCS and inertia (summed over its parts), re-read
     # this often; FLIP_RATE_DEG_S is the full-throttle flip's model.
     AUTHORITY_REFRESH_S: float = 15.0
-    # Drag coefficient on the booster's frontal area while it falls.  1.0 is
-    # a bare cylinder; airbrakes only slow it more, so the landing estimate
-    # errs towards keeping propellant.
-    LANDING_CD: float = 1.0
     # Look-ahead: the reserve is projected this far forward at its present
     # rate of fall, so the throttle-down starts before the line, not on it.
     SEP_LEAD_S: float = 2.0

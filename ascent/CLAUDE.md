@@ -20,9 +20,13 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
 - `budget.py` -- pure: the propellant the booster would land with if it
   separated now. Boostback integrated with the flip under power (nose turns
   from prograde over the top at `FLIP_RATE_DEG_S`), ballistic vacuum return;
-  landing burn from terminal velocity on the widest tank's area,
-  `LANDING_CD` 1.0. Matches LOG12758's measured boostback (1251 m/s) and
-  landing (~330) -- `tests/testBudget.py`.
+  landing burn after a fall through the body's own density profile with
+  the stack's zero-alpha Cd*A table (taken at liftoff), lit where
+  boosterland's law lights it (`LANDING_THROTTLE_CAP`, `SUICIDE_MARGIN`,
+  `SUICIDE_REACTION_S`), dv = v + 2 g s H / v. Matches LOG12758's boostback
+  (1251 m/s) and the Heavy Shuttle booster's fall and burn (LOG16184: lit
+  at 680 m/s, ~850 m/s) -- `tests/testBudget.py`. Errs high on boosters
+  with airbrakes (their drag is not in the table).
 - `turnshape.py` -- pure: MechJeb classic's pitch-vs-altitude path
   (`90 - ((h-h0)/(end-h0))**shape * 90`; the vertical climb ends at
   MechJeb's start height or start speed, whichever first, and h0 is the
