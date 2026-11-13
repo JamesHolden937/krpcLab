@@ -205,7 +205,9 @@ namespace KrpcLab
         /// axes x pitch, y roll, z yaw: positive then negative).  Then one
         /// line per ModuleControlSurface: actuatorSpeed (deg/s, or the lag
         /// rate when exponential), ctrlSurfaceRange (deg),
-        /// useExponentialSpeed (1/0), and its own potential torque.  Empty
+        /// useExponentialSpeed (1/0), and its own potential torque; and one
+        /// per ModuleGimbal that has a response speed: gimbalResponseSpeed
+        /// (1/s), gimbalRange (deg), 2, and its potential torque.  Empty
         /// outside flight.</summary>
         [KRPCProcedure]
         public static IList<string> SurfaceActuators()
@@ -228,6 +230,20 @@ namespace KrpcLab
                     catch (Exception) { continue; }
                     tp += Abs(pos);
                     tn += Abs(neg);
+                    var gm = m as ModuleGimbal;
+                    if (gm != null)
+                    {
+                        // ModuleGimbal.FixedUpdate: with useGimbalResponseSpeed
+                        // the nozzle moves Mathf.Lerp(now, target,
+                        // gimbalResponseSpeed x dt) a step -- a first-order lag
+                        // of 1/gimbalResponseSpeed s; without it, at once.
+                        if (gm.useGimbalResponseSpeed && gm.gimbalResponseSpeed > 0f)
+                            lines.Add(string.Format(ci, "{0} {1} 2 {2} {3} {4} {5} {6} {7}",
+                                gm.gimbalResponseSpeed, gm.gimbalRange,
+                                Mathf.Abs(pos.x), Mathf.Abs(pos.y), Mathf.Abs(pos.z),
+                                Mathf.Abs(neg.x), Mathf.Abs(neg.y), Mathf.Abs(neg.z)));
+                        continue;
+                    }
                     var cs = m as ModuleControlSurface;
                     if (cs == null) continue;
                     lines.Add(string.Format(ci, "{0} {1} {2} {3} {4} {5} {6} {7} {8}",

@@ -28,6 +28,14 @@ off:
 
 Until the fit has seen anything (``Plant.quality`` 0) ``k`` is 1 and the
 gains equal auto-tune's.
+
+**Actuator lag, every axis, from START** (``ATTITUDE_LAG_PACE``): kRPC tunes
+as if the torque arrived at once.  The engine gimbals do not -- KSP moves a
+nozzle ``Mathf.Lerp(now, target, gimbalResponseSpeed x dt)`` a step, 0.125 s
+on the Vector -- nor do exponential surfaces.  Each axis's time to peak is
+raised until kRPC's loop decays no faster than ``ROLL_LAG_FACTOR`` x the
+axis's torque-weighted lag (``common.rateplant.actuators``, re-read at
+1 Hz: a gimbal's torque is zero until it is lit).  Never below kRPC's own.
 """
 
 import math
@@ -42,6 +50,14 @@ def damping_and_frequency(time_to_peak, overshoot):
     zeta = math.sqrt(ln * ln / (math.pi * math.pi + ln * ln))
     omega = math.pi / (max(1e-3, time_to_peak) * math.sqrt(1.0 - zeta * zeta))
     return zeta, omega
+
+
+def time_to_peak_for(tau, overshoot):
+    """The time to peak (s) that gives kRPC's tuned loop a decay time of
+    ``tau``: its poles decay at ``zeta omega``, and ``omega = pi / (ttp
+    sqrt(1 - zeta^2))``."""
+    zeta, _ = damping_and_frequency(1.0, overshoot)
+    return math.pi * zeta * tau / math.sqrt(1.0 - zeta * zeta)
 
 
 def krpc_gains(accel, zeta, omega):
@@ -79,13 +95,57 @@ class RollTune:
         self.prev = None            # (ut, roll rate rad/s)
         self.sent = None            # gains last written
         self.kp = self.tau = self.cap = None
+        self.ttp0 = self.over = None    # kRPC's own time to peak, overshoot
+        self.ttp_sent = None
+        self.started = False
+        self.lag_logged = [0.0, 0.0, 0.0]
+
+    def start(self, ut):
+        """From START: read kRPC's own tuning; pace it by actuator lag."""
+        try:
+            self.ttp0 = tuple(self.ap.time_to_peak)
+            self.over = tuple(self.ap.overshoot)
+            self.cap0 = tuple(self.ap.max_angular_velocity)
+        except Exception as exc:                    # noqa: BLE001
+            self.log.event(ut, "attitude tune: kRPC tuning unread (%r)"
+                           % (exc,))
+            return
+        self.zw = [damping_and_frequency(self.ttp0[i], self.over[i])
+                   for i in range(3)]
+        self.started = True
+
+    def pace(self, ut):
+        """Each axis's time to peak from its actuators' lag."""
+        if not self.cfg.ATTITUDE_LAG_PACE:
+            return
+        ttp = []
+        for i in range(3):
+            lag = self.acts[i][1]
+            need = time_to_peak_for(self.cfg.ROLL_LAG_FACTOR * lag,
+                                    self.over[i]) if lag else 0.0
+            ttp.append(max(self.ttp0[i], need))
+            if lag and abs(lag - self.lag_logged[i]) > 0.25 * max(
+                    lag, self.lag_logged[i]):
+                self.lag_logged[i] = lag
+                self.log.event(ut, "attitude tune: %s lag %.3f s -> time to "
+                               "peak %.2f s" % (("pitch", "roll", "yaw")[i],
+                                                lag, ttp[i]))
+        self.zw = [damping_and_frequency(ttp[i], self.over[i])
+                   for i in range(3)]
+        if self.ttp_sent is None or any(
+                abs(a - b) > 0.02 * b for a, b in zip(ttp, self.ttp_sent)):
+            try:
+                self.ap.time_to_peak = tuple(ttp)
+                self.ttp_sent = ttp
+            except Exception as exc:                # noqa: BLE001
+                self.log.event(ut, "attitude tune: time to peak not set "
+                               "(%r)" % (exc,))
 
     def engage(self, ut):
+        """From the coast: auto-tune off, roll from the measured effect."""
+        if not self.started:
+            return
         try:
-            ttp = tuple(self.ap.time_to_peak)
-            over = tuple(self.ap.overshoot)
-            self.cap0 = tuple(self.ap.max_angular_velocity)
-            self.zw = [damping_and_frequency(ttp[i], over[i]) for i in range(3)]
             self.ap.auto_tune = False
         except Exception as exc:                    # noqa: BLE001
             self.log.event(ut, "roll tune: not engaged (%r)" % (exc,))
@@ -95,7 +155,7 @@ class RollTune:
                        "measured effect")
 
     def update(self, ut, roll_rate_deg, roll_input):
-        if not self.active:
+        if not self.started:
             return
         if ut >= self.next_read:
             self.next_read = ut + self.cfg.ROLL_TUNE_READ_S
@@ -116,6 +176,9 @@ class RollTune:
                         self.log.event(ut, "roll tune: roll surfaces slew "
                                        "%.2f full travel/s" % acts[1][0])
                     self.acts = acts
+            self.pace(ut)
+        if not self.active:
+            return
         # kRPC's roll input and our roll rate have opposite senses (the
         # boostback's gimbals: -209..-270 deg/s^2 per unit, corr -0.93/-0.97).
         w = (-math.radians(roll_rate_deg)
@@ -132,7 +195,7 @@ class RollTune:
         roll = None
         if self.accel[1]:
             effect = self.plant.k * self.accel[1]
-            zeta, omega = self.zw[1]
+            _, omega = self.zw[1]
             cap = rate_cap(effect, self.cfg.ROLL_BRAKE_DEG, self.cap0[1])
             slew, lag = self.acts[1]
             tau = closing_time(1.0 / omega, effect, slew, lag, cap,
@@ -169,6 +232,7 @@ class RollTune:
         try:
             self.ap.auto_tune = True
             self.ap.max_angular_velocity = tuple(self.cap0)
+            self.ap.time_to_peak = tuple(self.ttp0)
         except Exception:                           # noqa: BLE001
             pass
 

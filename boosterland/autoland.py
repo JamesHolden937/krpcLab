@@ -560,13 +560,14 @@ class Autoland:
         self.state = state
         self.phase_start_ut = ut
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
-        if (self.cfg.ROLL_TUNE and state == COAST
-                and self.roll_tune is None):
+        if self.roll_tune is None:
             svc = service(self.conn)
             self.roll_tune = RollTune(
                 self.autopilot, self.vessel,
                 getattr(svc, "surface_actuators", None)
                 if svc is not None else None, self.cfg, self.log)
+            self.roll_tune.start(ut)
+        if self.cfg.ROLL_TUNE and state == COAST:
             self.roll_tune.engage(ut)
         if self.cfg.KRPC_AP_DIAG and state == COAST:
             # kRPC keeps 3000 physics ticks (60 s) from when logging was

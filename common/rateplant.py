@@ -43,10 +43,11 @@ def actuators(lines):
     ``SurfaceActuators`` lines.  ``slew`` is how fast the axis's input can
     move, in full travel per second: the surfaces' ``actuatorSpeed /
     ctrlSurfaceRange``, combined harmonically by torque, with the torque
-    that is not on a slewed surface (wheels, RCS, gimbals) counted as
-    instant; None when no slewed surface acts on the axis.  ``lag`` is the
+    that is not on a slewed surface (wheels, RCS, instant gimbals) counted
+    as instant; None when no slewed surface acts on the axis.  ``lag`` is the
     torque-weighted first-order lag (s) of exponential surfaces (input
-    ``range / speed`` plus angle ``1 / speed``), 0 with none.  None when the
+    ``range / speed`` plus angle ``1 / speed``) and of engine gimbals with a
+    response speed (``1 / speed``, kind 2), 0 with none.  None when the
     lines cannot be read."""
     if not lines or not lines[0].startswith("total"):
         return None
@@ -56,12 +57,15 @@ def actuators(lines):
     lagged = [0.0, 0.0, 0.0]        # sum of torque x lag
     for line in lines[1:]:
         f = [float(x) for x in line.split()]
-        speed, rng, expo = f[0], f[1], f[2] > 0.5
+        speed, rng, kind = f[0], f[1], f[2]
         if speed <= 0.0 or rng <= 0.0:
             continue
         for i in range(3):
             t = 0.5 * (f[3 + i] + f[6 + i])
-            if expo:
+            if kind > 1.5:
+                # an engine gimbal: Mathf.Lerp by speed x dt a step
+                lagged[i] += t / speed
+            elif kind > 0.5:
                 lagged[i] += t * (rng / speed + 1.0 / speed)
             else:
                 slow[i] += t / (speed / rng)
