@@ -1012,3 +1012,29 @@ reaches 5.5 km at ~520 m/s against ~750 nose-first.  So there is ~230 m/s
 to gain, but on the **front** branch at 10-30 deg, where lift/q is 25-100
 and has to be steered (bank reversals or a slow roll of the lift), not
 on the back branch this law flies.
+
+## 2026-11-13 (later): high-aoa descent -- the cone
+
+Replaced the back-branch law (commit a0e5f4d): the angle is `holdable_aoa` at each propagation step's dynamic
+pressure (the torque limit capped at the lift peak), and the lift's direction turns about the velocity at a
+solved rate and phase (2-D Broyden over (phase, rate), first tick an 8-phase scan) so it averages out; the late
+brakes are held while it flies; the flip-back time is 1.5 x the current angle over the measured coast flip
+rate. Offline toy (testHighAoa): miss 1590 -> 69 m, burn reached at 118 v 156 m/s.
+
+cone1-1113 (LOG16355-16366, 3 a save a arm, qs_finbooster/qs_finbooster2, farm freshly restarted):
+
+| arm | ignition speed m/s | miss median / mean / worst m |
+|---|---|---|
+| default | 657-754, median ~694 | 44 / 90 / 360 |
+| HIGH_AOA_DESCENT | 683-747, median ~701 | 426 / 496 / 1047 (all long, east) |
+
+The law engaged at 46-50 deg near 335-350 m/s and at 13-40 deg lower down, and switched off within 2-20 s
+every time ("best miss 502-2288 m"). The solved cone rate sat at 0.05-0.09 rad/s against a cap of ~0.1
+(nose speed held to half the coast flip's ~9 deg/s): one revolution per minute, so the lift does not average
+over the descent, and each engagement left the ordinary coast a km-scale error. Flying at the torque limit
+leaves no torque to move the nose, so a faster cone is not available on this airframe.
+
+Verdict: the high-aoa descent is refuted on the fin boosters (two laws, five batches). Delete `HIGH_AOA_*`
+and its code; keep the polar and torque-limit log lines. The ascent comparison the user asked for was not
+flown: nothing moved the ignition speed. The lever that remains for the burn's cost is the ignition margin
+(`SUICIDE_MARGIN` 1.18 + 1.5 s reaction: ~1.6 of 5.8 km on LOG16351).
