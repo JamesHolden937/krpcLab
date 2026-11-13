@@ -85,12 +85,17 @@ class Steer:
     # HIGH_AOA_DESCENT (guidance.solve_high_aoa): ``polar`` is
     # (speed, altitude) -> [(aoa, lift/q, drag/q)] and replaces ``slope``:
     # lift is read off the measured polar at |aoa| and drag is the Mach
-    # curve's nose-first Cd*A scaled by drag(aoa)/drag(0).  ``flip_s`` > 0:
-    # the angle ramps to 0 over that long, starting that long before the
-    # landing burn would light -- the flip back to retrograde the control
-    # loop flies (autoland.run_coast).
+    # curve's nose-first Cd*A scaled by drag(aoa)/drag(0).  ``schedule``
+    # (speed, altitude) -> aoa replaces ``aoa`` at every step of a
+    # propagation, and ``cone_rate`` (rad/s) turns ``normal`` -- the lift's
+    # direction -- about the velocity by that much per second from t=0.
+    # ``flip_s`` > 0: the angle ramps to 0 over that long, starting that
+    # long before the landing burn would light -- the flip back to
+    # retrograde the control loop flies (autoland.high_aoa).
     polar: object = None
     flip_s: float = 0.0
+    schedule: object = None
+    cone_rate: float = 0.0
 
 
 def polar_point(polar, aoa):
@@ -391,11 +396,25 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
                 flip_t = t
         if height <= 0.0:
             break
-        if flip_t is not None:
-            left = max(0.0, 1.0 - (t - flip_t) / flip_s)
-            flying = replace(steer, aoa=steer.aoa * left) if left else None
-
         altitude = radius - env.equatorial_radius
+        if steer is not None:
+            left = 1.0
+            if flip_t is not None:
+                left = max(0.0, 1.0 - (t - flip_t) / flip_s)
+            if left <= 0.0:
+                flying = None
+            elif steer.schedule is not None or steer.cone_rate:
+                aoa = (steer.schedule(speed, altitude)
+                       if steer.schedule is not None else steer.aoa)
+                normal = steer.normal
+                if steer.cone_rate and speed > 1e-6:
+                    normal = vec.quat_rotate(vec.quat_axis_angle(
+                        vec.scale(v, 1.0 / speed), steer.cone_rate * t),
+                        normal)
+                flying = replace(steer, aoa=aoa * left, normal=normal)
+            elif left < 1.0:
+                flying = replace(steer, aoa=steer.aoa * left)
+
         dt = (cfg.PREDICT_DT_ATMO if altitude < env.atmosphere_depth
               else cfg.PREDICT_DT_VACUUM)
         if speed > 1.0:

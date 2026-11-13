@@ -1,4 +1,4 @@
-"""HIGH_AOA_DESCENT: the polar, the back-branch lift map and its solve."""
+"""HIGH_AOA_DESCENT: the polar, the scheduled angle, the cone and its solve."""
 
 import math
 import os
@@ -24,16 +24,22 @@ def fin_polar(speed=None, altitude=None):
 
 
 class PolarEnv(FakeEnv):
-    def __init__(self):
+    """Holds 40 deg in thin air, falling as 1/sqrt(q) above 500 Pa."""
+
+    def __init__(self, lift=True):
         super().__init__(atmosphere=True)
         self.drag_area = 20.0
         self.reswept_ut = 0.0
+        self.lift = lift
 
     def polar_at(self, speed, altitude):
-        return fin_polar()
+        if self.lift:
+            return fin_polar()
+        return [(a, 0.0, d) for a, _, d in fin_polar()]
 
-    def torque_limit_aoa(self, speed, altitude):
-        return math.radians(90.0)
+    def holdable_aoa(self, speed, altitude):
+        q = 0.5 * self.density(altitude) * speed * speed
+        return math.radians(40.0) * min(1.0, math.sqrt(500.0 / max(q, 1.0)))
 
 
 class TestPolar(unittest.TestCase):
@@ -45,25 +51,21 @@ class TestPolar(unittest.TestCase):
         self.assertAlmostEqual(lift, 0.0, delta=1e-6)
         self.assertAlmostEqual(ratio, 150.0 / 20.0, delta=1e-6)
 
-    def test_lift_command_makes_the_lift_asked(self):
-        branch = guidance.back_branch(fin_polar(), math.radians(90.0))
-        self.assertIsNotNone(branch)
-        for ell in ((50.0, 0.0), (0.0, -80.0), (30.0, 40.0)):
-            u, e = guidance.lift_command(branch, ell, (1.0, 0.0))
-            aoa = math.hypot(*u)
-            self.assertGreaterEqual(aoa, math.radians(45.0) - 1e-6,
-                                    "flown on the draggy side of the peak")
-            lift, _ = trajectory.polar_point(fin_polar(), aoa)
-            # The lift acts along the tilt direction with the polar's sign.
-            made = (lift * u[0] / aoa, lift * u[1] / aoa)
-            self.assertAlmostEqual(made[0], ell[0], delta=1.0)
-            self.assertAlmostEqual(made[1], ell[1], delta=1.0)
-        u, e = guidance.lift_command(branch, (0.0, 0.0), (0.0, 1.0))
-        self.assertAlmostEqual(math.hypot(*u), math.radians(90.0), places=6)
-        self.assertEqual(e, (0.0, 1.0))
+    def test_schedule_is_the_hold_capped(self):
+        env, cfg = PolarEnv(), Config()
+        cfg.HIGH_AOA_MAX_DEG = 30.0
+        schedule = guidance.aoa_schedule(env, cfg)
+        self.assertAlmostEqual(schedule(100.0, 30000.0), math.radians(30.0))
+        thick = schedule(600.0, 5000.0)
+        self.assertLess(thick, math.radians(30.0))
+        self.assertAlmostEqual(thick, env.holdable_aoa(600.0, 5000.0))
 
-    def test_no_far_side_below_the_peak(self):
-        self.assertIsNone(guidance.back_branch(fin_polar(), math.radians(40.0)))
+    def test_cone_limit_follows_the_flip_rate(self):
+        cfg = Config()
+        cfg.HIGH_AOA_CONE_MAX = 10.0
+        w = guidance.cone_limit(cfg, 20.0, math.radians(30.0))
+        self.assertAlmostEqual(w * math.sin(math.radians(30.0)),
+                               cfg.HIGH_AOA_CONE_FRACTION * math.radians(20.0))
 
 
 class TestHighAoaPropagation(unittest.TestCase):
@@ -73,40 +75,59 @@ class TestHighAoaPropagation(unittest.TestCase):
         # 20 km up, 3 km out, falling, a little horizontal speed toward the pad.
         self.r = (KERBIN_R + 20000.0, 0.0, 3000.0)
         self.v = (-600.0, 0.0, -60.0)
+        self.normal = guidance.steering_plane(self.r, self.v)
 
-    def test_broadside_reaches_the_burn_slower(self):
-        normal = guidance.steering_plane(self.r, self.v)
-        plain = trajectory.predict_landing(self.env, self.r, self.v, 2e4,
-                                           40.0, self.cfg)
-        flat = trajectory.Steer(math.radians(90.0), normal,
-                                polar=self.env.polar_at, flip_s=5.0)
-        slow = trajectory.predict_landing(self.env, self.r, self.v, 2e4,
-                                          40.0, self.cfg, steer=flat)
+    def predict(self, env, steer=None):
+        return trajectory.predict_landing(env, self.r, self.v, 2e4, 40.0,
+                                          self.cfg, steer=steer)
+
+    def miss(self, env, prediction):
+        return trajectory.miss_components(env, prediction.position,
+                                          env.target, self.r)
+
+    def scheduled(self, env, rate):
+        return trajectory.Steer(0.3, self.normal, polar=env.polar_at,
+                                flip_s=5.0,
+                                schedule=guidance.aoa_schedule(env, self.cfg),
+                                cone_rate=rate)
+
+    def test_scheduled_angle_reaches_the_burn_slower(self):
+        plain = self.predict(self.env)
+        slow = self.predict(self.env, self.scheduled(self.env, 0.5))
         self.assertTrue(plain.powered and slow.powered)
-        self.assertLess(slow.entry_speed, 0.8 * plain.entry_speed)
+        self.assertLess(slow.entry_speed, 0.9 * plain.entry_speed)
+
+    def test_coning_averages_the_lift_out(self):
+        flat = PolarEnv(lift=False)
+        drag_only = self.miss(flat, self.predict(flat,
+                                                 self.scheduled(flat, 0.5)))
+        held = self.miss(self.env, self.predict(self.env,
+                                                self.scheduled(self.env, 0.0)))
+        coned = self.miss(self.env, self.predict(self.env,
+                                                 self.scheduled(self.env, 1.0)))
+        off_held = math.hypot(held[0] - drag_only[0], held[1] - drag_only[1])
+        off_coned = math.hypot(coned[0] - drag_only[0],
+                               coned[1] - drag_only[1])
+        self.assertLess(off_coned, 0.2 * off_held,
+                        "held %.0f coned %.0f" % (off_held, off_coned))
 
     def test_solve_closes_the_miss(self):
         env, cfg = self.env, self.cfg
         cfg.HIGH_AOA_MAX_MISS_M = 1e9
-        normal = guidance.steering_plane(self.r, self.v)
-        rest = trajectory.Steer(math.radians(90.0), normal,
-                                polar=env.polar_at, flip_s=5.0)
-        before = trajectory.predict_landing(env, self.r, self.v, 2e4, 40.0,
-                                            cfg, steer=rest)
-        m0 = math.hypot(*trajectory.miss_components(
-            env, before.position, env.target, self.r))
-        steer, prediction, e, ell = guidance.solve_high_aoa(
-            env, self.r, self.v, 2e4, 40.0, cfg, None, 5.0)
+        cfg.HIGH_AOA_SOLVE_ITERS = 6
+        before = self.miss(env, self.predict(env, self.scheduled(env, 0.5)))
+        m0 = math.hypot(*before)
+        steer, prediction, got, flip_s = guidance.solve_high_aoa(
+            env, self.r, self.v, 2e4, 40.0, cfg, None, 20.0)
         self.assertIsNotNone(steer)
-        m1 = math.hypot(*trajectory.miss_components(
-            env, prediction.position, env.target, self.r))
-        self.assertLess(m1, 0.5 * m0, "miss %.0f -> %.0f" % (m0, m1))
-        self.assertGreaterEqual(abs(steer.aoa), math.radians(45.0) - 1e-6)
+        m1 = math.hypot(*self.miss(env, prediction))
+        self.assertLess(m1, max(0.3 * m0, 50.0), "miss %.0f -> %.0f" % (m0, m1))
+        self.assertGreater(flip_s, 0.0)
+        self.assertGreaterEqual(got[1], cfg.HIGH_AOA_CONE_MIN)
 
-    def test_unavailable_without_a_flip_time(self):
-        self.assertEqual(guidance.solve_high_aoa(
-            self.env, self.r, self.v, 2e4, 40.0, self.cfg, None, None)[0],
-            None)
+    def test_unavailable_without_a_flip_rate(self):
+        self.assertIsNone(guidance.solve_high_aoa(
+            self.env, self.r, self.v, 2e4, 40.0, self.cfg, None, None)[0])
 
 
 if __name__ == "__main__":

@@ -327,17 +327,21 @@ class Config:
                                             # left for disturbances
 
     # --- High-aoa descent (measuring) -----------------------------------
-    # From the drag re-sweep until the flip back, fly the far side of the
-    # lift peak: every lift the solve wants at the most drag that makes it,
-    # to reach the landing burn slower (guidance.solve_high_aoa).  The fin
-    # boosters' polar peaks at 44-49 deg with lift ~0 at 90 (attitude4/5-1113).
+    # From the drag re-sweep until the flip back, fall as far off retrograde
+    # as the controls can hold (the torque limit, capped at the lift peak,
+    # recomputed at every step of the propagation since it falls as q rises)
+    # for drag, with the lift's direction coned about the velocity at a
+    # solved rate and phase so that it averages out onto the pad
+    # (guidance.solve_high_aoa).
     HIGH_AOA_DESCENT: bool = False
-    HIGH_AOA_MAX_DEG: float = 90.0          # the most it flies; the probed
-                                            # polar ends at 90
-    HIGH_AOA_MIN_LIFT_FRACTION: float = 0.25  # usable only if the angle it
-                                            # rests at makes under this much
-                                            # of the peak lift
-    HIGH_AOA_SOLVE_FRACTION: float = 0.1    # sensitivity probes, of peak lift
+    HIGH_AOA_MAX_DEG: float = 90.0          # cap on the scheduled angle
+    HIGH_AOA_MIN_DEG: float = 3.0           # off below this: nothing to gain
+    HIGH_AOA_CONE_MIN: float = 0.05         # rad/s, slowest cone solved for
+    HIGH_AOA_CONE_MAX: float = 1.0          # rad/s, fastest
+    HIGH_AOA_CONE_FRACTION: float = 0.5     # the nose's coning speed
+                                            # (rate x sin aoa) is held under
+                                            # this of the coast flip's rate
+    HIGH_AOA_PHASES: int = 8                # first tick's phase scan
     HIGH_AOA_MAX_MISS_M: float = 100.0      # start only below this miss
     HIGH_AOA_KEEP_MISS_M: float = 500.0     # once flying, the ordinary
                                             # coast takes over above this

@@ -376,167 +376,141 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
     return zero, flat
 
 
-def back_branch(polar, top):
-    """The far side of the lift peak, as ``(peak, top, sign, lift_at)``.
+def aoa_schedule(env, cfg):
+    """(speed, altitude) -> the angle the high-aoa descent flies there.
 
-    ``polar`` is ``[(aoa, lift/q, drag/q)]`` from aoa 0; ``top`` is the most
-    the booster may fly.  Past the peak, more angle is less lift and more
-    drag, so every lift the wing can make is available at the *draggiest*
-    angle that makes it.  None when there is no far side to fly: the peak
-    is not inside the probed range, or ``top`` does not reach past it.
+    What the controls can hold at that point's dynamic pressure
+    (``Environment.holdable_aoa``: the torque limit, capped at the lift
+    peak), capped at ``HIGH_AOA_MAX_DEG``; 0 where nothing is measured.
+    It falls as the air thickens, so the propagator asks at every step.
     """
-    if not polar or len(polar) < 3:
-        return None
-    sign = -1.0 if sum(l for _, l, _ in polar) < 0.0 else 1.0
-    k = max(range(len(polar)), key=lambda i: sign * polar[i][1])
-    peak = polar[k][0]
-    top = min(top, polar[-1][0])
-    if top <= peak:
-        return None
+    cap = math.radians(cfg.HIGH_AOA_MAX_DEG)
+    hold = env.holdable_aoa
 
-    def lift_at(aoa):
-        return sign * trajectory.polar_point(polar, aoa)[0]
+    def schedule(speed, altitude):
+        held = hold(speed, altitude)
+        return max(0.0, min(held, cap)) if held is not None else 0.0
 
-    return peak, top, sign, lift_at
+    return schedule
 
 
-def lift_command(branch, ell, last):
-    """The plane-coordinate aoa vector that makes the lift vector ``ell``.
+def cone_limit(cfg, flip_rate, aoa):
+    """The fastest cone rate (rad/s) the nose can follow at ``aoa``.
 
-    ``ell`` is ``(in_plane, out_of_plane)`` m^2 of lift (lift/q), the
-    variable the miss is near-linear in.  Its size picks the angle on the
-    back branch (bisection: the lift there falls monotonically from the peak
-    to ``top``); its direction picks which way the nose tilts -- against
-    the lift when the polar's sign says tilting one way lifts the other.
-    Below the lift ``top`` still makes, the angle is ``top`` and the lift
-    is what it is.  ``last`` is the tilt direction to keep while ``ell`` is
-    too small to have one.  Returns ``(u, direction)``.
+    Coning at ``w`` moves the nose at ``w sin(aoa)``; that is held under
+    ``HIGH_AOA_CONE_FRACTION`` of the coast flip's measured rate (deg/s).
     """
-    peak, top, sign, lift_at = branch
-    mag = math.hypot(ell[0], ell[1])
-    if mag < 1e-9:
-        e = last
-    else:
-        e = (sign * ell[0] / mag, sign * ell[1] / mag)
-    most = lift_at(peak)
-    if mag >= most:
-        aoa = peak
-    elif mag <= lift_at(top):
-        aoa = top
-    else:
-        lo, hi = peak, top                  # lift_at(lo) > mag > lift_at(hi)
-        for _ in range(30):
-            mid = 0.5 * (lo + hi)
-            if lift_at(mid) > mag:
-                lo = mid
-            else:
-                hi = mid
-        aoa = 0.5 * (lo + hi)
-    return (aoa * e[0], aoa * e[1]), e
+    nose = cfg.HIGH_AOA_CONE_FRACTION * math.radians(flip_rate)
+    top = nose / max(math.sin(aoa), 1e-3)
+    return max(cfg.HIGH_AOA_CONE_MIN, min(cfg.HIGH_AOA_CONE_MAX, top))
 
 
-def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s,
-                   start=(0.0, 0.0), flying=False):
-    """Fall far off retrograde for drag, with the lift steered onto the pad.
+def solve_high_aoa(env, r, v, mass, max_accel, cfg, start, flip_rate,
+                   flying=False):
+    """Fall as far off retrograde as the controls hold, the lift coned away.
 
-    The fin boosters' polar has lift peaking at 44-49 deg and falling to ~0
-    at 90, while drag keeps rising toward broadside (25x nose-first's at 90,
-    hiaoa1-1113).  So any lift the solve asks for is flown at the largest
-    angle (most drag) that makes it, up to what the controls hold
-    (``Environment.torque_limit_aoa``) and ``HIGH_AOA_MAX_DEG``.  The miss
-    is solved over the *lift vector* ``ell`` (m^2 of lift/q, in plane
-    coordinates), starting from ``start`` -- the last tick's answer -- with
-    a Jacobian from two probes of ``HIGH_AOA_SOLVE_FRACTION`` of the peak
-    lift and up to ``HIGH_AOA_SOLVE_ITERS`` secant (Broyden) steps: the map
-    is far from linear, since the angle that makes a lift also sets the
-    drag.  Every propagation flies the polar and the flip back to
-    retrograde ``flip_s`` before the burn would light.
+    The fin boosters' drag/q is 7-14 m^2 nose-first and 60-85 at 22 deg,
+    but the angle they can hold falls from 90 deg above ~35 km to 7-15 by
+    Mach 2 (hiaoa4-1113), and on that front branch the lift is as large as
+    the drag.  So the angle is the schedule -- what the controls hold at
+    each step's dynamic pressure (:func:`aoa_schedule`) -- and the lift is
+    made to average out by turning its direction about the velocity at a
+    steady rate ``w`` from a phase ``p``: the miss is near a circle in
+    ``p`` whose radius shrinks as ``w`` grows, so ``(p, w)`` reaches it.
+    ``start`` is ``(p, w)`` carried from the last tick (phase already
+    advanced), or None: then ``HIGH_AOA_PHASES`` phases are scanned at the
+    geometric middle of the rate range.  Then a Jacobian from two probes
+    and up to ``HIGH_AOA_SOLVE_ITERS`` secant (Broyden) steps, ``w`` held
+    within ``[HIGH_AOA_CONE_MIN, cone_limit]``.  The flip back to
+    retrograde is flown ``HIGH_AOA_FLIP_MARGIN`` times the angle over the
+    flip rate before the burn.
 
-    Returns ``(steer, prediction, direction, ell)``, or
-    ``(None, None, why, None)`` when the vehicle cannot fly it here: no
-    polar, no far side within the torque limit, a lift at ``top`` above
-    ``HIGH_AOA_MIN_LIFT_FRACTION`` of the peak (no near-zero-lift attitude
-    to rest at), or a best miss over ``HIGH_AOA_MAX_MISS_M`` (to start) /
-    ``HIGH_AOA_KEEP_MISS_M`` (while ``flying``).
+    Returns ``(steer, prediction, (p, w), flip_s)``, or
+    ``(None, None, why, None)``: no plane or flip rate, nothing measured,
+    a scheduled angle under ``HIGH_AOA_MIN_DEG`` here, or a best miss over
+    ``HIGH_AOA_MAX_MISS_M`` (to start) / ``HIGH_AOA_KEEP_MISS_M`` (while
+    ``flying``).
     """
-    normal = steering_plane(r, v)
-    if normal is None or flip_s is None or flip_s <= 0.0:
-        return None, None, "no plane or flip time", None
+    base = steering_plane(r, v)
+    if base is None or not flip_rate or flip_rate <= 0.0:
+        return None, None, "no plane or flip rate", None
     speed = vec.norm(v)
     altitude = vec.norm(r) - env.equatorial_radius
-    polar = env.polar_at(speed, altitude)
-    limit = env.torque_limit_aoa(speed, altitude)
-    if not polar or limit is None:
+    if not env.polar_at(speed, altitude):
         return None, None, "no polar", None
-    branch = back_branch(polar, min(limit,
-                                    math.radians(cfg.HIGH_AOA_MAX_DEG)))
-    if branch is None:
-        return None, None, "torque limit %.1f deg under the peak" % (
-            math.degrees(limit)), None
-    peak, top, sign, lift_at = branch
-    most = lift_at(peak)
-    if most <= 0.0 or lift_at(top) > cfg.HIGH_AOA_MIN_LIFT_FRACTION * most:
-        return None, None, "lift %.0f of %.0f at the top %.1f deg" % (
-            lift_at(top), most, math.degrees(top)), None
-    if last is None:
-        last = (1.0, 0.0)
+    schedule = aoa_schedule(env, cfg)
+    aoa = schedule(speed, altitude)
+    if aoa < math.radians(cfg.HIGH_AOA_MIN_DEG):
+        return None, None, "holdable %.1f deg" % math.degrees(aoa), None
+    flip_s = cfg.HIGH_AOA_FLIP_MARGIN * math.degrees(aoa) / flip_rate
+    lo = cfg.HIGH_AOA_CONE_MIN
+    hi = cone_limit(cfg, flip_rate, aoa)
+    axis = vec.scale(v, 1.0 / speed)
 
-    def clip(ell):
-        size = math.hypot(ell[0], ell[1])
-        if size > most:
-            return (ell[0] * most / size, ell[1] * most / size)
-        return ell
-
-    def fly(ell):
-        u, e = lift_command(branch, ell, last)
-        steer = steer_for(normal, v, u)
-        steer = trajectory.Steer(steer.aoa, steer.normal, polar=env.polar_at,
-                                 flip_s=flip_s)
+    def fly(x):
+        p = math.remainder(x[0], 2.0 * math.pi)
+        w = min(hi, max(lo, x[1]))
+        normal = vec.quat_rotate(vec.quat_axis_angle(axis, p), base)
+        steer = trajectory.Steer(aoa, normal, polar=env.polar_at,
+                                 flip_s=flip_s, schedule=schedule,
+                                 cone_rate=w)
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         miss = trajectory.miss_components(env, prediction.position,
                                           env.target, r)
-        return (math.hypot(miss[0], miss[1]), steer, prediction, e, ell,
+        return (math.hypot(miss[0], miss[1]), steer, prediction, (p, w),
                 miss)
 
-    x = clip(tuple(start))
-    here = fly(x)
+    if start is None:
+        w0 = math.sqrt(lo * hi)
+        n = max(1, int(cfg.HIGH_AOA_PHASES))
+        here = min((fly((2.0 * math.pi * k / n, w0)) for k in range(n)),
+                   key=lambda f: f[0])
+    else:
+        here = fly(start)
     best = here
     if here[0] > cfg.AERO_STEER_DEADBAND_M:
-        p = cfg.HIGH_AOA_SOLVE_FRACTION * most
-        m0 = here[5]
-        m1 = fly((x[0] + p, x[1]))[5]
-        m2 = fly((x[0], x[1] + p))[5]
-        j = [(m1[0] - m0[0]) / p, (m2[0] - m0[0]) / p,
-             (m1[1] - m0[1]) / p, (m2[1] - m0[1]) / p]
+        x = here[3]
+        dp, dw = 0.2, 0.1 * x[1]
+        if x[1] + dw > hi:
+            dw = -dw
+        m0 = here[4]
+        m1 = fly((x[0] + dp, x[1]))[4]
+        m2 = fly((x[0], x[1] + dw))[4]
+        j = [(m1[0] - m0[0]) / dp, (m2[0] - m0[0]) / dw,
+             (m1[1] - m0[1]) / dp, (m2[1] - m0[1]) / dw]
         for _ in range(max(1, int(cfg.HIGH_AOA_SOLVE_ITERS))):
             det = j[0] * j[3] - j[1] * j[2]
             if abs(det) < 1e-12:
                 break
-            m = here[5]
+            m = here[4]
             step = ((-j[3] * m[0] + j[1] * m[1]) / det,
                     (j[2] * m[0] - j[0] * m[1]) / det)
-            nxt = fly(clip((x[0] + step[0], x[1] + step[1])))
+            # No more than a radian of phase and half the rate a step: the
+            # map is a circle, and a full Newton step across it lands on the
+            # far side.
+            step = (max(-1.0, min(1.0, step[0])),
+                    max(-0.5 * x[1], min(0.5 * x[1], step[1])))
+            nxt = fly((x[0] + step[0], x[1] + step[1]))
             if nxt[0] < best[0]:
                 best = nxt
-            # Broyden: J += (dm - J dx) dx^T / |dx|^2
-            dx = (nxt[4][0] - x[0], nxt[4][1] - x[1])
+            dx = (math.remainder(nxt[3][0] - x[0], 2.0 * math.pi),
+                  nxt[3][1] - x[1])
             dd = dx[0] * dx[0] + dx[1] * dx[1]
             if dd < 1e-12:
                 break
-            dm = (nxt[5][0] - m[0], nxt[5][1] - m[1])
+            dm = (nxt[4][0] - m[0], nxt[4][1] - m[1])
             res = (dm[0] - j[0] * dx[0] - j[1] * dx[1],
                    dm[1] - j[2] * dx[0] - j[3] * dx[1])
             j = [j[0] + res[0] * dx[0] / dd, j[1] + res[0] * dx[1] / dd,
                  j[2] + res[1] * dx[0] / dd, j[3] + res[1] * dx[1] / dd]
-            x, here = nxt[4], nxt
+            x, here = nxt[3], nxt
             if best[0] <= cfg.AERO_STEER_DEADBAND_M:
                 break
     bound = cfg.HIGH_AOA_KEEP_MISS_M if flying else cfg.HIGH_AOA_MAX_MISS_M
     if best[0] > bound:
-        return None, None, "best miss %.0f m (resting %.0f)" % (
-            best[0], math.hypot(*fly((0.0, 0.0))[5])), None
-    return best[1], best[2], best[3], best[4]
+        return None, None, "best miss %.0f m" % best[0], None
+    return best[1], best[2], best[3], flip_s
 
 
 def holdable(env, cfg):
