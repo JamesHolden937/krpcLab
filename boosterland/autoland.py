@@ -509,6 +509,14 @@ class Autoland:
                 getattr(svc, "surface_actuators", None)
                 if svc is not None else None, self.cfg, self.log)
             self.roll_tune.engage(ut)
+        if self.cfg.KRPC_AP_DIAG and state == COAST:
+            # kRPC keeps 3000 physics ticks (60 s) from when logging was
+            # last turned on: restart it here, so the record is the coast's.
+            try:
+                self.autopilot.diagnostic_logging = False
+                self.autopilot.diagnostic_logging = True
+            except Exception:                       # noqa: BLE001
+                pass
         if self.fins is not None:
             if state in (SEPARATION, BOOSTBACK):
                 self.fins.hold(state.lower())

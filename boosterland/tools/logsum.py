@@ -76,6 +76,46 @@ def summarise(path):
     return rows, phases, done, resweep, config
 
 
+def roll_table(path):
+    """Rows of ``--roll``: the roll loop by phase and altitude band."""
+    import re
+    bands = {}
+    for line in open(path):
+        if "alt=" not in line or "roll=" not in line:
+            continue
+        phase = line[13:26].strip()
+        if phase not in ("COAST", "LANDING_BURN"):
+            continue
+        d = dict(re.findall(r"(\w+)=\s*([^\s]+)", line))
+        try:
+            alt = float(d["alt"])
+            err = float(d["roll"])
+            rate = abs(float(d.get("r", "nan")))
+            u = abs(float(d["in"].split("/")[2])) if "in" in d else float("nan")
+        except (KeyError, ValueError):
+            continue
+        key = (phase, int(alt // 4000) * 4)
+        b = bands.setdefault(key, [[], [], [], None, None, None])
+        b[0].append(err)
+        b[1].append(rate)
+        b[2].append(u)
+        if "rk" in d:
+            b[3], b[4], b[5] = d["rk"], d.get("rkp"), d.get("rtau")
+
+    def q(xs, f):
+        xs = sorted(x for x in xs if x == x)
+        return xs[min(len(xs) - 1, int(f * len(xs)))] if xs else float("nan")
+    out = []
+    for (phase, km), b in sorted(bands.items(), key=lambda kv: (
+            kv[0][0] != "COAST", -kv[0][1])):
+        out.append("%-12s %3d km n=%4d roll err med %4.0f p90 %4.0f  |r| p90 "
+                   "%4.0f  |in| %.2f  k %s kp %s tau %s"
+                   % (phase, km, len(b[0]), q(b[0], 0.5), q(b[0], 0.9),
+                      q(b[1], 0.9), sum(x for x in b[2] if x == x)
+                      / max(1, len(b[2])), b[3] or "-", b[4] or "-", b[5] or "-"))
+    return out
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
             formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -86,7 +126,18 @@ def main(argv=None):
                    help="one row per flight: the signed miss at each phase "
                         "hand-over, plus the last three hs= readings.  This "
                         "is the view that says which segment spent the error")
+    p.add_argument("--roll", action="store_true",
+                   help="per 4 km of altitude in the coast and the burn: roll "
+                        "error median/p90, |roll rate| p90, mean |roll "
+                        "input|, and the roll tune's k and Kp (ROLL_TUNE)")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.roll:
+        for path in args.logs:
+            print(path.split("/")[-1])
+            for line in roll_table(path):
+                print("  " + line)
+        return 0
 
     if args.segments:
         print("%-9s %-34s %16s %16s %8s  %s"

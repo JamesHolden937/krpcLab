@@ -90,17 +90,9 @@ class RollTune:
         except Exception as exc:                    # noqa: BLE001
             self.log.event(ut, "roll tune: not engaged (%r)" % (exc,))
             return
-        if self.actuator_call is not None:
-            try:
-                self.acts = (actuators(list(self.actuator_call()))
-                             or self.acts)
-            except Exception:                       # noqa: BLE001
-                pass
         self.active = True
         self.log.event(ut, "roll tune: kRPC auto-tune off, roll from the "
-                       "measured effect; fins slew %s full travel/s"
-                       % ("%.2f" % self.acts[1][0]
-                          if self.acts[1][0] else "instant"))
+                       "measured effect")
 
     def update(self, ut, roll_rate_deg, roll_input):
         if not self.active:
@@ -112,6 +104,18 @@ class RollTune:
                                        self.vessel.moment_of_inertia)
             except Exception:                       # noqa: BLE001
                 pass
+            # The surfaces' slew, weighted by their torque -- which is ~0
+            # in the thin air the coast starts in, so it is re-read too.
+            if self.actuator_call is not None:
+                try:
+                    acts = actuators(list(self.actuator_call()))
+                except Exception:                   # noqa: BLE001
+                    acts = None
+                if acts:
+                    if acts[1][0] and not self.acts[1][0]:
+                        self.log.event(ut, "roll tune: roll surfaces slew "
+                                       "%.2f full travel/s" % acts[1][0])
+                    self.acts = acts
         # kRPC's roll input and our roll rate have opposite senses (the
         # boostback's gimbals: -209..-270 deg/s^2 per unit, corr -0.93/-0.97).
         w = (-math.radians(roll_rate_deg)

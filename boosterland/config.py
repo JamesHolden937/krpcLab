@@ -523,7 +523,9 @@ class Config:
     KRPC_AP_DIAG: bool = False              # kRPC's own per-physics-tick
                                             # autopilot record (errors, rates,
                                             # gains, outputs per axis), saved
-                                            # at shutdown as LOG<n>.ap.csv
+                                            # at shutdown as LOG<n>.ap.csv;
+                                            # kRPC keeps 3000 ticks (60 s),
+                                            # restarted at the coast
 
     THROTTLE_DIVERGENCE: float = 0.1        # log when the vessel ignores us
     MASS_LOSS_FRACTION: float = 0.1         # mass down this much in one tick
