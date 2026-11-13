@@ -103,6 +103,8 @@ class RollTune:
         self.ttp_sent = None
         self.started = False
         self.held_bw = None             # kRPC's pitch/yaw (Kp a, Ki a)
+        self.latched = False            # kRPC's pitch/yaw oscillation latch
+        self.floor = None               # ... and its bandwidth floor, rad/s
         self.lag_logged = [0.0, 0.0, 0.0]
 
     def start(self, ut):
@@ -207,6 +209,8 @@ class RollTune:
                                        "%.2f full travel/s" % acts[1][0])
                     self.acts = acts
             self.pace(ut)
+            if self.active:
+                self.read_latch(ut)
         if not self.active:
             return
         # kRPC's roll input and our roll rate have opposite senses (the
@@ -220,10 +224,35 @@ class RollTune:
                               ut - prev[0])
         self.write(ut)
 
+    def read_latch(self, ut):
+        """kRPC's structural-oscillation latch on pitch/yaw and the floor it
+        would drop their bandwidth to: auto-tune applies it, and auto-tune
+        is off.  Read once a game second."""
+        try:
+            latched = bool(self.ap.pitch_yaw_oscillation_latched)
+            floor = float(self.ap.oscillation_bandwidth_floor)
+        except Exception:                           # noqa: BLE001
+            return
+        if latched != self.latched:
+            self.log.event(ut, "roll tune: kRPC pitch/yaw oscillation %s "
+                           "(floor %.2f rad/s)" % ("latched" if latched
+                                                   else "released", floor))
+        self.latched, self.floor = latched, floor
+
+    def py_bandwidth(self, i):
+        """(Kp a, Ki a) for pitch or yaw: kRPC's at the coast's start, no
+        higher than its oscillation floor while that is latched."""
+        bw = self.held_bw[i] if self.held_bw else None
+        if not bw or not self.latched or not self.floor:
+            return bw
+        zeta, _ = damping_and_frequency(1.0, self.over[i])
+        return (min(bw[0], 2.0 * zeta * self.floor),
+                min(bw[1], self.floor * self.floor))
+
     def write(self, ut):
         gains = [krpc_gains(self.accel[i], *self.zw[i]) for i in range(3)]
         for i in (0, 2):
-            bw = self.held_bw[i] if self.held_bw else None
+            bw = self.py_bandwidth(i)
             if bw and self.accel[i]:
                 gains[i] = (bw[0] / self.accel[i], bw[1] / self.accel[i], 0.0)
         roll = None
