@@ -53,11 +53,12 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   thrust is under target on two ticks. The limits stay on after staging
   until boosterland's cluster owns them (released at staging they let the
   booster reach 2140 kN against a 1280 target, LOG12760).
-- Separation lights the upper stage with the decoupler: when no upper
-  engine is lit by the decoupler's stage, the next stage is fired in the
-  very next call if it holds an engine and decouples nothing -- decided at
-  launch (`Stack._light_plan`), so no read sits between the two stagings
-  and nothing is left to MechJeb's autostage delays.
+- Separation lights the upper stage *before* the decoupler: when no upper
+  engine is lit by the decoupler's stage and the next stage holds engines
+  and decouples nothing (decided at launch, `Stack._light_plan`), those
+  engines are activated directly, the decoupler fires on the next call, and
+  then their stage is fired so MechJeb's autostage does not stop on it. No
+  read sits between them and nothing waits on autostage.
 - The throttle is MechJeb's: never write `control.throttle` on the ascending
   vessel (kRPC holds it over MechJeb) and never read it (it shows 0.00 under
   MechJeb) -- `main_throttle` reads the booster engines.

@@ -91,8 +91,8 @@ class Stack:
         self.thrust = {i: e.max_vacuum_thrust or e.max_thrust
                        for i, e in enumerate(self.engines)}
         self.control_part = self._control_part(vessel, ids)
-        self.light_stage, self.light_note = self._light_plan(vessel, ids,
-                                                             engines)
+        self.light_stage, self.light_engines, self.light_note = \
+            self._light_plan(vessel, ids, engines)
         if self.control_part is None:
             logbook.event(ut, "WARNING upper stage has no control source: "
                           "no crewed command part and no probe core above "
@@ -111,28 +111,29 @@ class Stack:
                          self.control_part))
 
     def _light_plan(self, vessel, booster_parts, engines):
-        """The stage that lights the upper engines right after the booster's
-        decoupler, decided here so separation fires the two back to back
-        with no read between them: ``(stage, None)``, or ``(None, why)``
-        when nothing is to be fired.  Only a stage that holds an upper
-        engine and decouples nothing is fired."""
+        """The stage after the booster's decoupler and its upper engines,
+        decided here so separation lights them and decouples back to back
+        with no read between them: ``(stage, engines, None)``, or
+        ``(None, [], why)`` when nothing is to be lit.  Only a stage that
+        holds an upper engine and decouples nothing is used."""
         upper = [e for e in engines if e.part not in booster_parts]
         if not upper:
-            return None, "WARNING upper stage has no engine to light"
+            return None, [], "WARNING upper stage has no engine to light"
         if any(e.active or e.part.stage >= self.stage for e in upper):
-            return None, None
+            return None, [], None
         nxt = self.stage - 1
         if nxt < 0:
-            return None, "WARNING upper stage has no engine to light"
+            return None, [], "WARNING upper stage has no engine to light"
         parts = vessel.stage_at(nxt).parts
         if any(p.decoupler is not None for p in parts):
-            return None, ("WARNING upper engines not lit: stage %d "
-                          "decouples something" % nxt)
+            return None, [], ("WARNING upper engines not lit: stage %d "
+                              "decouples something" % nxt)
         ids = set(parts)
-        if not any(e.part in ids for e in upper):
-            return None, ("WARNING upper engines not lit: stage %d "
-                          "holds no engine" % nxt)
-        return nxt, None
+        lit = [e for e in upper if e.part in ids]
+        if not lit:
+            return None, [], ("WARNING upper engines not lit: stage %d "
+                              "holds no engine" % nxt)
+        return nxt, lit, None
 
     @staticmethod
     def _control_part(vessel, booster_parts):
@@ -871,10 +872,13 @@ class Ascent:
             rec, state, b, rec.propellant_left
             - self.cfg.RESERVE_FRACTION * (rec.propellant
                                            - rec.propellant_left)))
-        # The decoupler and the upper engines' stage go back to back, nothing
-        # read between them: every call in that gap is game time the upper
-        # stage coasts unlit beside the booster.
+        # The upper engines are lit first, straight on the engines, and the
+        # decoupler fires on the next call: the upper stage never coasts
+        # unlit beside the booster.  Their stage, now holding nothing unlit,
+        # is fired after so MechJeb's autostage does not stop on it later.
         light = self.stack.light_stage
+        for e in self.stack.light_engines:
+            e.active = True
         self.control.activate_next_stage()
         if light is not None:
             self.control.activate_next_stage()
@@ -890,8 +894,9 @@ class Ascent:
         if booster is None:
             raise RuntimeError("staged, but the booster is still attached")
         if light is not None:
-            self.log.event(ut, "upper engines lit with the separation: "
-                           "stage %d" % light)
+            self.log.event(ut, "upper engines lit before the decoupler: "
+                           "stage %d, %d engines"
+                           % (light, len(self.stack.light_engines)))
         elif self.stack.light_note:
             self.log.event(ut, self.stack.light_note)
         self.booster_vessel = booster
