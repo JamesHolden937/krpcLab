@@ -76,6 +76,10 @@ def rate_cap(effect, brake_deg, default):
     return min(default, math.sqrt(2.0 * effect * math.radians(brake_deg)))
 
 
+def _fmt(values):
+    return "(" + ", ".join("%.2f" % v for v in values) + ")"
+
+
 class RollTune:
     """The kRPC glue: engage once, then ``update`` every tick."""
 
@@ -132,14 +136,20 @@ class RollTune:
                                                 lag, ttp[i]))
         self.zw = [damping_and_frequency(ttp[i], self.over[i])
                    for i in range(3)]
-        if self.ttp_sent is None or any(
-                abs(a - b) > 0.02 * b for a, b in zip(ttp, self.ttp_sent)):
-            try:
+        # Read back, not remembered: something resets kRPC's time to peak
+        # after it is set (LOG16199-16202 read (1, 1, 1) at the burn after
+        # 1.4-1.7 was written at the flip).
+        try:
+            now = tuple(self.ap.time_to_peak)
+            if any(abs(a - b) > 0.02 * a for a, b in zip(ttp, now)):
+                if self.ttp_sent is not None:
+                    self.log.event(ut, "attitude tune: time to peak found at "
+                                   "%s, set again" % (_fmt(now),))
                 self.ap.time_to_peak = tuple(ttp)
-                self.ttp_sent = ttp
-            except Exception as exc:                # noqa: BLE001
-                self.log.event(ut, "attitude tune: time to peak not set "
-                               "(%r)" % (exc,))
+            self.ttp_sent = ttp
+        except Exception as exc:                    # noqa: BLE001
+            self.log.event(ut, "attitude tune: time to peak not set (%r)"
+                           % (exc,))
 
     def engage(self, ut):
         """From the coast: auto-tune off, roll from the measured effect."""

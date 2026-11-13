@@ -539,6 +539,7 @@ class Autoland:
         self.roll_tune = None           # RollTune, from the coast on
         self.roll_order = 1             # roll symmetry (ROLL_SYMMETRY)
         self.roll_slot = None           # which of its equivalent roofs
+        self.diag_restarted = False     # KRPC_AP_DIAG_BELOW_M
         self.prev_nose = None           # (ut, direction) of the last tick
         self.nose_rate = None           # deg/s, see track_nose_rate
         self.prev_cmd = None            # (ut, commanded direction)
@@ -569,7 +570,8 @@ class Autoland:
             self.roll_tune.start(ut)
         if self.cfg.ROLL_TUNE and state == COAST:
             self.roll_tune.engage(ut)
-        if self.cfg.KRPC_AP_DIAG and state == COAST:
+        if (self.cfg.KRPC_AP_DIAG and state == COAST
+                and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
             # kRPC keeps 3000 physics ticks (60 s) from when logging was
             # last turned on: restart it here, so the record is the coast's.
             try:
@@ -2186,6 +2188,16 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
+        if (self.cfg.KRPC_AP_DIAG and self.cfg.KRPC_AP_DIAG_BELOW_M > 0.0
+                and self.state == COAST and not self.diag_restarted
+                and snap.mean_altitude < self.cfg.KRPC_AP_DIAG_BELOW_M):
+            self.diag_restarted = True
+            try:
+                self.autopilot.diagnostic_logging = False
+                self.autopilot.diagnostic_logging = True
+                self.log.event(snap.ut, "kRPC diagnostic record restarted")
+            except Exception:                       # noqa: BLE001
+                pass
         if self.roll_tune is not None and self.state != TOUCHDOWN:
             inputs = snap.inputs
             self.roll_tune.update(snap.ut, self.roll_rate,

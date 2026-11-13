@@ -536,6 +536,9 @@ class Config:
                                             # at shutdown as LOG<n>.ap.csv;
                                             # kRPC keeps 3000 ticks (60 s),
                                             # restarted at the coast
+    KRPC_AP_DIAG_BELOW_M: float = 0.0       # ... or once the coast is
+                                            # below this altitude (0: at
+                                            # its start)
 
     THROTTLE_DIVERGENCE: float = 0.1        # log when the vessel ignores us
     MASS_LOSS_FRACTION: float = 0.1         # mass down this much in one tick

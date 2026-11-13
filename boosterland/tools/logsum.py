@@ -84,7 +84,7 @@ def roll_table(path):
         if "alt=" not in line or " r=" not in line:
             continue
         phase = line[13:26].strip()
-        if phase not in ("COAST", "LANDING_BURN"):
+        if phase not in ("BOOSTBACK", "COAST", "LANDING_BURN"):
             continue
         d = dict(re.findall(r"(\w+)=\s*([^\s]+)", line))
         try:
@@ -95,10 +95,14 @@ def roll_table(path):
         except (KeyError, ValueError):
             continue
         key = (phase, int(alt // 4000) * 4)
-        b = bands.setdefault(key, [[], [], [], None, None, None])
+        b = bands.setdefault(key, [[], [], [], None, None, None, []])
         b[0].append(err)
         b[1].append(rate)
         b[2].append(u)
+        try:
+            b[6].append(float(d["w"]))
+        except (KeyError, ValueError):
+            pass
         if "rk" in d:
             b[3], b[4], b[5] = d["rk"], d.get("rkp"), d.get("rtau")
 
@@ -106,12 +110,13 @@ def roll_table(path):
         xs = sorted(x for x in xs if x == x)
         return xs[min(len(xs) - 1, int(f * len(xs)))] if xs else float("nan")
     out = []
+    order = {"BOOSTBACK": 0, "COAST": 1, "LANDING_BURN": 2}
     for (phase, km), b in sorted(bands.items(), key=lambda kv: (
-            kv[0][0] != "COAST", -kv[0][1])):
+            order[kv[0][0]], -kv[0][1])):
         out.append("%-12s %3d km n=%4d roll err med %4.0f p90 %4.0f  |r| p90 "
-                   "%4.0f  |in| %.2f  k %s kp %s tau %s"
+                   "%4.0f  nose w p90 %4.1f  |in| %.2f  k %s kp %s tau %s"
                    % (phase, km, len(b[0]), q(b[0], 0.5), q(b[0], 0.9),
-                      q(b[1], 0.9), sum(x for x in b[2] if x == x)
+                      q(b[1], 0.9), q(b[6], 0.9), sum(x for x in b[2] if x == x)
                       / max(1, len(b[2])), b[3] or "-", b[4] or "-", b[5] or "-"))
     return out
 
@@ -127,7 +132,7 @@ def main(argv=None):
                         "hand-over, plus the last three hs= readings.  This "
                         "is the view that says which segment spent the error")
     p.add_argument("--roll", action="store_true",
-                   help="per 4 km of altitude in the coast and the burn: roll "
+                   help="per 4 km of altitude in the boostback, coast and burn: roll "
                         "error median/p90, |roll rate| p90, mean |roll "
                         "input|, and the roll tune's k and Kp (ROLL_TUNE)")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
