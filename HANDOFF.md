@@ -33,8 +33,11 @@ fitted 0.75-1.6), so auto-tune's roll loop barely pushed: 70-110 deg/s spins bel
 - `ROLL_SYMMETRY`: n from the surface rings (6); n >= 3: roll angle free from the coast, only the rate damped
   (kRPC target roll NaN); n = 2: nearest of 2 roofs.
 - Result (attitude4/5-1113, 18 an arm over qs_finbooster/qs_finbooster2): coast/burn roll rate p90 ~0-18 v
-  50-105 deg/s, coast nose rate ~1-7 v 5-25; **miss median 51.5 v 39.5** (one 272 m). Kept on the user's
-  ask; the fin2 save's own 6-flight old arms span 28-70.
+  50-105 deg/s, coast nose rate ~1-7 v 5-25; **miss median 51.5 v 39.5** (one 272 m). The fin2 save's own
+  6-flight old arms span 28-70.
+
+**Decision (the user, 2026-11-13): keep this controller as the default; fix accuracy later, on top of it.**
+Do not revert ROLL_TUNE/ROLL_SYMMETRY to win back the miss.
 - `common/rateplant.py`: `Plant`, `actuators`, `closing_time`, `pi_gains`, `authority`, `clamp` moved from
   airplane/control.py (airplane imports them back). launcherMod's `SurfaceActuators` also lists gimbals
   (`gimbalResponseSpeed`, kind 2: lag 1/speed; built and installed in farm + live).
@@ -44,10 +47,22 @@ fitted 0.75-1.6), so auto-tune's roll loop barely pushed: 70-110 deg/s spins bel
   repeatable but holdable aoa fell to ~12 and the miss 201 v 88), `ROLL_FREE_IN_BURN` (held in the burn 65
   v 44).
 
+**What limits accuracy now** (read off attitude4/5-1113, `logsum.py --segments`, both arms):
+- The error is made in the landing burn, not before it. At burn entry most flights are within +-40 m along and
+  cross; they land 30-70 m out.
+- The burn ends saturated. It lights at ~4-5 km at ~690 m/s; from ~250 m the throttle sits at
+  `LANDING_THROTTLE_CAP` 0.95 until touchdown. With no throttle margin left, the horizontal speed is not nulled:
+  touchdown hs is 1-22 m/s, median ~8, in both arms. That is 20-50 m of drift in the last seconds, and it is
+  the floor both controllers share.
+- What the new controller adds: on 5 of 18 flights the nose swings 30-80 deg/s in the burn (old max 38),
+  pitch/yaw saturated (`sat=1.00`). LOG16306 (272 m) arrived at the burn 160 m short, then lost pointing
+  while it closed. That is the ~12 m median cost and the outliers.
+
 **Open, in order:**
-1. The ~12 m median cost and the outliers: compare pitch/yaw in the landing burn (nose w p90 30-70 on some
-   new fin2 flights) and the `holdable aoa` probe, which now runs at whatever roll the booster has (12 v 45
-   deg between flights).
+1. Accuracy, on the kept controller: (a) leave throttle margin at the end of the burn -- light it earlier, or
+   size `SUICIDE_MARGIN` from the craft's thrust/weight -- so the last ~250 m can still steer and null hs;
+   (b) the burn's pitch/yaw swings (`PITCH_YAW_TUNE`, item 2, is the candidate); (c) the `holdable aoa`
+   probe now runs at whatever roll the booster has (12 v 45 deg between flights).
 2. `PITCH_YAW_TUNE` (branch `pyTune`, unflown): pitch/yaw fitted and capped as roll is.
 3. qs_finbooster's boostback roll (|r| p90 115-195, before the coast: gimbals roll there).
 4. Fly an ascent on the new budget (live: the user's Heavy Shuttle); re-fly qs_heavy/qs_heavyshuttlebooster
