@@ -762,6 +762,12 @@ class Autoland:
         error = set_autopilot_engaged(self.autopilot, True)
         if error is None:
             self.autopilot_engaged = True
+            if self.cfg.KRPC_AP_DIAG:
+                try:
+                    self.autopilot.diagnostic_logging = True
+                except Exception as exc:            # noqa: BLE001
+                    self.log.event(ut, "kRPC diagnostic log refused: %r"
+                                   % exc)
             if self.autopilot_retries:
                 self.log.event(ut, "autopilot engaged after %d retries"
                                % self.autopilot_retries)
@@ -2097,9 +2103,23 @@ class Autoland:
             wait(self.cfg.LOOP_SLEEP_S,
                  snap.ut if snap is not None else self.conn.space_center.ut)
 
+    def save_ap_diag(self):
+        """kRPC's diagnostic CSV beside the log (``KRPC_AP_DIAG``)."""
+        try:
+            text = self.autopilot.diagnostic_log
+            path = self.log.path + ".ap.csv"
+            with open(path, "w") as fh:
+                fh.write(text)
+            self.log.event(0.0, "kRPC diagnostic log: %d rows -> %s"
+                           % (text.count("\n"), path))
+        except Exception as exc:                    # noqa: BLE001
+            self.log.event(0.0, "kRPC diagnostic log unreadable: %r" % exc)
+
     def shutdown(self, reason):
         """Hand control back to the player in a safe, predictable state."""
         ut = 0.0
+        if self.cfg.KRPC_AP_DIAG:
+            self.save_ap_diag()
         try:
             ut = self.conn.space_center.ut
             self.control.throttle = 0.0

@@ -502,6 +502,11 @@ class Config:
                                             # prediction can be re-flown
                                             # offline; see replay.py
 
+    KRPC_AP_DIAG: bool = False              # kRPC's own per-physics-tick
+                                            # autopilot record (errors, rates,
+                                            # gains, outputs per axis), saved
+                                            # at shutdown as LOG<n>.ap.csv
+
     THROTTLE_DIVERGENCE: float = 0.1        # log when the vessel ignores us
     MASS_LOSS_FRACTION: float = 0.1         # mass down this much in one tick
                                             # is parts lost, not propellant
