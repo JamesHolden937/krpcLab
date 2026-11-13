@@ -95,7 +95,7 @@ class TestHighAoaPropagation(unittest.TestCase):
                                             cfg, steer=rest)
         m0 = math.hypot(*trajectory.miss_components(
             env, before.position, env.target, self.r))
-        steer, prediction, e = guidance.solve_high_aoa(
+        steer, prediction, e, ell = guidance.solve_high_aoa(
             env, self.r, self.v, 2e4, 40.0, cfg, None, 5.0)
         self.assertIsNotNone(steer)
         m1 = math.hypot(*trajectory.miss_components(

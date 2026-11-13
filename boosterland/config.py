@@ -338,8 +338,10 @@ class Config:
                                             # rests at makes under this much
                                             # of the peak lift
     HIGH_AOA_SOLVE_FRACTION: float = 0.1    # sensitivity probes, of peak lift
-    HIGH_AOA_MAX_MISS_M: float = 100.0      # worse than this: fly the
-                                            # ordinary coast instead
+    HIGH_AOA_MAX_MISS_M: float = 100.0      # start only below this miss
+    HIGH_AOA_KEEP_MISS_M: float = 500.0     # once flying, the ordinary
+                                            # coast takes over above this
+    HIGH_AOA_SOLVE_ITERS: int = 3           # secant steps per tick
     HIGH_AOA_FLIP_MARGIN: float = 1.5       # the flip back to retrograde is
                                             # given this times the angle over
                                             # the coast flip's measured rate

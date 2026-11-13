@@ -435,47 +435,57 @@ def lift_command(branch, ell, last):
     return (aoa * e[0], aoa * e[1]), e
 
 
-def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
+def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s,
+                   start=(0.0, 0.0), flying=False):
     """Fall far off retrograde for drag, with the lift steered onto the pad.
 
     The fin boosters' polar has lift peaking at 44-49 deg and falling to ~0
-    at 90, while drag keeps rising toward broadside.  So any lift the solve
-    asks for is flown at the largest angle (most drag) that makes it, up to
-    what the controls hold (``Environment.torque_limit_aoa``) and
-    ``HIGH_AOA_MAX_DEG``.  The miss is solved over the *lift vector*: three
-    propagations (no lift, and ``HIGH_AOA_SOLVE_FRACTION`` of the peak lift
-    along each axis) give a 2x2 sensitivity, inverted for the lift that
-    nulls the miss, then checked by ``verified``-style halving.  Every
-    propagation flies the polar and the flip back to retrograde
-    ``flip_s`` before the burn would light.
+    at 90, while drag keeps rising toward broadside (25x nose-first's at 90,
+    hiaoa1-1113).  So any lift the solve asks for is flown at the largest
+    angle (most drag) that makes it, up to what the controls hold
+    (``Environment.torque_limit_aoa``) and ``HIGH_AOA_MAX_DEG``.  The miss
+    is solved over the *lift vector* ``ell`` (m^2 of lift/q, in plane
+    coordinates), starting from ``start`` -- the last tick's answer -- with
+    a Jacobian from two probes of ``HIGH_AOA_SOLVE_FRACTION`` of the peak
+    lift and up to ``HIGH_AOA_SOLVE_ITERS`` secant (Broyden) steps: the map
+    is far from linear, since the angle that makes a lift also sets the
+    drag.  Every propagation flies the polar and the flip back to
+    retrograde ``flip_s`` before the burn would light.
 
-    Returns ``(steer, prediction, direction)``, or ``(None, None, why)``
-    when the vehicle cannot fly it here: no polar, no far side within the
-    torque limit, a lift at ``top`` above ``HIGH_AOA_MIN_LIFT_FRACTION`` of
-    the peak (no near-zero-lift attitude to rest at), or a best miss over
-    ``HIGH_AOA_MAX_MISS_M``.
+    Returns ``(steer, prediction, direction, ell)``, or
+    ``(None, None, why, None)`` when the vehicle cannot fly it here: no
+    polar, no far side within the torque limit, a lift at ``top`` above
+    ``HIGH_AOA_MIN_LIFT_FRACTION`` of the peak (no near-zero-lift attitude
+    to rest at), or a best miss over ``HIGH_AOA_MAX_MISS_M`` (to start) /
+    ``HIGH_AOA_KEEP_MISS_M`` (while ``flying``).
     """
     normal = steering_plane(r, v)
     if normal is None or flip_s is None or flip_s <= 0.0:
-        return None, None, "no plane or flip time"
+        return None, None, "no plane or flip time", None
     speed = vec.norm(v)
     altitude = vec.norm(r) - env.equatorial_radius
     polar = env.polar_at(speed, altitude)
     limit = env.torque_limit_aoa(speed, altitude)
     if not polar or limit is None:
-        return None, None, "no polar"
+        return None, None, "no polar", None
     branch = back_branch(polar, min(limit,
                                     math.radians(cfg.HIGH_AOA_MAX_DEG)))
     if branch is None:
         return None, None, "torque limit %.1f deg under the peak" % (
-            math.degrees(limit))
+            math.degrees(limit)), None
     peak, top, sign, lift_at = branch
     most = lift_at(peak)
     if most <= 0.0 or lift_at(top) > cfg.HIGH_AOA_MIN_LIFT_FRACTION * most:
         return None, None, "lift %.0f of %.0f at the top %.1f deg" % (
-            lift_at(top), most, math.degrees(top))
+            lift_at(top), most, math.degrees(top)), None
     if last is None:
         last = (1.0, 0.0)
+
+    def clip(ell):
+        size = math.hypot(ell[0], ell[1])
+        if size > most:
+            return (ell[0] * most / size, ell[1] * most / size)
+        return ell
 
     def fly(ell):
         u, e = lift_command(branch, ell, last)
@@ -484,36 +494,49 @@ def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
                                  flip_s=flip_s)
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
-        long, cross = trajectory.miss_components(env, prediction.position,
-                                                 env.target, r)
-        return steer, prediction, (long, cross), e
+        miss = trajectory.miss_components(env, prediction.position,
+                                          env.target, r)
+        return (math.hypot(miss[0], miss[1]), steer, prediction, e, ell,
+                miss)
 
-    zero, flat, m0, e0 = fly((0.0, 0.0))
-    best = (math.hypot(m0[0], m0[1]), zero, flat, e0)
-    if best[0] > cfg.AERO_STEER_DEADBAND_M:
+    x = clip(tuple(start))
+    here = fly(x)
+    best = here
+    if here[0] > cfg.AERO_STEER_DEADBAND_M:
         p = cfg.HIGH_AOA_SOLVE_FRACTION * most
-        _, _, m1, _ = fly((p, 0.0))
-        _, _, m2, _ = fly((0.0, p))
-        j = ((m1[0] - m0[0]) / p, (m2[0] - m0[0]) / p,
-             (m1[1] - m0[1]) / p, (m2[1] - m0[1]) / p)
-        det = j[0] * j[3] - j[1] * j[2]
-        if abs(det) > 1e-12:
-            ell = ((-j[3] * m0[0] + j[1] * m0[1]) / det,
-                   (j[2] * m0[0] - j[0] * m0[1]) / det)
-            size = math.hypot(ell[0], ell[1])
-            if size > most:
-                ell = (ell[0] * most / size, ell[1] * most / size)
-            for scale in (1.0, 0.5):
-                trial = (ell[0] * scale, ell[1] * scale)
-                steer, prediction, m, e = fly(trial)
-                miss = math.hypot(m[0], m[1])
-                if miss < best[0]:
-                    best = (miss, steer, prediction, e)
-                    break
-    if best[0] > cfg.HIGH_AOA_MAX_MISS_M:
+        m0 = here[5]
+        m1 = fly((x[0] + p, x[1]))[5]
+        m2 = fly((x[0], x[1] + p))[5]
+        j = [(m1[0] - m0[0]) / p, (m2[0] - m0[0]) / p,
+             (m1[1] - m0[1]) / p, (m2[1] - m0[1]) / p]
+        for _ in range(max(1, int(cfg.HIGH_AOA_SOLVE_ITERS))):
+            det = j[0] * j[3] - j[1] * j[2]
+            if abs(det) < 1e-12:
+                break
+            m = here[5]
+            step = ((-j[3] * m[0] + j[1] * m[1]) / det,
+                    (j[2] * m[0] - j[0] * m[1]) / det)
+            nxt = fly(clip((x[0] + step[0], x[1] + step[1])))
+            if nxt[0] < best[0]:
+                best = nxt
+            # Broyden: J += (dm - J dx) dx^T / |dx|^2
+            dx = (nxt[4][0] - x[0], nxt[4][1] - x[1])
+            dd = dx[0] * dx[0] + dx[1] * dx[1]
+            if dd < 1e-12:
+                break
+            dm = (nxt[5][0] - m[0], nxt[5][1] - m[1])
+            res = (dm[0] - j[0] * dx[0] - j[1] * dx[1],
+                   dm[1] - j[2] * dx[0] - j[3] * dx[1])
+            j = [j[0] + res[0] * dx[0] / dd, j[1] + res[0] * dx[1] / dd,
+                 j[2] + res[1] * dx[0] / dd, j[3] + res[1] * dx[1] / dd]
+            x, here = nxt[4], nxt
+            if best[0] <= cfg.AERO_STEER_DEADBAND_M:
+                break
+    bound = cfg.HIGH_AOA_KEEP_MISS_M if flying else cfg.HIGH_AOA_MAX_MISS_M
+    if best[0] > bound:
         return None, None, "best miss %.0f m (resting %.0f)" % (
-            best[0], math.hypot(m0[0], m0[1]))
-    return best[1], best[2], best[3]
+            best[0], math.hypot(*fly((0.0, 0.0))[5])), None
+    return best[1], best[2], best[3], best[4]
 
 
 def holdable(env, cfg):

@@ -508,6 +508,7 @@ class Autoland:
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
         self.high_aoa_dir = None        # HIGH_AOA_DESCENT: last tilt direction
+        self.high_aoa_lift = (0.0, 0.0)  # ... and lift vector, the warm start
         self.high_aoa_state = None      # None, "flying", "flipped"
         self.flip_rate = None           # deg/s, the coast flip's, measured
         self.coast_entry_err = None
@@ -1322,9 +1323,10 @@ class Autoland:
                            " v=%.0f (flip %.1fs)"
                            % (height, needed, snap.speed, flip_s))
             return None, None
-        steer, steered, got = guidance.solve_high_aoa(
+        steer, steered, got, ell = guidance.solve_high_aoa(
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
-            cfg, self.high_aoa_dir, flip_s)
+            cfg, self.high_aoa_dir, flip_s, self.high_aoa_lift,
+            self.high_aoa_state == "flying")
         if steer is None:
             # Not now: the ordinary coast flies this tick and the next one
             # asks again (the limit and the miss both move).
@@ -1335,6 +1337,7 @@ class Autoland:
                                % (snap.speed, got))
             return None, None
         self.high_aoa_dir = got
+        self.high_aoa_lift = ell
         if self.high_aoa_state is None:
             self.high_aoa_state = "flying"
             self.env.drag_nose_first = True
