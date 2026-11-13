@@ -1322,16 +1322,19 @@ class Autoland:
                            " v=%.0f (flip %.1fs)"
                            % (height, needed, snap.speed, flip_s))
             return None, None
-        steer, steered, self.high_aoa_dir = guidance.solve_high_aoa(
+        steer, steered, got = guidance.solve_high_aoa(
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             cfg, self.high_aoa_dir, flip_s)
         if steer is None:
+            # Not now: the ordinary coast flies this tick and the next one
+            # asks again (the limit and the miss both move).
             if self.high_aoa_state == "flying":
-                self.high_aoa_state = "flipped"
+                self.high_aoa_state = None
                 self.env.drag_nose_first = False
-                self.log.event(snap.ut, "high aoa: given up at v=%.0f"
-                               % snap.speed)
+                self.log.event(snap.ut, "high aoa: off at v=%.0f: %s"
+                               % (snap.speed, got))
             return None, None
+        self.high_aoa_dir = got
         if self.high_aoa_state is None:
             self.high_aoa_state = "flying"
             self.env.drag_nose_first = True

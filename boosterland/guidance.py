@@ -449,7 +449,7 @@ def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
     propagation flies the polar and the flip back to retrograde
     ``flip_s`` before the burn would light.
 
-    Returns ``(steer, prediction, direction)``, or ``(None, None, last)``
+    Returns ``(steer, prediction, direction)``, or ``(None, None, why)``
     when the vehicle cannot fly it here: no polar, no far side within the
     torque limit, a lift at ``top`` above ``HIGH_AOA_MIN_LIFT_FRACTION`` of
     the peak (no near-zero-lift attitude to rest at), or a best miss over
@@ -457,21 +457,23 @@ def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
     """
     normal = steering_plane(r, v)
     if normal is None or flip_s is None or flip_s <= 0.0:
-        return None, None, last
+        return None, None, "no plane or flip time"
     speed = vec.norm(v)
     altitude = vec.norm(r) - env.equatorial_radius
     polar = env.polar_at(speed, altitude)
     limit = env.torque_limit_aoa(speed, altitude)
     if not polar or limit is None:
-        return None, None, last
+        return None, None, "no polar"
     branch = back_branch(polar, min(limit,
                                     math.radians(cfg.HIGH_AOA_MAX_DEG)))
     if branch is None:
-        return None, None, last
+        return None, None, "torque limit %.1f deg under the peak" % (
+            math.degrees(limit))
     peak, top, sign, lift_at = branch
     most = lift_at(peak)
     if most <= 0.0 or lift_at(top) > cfg.HIGH_AOA_MIN_LIFT_FRACTION * most:
-        return None, None, last
+        return None, None, "lift %.0f of %.0f at the top %.1f deg" % (
+            lift_at(top), most, math.degrees(top))
     if last is None:
         last = (1.0, 0.0)
 
@@ -509,7 +511,8 @@ def solve_high_aoa(env, r, v, mass, max_accel, cfg, last, flip_s):
                     best = (miss, steer, prediction, e)
                     break
     if best[0] > cfg.HIGH_AOA_MAX_MISS_M:
-        return None, None, last
+        return None, None, "best miss %.0f m (resting %.0f)" % (
+            best[0], math.hypot(m0[0], m0[1]))
     return best[1], best[2], best[3]
 
 
