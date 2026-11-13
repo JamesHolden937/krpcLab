@@ -951,3 +951,12 @@ attitude1-1112 (8 an arm, both saves) old 36/52, new 178/70;
 attitude2-1112 old 34, new 201, held (roll held, tune+pace) 106, nopace 88;
 attitude3-1112 (pitch/yaw at kRPC's coast-entry bandwidth, no pace)
 fin2 51 v 84, fin 40 v 54 -- all 44 v 59, roll |r| p90 1-7 v 60-100.
+attitude4-1113 (pitch/yaw also dropped to kRPC's oscillation floor while it
+latches): fin2 old 28 v new 64, fin 39 v 28; coast nose rate p90 ~1 deg/s
+and roll ~0 in most new flights (old 4-25 and 53-102).  attitude5-1113
+(fin2): old 70, new 44, roll held in the burn 65 -- `ROLL_FREE_IN_BURN`
+deleted.  Pooled over 4+5, both saves, 18 an arm: old median 39.5, new 51.5
+(the 272 m outlier is new's).  `ATTITUDE_LAG_PACE` deleted (201 v 88 in
+attitude2); the mod keeps reporting gimbal lag (`actuators` kind 2).
+**Kept as the defaults on the user's ask** (roll fixed; the miss within the
+fin2 save's own scatter, which spans 28-70 between two 6-flight old arms).

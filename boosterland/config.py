@@ -244,11 +244,7 @@ class Config:
     ROLL_PLANT_EXCITE: float = 0.01
     ROLL_PLANT_WINDOW_S: float = 1.0
     ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
-    ROLL_LAG_FACTOR: float = 3.0        # ... and, every axis, the closing
-                                        # time over the actuators' lag
-    ATTITUDE_LAG_PACE: bool = False     # every axis's kRPC time to peak
-                                        # raised to that (gimbal response
-                                        # speed, exponential surfaces)
+    ROLL_LAG_FACTOR: float = 3.0
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
     # orientations the aerodynamic surfaces look the same in (autoland.
@@ -256,8 +252,6 @@ class Config:
     # 180/n deg; a slot is left once another is nearer by this fraction.
     ROLL_SYMMETRY: bool = True
     ROLL_SLOT_HYSTERESIS: float = 0.15
-    ROLL_FREE_IN_BURN: bool = True      # the free roll through the
-                                        # landing burn too, or held there
 
     # --- Aerodynamic steering (flying the coast as a wing) -----------------
     AERO_STEER: bool = True                 # steer the coast with an angle of
