@@ -246,7 +246,7 @@ class Config:
     ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
     ROLL_LAG_FACTOR: float = 3.0        # ... and, every axis, the closing
                                         # time over the actuators' lag
-    ATTITUDE_LAG_PACE: bool = True      # every axis's kRPC time to peak
+    ATTITUDE_LAG_PACE: bool = False     # every axis's kRPC time to peak
                                         # raised to that (gimbal response
                                         # speed, exponential surfaces)
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this

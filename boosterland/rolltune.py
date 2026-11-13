@@ -102,6 +102,7 @@ class RollTune:
         self.ttp0 = self.over = None    # kRPC's own time to peak, overshoot
         self.ttp_sent = None
         self.started = False
+        self.held_bw = None             # kRPC's pitch/yaw (Kp a, Ki a)
         self.lag_logged = [0.0, 0.0, 0.0]
 
     def start(self, ut):
@@ -155,14 +156,33 @@ class RollTune:
         """From the coast: auto-tune off, roll from the measured effect."""
         if not self.started:
             return
+        # Pitch and yaw keep the tuning kRPC had reached: its gains times
+        # the acceleration it credits are the loop's bandwidths (Kp a =
+        # 2 zeta omega, Ki a = omega^2), oscillation mitigation included --
+        # 0.59/0.43 at the fin booster's burn, ~1.2 rad/s where its plain
+        # formula gives 5.6 (LOG16184).  Written from the formula instead,
+        # the coast's pitch rang at 20-47 deg/s and the miss went from 34 to
+        # 201 m (attitude2-1112).
         try:
+            self.accel = authority(self.vessel.available_torque,
+                                   self.vessel.moment_of_inertia)
+            pid = (tuple(self.ap.pitch_pid_gains), None,
+                   tuple(self.ap.yaw_pid_gains))
+            self.held_bw = [None, None, None]
+            for i in (0, 2):
+                if self.accel[i]:
+                    self.held_bw[i] = (pid[i][0] * self.accel[i],
+                                       pid[i][1] * self.accel[i])
             self.ap.auto_tune = False
         except Exception as exc:                    # noqa: BLE001
             self.log.event(ut, "roll tune: not engaged (%r)" % (exc,))
             return
         self.active = True
         self.log.event(ut, "roll tune: kRPC auto-tune off, roll from the "
-                       "measured effect")
+                       "measured effect; pitch/yaw held at kRPC's bandwidth "
+                       "%s" % " ".join(
+                           "%.2f/%.2f" % b if b else "-"
+                           for b in (self.held_bw[0], self.held_bw[2])))
 
     def update(self, ut, roll_rate_deg, roll_input):
         if not self.started:
@@ -202,6 +222,10 @@ class RollTune:
 
     def write(self, ut):
         gains = [krpc_gains(self.accel[i], *self.zw[i]) for i in range(3)]
+        for i in (0, 2):
+            bw = self.held_bw[i] if self.held_bw else None
+            if bw and self.accel[i]:
+                gains[i] = (bw[0] / self.accel[i], bw[1] / self.accel[i], 0.0)
         roll = None
         if self.accel[1]:
             effect = self.plant.k * self.accel[1]
