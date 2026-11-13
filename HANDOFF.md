@@ -63,6 +63,17 @@ Do not revert ROLL_TUNE/ROLL_SYMMETRY to win back the miss.
    size `SUICIDE_MARGIN` from the craft's thrust/weight -- so the last ~250 m can still steer and null hs;
    (b) the burn's pitch/yaw swings (`PITCH_YAW_TUNE`, item 2, is the candidate); (c) the `holdable aoa`
    probe now runs at whatever roll the booster has (12 v 45 deg between flights).
+1b. **Try a high-AOA final descent** (the user, 2026-11-13) to arrive at the burn slower than ~690 m/s. What the
+   fin boosters can hold (36 flights, attitude4/5-1113): the `holdable aoa` probe reads **44-49 deg** on 29
+   flights. That is the lift peak (`lift peak at M1.2-1.8: 44-48 deg`, lift/q 135-158 m^2 at 45 deg against
+   Cd*A ~15-30 nose-first), so the torque margin is not what binds. On 7 flights, in both arms, it reads 11.5-13.5
+   deg: the probe's turn plane against the fin ring's roll, so measure it at the roll the booster flies.
+   The coast now flies only 1-5 deg (it only nulls a miss that is already small) and holds 1-3 deg of actual
+   aoa below 20 km. Steps: (i) log the probe's drag as well as its lift per angle -- the gain is Cd*A at 30-45
+   deg against nose-first; (ii) a law that flies a large aoa for speed, with its lift steered by bank so the
+   range still closes (`AERO_STEER`'s propagator has to fly the same law); (iii) on the farm, compare ignition
+   speed, burn dv, throttle-cap time and miss against the defaults. Risk: the tracking was 0.1 of a command on
+   the original booster; check trk= at the big angles before trusting the model.
 2. `PITCH_YAW_TUNE` (branch `pyTune`, unflown): pitch/yaw fitted and capped as roll is.
 3. qs_finbooster's boostback roll (|r| p90 115-195, before the coast: gimbals roll there).
 4. Fly an ascent on the new budget (live: the user's Heavy Shuttle); re-fly qs_heavy/qs_heavyshuttlebooster
