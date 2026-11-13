@@ -895,3 +895,59 @@ Goal (the user): remove every constant that can be derived.  4 instances,
   cross swinging to -18 km; the heading was held at cross -2860 and the burn
   ended at cross +2855, beyond anything the coast can trim.  Boostback code is
   unchanged today; ~1 in 60 fin flights.  Open.
+
+## 2026-11-12 night: the fin booster's roll; the ascent's landing budget
+
+The user (live LOG16183/16184, a modified fin booster: 36 Vernors, new
+tanks; `saves/qs_finbooster2`): it oscillates a lot, mostly in roll in the
+unpowered descent; it ran out of fuel in the burn; make it work with every
+engine gimballing.
+
+**Fuel.**  The ascent separated on a landing budget of 405 m/s (sea-level
+terminal speed, Cd 1 on the tank's area); the booster lit at 5.2 km doing
+680 m/s and flamed out at 29 m after ~737 m/s.  `ascent/budget.fall` now
+falls through the body's density profile on the stack's own Cd*A table
+(taken at liftoff for every ascent type) and lights where boosterland's law
+lights (`LANDING_THROTTLE_CAP`, `SUICIDE_MARGIN`, `SUICIDE_REACTION_S`):
+apex 35.0 km (flown 34.2), ignition 684 m/s (680), burn 833 m/s (~850).
+`LANDING_CD` deleted.  Not flown in an ascent yet.
+
+**Roll.**  Stock credits the six tail fins with ~100x the roll they give:
+kRPC's credited roll acceleration 100-116 rad/s^2 per unit input in the low
+coast against a fitted 0.75-1.6 (kRPC's own diagnostic record, LOG16204/
+16205).  Auto-tune therefore set roll Kp ~0.03, the loop barely pushed, and
+the booster spun 70-110 deg/s below 20 km (LOG16185/16186).  Steps:
+- `ROLL_TUNE`: from the coast, auto-tune off; `common.rateplant.Plant`
+  (moved from airplane/control.py) fits the roll effect; `pi_gains` with the
+  closing time slowed to the fins' slew (`SurfaceActuators`, re-read at 1 Hz
+  -- the fins' torque is ~0 at coast entry and hid them).  Alone it
+  limit-cycled: kRPC's target rate is min(cap, sqrt(2 a th), Kp a th / 2)
+  on the *credited* a (`ComputeAxisVelocity`), so its attitude loop out-ran
+  the rate loop; and above ~28 km nothing answers roll, the error ran
+  through 180 deg and the integrator wound (LOG16194's record).
+- `ROLL_SYMMETRY`: n from the craft's evenly spaced surface rings (6 here).
+  Slots at the nearest of n roofs bounded the error to 30 deg but still rang
+  ~100 deg/s; from n >= 3 the roll angle is left free (kRPC target roll
+  NaN: the rate is damped, nothing held).  Coast roll rate p90 0-7 deg/s
+  from then on, against 37-100 without.
+- The free roll moved `holdable aoa` (computed at coast entry) between ~12
+  and ~45 deg: the probe runs at whatever roll the booster has.
+- Pitch/yaw: written from kRPC's plain formula once auto-tune was off, the
+  coast's pitch rang (nose rate p90 20-47) and the miss went from 34 to 201
+  m (attitude2-1112, 6 an arm).  Now kRPC's own bandwidth at coast entry
+  (gain x credited a) is held, dropped to its oscillation floor while kRPC
+  latches pitch/yaw.
+- `ATTITUDE_LAG_PACE` (off): each axis's time to peak from its actuators'
+  lag (launcherMod now lists gimbals: `gimbalResponseSpeed`, 1/8 s on the
+  Vector -- `ModuleGimbal` Lerps by speed x dt).  Boostback cross at coast
+  entry became very repeatable (-50..-77 v -279..+428) but every flight's
+  holdable fell to ~12 deg and `nopace` beat it (88 v 201); re-measure once
+  pitch/yaw match.
+- `PITCH_YAW_TUNE` (branch `pyTune`, unflown): pitch and yaw fitted and
+  capped as roll is.
+
+Sweeps (qs_finbooster2 unless said; old = auto-tune throughout):
+attitude1-1112 (8 an arm, both saves) old 36/52, new 178/70;
+attitude2-1112 old 34, new 201, held (roll held, tune+pace) 106, nopace 88;
+attitude3-1112 (pitch/yaw at kRPC's coast-entry bandwidth, no pace)
+fin2 51 v 84, fin 40 v 54 -- all 44 v 59, roll |r| p90 1-7 v 60-100.

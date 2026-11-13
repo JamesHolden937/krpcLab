@@ -653,7 +653,9 @@ class Autoland:
                 if up is not None and self.roll_hold:
                     up = rotate_about(up, direction, self.roll_hold)
                 late = self.state in (COAST, LANDING_BURN, TOUCHDOWN)
-                if up is not None and late and self.roll_order >= 3:
+                free = (self.state == COAST
+                        or self.cfg.ROLL_FREE_IN_BURN)
+                if up is not None and late and free and self.roll_order >= 3:
                     # Three or more equal surfaces round the axis lift and
                     # brake the same at any roll, and the steering is the
                     # nose's: the roll angle is worth nothing, only its

@@ -256,6 +256,8 @@ class Config:
     # 180/n deg; a slot is left once another is nearer by this fraction.
     ROLL_SYMMETRY: bool = True
     ROLL_SLOT_HYSTERESIS: float = 0.15
+    ROLL_FREE_IN_BURN: bool = True      # the free roll through the
+                                        # landing burn too, or held there
 
     # --- Aerodynamic steering (flying the coast as a wing) -----------------
     AERO_STEER: bool = True                 # steer the coast with an angle of
