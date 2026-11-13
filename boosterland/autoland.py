@@ -1231,8 +1231,10 @@ class Autoland:
         if first and self.env.holdable_deg is not None:
             self.log.event(snap.ut, "holdable aoa %.1f deg (computed)"
                            % self.env.holdable_deg)
+        off = vec.angle_between(vec.scale(snap.direction, -1.0),
+                                snap.velocity)
         if self.coast_entry_err is None:
-            self.coast_entry_err = self.pointing_error(snap)
+            self.coast_entry_err = off      # the nose off retrograde
         if self.high_aoa_state != "flying":
             self.measure_tracking(snap)
         # Fly the air first, and only then think about the engines.  A booster
@@ -1283,8 +1285,7 @@ class Autoland:
             self.coast_settled = True
             took = snap.ut - self.phase_start_ut
             if took > 0.0 and self.coast_entry_err is not None:
-                self.flip_rate = max(
-                    0.0, self.coast_entry_err - self.pointing_error(snap)) / took
+                self.flip_rate = max(0.0, self.coast_entry_err - off) / took
             self.log.event(snap.ut, "coast settled: err %.1f deg after %.1fs"
                            " (flip %.1f deg/s)"
                            % (self.pointing_error(snap), took,
