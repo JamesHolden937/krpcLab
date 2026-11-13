@@ -12,7 +12,29 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-13: boosterland + ascent -- the fin booster's roll; the ascent's landing budget
+## 2026-11-13: boosterland + ascent -- high-aoa descent measured (not yet a gain); the fin booster's roll; the ascent's landing budget
+
+**Later the same day (journal "2026-11-13: high-aoa descent"):** item 1b built behind `HIGH_AOA_DESCENT`
+(off, measuring; commits 125d60b..e75fdd2) and screened in 4 batches (hiaoa1-4-1113, LOG16331-16354).
+**Defaults fly as before**; the new fields moved the fingerprint 7cd7531a -> **a099e97d** (same behaviour).
+- The probe now logs the polar (`lift peak` event: `aoa:lift/drag` m^2) and a torque limit without the
+  lift-peak cap (`torque limit` event). Fin boosters: drag/q 7-14 nose-first, 60-85 at 22 deg, 170-375 at 90;
+  lift ~0 at 90; restoring moment at every angle.
+- The torque limit is 90 deg only above ~35 km (q < 400 Pa). It falls to 7-15 deg by M2, where drag matters.
+  The back-branch law (rest broadside, lift on the far side of the peak) commanded 49-70 deg; the booster held
+  2-42 with saturated input, and the burn still lit at 690-720 m/s.
+- Offline (journal): flying the *torque-limited* angle all the way down would reach 5.5 km at ~520 m/s, not
+  ~750. That is on the front branch (10-30 deg, lift/q 25-100), so the lift has to be steered.
+- **Next for 1b:** replace the back-branch law with: angle = the torque limit along the propagated descent
+  (q-dependent, recomputed per step, not held fixed); lift direction steered by bank. Two candidates:
+  (a) a bank reversal at a solved time; (b) a slow roll of the lift about v. Also: don't open the late brakes to
+  90 while high-aoa flies (it raises the moment), and fit the flip time from the measured torque. If the gain
+  is not there, delete `HIGH_AOA_*` and the back-branch code, but keep the polar probe.
+- **The user asked for an ascent comparison** (does the booster separate faster or slower with this?). Not
+  flown: the descent doesn't yet slow the booster, and `ascent/budget.fall` uses the stack's zero-alpha Cd*A,
+  so the ascent can't see the change yet. Once a law lowers the burn speed, `budget.fall` must fly the same
+  angle schedule. A lower landing dv means a later separation, at a higher velocity. The farm has no
+  fin-booster stack save (`qs_stack` is the heavy booster).
 
 The user (live LOG16183/16184, a modified fin booster, now `saves/qs_finbooster2`): it oscillates a lot, mostly
 roll in the unpowered descent; it ran short of fuel in the burn; it must work with every engine gimballing (they
@@ -63,7 +85,8 @@ Do not revert ROLL_TUNE/ROLL_SYMMETRY to win back the miss.
    size `SUICIDE_MARGIN` from the craft's thrust/weight -- so the last ~250 m can still steer and null hs;
    (b) the burn's pitch/yaw swings (`PITCH_YAW_TUNE`, item 2, is the candidate); (c) the `holdable aoa`
    probe now runs at whatever roll the booster has (12 v 45 deg between flights).
-1b. **Try a high-AOA final descent** (the user, 2026-11-13) to arrive at the burn slower than ~690 m/s. What the
+1b. **High-AOA final descent** (the user, 2026-11-13): first round done, see the top of this section.
+   The original notes, kept for context: arrive at the burn slower than ~690 m/s. What the
    fin boosters can hold (36 flights, attitude4/5-1113): the `holdable aoa` probe reads **44-49 deg** on 29
    flights. That is the lift peak (`lift peak at M1.2-1.8: 44-48 deg`, lift/q 135-158 m^2 at 45 deg against
    Cd*A ~15-30 nose-first), so the torque margin is not what binds. On 7 flights, in both arms, it reads 11.5-13.5

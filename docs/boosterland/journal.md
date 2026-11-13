@@ -960,3 +960,55 @@ deleted.  Pooled over 4+5, both saves, 18 an arm: old median 39.5, new 51.5
 attitude2); the mod keeps reporting gimbal lag (`actuators` kind 2).
 **Kept as the defaults on the user's ask** (roll fixed; the miss within the
 fin2 save's own scatter, which spans 28-70 between two 6-flight old arms).
+
+## 2026-11-13: high-aoa descent -- the polar measured; the fin booster cannot hold it where it pays
+
+HANDOFF 1b: fly far off retrograde to reach the landing burn slower.  Built
+behind `HIGH_AOA_DESCENT` (off, measuring), commits 125d60b..e75fdd2:
+- `Environment.refresh_holdable` now also probes aoa 0 and records the drag
+  (along -v) at each angle: the polar per Mach bin (`polar_at`), logged in
+  the `lift peak` event as `aoa:lift/drag` (m^2).  `torque_limit_aoa` is
+  `holdable_aoa` without the lift-peak cap; its event logs moment/q per angle
+  and the control budget/q.
+- `guidance.solve_high_aoa`: the back branch of the polar (past the lift
+  peak, most drag for a given lift); the miss solved over the 2-D lift
+  vector, warm-started from the last tick, two probes then Broyden steps;
+  rests at the top angle when no lift is wanted.  `trajectory.Steer.polar`
+  flies lift and drag off the polar; `Steer.flip_s` ramps the angle to 0
+  over the flip back, started that long before the burn would light.
+  Flip time = 1.5 x 90 deg over the coast flip's measured rate.
+
+**Polar (fin boosters, both saves):** lift peaks at 45-50 deg (lift/q
+-115..-160) and is ~0 at 90; drag/q is 7-14 nose-first, ~60-85 at 22 deg,
+~120-220 at 45, **170-375 at 90** (12-25x).  Restoring moment/q rises
+monotonically to 90 deg (2000-4500 m^3): the booster is a weathervane at
+every angle.
+
+**Torque limit:** 90 deg only at q < ~400 Pa (M1.2, ~35 km).  Control
+torque fitted over LOG16350's six probes as budget/q = 0.7 (F/q + S),
+F 2.2 MN m (wheels + RCS), S 262 m^3 (surfaces).  The limit falls to 38-76
+deg at M1.5, 21-32 at M1.8, 12-15 at M2.0, 7-14 at M2.3 -- exactly where
+the air is thick enough for drag to matter.
+
+Batches (6 flights each, 3 per fin save, all HIGH_AOA_DESCENT=True):
+- hiaoa1-1113 (LOG16331-16336): never engaged -- the flip rate was read off
+  `pointing_error` (the command's), 0 deg/s.  Median 42.
+- hiaoa2-1113 (16337-16342): engaged 46-65 deg on 4/6, off next tick.
+- hiaoa3-1113 (16343-16348): reason logged: resting broadside lands
+  4.6-8 km short (boostback aimed for a nose-first coast) and a one-step
+  Newton left 109 m-4 km.
+- hiaoa4-1113 (16349-16354): warm start + Broyden held the predicted miss
+  at 0-4 m for 20-40 s at 49-70 deg commanded, but **the vehicle held 2-42
+  deg** (input saturated, err 30-98 deg, RCS open, fins opened to 90 at
+  34.8 km by the late-brake law), then the torque limit fell to 74-81 deg
+  and the rest-lift gate (25%) turned it off by ~26 km.  Burn lit at
+  690-720 m/s, M2.1-2.2 -- unchanged.  Median 92 (n=6).
+
+The law picks its angle from the torque limit at *this* q and the
+propagator holds it for the whole descent, while q rises tenfold in 30 s.
+Offline estimate (LOG16350's polar and fitted torque, 1-D fall from 34 km,
+lift assumed cancelled): flying the torque-limited angle all the way down
+reaches 5.5 km at ~520 m/s against ~750 nose-first.  So there is ~230 m/s
+to gain, but on the **front** branch at 10-30 deg, where lift/q is 25-100
+and has to be steered (bank reversals or a slow roll of the lift), not
+on the back branch this law flies.
