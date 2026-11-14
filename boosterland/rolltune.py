@@ -96,7 +96,7 @@ class RollTune:
         self.held_bw = None             # kRPC's pitch/yaw (Kp a, Ki a)
         self.latched = False            # kRPC's pitch/yaw oscillation latch
         self.floor = None               # ... and its bandwidth floor, rad/s
-        self.paced = False              # BOOSTBACK_LAG_PACE in force
+        self.paced = False              # ATTITUDE_LAG_PACE's time to peak set
         self.ttp_sent = None
         self.lag_logged = [0.0, 0.0, 0.0]
         self.engage_at = None           # engage() deferred to this ut
@@ -118,7 +118,7 @@ class RollTune:
     def engage(self, ut):
         """From the coast: auto-tune off, roll from the measured effect.
 
-        With the boostback paced, kRPC's own time to peak is put back first
+        With the time to peak paced, kRPC's own is put back first
         and the gains are read ``ROLL_TUNE_ENGAGE_DELAY_S`` later: auto-tune
         re-derives them on its next physics tick, and read at once they
         would be the paced ones."""
@@ -157,20 +157,35 @@ class RollTune:
                            "%.2f/%.2f" % b if b else "-"
                            for b in (self.held_bw[0], self.held_bw[2])))
 
-    def pace(self, ut):
-        """BOOSTBACK_LAG_PACE: each axis's time to peak raised until kRPC's
-        loop decays no faster than ``ROLL_LAG_FACTOR`` x its actuators'
+    def lag_ttp(self, i):
+        """ATTITUDE_LAG_PACE: the time to peak at which kRPC's loop on axis
+        ``i`` decays no faster than ``ROLL_LAG_FACTOR`` x its actuators'
         torque-weighted lag (``gimbalResponseSpeed``: 0.125 s on the
-        Vector).  kRPC tunes as if the torque arrived at once; on the
-        gimbals at full thrust that is a limit cycle -- inputs pinned at
-        +-1 flipping every tick, nose 10-40 deg/s, roll 60-190 deg/s
-        (LOG16371, LOG16376/16377).  Never below kRPC's own."""
+        Vector; exponential surfaces).  kRPC tunes as if the torque arrived
+        at once; on the gimbals at full thrust that is a limit cycle --
+        inputs pinned at +-1 flipping every tick, nose 10-40 deg/s, roll
+        60-190 deg/s (LOG16371, LOG16376/16377).  The lag is weighted by
+        torque, so an unlit gimbal adds none and the pace lifts itself when
+        the engines stop.  Never below kRPC's own."""
+        lag = self.acts[i][1]
+        need = time_to_peak_for(self.cfg.ROLL_LAG_FACTOR * lag,
+                                self.over[i]) if lag else 0.0
+        return max(self.ttp0[i], need)
+
+    def lag_bandwidth(self, i):
+        """(Kp a, Ki a) of ``lag_ttp`` -- the most the actuators can serve
+        while auto-tune is off -- or None when nothing lags."""
+        if not self.acts[i][1]:
+            return None
+        zeta, omega = damping_and_frequency(self.lag_ttp(i), self.over[i])
+        return (2.0 * zeta * omega, omega * omega)
+
+    def pace(self, ut):
+        """Auto-tune's time to peak, per axis, from ``lag_ttp``."""
         ttp = []
         for i in range(3):
             lag = self.acts[i][1]
-            need = time_to_peak_for(self.cfg.ROLL_LAG_FACTOR * lag,
-                                    self.over[i]) if lag else 0.0
-            ttp.append(max(self.ttp0[i], need))
+            ttp.append(self.lag_ttp(i))
             if lag and abs(lag - self.lag_logged[i]) > 0.25 * max(
                     lag, self.lag_logged[i]):
                 self.lag_logged[i] = lag
@@ -202,9 +217,10 @@ class RollTune:
             self.log.event(ut, "attitude pace: time to peak not set (%r)"
                            % (exc,))
 
-    def update(self, ut, roll_rate_deg, roll_input, pace=False):
+    def update(self, ut, roll_rate_deg, roll_input):
         if not self.started:
             return
+        pace = self.cfg.ATTITUDE_LAG_PACE
         if self.engage_at is not None and ut >= self.engage_at:
             self.engage(ut)
         if ut >= self.next_read:
@@ -230,7 +246,7 @@ class RollTune:
                     self.acts = acts
             if self.active:
                 self.read_latch(ut)
-            if pace:
+            if pace and not self.active and self.engage_at is None:
                 self.pace(ut)
         if not self.active:
             return
@@ -262,13 +278,18 @@ class RollTune:
 
     def py_bandwidth(self, i):
         """(Kp a, Ki a) for pitch or yaw: kRPC's at the coast's start, no
-        higher than its oscillation floor while that is latched."""
+        higher than its oscillation floor while that is latched, nor (with
+        ATTITUDE_LAG_PACE) than the actuators' lag serves -- the landing
+        burn's gimbals."""
         bw = self.held_bw[i] if self.held_bw else None
-        if not bw or not self.latched or not self.floor:
-            return bw
-        zeta, _ = damping_and_frequency(1.0, self.over[i])
-        return (min(bw[0], 2.0 * zeta * self.floor),
-                min(bw[1], self.floor * self.floor))
+        if bw and self.latched and self.floor:
+            zeta, _ = damping_and_frequency(1.0, self.over[i])
+            bw = (min(bw[0], 2.0 * zeta * self.floor),
+                  min(bw[1], self.floor * self.floor))
+        lag = self.lag_bandwidth(i) if self.cfg.ATTITUDE_LAG_PACE else None
+        if bw and lag:
+            bw = (min(bw[0], lag[0]), min(bw[1], lag[1]))
+        return bw
 
     def write(self, ut):
         gains = [krpc_gains(self.accel[i], *self.zw[i]) for i in range(3)]

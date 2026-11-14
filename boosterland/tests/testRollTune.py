@@ -30,6 +30,22 @@ class TestRollTune(unittest.TestCase):
         self.assertAlmostEqual(rolltune.time_to_peak_for(0.2172, 0.01), 1.0,
                                delta=0.01)
 
+    def test_lag_bandwidth_decays_at_the_lag_factor(self):
+        from boosterland.config import Config
+        cfg = Config()
+        tune = rolltune.RollTune(None, None, None, cfg, None)
+        tune.ttp0, tune.over = (1.0, 1.0, 1.0), (0.01, 0.01, 0.01)
+        tune.acts = ((None, 0.125), (None, 0.0), (None, 0.001))
+        kp_a, ki_a = tune.lag_bandwidth(0)
+        zeta, _ = rolltune.damping_and_frequency(1.0, 0.01)
+        omega = kp_a / (2 * zeta)
+        self.assertAlmostEqual(1.0 / (zeta * omega),
+                               cfg.ROLL_LAG_FACTOR * 0.125, places=6)
+        self.assertAlmostEqual(ki_a, omega * omega, places=6)
+        self.assertIsNone(tune.lag_bandwidth(1))     # nothing lags
+        # a tiny lag never asks for more than kRPC's own
+        self.assertEqual(tune.lag_ttp(2), 1.0)
+
     def test_no_authority_no_gains(self):
         self.assertIsNone(rolltune.krpc_gains(None, 0.8, 5.0))
         self.assertIsNone(rolltune.krpc_gains(0.0, 0.8, 5.0))

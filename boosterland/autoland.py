@@ -570,10 +570,11 @@ class Autoland:
             self.roll_tune.start(ut)
         if self.cfg.ROLL_TUNE and state == COAST:
             self.roll_tune.engage(ut)
-        elif state not in (SEPARATION, BOOSTBACK) and self.roll_tune.paced:
-            self.roll_tune.unpace(ut)
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
+            # The boostback's record first (LOG<n>.bb.ap.csv): at shutdown
+            # a destroyed vessel takes it with it.
+            self.save_ap_diag(".bb.ap.csv")
             # kRPC keeps 3000 physics ticks (60 s) from when logging was
             # last turned on: restart it here, so the record is the coast's.
             try:
@@ -2203,10 +2204,7 @@ class Autoland:
         if self.roll_tune is not None and self.state != TOUCHDOWN:
             inputs = snap.inputs
             self.roll_tune.update(snap.ut, self.roll_rate,
-                                  inputs[2] if inputs else None,
-                                  pace=(self.cfg.BOOSTBACK_LAG_PACE
-                                        and self.state in (SEPARATION,
-                                                           BOOSTBACK)))
+                                  inputs[2] if inputs else None)
         if self.state != COAST and any(self.trim_cmd):
             self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
@@ -2237,11 +2235,11 @@ class Autoland:
             wait(self.cfg.LOOP_SLEEP_S,
                  snap.ut if snap is not None else self.conn.space_center.ut)
 
-    def save_ap_diag(self):
+    def save_ap_diag(self, suffix=".ap.csv"):
         """kRPC's diagnostic CSV beside the log (``KRPC_AP_DIAG``)."""
         try:
             text = self.autopilot.diagnostic_log
-            path = self.log.path + ".ap.csv"
+            path = self.log.path + suffix
             with open(path, "w") as fh:
                 fh.write(text)
             self.log.event(0.0, "kRPC diagnostic log: %d rows -> %s"

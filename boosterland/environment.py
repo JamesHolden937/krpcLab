@@ -642,7 +642,16 @@ class Environment:
             pos, neg = getattr(self.vessel, name)
         except Exception:                   # noqa: BLE001 -- KSP-side failure
             return None
-        return min(abs(pos[0]), abs(pos[2]), abs(neg[0]), abs(neg[2]))
+        value = min(abs(pos[0]), abs(pos[2]), abs(neg[0]), abs(neg[2]))
+        if name == "available_rcs_torque":
+            # RCS reads 0 while the valve is shut -- and on the tick it
+            # opens -- but it is still there to be used.  Kept from every
+            # read (the flip's, every tick), not only the probe's: a valve
+            # shut through a steady boostback and reopened at the coast
+            # made the first probe's budget wheels-only, holdable 12-15 deg
+            # against 42-46 (pace1-1113).
+            self._hold_rcs = max(self._hold_rcs, value)
+        return value
 
     def refresh_holdable(self, ut, position, velocity, rotation, nose):
         """Measure what the booster can hold off retrograde, before asking.

@@ -245,11 +245,12 @@ class Config:
     ROLL_PLANT_WINDOW_S: float = 1.0
     ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
     ROLL_LAG_FACTOR: float = 3.0
-    # kRPC's time to peak paced by the actuators' lag (ROLL_LAG_FACTOR x
-    # it) through SEPARATION and BOOSTBACK only: auto-tune on the gimbals
-    # at full thrust limit-cycles (rolltune.RollTune.pace).  Put back at the
-    # coast, whose gains are read this long after.
-    BOOSTBACK_LAG_PACE: bool = False
+    # Every axis's loop no faster than ROLL_LAG_FACTOR x its actuators'
+    # torque-weighted lag (rolltune.RollTune.lag_ttp): auto-tune's time to
+    # peak until the coast, the held pitch/yaw bandwidth after it.  Auto-tune
+    # on the gimbals at full thrust limit-cycles.  kRPC's own time to peak
+    # is put back at the coast, whose gains are read this long after.
+    ATTITUDE_LAG_PACE: bool = False
     ROLL_TUNE_ENGAGE_DELAY_S: float = 0.1
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
