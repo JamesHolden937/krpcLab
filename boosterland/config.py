@@ -257,7 +257,7 @@ class Config:
     # through the unpowered flip (the fin booster's roll on RCS) latches on
     # its own runaway gain, and the latch floors that axis for the rest of
     # the flight (Autoland.clear_krpc_latches).
-    KRPC_CLEAR_LATCH_ON_THRUST: bool = False
+    KRPC_CLEAR_LATCH_ON_THRUST: bool = True
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
     # orientations the aerodynamic surfaces look the same in (autoland.
