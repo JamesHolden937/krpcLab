@@ -8,7 +8,10 @@
 >   stripped. It brings its own patches, e.g. solar panels.
 > - Farm results from before 2026-11-06 are not comparable with later ones.
 > - kspSim models probed before then are stale: re-probe (`kspSim/world.py` warns).
-> - The live game (`~/Kerbal Space Program`) and KSP-VSE's `vse/` instance are still stock.
+> - The live game (`~/KSP-Retooled`) runs MiniSystem too; KSP-VSE's `vse/` instance is stock.
+> - **Since 2026-11-13 (evening) the farm is KSP Retooled 1.13 (Unity 6.7)**, rebuilt from the live game
+>   (commit b93d928). Flights before LOG16368 were stock 1.12.5: not comparable. LOG16368 (default booster,
+>   first Retooled flight) touched down 31 m/s sideways and was destroyed 203 m from the pad.
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
