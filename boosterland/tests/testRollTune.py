@@ -22,6 +22,14 @@ class TestRollTune(unittest.TestCase):
         self.assertAlmostEqual(ki, 0.0909, delta=0.0005)
         self.assertEqual(kd, 0.0)
 
+    def test_time_to_peak_for_a_decay_time(self):
+        zeta, omega = rolltune.damping_and_frequency(
+            rolltune.time_to_peak_for(0.375, 0.01), 0.01)
+        self.assertAlmostEqual(1.0 / (zeta * omega), 0.375, places=6)
+        # kRPC's own 1 s decays in 0.217 s
+        self.assertAlmostEqual(rolltune.time_to_peak_for(0.2172, 0.01), 1.0,
+                               delta=0.01)
+
     def test_no_authority_no_gains(self):
         self.assertIsNone(rolltune.krpc_gains(None, 0.8, 5.0))
         self.assertIsNone(rolltune.krpc_gains(0.0, 0.8, 5.0))
