@@ -88,6 +88,9 @@ Do not revert ROLL_TUNE/ROLL_SYMMETRY to win back the miss.
   while it closed. That is the ~12 m median cost and the outliers.
 
 **Open, in order:**
+0. **Next (the user chose it, 2026-11-13 end): the landing burn.** Its ignition margin (`SUICIDE_MARGIN` 1.18 +
+   `SUICIDE_REACTION_S` 1.5 s = ~1.6 of LOG16351's 5.8 km; throttle opens at 0.66) and why it adds error on the fin
+   boosters (predicted 36 m at ignition, landed 71 short; median ~45-90). Restart the farm first (swap 24.3 GB).
 1. Accuracy, on the kept controller: (a) leave throttle margin at the end of the burn -- light it earlier, or
    size `SUICIDE_MARGIN` from the craft's thrust/weight -- so the last ~250 m can still steer and null hs;
    (b) the burn's pitch/yaw swings (`PITCH_YAW_TUNE`, item 2, is the candidate); (c) the `holdable aoa`
