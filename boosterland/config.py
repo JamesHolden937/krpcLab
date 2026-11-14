@@ -259,6 +259,7 @@ class Config:
     # angle buys nothing; kRPC credits the gimbals 3-6x the roll they make
     # and chased the held angle at +-1 rad/s, 140-213 deg/s p90 (pace2-1113).
     ROLL_TUNE_BOOSTBACK: bool = False
+    ROLL_TUNE_LIT_S: float = 1.0        # ... engaged this long after thrust
     ROLL_FREE_BOOSTBACK: bool = False
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll

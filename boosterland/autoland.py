@@ -517,6 +517,7 @@ class Autoland:
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
+        self.lit_since = None           # ROLL_TUNE_BOOSTBACK's thrust clock
         self.flip_gimbal = None         # FLIP_THROTTLE_LAW: rad/s^2 per unit
         self.flip_fixed = 0.0           # throttle; RCS + wheels, rad/s^2
         self.flip_done = False
@@ -568,9 +569,13 @@ class Autoland:
                 getattr(svc, "surface_actuators", None)
                 if svc is not None else None, self.cfg, self.log)
             self.roll_tune.start(ut)
-        if self.cfg.ROLL_TUNE and (state == COAST or (
-                self.cfg.ROLL_TUNE_BOOSTBACK and state == BOOSTBACK)):
-            self.roll_tune.engage(ut)
+        if self.cfg.ROLL_TUNE and state == COAST:
+            if self.roll_tune.active:
+                # Engaged under thrust (ROLL_TUNE_BOOSTBACK): the coast
+                # takes kRPC's own pitch/yaw bandwidth afresh.
+                self.roll_tune.restart(ut)
+            else:
+                self.roll_tune.engage(ut)
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
             # The boostback's record first (LOG<n>.bb.ap.csv): at shutdown
@@ -2204,6 +2209,21 @@ class Autoland:
                 self.log.event(snap.ut, "kRPC diagnostic record restarted")
             except Exception:                       # noqa: BLE001
                 pass
+        if (self.cfg.ROLL_TUNE and self.cfg.ROLL_TUNE_BOOSTBACK
+                and self.state == BOOSTBACK and self.roll_tune is not None
+                and not self.roll_tune.active
+                and self.roll_tune.engage_at is None):
+            # Under thrust, not at the boostback's start: pitch and yaw keep
+            # the bandwidth kRPC has reached, and with the engines off that
+            # was 0.28 rad/s against 6-9 -- the booster could not follow
+            # (roll-1113 arm C, three flights lost 64-162 km).
+            if snap.throttle > 0.5 and self.flip_done:
+                if self.lit_since is None:
+                    self.lit_since = snap.ut
+                elif snap.ut - self.lit_since >= self.cfg.ROLL_TUNE_LIT_S:
+                    self.roll_tune.engage(snap.ut)
+            else:
+                self.lit_since = None
         if self.roll_tune is not None and self.state != TOUCHDOWN:
             inputs = snap.inputs
             self.roll_tune.update(snap.ut, self.roll_rate,

@@ -330,6 +330,17 @@ class RollTune:
         except Exception as exc:                    # noqa: BLE001
             self.log.event(ut, "roll tune: gains not written (%r)" % (exc,))
 
+    def restart(self, ut):
+        """Auto-tune back on at kRPC's own time to peak, and engage again
+        ``ROLL_TUNE_ENGAGE_DELAY_S`` later, so the held pitch/yaw bandwidth
+        is the one kRPC reaches here rather than the last phase's."""
+        self.release()
+        self.set_ttp(ut, self.ttp0)
+        self.paced = False
+        self.sent = None
+        self.engage_at = ut + self.cfg.ROLL_TUNE_ENGAGE_DELAY_S
+        self.log.event(ut, "roll tune: re-engaging for the %s" % "coast")
+
     def release(self):
         if not self.active:
             return
