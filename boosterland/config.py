@@ -326,30 +326,6 @@ class Config:
                                             # aerodynamic moment; the rest is
                                             # left for disturbances
 
-    # --- High-aoa descent (measuring) -----------------------------------
-    # From the drag re-sweep until the flip back, fall as far off retrograde
-    # as the controls can hold (the torque limit, capped at the lift peak,
-    # recomputed at every step of the propagation since it falls as q rises)
-    # for drag, with the lift's direction coned about the velocity at a
-    # solved rate and phase so that it averages out onto the pad
-    # (guidance.solve_high_aoa).
-    HIGH_AOA_DESCENT: bool = False
-    HIGH_AOA_MAX_DEG: float = 90.0          # cap on the scheduled angle
-    HIGH_AOA_MIN_DEG: float = 3.0           # off below this: nothing to gain
-    HIGH_AOA_CONE_MIN: float = 0.05         # rad/s, slowest cone solved for
-    HIGH_AOA_CONE_MAX: float = 1.0          # rad/s, fastest
-    HIGH_AOA_CONE_FRACTION: float = 0.5     # the nose's coning speed
-                                            # (rate x sin aoa) is held under
-                                            # this of the coast flip's rate
-    HIGH_AOA_PHASES: int = 8                # first tick's phase scan
-    HIGH_AOA_MAX_MISS_M: float = 100.0      # start only below this miss
-    HIGH_AOA_KEEP_MISS_M: float = 500.0     # once flying, the ordinary
-                                            # coast takes over above this
-    HIGH_AOA_SOLVE_ITERS: int = 3           # secant steps per tick
-    HIGH_AOA_FLIP_MARGIN: float = 1.5       # the flip back to retrograde is
-                                            # given this times the angle over
-                                            # the coast flip's measured rate
-
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early

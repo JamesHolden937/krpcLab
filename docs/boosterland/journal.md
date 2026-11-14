@@ -1038,3 +1038,5 @@ Verdict: the high-aoa descent is refuted on the fin boosters (two laws, five bat
 and its code; keep the polar and torque-limit log lines. The ascent comparison the user asked for was not
 flown: nothing moved the ignition speed. The lever that remains for the burn's cost is the ignition margin
 (`SUICIDE_MARGIN` 1.18 + 1.5 s reaction: ~1.6 of 5.8 km on LOG16351).
+
+Deleted the same day (flags rule): `HIGH_AOA_*` and both laws' code; the polar and torque-limit log lines stay. Fingerprint back to 7cd7531a.

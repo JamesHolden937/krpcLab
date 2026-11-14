@@ -12,11 +12,10 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-13: boosterland + ascent -- high-aoa descent refuted (delete it next); the fin booster's roll; the ascent's landing budget
+## 2026-11-13: boosterland + ascent -- high-aoa descent refuted and deleted; the fin booster's roll; the ascent's landing budget
 
 **Later the same day (journal "2026-11-13: high-aoa descent", "... the cone"):** item 1b built behind
-`HIGH_AOA_DESCENT` (off; defaults fly as before) and flown in 5 batches. **Refuted twice; DELETE IT next
-session** (flags rule), keeping the probe's `lift peak` (polar `aoa:lift/drag`) and `torque limit` log lines.
+`HIGH_AOA_DESCENT` (off; defaults fly as before) and flown in 5 batches. **Refuted twice; deleted** (commit after 8aad4ea; code in a0e5f4d), keeping the probe's `lift peak` (polar `aoa:lift/drag`) and `torque limit` log lines.
 - Polar (fin boosters): drag/q 7-14 nose-first, 60-85 at 22 deg, 170-375 at 90; lift peaks 45-50 deg, ~0 at 90.
   Torque limit is 90 deg only above ~35 km (q < 400 Pa), 7-15 deg by M2.
 - Law 1 (hiaoa1-4, LOG16331-16354, commits 125d60b..e75fdd2): rest broadside, lift on the back branch.
@@ -29,11 +28,9 @@ session** (flags rule), keeping the probe's `lift peak` (polar `aoa:lift/drag`) 
   pinned it at 0.05-0.09: a minute per revolution, the lift never averages; best miss > 500 m, so the law
   toggled on/off every few s and the coast inherited km-sized errors. At the torque limit there is no torque
   left to move the nose: coning is infeasible on this airframe, not mistuned.
-- Deletion sites: config `HIGH_AOA_*`; guidance `aoa_schedule`, `cone_limit`, `solve_high_aoa`; trajectory
-  `Steer.polar/flip_s/schedule/cone_rate`, `polar_point`, the polar branch of `acceleration`, the flip/schedule
-  block of `predict_landing` (and `replace` import); autoland `high_aoa`, `high_aoa_cone/state`, the
-  measure_tracking and DEPLOY_LAW gates on it (keep the `coast settled ... flip X deg/s` log); environment
-  `drag_nose_first` (+ probe_rotation branch), `_polar`/`polar_at`; `tests/testHighAoa.py`.
+- Deleted: config `HIGH_AOA_*`, the guidance solve, `Steer`'s polar/schedule/cone fields, autoland's high-aoa state and
+  brake gate, environment's `drag_nose_first`/`polar_at`, `tests/testHighAoa.py`. Kept: the probe's polar and
+  `torque limit` events (`Environment.torque_limit_aoa`, log only).
 - **Ascent comparison (the user asked): not flown** -- nothing changes the burn speed, so separation would not
   move. The fin-booster stack on the pad is the live `FMRS/before_launch.sfs` of 11-12 21:49 ("Heavy Shuttle",
   129 parts, all part types present on the farm; untested there): copy it to `saves/` if an ascent needs it.
@@ -44,7 +41,7 @@ session** (flags rule), keeping the probe's `lift peak` (polar `aoa:lift/drag`) 
   does steer (throttle loop; tilt <= 15 deg + divert, coned upright under 250 m) but on the fin boosters it
   adds error: predicted 1 m at 10 km, 36 m at ignition, landed 71 m short. **Best next lever: the burn's margin
   and its terminal accuracy (item 1a below), not the descent.**
-- Farm stopped; swap was 24.3 GB after cone1 (restart before any batch). Defaults fingerprint after a0e5f4d: **45d64880** (same behaviour).
+- Farm stopped; swap was 24.3 GB after cone1 (restart before any batch). Defaults fingerprint back to **7cd7531a**.
 
 The user (live LOG16183/16184, a modified fin booster, now `saves/qs_finbooster2`): it oscillates a lot, mostly
 roll in the unpowered descent; it ran short of fuel in the burn; it must work with every engine gimballing (they

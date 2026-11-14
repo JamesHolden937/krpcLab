@@ -15,7 +15,7 @@ boostback aims at the point the vehicle will actually touch down on.
 """
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from common import vec
 from common.geo import gravity_at, surface_distance  # noqa: F401
@@ -82,39 +82,6 @@ class Steer:
     hold: object = None         # (speed, altitude) -> the most the vehicle
                                 # can hold, radians, or None; the lift is
                                 # credited at no more than that
-    # HIGH_AOA_DESCENT (guidance.solve_high_aoa): ``polar`` is
-    # (speed, altitude) -> [(aoa, lift/q, drag/q)] and replaces ``slope``:
-    # lift is read off the measured polar at |aoa| and drag is the Mach
-    # curve's nose-first Cd*A scaled by drag(aoa)/drag(0).  ``schedule``
-    # (speed, altitude) -> aoa replaces ``aoa`` at every step of a
-    # propagation, and ``cone_rate`` (rad/s) turns ``normal`` -- the lift's
-    # direction -- about the velocity by that much per second from t=0.
-    # ``flip_s`` > 0: the angle ramps to 0 over that long, starting that
-    # long before the landing burn would light -- the flip back to
-    # retrograde the control loop flies (autoland.high_aoa).
-    polar: object = None
-    flip_s: float = 0.0
-    schedule: object = None
-    cone_rate: float = 0.0
-
-
-def polar_point(polar, aoa):
-    """(lift/q, drag ratio to aoa 0) at ``aoa`` radians >= 0, interpolated."""
-    if not polar:
-        return 0.0, 1.0
-    d0 = polar[0][2] if polar[0][0] <= 1e-9 and polar[0][2] > 0.0 else None
-    if aoa <= polar[0][0]:
-        a, l, d = polar[0]
-    elif aoa >= polar[-1][0]:
-        a, l, d = polar[-1]
-    else:
-        for (a0, l0, x0), (a1, l1, x1) in zip(polar, polar[1:]):
-            if a0 <= aoa <= a1:
-                f = (aoa - a0) / (a1 - a0) if a1 > a0 else 0.0
-                l = l0 + (l1 - l0) * f
-                d = x0 + (x1 - x0) * f
-                break
-    return l, (d / d0 if d0 else 1.0)
 
 
 def lift_direction(steer, v):
@@ -138,23 +105,11 @@ def acceleration(env, r, v, mass, drag, steer=None):
         if rho > 0.0:
             speed = vec.norm(v)
             drag_area = drag(speed, altitude) if speed > 0.0 else 0.0
-            polar_lift = None
-            if (speed > 0.0 and steer is not None and steer.polar is not None
-                    and steer.aoa):
-                polar_lift, ratio = polar_point(
-                    steer.polar(speed, altitude), abs(steer.aoa))
-                drag_area *= ratio
             if speed > 0.0 and drag_area > 0.0:
                 # a_drag = -(1/2) rho Cd A |v| v / m
                 q = 0.5 * rho * drag_area * speed / mass
                 a = vec.add(a, vec.scale(v, -q))
-            if polar_lift is not None:
-                side = lift_direction(steer, v)
-                if side is not None:
-                    lift = (0.5 * rho * speed * speed * polar_lift
-                            * math.copysign(1.0, steer.aoa) / mass)
-                    a = vec.add(a, vec.scale(side, lift))
-            elif speed > 0.0 and steer is not None and steer.aoa and steer.slope:
+            if speed > 0.0 and steer is not None and steer.aoa and steer.slope:
                 slope = steer.slope(speed, altitude)
                 side = lift_direction(steer, v)
                 if slope and side is not None:
@@ -367,9 +322,6 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     powered = False
     net = 0.0
     profile = []
-    flip_s = steer.flip_s if steer is not None else 0.0
-    flip_t = None
-    flying = steer
 
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
@@ -391,30 +343,10 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
             if descending and height <= needed:
                 powered = True
                 break
-            if (flip_s > 0.0 and flip_t is None and descending
-                    and height <= needed + speed * flip_s):
-                flip_t = t
         if height <= 0.0:
             break
-        altitude = radius - env.equatorial_radius
-        if steer is not None:
-            left = 1.0
-            if flip_t is not None:
-                left = max(0.0, 1.0 - (t - flip_t) / flip_s)
-            if left <= 0.0:
-                flying = None
-            elif steer.schedule is not None or steer.cone_rate:
-                aoa = (steer.schedule(speed, altitude)
-                       if steer.schedule is not None else steer.aoa)
-                normal = steer.normal
-                if steer.cone_rate and speed > 1e-6:
-                    normal = vec.quat_rotate(vec.quat_axis_angle(
-                        vec.scale(v, 1.0 / speed), steer.cone_rate * t),
-                        normal)
-                flying = replace(steer, aoa=aoa * left, normal=normal)
-            elif left < 1.0:
-                flying = replace(steer, aoa=steer.aoa * left)
 
+        altitude = radius - env.equatorial_radius
         dt = (cfg.PREDICT_DT_ATMO if altitude < env.atmosphere_depth
               else cfg.PREDICT_DT_VACUUM)
         if speed > 1.0:
@@ -431,7 +363,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         if descending:
             profile.append((speed, altitude))
 
-        r, v = _step(env, r, v, mass, drag, dt, cfg, steer=flying)
+        r, v = _step(env, r, v, mass, drag, dt, cfg, steer=steer)
         t += dt
         steps += 1
 

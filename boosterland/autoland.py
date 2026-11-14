@@ -507,11 +507,6 @@ class Autoland:
         self.late_next_ut = 0.0
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
-        self.high_aoa_cone = None       # HIGH_AOA_DESCENT: (phase, rate, ut)
-                                        # last flown, the warm start
-        self.high_aoa_state = None      # None, "flying", "flipped"
-        self.flip_rate = None           # deg/s, the coast flip's, measured
-        self.coast_entry_err = None
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
@@ -1232,23 +1227,16 @@ class Autoland:
         if first and self.env.holdable_deg is not None:
             self.log.event(snap.ut, "holdable aoa %.1f deg (computed)"
                            % self.env.holdable_deg)
-        off = vec.angle_between(vec.scale(snap.direction, -1.0),
-                                snap.velocity)
-        if self.coast_entry_err is None:
-            self.coast_entry_err = off      # the nose off retrograde
-        if self.high_aoa_state != "flying":
-            self.measure_tracking(snap)
+        self.measure_tracking(snap)
         # Fly the air first, and only then think about the engines.  A booster
         # falling through 30 km of thickening atmosphere with its grid fins out
         # is a wing, and a wing costs no propellant, and no relight -- see guidance.solve_steer.
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
-        steer, steered = self.high_aoa(snap)
-        if steer is None:
-            steer, steered = guidance.solve_steer(
-                self.env, snap.position, snap.velocity, snap.mass,
-                snap.max_accel, self.cfg)
+        steer, steered = guidance.solve_steer(
+            self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
+            self.cfg)
         if steer is not None:
             self.prediction = steered
             self.env.set_descent_profile(steered.profile)
@@ -1273,10 +1261,7 @@ class Autoland:
                                      if self.steer else 0.0),
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
-        # While it flies broadside the brakes stay where they are: opening
-        # them adds a moment the controls are already spending all of theirs
-        # against, and moves the polar the solve flies.
-        if self.cfg.DEPLOY_LAW and self.high_aoa_state != "flying":
+        if self.cfg.DEPLOY_LAW:
             if self.cfg.DEPLOY_LATE and self.late_state != "handed":
                 self.run_late_deploy(snap)
             else:
@@ -1287,73 +1272,15 @@ class Autoland:
         if (not self.coast_settled and self.pointing_error(snap)
                 <= self.cfg.COAST_RCS_TRIM_SETTLE_DEG):
             self.coast_settled = True
-            took = snap.ut - self.phase_start_ut
-            if took > 0.0 and self.coast_entry_err is not None:
-                self.flip_rate = max(0.0, self.coast_entry_err - off) / took
             self.log.event(snap.ut, "coast settled: err %.1f deg after %.1fs"
-                           " (flip %.1f deg/s)"
-                           % (self.pointing_error(snap), took,
-                              self.flip_rate or 0.0))
+                           % (self.pointing_error(snap),
+                              snap.ut - self.phase_start_ut))
         if self.cfg.COAST_RCS_TRIM:
             self.run_rcs_trim(snap)
         if snap.vertical_speed < 0.0 and height <= needed:
             self.enter(LANDING_BURN, snap.ut,
                        "h=%.0f needed=%.0f miss=%.0f"
                        % (height, needed, distance))
-
-    def high_aoa(self, snap):
-        """HIGH_AOA_DESCENT: the coast's steer and prediction, or (None, None).
-
-        Flown from the drag re-sweep (the same gate as the wing) until the
-        flip back: once the height left over the burn's is what the flip
-        needs at this speed, the nose goes to retrograde and the ordinary
-        coast takes over for good.  The flip's time is the angle flown now
-        over the coast flip's measured rate, times ``HIGH_AOA_FLIP_MARGIN``.
-        The cone's phase is carried from tick to tick, advanced by its rate.
-        """
-        cfg = self.cfg
-        if (not cfg.HIGH_AOA_DESCENT or self.high_aoa_state == "flipped"
-                or self.env.reswept_ut is None or not self.flip_rate):
-            return None, None
-        start = None
-        if self.high_aoa_cone is not None:
-            p, w, ut = self.high_aoa_cone
-            start = (p + w * (snap.ut - ut), w)
-        steer, steered, got, flip_s = guidance.solve_high_aoa(
-            self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
-            cfg, start, self.flip_rate, self.high_aoa_state == "flying")
-        if steer is not None and self.high_aoa_state == "flying":
-            height, needed, _ = trajectory.landing_burn_state(
-                self.env, snap.position, snap.velocity, snap.max_accel, cfg,
-                height=snap.landing_height)
-            if (snap.vertical_speed < 0.0
-                    and height - needed <= snap.speed * flip_s):
-                self.high_aoa_state = "flipped"
-                self.env.drag_nose_first = False
-                self.log.event(snap.ut, "high aoa: flip back at h=%.0f "
-                               "needed=%.0f v=%.0f aoa %.1f (flip %.1fs)"
-                               % (height, needed, snap.speed,
-                                  math.degrees(steer.aoa), flip_s))
-                return None, None
-        if steer is None:
-            # Not now: the ordinary coast flies this tick and the next one
-            # asks again (the limit and the miss both move).
-            self.high_aoa_cone = None
-            if self.high_aoa_state == "flying":
-                self.high_aoa_state = None
-                self.env.drag_nose_first = False
-                self.log.event(snap.ut, "high aoa: off at v=%.0f: %s"
-                               % (snap.speed, got))
-            return None, None
-        self.high_aoa_cone = (got[0], got[1], snap.ut)
-        if self.high_aoa_state is None:
-            self.high_aoa_state = "flying"
-            self.env.drag_nose_first = True
-            self.log.event(snap.ut, "high aoa: flying %.1f deg at v=%.0f, "
-                           "cone %.2f rad/s (flip %.1fs)"
-                           % (math.degrees(steer.aoa), snap.speed, got[1],
-                              flip_s))
-        return steer, steered
 
     def run_rcs_trim(self, snap):
         """Translate on the RCS thrusters to walk the cross-track miss to 0.
