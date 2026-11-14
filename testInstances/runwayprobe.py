@@ -20,7 +20,7 @@ inst = sys.argv[1] if len(sys.argv) > 1 else "0"
 base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ksp" + inst)
 rpc = int(open(os.path.join(base, ".rpc_port")).read())
 stream = int(open(os.path.join(base, ".stream_port")).read())
-conn = krpc.connect(name="runwayprobe", rpc_port=rpc, stream_port=stream)
+conn = krpc.connect(name="runwayprobe", port=rpc)
 body = conn.space_center.bodies["Kerbin"]
 cfg = Config()
 

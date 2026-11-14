@@ -31,7 +31,7 @@ from common.krpcpilot import set_autopilot_engaged      # noqa: E402
 
 def fly_plane(rpc, stream, args, stop):
     """Take off and hold ``args.alt`` on ``args.heading`` until ``stop``."""
-    conn = krpc.connect(name="propfly-plane", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="propfly-plane", port=rpc)
     sc = conn.space_center
     v = sc.active_vessel
     body = v.orbit.body
@@ -121,7 +121,7 @@ def main():
     farmflight.add_arguments(p)
     args = p.parse_args()
     rpc, stream = paths.ports(args.instance)
-    conn = krpc.connect(name="propfly-loader", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="propfly-loader", port=rpc)
     conn.space_center.load(args.save)
     conn.close()
     time.sleep(5.0)

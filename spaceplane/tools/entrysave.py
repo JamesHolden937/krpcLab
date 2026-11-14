@@ -52,7 +52,7 @@ def main(argv=None):
 
     port = 50100 + 2 * args.instance
     conn = krpc.connect(name="entrysave", address="127.0.0.1",
-                        rpc_port=port, stream_port=port + 1)
+                        port=port)
     sc = conn.space_center
     deadline = time.time() + args.timeout
     seen = None

@@ -48,7 +48,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     port = 50100 + 2 * args.instance
     conn = krpc.connect(name="vacbench", address="127.0.0.1",
-                        rpc_port=port, stream_port=port + 1)
+                        port=port)
     sc = conn.space_center
     sc.load(args.save)
     time.sleep(3.0)

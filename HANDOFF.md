@@ -17,6 +17,19 @@
 
 ## 2026-11-14 (+ 11-13 night): boosterland -- the boostback oscillation (gimbal lag, the roll latch, gimbalTorqueFix)
 
+**2026-11-14 later: kRPC main (0.8.0-dev, commit 34c70de) installed on the farm, stockref and the live game,
+and its client in both venvs** -- `tools/krpcmain.sh` rebuilds/reinstalls it (bazelisk in ~/.local/bin, source
+~/krpc); 0.7.0 backups in `.krpc070/` (gitignored). What changed for us: one port (`connect(port=)`; settings
+keys `tcpip_address`/`tcpip_port`, `setports.py` writes them; `--stream-port`/`.stream_port` are ignored), every
+`krpc.connect` call rewritten, `krpcbatch` on `Session.call`, `fastclient` off (0.7-only: PyPy coast ticks ~30%
+dearer, 0.08 -> 0.105 wall-s), launcherMod rebuilt, KRPC.MechJeb now ships with kRPC. The backport stands down
+itself ("kRPC models the gimbal lag itself"); boostback identical to it (Kp*alpha 3.29, nose p90 5.7-6.2).
+**0.8 also carries #1191: MoI measured about the CoM, ControlSurface torque fixed, `LimitAngularVelocity` on by
+default -- a new plant.** k08-1114 (LOG16667-16690, qs_finbooster2, 12 a arm): pace on median miss 480 m, 7/12
+destroyed (the coast's held bandwidth reads 0.6 v 1.9 rad/s and kRPC latches 12/12); pace off 26 m, 5/12, td
+median 12 m/s (0.7+backport pace on: 66 m, 7.5 m/s). **`ATTITUDE_LAG_PACE` default now False.** kspSim is
+broken until ported to the 0.8 protocol (2 suite errors are its 0.7 codec tests).
+
 **2026-11-14: kRPC's own fix (krpc/krpc#1348, merged 11-14, unreleased 0.8.0) backported into
 `KrpcGimbalLag.cs` (b53a1d8)**: exact per-tick lag -dt/ln(1-speed dt), cap 2 zeta w0 + w0 <= 1/lag, PI gains
 placed for the lagged plant; the patch refuses itself on a kRPC with `gimbalLag` (delete it then). 0.8.0 itself is
@@ -54,8 +67,12 @@ full thrust in the boostback (4.3 km of cross). **Two kRPC defects and one stock
   pitch/yaw). Fixed: holdable probe reading RCS 0 on the valve's reopening tick.
 
 **Open, in order:**
-1. Live: the user flies the defaults (pace + latch reset). Offer `gimbalTorqueFix/build.sh --live` (now the
-   krpc#1348 backport).
+0. **kRPC 0.8 follow-ups:** (a) delete the pace code (ATTITUDE_LAG_PACE, lag_ttp/lag_bandwidth, the backport
+   KrpcGimbalLag.cs) after a second batch confirms; (b) touchdown speed 12 v 7.5 m/s and 5/12 lost on 0.8 --
+   re-take anything derived from kRPC torque/MoI (#1191); (c) port kspSim's server/codec and fastclient to the
+   0.8 protocol (Message envelope, request ids, one port, streams as uint64, Error.exception); (d) re-check the
+   spaceplane/airplane/propPitch on 0.8 (LimitAngularVelocity, surface torque) before trusting their defaults.
+1. Live: the user flies the defaults (latch reset; pace now off) on kRPC 0.8.
 1a. Why the 18-part `quicksave` booster dies 24/24 on the Retooled farm (lag3-1114: parts lost mid-burn, ~567 m/s at 5.9 km).
 2. Heavy booster's unpowered flip stalls ~120 s -> boostback TIMEOUT, 2-5 km: 4/4 on instance 2, 0 on 5
    (identical GameData and save). Separation roll + no RCS roll authority; find why only ksp2.

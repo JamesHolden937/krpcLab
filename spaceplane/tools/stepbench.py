@@ -261,7 +261,7 @@ def main():
     # (--krpc never sweeps) the client never takes the attitude.
     cfg = apply_overrides(Config(), ["SURFACE_OWN=1"] + args.set)
     rpc, stream = paths.ports(args.instance)
-    conn = krpc.connect(name="stepbench", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="stepbench", port=rpc)
     sc = conn.space_center
     book = Logbook(os.path.join(ROOT, "logs"), 0.0)
 

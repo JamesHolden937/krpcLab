@@ -35,7 +35,7 @@ base = os.path.join(here, "ksp%s" % n)
 rpc = int(open(os.path.join(base, ".rpc_port")).read())
 stream = int(open(os.path.join(base, ".stream_port")).read())
 conn = krpc.connect(name="cgProbe", address="127.0.0.1",
-                    rpc_port=rpc, stream_port=stream)
+                    port=rpc)
 sc = conn.space_center
 if len(args) > 1:
     sc.load(args[1])

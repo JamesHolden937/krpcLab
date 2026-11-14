@@ -26,7 +26,7 @@ from common import partmodule  # noqa: E402
 
 rpc, stream = int(sys.argv[1]), int(sys.argv[2])
 conn = krpc.connect(name="ctrlsrf", address="127.0.0.1",
-                    rpc_port=rpc, stream_port=stream)
+                    port=rpc)
 vessel = conn.space_center.active_vessel
 print("vessel: %s, %d parts" % (vessel.name, len(vessel.parts.all)))
 

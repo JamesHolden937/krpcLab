@@ -190,7 +190,12 @@ def install():
     """Patch the installed krpc client (idempotent)."""
     if _ORIGINAL or os.environ.get("KSPSIM_FASTCLIENT") == "0":
         return
-    import krpc.client as kclient
+    try:
+        # kRPC 0.7's client only: 0.8 has a new wire format (one connection,
+        # requests by id) and no krpc.client; it flies the stock client.
+        import krpc.client as kclient
+    except ImportError:
+        return
     import krpc.schema.KRPC_pb2 as KRPC
     from krpc.decoder import Decoder
     from krpc.encoder import Encoder

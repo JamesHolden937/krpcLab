@@ -48,8 +48,7 @@ def connect(n):
     base = os.path.join(HERE, "ksp%s" % n)
     return krpc.connect(
         name="shoot",
-        rpc_port=int(open(os.path.join(base, ".rpc_port")).read()),
-        stream_port=int(open(os.path.join(base, ".stream_port")).read()))
+        port=int(open(os.path.join(base, ".rpc_port")).read()))
 
 
 def watch(conn, args):

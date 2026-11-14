@@ -20,6 +20,10 @@ A Python stand-in for the game that speaks the kRPC wire protocol, so the
 (probe, part configs, the save) and every law is **checked against the game
 frame by frame** (flight tests). Journal: `docs/kspSim/journal.md`.
 
+**Broken since 2026-11-14: the farm, the live game and the venvs run kRPC main (0.8.0-dev), whose
+protocol this server does not speak yet** (one port, a `Message` envelope, request ids, streams as uint64,
+`Error.exception`; `fastclient` stands down under 0.8). Port it before screening anything.
+
 **kRPC 0.7.0** (ported 2026-10-28): the protocol-version handshake, nulls
 as `is_null`, a presence byte before each nullable item in a collection,
 structures (`AxisRange`, `Wrench`, `BoundingBox`), `PartField`/`PartEvent`/

@@ -49,8 +49,7 @@ def connect(name, rpc, stream, tries=40):
         try:
             kwargs = {"name": name}
             if rpc:
-                kwargs["rpc_port"] = rpc
-                kwargs["stream_port"] = stream
+                kwargs["port"] = rpc
             return farmflight.bounded(krpc.connect(**kwargs))
         except Exception as exc:                        # noqa: BLE001
             last = exc
@@ -86,7 +85,7 @@ def set_paused(rpc, stream, paused, settle=0.5):
     """
     try:
         conn = farmflight.bounded(krpc.connect(
-            name="quickglide-pause", rpc_port=rpc, stream_port=stream)
+            name="quickglide-pause", port=rpc)
             if rpc else krpc.connect(name="quickglide-pause"), 60)
     except Exception:                                   # noqa: BLE001
         return None
@@ -121,7 +120,7 @@ def clock_is_running(rpc, stream, seconds=3.0):
     """
     try:
         conn = farmflight.bounded(krpc.connect(
-            name="quickglide-clock", rpc_port=rpc, stream_port=stream)
+            name="quickglide-clock", port=rpc)
             if rpc else krpc.connect(name="quickglide-clock"), 60)
     except Exception:                                   # noqa: BLE001
         return None

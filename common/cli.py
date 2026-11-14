@@ -28,8 +28,9 @@ def parser(name, description, pilot=True):
 def connect_kwargs(args, name=None):
     """``krpc.connect`` keywords for the parsed connection flags."""
     kwargs = {"name": name or getattr(args, "name", None) or "krpclab"}
-    for key in ("address", "rpc_port", "stream_port"):
-        value = getattr(args, key, None)
+    # kRPC 0.8 serves RPCs and streams on one port; --stream-port is ignored.
+    for key, arg in (("address", "address"), ("port", "rpc_port")):
+        value = getattr(args, arg, None)
         if value is not None:
             kwargs[key] = value
     return kwargs

@@ -35,7 +35,7 @@ started = False
 while time.time() < deadline:
     try:
         if conn is None:
-            conn = krpc.connect(name="apwatch", rpc_port=rp, stream_port=sp)
+            conn = krpc.connect(name="apwatch", port=rp)
             sc = conn.space_center
             v = sc.active_vessel
             ap = v.auto_pilot

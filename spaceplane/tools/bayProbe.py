@@ -11,14 +11,14 @@ inst = sys.argv[1] if len(sys.argv) > 1 else "0"
 save = sys.argv[2] if len(sys.argv) > 2 else "qs_s2_hac0"
 d = os.path.join(ROOT, "testInstances", "ksp" + inst)
 rp, sp = int(open(d + "/.rpc_port").read()), int(open(d + "/.stream_port").read())
-c = krpc.connect(name="bay-loader", rpc_port=rp, stream_port=sp)
+c = krpc.connect(name="bay-loader", port=rp)
 c.space_center.load(save)
 c.close()
 conn = None
 for _ in range(60):
     time.sleep(2)
     try:
-        conn = krpc.connect(name="bayprobe", rpc_port=rp, stream_port=sp)
+        conn = krpc.connect(name="bayprobe", port=rp)
         v = conn.space_center.active_vessel
         if v.flight(v.orbit.body.reference_frame).speed > 1:
             break

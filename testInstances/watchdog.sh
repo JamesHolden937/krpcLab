@@ -125,8 +125,7 @@ clock_frozen() {                      # 0 = frozen, 1 = advancing or unknown
 import sys, time
 try:
     import krpc
-    c = krpc.connect(name="watchdog-clock", rpc_port=int(sys.argv[1]),
-                     stream_port=int(sys.argv[2]))
+    c = krpc.connect(name="watchdog-clock", port=int(sys.argv[1]))
 except Exception:
     sys.exit(1)                       # cannot ask: not an answer, not a fault
 try:

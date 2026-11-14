@@ -100,7 +100,7 @@ def connect(instance, name="flighttest"):
     last = None
     for _ in range(30):
         try:
-            return krpc.connect(name=name, rpc_port=rpc, stream_port=stream)
+            return krpc.connect(name=name, port=rpc)
         except Exception as exc:                        # noqa: BLE001
             last = exc
             time.sleep(1.0)

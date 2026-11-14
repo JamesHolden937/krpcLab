@@ -76,7 +76,7 @@ def main(argv=None):
                 continue
             port = 50100 + 2 * int(inst.group(1))
             conn = krpc.connect(name="gatesave", address="127.0.0.1",
-                                rpc_port=port, stream_port=port + 1)
+                                port=port)
             conn.space_center.save(args.name)
             print("saved %r on ksp%s from %s" % (args.name, inst.group(1),
                                                  os.path.basename(path)))

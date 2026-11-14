@@ -13,7 +13,7 @@ import krpc
 
 rpc, stream = int(sys.argv[1]), int(sys.argv[2])
 conn = krpc.connect(name="probe", address="127.0.0.1",
-                    rpc_port=rpc, stream_port=stream)
+                    port=rpc)
 print("connected; server version", conn.krpc.get_status().version)
 try:
     scene = conn.krpc.game_scene

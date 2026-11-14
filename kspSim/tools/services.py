@@ -84,7 +84,7 @@ def from_instance(n):
     import krpc
     from common import paths
     rpc, _ = paths.ports(n)
-    conn = krpc.connect(name="services", rpc_port=rpc, stream_port=None)
+    conn = krpc.connect(name="services", port=rpc)
     try:
         return conn._invoke("KRPC", "GetServices", [], [], conn._types.services_type)
     finally:

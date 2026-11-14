@@ -1110,3 +1110,19 @@ instance = lag2-1113's design): boostback lit (torque > half max) nose p90 5.6-6
 0.03; lag2-1113 old patch: 3.2-3.4 / 8.5-10.6 / 20-21.5 (three modes), saturation 0.01-0.16. Kp*alpha 3.29 v
 5.33. Misses: pace on median 66 m (lag2 64), 2/12 destroyed both; pace off 4/12 destroyed (lag2 5/12), misses
 still long east. Burn nose p90 (worst 4 km bin, pace on) median ~5.5 v ~8.2. Kept.
+
+### 2026-11-14 later: kRPC main (0.8.0-dev) installed
+
+The user chose kRPC's own build over the backport. Main at 34c70de built with Bazel (`tools/krpcmain.sh`) and
+installed on the farm, stockref and the live game; client 0.8.0 in both venvs. Ported: one port (settings
+`tcpip_port`, `krpc.connect(port=)` in ~40 call sites), `common/krpcbatch` on `Session.call`, `kspSim/fastclient`
+disabled under 0.8. Not ported: kspSim's server (0.7 protocol).
+
+k08-1114 (LOG16667-16690, qs_finbooster2, lag4-1114's design): the boostback equals the backport's exactly
+(lit nose p90 5.7-6.2, Kp*alpha 3.29/3.27), confirming the backport matched #1348. Downstream, 0.8 is a different
+plant: #1191 (MoI about the CoM, ControlSurface.AvailableTorque, LimitAngularVelocity on) moved RollTune's held
+coast bandwidth (gains x torque/MoI) from ~1.9 to ~0.6 rad/s, kRPC latched pitch/yaw oscillation on all 12
+pace-on flights and the coast overshot +180..+333 m by burn entry. Pace off (auto-tune on through the coast):
+burn entry -9..-48 m, landed median 26.5 m, td median 12 m/s, 5/12 destroyed; pace on 480 m, 12.4 m/s, 7/12.
+0.7+backport (lag4-1114): pace on 66 m, 7.5 m/s, 2/12. ATTITUDE_LAG_PACE default -> False. Coast ticks cost
+0.094-0.156 wall-s v 0.071-0.105 (no fast client).

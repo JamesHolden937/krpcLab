@@ -18,7 +18,7 @@ save = sys.argv[2] if len(sys.argv) > 2 else "qs_s2_hac0"
 base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ksp" + inst)
 rpc = int(open(os.path.join(base, ".rpc_port")).read())
 stream = int(open(os.path.join(base, ".stream_port")).read())
-conn = krpc.connect(name="gearprobe", rpc_port=rpc, stream_port=stream)
+conn = krpc.connect(name="gearprobe", port=rpc)
 sc = conn.space_center
 sc.load(save)
 time.sleep(3)

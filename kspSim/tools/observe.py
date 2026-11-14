@@ -36,7 +36,7 @@ def attach(instance, fluxes=False):
     base = os.path.join(ROOT, "testInstances", "ksp%s" % instance)
     rpc = int(open(os.path.join(base, ".rpc_port")).read())
     stream = int(open(os.path.join(base, ".stream_port")).read())
-    conn = krpc.connect(name="kspsim-observer", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="kspsim-observer", port=rpc)
     sc = conn.space_center
     v = sc.active_vessel
     bf = v.orbit.body.reference_frame

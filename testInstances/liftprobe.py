@@ -61,8 +61,7 @@ def main():
     stream = open(os.path.join(HERE, "ksp" + args.instance,
                                ".stream_port")).read()
     def connect(name):
-        return krpc.connect(name=name, rpc_port=int(port),
-                            stream_port=int(stream))
+        return krpc.connect(name=name, port=int(port))
 
     # ``load`` invalidates the connection along with every object reference on
     # it, so reconnect rather than reuse -- same reason quickfly.py does.

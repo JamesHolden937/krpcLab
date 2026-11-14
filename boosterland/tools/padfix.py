@@ -56,7 +56,7 @@ from boosterland.config import Config
 
 def connect(args, name):
     return krpc.connect(name=name, address=args.address,
-                        rpc_port=args.rpc_port, stream_port=args.stream_port)
+                        port=args.rpc_port)
 
 
 def _north_east(lat, lon, ref_lat, ref_lon, radius):

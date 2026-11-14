@@ -75,7 +75,7 @@ def connect(instance):
     base = os.path.join(ROOT, "testInstances", "ksp%s" % instance)
     rpc = int(open(os.path.join(base, ".rpc_port")).read())
     stream = int(open(os.path.join(base, ".stream_port")).read())
-    return krpc.connect(name="kspsim-probe", rpc_port=rpc, stream_port=stream)
+    return krpc.connect(name="kspsim-probe", port=rpc)
 
 
 def safe(fn, default=None):

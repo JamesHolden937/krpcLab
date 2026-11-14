@@ -50,11 +50,15 @@ def batch(conn, calls):
         for fn, args in calls:
             request.calls.extend([conn.get_call(fn, *args)])
             types.append(conn._get_return_type(fn, *args))
-    with conn._rpc_connection_lock:
-        if fast is not None:
+    if fast is not None:
+        with conn._rpc_connection_lock:
             conn._rpc_connection.send(fast.fastpb.frame(payload))
             raw = fast._read_frame(conn._rpc_connection._socket)
-        else:
+    elif hasattr(conn, "_session"):
+        # kRPC 0.8: one connection, requests matched to responses by id
+        response = conn._session.call(request, False)
+    else:
+        with conn._rpc_connection_lock:
             conn._rpc_connection.send_message(request)
             response = conn._rpc_connection.receive_message(KRPC.Response)
     if fast is not None:
@@ -85,7 +89,7 @@ def ask(conn, calls, batched=True):
     """``batch`` on a real client, else one call at a time with the same
     ``None``-for-a-refusal contract -- for ``batched=False`` and for the
     offline tests' fakes, which have no wire to put a batch on."""
-    if batched and hasattr(conn, "_rpc_connection"):
+    if batched and (hasattr(conn, "_session") or hasattr(conn, "_rpc_connection")):
         return batch(conn, calls)
     out = []
     for fn, args in calls:

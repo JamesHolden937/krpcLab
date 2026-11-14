@@ -11,14 +11,14 @@ inst = sys.argv[1] if len(sys.argv) > 1 else "0"
 save = sys.argv[2] if len(sys.argv) > 2 else "qs_s2_hac0"
 d = "/home/holden/krpcLab/testInstances/ksp" + inst
 rp, sp = int(open(d + "/.rpc_port").read()), int(open(d + "/.stream_port").read())
-c = krpc.connect(name="tab-loader", rpc_port=rp, stream_port=sp)
+c = krpc.connect(name="tab-loader", port=rp)
 c.space_center.load(save)
 c.close()
 conn = None
 for _ in range(60):
     time.sleep(2)
     try:
-        conn = krpc.connect(name="tabprobe", rpc_port=rp, stream_port=sp)
+        conn = krpc.connect(name="tabprobe", port=rp)
         v = conn.space_center.active_vessel
         if v.flight(v.orbit.body.reference_frame).speed > 1:
             break

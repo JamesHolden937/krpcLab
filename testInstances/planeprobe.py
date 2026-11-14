@@ -461,8 +461,7 @@ def connect_instance(instance, name, save=None):
                                ".stream_port")).read()
 
     def dial(tag):
-        return krpc.connect(name=tag, rpc_port=int(port),
-                            stream_port=int(stream))
+        return krpc.connect(name=tag, port=int(port))
 
     if not save:
         return dial(name)

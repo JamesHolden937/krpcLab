@@ -250,7 +250,11 @@ class Config:
     # peak until the coast, the held pitch/yaw bandwidth after it.  Auto-tune
     # on the gimbals at full thrust limit-cycles.  kRPC's own time to peak
     # is put back at the coast, whose gains are read this long after.
-    ATTITUDE_LAG_PACE: bool = True
+    # Off since kRPC main (0.8.0-dev, krpc#1348 + #1191): kRPC tunes for the
+    # gimbal lag itself, and the coast's held bandwidth (gains x torque/MoI)
+    # reads ~0.6 rad/s on 0.8's corrected MoI and latches -- k08-1114, 12 a
+    # arm: off median miss 26 m, on 480 m.  Pace code to be deleted.
+    ATTITUDE_LAG_PACE: bool = False
     ROLL_TUNE_ENGAGE_DELAY_S: float = 0.1
     # When the engines light after the flip, reset kRPC's autopilot if it
     # latched an axis as structurally flexible: an axis with no authority

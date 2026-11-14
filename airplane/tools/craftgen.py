@@ -361,7 +361,7 @@ def check(instance, d):
     sdir = os.path.join(paths.instance_dir(instance), "saves", "default",
                         "Ships", "SPH")
     shutil.copy(os.path.join(CRAFT, d.name + ".craft"), sdir)
-    conn = krpc.connect(name="craftgen", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="craftgen", port=rpc)
     sc = conn.space_center
     try:
         conn.krpc.paused = False

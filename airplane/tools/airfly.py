@@ -76,8 +76,7 @@ def disturb(rpc, stream, pulses, started, stop, t0_box, lead_s,
     brakes off), then fly the pulses: ``pitch``, ``roll`` and ``yaw`` as
     the player's stick (the window mod's ``TestStick``), ``*_trim`` as the
     trims."""
-    conn = krpc.connect(name="airfly-disturb", rpc_port=rpc,
-                        stream_port=stream)
+    conn = krpc.connect(name="airfly-disturb", port=rpc)
     svc = conn.krpc_lab_launcher
     stick = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
     c = conn.space_center.active_vessel.control
@@ -252,7 +251,7 @@ def launch_on_runway(instance, craft, rpc, stream):
     sdir = os.path.join(paths.instance_dir(instance), "saves", "default")
     shutil.copy(os.path.join(ROOT, "saves", "craft", "SPH", craft + ".craft"),
                 os.path.join(sdir, "Ships", "SPH", craft + ".craft"))
-    conn = krpc.connect(name="airfly", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="airfly", port=rpc)
     try:
         conn.krpc.paused = False          # a run killed while paused
     except Exception:                                   # noqa: BLE001

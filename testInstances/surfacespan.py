@@ -22,7 +22,7 @@ import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import krpc
 conn = krpc.connect(name="span", address="127.0.0.1",
-                    rpc_port=int(sys.argv[1]), stream_port=int(sys.argv[2]))
+                    port=int(sys.argv[1]))
 v = conn.space_center.active_vessel
 f = v.reference_frame
 

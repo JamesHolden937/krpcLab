@@ -43,6 +43,7 @@ fi
 if ! "$PY" -c "import krpc" 2>/dev/null; then
     echo "installing requirements"
     "$VENV/bin/pip" install --quiet -r requirements.txt || exit 1
+    tools/krpcmain.sh --client || exit 1
 fi
 
 pilot=""

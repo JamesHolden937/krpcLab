@@ -122,7 +122,7 @@ def main():
     src = os.path.join(ROOT, "saves", "craft", "SPH", args.craft + ".craft")
     shutil.copy(src, os.path.join(sdir, "Ships", "SPH", args.craft + ".craft"))
     rpc, stream = paths.ports(args.instance)
-    conn = krpc.connect(name="airstart", rpc_port=rpc, stream_port=stream)
+    conn = krpc.connect(name="airstart", port=rpc)
     try:
         conn.krpc.paused = False          # a run killed while paused
     except Exception:                                   # noqa: BLE001

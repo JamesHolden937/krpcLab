@@ -75,8 +75,7 @@ def main():
     args = ap.parse_args()
     base = os.path.join(ROOT, "testInstances", "ksp%s" % args.instance)
     conn = krpc.connect(name="splitprobe", address="127.0.0.1",
-                        rpc_port=int(open(os.path.join(base, ".rpc_port")).read()),
-                        stream_port=int(open(os.path.join(base, ".stream_port")).read()))
+                        port=int(open(os.path.join(base, ".rpc_port")).read()))
     sc = conn.space_center
     sc.load(args.save)
     time.sleep(2.0)
