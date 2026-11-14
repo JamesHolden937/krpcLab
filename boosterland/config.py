@@ -252,6 +252,12 @@ class Config:
     # is put back at the coast, whose gains are read this long after.
     ATTITUDE_LAG_PACE: bool = True
     ROLL_TUNE_ENGAGE_DELAY_S: float = 0.1
+    # When the engines light after the flip, reset kRPC's autopilot if it
+    # latched an axis as structurally flexible: an axis with no authority
+    # through the unpowered flip (the fin booster's roll on RCS) latches on
+    # its own runaway gain, and the latch floors that axis for the rest of
+    # the flight (Autoland.clear_krpc_latches).
+    KRPC_CLEAR_LATCH_ON_THRUST: bool = False
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
     # orientations the aerodynamic surfaces look the same in (autoland.

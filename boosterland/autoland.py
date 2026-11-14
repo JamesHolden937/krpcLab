@@ -517,6 +517,7 @@ class Autoland:
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
         self.boostback_heading = None   # BOOSTBACK_HEADING_HOLD's aim
+        self.latch_checked = False      # KRPC_CLEAR_LATCH_ON_THRUST
         self.flip_gimbal = None         # FLIP_THROTTLE_LAW: rad/s^2 per unit
         self.flip_fixed = 0.0           # throttle; RCS + wheels, rad/s^2
         self.flip_done = False
@@ -853,6 +854,68 @@ class Autoland:
         pad = getattr(self.env, "pad", self.env.target)
         return trajectory.surface_distance(self.env, snap.position, pad)
 
+    def configure_autopilot(self, ut):
+        """krpcLab's settings on kRPC's autopilot: at START, and again after
+        ``clear_krpc_latches`` has reset it to kRPC's defaults."""
+        self.autopilot.reference_frame = self.frame
+        try:
+            # kRPC controls roll only while the pointing error is under
+            # this; above it the roll input is zero and roll drifts.
+            # kRPC 0.7 replaced ``roll_threshold`` by a blend: none
+            # above ``roll_start_angle``, full below
+            # ``roll_engage_angle`` (start set first, so the pair is
+            # never inverted mid-change).
+            limit = float(self.cfg.ROLL_THRESHOLD_DEG)
+            start = min(180.0, limit + 5.0)
+            self.autopilot.roll_start_angle = start
+            self.autopilot.roll_engage_angle = min(limit, start - 1.0)
+        except Exception as exc:    # noqa: BLE001
+            self.log.event(ut, "could not set kRPC's roll gate "
+                           "(%r): roll drops above 20 deg of pointing "
+                           "error" % exc)
+
+    def clear_krpc_latches(self, snap):
+        """KRPC_CLEAR_LATCH_ON_THRUST: when the engines light after the
+        flip, clear any axis kRPC latched as structurally flexible.
+
+        Through the unpowered flip an axis can have no authority at all --
+        the fin booster's RCS cannot roll it (credited 0, measured ~0) -- and
+        auto-tune's gain is the bandwidth over that authority: roll kp
+        19,000-244,000.  The output bangs, the integrator winds to the
+        stop, and kRPC's wobble detector latches the axis and floors its
+        bandwidth.  Lit, the gimbals give 5.4-6 rad/s^2 of roll, and the
+        latched loop ran at kp 0.19 against ~1.6 with the integrator still
+        at -0.7: 3-4 rad/s of roll took ~5 s to stop (LOG16502 .bb.ap).
+        Nothing flexed, so the latch is not a finding: ``AutoPilot.reset``
+        clears it with the integrators, and krpcLab's settings go back on.
+        A real structural mode latches again under thrust."""
+        ap = self.autopilot
+        try:
+            latched = (bool(ap.roll_oscillation_latched),
+                       bool(ap.pitch_yaw_oscillation_latched))
+        except Exception as exc:                    # noqa: BLE001
+            self.log.event(snap.ut, "kRPC latch unread: %r" % (exc,))
+            return
+        if not any(latched):
+            self.log.event(snap.ut, "kRPC latches at thrust: none")
+            return
+        if self.cfg.KRPC_AP_DIAG:
+            self.save_ap_diag(".flip.ap.csv")
+        try:
+            ap.reset()
+            self.configure_autopilot(snap.ut)
+            if self.cfg.KRPC_AP_DIAG:
+                ap.diagnostic_logging = True
+            if self.roll_tune is not None:
+                self.roll_tune.ttp_sent = None
+            error = set_autopilot_engaged(ap, True)
+        except Exception as exc:                    # noqa: BLE001
+            error = exc
+        self.log.event(snap.ut, "kRPC latches at thrust: roll=%s pitch/yaw=%s"
+                       " -> reset%s" % (latched[0], latched[1],
+                                        "" if error is None
+                                        else " FAILED: %r" % (error,)))
+
     def engage_autopilot(self, ut):
         """Engage, and keep trying on later ticks if the game refuses.
 
@@ -908,22 +971,7 @@ class Autoland:
                 self.cluster = EngineCluster(self.vessel, self.cfg)
                 self.log.event(snap.ut, self.cluster.describe())
             self.control.sas = False
-            self.autopilot.reference_frame = self.frame
-            try:
-                # kRPC controls roll only while the pointing error is under
-                # this; above it the roll input is zero and roll drifts.
-                # kRPC 0.7 replaced ``roll_threshold`` by a blend: none
-                # above ``roll_start_angle``, full below
-                # ``roll_engage_angle`` (start set first, so the pair is
-                # never inverted mid-change).
-                limit = float(self.cfg.ROLL_THRESHOLD_DEG)
-                start = min(180.0, limit + 5.0)
-                self.autopilot.roll_start_angle = start
-                self.autopilot.roll_engage_angle = min(limit, start - 1.0)
-            except Exception as exc:    # noqa: BLE001
-                self.log.event(snap.ut, "could not set kRPC's roll gate "
-                               "(%r): roll drops above 20 deg of pointing "
-                               "error" % exc)
+            self.configure_autopilot(snap.ut)
             self.aim(snap.direction, snap)   # hold attitude, but stop the roll
             self.engage_autopilot(snap.ut)
             self.gui.set_start_label("RUNNING")
@@ -2201,6 +2249,12 @@ class Autoland:
                 self.log.event(snap.ut, "kRPC diagnostic record restarted")
             except Exception:                       # noqa: BLE001
                 pass
+        if (self.cfg.KRPC_CLEAR_LATCH_ON_THRUST and self.state == BOOSTBACK
+                and self.flip_done and not self.latch_checked
+                and snap.throttle > 0.5):
+            self.latch_checked = True
+            self.clear_krpc_latches(snap)
+            self.aim(self.commanded_direction or snap.direction, snap)
         if self.roll_tune is not None and self.state != TOUCHDOWN:
             inputs = snap.inputs
             self.roll_tune.update(snap.ut, self.roll_rate,
