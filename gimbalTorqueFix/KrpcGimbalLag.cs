@@ -129,8 +129,9 @@ namespace GimbalTorqueFix
                         Vector3 pos, neg;
                         gimbal.GetPotentialTorque (out pos, out neg);
                         double tau = 1.0 / gimbal.gimbalResponseSpeed;
+                        // kN m, where kRPC's torque is N m (ITorqueProviderExtensions x 1000)
                         for (int i = 0; i < 3; i++)
-                            lagged [i] += 0.5 * (Math.Abs (pos [i]) + Math.Abs (neg [i])) * tau;
+                            lagged [i] += 500.0 * (Math.Abs (pos [i]) + Math.Abs (neg [i])) * tau;
                     }
                 }
             }
