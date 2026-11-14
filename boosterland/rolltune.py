@@ -122,7 +122,7 @@ class RollTune:
         and the gains are read ``ROLL_TUNE_ENGAGE_DELAY_S`` later: auto-tune
         re-derives them on its next physics tick, and read at once they
         would be the paced ones."""
-        if not self.started:
+        if not self.started or self.active:
             return
         if self.paced:
             self.unpace(ut)

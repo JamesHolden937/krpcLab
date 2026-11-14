@@ -568,7 +568,8 @@ class Autoland:
                 getattr(svc, "surface_actuators", None)
                 if svc is not None else None, self.cfg, self.log)
             self.roll_tune.start(ut)
-        if self.cfg.ROLL_TUNE and state == COAST:
+        if self.cfg.ROLL_TUNE and (state == COAST or (
+                self.cfg.ROLL_TUNE_BOOSTBACK and state == BOOSTBACK)):
             self.roll_tune.engage(ut)
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
@@ -656,7 +657,9 @@ class Autoland:
                 if up is not None and self.roll_hold:
                     up = rotate_about(up, direction, self.roll_hold)
                 late = self.state in (COAST, LANDING_BURN, TOUCHDOWN)
-                if up is not None and late and self.roll_order >= 3:
+                free = late or (self.cfg.ROLL_FREE_BOOSTBACK and self.state
+                                in (SEPARATION, BOOSTBACK))
+                if up is not None and free and self.roll_order >= 3:
                     # Three or more equal surfaces round the axis lift and
                     # brake the same at any roll, and the steering is the
                     # nose's: the roll angle is worth nothing, only its
