@@ -1092,3 +1092,21 @@ fixed c56c76e). Fixed, pace off reads kRPC pitch bandwidth 5.33 = pace on, and t
 both arms; the burn still needs pace (auto-tune is off from the coast). Found while reading it: the burn's
 pitch/yaw bandwidth is whatever kRPC had at coast entry, bimodal ~2 v 9.2 (-> 5.33 capped); burn nose p90
 median ~3.8 deg/s at ~2, ~10 at 5.33 (HANDOFF open item 4).
+
+## 2026-11-14: kRPC's gimbal-lag fix backported into KrpcGimbalLag
+
+kRPC merged its own fix (krpc/krpc#1348, unreleased 0.8.0): torque-weighted gimbal lag from the exact per-tick
+time constant -dt/ln(1-speed dt), bandwidth capped so the lag pole 1/lag - 2 zeta w0 stays >= w0, PI gains placed
+for alpha/(s(1+lag s)). Using 0.8.0 now was rejected: main carries ~30 breaking changes (hashed procedure ids
+#1265, Error.exception #1324, strict decoding #1280, name rules #1325/#1338) that need the matching Python client
+and a launcherMod check, plus Bazel. No 0.8.0 milestone; 0.6.0->0.7.0 took 91 days (128 PRs), 152 PRs since.
+Backport (b53a1d8): prefix caps twiceZetaOmega/omegaSquared, postfix rewrites the PID gains (kRPC's bandwidth
+floor read back from the gains it set) and unflooredKp; refuses itself where kRPC has `gimbalLag`.
+
+lag3-1114 (LOG16595-16618) flew the default `quicksave` by mistake: 22/24 destroyed. ctlold-1114 (LOG16619-16642,
+old patch, same save): 24/24 destroyed -- that booster fails on the Retooled farm whatever the patch.
+lag4-1114 (LOG16643-16666, new patch, qs_finbooster2, KRPC_AP_DIAG + LOOP_PACING_GAME_TIME, pace 0/1 x 2 per
+instance = lag2-1113's design): boostback lit (torque > half max) nose p90 5.6-6.1 deg/s on all 24, saturation
+0.03; lag2-1113 old patch: 3.2-3.4 / 8.5-10.6 / 20-21.5 (three modes), saturation 0.01-0.16. Kp*alpha 3.29 v
+5.33. Misses: pace on median 66 m (lag2 64), 2/12 destroyed both; pace off 4/12 destroyed (lag2 5/12), misses
+still long east. Burn nose p90 (worst 4 km bin, pace on) median ~5.5 v ~8.2. Kept.

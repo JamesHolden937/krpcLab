@@ -15,9 +15,20 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-13 night: boosterland -- the boostback oscillation (gimbal lag, the roll latch, gimbalTorqueFix)
+## 2026-11-14 (+ 11-13 night): boosterland -- the boostback oscillation (gimbal lag, the roll latch, gimbalTorqueFix)
 
-Journal: `docs/boosterland/journal.md` "2026-11-13 night". The user's live LOG16371: the nose swung 55 deg at
+**2026-11-14: kRPC's own fix (krpc/krpc#1348, merged 11-14, unreleased 0.8.0) backported into
+`KrpcGimbalLag.cs` (b53a1d8)**: exact per-tick lag -dt/ln(1-speed dt), cap 2 zeta w0 + w0 <= 1/lag, PI gains
+placed for the lagged plant; the patch refuses itself on a kRPC with `gimbalLag` (delete it then). 0.8.0 itself is
+not usable early: hashed procedure ids and ~30 other breaking changes need the new Python client and a launcherMod
+check; no milestone/date (0.6->0.7 took 91 days). lag4-1114 (LOG16643-16666, qs_finbooster2, same arms as
+lag2-1113): boostback lit nose p90 **5.6-6.1 deg/s on all 24** (old patch: trimodal 3.3/10/21), Kp*alpha 3.29
+(was 5.33), pace on = off in the boostback; landings 2/12 destroyed pace-on (= lag2), pace-off misses still
++80..+200 E. Burn nose p90 (pace on) median ~5.5 v ~8. On every farm instance; not live. **Trap paid:** the
+default `quicksave` (18-part single-Vector booster) is destroyed 24/24 on the Retooled farm with either patch
+(lag3-1114, ctlold-1114) -- fly qs_finbooster2 for booster comparisons until that is looked at.
+
+Journal: `docs/boosterland/journal.md` "2026-11-14" and "2026-11-13 night". The user's live LOG16371: the nose swung 55 deg at
 full thrust in the boostback (4.3 km of cross). **Two kRPC defects and one stock one, all now handled:**
 - **Gimbal lag (kRPC; the user filed an issue).** Auto-tune assumes instant torque; ModuleGimbal Lerps at
   gimbalResponseSpeed (0.125 s, Vector) -> limit cycle under thrust. `ATTITUDE_LAG_PACE` **on by default**
@@ -43,7 +54,9 @@ full thrust in the boostback (4.3 km of cross). **Two kRPC defects and one stock
   pitch/yaw). Fixed: holdable probe reading RCS 0 on the valve's reopening tick.
 
 **Open, in order:**
-1. Live: the user flies the defaults (pace + latch reset). Offer `gimbalTorqueFix/build.sh --live`.
+1. Live: the user flies the defaults (pace + latch reset). Offer `gimbalTorqueFix/build.sh --live` (now the
+   krpc#1348 backport).
+1a. Why the 18-part `quicksave` booster dies 24/24 on the Retooled farm (lag3-1114: parts lost mid-burn, ~567 m/s at 5.9 km).
 2. Heavy booster's unpowered flip stalls ~120 s -> boostback TIMEOUT, 2-5 km: 4/4 on instance 2, 0 on 5
    (identical GameData and save). Separation roll + no RCS roll authority; find why only ksp2.
 3. Flip law reads gimbal authority 0 (gimbal_limit is 0 while locked; cached). Inert today.
