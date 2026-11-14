@@ -66,25 +66,46 @@ full thrust in the boostback (4.3 km of cross). **Two kRPC defects and one stock
 - Deleted after measuring: ROLL_FREE_BOOSTBACK (null), ROLL_TUNE_BOOSTBACK (worked around the latch, hurt
   pitch/yaw). Fixed: holdable probe reading RCS 0 on the valve's reopening tick.
 
-**Open, in order:**
-0. **kRPC 0.8 follow-ups:** (a) delete the pace code (ATTITUDE_LAG_PACE, lag_ttp/lag_bandwidth, the backport
-   KrpcGimbalLag.cs) after a second batch confirms; (b) touchdown speed 12 v 7.5 m/s and 5/12 lost on 0.8 --
-   re-take anything derived from kRPC torque/MoI (#1191); (c) port kspSim's server/codec and fastclient to the
-   0.8 protocol (Message envelope, request ids, one port, streams as uint64, Error.exception); (d) re-check the
-   spaceplane/airplane/propPitch on 0.8 (LimitAngularVelocity, surface torque) before trusting their defaults.
-1. Live: the user flies the defaults (latch reset; pace now off) on kRPC 0.8.
-1a. Why the 18-part `quicksave` booster dies 24/24 on the Retooled farm (lag3-1114: parts lost mid-burn, ~567 m/s at 5.9 km).
-2. Heavy booster's unpowered flip stalls ~120 s -> boostback TIMEOUT, 2-5 km: 4/4 on instance 2, 0 on 5
-   (identical GameData and save). Separation roll + no RCS roll authority; find why only ksp2.
-3. Flip law reads gimbal authority 0 (gimbal_limit is 0 while locked; cached). Inert today.
-4. **The landing burn's pitch/yaw bandwidth is luck.** RollTune.engage holds kRPC's bandwidth at coast entry,
-   which is bimodal: ~2 rad/s (kRPC's mitigations engaged at that tick) or 9.2 (none; capped to 5.33 by the
-   lag). Over latch/lag/lag2-1113 pace-on flights: captured ~2 -> burn nose p90 2-5 deg/s (median ~3.8);
-   9.2 -> 6.5-33 (median ~10). The burn needs ~2 where the boostback is calm at 5.33: something in the burn
-   lags or disturbs beyond the gimbals (engine cluster throttling? aero?). Derive the burn's bandwidth instead of
-   capturing it; do not fit ROLL_LAG_FACTOR. Then the item-0 burn work below.
-5. Farm memory: six Retooled instances swap 20-30 GB; consider five.
-6. howItWorks.pdf (boosterland) not redone for pace / latch reset.
+**Open, in order (everything pending as of 2026-11-14 end):**
+
+*kRPC 0.8 (main) -- consequences of the install:*
+1. **The 0.8 default rests on an accident.** With pace off, RollTune.engage still turns auto-tune off at coast
+   entry but reads pitch/yaw authority 0 at that tick (`held at kRPC's bandwidth - -`, every k08 pace-off
+   flight), so the coast and burn fly kRPC's last auto-tuned pitch/yaw gains, unmanaged. Find why accel reads 0
+   (0.8's MoI/torque, #1191, or the tick) and decide what the coast should hold -- this replaces old item 4.
+2. **Touchdown on 0.8**: median 12 m/s and 5/12 lost v 7.5 m/s, 2/12 on 0.7+backport. Re-take everything
+   derived from kRPC torque/MoI (#1191 moved both): RollTune, the probes' tables, `holdable aoa`, flip law.
+3. **Second batch, then delete the pace code**: ATTITUDE_LAG_PACE, lag_ttp/lag_bandwidth/pace/unpace,
+   ROLL_LAG_FACTOR, ROLL_TUNE_ENGAGE_DELAY_S, and `gimbalTorqueFix/KrpcGimbalLag.cs` (inert under 0.8). Fly
+   k08's design again on a fresh farm, plus qs_finbooster and qs_heavy, before deleting.
+4. **kspSim is broken**: port `server.py`/`protocol.py`/`fastpb.py`/`wire.py` to 0.8 (Message envelope,
+   ConnectionRequest/Response, request ids, one port, streams as uint64, Error.exception, Status ->
+   ServerStatus struct), re-record `data/services.bin` (`tools/services.py`), port `attitude.py` to 0.8's
+   AttitudeController (#1191 + #1348). Until then the suite has 2 errors (testPhysics wire codec) and the
+   post-commit hook will report them.
+5. **PyPy fast client**: `kspSim/fastclient.py` stands down under 0.8; coast ticks cost ~30% more wall time
+   (0.08 -> 0.105 s). Port it to 0.8's Session (or measure whether CPython+C protobuf is now faster).
+6. **Other pilots on 0.8, unflown**: spaceplane, airplane, propPitch (LimitAngularVelocity on by default, surface
+   torque and MoI fixed -- their tables and kRPC-dependent laws), ascent (KRPC.MechJeb now ships with kRPC; one
+   smoke flight of qs_stack). Fly each pilot's standard batch before trusting its defaults.
+7. **Live**: the user flies the 0.8 defaults (latch reset, pace off). START SCRIPT / launcherMod under 0.8 not
+   exercised live yet. Live game has no GimbalTorqueFix (stock GetPotentialTorque over-credits 1.25-1.5x):
+   offer `gimbalTorqueFix/build.sh --live` (its torque patch still applies under 0.8).
+8. **When 0.8.0 is released**: switch `tools/krpcmain.sh` to the release (mod zip + `pip install krpc==0.8.0`),
+   diff it against 34c70de, re-fly.
+9. **Disk outside krpcLab (the user's call)**: Bazel's cache is 17 GB in `~/.cache/bazel` (`cd ~/krpc && bazel
+   clean --expunge` frees it; the next `krpcmain.sh` re-downloads, ~4 min); bazelisk in `~/.local/bin/bazel`;
+   `.krpc070/` (50 MB, gitignored) holds the 0.7.0 installs for a rollback.
+
+*Booster, carried:*
+10. Why the 18-part `quicksave` booster dies 24/24 on the Retooled farm (lag3/ctlold-1114: parts lost mid-burn,
+    ~567 m/s at 5.9 km, either patch). Fly qs_finbooster2 for comparisons until then.
+11. Heavy booster's unpowered flip stalls ~120 s -> boostback TIMEOUT, 2-5 km: 4/4 on instance 2, 0 on 5
+    (identical GameData and save). Separation roll + no RCS roll authority; find why only ksp2.
+12. Flip law reads gimbal authority 0 (gimbal_limit is 0 while locked; cached). Inert today.
+13. The landing-burn items of the 2026-11-13 section below (ignition margin, throttle margin, PITCH_YAW_TUNE).
+14. Farm memory: six Retooled instances swap 20-30 GB (28.8 GB after k08-1114); consider five.
+15. howItWorks.pdf (boosterland) not redone for the latch reset and pace off.
 
 ## 2026-11-13: boosterland + ascent -- high-aoa descent refuted and deleted (earlier the same day; still current for the descent, burn and ascent); the fin booster's roll; the ascent's landing budget
 
