@@ -15,7 +15,48 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-13: boosterland + ascent -- high-aoa descent refuted and deleted; the fin booster's roll; the ascent's landing budget
+## 2026-11-13 night: boosterland -- the boostback oscillation (gimbal lag, the roll latch, gimbalTorqueFix)
+
+Journal: `docs/boosterland/journal.md` "2026-11-13 night". The user's live LOG16371: the nose swung 55 deg at
+full thrust in the boostback (4.3 km of cross). **Two kRPC defects and one stock one, all now handled:**
+- **Gimbal lag (kRPC; the user filed an issue).** Auto-tune assumes instant torque; ModuleGimbal Lerps at
+  gimbalResponseSpeed (0.125 s, Vector) -> limit cycle under thrust. `ATTITUDE_LAG_PACE` **on by default**
+  (rolltune.RollTune.lag_ttp/lag_bandwidth): every phase, from the measured torque-weighted lag.
+  Boostback nose p90 15-29 -> 3-25, burn 16-35 -> 4-13 deg/s; coast-entry cross -68..+54 m (was -189..+397).
+- **Zero-authority roll latch (kRPC).** No roll authority in the unpowered flip (the fins' RCS can't roll)
+  -> auto-tune roll kp 1e4-1e5 -> kRPC latches roll as flexible -> roll at 1/8 gain after ignition, 133-258
+  deg/s spin. `KRPC_CLEAR_LATCH_ON_THRUST` **on by default** (Autoland.clear_krpc_latches: AutoPilot.reset +
+  configure_autopilot at ignition when latched). Roll p90 133 -> 2 (fin), 173 -> 17 (heavy).
+- **Stock ModuleGimbal.GetPotentialTorque over-credits 1.25-1.5x.** `gimbalTorqueFix/` (Harmony mod, build
+  with `gimbalTorqueFix/build.sh [--live]`): torque from stock's own GimbalRotation deflection; probe
+  measured/credited 0.67-0.80 stock -> 0.85-1.00. **Installed on every farm instance since latch-1113 (the
+  farm's plant changed then); NOT in the live game -- the user decides.** Its `KrpcGimbalLag.cs` caps kRPC's
+  DoAutoTuneAxis bandwidth by gimbal lag (any kRPC client); lag-1113 showed it never bound (kN m v N m, fixed
+  c56c76e); lag2-1113 (fixed): pace off + patch caps kRPC's bandwidth at 5.33 exactly
+  as pace does, boostback equally calm in both arms -- **the patch alone fixes the boostback for any kRPC
+  client**. Pace is still needed for the burn: from the coast krpcLab sets kRPC's gains itself (auto-tune off),
+  so the patch cannot act there (pace off: burn saturated 1.00, fin misses 201-241 m).
+- Tools: `testInstances/actuators.py N SAVE --probe` (credited v measured per axis and source);
+  `KRPC_AP_DIAG` now also writes LOG<n>.bb.ap.csv (boostback) and .flip.ap.csv (before a latch reset).
+  kRPC source: `~/krpc` (git clone, master).
+- Deleted after measuring: ROLL_FREE_BOOSTBACK (null), ROLL_TUNE_BOOSTBACK (worked around the latch, hurt
+  pitch/yaw). Fixed: holdable probe reading RCS 0 on the valve's reopening tick.
+
+**Open, in order:**
+1. Live: the user flies the defaults (pace + latch reset). Offer `gimbalTorqueFix/build.sh --live`.
+2. Heavy booster's unpowered flip stalls ~120 s -> boostback TIMEOUT, 2-5 km: 4/4 on instance 2, 0 on 5
+   (identical GameData and save). Separation roll + no RCS roll authority; find why only ksp2.
+3. Flip law reads gimbal authority 0 (gimbal_limit is 0 while locked; cached). Inert today.
+4. **The landing burn's pitch/yaw bandwidth is luck.** RollTune.engage holds kRPC's bandwidth at coast entry,
+   which is bimodal: ~2 rad/s (kRPC's mitigations engaged at that tick) or 9.2 (none; capped to 5.33 by the
+   lag). Over latch/lag/lag2-1113 pace-on flights: captured ~2 -> burn nose p90 2-5 deg/s (median ~3.8);
+   9.2 -> 6.5-33 (median ~10). The burn needs ~2 where the boostback is calm at 5.33: something in the burn
+   lags or disturbs beyond the gimbals (engine cluster throttling? aero?). Derive the burn's bandwidth instead of
+   capturing it; do not fit ROLL_LAG_FACTOR. Then the item-0 burn work below.
+5. Farm memory: six Retooled instances swap 20-30 GB; consider five.
+6. howItWorks.pdf (boosterland) not redone for pace / latch reset.
+
+## 2026-11-13: boosterland + ascent -- high-aoa descent refuted and deleted (earlier the same day; still current for the descent, burn and ascent); the fin booster's roll; the ascent's landing budget
 
 **Later the same day (journal "2026-11-13: high-aoa descent", "... the cone"):** item 1b built behind
 `HIGH_AOA_DESCENT` (off; defaults fly as before) and flown in 5 batches. **Refuted twice; deleted** (commit after 8aad4ea; code in a0e5f4d), keeping the probe's `lift peak` (polar `aoa:lift/drag`) and `torque limit` log lines.

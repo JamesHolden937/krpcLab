@@ -1040,3 +1040,55 @@ flown: nothing moved the ignition speed. The lever that remains for the burn's c
 (`SUICIDE_MARGIN` 1.18 + 1.5 s reaction: ~1.6 of 5.8 km on LOG16351).
 
 Deleted the same day (flags rule): `HIGH_AOA_*` and both laws' code; the polar and torque-limit log lines stay. Fingerprint back to 7cd7531a.
+
+## 2026-11-13 night: the boostback's oscillation -- gimbal lag, the roll latch, and a game mod
+
+The user's live LOG16371 (fin booster, 286 t): after the flip, at full thrust, the nose swung 2->55->6 deg
+at up to 42 deg/s on a steady command, putting 4.3 km of cross into the burn. The farm reproduces it
+(bbdiag-1113, LOG16376/16377): inputs pinned +-1 flipping every tick, nose 10-15 deg/s, roll 60-190 deg/s.
+The RCS valve was not it (open the whole boostback, logged).
+
+**Two kRPC problems, both found in its own record (`KRPC_AP_DIAG`, now also saved at the coast as
+LOG<n>.bb.ap.csv) and in its source (`~/krpc`, master = the installed 0.7.0's controller):**
+1. *Gimbal lag.* kRPC's auto-tune treats torque as instant; ModuleGimbal Lerps the nozzle by
+   gimbalResponseSpeed x dt a tick (0.125 s on the Vector). kRPC models control-surface slew
+   (actuatorSlew/actuatorBackoff) but not gimbals. Fix: `ATTITUDE_LAG_PACE` (default): each axis's loop
+   decays no faster than ROLL_LAG_FACTOR (3) x its torque-weighted actuator lag -- auto-tune's time to peak
+   until the coast, the held pitch/yaw bandwidth after it (so the landing burn is covered). pace2/roll/roll2/
+   gfix-1113, three saves: boostback nose p90 15-29 -> 3-25 deg/s, landing burn 16-35 -> 4-13, input
+   saturation 0.95 -> 0.1-0.3, coast-entry cross spread -189..+397 -> -68..+54 m. Cost: the burn tracks
+   slower (err p90 3-11 -> 13-16 deg). The user filed a kRPC issue.
+2. *Zero-authority runaway.* Through the unpowered flip the fin boosters' RCS cannot roll them (probe:
+   credited 0, measured ~0). Auto-tune's gain is bandwidth/authority: roll kp 19,000-244,000; output bangs,
+   integrator winds to -1, and kRPC's wobble detector latches roll as structurally flexible. Lit (5.4-6
+   rad/s^2 of gimbal roll) the latched loop ran at kp 0.19 against ~1.6, integrator at -0.7: 3-4 rad/s of
+   roll took ~5 s to stop (LOG16502). kRPC guards this only on launch clamps (PRELAUNCH in Update).
+   Fix: `KRPC_CLEAR_LATCH_ON_THRUST` (default): at ignition after the flip, if kRPC latched an axis,
+   AutoPilot.reset() and krpcLab's settings re-applied. latch-1113: roll latched on 8/8 fin/heavy flights,
+   0/4 fin2; boostback roll p90 133 -> 2 deg/s (fin), 173 -> 17 (heavy); fin miss median ~130 -> ~52 m.
+
+**gimbalTorqueFix/ (a game mod, Harmony):** stock ModuleGimbal.GetPotentialTorque credits roll as
+radial distance x thrust x (sin x-range + sin y-range) and pitch/yaw on the whole CoM distance; the patch
+computes it from stock's own GimbalRotation deflection, rotating the thrust transforms and summing r x dF.
+`testInstances/actuators.py --probe` (+-1 steps per axis, RCS alone then gimbals alone at full thrust):
+measured/credited stock 0.67-0.80, with the mod 0.85-1.00 (fin, heavy). On every farm instance from
+latch-1113 on (farm plant changed: compare only within). Not in the live game. `KrpcGimbalLag.cs` in the
+same mod caps kRPC's DoAutoTuneAxis bandwidth by gimbal lag for any kRPC script; first flown in lag-1113.
+
+Measured and deleted: `ROLL_FREE_BOOSTBACK` (no roll angle in the boostback: null, 208-255 deg/s), `ROLL_TUNE_
+BOOSTBACK` (measured roll gains from the boostback: at its start it held kRPC's engines-off pitch/yaw
+bandwidth 0.28 rad/s and lost three flights by 64-162 km; 1 s into thrust it halved the roll but pitch/yaw
+saturation went to 0.74-0.94) -- both were working around the latch. Also fixed: the holdable-aoa probe read
+RCS torque 0 on the tick the valve reopened (holdable 12-15 v 42-46; it is what made the first
+ATTITUDE_LAG_PACE look bad on 11-12).
+
+Open: the heavy booster's unpowered flip stalls ~120 s (boostback TIMEOUT, 2-5 km) -- all four today on
+instance 2, none on 5 flying the same save and GameData. The flip law reads gimbal authority 0 (kRPC
+gimbal_limit is 0 while locked, IDLE_GIMBAL_LOCK locks them, and it is cached); inert today. Farm swap ran
+20-30 GB with six Retooled instances all evening: these batches are noisy.
+
+lag-1113 / lag2-1113: `KrpcGimbalLag.cs` first never bound (kRPC's torque is N m, GetPotentialTorque kN m;
+fixed c56c76e). Fixed, pace off reads kRPC pitch bandwidth 5.33 = pace on, and the boostback is equally calm in
+both arms; the burn still needs pace (auto-tune is off from the coast). Found while reading it: the burn's
+pitch/yaw bandwidth is whatever kRPC had at coast entry, bimodal ~2 v 9.2 (-> 5.33 capped); burn nose p90
+median ~3.8 deg/s at ~2, ~10 at 5.33 (HANDOFF open item 4).
