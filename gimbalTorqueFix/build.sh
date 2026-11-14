@@ -17,7 +17,7 @@ BIN="$HERE/bin"
 mkdir -p "$BIN"
 mcs -optimize -nologo -target:library -nostdlib -noconfig \
     -r:"$M/mscorlib.dll" -r:"$M/System.dll" -r:"$M/System.Core.dll" -out:"$BIN/GimbalTorqueFix.dll" \
-    -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.CoreModule.dll" -r:"$M/UnityEngine.dll" \
+    -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.CoreModule.dll" -r:"$M/UnityEngine.dll" -r:"$M/UnityEngine.UI.dll" \
     -r:"$KSP/GameData/000_Harmony/0Harmony.dll" "$HERE"/*.cs
 install_into() {   # $1: a game directory
     local g="$1/GameData"
