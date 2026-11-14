@@ -145,9 +145,14 @@ chmod +x "$DIR/run-ksp.sh"
 # Part textures are not physics: drop them from the clone (its own hardlinks
 # only; base/ keeps them).  2026-10-02: GameData 2.4 -> 1.1 GB, boots in 40 s,
 # flies the bench as before; RSS ~unchanged at TEXTURE_QUALITY 3.
-find "$DIR/GameData" -iname "*.dds" -delete
+# NOT in the planet mods: TPR (in the live game since KSP Retooled) keeps its
+# terrain heightmaps as .dds/.png, and a missing heightmap changes the ground
+# under the vessel (Kopernicus logs "[OD] ERROR: Failed to load map").
+KEEP=( -not -path "*/GameData/TPR/*" -not -path "*/GameData/Kopernicus*" \
+       -not -path "*/GameData/MiniSystem/*" -not -path "*/GameData/000_*" )
+find "$DIR/GameData" -iname "*.dds" "${KEEP[@]}" -delete
 find "$DIR/GameData" -iname "*.png" -not -path "*kRPC*" \
-  -not -path "*Boosterland*" -not -path "*000_*" -delete
+  -not -path "*Boosterland*" "${KEEP[@]}" -delete
 rm -rf "$DIR/GameData/KSPCommunityFixes/PluginData/TextureCache"
 
 printf '%s\n' "$RPC" > "$DIR/.rpc_port"

@@ -199,6 +199,9 @@ need no third-party packages.
 
 **Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
 - `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.
+- **KSP Retooled 1.13 (Unity 6.7) since 2026-11-13**, like the live game; earlier farm results are not
+  comparable. Plugins compile against `~/kspfarm/stockref` (stock 1.12.5), never `base/`. The game process
+  is named `Unity Main Thre`: use `procs.sh` (`game_pid`, `game_count`), not `pgrep -x KSP_x64.exe`.
 - `testInstances/{base,ksp<n>,prefix<n>}` are symlinks to them, so every path in this repo still
   works. `mkbase.sh` and `mkclone.sh` create the real directories there plus the links.
   `KSPFARM=<dir>` moves the farm.

@@ -64,4 +64,4 @@ if [ "$bad" = 1 ]; then
   printf 'STILL RUNNING: %s\n' "${summary[@]}" >&2
   exit 1
 fi
-echo "stopped: nothing of $(printf "ksp%s " "$@")left; KSP_x64.exe machine-wide: $(pgrep -xc KSP_x64.exe 2>/dev/null)"
+echo "stopped: nothing of $(printf "ksp%s " "$@")left; KSP games machine-wide: $(game_count)"

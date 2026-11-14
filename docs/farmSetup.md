@@ -25,11 +25,11 @@ models.
 
 ## What you need
 
-**A legal KSP install.** The farm was built from KSP **1.12.3 (build
-03190)**, the Windows build (`KSP_x64.exe`), run under Proton. By default
-`mkbase.sh` reads it from `~/KSP-Retooled` (KSP Retooled; it reverts a reflink copy of it to stock
-1.12.5 first, from the originals in `.retooled/original`); set `KSP_SRC=/path` to
-point somewhere else. The install is only ever read.
+**A legal KSP install.** Since 2026-11-13 the farm is built from KSP **Retooled 1.13** (Unity 6.7; the
+live game, `~/KSP-Retooled`), the Windows build (`KSP_x64.exe`), run under Proton. Before that it was
+stock 1.12.x, and those results are not comparable. Set `KSP_SRC=/path` to point somewhere else. The install
+is only ever read. Plugins compile against `~/kspfarm/stockref` (stock 1.12.5 assemblies), which `mkbase.sh`
+makes from a reflink copy of the install reverted to stock (`.retooled/original`) if it is missing.
 
 **The mods in it.** These are the mods the reference saves were flown with.
 **AtmosphereAutopilot was removed on 2026-10-21** (farm and live): its

@@ -10,7 +10,8 @@ PY=python3
 rm -f .git-bundle-error.log
 # Not beside the farm: the suite on top of six instances is killed by
 # memory pressure (CLAUDE.md).
-pgrep -x KSP_x64.exe >/dev/null 2>&1 && exit 0
+# (command line, not name: KSP Retooled's Unity 6 renames the game process)
+"$HOME/.local/bin/pgrepf" 'KSP_x64\.exe' >/dev/null 2>&1 && exit 0
 # Outside the tree: a bundle's modules sit beside it, and beside one in the
 # root they would be the tree's own files.
 T=$(mktemp -d) || exit 0

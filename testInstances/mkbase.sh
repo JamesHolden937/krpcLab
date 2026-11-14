@@ -5,7 +5,8 @@
 #
 # The live install is only ever READ.  Everything is written under
 # testInstances/.  Graphics mods listed in strip.txt are never copied, so
-# this is a ~7 GB copy rather than a 14 GB one.
+# this is a ~7 GB copy rather than a 14 GB one.  Plugins are compiled against
+# $KSPFARM/stockref (stock 1.12.5 assemblies; see below).
 #
 set -euo pipefail
 
@@ -25,19 +26,23 @@ if [ -e "$BASE" ]; then
   exit 1
 fi
 
-# The live game is KSP Retooled (Unity 6.7) since 2026-11-13; the farm stays stock 1.12.5. A Retooled install keeps
-# the stock files it replaced in .retooled/original, so build from a reflink copy of it reverted to stock.
-if [ -f "$SRC/.retooled/journal.json" ]; then
+# The live game and the farm are KSP Retooled (Unity 6.7) since 2026-11-13 (the farm since that evening), so base/
+# is a stripped copy of the live install as it is. Mods are still compiled against stock 1.12.5 (mcs cannot target
+# Retooled's netstandard 2.1 assemblies, and 1.12-built mods run on Retooled): $KSPFARM/stockref is a stock
+# 1.12.5 copy kept only for its assemblies, never launched. Missing, it is made from a reflink copy of the live
+# install reverted to stock (a Retooled install keeps the stock files it replaced in .retooled/original).
+STOCKREF="$KSPFARM/stockref"
+if [ ! -f "$STOCKREF/KSP_x64_Data/Managed/Assembly-CSharp.dll" ]; then
+  [ -f "$SRC/.retooled/journal.json" ] || { echo "no $STOCKREF and $SRC is not a Retooled install to revert" >&2; exit 1; }
   RP_DIR="$HOME/.local/share/ksp-retooled/cli/$(cat "$HOME/.local/share/ksp-retooled/cli/current")"
-  STOCK="$KSPFARM/.stocksrc"
-  rm -rf "$STOCK"
-  trap 'rm -rf "$STOCK"' EXIT
-  echo "reverting a reflink copy of $SRC to stock 1.12.5 in $STOCK"
-  cp -a --reflink=always "$SRC" "$STOCK"
-  "$HOME/.dotnet/dotnet" "$RP_DIR/retooled-patch.dll" revert --install "$STOCK"
-  rm -rf "$STOCK/.retooled" "$STOCK/Launcher_Data"
-  SRC="$STOCK"
+  rm -rf "$STOCKREF.tmp"
+  echo "making $STOCKREF: reflink copy of $SRC reverted to stock 1.12.5"
+  cp -a --reflink=always "$SRC" "$STOCKREF.tmp"
+  "$HOME/.dotnet/dotnet" "$RP_DIR/retooled-patch.dll" revert --install "$STOCKREF.tmp"
+  rm -rf "$STOCKREF.tmp/.retooled" "$STOCKREF.tmp/Launcher_Data"
+  mv "$STOCKREF.tmp" "$STOCKREF"
 fi
+REFM="$STOCKREF/KSP_x64_Data/Managed"
 
 echo "source : $SRC"
 echo "base   : $BASE"
@@ -63,6 +68,11 @@ EX+=( --exclude="./GameData/ModuleManager.ConfigCache"
 EX+=( --exclude="./Screenshots" --exclude="./thumbs" --exclude="./Replays"
       --exclude="./Logs" --exclude="./KSP.log" --exclude="./CKAN"
       --exclude="./DisabledMods" --exclude="./saves/*/Backup" )
+# Retooled's own stock backup and launcher donor files, the live game's load caches (KSPLoadFixes and KOE are
+# stripped), Retooled's regenerable texture cache, and the pre-Retooled saves.
+EX+=( --exclude="./.retooled" --exclude="./Launcher_Data" --exclude="./KSPLoadFixes-cache"
+      --exclude="./KerbalOverEngineering-cache" --exclude="./PluginData/TextureCache"
+      --exclude="./saves-stock-1.12.5" --exclude="./HANDOFF.md" )
 
 # --- second round: texture data inside mods that STAY (1.2 GB) ------------
 # Nothing here is a part model or a part .cfg.  KSP derives a part's drag cube
@@ -115,13 +125,13 @@ tar -C "$SRC" -cf - "${EX[@]}" . | tar -C "$BASE" -xf -
 # The farm runs the MiniSystem planet patch (a MODIFIED Kerbol system; see miniSystem.sh).
 MINI="${MINISYSTEM:-$HOME/minisystem}/GameData/MiniSystem"
 if [ -f "$MINI/MiniSystem.cfg" ]; then
-  cp -a "$MINI" "$BASE/GameData/MiniSystem"; echo "MiniSystem installed (modified Kerbol system)"
+  rm -rf "$BASE/GameData/MiniSystem"; cp -a "$MINI" "$BASE/GameData/MiniSystem"; echo "MiniSystem installed (modified Kerbol system)"
 else
   echo "WARNING: no $MINI -- base/ will run the stock system, unlike the rest of the farm" >&2
 fi
 rm -rf "$BASE/GameData/Kopernicus/Cache"/*
 if [ -f "$HERE/autoloadSrc/AutoLoadSave.cs" ]; then
-  M="$BASE/KSP_x64_Data/Managed"
+  M="$REFM"
   if command -v mcs >/dev/null; then
     mcs -target:library -out:"$HERE/autoloadSrc/BoosterlandAutoLoad.dll" \
         -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.dll" \
@@ -149,7 +159,7 @@ fi
 # Off by default; ../tools/timescale.py turns it on per instance.  See
 # keepNotes.md, "Flying faster than real time".
 if [ -f "$HERE/timescaleSrc/TimeScale.cs" ]; then
-  M="$BASE/KSP_x64_Data/Managed"
+  M="$REFM"
   if command -v mcs >/dev/null; then
     mcs -target:library -out:"$HERE/timescaleSrc/BoosterlandTimeScale.dll" \
         -r:"$M/Assembly-CSharp.dll" -r:"$M/UnityEngine.dll" \
@@ -174,7 +184,7 @@ fi
 # Logs every collision and joint break of the active vessel to KSP.log as
 # "[CollisionSpy] ...".  Built from source like the two above.
 if [ -f "$HERE/collisionSpySrc/CollisionSpy.cs" ] && command -v mcs >/dev/null; then
-  M="$BASE/KSP_x64_Data/Managed"
+  M="$REFM"
   D="$BASE/GameData/CollisionSpy"
   mkdir -p "$D"
   mcs -target:library -out:"$D/CollisionSpy.dll" \
@@ -191,7 +201,7 @@ fi
 # cannot reach those ticks; this adds an event it can ("Release propellant").
 # The spaceplane triggers it at startup on any valve with nothing ticked.
 if [ -f "$HERE/drainSelectSrc/DrainSelect.cs" ] && command -v mcs >/dev/null; then
-  M="$BASE/KSP_x64_Data/Managed"
+  M="$REFM"
   D="$BASE/GameData/DrainSelect"
   mkdir -p "$D"
   mcs -target:library -out:"$D/DrainSelect.dll" \

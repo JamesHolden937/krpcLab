@@ -9,11 +9,12 @@
 # Output: launcherMod/bin/KrpcLabLauncher.dll (git-ignored)
 #   -> GameData/KrpcLabLauncher/Plugins/.  Needs kRPC (its service is the
 # launcher's only way in).  The game's assemblies come from the farm's base
-# copy (KSP=<dir> to override).
+# stock 1.12.5 reference copy, ~/kspfarm/stockref (KSP=<dir> to override): the
+# farm and live game are KSP Retooled, whose Unity 6 assemblies mcs cannot target.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/.."
-KSP="${KSP:-$ROOT/testInstances/base}"
+KSP="${KSP:-${KSPFARM:-$HOME/kspfarm}/stockref}"
 M="$KSP/KSP_x64_Data/Managed"
 BIN="$HERE/bin"
 mkdir -p "$BIN"

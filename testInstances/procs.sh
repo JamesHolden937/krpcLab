@@ -60,13 +60,27 @@ for p in sorted(hit - skip): print(p)
 PY
 }
 
-# game_pid N -- the KSP_x64.exe of instance N (exit 1 if none).
+# game_pid N -- the KSP_x64.exe of instance N (exit 1 if none).  Matched on
+# argv[0] (`X:\...\KSP_x64.exe`), not comm: KSP Retooled's Unity 6 names its
+# main thread, so the game's comm is `Unity Main Thre`.  The umu/Proton
+# wrappers carry KSP_x64.exe only as a later argument.
 game_pid() {
-  local p
+  local p a0
   for p in $(inst_pids "$1"); do
-    [ "$(cat /proc/$p/comm 2>/dev/null)" = KSP_x64.exe ] && { echo "$p"; return 0; }
+    a0=$(tr '\0' '\n' < /proc/$p/cmdline 2>/dev/null | head -n1)
+    case "${a0//\\//}" in */KSP_x64.exe|KSP_x64.exe) echo "$p"; return 0 ;; esac
   done
   return 1
+}
+
+# game_count -- KSP games running machine-wide (any install, farm or live).
+game_count() {
+  local n=0 p a0
+  for p in /proc/[0-9]*; do
+    a0=$(tr '\0' '\n' < "$p/cmdline" 2>/dev/null | head -n1) || continue
+    case "${a0//\\//}" in */KSP_x64.exe) n=$((n+1)) ;; esac
+  done
+  echo "$n"
 }
 
 # farm_instances -- the instance numbers that exist on disk.

@@ -68,3 +68,18 @@ StationKeeping
 #   AtmosphereAutopilot   SyncModuleControlSurface on all 6 control surfaces
 #   PersistentThrust      PersistentEngine on both engines
 #   PersistentThrustNavigator
+# Added 2026-11-13 with the move to KSP Retooled (live-game mods new since the last base): load-time patches
+# (KSPLoadFixes, untriaged on Retooled), KOE (the user: "take it out of base"), VSE (KSP-VSE's renderer; its own
+# farm installs it), and visual/UI-only mods.
+000_KSPLoadFixes
+KerbalOverEngineering
+VSE
+PlanetShine
+Volumetric Ground FX
+GroundBlastFx
+Losket
+Palette
+AfbwKalFix
+TrackingStationEvolved
+PreciseEditor
+VolumetricExplosionFX
