@@ -250,17 +250,8 @@ class Config:
     # peak until the coast, the held pitch/yaw bandwidth after it.  Auto-tune
     # on the gimbals at full thrust limit-cycles.  kRPC's own time to peak
     # is put back at the coast, whose gains are read this long after.
-    ATTITUDE_LAG_PACE: bool = False
+    ATTITUDE_LAG_PACE: bool = True
     ROLL_TUNE_ENGAGE_DELAY_S: float = 0.1
-    # From the boostback rather than the coast: roll gains from the
-    # measured effect (ROLL_TUNE_BOOSTBACK) and, on a booster of 3+ equal
-    # surfaces, no roll angle held, only the rate damped
-    # (ROLL_FREE_BOOSTBACK).  The boostback's thrust is axial, so its roll
-    # angle buys nothing; kRPC credits the gimbals 3-6x the roll they make
-    # and chased the held angle at +-1 rad/s, 140-213 deg/s p90 (pace2-1113).
-    ROLL_TUNE_BOOSTBACK: bool = False
-    ROLL_TUNE_LIT_S: float = 1.0        # ... engaged this long after thrust
-    ROLL_FREE_BOOSTBACK: bool = False
     ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
     # orientations the aerodynamic surfaces look the same in (autoland.
