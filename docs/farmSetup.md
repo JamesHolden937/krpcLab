@@ -27,7 +27,8 @@ models.
 
 **A legal KSP install.** The farm was built from KSP **1.12.3 (build
 03190)**, the Windows build (`KSP_x64.exe`), run under Proton. By default
-`mkbase.sh` reads it from `~/Kerbal Space Program`; set `KSP_SRC=/path` to
+`mkbase.sh` reads it from `~/KSP-Retooled` (KSP Retooled; it reverts a reflink copy of it to stock
+1.12.5 first, from the originals in `.retooled/original`); set `KSP_SRC=/path` to
 point somewhere else. The install is only ever read.
 
 **The mods in it.** These are the mods the reference saves were flown with.

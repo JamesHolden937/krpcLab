@@ -14,7 +14,7 @@ once, and the operational failures that farm has produced.
 In-game measurement is the bottleneck: a flight is about three minutes and the
 useful experiments are three flights a configuration. `testInstances/` holds
 independent, graphics-stripped copies of the KSP install, each with its own
-kRPC port. The live install at `~/Kerbal Space Program` is only ever **read**;
+kRPC port. The live install at `~/KSP-Retooled` is only ever **read**;
 `testInstances/README.md` and `keepNotes.md` carry the detail.
 
 `mkbase.sh` builds `base/` by copying the install without the mods in

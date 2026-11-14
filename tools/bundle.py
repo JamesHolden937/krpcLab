@@ -168,7 +168,7 @@ def outsiders(modules):
 # Where kRPC's service definitions are: the farm's game, else the live one.
 KRPC_DEFINITIONS = [os.path.join(ROOT, "testInstances", "base", "GameData",
                                  "kRPC"),
-                    os.path.expanduser("~/Kerbal Space Program/GameData/kRPC")]
+                    os.path.expanduser("~/KSP-Retooled/GameData/kRPC")]
 
 
 def _snake(word):

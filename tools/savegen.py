@@ -38,7 +38,7 @@ import re
 import shutil
 import sys
 
-SAVE_DIR = os.path.expanduser("~/Kerbal Space Program/saves/default")
+SAVE_DIR = os.path.expanduser("~/KSP-Retooled/saves/default")
 VESSEL_NAME = "Untitled Space Craft"
 MU_KERBIN = 3.5316000e12
 

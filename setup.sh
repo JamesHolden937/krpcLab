@@ -56,7 +56,7 @@ if [ -z "$KSP" ]; then
   guess=""
   [ -f .kspPath ] && guess="$(cat .kspPath)"
   if [ -z "$guess" ]; then
-    for c in "${KSP_SRC:-}" "$HOME/Kerbal Space Program" \
+    for c in "${KSP_SRC:-}" "$HOME/KSP-Retooled" \
              "$HOME/.steam/steam/steamapps/common/Kerbal Space Program" \
              "$HOME/.local/share/Steam/steamapps/common/Kerbal Space Program"; do
       [ -n "$c" ] && [ -d "$c/GameData" ] && { guess="$c"; break; }

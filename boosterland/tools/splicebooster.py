@@ -21,7 +21,7 @@ records at separation (``m=`` on the SEPARATION line): every tank holding
 LiquidFuel/Oxidizer is filled to the same fraction.
 
     ./boosterland/tools/splicebooster.py \\
-        --stack "~/Kerbal Space Program/saves/default/FMRS/before_launch.sfs" \\
+        --stack "~/KSP-Retooled/saves/default/FMRS/before_launch.sfs" \\
         --decoupler Decoupler.3 --mass 99.36 --name "heavy booster" \\
         --state saves/quicksave.sfs -o saves/qs_heavy.sfs
 """

@@ -37,4 +37,4 @@ install_into() {   # $1: a game directory
         > "$g/KrpcLabLauncher/PluginData/launch.cfg"
 }
 for d in "$ROOT/testInstances/base" "$ROOT"/testInstances/ksp[0-9]*; do install_into "$d"; done
-install_into "${KSP_LIVE:-$HOME/Kerbal Space Program}"
+install_into "${KSP_LIVE:-$HOME/KSP-Retooled}"

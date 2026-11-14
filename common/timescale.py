@@ -46,7 +46,7 @@ def instance_dir(instance=None, rpc_port=None):
     if rpc_port is not None and rpc_port >= 50100:
         return os.path.join(ROOT, "testInstances",
                             "ksp" + str((rpc_port - 50100) // 2))
-    return os.path.expanduser("~/Kerbal Space Program")
+    return os.path.expanduser("~/KSP-Retooled")
 
 
 def write(dirpath, spec, quant_s=DEFAULT_QUANT_S, max_scale=8.0):

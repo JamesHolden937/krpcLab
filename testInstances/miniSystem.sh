@@ -17,7 +17,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KSPFARM="${KSPFARM:-$HOME/kspfarm}"; BASE="$KSPFARM/base"
-LIVE="${KSP_SRC:-$HOME/Kerbal Space Program}/GameData"
+LIVE="${KSP_SRC:-$HOME/KSP-Retooled}/GameData"
 MINI="${MINISYSTEM:-$HOME/minisystem}/GameData/MiniSystem"
 [ -f "$MINI/MiniSystem.cfg" ] || { echo "no $MINI/MiniSystem.cfg (run ~/minisystem/tools/genPatch.py)" >&2; exit 1; }
 . "$HERE/procs.sh"

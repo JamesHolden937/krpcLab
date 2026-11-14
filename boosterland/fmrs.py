@@ -70,7 +70,7 @@ def connect(args, name):
 def save_roots():
     """Every game's save folder this machine might be running: the live
     install and the farm's instances."""
-    homes = [os.path.expanduser("~/Kerbal Space Program")]
+    homes = [os.path.expanduser("~/KSP-Retooled")]
     homes += sorted(glob.glob(os.path.join(paths.INSTANCES, "ksp*")))
     return [d for home in homes
             for d in glob.glob(os.path.join(home, "saves", "*"))

@@ -8,13 +8,13 @@
 >   stripped. It brings its own patches, e.g. solar panels.
 > - Farm results from before 2026-11-06 are not comparable with later ones.
 > - kspSim models probed before then are stale: re-probe (`kspSim/world.py` warns).
-> - The live game (`~/Kerbal Space Program`) and KSP-VSE's `vse/` instance are still stock.
+> - The live game (`~/KSP-Retooled`, KSP Retooled 1.13 on Unity 6.7 since 2026-11-13) runs MiniSystem too; KSP-VSE's `vse/` instance is stock.
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
 Independent, graphics-stripped copies of the KSP install, each with its own
 kRPC port, so several `quickfly.py` runs can fly at once.  The live install at
-`~/Kerbal Space Program` is only ever **read**.
+`~/KSP-Retooled` is only ever **read**.
 
 **Where the game copies live:** in the shared farm `~/kspfarm`. Read `~/kspfarm/README.md` first.
 - `base/` is `~/kspfarm/base`, and the instances `ksp<n>` and `prefix<n>` are in `~/kspfarm/krpclab/`.

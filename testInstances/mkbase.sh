@@ -10,7 +10,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC="${KSP_SRC:-$HOME/Kerbal Space Program}"
+SRC="${KSP_SRC:-$HOME/KSP-Retooled}"
 # Built into the shared farm (~/kspfarm, see its README.md); testInstances/base
 # is a symlink to it so every script and tool keeps finding it here.
 KSPFARM="${KSPFARM:-$HOME/kspfarm}"
@@ -23,6 +23,20 @@ if [ -e "$BASE" ]; then
   echo "base/ already exists -- remove it first if you mean to rebuild:"
   echo "  rm -rf '$BASE'"
   exit 1
+fi
+
+# The live game is KSP Retooled (Unity 6.7) since 2026-11-13; the farm stays stock 1.12.5. A Retooled install keeps
+# the stock files it replaced in .retooled/original, so build from a reflink copy of it reverted to stock.
+if [ -f "$SRC/.retooled/journal.json" ]; then
+  RP_DIR="$HOME/.local/share/ksp-retooled/cli/$(cat "$HOME/.local/share/ksp-retooled/cli/current")"
+  STOCK="$KSPFARM/.stocksrc"
+  rm -rf "$STOCK"
+  trap 'rm -rf "$STOCK"' EXIT
+  echo "reverting a reflink copy of $SRC to stock 1.12.5 in $STOCK"
+  cp -a --reflink=always "$SRC" "$STOCK"
+  "$HOME/.dotnet/dotnet" "$RP_DIR/retooled-patch.dll" revert --install "$STOCK"
+  rm -rf "$STOCK/.retooled" "$STOCK/Launcher_Data"
+  SRC="$STOCK"
 fi
 
 echo "source : $SRC"
