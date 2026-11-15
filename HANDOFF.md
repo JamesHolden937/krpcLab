@@ -17,7 +17,7 @@
 
 ## 2026-11-14 night: boosterland -- the burn's oscillation fixed (auto-tune back on, kRPC's aero rate cap off); fin2 runs dry, fly qs_finbooster3
 
-**Defaults fingerprint 8d0d377d** (after f58ad20). Committed and pushed. howItWorks.pdf (boosterland) **not redone**:
+**Defaults fingerprint 8d0d377d** (after f58ad20). Committed and pushed. **Farm stopped** (swap 5.5 GB after). Not flown live yet: the user's next live booster flight is the first on these defaults. `tools/instancebench.py` has an uncommitted change that is not this session's: leave it. howItWorks.pdf (boosterland) **not redone**:
 it still describes RollTune and the pace. Journal: `docs/boosterland/journal.md` "2026-11-14 evening" (three entries).
 
 **What changed (defaults now):**
