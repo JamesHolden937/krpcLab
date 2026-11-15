@@ -19,6 +19,7 @@ TELEM = re.compile(r"^\[ *([\d.]+)\] (\w+) +alt= *(-?[\d.]+).*?"
 SIGNED = re.compile(r"^\[ *([\d.]+)\] (\w+) +alt= *(-?[\d.]+).*?hs= *([\d.]+).*?"
                     r"long= *([-+][\d.]+) +cross= *([-+][\d.]+)")
 PHASE = re.compile(r"^\[ *([\d.]+)\] phase (\w+) -> (\w+) ?(.*)$")
+TD = re.compile(r"phase LANDING_BURN -> TOUCHDOWN .*td_pad=([\d.]+)m")
 DONE = re.compile(r"shutdown: (\S+) ([\d.]+) m from pad, alt=(-?[\d.]+) spd=([\d.]+)")
 RESWEEP = re.compile(r"^\[ *([\d.]+)\] drag curve re-swept")
 CONFIG = re.compile(r"^\[ *[\d.]+\] config: (.*)$")
@@ -37,7 +38,11 @@ def segments(path):
     the fix belongs earlier in the flight.
     """
     marks, seen, done, hs = {}, set(), None, []
+    td = None
     for line in open(path, errors="replace"):
+        m = TD.search(line)
+        if m:
+            td = float(m.group(1))
         m = SIGNED.match(line)
         if m:
             phase = m.group(2)
@@ -49,7 +54,7 @@ def segments(path):
         m = DONE.search(line)
         if m:
             done = (m.group(1), float(m.group(2)))
-    return marks, done, hs[-3:]
+    return marks, done, hs[-3:], td
 
 
 def summarise(path):
@@ -145,11 +150,11 @@ def main(argv=None):
         return 0
 
     if args.segments:
-        print("%-9s %-34s %16s %16s %8s  %s"
-              % ("log", "config", "coast entry", "burn entry", "landed",
-                 "hs= last three"))
+        print("%-9s %-34s %16s %16s %6s %8s  %s"
+              % ("log", "config", "coast entry", "burn entry", "td",
+                 "landed", "hs= last three"))
         for path in args.logs:
-            marks, done, hs = segments(path)
+            marks, done, hs, td = segments(path)
             if done is None:
                 continue
             _, _, _, _, config = summarise(path)
@@ -159,9 +164,10 @@ def main(argv=None):
                               if not f.startswith("AIM_BIAS_"))
             co = marks.get("COAST", (float("nan"),) * 2)
             lb = marks.get("LANDING_BURN", (float("nan"),) * 2)
-            print("%-9s %-34s %+8.0f%+8.0f %+8.0f%+8.0f %8.0f  %s"
+            print("%-9s %-34s %+8.0f%+8.0f %+8.0f%+8.0f %6s %8.0f  %s"
                   % (path.split("/")[-1], (config or "?")[:34],
-                     co[0], co[1], lb[0], lb[1], done[1],
+                     co[0], co[1], lb[0], lb[1],
+                     "-" if td is None else "%.0f" % td, done[1],
                      " ".join("%.1f" % h for h in hs)))
         return 0
 
