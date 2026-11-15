@@ -26,8 +26,7 @@ from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
 from .engines import allocate, group_engines
 from .environment import Environment
-from common.panel import ACCENT_BOOSTER, ControlPanel, service
-from boosterland.rolltune import RollTune
+from common.panel import ACCENT_BOOSTER, ControlPanel
 from .gui import telemetry_lines
 from common.idle import IdleGimbals, VacuumSurfaces
 from common.krpcpilot import (  # noqa: F401
@@ -537,7 +536,6 @@ class Autoland:
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.cluster = None             # EngineCluster, built at START
-        self.roll_tune = None           # RollTune, from the coast on
         self.roll_order = 1             # roll symmetry (ROLL_SYMMETRY)
         self.roll_slot = None           # which of its equivalent roofs
         self.diag_restarted = False     # KRPC_AP_DIAG_BELOW_M
@@ -562,15 +560,6 @@ class Autoland:
         self.state = state
         self.phase_start_ut = ut
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
-        if self.roll_tune is None:
-            svc = service(self.conn)
-            self.roll_tune = RollTune(
-                self.autopilot, self.vessel,
-                getattr(svc, "surface_actuators", None)
-                if svc is not None else None, self.cfg, self.log)
-            self.roll_tune.start(ut)
-        if self.cfg.ROLL_TUNE and state == COAST:
-            self.roll_tune.engage(ut)
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
             # The boostback's record first (LOG<n>.bb.ap.csv): at shutdown
@@ -663,8 +652,8 @@ class Autoland:
                     # nose's: the roll angle is worth nothing, only its
                     # rate.  kRPC with no target roll drives the rate to
                     # zero (the inner loop alone).  Held to an angle, its
-                    # attitude loop runs on the credited torque, 10-30x the
-                    # fins' (rolltune.py), and rang at ~100 deg/s
+                    # attitude loop rang at ~100 deg/s on kRPC 0.7, which
+                    # credited the fins with 10-30x their roll
                     # (LOG16195-16198).
                     up = None
                 if (up is not None and late and self.roll_order > 1):
@@ -912,8 +901,6 @@ class Autoland:
             self.configure_autopilot(snap.ut)
             if self.cfg.KRPC_AP_DIAG:
                 ap.diagnostic_logging = True
-            if self.roll_tune is not None:
-                self.roll_tune.ttp_sent = None
             error = set_autopilot_engaged(ap, True)
         except Exception as exc:                    # noqa: BLE001
             error = exc
@@ -2261,10 +2248,6 @@ class Autoland:
             self.latch_checked = True
             self.clear_krpc_latches(snap)
             self.aim(self.commanded_direction or snap.direction, snap)
-        if self.roll_tune is not None and self.state != TOUCHDOWN:
-            inputs = snap.inputs
-            self.roll_tune.update(snap.ut, self.roll_rate,
-                                  inputs[2] if inputs else None)
         if self.state != COAST and any(self.trim_cmd):
             self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
@@ -2379,8 +2362,6 @@ def compact_line(state, snap, prediction, run):
                (" can=%.1f" % run.env.holdable_deg
                 if run.env.holdable_deg is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
-            + (run.roll_tune.fields()
-               if getattr(run, "roll_tune", None) is not None else "")
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
                if any(getattr(run, "trim_cmd", (0.0,))) else ""))
 

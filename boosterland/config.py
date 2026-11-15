@@ -228,34 +228,6 @@ class Config:
     ROLL_PLANE_MIN_HS_MPS: float = 5.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)
-    # kRPC's roll gains from the roll the booster measures it gets per unit
-    # input, from the coast on (boosterland/rolltune.py): stock credits the
-    # fins with ~150-300x their roll (LOG16185/16186), so auto-tune's roll
-    # loop barely pushed and the booster spun 70-110 deg/s below 20 km.
-    ROLL_TUNE: bool = True
-    ROLL_TUNE_READ_S: float = 1.0       # kRPC's torque and inertia re-read
-    # The fit (common.rateplant.Plant), as the airplane's PLANT_*, with k
-    # allowed down to 1/1024 of kRPC's figure.
-    ROLL_PLANT_FORGET_S: float = 10.0
-    ROLL_PLANT_P_MAX: float = 100.0
-    ROLL_PLANT_K_MIN: float = 1.0 / 1024.0
-    ROLL_PLANT_K_MAX: float = 16.0
-    ROLL_PLANT_D_MAX: float = 20.0
-    ROLL_PLANT_EXCITE: float = 0.01
-    ROLL_PLANT_WINDOW_S: float = 1.0
-    ROLL_SLEW_FACTOR: float = 2.0       # common.rateplant.closing_time
-    ROLL_LAG_FACTOR: float = 3.0
-    # Every axis's loop no faster than ROLL_LAG_FACTOR x its actuators'
-    # torque-weighted lag (rolltune.RollTune.lag_ttp): auto-tune's time to
-    # peak until the coast, the held pitch/yaw bandwidth after it.  Auto-tune
-    # on the gimbals at full thrust limit-cycles.  kRPC's own time to peak
-    # is put back at the coast, whose gains are read this long after.
-    # Off since kRPC main (0.8.0-dev, krpc#1348 + #1191): kRPC tunes for the
-    # gimbal lag itself, and the coast's held bandwidth (gains x torque/MoI)
-    # reads ~0.6 rad/s on 0.8's corrected MoI and latches -- k08-1114, 12 a
-    # arm: off median miss 26 m, on 480 m.  Pace code to be deleted.
-    ATTITUDE_LAG_PACE: bool = False
-    ROLL_TUNE_ENGAGE_DELAY_S: float = 0.1
     # When the engines light after the flip, reset kRPC's autopilot if it
     # latched an axis as structurally flexible: an axis with no authority
     # through the unpowered flip (the fin booster's roll on RCS) latches on
