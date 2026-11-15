@@ -1150,7 +1150,7 @@ slew, credited from `available_control_surface_torque` in the same step. Tail-fi
 | pitch | as saved | 2.7-5.7 | 0.84 (0.81-0.85) |
 | pitch | deployed | 11-29 | 0.96 (0.94-1.36) |
 
-RCS roll 1.00 and gimbals 0.80-0.90 (stock GetPotentialTorque, no GimbalTorqueFix credit change for roll) in the
+RCS 0.82-1.00 and gimbals 0.80-0.90 (at separation) in the
 same tool. **0.8 credits the fins' roll correctly: no kRPC issue to file.** Earlier probes at separation (fins
 leading, booster climbing, q falling 5x) were unusable; at 10 km/1000 m/s (q 131 kPa) the fins tore off.
 RollTune's in-flight fits on 0.8 (rk 0.26-0.31 on the 6 k08 flights with rq > 0.8) are not a credit error: they
