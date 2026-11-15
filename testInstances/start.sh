@@ -35,6 +35,16 @@ declare -A started tries
 want=()
 for N in "$@"; do
   [ -d "$HERE/ksp$N" ] || { echo "no instance ksp$N -- ./mkclone.sh $N" >&2; continue; }
+  # Compile only the parts the reference saves and craft files use: one
+  # ModuleManager patch per clone, regenerated from saves/ before every
+  # launch (partstrip.py; docs/testInstances.md "Part pruning").  PRUNE=0
+  # boots the full catalogue.
+  if [ "${PRUNE:-1}" = 0 ]; then
+    "$HERE/partstrip.py" "$N" --undo
+  else
+    "$HERE/partstrip.py" "$N" | tail -n1 | sed "s/^/ksp$N prune: /" \
+      || echo "ksp$N prune: partstrip.py failed; booting as it was" >&2
+  fi
   launch "$N"; tries[$N]=0; want+=("$N")
   echo "started ksp$N (scope ksp$N-boosterland)"
   sleep 10        # stagger: four simultaneous loading screens thrash the disk
