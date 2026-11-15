@@ -35,6 +35,16 @@ declare -A started tries
 want=()
 for N in "$@"; do
   [ -d "$HERE/ksp$N" ] || { echo "no instance ksp$N -- ./mkclone.sh $N" >&2; continue; }
+  # Load only what the reference saves and craft files use -- their parts,
+  # those parts' models, TPR's real terrain maps (the rest stubbed): -0.5 GB
+  # an instance.  Re-derived from saves/ before every launch (partstrip.py;
+  # docs/testInstances.md "Pruning").  PRUNE=0 boots the full clone.
+  if [ "${PRUNE:-1}" = 0 ]; then
+    "$HERE/partstrip.py" "$N" --undo
+  else
+    "$HERE/partstrip.py" "$N" | tail -n1 | sed "s/^/ksp$N prune: /" \
+      || echo "ksp$N prune: partstrip.py failed; booting as it was" >&2
+  fi
   launch "$N"; tries[$N]=0; want+=("$N")
   echo "started ksp$N (scope ksp$N-boosterland)"
   sleep 10        # stagger: four simultaneous loading screens thrash the disk
