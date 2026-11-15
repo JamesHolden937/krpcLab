@@ -506,6 +506,7 @@ class Autoland:
         self.late_next_ut = 0.0
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
+        self.coast_steer = None         # its last solved one (LANDING_HOLD_AOA)
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
@@ -587,11 +588,11 @@ class Autoland:
         # as "held".
         self.steer_history = []
 
-    def predict(self, snap, powered, steer=None):
+    def predict(self, snap, powered, steer=None, burn_hold=None):
         max_accel = snap.max_accel if powered else 0.0
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
-            self.cfg, steer=steer)
+            self.cfg, steer=steer, burn_hold=burn_hold)
         # Hand the descent back to the estimator: the next aerodynamic probe
         # wants to know where the booster will be when it is doing each speed,
         # so that a Mach bin is measured in the air it is going to be used in.
@@ -1278,10 +1279,21 @@ class Autoland:
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
-        steer, steered = guidance.solve_steer(
-            self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
-            self.cfg)
+        steer, steered = None, None
+        align = self.cfg.LANDING_ALIGN_S
+        if align > 0.0 and snap.vertical_speed < 0.0:
+            h, need, _ = trajectory.landing_burn_state(
+                self.env, snap.position, snap.velocity, snap.max_accel,
+                self.cfg, height=snap.landing_height)
+            align = (h - need) / max(1.0, -snap.vertical_speed) <= align
+        else:
+            align = False
+        if not align:
+            steer, steered = guidance.solve_steer(
+                self.env, snap.position, snap.velocity, snap.mass,
+                snap.max_accel, self.cfg)
         if steer is not None:
+            self.coast_steer = steer
             self.prediction = steered
             self.env.set_descent_profile(steered.profile)
             self.steer = steer
@@ -1903,7 +1915,12 @@ class Autoland:
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
-        prediction = self.predict(snap, powered=True)
+        hold = None
+        if self.cfg.LANDING_HOLD_AOA and self.coast_steer is not None:
+            elapsed = snap.ut - self.phase_start_ut
+            hold = (self.coast_steer, elapsed)
+            held = trajectory.held_steer(self.coast_steer, elapsed, self.cfg)
+        prediction = self.predict(snap, powered=True, burn_hold=hold)
         # Throttle first: the steering law has to know how much acceleration
         # it is actually going to get, not how much the vehicle could make at
         # full thrust -- see guidance.terminal_command.
@@ -1925,6 +1942,18 @@ class Autoland:
         # long as it steers -- the trim term only notices once the vehicle is
         # already fast -- so give back what the tilt takes.  Nothing changes
         # when the divert is off, because then the tilt is zero.
+        if hold is not None and held is not None:
+            # The coast's angle of attack, carried on and decaying, as the
+            # propagator flies it: retrograde -> held nose, applied to the
+            # guidance direction (the divert tilt rides on top).
+            retro = vec.unit(vec.scale(snap.velocity, -1.0))
+            nose = trajectory.held_thrust_direction(held, snap.velocity)
+            axis = vec.cross(retro, nose)
+            if vec.norm(axis) > 1e-9:
+                q = vec.quat_axis_angle(vec.unit(axis), math.radians(
+                    vec.angle_between(retro, nose)))
+                steer = guidance.TerminalCommand(
+                    vec.unit(vec.quat_rotate(q, steer.direction)), steer.demand)
         tilt = vec.angle_between(steer.direction, vec.scale(snap.velocity, -1.0))
         if tilt > 1.0:
             throttle = min(self.cfg.LANDING_THROTTLE_CAP,

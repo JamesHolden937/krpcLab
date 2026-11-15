@@ -346,6 +346,14 @@ class Config:
     COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
                                             # means the axis sign is wrong:
                                             # flip it once, then give up
+    LANDING_HOLD_AOA: bool = False          # the burn keeps the coast's angle
+                                            # of attack, decaying, and the
+                                            # propagator flies the same: no
+                                            # unmodelled turn at ignition
+    LANDING_HOLD_TAU_S: float = 2.0         # ... decaying over this long
+    LANDING_ALIGN_S: float = 0.0            # >0: the coast stops steering and
+                                            # points retrograde this many s
+                                            # before the burn trigger
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_DIVERT_ON_PREDICTION: bool = True    # steer on the propagator's
