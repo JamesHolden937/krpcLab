@@ -977,15 +977,26 @@ class Ascent:
             self.settings_checked = True
             self.check_settings(ut, "after separation")
         a = self.mj.ascent_autopilot
-        if self.cfg.MJ_AUTOSTAGE_AFTER_SEP and not a.autostage:
-            a.autostage = True
-            try:
-                self.mj.staging_controller.enabled = True
-            except Exception:           # noqa: BLE001
-                pass
+        try:
+            if self.cfg.MJ_AUTOSTAGE_AFTER_SEP and not a.autostage:
+                a.autostage = True
+                try:
+                    self.mj.staging_controller.enabled = True
+                except Exception:           # noqa: BLE001
+                    pass
+            status = a.status
+        except Exception as e:          # noqa: BLE001
+            # the part carrying MechJeb is gone (a pod destroyed with the
+            # rest of the stage still flying): the stage is lost, not the
+            # script (LOG16692)
+            if "no MechJeb" not in str(e):
+                raise
+            self.log.event(ut, "upper stage lost: no MechJeb on the vessel, "
+                           "mass %.2f t" % (self.vessel.mass / 1e3))
+            self.finish("upper stage lost")
+            return
         orbit = self.vessel.orbit
         apo, peri = orbit.apoapsis_altitude, orbit.periapsis_altitude
-        status = a.status
         self.extra = ["apo %.0f peri %.0f" % (apo, peri),
                       "mj      : %s" % status]
         thrust = sum(e.thrust for e in self.stack.upper)
