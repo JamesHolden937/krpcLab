@@ -1,5 +1,16 @@
 # ascent journal
 
+## Session, 2026-11-14 evening: kRPC 0.8's MechJeb API; the farm's booster thrust cutouts
+
+- Live LOG16691 crashed at liftoff on `auto_path`: KRPC.MechJeb of kRPC main splits the ascent settings
+  (autopilot / `ascent_path_classic` / `ascent_path_pvg`, `ascent_type` -> `ascent_path_index`, PVG 2).
+  Every split setting had silently been set on the Python object. Routed by `MJ_OWNER`, guarded by `mj_set`.
+- Farm verification (ksp0): LOG16692 qs_stack_small and LOG16693 qs_stack got through launch, solve
+  (0.391 / 0.511), separation and the settings re-check, then lost the upper stage suborbital: booster
+  thrust 0 on more and more frames from 60-70 s at throttle 1, propellant present. Not MechJeb, krpcLab,
+  kRPC 0.7 v 0.8, GimbalTorqueFix or the time scale (each removed in turn, no-MechJeb vertical flights);
+  the user's live stack does it on the farm too; live 11-13 did not. Open: live build updated 11-14 15:26.
+
 ## Session, 2026-10-18 evening: first version
 
 **The user asked:** install kRPC MechJeb on the live game and the farm; write
