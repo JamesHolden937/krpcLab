@@ -1126,3 +1126,34 @@ pace-on flights and the coast overshot +180..+333 m by burn entry. Pace off (aut
 burn entry -9..-48 m, landed median 26.5 m, td median 12 m/s, 5/12 destroyed; pace on 480 m, 12.4 m/s, 7/12.
 0.7+backport (lag4-1114): pace on 66 m, 7.5 m/s, 2/12. ATTITUDE_LAG_PACE default -> False. Coast ticks cost
 0.094-0.156 wall-s v 0.071-0.105 (no fast client).
+
+## 2026-11-14 evening: does kRPC 0.8 still over-credit the fins' roll? No
+
+The user's live LOG16697 (defaults, kRPC 34c70de): burn pitch/yaw saturated, nose 20-42 deg/s, 15 m/s sideways
+at touchdown, 220 m short, broke up. RollTune read pitch/yaw authority 0 at coast entry (`held at kRPC's bandwidth
+- -`), so pitch/yaw flew kRPC's plain formula (bandwidth ~5.6 rad/s) with no gimbal-lag cap; kRPC's own cap
+(#1348) only acts with auto-tune on, and RollTune turns it off. Auto-tune is off only because 0.7 credited the
+fins with ~100x their roll. Checked whether 0.8 still does.
+
+Code: 0.8's `ControlSurface.ComputeAvailableTorque` (#1191) = (part CoM - vessel CoM) x
+`GetPotentialLift` (stock: lift at deployAngle +- range x authority, minus the base lift), roll scaled by
+min(1, the stock roll law's gain). Unchanged on main at fc9a040.
+
+Measured (`actuators.py 0 qs_finbooster2 --probe --probe-below=30000 --probe-axes=... --probe-cycles=2
+--surfaces-only`, commit 467bff4): held retrograde to 29 km, released, 0/+1/0/-1 steps, slope after the fins'
+slew, credited from `available_control_surface_torque` in the same step. Tail-first descent, ~830 m/s:
+
+| axis | fins | q kPa | measured/credited |
+|---|---|---|---|
+| roll | as saved | 2.8-5.9 | 1.00 (1.00-1.00, n=4) |
+| roll | deployed 15 alternate | 11-30 | 0.88 (0.71-1.02) |
+| pitch | as saved | 2.7-5.7 | 0.84 (0.81-0.85) |
+| pitch | deployed | 11-29 | 0.96 (0.94-1.36) |
+
+RCS roll 1.00 and gimbals 0.80-0.90 (stock GetPotentialTorque, no GimbalTorqueFix credit change for roll) in the
+same tool. **0.8 credits the fins' roll correctly: no kRPC issue to file.** Earlier probes at separation (fins
+leading, booster climbing, q falling 5x) were unusable; at 10 km/1000 m/s (q 131 kPa) the fins tore off.
+RollTune's in-flight fits on 0.8 (rk 0.26-0.31 on the 6 k08 flights with rq > 0.8) are not a credit error: they
+fit commanded input, not deflection, while pitch/yaw sit at +-1 and stock's shared clamp on pitch+yaw+roll
+deflection takes the roll (#1191's stated limitation) and the fins slew.
+Next: fly auto-tune on from the coast (`ROLL_TUNE=False`) against the defaults.
