@@ -409,7 +409,7 @@ class TerminalCommand:
 
 
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
-                     zem=None, tilt_budget_deg=None):
+                     zem=None, tilt_budget_deg=None, null_rate=None):
     """The burn's command, stood up for the last ``LANDING_UPRIGHT_ALT_M``.
 
     Below 250 m the law points retrograde within ``LANDING_MAX_TILT_DEG`` of
@@ -423,7 +423,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     leg height to ``LANDING_UPRIGHT_TILT_DEG`` at the ground.  0 is off.
     """
     cmd = _terminal_command(env, r, v, height, time_to_land, thrust_accel,
-                            cfg, zem, tilt_budget_deg)
+                            cfg, zem, tilt_budget_deg, null_rate)
     top = cfg.LANDING_UPRIGHT_ALT_M
     if top <= 0.0 or height >= top:
         return cmd
@@ -435,7 +435,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
 
 
 def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
-                      zem=None, tilt_budget_deg=None):
+                      zem=None, tilt_budget_deg=None, null_rate=None):
     """Steer the landing burn onto the pad, arriving with no sideways speed.
 
     The old divert was position feedback alone -- tilt proportional to the miss
@@ -536,9 +536,11 @@ def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     # LOG10246) -- but held inside ``LANDING_MAX_TILT_DEG`` of vertical, and
     # vertical outright once the booster is going up.
     near = height <= cfg.LANDING_NULL_ALT_M
-    if near and cfg.LANDING_NULL_RATE_MAX > 0.0:
+    cap = (null_rate if cfg.LANDING_THRUST_SHARE and null_rate
+           else cfg.LANDING_NULL_RATE_MAX)
+    if near and cap and cap > 0.0:
         return TerminalCommand(bounded_null(v, up, thrust_accel, time_to_land,
-                                            cfg), 0.0)
+                                            cfg, cap, tilt_budget_deg), 0.0)
     base = (within_cone(retrograde, up, cfg.LANDING_MAX_TILT_DEG) if near
             else retrograde)
     if not (cfg.LANDING_DIVERT_MIN_ALT_M < height
@@ -599,7 +601,8 @@ def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                          vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
 
 
-def bounded_null(v, up, thrust_accel, time_to_land, cfg):
+def bounded_null(v, up, thrust_accel, time_to_land, cfg, rate_max,
+                 tilt_budget_deg=None):
     """The last stretch's nose: vertical, tilted to null the lateral speed at
     a rate the attitude loop can follow (``LANDING_NULL_RATE_MAX``).
 
@@ -616,9 +619,12 @@ def bounded_null(v, up, thrust_accel, time_to_land, cfg):
         return up
     t_go = max(cfg.LANDING_TGO_MIN_S, time_to_land)
     rate = min(thrust_accel / max(vec.norm(v), 0.1)
-               + cfg.LANDING_ZEV_GAIN / t_go, cfg.LANDING_NULL_RATE_MAX)
+               + cfg.LANDING_ZEV_GAIN / t_go, rate_max)
+    limit = cfg.LANDING_MAX_TILT_DEG
+    if tilt_budget_deg is not None:
+        limit = min(limit, tilt_budget_deg)
     tilt = min(math.atan2(rate * vec.norm(lateral), thrust_accel),
-               math.radians(cfg.LANDING_MAX_TILT_DEG))
+               math.radians(max(0.0, limit)))
     side = vec.scale(vec.unit(lateral), -1.0)
     return vec.unit(vec.add(vec.scale(up, math.cos(tilt)),
                             vec.scale(side, math.sin(tilt))))

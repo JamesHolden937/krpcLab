@@ -545,6 +545,7 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
+        self.null_rate_value = None     # LANDING_THRUST_SHARE: read once
         self.slew_read_ut = -1e9
         self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
@@ -1901,6 +1902,23 @@ class Autoland:
                    * self.cfg.LANDING_SLEW_SHARE,
                    self.cfg.LANDING_SLEW_MIN_DEG_S)
 
+    def null_rate(self, snap):
+        """The lateral null's highest rate (1/s): half the attitude loop's
+        own bandwidth, 1 / (2 time_to_peak) of kRPC's slower of pitch and
+        yaw, read once a burn.  A lateral loop faster than the nose that
+        executes it is the last-20 m oscillation (dv3-1115)."""
+        if not self.cfg.LANDING_THRUST_SHARE:
+            return None
+        if self.null_rate_value is None:
+            try:
+                ttp = self.autopilot.time_to_peak
+                self.null_rate_value = 0.5 / max(0.1, ttp[0], ttp[2])
+            except Exception:                       # noqa: BLE001
+                self.null_rate_value = 0.0
+            self.log.event(snap.ut, "lateral null rate %.2f /s (kRPC "
+                           "time_to_peak)" % self.null_rate_value)
+        return self.null_rate_value or None
+
     def run_landing_burn(self, snap):
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
@@ -1925,7 +1943,7 @@ class Autoland:
         steer = guidance.terminal_command(
             self.env, snap.position, snap.velocity, snap.landing_height,
             prediction.time_to_land, throttle * snap.max_accel, self.cfg, zem,
-            budget)
+            budget, self.null_rate(snap))
         # Thrust tilted off retrograde brakes with only its cosine, and the
         # vertical profile above sized the throttle as though all of it were
         # braking.  Left alone, a divert quietly under-brakes for exactly as

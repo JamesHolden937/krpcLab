@@ -134,6 +134,20 @@ def stopping_distance(speed, net_accel):
     return speed * speed / (2.0 * net_accel)
 
 
+def planned_net(max_accel, g, cfg):
+    """The net deceleration the vertical profile plans with.
+
+    The whole cap, by default.  With ``LANDING_THRUST_SHARE`` the profile
+    takes only ``cos(LANDING_MAX_TILT_DEG)`` of it, so the throttle it asks
+    for leaves the divert its full tilt (``acos(throttle / cap)``) down to
+    the ground: planned at the cap, the throttle pinned from ~600 m and the
+    burn had no lateral authority for its last 600 m whatever its TWR.
+    """
+    share = (math.cos(math.radians(cfg.LANDING_MAX_TILT_DEG))
+             if cfg.LANDING_THRUST_SHARE else 1.0)
+    return max_accel * cfg.LANDING_THROTTLE_CAP * share - g
+
+
 def landing_burn_state(env, r, v, max_accel, cfg, height=None):
     """(height, height needed to stop, net decel) right now.
 
@@ -145,7 +159,7 @@ def landing_burn_state(env, r, v, max_accel, cfg, height=None):
         height = vec.norm(r) - env.target_radius
     speed = vec.norm(v)
     g = env.mu / (vec.norm(r) ** 2)
-    net = max_accel * cfg.LANDING_THROTTLE_CAP - g
+    net = planned_net(max_accel, g, cfg)
     needed = stopping_distance(speed, net) * cfg.SUICIDE_MARGIN
     needed += speed * cfg.SUICIDE_REACTION_S
     return height, needed, net
@@ -183,16 +197,31 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
         w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
         speed = math.sqrt(down * down + w * w * side_sq)
-    net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
+    net = max(0.1, planned_net(max_accel, g, cfg))
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
-    # A pure constant-deceleration profile is still doing several m/s a couple
-    # of metres up -- it assumes the vehicle can brake at full authority right
-    # into the ground.  Taper the last stretch into a gentle constant-rate
-    # descent so the legs meet the pad at walking pace.
-    target_speed = min(target_speed,
-                       cfg.TOUCHDOWN_SPEED + cfg.FINAL_APPROACH_RATE * remaining)
+    if cfg.LANDING_THRUST_SHARE:
+        # The taper v = TOUCHDOWN_SPEED + k h decelerates at k v, which grows
+        # with height; joined to the constant-deceleration curve where k v
+        # reaches ``net``, no point asks for more than the plan.  The old
+        # join (the min of the two) asks for 2 net where they cross.
+        k = max(1e-3, cfg.FINAL_APPROACH_RATE)
+        v_join = max(cfg.TOUCHDOWN_SPEED, net / k)
+        h_join = (v_join - cfg.TOUCHDOWN_SPEED) / k
+        if remaining <= h_join:
+            target_speed = cfg.TOUCHDOWN_SPEED + k * remaining
+        else:
+            target_speed = math.sqrt(v_join * v_join
+                                     + 2.0 * net * (remaining - h_join))
+    else:
+        target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
+        # A pure constant-deceleration profile is still doing several m/s a
+        # couple of metres up -- it assumes the vehicle can brake at full
+        # authority right into the ground.  Taper the last stretch into a
+        # gentle constant-rate descent so the legs meet the pad at walking
+        # pace.
+        target_speed = min(target_speed, cfg.TOUCHDOWN_SPEED
+                           + cfg.FINAL_APPROACH_RATE * remaining)
     if max_accel <= 0.0:
         return 0.0, target_speed
 

@@ -317,6 +317,15 @@ class Config:
 
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
+    LANDING_THRUST_SHARE: bool = False      # the vertical profile plans at
+                                            # cos(LANDING_MAX_TILT_DEG) of the
+                                            # cap, its taper joined where it is
+                                            # feasible, so the divert keeps its
+                                            # tilt to the ground; the null law
+                                            # below 250 m runs at the attitude
+                                            # loop's own bandwidth (see
+                                            # trajectory.planned_net,
+                                            # guidance.bounded_null)
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
