@@ -543,6 +543,12 @@ class Config:
                                             # prediction can be re-flown
                                             # offline; see replay.py
 
+    # kRPC 0.8's AutoPilot.limit_angular_velocity (on by kRPC's default):
+    # caps the nose's rate at the rate the flight path turns at the
+    # incidence the spare torque holds (AerodynamicRateLimit, an aircraft's
+    # model).  On the fin booster's burn that is 0.001-0.04 rad/s, and the
+    # nose sat 6-12 deg off its command for the first 10 s (LOG16724.ap.csv).
+    KRPC_LIMIT_ANGULAR_VELOCITY: bool = True
     KRPC_AP_DIAG: bool = False              # kRPC's own per-physics-tick
                                             # autopilot record (errors, rates,
                                             # gains, outputs per axis), saved

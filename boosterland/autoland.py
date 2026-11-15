@@ -859,6 +859,12 @@ class Autoland:
         ``clear_krpc_latches`` has reset it to kRPC's defaults."""
         self.autopilot.reference_frame = self.frame
         try:
+            self.autopilot.limit_angular_velocity = bool(
+                self.cfg.KRPC_LIMIT_ANGULAR_VELOCITY)
+        except Exception as exc:    # noqa: BLE001 -- kRPC before 0.8
+            self.log.event(ut, "kRPC limit_angular_velocity not set (%r)"
+                           % (exc,))
+        try:
             # kRPC controls roll only while the pointing error is under
             # this; above it the roll input is zero and roll drifts.
             # kRPC 0.7 replaced ``roll_threshold`` by a blend: none
