@@ -15,6 +15,50 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
+## 2026-11-14 night: boosterland -- the burn's oscillation fixed (auto-tune back on, kRPC's aero rate cap off); fin2 runs dry, fly qs_finbooster3
+
+**Defaults fingerprint 8d0d377d** (after f58ad20). Committed and pushed. howItWorks.pdf (boosterland) **not redone**:
+it still describes RollTune and the pace. Journal: `docs/boosterland/journal.md` "2026-11-14 evening" (three entries).
+
+**What changed (defaults now):**
+- kRPC 0.8 credits the fins' roll correctly: `testInstances/actuators.py N SAVE --probe --probe-below=30000
+  --probe-axes=roll --probe-cycles=2 --surfaces-only` (467bff4) measured/credited roll 1.00 as saved, 0.88 deployed,
+  pitch 0.84/0.96, tail-first at 29 km. So RollTune's reason was gone: **RollTune, ATTITUDE_LAG_PACE, ROLL_TUNE*,
+  ROLL_PLANT_*, ROLL_LAG/SLEW_FACTOR, ROLL_BRAKE_DEG deleted** (67ad1f3); kRPC auto-tune runs the whole flight.
+- **`KRPC_LIMIT_ANGULAR_VELOCITY` False** (58fcc6d): kRPC 0.8's AerodynamicRateLimit (an aircraft's flight-path
+  turn rate) capped the burn's pitch/yaw target rate at 0.001-0.04 rad/s; with it on the nose sat 6-12 deg off its
+  command for ~10 s and landed ~250 m long (rtdiag-1114 LOG16722-16727 .ap.csv).
+- The user's complaint (LOG16697 live: burn input pinned, nose 20-42 deg/s, broke up) was RollTune flying kRPC's
+  plain formula (~5.6 rad/s, no gimbal-lag cap) whenever coast entry read authority 0.
+- Burn input pinned (share of ticks >= 0.95): 0.86 -> **0.00**; burn roll p90 31 -> 0 deg/s (rt1/nl1-1114).
+- **qs_finbooster3** (c3b85bb): fin2 + 53.4 t propellant = the live 284 t separation. **fin2 runs dry at 122.65 t
+  30-140 m up**: its touchdown/destroyed numbers measure fuel. On fin3 (pf2-1114, LOG16791-16814, defaults a arm):
+  **td median 2.9 m/s (hs 2.5), miss median 29 m, 1/12 destroyed.**
+- Flown and deleted: `LANDING_PROFILE_FEASIBLE` (null on fin3; the taper's branches cross at k^2 h = 2 net, real but
+  harmless with propellant left).
+- Farm: part pruning merged (eae1744, the part-prune session): `start.sh` runs `partstrip.py N` (a ModuleManager
+  patch deleting unused parts + unused models; `PRUNE=0` boots full, `--undo` restores): peak 5.26 -> 4.74 GB an
+  instance. Per-instance memory is flat over a batch (no leak); swap grows by the kernel trading pages for cache.
+
+**Open, in order:**
+1. **Accuracy on fin3** (median 29 m): every auto-tune flight entered the burn within ~50 m; read where the burn adds
+   its error (`logsum.py --segments`), then the divert (below `LANDING_DIVERT_MAX_ALT_M` 2.5 km, `LANDING_MAX_TILT_DEG`
+   15) now that the vehicle follows its commands. Re-take anything derived from the old controller.
+2. Fly the other boosters on the new defaults: qs_finbooster, qs_heavy, qs_heavyshuttlebooster, `quicksave`
+   (destroyed 24/24 on the Retooled farm, old item 10); check whether any needs propellant like fin2.
+3. howItWorks.pdf (boosterland): RollTune and pace gone, auto-tune throughout, rate cap off.
+4. Carried from the section below: kspSim port to 0.8 (item 4), PyPy fast client (5), other pilots on 0.8 (6), live
+   START SCRIPT under 0.8 (7), 0.8.0 release (8), Bazel cache 17 GB (9, the user's call), heavy's flip on ksp2 (11),
+   flip law gimbal authority 0 (12), gimbalTorqueFix's `KrpcGimbalLag.cs` (inert under 0.8; delete with a rebuild).
+5. A possible kRPC issue (not drafted): AerodynamicRateLimit caps a rocket's attitude rate at its flight-path turn
+   rate, so a powered vehicle cannot rotate back toward retrograde. Read `surfaceShare` (why rate_limit < aero_limit
+   with gimbals dominant) before filing.
+
+**Traps paid:** a lock waiter that checks `flock` and then runs is a race: run the job *inside* `farmlaunch` and
+retry on 75 (scratchpad pf2job pattern) -- twice this session ksp0-5 booted beside another session's ksp6.
+Never write a finish time without `date`: three ETAs this session were invented and wrong. fin2's 16 m/s
+touchdowns looked like a guidance floor for a session; check the mass at loss (`parts lost` at dry mass) first.
+
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
 **The user's live ascent died at liftoff (LOG16691, Heavy Shuttle):** `'AscentAutopilot' object has no attribute
