@@ -351,9 +351,6 @@ class Config:
                                             # propagator flies the same: no
                                             # unmodelled turn at ignition
     LANDING_HOLD_TAU_S: float = 2.0         # ... decaying over this long
-    LANDING_ALIGN_S: float = 0.0            # >0: the coast stops steering and
-                                            # points retrograde this many s
-                                            # before the burn trigger
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_DIVERT_ON_PREDICTION: bool = True    # steer on the propagator's
@@ -368,6 +365,10 @@ class Config:
                                             # aiming and only nulls the
                                             # lateral speed, so the legs
                                             # arrive going straight down
+    LANDING_NULL_RATE_MAX: float = 0.0      # >0: below LANDING_NULL_ALT_M the
+                                            # nose is vertical plus a lateral
+                                            # null capped at this rate (1/s);
+                                            # see guidance.bounded_null
     LANDING_HVEL_TOL: float = 0.3           # lateral speed that counts as nulled
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
                                             # vertical for the last few m

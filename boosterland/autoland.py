@@ -1279,19 +1279,9 @@ class Autoland:
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
-        steer, steered = None, None
-        align = self.cfg.LANDING_ALIGN_S
-        if align > 0.0 and snap.vertical_speed < 0.0:
-            h, need, _ = trajectory.landing_burn_state(
-                self.env, snap.position, snap.velocity, snap.max_accel,
-                self.cfg, height=snap.landing_height)
-            align = (h - need) / max(1.0, -snap.vertical_speed) <= align
-        else:
-            align = False
-        if not align:
-            steer, steered = guidance.solve_steer(
-                self.env, snap.position, snap.velocity, snap.mass,
-                snap.max_accel, self.cfg)
+        steer, steered = guidance.solve_steer(
+            self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
+            self.cfg)
         if steer is not None:
             self.coast_steer = steer
             self.prediction = steered

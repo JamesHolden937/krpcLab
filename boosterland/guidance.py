@@ -536,6 +536,9 @@ def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     # LOG10246) -- but held inside ``LANDING_MAX_TILT_DEG`` of vertical, and
     # vertical outright once the booster is going up.
     near = height <= cfg.LANDING_NULL_ALT_M
+    if near and cfg.LANDING_NULL_RATE_MAX > 0.0:
+        return TerminalCommand(bounded_null(v, up, thrust_accel, time_to_land,
+                                            cfg), 0.0)
     base = (within_cone(retrograde, up, cfg.LANDING_MAX_TILT_DEG) if near
             else retrograde)
     if not (cfg.LANDING_DIVERT_MIN_ALT_M < height
@@ -594,6 +597,31 @@ def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     return TerminalCommand(
         vec.unit(vec.add(base,
                          vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
+
+
+def bounded_null(v, up, thrust_accel, time_to_land, cfg):
+    """The last stretch's nose: vertical, tilted to null the lateral speed at
+    a rate the attitude loop can follow (``LANDING_NULL_RATE_MAX``).
+
+    Retrograde nulls the lateral speed too, at a rate of thrust/speed per
+    second -- harmless at 60 m/s, but ~3/s at the last few m/s of descent,
+    far faster than a nose that lags its command by 1-2 s.  The speed is
+    nulled, overshoots, retrograde flips to the other side and the nose
+    chases it: hs grew 3 -> 13 m/s in the last 15 m (dv3-1115, LOG16929,
+    LOG16935, LOG16911).  This flies the same retrograde braking while that
+    rate is low, plus the ``LANDING_ZEV_GAIN / t_go`` null, and caps the sum.
+    """
+    lateral = vec.project_out(v, up)
+    if thrust_accel < cfg.LANDING_DIVERT_MIN_ACCEL or vec.norm(lateral) < 1e-6:
+        return up
+    t_go = max(cfg.LANDING_TGO_MIN_S, time_to_land)
+    rate = min(thrust_accel / max(vec.norm(v), 0.1)
+               + cfg.LANDING_ZEV_GAIN / t_go, cfg.LANDING_NULL_RATE_MAX)
+    tilt = min(math.atan2(rate * vec.norm(lateral), thrust_accel),
+               math.radians(cfg.LANDING_MAX_TILT_DEG))
+    side = vec.scale(vec.unit(lateral), -1.0)
+    return vec.unit(vec.add(vec.scale(up, math.cos(tilt)),
+                            vec.scale(side, math.sin(tilt))))
 
 
 def slew(previous, target, max_deg):
