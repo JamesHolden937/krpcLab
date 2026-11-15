@@ -35,10 +35,10 @@ declare -A started tries
 want=()
 for N in "$@"; do
   [ -d "$HERE/ksp$N" ] || { echo "no instance ksp$N -- ./mkclone.sh $N" >&2; continue; }
-  # Compile only the parts the reference saves and craft files use: one
-  # ModuleManager patch per clone, regenerated from saves/ before every
-  # launch (partstrip.py; docs/testInstances.md "Part pruning").  PRUNE=0
-  # boots the full catalogue.
+  # Load only what the reference saves and craft files use -- their parts,
+  # those parts' models, TPR's real terrain maps (the rest stubbed): -0.5 GB
+  # an instance.  Re-derived from saves/ before every launch (partstrip.py;
+  # docs/testInstances.md "Pruning").  PRUNE=0 boots the full clone.
   if [ "${PRUNE:-1}" = 0 ]; then
     "$HERE/partstrip.py" "$N" --undo
   else

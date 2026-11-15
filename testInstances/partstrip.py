@@ -1,36 +1,51 @@
 #!/usr/bin/env python3
-"""Prune a clone's part catalogue to the parts its vehicles actually use.
+"""Shrink a clone to what its vehicles use: parts, their models, and TPR's
+visual-only planet textures.
 
-An instance compiles every PART node in its game database at load (498 on
-KSP Retooled with this farm's mods) against the few dozen the reference saves
-and craft files use, and RAM is what caps the number of instances -- the thing
-that multiplies measurement throughput.
+An unpruned instance compiles 498 parts, loads 721 models and keeps ~1.8 GB of
+TPR colour/normal/cloud/flare textures that no physics reads.  RAM caps the
+number of instances, which is what multiplies measurement throughput.
+Measured alone on ksp6 (docs/testInstances.md, "Pruning"): peak RSS+swap
+5.26 -> 4.74 GB, flying qs_finbooster2 the same.
 
-    ./partstrip.py 6 --dry-run      # what would be pruned
-    ./partstrip.py 6                # write the patch
-    ./partstrip.py 6 --undo         # remove it
-    ./partstrip.py 6 --report       # the keep-list and where each part lives
+    ./partstrip.py 6 --dry-run      # what it would do
+    ./partstrip.py 6                # do it (start.sh runs this before every launch)
+    ./partstrip.py 6 --undo         # back to the full clone
+    ./partstrip.py 6 --report       # the keep-list
 
-**It deletes nothing on disk.**  It writes one ModuleManager patch,
-`GameData/zzzKrpcLabPrune/prune.cfg`, that removes every PART node not in the
-keep-list -- and every INTERNAL and PROP node no kept part reaches -- at
-`:FINAL`, after every other mod's patches have run.  Every file anything
-references is still there; only the nodes are gone from the database before
-PartLoader compiles it.  The earlier version deleted part directories and
-wedged the instance at "Compiling Internal Prop": a ReStock patch applied to a
-*kept* part named a texture in a *deleted* directory, an edge no
-directory-level keep-list can see.  Undoing it is deleting one directory.
+Every run first restores the clone from base/ (relinks every model and TPR
+file), then prunes again from a keep-list derived afresh, so a newly needed
+part always gets its model back.  Three steps:
 
-The patch is a new file in the clone's own GameData/ directory (mkclone.sh
-recreates directories, so new files are private) and never touches base/.
+1. **Parts, IVAs and props: a ModuleManager patch, never a deletion.**
+   `GameData/zzzKrpcLabPrune/prune.cfg` removes, at `:FINAL`, every PART node
+   not in the keep-list and every INTERNAL/PROP no kept part reaches.  An
+   earlier version deleted part directories and wedged the instance at
+   "Compiling Internal Prop" (a ReStock patch on a kept part named a texture
+   in a deleted directory).  Alone this saves no RAM: compiling a part is not
+   the cost, loading its files is.
+2. **Models: delete the .mu files no surviving node names.**  References come
+   from ModuleManager's cache -- the patched database PartLoader compiles --
+   so every value of every kept PART/INTERNAL/PROP and of every other root
+   node counts, plus a part's own directory when it names no MODEL.  Only
+   part/IVA/prop model directories are candidates (never Squad/FX).  Needs a
+   cache that holds every kept part; otherwise models stay until the next run.
+3. **TPR: replace each visual-only texture with a 4x4 stub of the same name
+   and format**, and delete Configs/NewParallaxConfigs (Parallax is not
+   installed; GameDatabase loads its 45 textures anyway).  Kept real: every
+   body's biome map and every terrain input of Kerbin, Mun and Minmus (the
+   height maps and multiplier maps their PQS mods read), so the ground is the
+   live game's.  **Deleting instead of stubbing breaks the game**: Kopernicus
+   retries a missing map every frame (2.8 M exceptions, the game at 0.27x).
 
-**The keep-list is derived, never written down.**  Read every time from the
-tracked reference saves and craft files (../saves/*.sfs, ../saves/craft/) and
-from the clone's own saves/default/ (its .sfs and Ships/*/*.craft), plus the
-parts the game spawns by itself (EVA kerbals, flags, asteroids, comets).
-start.sh re-runs it before every launch, so a new save or craft file is never
-flown on an instance that pruned its parts.  A save made in this instance on a
-part outside the list cannot load until the next launch -- re-run and restart.
+Clone files are hardlinks into base/; this removes only the clone's entries
+(stubs are new private files) and refuses to run on base/ itself.
+
+**The keep-list is derived, never written down.**  From the tracked saves and
+craft files (../saves/*.sfs, ../saves/craft/), the clone's own saves/default/
+(.sfs and Ships/*/*.craft), and the parts the game spawns itself (EVA kerbals,
+flags, asteroids, comets).  A save made on a part outside it cannot load until
+the next launch.
 
 One trap, paid for: **KSP writes `.` in a save where the part config spells
 `_`** -- `Decoupler.0` in a save is `name = Decoupler_0` in its cfg -- and
@@ -41,12 +56,18 @@ import argparse
 import fnmatch
 import os
 import re
+import shutil
+import struct
 import sys
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PATCH_DIR = "zzzKrpcLabPrune"
 PATCH = os.path.join(PATCH_DIR, "prune.cfg")
+BASE = os.path.join(os.environ.get("KSPFARM", os.path.expanduser("~/kspfarm")), "base")
+TPR_DATA = os.path.join("TPR", "PluginData")
+PARALLAX = os.path.join("TPR", "Configs", "NewParallaxConfigs")
 # Spawned by the game itself, never named in a save we fly.
 ALWAYS = ("kerbalEVA*", "flag", "PotatoRoid", "PotatoComet")
 NAME = re.compile(r"^\s*name\s*=\s*(\S+)\s*$")
@@ -220,18 +241,122 @@ def prune_models(directory, db, kept, dry):
     return gone, size
 
 
-def restore_models(directory):
-    """Link back every .mu base/ has and this clone lacks."""
+def restore(directory):
+    """Undo steps 2 and 3: relink from base/ every model the clone lacks and
+    every TPR file it lacks or holds a stub for.  Returns the count."""
     gd = os.path.join(directory, "GameData")
-    base = os.path.join(HERE, "base", "GameData")
+    base = os.path.join(BASE, "GameData")
     n = 0
-    for path in walk(base, ".mu"):
-        rel = os.path.relpath(path, base)
-        dst = os.path.join(gd, rel)
-        if not os.path.exists(dst) and os.path.isdir(os.path.dirname(dst)):
-            os.link(path, dst)
-            n += 1
+    targets = [(path, True) for path in walk(base, ".mu")]
+    for sub in (TPR_DATA, PARALLAX):
+        targets += [(path, False) for path in walk(os.path.join(base, sub), "")]
+    for path, model in targets:
+        dst = os.path.join(gd, os.path.relpath(path, base))
+        if os.path.exists(dst) and os.path.samefile(path, dst):
+            continue
+        if model and os.path.exists(dst):
+            continue          # a model the clone has a private copy of: leave it
+        if model and not os.path.isdir(os.path.dirname(dst)):
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.lexists(dst):
+            os.remove(dst)
+        os.link(path, dst)
+        n += 1
     return n
+
+
+def png_stub(src):
+    """A 4x4 PNG in the source's colour type (8 bits), mid grey, opaque."""
+    with open(src, "rb") as f:
+        head = f.read(33)
+    ctype = head[25] if len(head) == 33 else 6
+    chans = {0: 1, 2: 3, 4: 2, 6: 4}.get(ctype)
+    if len(head) < 33 or head[24] != 8 or chans is None:
+        ctype, chans = 6, 4
+    px = bytes([128] * (chans - 1) + [255]) if chans in (2, 4) else bytes([128] * chans)
+    raw = b"".join(b"\0" + px * 4 for _ in range(4))
+
+    def chunk(t, d):
+        return (struct.pack(">I", len(d)) + t + d
+                + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, ctype, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def dds_stub(src):
+    """A 4x4 one-mip DDS in the source's FourCC (DXT1, else a 16-byte block)."""
+    with open(src, "rb") as f:
+        h = bytearray(f.read(128))
+    block = 8 if bytes(h[84:88]) == b"DXT1" else 16
+    struct.pack_into("<I", h, 8, 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000)
+    struct.pack_into("<II", h, 12, 4, 4)
+    struct.pack_into("<I", h, 20, block)
+    struct.pack_into("<I", h, 28, 1)
+    struct.pack_into("<I", h, 108, 0x1000)
+    return bytes(h) + bytes(block)
+
+
+TPR_REF = re.compile(r"^\s*(map|heightMap|multiplierMap|biomeMap)\s*=\s*TPR/PluginData/(\S+)")
+PQS_MOD = re.compile(r"^\t\t\t\t([A-Za-z]\w*)\s*$")
+HOME = re.compile(r"^0?3(-[12])?_")      # 03_Kerbin, 03-1_Mun, 03-2_Minmus
+
+
+def tpr_keep(gd):
+    """TPR files the physics reads: every biome map, and Kerbin's, the Mun's
+    and Minmus's height and multiplier maps (stem, lower case)."""
+    keep = set()
+    kdir = os.path.join(gd, "TPR", "KopernicusFiles")
+    for f in sorted(os.listdir(kdir)):
+        home = HOME.match(f) is not None
+        mod = ""
+        for line in open(os.path.join(kdir, f), errors="replace"):
+            line = line.split("//", 1)[0].rstrip() + "\n"
+            m = PQS_MOD.match(line)
+            if m:
+                mod = m.group(1)
+            r = TPR_REF.match(line)
+            if not r:
+                continue
+            key, name = r.groups()
+            if key == "biomeMap" or (home and (key in ("heightMap", "multiplierMap")
+                                               or "Height" in mod)):
+                keep.add(os.path.splitext(name)[0].lower())
+    return keep
+
+
+def stub_tpr(directory, dry):
+    """Step 3.  Returns (files stubbed or deleted, MB they held)."""
+    gd = os.path.join(directory, "GameData")
+    data = os.path.join(gd, TPR_DATA)
+    if not os.path.isdir(data):
+        return 0, 0.0
+    keep = tpr_keep(gd)
+    n, size = 0, 0
+    for f in sorted(os.listdir(data)):
+        path = os.path.join(data, f)
+        stem, ext = os.path.splitext(f)
+        if not os.path.isfile(path) or stem.lower() in keep \
+                or ext.lower() not in (".png", ".dds"):
+            continue
+        if os.path.getsize(path) < 1024:
+            continue          # already a stub
+        n += 1
+        size += os.path.getsize(path)
+        if not dry:
+            stub = png_stub(path) if ext.lower() == ".png" else dds_stub(path)
+            os.remove(path)   # the hardlink into base/; the stub is private
+            with open(path, "wb") as out:
+                out.write(stub)
+    par = os.path.join(gd, PARALLAX)
+    if os.path.isdir(par):
+        for p in walk(par, ""):
+            size += os.path.getsize(p)
+            n += 1
+        if not dry:
+            shutil.rmtree(par)
+    return n, size / 1048576.0
 
 
 def raw_parts(instance_dir):
@@ -297,15 +422,13 @@ def main():
     g.add_argument("--dry-run", action="store_true")
     g.add_argument("--report", action="store_true")
     g.add_argument("--undo", action="store_true")
-    p.add_argument("--models", action="store_true",
-                   help="also delete the .mu models no surviving node uses")
     a = p.parse_args()
 
     directory = a.instance if os.path.isdir(a.instance) \
         else os.path.join(HERE, "ksp" + str(a.instance))
     if not os.path.isdir(directory):
         raise SystemExit("no such instance: %s" % directory)
-    if os.path.realpath(directory) == os.path.realpath(os.path.join(HERE, "base")):
+    if os.path.realpath(directory) == os.path.realpath(BASE):
         raise SystemExit("refusing to prune base/ -- prune a clone")
     target = os.path.join(directory, "GameData", PATCH)
 
@@ -314,10 +437,10 @@ def main():
             os.remove(target)
             os.rmdir(os.path.dirname(target))
             print("removed %s" % target)
-        n = restore_models(directory)
-        if n:
-            print("relinked %d models from base/" % n)
+        print("relinked %d files from base/" % restore(directory))
         return 0
+    if not a.dry_run and not a.report:
+        restore(directory)
 
     sfs, craft = sources(directory)
     used = set()
@@ -363,33 +486,39 @@ def main():
           % (len(internals & set(db["INTERNAL"])), len(db["INTERNAL"]),
              len(props & set(db["PROP"])), len(db["PROP"])))
     if a.report:
+        print("TPR files kept real: %s" % ", ".join(sorted(tpr_keep(
+            os.path.join(directory, "GameData")))))
         for k in keep:
             print("  keep %s" % k)
         return 0
-    if a.models and (stale or not db["PART"]):
-        print("cache lacks kept parts: models not pruned this boot")
-    elif a.models:
+    verb = "would " if a.dry_run else ""
+    if stale or not db["PART"]:
+        print("cache lacks kept parts: models kept this boot")
+        gone = []
+    else:
         kept = {"PART": set(keep) | {n for n in db["PART"] if any(
                     fnmatch.fnmatch(n, g) for g in ALWAYS)},
                 "INTERNAL": internals, "PROP": props}
-        gone, size = prune_models(directory, db, kept, a.dry_run or a.report)
-        print("models: %s %d (%.0f MB on disk)" % (
-            "would delete" if a.dry_run or a.report else "deleted",
-            len(gone), size / 1048576.0))
-    text = patch_text(keep, internals, props, prune_spaces=bool(db["PROP"]))
+        gone, size = prune_models(directory, db, kept, a.dry_run)
+        print("models: %sdelete %d (%.0f MB on disk)" % (verb, len(gone), size / 1048576.0))
+    ntex, mb = stub_tpr(directory, a.dry_run)
+    print("TPR: %sstub %d visual-only files (%.0f MB)" % (verb, ntex, mb))
+    text = patch_text(keep, internals, props, prune_spaces=bool(db["PART"]))
     if a.dry_run:
         sys.stdout.write(text)
         return 0
     old = open(target).read() if os.path.exists(target) else None
+    summary = "%d parts, %d models deleted, %d TPR files stubbed" % (
+        len(keep), len(gone), ntex)
     if old == text:
-        print("unchanged %s" % target)
+        print("patch unchanged; %s" % summary)
         return 0
     os.makedirs(os.path.dirname(target), exist_ok=True)
     tmp = target + ".tmp"
     with open(tmp, "w") as f:
         f.write(text)
     os.replace(tmp, target)
-    print("wrote %s" % target)
+    print("patch written; %s" % summary)
     return 0
 
 

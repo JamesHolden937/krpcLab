@@ -358,43 +358,60 @@ timescale was asked for and the plugin is silent with a vessel loaded — an
 hour of flights that silently ran at 1x is an hour of measurements that lie in
 the direction you were hoping for.
 
-### Stripping parts saves RAM and does not work yet
+### Pruning: an instance keeps only what its vehicles use (2026-11-14)
 
-Instances compile **489 parts** at load against the **26** that every vehicle
-in the farm's thirteen quicksaves put together uses, and RAM is what caps the
-instance count -- which is the thing that actually multiplies throughput.
-`partstrip.py` derives the keep-list from a clone's own saves and prunes the
-rest. **It currently wedges the instance**, and the reason is worth knowing
-before anyone tries again.
+`start.sh` runs `partstrip.py N` before it launches each instance (`PRUNE=0`
+boots the full clone; `partstrip.py N --undo` restores it from `base/`). Each
+run relinks the clone from `base/`, derives the keep-list afresh from
+`saves/*.sfs`, `saves/craft/` and the clone's `saves/default/`, then:
 
-A stripped ksp4 never finished loading: the log froze at *Compiling Internal
-Prop*, the port never opened, and the process spun at 290% CPU for four
-minutes. Ten lines earlier:
+1. **Parts, IVAs, props: a ModuleManager patch.**
+   `GameData/zzzKrpcLabPrune/prune.cfg` deletes, at `:FINAL`, every PART
+   not in the keep-list and every INTERNAL/PROP no kept part reaches. 498
+   parts compiled -> 133 (117 used + EVA kerbals, flag, asteroid, comet).
+2. **Models: the .mu files no surviving node names are deleted.** References
+   come from `ModuleManager.ConfigCache`, the patched database: 1016 -> 139.
+3. **TPR's visual-only textures become 4x4 stubs** of the same name and
+   format (172 files, 1.8 GB on disk: colour, normal, scaled, cloud, flare
+   maps and other bodies' height maps), and `TPR/Configs/NewParallaxConfigs`
+   goes (Parallax is not installed, yet GameDatabase loads its 45 textures).
+   Every biome map and every terrain input of Kerbin, the Mun and Minmus stays
+   real, so the ground is the live game's.
 
-    PartCompiler: Cannot replace texture as cannot find texture 'blank'
-    PartCompiler: Cannot replace texture as cannot find texture 'blank-n'
+**Measured on ksp6 alone on the machine** (instance count logged every 5 s;
+peak RSS+VmSwap of the game process, `/proc/PID/status`, over boot, menu and
+`fly.sh 6 -n 2..3 --save qs_finbooster2`):
 
-**The dependency graph crosses directories through ModuleManager patches.**
-`ReStock/PatchesMH/Coupling/restock-mh-engineplates.cfg` does `texture = blank`
-against a part that was *kept*, naming a texture that lived in a directory
-that was removed. A directory-level keep-list cannot see that edge, because
-the edge is not in either directory -- it is in a third mod's patch.
+| arm | parts | models | peak GB | at menu GB | flights (m from pad) |
+|---|---|---|---|---|---|
+| full clone | 498 | 1016 | 5.26 | 4.94 | 85, 16 |
+| 1 only (patch) | 133 | 1016 | 5.36 | 4.95 | 23, 23 |
+| 1 + 2 | 133 | 139 | 5.08 | 4.84 | 62, 81 |
+| **1 + 2 + 3 (the default)** | 133 | 139 | **4.74** | **4.17** | 94, 91, 50 |
+| no TPR at all (not the same game) | 133 | 139 | 4.14 | 3.63 | 50, 47 |
 
-So a working strip has to resolve what the patches reference, not just what
-the saves reference. Until then `partstrip.py` is a loaded gun: RSS did drop
-from 4.26 GB to 1.97 GB, but that is the footprint of a **wedged** instance
-and proves nothing about a working one.
+So **-0.5 GB at peak and -0.77 GB at the menu per instance, ~3-4.5 GB across
+six**, all from files no longer loaded; compiling fewer parts saves nothing by
+itself. Every arm flew the booster to within 16-94 m at 1.0x, all within the
+booster's scatter at n=2-3 (not a precision comparison). KSP.log exceptions
+are the same as the full clone's: about ten Kopernicus on-demand-load
+`InvalidOperationException`s per run, at scene switches, in every arm with TPR.
+The last ~0.6 GB, TPR's real Kerbin/Mun/Minmus terrain, stays: it is the
+ground the live game flies on.
 
-Two things make it safe to experiment with anyway, and both are the point:
-`mkclone.sh` hardlinks, so deleting inside a clone drops only that clone's
-directory entries and `base/` keeps all 489 parts; and the script refuses to
-run against `base/` at all. A bad strip costs one `mkclone.sh`.
-
-**And the failure mode is the real objection.** Not that it broke -- that it
-broke by *spinning silently* rather than erroring, on a farm whose whole
-purpose is unattended runs. Anything that prunes assets needs a positive
-check that the instance still reaches its port and still flies, not just that
-it started.
+**Three ways this goes wrong, each paid for:**
+- **Deleting directories wedges the instance.** The first `partstrip.py`
+  removed part directories. The instance spun at "Compiling Internal Prop" with
+  no port, because a ReStock patch on a *kept* part named a texture in a
+  deleted directory. Hence the patch for parts, and deletions only for models
+  nothing references.
+- **Deleting a texture Kopernicus names is worse than keeping it.** Kopernicus
+  retries a missing map every frame. With the Sun's `SunspotsInvert.png` gone
+  that was 2.8 M exceptions and the game at 0.27x, flights timing out 10 km
+  out. Hence stubs, never deletions, in TPR.
+- **A pruned instance cannot load a vehicle with a part outside the list.** The
+  list is rebuilt before every launch. A save made mid-session on a new part
+  loads after the next restart.
 
 **Hold a sleep inhibitor while flying** (`./nosleep.sh start|stop|status`). A
 flight is minutes of unattended wall clock with nobody at the keyboard, which
@@ -608,8 +625,8 @@ few tens of MB.  Deleting DLLs is not a lever.
 - **`-nographics`** (`KSP_EXTRA=-nographics ./start.sh N`, `kwinRun.sh` passes
   `KSP_EXTRA` through): **hangs** -- the process sits at 76 MB for 5+ min and
   never writes KSP.log.  Dead end.
-- What is left is the 489 compiled parts (`partstrip.py`, above: 4.26 -> 1.97
-  GB but wedged on a cross-mod texture reference).
+- Parts, models and TPR's visual textures: `partstrip.py`, "Pruning" above
+  (5.26 -> 4.74 GB peak, 2026-11-14). Compiling fewer parts alone saves nothing.
 
 Note `kwinRun.sh`'s exec line: the comment between its continuation lines ends
 the command, so instances launch with `-force-d3d11` alone and the
