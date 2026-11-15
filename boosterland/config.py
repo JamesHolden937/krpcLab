@@ -317,6 +317,19 @@ class Config:
 
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
+    LANDING_PLAN_THROTTLE: float = 0.95     # the descent profile and the burn
+                                            # trigger plan at this throttle; the
+                                            # cap above is what may be used.
+                                            # Below the cap the divert keeps a
+                                            # tilt budget acos(plan/cap) to the
+                                            # ground (at the cap it is 0)
+    LANDING_POINT_INTEGRAL: bool = False    # aim the burn past its command by
+                                            # the integrated nose error; see
+                                            # Autoland.point_integral
+    LANDING_POINT_TAU_S: float = 2.0        # ... integrating over this long
+    LANDING_POINT_MAX_DEG: float = 10.0     # ... offset at most this far
+    LANDING_POINT_CLOSING_DEG_S: float = 1.0  # ... only while the error closes
+                                            # slower than this by itself
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the

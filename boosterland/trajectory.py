@@ -145,7 +145,7 @@ def landing_burn_state(env, r, v, max_accel, cfg, height=None):
         height = vec.norm(r) - env.target_radius
     speed = vec.norm(v)
     g = env.mu / (vec.norm(r) ** 2)
-    net = max_accel * cfg.LANDING_THROTTLE_CAP - g
+    net = max_accel * cfg.LANDING_PLAN_THROTTLE - g
     needed = stopping_distance(speed, net) * cfg.SUICIDE_MARGIN
     needed += speed * cfg.SUICIDE_REACTION_S
     return height, needed, net
@@ -183,7 +183,7 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
         w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
         speed = math.sqrt(down * down + w * w * side_sq)
-    net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
+    net = max(0.1, max_accel * cfg.LANDING_PLAN_THROTTLE - g)
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
     target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
