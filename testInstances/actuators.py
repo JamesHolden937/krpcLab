@@ -91,14 +91,136 @@ def probe(label, source):
         wait_game(PROBE_REST_S)
 
 
+SURFACE_SLEW_S = 0.8     # game s for the fins to reach a step's deflection
+SURFACE_MEASURE_S = 0.6  # ... then the rate's slope over this long
+SURFACE_CYCLES = 4       # 0, +1, 0, -1 per cycle
+
+
+def _arg(name, default, kind=float):
+    for a in sys.argv:
+        if a.startswith(name + "="):
+            return kind(a.split("=", 1)[1])
+    return default
+
+
+# --probe-axes=roll,pitch  --probe-cycles=N  --surfaces-only  --deployed
+AXES = _arg("--probe-axes", "pitch,roll,yaw", str).split(",")
+SURFACE_CYCLES = int(_arg("--probe-cycles", SURFACE_CYCLES))
+
+
+def surface_step(axis, i, value, surfaces, moi):
+    """Hold ``axis`` at ``value``; after SURFACE_SLEW_S return (measured
+    acceleration about axis i over SURFACE_MEASURE_S, credited rad/s2 for
+    the sign of value, deflection min..max, q)."""
+    setattr(v.control, axis, value)
+    wait_game(SURFACE_SLEW_S)
+    tq = v.available_control_surface_torque
+    cred = abs((tq[0] if value >= 0 else tq[1])[i]) / moi[i]
+    angles = [s.deflection_angle for s in surfaces]
+    q = v.flight().dynamic_pressure
+    t0, r0 = sc.ut, body_rate()[i]
+    wait_game(SURFACE_MEASURE_S)
+    return ((body_rate()[i] - r0) / (sc.ut - t0), cred,
+            (min(angles), max(angles)), q)
+
+
+def probe_surfaces(label):
+    """+-1 steps on each axis on the control surfaces alone (engines off,
+    RCS off), SURFACE_CYCLES cycles of 0, +1, 0, -1.  The surfaces slew
+    (actuatorSpeed), so each acceleration is the rate's slope after
+    SURFACE_SLEW_S, once the deflection has settled.  The effect of a step
+    is its acceleration less the mean of the zero-input steps either side
+    (a slowly changing aerodynamic moment cancels); credited is kRPC's
+    ``available_control_surface_torque`` over the inertia, read in the same
+    step.  Each cycle gives a ratio: the median and range are printed."""
+    moi = v.moment_of_inertia
+    surfaces = v.parts.control_surfaces
+    print("\n-- probe: %s (%d surfaces)" % (label, len(surfaces)))
+    for i, axis in enumerate(("pitch", "roll", "yaw")):
+        if axis not in AXES:
+            continue
+        seq = []
+        for _ in range(SURFACE_CYCLES):
+            for value in (0.0, 1.0, 0.0, -1.0):
+                seq.append((value, surface_step(axis, i, value, surfaces,
+                                                moi)))
+        seq.append((0.0, surface_step(axis, i, 0.0, surfaces, moi)))
+        ratios, effs, creds, qs, defl = [], [], [], [], []
+        for k in range(1, len(seq) - 1, 2):
+            value, (acc, cred, d, q) = seq[k]
+            base = 0.5 * (seq[k - 1][1][0] + seq[k + 1][1][0])
+            # Signed: > 0 = the way RCS and the gimbals answer the same
+            # input.  A positive kRPC input turns the vessel the negative
+            # way about its reference_frame axis on every axis (the RCS and
+            # gimbal probes: + step -> -rate), hence the minus.
+            eff = -(acc - base) * value
+            effs.append(eff)
+            creds.append(cred)
+            qs.append(q)
+            defl.append(d)
+            if cred > 0:
+                ratios.append(eff / cred)
+        ratios.sort()
+        med = ratios[len(ratios) // 2] if ratios else float("nan")
+        print("  %-5s credited %.4f-%.4f rad/s2  measured %+.4f..%+.4f  "
+              "measured/credited median %.2f (%.2f..%.2f, n=%d)  "
+              "deflection %+.1f..%+.1f deg  q %.0f-%.0f Pa"
+              % (axis, min(creds), max(creds), min(effs), max(effs), med,
+                 ratios[0] if ratios else float("nan"),
+                 ratios[-1] if ratios else float("nan"), len(ratios),
+                 min(d[0] for d in defl), max(d[1] for d in defl),
+                 min(qs), max(qs)))
+    v.control.pitch = v.control.roll = v.control.yaw = 0.0
+
+
+def hold_until_below(alt):
+    """--probe-below=ALT: kRPC's autopilot (RCS on) holds surface
+    retrograde until the vessel falls below ALT m, then lets go, so the
+    surfaces are probed in a steady, high-q, tail-first descent rather
+    than at separation."""
+    ap = v.auto_pilot
+    c = v.control
+    c.rcs = True
+    ap.reference_frame = v.surface_velocity_reference_frame
+    ap.target_direction = (0.0, -1.0, 0.0)
+    ap.engaged = True
+    print("holding retrograde until below %.0f m" % alt)
+    flight = v.flight(v.orbit.body.reference_frame)
+    while not (flight.mean_altitude < alt and flight.vertical_speed < 0):
+        wait_game(1.0)
+    ap.engaged = False
+    c.rcs = False
+    wait_game(2.0)
+    print("released at %.0f m, %.0f m/s, q %.0f Pa"
+          % (flight.mean_altitude, flight.speed,
+             v.flight().dynamic_pressure))
+
+
 if PROBE:
     c = v.control
     try:
-        v.auto_pilot.disengage()
+        v.auto_pilot.engaged = False
     except Exception:           # noqa: BLE001
         pass
     c.sas = False
     c.throttle = 0.0
+    c.rcs = False
+    wait_game(0.5)
+    below = _arg("--probe-below", None)
+    if below is not None:
+        hold_until_below(below)
+    if v.parts.control_surfaces:
+        if "--deployed" not in sys.argv:
+            probe_surfaces("control surfaces only, as saved (engines off, "
+                           "RCS off)")
+        from boosterland.autoland import deploy_brake_fins
+        from boosterland.config import Config
+        print("  " + deploy_brake_fins(v, Config()))
+        wait_game(2.0)
+        probe_surfaces("control surfaces only, brake fins deployed")
+    if "--surfaces-only" in sys.argv:
+        print("\n(probe done: reload the save)")
+        sys.exit(0)
     c.rcs = True
     wait_game(0.5)
     probe("RCS only (engines off, valve open)", "available_rcs_torque")
