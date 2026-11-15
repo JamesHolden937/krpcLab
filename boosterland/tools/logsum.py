@@ -134,7 +134,7 @@ def main(argv=None):
     p.add_argument("--roll", action="store_true",
                    help="per 4 km of altitude in the boostback, coast and burn: roll "
                         "error median/p90, |roll rate| p90, mean |roll "
-                        "input|, and the roll tune's k and Kp (ROLL_TUNE)")
+                        "input|, and the roll tune's k and Kp (logs before ROLL_TUNE's deletion)")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.roll:
