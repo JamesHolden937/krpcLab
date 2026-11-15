@@ -43,6 +43,25 @@ if args:
 v = sc.active_vessel
 print("vessel %s  %d parts  %.3f t" % (v.name, len(v.parts.all), v.mass / 1e3))
 
+if "--joints" in sys.argv:
+    # The touchdown impact model's inputs and answer (common/impact.py).
+    from common import impact  # noqa: E402
+    parts = impact.read(conn)
+    ground = set(impact.touching(parts))
+    print("%3s %3s %-36s %8s %6s %7s %7s %3s %10s %10s %10s" % (
+        "i", "par", "part", "mass t", "crash", "y", "low", "nj", "breakF kN",
+        "spring", "damper"))
+    for p in parts:
+        print("%3d %3d %-36s %8.3f %6.1f %7.2f %7.2f %3d %10s %10.0f %10.0f%s" % (
+            p["index"], p["parent"], p["title"][:36], p["mass"], p["crash"],
+            p["y"], p["low"], p["joints"], "%.0f" % p["break_force"],
+            p["spring"], p["damper"], "  <- touches" if p["index"] in ground else ""))
+    for speed in (1, 2, 4, 8):
+        print("contact %d m/s: worst ratio %.2f (%s)" % (
+            (speed,) + impact.peak_load(parts, speed)))
+    print("survives %s" % (impact.survivable_speed(parts),))
+    sys.exit(0)
+
 PROBE_STEP_S = 0.8      # game seconds per step: several gimbal lags (0.125 s)
 PROBE_REST_S = 0.8
 

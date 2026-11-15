@@ -24,7 +24,7 @@ mcs -optimize -nologo -target:library -nostdlib -noconfig \
     -r:"$M/mscorlib.dll" -r:"$M/System.dll" -r:"$M/System.Core.dll" -out:"$BIN/KrpcLabLauncher.dll" \
     -r:"$M/Assembly-CSharp.dll" -r:"$M/Assembly-CSharp-firstpass.dll" -r:"$M/UnityEngine.CoreModule.dll" \
     -r:"$M/UnityEngine.dll" -r:"$M/UnityEngine.UI.dll" -r:"$M/UnityEngine.IMGUIModule.dll" \
-    -r:"$M/UnityEngine.TextRenderingModule.dll" -r:"$M/UnityEngine.InputLegacyModule.dll" -r:"$M/UnityEngine.AnimationModule.dll" \
+    -r:"$M/UnityEngine.PhysicsModule.dll" -r:"$M/UnityEngine.TextRenderingModule.dll" -r:"$M/UnityEngine.InputLegacyModule.dll" -r:"$M/UnityEngine.AnimationModule.dll" \
     -r:"$KSP/GameData/kRPC/KRPC.Core.dll" -r:"$KSP/GameData/000_Harmony/0Harmony.dll" \
     "$HERE"/*.cs
 install_into() {   # $1: a game directory
