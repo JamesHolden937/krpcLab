@@ -316,27 +316,11 @@ class Config:
                                             # left for disturbances
 
     # --- Landing burn -----------------------------------------------------
-    LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
-    LANDING_DESCENT_GUIDANCE: bool = False  # one law for the burn: thrust
-                                            # vector to the pad at a measured
-                                            # touchdown speed, upright; see
-                                            # guidance.descent_command
-    LANDING_TD_LIMIT_SHARE: float = 0.5     # touchdown speed: this share of
-                                            # the weakest touching part's
-                                            # impact tolerance (or the legs'
-                                            # vertical limit)
-    LANDING_LATERAL_FLOOR_TTP: float = 6.0   # lateral t_go floor in kRPC
-                                            # time_to_peaks: 6/t <= the attitude
-                                            # bandwidth (n1 in dv4-1115: 1.0/s)
-    LANDING_THRUST_SHARE: bool = False      # the vertical profile plans at
-                                            # cos(LANDING_MAX_TILT_DEG) of the
-                                            # cap, its taper joined where it is
-                                            # feasible, so the divert keeps its
-                                            # tilt to the ground; the null law
-                                            # below 250 m runs at the attitude
-                                            # loop's own bandwidth (see
-                                            # trajectory.planned_net,
-                                            # guidance.bounded_null)
+    LANDING_THROTTLE_CAP: float = 1.0       # the engines' full thrust; the
+                                            # profile plans at cos(LANDING_
+                                            # MAX_TILT_DEG) of it, leaving the
+                                            # rest to the divert's tilt
+                                            # (trajectory.planned_net)
     SUICIDE_MARGIN: float = 1.18            # light the engines this much early
     SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
@@ -366,11 +350,6 @@ class Config:
     COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
                                             # means the axis sign is wrong:
                                             # flip it once, then give up
-    LANDING_HOLD_AOA: bool = False          # the burn keeps the coast's angle
-                                            # of attack, decaying, and the
-                                            # propagator flies the same: no
-                                            # unmodelled turn at ignition
-    LANDING_HOLD_TAU_S: float = 2.0         # ... decaying over this long
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_DIVERT_ON_PREDICTION: bool = True    # steer on the propagator's
@@ -385,10 +364,6 @@ class Config:
                                             # aiming and only nulls the
                                             # lateral speed, so the legs
                                             # arrive going straight down
-    LANDING_NULL_RATE_MAX: float = 0.0      # >0: below LANDING_NULL_ALT_M the
-                                            # nose is vertical plus a lateral
-                                            # null capped at this rate (1/s);
-                                            # see guidance.bounded_null
     LANDING_HVEL_TOL: float = 0.3           # lateral speed that counts as nulled
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
                                             # vertical for the last few m

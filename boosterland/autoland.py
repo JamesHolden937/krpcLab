@@ -506,7 +506,6 @@ class Autoland:
         self.late_next_ut = 0.0
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
-        self.coast_steer = None         # its last solved one (LANDING_HOLD_AOA)
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
         self.deploy_next_ut = 0.0
@@ -545,8 +544,7 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
-        self.descent = None             # LANDING_DESCENT_GUIDANCE state
-        self.null_rate_value = None     # LANDING_THRUST_SHARE: read once
+        self.null_rate_value = None     # Autoland.null_rate: read once
         self.slew_read_ut = -1e9
         self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
@@ -590,11 +588,11 @@ class Autoland:
         # as "held".
         self.steer_history = []
 
-    def predict(self, snap, powered, steer=None, burn_hold=None):
+    def predict(self, snap, powered, steer=None):
         max_accel = snap.max_accel if powered else 0.0
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
-            self.cfg, steer=steer, burn_hold=burn_hold)
+            self.cfg, steer=steer)
         # Hand the descent back to the estimator: the next aerodynamic probe
         # wants to know where the booster will be when it is doing each speed,
         # so that a Mach bin is measured in the air it is going to be used in.
@@ -1285,7 +1283,6 @@ class Autoland:
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             self.cfg)
         if steer is not None:
-            self.coast_steer = steer
             self.prediction = steered
             self.env.set_descent_profile(steered.profile)
             self.steer = steer
@@ -1908,105 +1905,22 @@ class Autoland:
         own bandwidth, 1 / (2 time_to_peak) of kRPC's slower of pitch and
         yaw, read once a burn.  A lateral loop faster than the nose that
         executes it is the last-20 m oscillation (dv3-1115)."""
-        if not self.cfg.LANDING_THRUST_SHARE:
-            return None
         if self.null_rate_value is None:
             try:
                 ttp = self.autopilot.time_to_peak
-                self.null_rate_value = 0.5 / max(0.1, ttp[0], ttp[2])
+                ttp, why = max(ttp[0], ttp[2]), "kRPC time_to_peak"
             except Exception:                       # noqa: BLE001
-                self.null_rate_value = 0.0
-            self.log.event(snap.ut, "lateral null rate %.2f /s (kRPC "
-                           "time_to_peak)" % self.null_rate_value)
-        return self.null_rate_value or None
-
-    def descent_setup(self, snap):
-        """Touchdown speed and lateral floor, once a burn, both measured."""
-        lim = self.landing_limits or None
-        limit, source = None, None
-        if lim and lim.get("vertical"):
-            limit, source = lim["vertical"], "legs' vertical limit"
-        elif self.touchdown_limit is not None:
-            limit, source = self.touchdown_limit[0], self.touchdown_limit[1]
-        if limit:
-            speed = limit * self.cfg.LANDING_TD_LIMIT_SHARE
-        else:
-            speed, source = self.cfg.TOUCHDOWN_SPEED, "no limit read: configured"
-        try:
-            ttp = self.autopilot.time_to_peak
-            ttp = max(ttp[0], ttp[2])
-        except Exception:                           # noqa: BLE001
-            ttp = 1.0
-        floor = self.cfg.LANDING_LATERAL_FLOOR_TTP * ttp
-        self.descent = {"td": speed, "floor": floor, "tgo": None,
-                        "ut": snap.ut}
-        self.log.event(snap.ut, "descent guidance: touchdown %.1f m/s (%s), "
-                       "lateral t_go floor %.1f s (time_to_peak %.2f)"
-                       % (speed, source, floor, ttp))
-
-    def run_descent(self, snap):
-        """The landing burn on ``guidance.descent_command``."""
-        if self.descent is None:
-            self.descent_setup(snap)
-        d = self.descent
-        args = (self.env, snap.position, snap.velocity, snap.landing_height,
-                snap.mass, snap.max_accel, self.cfg)
-        left = (None if d["tgo"] is None
-                else d["tgo"] - (snap.ut - d["ut"]))
-        plan = (snap.max_accel * self.cfg.LANDING_THROTTLE_CAP
-                / max(1.0, self.cfg.SUICIDE_MARGIN))
-        # Count down; re-solve only when the countdown no longer fits.
-        if left is None or not guidance.descent_command(
-                *args, left, d["floor"], d["td"], plan).feasible:
-            need = guidance.descent_tgo(*args, d["floor"], d["td"])
-            tgo = need if need is not None else (left or 60.0)
-        else:
-            tgo = left
-        d["tgo"], d["ut"] = tgo, snap.ut
-        cmd = guidance.descent_command(*args, tgo, d["floor"], d["td"])
-        self.set_throttle(cmd.throttle)
-        direction = cmd.direction
-        rate = (self.burn_slew_rate(snap)
-                if self.cfg.LANDING_SLEW_SHARE > 0.0 else None)
-        if rate is not None:
-            direction = guidance.slew(
-                self.burn_cmd, direction,
-                rate * max(0.0, snap.ut - self.burn_cmd_ut))
-        self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
-        self.aim(direction, snap)
-        self.extra_lines = [
-            "miss    : %8.0f m" % self.miss_distance(),
-            "legs alt: %8.1f m" % snap.legs_altitude,
-            "t_go    : %8.1f s" % tgo,
-            "td speed: %8.1f m/s" % d["td"],
-        ]
-        command = guidance.LandingThrottle(cmd.throttle, d["td"],
-                                           snap.landing_height)
-        if self.touched_down(snap, command):
-            self.set_throttle(0.0)
-            self.enter(TOUCHDOWN, snap.ut,
-                       "legs=%.1fm vs=%.1f td_pad=%.1fm td_hs=%.1f td_tilt=%.1f"
-                       % (snap.legs_altitude, snap.vertical_speed,
-                          self.pad_distance(snap), snap.horizontal_speed,
-                          vec.angle_between(snap.direction, snap.position)))
-            self.log_touchdown(snap)
+                ttp, why = 1.0, "time_to_peak unreadable: kRPC's default 1 s"
+            self.null_rate_value = 0.5 / max(0.1, ttp)
+            self.log.event(snap.ut, "lateral null rate %.2f /s (%s)"
+                           % (self.null_rate_value, why))
+        return self.null_rate_value
 
     def run_landing_burn(self, snap):
-        if self.cfg.LANDING_DESCENT_GUIDANCE:
-            self.log_attitude_tune(snap)
-            self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
-                                  snap.rotation, snap.direction)
-            self.predict(snap, powered=True)
-            return self.run_descent(snap)
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
-        hold = None
-        if self.cfg.LANDING_HOLD_AOA and self.coast_steer is not None:
-            elapsed = snap.ut - self.phase_start_ut
-            hold = (self.coast_steer, elapsed)
-            held = trajectory.held_steer(self.coast_steer, elapsed, self.cfg)
-        prediction = self.predict(snap, powered=True, burn_hold=hold)
+        prediction = self.predict(snap, powered=True)
         # Throttle first: the steering law has to know how much acceleration
         # it is actually going to get, not how much the vehicle could make at
         # full thrust -- see guidance.terminal_command.
@@ -2028,18 +1942,6 @@ class Autoland:
         # long as it steers -- the trim term only notices once the vehicle is
         # already fast -- so give back what the tilt takes.  Nothing changes
         # when the divert is off, because then the tilt is zero.
-        if hold is not None and held is not None:
-            # The coast's angle of attack, carried on and decaying, as the
-            # propagator flies it: retrograde -> held nose, applied to the
-            # guidance direction (the divert tilt rides on top).
-            retro = vec.unit(vec.scale(snap.velocity, -1.0))
-            nose = trajectory.held_thrust_direction(held, snap.velocity)
-            axis = vec.cross(retro, nose)
-            if vec.norm(axis) > 1e-9:
-                q = vec.quat_axis_angle(vec.unit(axis), math.radians(
-                    vec.angle_between(retro, nose)))
-                steer = guidance.TerminalCommand(
-                    vec.unit(vec.quat_rotate(q, steer.direction)), steer.demand)
         tilt = vec.angle_between(steer.direction, vec.scale(snap.velocity, -1.0))
         if tilt > 1.0:
             throttle = min(self.cfg.LANDING_THROTTLE_CAP,

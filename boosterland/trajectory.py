@@ -15,7 +15,7 @@ boostback aims at the point the vehicle will actually touch down on.
 """
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from common import vec
 from common.geo import gravity_at, surface_distance  # noqa: F401
@@ -137,14 +137,12 @@ def stopping_distance(speed, net_accel):
 def planned_net(max_accel, g, cfg):
     """The net deceleration the vertical profile plans with.
 
-    The whole cap, by default.  With ``LANDING_THRUST_SHARE`` the profile
-    takes only ``cos(LANDING_MAX_TILT_DEG)`` of it, so the throttle it asks
+    The profile takes only ``cos(LANDING_MAX_TILT_DEG)`` of the cap, so the throttle it asks
     for leaves the divert its full tilt (``acos(throttle / cap)``) down to
     the ground: planned at the cap, the throttle pinned from ~600 m and the
     burn had no lateral authority for its last 600 m whatever its TWR.
     """
-    share = (math.cos(math.radians(cfg.LANDING_MAX_TILT_DEG))
-             if cfg.LANDING_THRUST_SHARE else 1.0)
+    share = math.cos(math.radians(cfg.LANDING_MAX_TILT_DEG))
     return max_accel * cfg.LANDING_THROTTLE_CAP * share - g
 
 
@@ -200,28 +198,18 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     net = max(0.1, planned_net(max_accel, g, cfg))
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    if cfg.LANDING_THRUST_SHARE:
-        # The taper v = TOUCHDOWN_SPEED + k h decelerates at k v, which grows
-        # with height; joined to the constant-deceleration curve where k v
-        # reaches ``net``, no point asks for more than the plan.  The old
-        # join (the min of the two) asks for 2 net where they cross.
-        k = max(1e-3, cfg.FINAL_APPROACH_RATE)
-        v_join = max(cfg.TOUCHDOWN_SPEED, net / k)
-        h_join = (v_join - cfg.TOUCHDOWN_SPEED) / k
-        if remaining <= h_join:
-            target_speed = cfg.TOUCHDOWN_SPEED + k * remaining
-        else:
-            target_speed = math.sqrt(v_join * v_join
-                                     + 2.0 * net * (remaining - h_join))
+    # The taper v = TOUCHDOWN_SPEED + k h decelerates at k v, which grows
+    # with height; joined to the constant-deceleration curve where k v
+    # reaches ``net``, no point asks for more than the plan.  The old
+    # join (the min of the two) asks for 2 net where they cross.
+    k = max(1e-3, cfg.FINAL_APPROACH_RATE)
+    v_join = max(cfg.TOUCHDOWN_SPEED, net / k)
+    h_join = (v_join - cfg.TOUCHDOWN_SPEED) / k
+    if remaining <= h_join:
+        target_speed = cfg.TOUCHDOWN_SPEED + k * remaining
     else:
-        target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
-        # A pure constant-deceleration profile is still doing several m/s a
-        # couple of metres up -- it assumes the vehicle can brake at full
-        # authority right into the ground.  Taper the last stretch into a
-        # gentle constant-rate descent so the legs meet the pad at walking
-        # pace.
-        target_speed = min(target_speed, cfg.TOUCHDOWN_SPEED
-                           + cfg.FINAL_APPROACH_RATE * remaining)
+        target_speed = math.sqrt(v_join * v_join
+                                 + 2.0 * net * (remaining - h_join))
     if max_accel <= 0.0:
         return 0.0, target_speed
 
@@ -334,7 +322,7 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
 
 
 def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
-                    steer=None, drag_scale=1.0, burn_hold=None):
+                    steer=None, drag_scale=1.0):
     """Propagate to touchdown, including the landing burn's downrange creep.
 
     ``steer`` is the angle of attack the vehicle is going to fly (see
@@ -343,13 +331,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     that does not include the steering the booster is about to fly is a
     prediction of a trajectory nobody flies.
 
-    ``burn_hold`` is ``(steer, elapsed)`` from inside a burn that is
-    flying ``LANDING_HOLD_AOA``: the coast's angle of attack, ``elapsed``
-    game seconds into its decay.  From the coast it is implied: with the
-    flag on, the burn starts holding the ``steer`` the coast flies.
     """
-    if burn_hold is None and steer is not None and cfg.LANDING_HOLD_AOA:
-        burn_hold = (steer, 0.0)
     drag = drag_lookup(env, drag_area, drag_scale)
     r = tuple(r0)
     v = tuple(v0)
@@ -423,7 +405,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
         r, v, burn_time, burn_steps = _fly_landing_burn(
-            env, r, v, mass, max_accel, cfg, drag, hold=burn_hold)
+            env, r, v, mass, max_accel, cfg, drag)
         steps += burn_steps
 
     return Prediction(
@@ -438,32 +420,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     )
 
 
-def held_steer(steer, elapsed, cfg):
-    """``steer`` with its angle of attack decayed ``elapsed`` s into the burn
-    (``LANDING_HOLD_AOA``), or None once it is under a hundredth of a degree."""
-    if steer is None:
-        return None
-    aoa = steer.aoa * math.exp(-max(0.0, elapsed) / cfg.LANDING_HOLD_TAU_S)
-    if abs(aoa) < 1.7e-4:
-        return None
-    return replace(steer, aoa=aoa)
-
-
-def held_thrust_direction(steer, v):
-    """Retrograde rotated by ``steer``'s angle of attack, in its plane: the
-    nose a held burn points (``guidance.steer_attitude``'s construction)."""
-    retro = vec.unit(vec.scale(v, -1.0))
-    if steer is None:
-        return retro
-    side = lift_direction(steer, v)
-    if side is None:
-        return retro
-    return vec.unit(vec.add(vec.scale(retro, math.cos(steer.aoa)),
-                            vec.scale(side, math.sin(steer.aoa))))
-
-
-def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
-                      hold=None):
+def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None):
     """Integrate the suicide burn itself: thrust anti-velocity on the profile.
 
     Returns the touchdown state, how long the burn took and the steps spent.
@@ -480,23 +437,15 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
         speed = vec.norm(v)
         if height <= 0.0 or speed < cfg.TOUCHDOWN_SPEED:
             break
-        held = held_steer(hold[0], hold[1] + t, cfg) if hold else None
 
         throttle, _ = landing_command(env, radius, speed, height, max_accel,
                                       cfg, vec.dot(v, vec.unit(r)))
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
 
-        if held is None:
-            r, v = _step(env, r, v, mass, drag, dt, cfg,
-                         lambda rr, vv: vec.scale(vec.unit(vv),
-                                                  -throttle * max_accel),
-                         steer=steer)
-        else:
-            r, v = _step(env, r, v, mass, drag, dt, cfg,
-                         lambda rr, vv: vec.scale(
-                             held_thrust_direction(held, vv),
-                             throttle * max_accel),
-                         steer=held)
+        r, v = _step(env, r, v, mass, drag, dt, cfg,
+                     lambda rr, vv: vec.scale(vec.unit(vv),
+                                              -throttle * max_accel),
+                     steer=steer)
         t += dt
         steps += 1
     return r, v, t, steps
