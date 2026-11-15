@@ -1948,9 +1948,11 @@ class Autoland:
         ]
         if self.touched_down(snap, command):
             self.set_throttle(0.0)
-            self.enter(TOUCHDOWN, snap.ut, "legs=%.1fm vs=%.1f td_pad=%.1fm"
+            self.enter(TOUCHDOWN, snap.ut,
+                       "legs=%.1fm vs=%.1f td_pad=%.1fm td_hs=%.1f td_tilt=%.1f"
                        % (snap.legs_altitude, snap.vertical_speed,
-                          self.pad_distance(snap)))
+                          self.pad_distance(snap), snap.horizontal_speed,
+                          vec.angle_between(snap.direction, snap.position)))
             self.log_touchdown(snap)
 
     def read_landing_limits(self, snap, why):
