@@ -1157,3 +1157,31 @@ RollTune's in-flight fits on 0.8 (rk 0.26-0.31 on the 6 k08 flights with rq > 0.
 fit commanded input, not deflection, while pitch/yaw sit at +-1 and stock's shared clamp on pitch+yaw+roll
 deflection takes the roll (#1191's stated limitation) and the fins slew.
 Next: fly auto-tune on from the coast (`ROLL_TUNE=False`) against the defaults.
+
+## 2026-11-14 evening: the burn's oscillation -- auto-tune back on, kRPC's aerodynamic rate cap off
+
+qs_finbooster2, 12 an arm, fresh farm each batch (rt1-1114 LOG16698-16721, nl1-1114 LOG16732-16755):
+
+| arm | burn input pinned (ticks >= 0.95) | burn roll p90 | destroyed | miss median | td hs median |
+|---|---|---|---|---|---|
+| defaults (RollTune) | 0.86 | 31 deg/s | 8 | 39 m | 17 |
+| ROLL_TUNE=False | 0.12 | 0 | 2 | 253 m (all long) | 3 |
+| KRPC_LIMIT_ANGULAR_VELOCITY=False | 1.00 | 21 | 3 | 31 m | 15 |
+| both | **0.00** | **0** | 4 | 61 m | 16 |
+
+- RollTune's pitch/yaw were kRPC's plain formula (~5.6 rad/s) whenever coast entry read authority 0 (the live
+  LOG16697 and most farm flights): no gimbal-lag cap, burn input pinned. With auto-tune on, kRPC #1348 caps it.
+- Auto-tune alone held the nose 6-12 deg off its command for the first ~10 s of the burn (rtdiag-1114,
+  LOG16722-16727, KRPC_AP_DIAG from 9 km): kRPC 0.8's AerodynamicRateLimit (LimitAngularVelocity, on by default)
+  capped the pitch/yaw target rate at 0.001-0.04 rad/s -- (normal force + thrust sin(incidence)) / (m V), an
+  aircraft's flight-path turn rate, floored at incidence / 10 s. The burn then drifted 100-300 m long before the
+  divert (below 2.5 km) and its 15 deg tilt could not win it back.
+- Promoted: RollTune, ATTITUDE_LAG_PACE and their config deleted (67ad1f3, merge 8fe2f5b);
+  `KRPC_LIMIT_ANGULAR_VELOCITY` False (58fcc6d).
+- Left: touchdown hs ~16 m/s in every arm. Cause, LOG16738: the profile's taper `min(sqrt(2 net h) + 2,
+  2 + 0.5 h)` asks for k^2 h = 2 net where its branches cross (~560 m here), so the throttle pins at the cap from
+  ~600 m and the divert's tilt budget acos(throttle / cap) is 0 to the ground. `LANDING_PROFILE_FEASIBLE` (954af4d):
+  planned at net / SUICIDE_MARGIN, taper joined where k v = planned. Offline suite passes with it on. Flying pf1-1114.
+- Memory, same evening: per-instance footprint flat at 4.6-4.9 GB across a batch (30 s samples); swap rises
+  because the kernel moves game pages out for file cache (swappiness 150), not a leak. Part pruning (separate
+  session, branch claude/part-prune-2c85ca): 498 -> 133 parts flies the same and saves no RAM.
