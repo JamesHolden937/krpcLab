@@ -1192,3 +1192,41 @@ qs_finbooster2, 12 an arm, fresh farm each batch (rt1-1114 LOG16698-16721, nl1-1
   free space, 284 t as live LOG16697 separated. pf2-1114 (LOG16791-16814, 12 an arm, fin3): defaults td median
   2.9 m/s (hs 2.5), miss 29 m, 1/12 destroyed; LANDING_PROFILE_FEASIBLE 2.3 m/s, 33 m, 3/12 (lost ~140 t, after
   touchdown). Null: deleted. The taper's infeasibility is real but does not cost a landing with propellant left.
+
+## 2026-11-15: the landing burn's error -- thrust shared, last-250 m null bounded
+
+All on qs_finbooster3, 12 an arm, fresh farm each batch, scored at the touchdown tick (new `td_pad/td_hs/td_tilt`
+in the TOUCHDOWN event; `logsum --segments` has a `td` column) so a legless topple after contact is not counted.
+
+- Where the error came from (pf2-1114 + dv1): burn entry within ~20 m, then the prediction drifted 20-220 m
+  long while the burn flew undiverted retrograde above 2.5 km; the divert swung it short; touchdown carried ~4 m/s.
+- kRPC diag (apd-1115, LOG16903/05/08 .ap.csv): no standing kRPC offset. Two lags: the ~4 s turn from the coast's
+  aoa (fins saturated at Mach 2.5, nose ~10 deg off) onto retrograde after ignition, which the predictor assumes
+  instant; and ~4 deg of tracking lag behind a command moving 5 deg/s in the divert.
+- Real touchdown killer (dv3): in the last ~20 m hs grew 3 -> 10-13 m/s. Retrograde nulls lateral speed at
+  thrust/speed per second, ~3/s at the bottom, faster than the nose follows: overshoot, retrograde flips, grows.
+- Throttle pinned at the 0.95 cap from ~600 m: the taper `min(sqrt(2 net h)+2, 2+0.5 h)` asks 2 net where the
+  branches cross, and the tilt budget acos(thr/cap) is 0 there -- no lateral authority whatever the TWR.
+
+| batch | arm | td median | p75 | destroyed | td hs | tilt |
+|---|---|---|---|---|---|---|
+| dv1 | def / early divert / early+ZEM 3 | 17.8 / 12.3 / 38.2 | 50 / 51 / 93 | 1 / 2 / 5 | 4.0 / 3.8 / 5.1 | |
+| dv2 | def / point integral / plan 0.8 / both | 8.9 / 28 / 47 / 45 | | 3 / 3 / 4 / 2 | 2.3 / 3.2 / 7.8 / 5.8 | |
+| dv3 | def / hold aoa / align 4 s | 15.6 / 21.2 / 50.2 | 39 / 49 / 66 | 4 / 4 / 4 | 3.1 / 2.7 / 7.9 | 2.8 |
+| dv4 | def / null cap 1.0 / 0.6 / hold+1.0 | 17.4 / 12.4 / 13.2 / 11.2 | 40 / 15 / 42 / 35 | 4 / 0 / 1 / 1 | 3.9 / 1.4 / 0.7 / 0.9 | |
+| dv5 | def / n1 (broken, see below) / ts / ts+hold | 9.9 / 64 / 13.6 / 18.4 | 47 / 66 / 44 / 28 | 0 / 1 / 1 / 0 | 1.6 / 3.1 / 1.1 / 0.8 | 2.8 / 3.0 / 1.1 / 1.2 |
+| dv6 | def / ts / descent guidance 11 m/s / 2 m/s | 14.5 / 14.2 / 126 / 16.5 | 35 / 17 / 182 / 87 | 4 / 0 / 3 / 2 | 3.0 / 0.2 / 5.8 / 3.2 | 2.7 / 0.7 / 24 / 20 |
+
+- Promoted (6304beb): thrust share -- the profile plans at cos(LANDING_MAX_TILT_DEG) of full thrust
+  (`trajectory.planned_net`, also the trigger), taper joined where k v = net, LANDING_THROTTLE_CAP 1.0; below
+  250 m `guidance.bounded_null` (vertical + lateral null at min(thrust/speed + 4/t_go, half kRPC's attitude
+  bandwidth 0.5/time_to_peak)).
+- Deleted: LANDING_POINT_INTEGRAL, LANDING_PLAN_THROTTLE (dv2), LANDING_ALIGN_S (dv3), LANDING_HOLD_AOA (null),
+  LANDING_NULL_RATE_MAX (superseded), LANDING_DESCENT_GUIDANCE (Apollo quadratic, c0075d5: balloons at the
+  bottom, LOG17043 climbed to 56 m; td tilt 20-24 deg -- the end game of that law is wrong, idea not refuted).
+- dv5's n1 was broken by the merge: bounded_null took the tilt budget, which is 0 at the cap -> ~65 m west.
+- Touchdown speed is still the fixed TOUCHDOWN_SPEED 2 m/s. The user wants it computed from what the craft
+  survives (shock absorption, joints). Built: `KrpcLabJoints.Parts` (launcherMod), `common/impact.py`,
+  `actuators.py --joints`. First read right after load: break forces ~1e20 kN (easing/KJR), springs 2.2e7 kN/m;
+  a rigid-ground chain model then predicts breaks below 1 m/s, which landings contradict -- the contact's
+  compliance sets the load. Open.

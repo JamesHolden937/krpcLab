@@ -15,49 +15,45 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-14 night: boosterland -- the burn's oscillation fixed (auto-tune back on, kRPC's aero rate cap off); fin2 runs dry, fly qs_finbooster3
+## 2026-11-15: boosterland -- landing burn: thrust shared with the divert, last 250 m null bounded
 
-**Defaults fingerprint 8d0d377d** (after f58ad20). Committed and pushed. **Farm stopped** (swap 5.5 GB after). Not flown live yet: the user's next live booster flight is the first on these defaults. `tools/instancebench.py` has an uncommitted change that is not this session's: leave it. howItWorks.pdf (boosterland) **not redone**:
-it still describes RollTune and the pace. Journal: `docs/boosterland/journal.md` "2026-11-14 evening" (three entries).
+**Defaults fingerprint 9c021039** (after 6304beb + c358e55). Committed, not pushed. Farm stopped. Not flown live:
+the user's next live booster flight is the first on these defaults. `tools/instancebench.py` and
+`docs/krpcFeatureRequests.md` are not this session's: leave them. howItWorks.pdf (boosterland) **not redone** (still
+describes RollTune; now also the burn profile and the near-ground law). Journal: `docs/boosterland/journal.md`
+"2026-11-15". Scoring now at the touchdown tick: TOUCHDOWN event has `td_pad td_hs td_tilt`; `logsum --segments`
+has `td`; per-arm table: scratchpad armsum.py pattern (parse rot file + TOUCHDOWN event).
 
-**What changed (defaults now):**
-- kRPC 0.8 credits the fins' roll correctly: `testInstances/actuators.py N SAVE --probe --probe-below=30000
-  --probe-axes=roll --probe-cycles=2 --surfaces-only` (467bff4) measured/credited roll 1.00 as saved, 0.88 deployed,
-  pitch 0.84/0.96, tail-first at 29 km. So RollTune's reason was gone: **RollTune, ATTITUDE_LAG_PACE, ROLL_TUNE*,
-  ROLL_PLANT_*, ROLL_LAG/SLEW_FACTOR, ROLL_BRAKE_DEG deleted** (67ad1f3); kRPC auto-tune runs the whole flight.
-- **`KRPC_LIMIT_ANGULAR_VELOCITY` False** (58fcc6d): kRPC 0.8's AerodynamicRateLimit (an aircraft's flight-path
-  turn rate) capped the burn's pitch/yaw target rate at 0.001-0.04 rad/s; with it on the nose sat 6-12 deg off its
-  command for ~10 s and landed ~250 m long (rtdiag-1114 LOG16722-16727 .ap.csv).
-- The user's complaint (LOG16697 live: burn input pinned, nose 20-42 deg/s, broke up) was RollTune flying kRPC's
-  plain formula (~5.6 rad/s, no gimbal-lag cap) whenever coast entry read authority 0.
-- Burn input pinned (share of ticks >= 0.95): 0.86 -> **0.00**; burn roll p90 31 -> 0 deg/s (rt1/nl1-1114).
-- **qs_finbooster3** (c3b85bb): fin2 + 53.4 t propellant = the live 284 t separation. **fin2 runs dry at 122.65 t
-  30-140 m up**: its touchdown/destroyed numbers measure fuel. On fin3 (pf2-1114, LOG16791-16814, defaults a arm):
-  **td median 2.9 m/s (hs 2.5), miss median 29 m, 1/12 destroyed.**
-- Flown and deleted: `LANDING_PROFILE_FEASIBLE` (null on fin3; the taper's branches cross at k^2 h = 2 net, real but
-  harmless with propellant left).
-- Farm: part pruning merged (eae1744, the part-prune session): `start.sh` runs `partstrip.py N` (a ModuleManager
-  patch deleting unused parts + unused models; `PRUNE=0` boots full, `--undo` restores): peak 5.26 -> 4.74 GB an
-  instance. Per-instance memory is flat over a batch (no leak); swap grows by the kernel trading pages for cache.
+**What changed (defaults):**
+- `trajectory.planned_net`: the vertical profile and the ignition trigger plan at cos(LANDING_MAX_TILT_DEG) of
+  full thrust; `LANDING_THROTTLE_CAP` 0.95 -> **1.0**; the taper joins where k v = net (no 2 net demand at the
+  crossing). The divert keeps acos(thr/cap) >= ~15 deg to the ground.
+- `guidance.bounded_null` below `LANDING_NULL_ALT_M`: vertical + lateral null at
+  min(thrust/speed + 4/t_go, 0.5/time_to_peak) -- retrograde's own null rate (~3/s at the bottom) oscillated
+  hs 3 -> 13 m/s in the last 20 m (dv3).
+- Result (dv5, dv6, qs_finbooster3, 12 each): td median 13.6/14.2 m, **p75 17 m**, 0-1 destroyed, **td hs 0.2-1.1
+  m/s, tilt 0.7-1.1 deg**; old defaults 9.9/14.5 m, p75 35-47, 0-4 destroyed, hs 1.6-3.0, tilt 2.7.
+- Deleted after measuring: POINT_INTEGRAL, PLAN_THROTTLE, ALIGN_S, HOLD_AOA, NULL_RATE_MAX, DESCENT_GUIDANCE.
 
 **Open, in order:**
-1. **Accuracy on fin3** (median 29 m): every auto-tune flight entered the burn within ~50 m; read where the burn adds
-   its error (`logsum.py --segments`), then the divert (below `LANDING_DIVERT_MAX_ALT_M` 2.5 km, `LANDING_MAX_TILT_DEG`
-   15) now that the vehicle follows its commands. Re-take anything derived from the old controller.
-2. Fly the other boosters on the new defaults: qs_finbooster, qs_heavy, qs_heavyshuttlebooster, `quicksave`
-   (destroyed 24/24 on the Retooled farm, old item 10); check whether any needs propellant like fin2.
-3. howItWorks.pdf (boosterland): RollTune and pace gone, auto-tune throughout, rate cap off.
-4. Carried from the section below: kspSim port to 0.8 (item 4), PyPy fast client (5), other pilots on 0.8 (6), live
-   START SCRIPT under 0.8 (7), 0.8.0 release (8), Bazel cache 17 GB (9, the user's call), heavy's flip on ksp2 (11),
-   flip law gimbal authority 0 (12), gimbalTorqueFix's `KrpcGimbalLag.cs` (inert under 0.8; delete with a rebuild).
-5. A possible kRPC issue (not drafted): AerodynamicRateLimit caps a rocket's attitude rate at its flight-path turn
-   rate, so a powered vehicle cannot rotate back toward retrograde. Read `surfaceShare` (why rate_limit < aero_limit
-   with gimbals dominant) before filing.
+1. **The remaining long drift above 2.5 km** (still 20-70 m on some flights): the ~4 s turn from the coast's aoa
+   onto retrograde after ignition (fins saturated, nose ~10 deg off at Mach 2.5). HOLD_AOA modelled it and cut the
+   >60 m drifts 4/12 -> 1/12 but was null on td; re-try on the new defaults (the bottom no longer hides it).
+2. **Touchdown speed from what the craft survives** (the user: no fixed 2 m/s; shock absorption, joints).
+   `KrpcLabJoints.Parts` + `common/impact.py` + `actuators.py N SAVE --joints` exist; first read was right after
+   load (break forces ~1e20 kN, physics easing/KJR 3.9 -- read again in flight); the rigid-ground chain model
+   blows up (inf) and predicts < 1 m/s, contradicted by landings: model the contact's compliance, or calibrate
+   from landings (KSP.log names what broke). The legs' model (`common/touchdown.landing_limits`) already covers
+   suspension.
+3. **One-law guidance** (the user wants it general): the Apollo quadratic (c0075d5) failed in its end game
+   (balloons); a fix is ending the profile at a hover gate a few metres up, then the vertical-only null.
+4. Other boosters on the new defaults (qs_heavy legged, qs_heavyshuttlebooster, qs_finbooster): `planned_net`'s
+   share and the null rate are generic but unflown there.
+5. Carried: howItWorks.pdf; kspSim port to 0.8; the coast-entry/flip items of the section below.
 
-**Traps paid:** a lock waiter that checks `flock` and then runs is a race: run the job *inside* `farmlaunch` and
-retry on 75 (scratchpad pf2job pattern) -- twice this session ksp0-5 booted beside another session's ksp6.
-Never write a finish time without `date`: three ETAs this session were invented and wrong. fin2's 16 m/s
-touchdowns looked like a guidance floor for a session; check the mass at loss (`parts lost` at dry mass) first.
+**Traps paid:** `| tail` after farmlaunch in a run_in_background command hides its first line and the 600 s start
+watchdog kills it. A merge that added `tilt_budget` to bounded_null silently disabled it at the cap (dv5 n1 at
+65 m): a flag measured twice can be two different mechanisms -- diff the code between batches.
 
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
