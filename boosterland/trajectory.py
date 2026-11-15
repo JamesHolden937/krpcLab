@@ -186,37 +186,13 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     net = max(0.1, max_accel * cfg.LANDING_THROTTLE_CAP - g)
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    if cfg.LANDING_PROFILE_FEASIBLE:
-        # A profile no point of which asks for more than the burn has spare.
-        # The burn lights SUICIDE_MARGIN early, so it plans at
-        # planned = net / SUICIDE_MARGIN.  Near the ground it is the
-        # FINAL_APPROACH_RATE taper v = TOUCHDOWN_SPEED + k h, whose own
-        # deceleration v dv/dh = k v grows with height; above the height
-        # where k v reaches ``planned`` it is constant deceleration from
-        # there, so the two meet with the same deceleration.  The old join
-        # (min of the taper and sqrt(2 net h)) asks for k^2 h = 2 net where
-        # they cross, whatever k is: the throttle pinned at the cap from
-        # ~560 m on the fin booster, and with it the divert's tilt budget
-        # (acos(throttle / cap)) was zero to the ground -- 10-40 m/s
-        # sideways at touchdown (nl1-1114, LOG16738).
-        k = max(1e-3, cfg.FINAL_APPROACH_RATE)
-        planned = net / max(1.0, cfg.SUICIDE_MARGIN)
-        v_join = max(cfg.TOUCHDOWN_SPEED, planned / k)
-        h_join = (v_join - cfg.TOUCHDOWN_SPEED) / k
-        if remaining <= h_join:
-            target_speed = cfg.TOUCHDOWN_SPEED + k * remaining
-        else:
-            target_speed = math.sqrt(v_join * v_join
-                                     + 2.0 * planned * (remaining - h_join))
-    else:
-        target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
-        # A pure constant-deceleration profile is still doing several m/s a
-        # couple of metres up -- it assumes the vehicle can brake at full
-        # authority right into the ground.  Taper the last stretch into a
-        # gentle constant-rate descent so the legs meet the pad at walking
-        # pace.
-        target_speed = min(target_speed, cfg.TOUCHDOWN_SPEED
-                           + cfg.FINAL_APPROACH_RATE * remaining)
+    target_speed = math.sqrt(2.0 * net * remaining) + cfg.TOUCHDOWN_SPEED
+    # A pure constant-deceleration profile is still doing several m/s a couple
+    # of metres up -- it assumes the vehicle can brake at full authority right
+    # into the ground.  Taper the last stretch into a gentle constant-rate
+    # descent so the legs meet the pad at walking pace.
+    target_speed = min(target_speed,
+                       cfg.TOUCHDOWN_SPEED + cfg.FINAL_APPROACH_RATE * remaining)
     if max_accel <= 0.0:
         return 0.0, target_speed
 

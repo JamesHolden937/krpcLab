@@ -403,9 +403,6 @@ class Config:
                                             # on the 2 km prediction +-30 m, v 4/6
                                             # drifting 300-750 m off it)
     FINAL_APPROACH_RATE: float = 0.5        # m/s of descent allowed per metre up
-    LANDING_PROFILE_FEASIBLE: bool = False  # trajectory.landing_command: one
-                                            # curve at net / SUICIDE_MARGIN, no
-                                            # FINAL_APPROACH_RATE taper
     LANDING_FLARE_ALT_M: float = 12.0       # this low and this slow, hover
     LANDING_FLARE_SPEED: float = 8.0        # thrust is all that can be wanted
     LANDING_FLARE_MARGIN: float = 0.12      # ... plus this much to settle with
