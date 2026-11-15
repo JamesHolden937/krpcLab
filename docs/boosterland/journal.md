@@ -1185,3 +1185,10 @@ qs_finbooster2, 12 an arm, fresh farm each batch (rt1-1114 LOG16698-16721, nl1-1
 - Memory, same evening: per-instance footprint flat at 4.6-4.9 GB across a batch (30 s samples); swap rises
   because the kernel moves game pages out for file cache (swappiness 150), not a leak. Part pruning (separate
   session, branch claude/part-prune-2c85ca): 498 -> 133 parts flies the same and saves no RAM.
+- **Correction, later the same evening:** qs_finbooster2 runs out of propellant before the ground: every
+  destroyed flight of pf1-1114 (LOG16767-16790) lost thrust at 122.65 t (dry), 30-140 m up, engines reading 0 at
+  throttle 0.95. Its touchdown and destroyed counts above measure fuel, not the controller; the burn's
+  pinned-input and roll numbers stand. New save `qs_finbooster3` (c3b85bb): fin2 plus 53.4 t over the tanks'
+  free space, 284 t as live LOG16697 separated. pf2-1114 (LOG16791-16814, 12 an arm, fin3): defaults td median
+  2.9 m/s (hs 2.5), miss 29 m, 1/12 destroyed; LANDING_PROFILE_FEASIBLE 2.3 m/s, 33 m, 3/12 (lost ~140 t, after
+  touchdown). Null: deleted. The taper's infeasibility is real but does not cost a landing with propellant left.
