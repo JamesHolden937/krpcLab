@@ -544,9 +544,6 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
-        self.point_bias = (0.0, 0.0, 0.0)   # LANDING_POINT_INTEGRAL's aim offset
-        self.point_bias_ut = None
-        self.point_err = None
         self.slew_read_ut = -1e9
         self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
@@ -1902,44 +1899,6 @@ class Autoland:
                    * self.cfg.LANDING_SLEW_SHARE,
                    self.cfg.LANDING_SLEW_MIN_DEG_S)
 
-    def point_integral(self, direction, snap):
-        """``direction`` offset by the integral of the nose's error from it.
-
-        kRPC's cascade holds its rate integrators on several conditions
-        (pointing deadband, actuator lag), and through the burn it lets a
-        steady 5-12 deg pointing error stand against an input of ~0.5 that
-        is nowhere near saturated (dv1-1115: LOG16829 err 4-8 deg for 10 s,
-        LOG16830 ~1).  Thrust that far off the command pushes the touchdown
-        100-140 m long before the divert can act.  So aim past the target
-        by the error accumulated over ``LANDING_POINT_TAU_S``: the nose
-        lands on what guidance asked for, whatever kRPC's inner loop does.
-        Bounded by ``LANDING_POINT_MAX_DEG``; held while the engines are
-        off (no thrust, nothing to point).
-        """
-        if not self.cfg.LANDING_POINT_INTEGRAL:
-            return direction
-        d = vec.unit(direction)
-        last, self.point_bias_ut = self.point_bias_ut, snap.ut
-        dt = 0.0 if last is None else max(0.0, snap.ut - last)
-        bias = vec.project_out(self.point_bias, d)
-        if snap.throttle > 0.05 and vec.norm(snap.direction) > 0.5:
-            err = vec.project_out(vec.sub(d, vec.unit(snap.direction)), d)
-            angle = math.degrees(vec.norm(err))
-            prev, self.point_err = self.point_err, angle
-            # Only a *standing* error: while the nose is still closing on
-            # the command by itself (the turn onto retrograde at ignition)
-            # integrating it would wind up an overshoot.
-            closing = ((prev - angle) / dt
-                       if prev is not None and dt > 1e-3 else 0.0)
-            if closing < self.cfg.LANDING_POINT_CLOSING_DEG_S:
-                bias = vec.add(bias, vec.scale(
-                    err, dt / self.cfg.LANDING_POINT_TAU_S))
-        most = math.tan(math.radians(self.cfg.LANDING_POINT_MAX_DEG))
-        if vec.norm(bias) > most:
-            bias = vec.scale(vec.unit(bias), most)
-        self.point_bias = bias
-        return vec.unit(vec.add(d, bias))
-
     def run_landing_burn(self, snap):
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
@@ -1979,10 +1938,7 @@ class Autoland:
                 self.burn_cmd, direction,
                 rate * max(0.0, snap.ut - self.burn_cmd_ut))
         self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
-        self.aim(self.point_integral(direction, snap), snap)
-        # The error is the nose's against what guidance wants, not against
-        # the offset aim that is getting it there.
-        self.commanded_direction = tuple(direction)
+        self.aim(direction, snap)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),
@@ -1992,11 +1948,9 @@ class Autoland:
         ]
         if self.touched_down(snap, command):
             self.set_throttle(0.0)
-            self.enter(TOUCHDOWN, snap.ut,
-                       "legs=%.1fm vs=%.1f td_pad=%.1fm td_hs=%.1f td_tilt=%.1f"
+            self.enter(TOUCHDOWN, snap.ut, "legs=%.1fm vs=%.1f td_pad=%.1fm"
                        % (snap.legs_altitude, snap.vertical_speed,
-                          self.pad_distance(snap), snap.horizontal_speed,
-                          vec.angle_between(snap.direction, snap.position)))
+                          self.pad_distance(snap)))
             self.log_touchdown(snap)
 
     def read_landing_limits(self, snap, why):
@@ -2410,10 +2364,7 @@ def compact_line(state, snap, prediction, run):
                 if run.env.holdable_deg is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
-               if any(getattr(run, "trim_cmd", (0.0,))) else "")
-            + (" pb=%.1f" % math.degrees(math.atan(vec.norm(run.point_bias)))
-               if state == "LANDING_BURN" and run.cfg.LANDING_POINT_INTEGRAL
-               else ""))
+               if any(getattr(run, "trim_cmd", (0.0,))) else ""))
 
 
 def engine_fields(state, run):
