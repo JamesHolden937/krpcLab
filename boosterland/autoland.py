@@ -545,6 +545,7 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
+        self.descent = None             # LANDING_DESCENT_GUIDANCE state
         self.null_rate_value = None     # LANDING_THRUST_SHARE: read once
         self.slew_read_ut = -1e9
         self.slew_accel = None          # rad/s^2 per unit throttle
@@ -1919,7 +1920,84 @@ class Autoland:
                            "time_to_peak)" % self.null_rate_value)
         return self.null_rate_value or None
 
+    def descent_setup(self, snap):
+        """Touchdown speed and lateral floor, once a burn, both measured."""
+        lim = self.landing_limits or None
+        limit, source = None, None
+        if lim and lim.get("vertical"):
+            limit, source = lim["vertical"], "legs' vertical limit"
+        elif self.touchdown_limit is not None:
+            limit, source = self.touchdown_limit[0], self.touchdown_limit[1]
+        if limit:
+            speed = limit * self.cfg.LANDING_TD_LIMIT_SHARE
+        else:
+            speed, source = self.cfg.TOUCHDOWN_SPEED, "no limit read: configured"
+        try:
+            ttp = self.autopilot.time_to_peak
+            ttp = max(ttp[0], ttp[2])
+        except Exception:                           # noqa: BLE001
+            ttp = 1.0
+        floor = self.cfg.LANDING_LATERAL_FLOOR_TTP * ttp
+        self.descent = {"td": speed, "floor": floor, "tgo": None,
+                        "ut": snap.ut}
+        self.log.event(snap.ut, "descent guidance: touchdown %.1f m/s (%s), "
+                       "lateral t_go floor %.1f s (time_to_peak %.2f)"
+                       % (speed, source, floor, ttp))
+
+    def run_descent(self, snap):
+        """The landing burn on ``guidance.descent_command``."""
+        if self.descent is None:
+            self.descent_setup(snap)
+        d = self.descent
+        args = (self.env, snap.position, snap.velocity, snap.landing_height,
+                snap.mass, snap.max_accel, self.cfg)
+        left = (None if d["tgo"] is None
+                else d["tgo"] - (snap.ut - d["ut"]))
+        plan = (snap.max_accel * self.cfg.LANDING_THROTTLE_CAP
+                / max(1.0, self.cfg.SUICIDE_MARGIN))
+        # Count down; re-solve only when the countdown no longer fits.
+        if left is None or not guidance.descent_command(
+                *args, left, d["floor"], d["td"], plan).feasible:
+            need = guidance.descent_tgo(*args, d["floor"], d["td"])
+            tgo = need if need is not None else (left or 60.0)
+        else:
+            tgo = left
+        d["tgo"], d["ut"] = tgo, snap.ut
+        cmd = guidance.descent_command(*args, tgo, d["floor"], d["td"])
+        self.set_throttle(cmd.throttle)
+        direction = cmd.direction
+        rate = (self.burn_slew_rate(snap)
+                if self.cfg.LANDING_SLEW_SHARE > 0.0 else None)
+        if rate is not None:
+            direction = guidance.slew(
+                self.burn_cmd, direction,
+                rate * max(0.0, snap.ut - self.burn_cmd_ut))
+        self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
+        self.aim(direction, snap)
+        self.extra_lines = [
+            "miss    : %8.0f m" % self.miss_distance(),
+            "legs alt: %8.1f m" % snap.legs_altitude,
+            "t_go    : %8.1f s" % tgo,
+            "td speed: %8.1f m/s" % d["td"],
+        ]
+        command = guidance.LandingThrottle(cmd.throttle, d["td"],
+                                           snap.landing_height)
+        if self.touched_down(snap, command):
+            self.set_throttle(0.0)
+            self.enter(TOUCHDOWN, snap.ut,
+                       "legs=%.1fm vs=%.1f td_pad=%.1fm td_hs=%.1f td_tilt=%.1f"
+                       % (snap.legs_altitude, snap.vertical_speed,
+                          self.pad_distance(snap), snap.horizontal_speed,
+                          vec.angle_between(snap.direction, snap.position)))
+            self.log_touchdown(snap)
+
     def run_landing_burn(self, snap):
+        if self.cfg.LANDING_DESCENT_GUIDANCE:
+            self.log_attitude_tune(snap)
+            self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
+                                  snap.rotation, snap.direction)
+            self.predict(snap, powered=True)
+            return self.run_descent(snap)
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)

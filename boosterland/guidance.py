@@ -630,6 +630,114 @@ def bounded_null(v, up, thrust_accel, time_to_land, cfg, rate_max,
                             vec.scale(side, math.sin(tilt))))
 
 
+def descent_profile(offset, velocity, velocity_f, t):
+    """``(a0, j, s)``: the acceleration a(tau) = a0 + j tau + s tau^2 that
+    takes ``offset`` (position minus target) to 0 and ``velocity`` to
+    ``velocity_f`` in ``t`` s with zero acceleration at the end (the Apollo
+    E-guidance quadratic, one axis)."""
+    t2, t3, t4 = t * t, t ** 3, t ** 4
+    # Rows: a(T) = 0, v(T) = velocity_f, r(T) = 0, unknowns (a0, j, s).
+    m = [[1.0, t, t2, 0.0],
+         [t, t2 / 2.0, t3 / 3.0, velocity_f - velocity],
+         [t2 / 2.0, t3 / 6.0, t4 / 12.0, -offset - velocity * t]]
+    for i in range(3):
+        p = max(range(i, 3), key=lambda k: abs(m[k][i]))
+        m[i], m[p] = m[p], m[i]
+        for k in range(3):
+            if k != i:
+                f = m[k][i] / m[i][i]
+                m[k] = [m[k][c] - f * m[i][c] for c in range(4)]
+    return tuple(m[i][3] / m[i][i] for i in range(3))
+
+
+@dataclass
+class DescentCommand:
+    direction: tuple
+    throttle: float
+    thrust: float           # m/s^2 asked of the engines now
+    feasible: bool          # the whole profile within the engines' plan
+
+
+def descent_command(env, r, v, height, mass, max_accel, cfg, t_go,
+                    lateral_floor, touchdown_speed, plan=None):
+    """One law for the whole landing burn: the thrust vector that brings the
+    legs to the pad at ``touchdown_speed`` straight down, with zero
+    acceleration (upright, nothing left to steer) at touchdown.
+
+    Vertical and lateral are solved together, so the braking and the
+    steering share the engines by construction: no separate speed profile,
+    divert band, null altitude, tilt budget or cap split.  Gravity and the
+    estimated drag are subtracted from the wanted total acceleration to give
+    what the engines must make.  ``t_go`` is floored per axis: vertically at
+    ``LANDING_TGO_MIN_S``, laterally at ``lateral_floor``, so the lateral
+    gains never exceed what the attitude loop executing them can follow.
+    ``plan`` (m/s^2) is checked over the whole profile: thrust never above
+    it, never negative (the engines cannot pull down).
+    """
+    up = vec.unit(r)
+    t_v = max(cfg.LANDING_TGO_MIN_S, t_go)
+    t_h = max(lateral_floor, t_go)
+    vz = vec.dot(v, up)
+    pv = descent_profile(height, vz, -touchdown_speed, t_v)
+    offset = vec.project_out(vec.sub(r, env.target), up)
+    lateral = vec.project_out(v, up)
+    ph = [descent_profile(offset[i], lateral[i], 0.0, t_h) for i in range(3)]
+    want = vec.add(vec.scale(up, pv[0]), tuple(c[0] for c in ph))
+    natural = trajectory.acceleration(env, r, v, mass, env.drag_area_at)
+    g = vec.norm(trajectory.gravity_at(env, r))
+    thrust = vec.sub(want, natural)
+    feasible = True
+    if plan is not None:
+        # Later in the profile: gravity only (drag fades as it slows).
+        for k in range(1, 9):
+            tau = t_v * k / 8.0
+            az = pv[0] + pv[1] * tau + pv[2] * tau * tau
+            th = min(tau, t_h)
+            ah = math.sqrt(sum((c[0] + c[1] * th + c[2] * th * th) ** 2
+                               for c in ph))
+            if az + g < 0.0 or math.hypot(az + g, ah) > plan:
+                feasible = False
+                break
+        mag0 = vec.norm(thrust)
+        if mag0 > plan or vec.dot(thrust, up) < 0.0:
+            feasible = False
+    mag = vec.norm(thrust)
+    if mag < 1e-6 or vec.dot(thrust, up) <= 0.0 or max_accel <= 0.0:
+        return DescentCommand(up, 0.0, 0.0, feasible)
+    direction = within_cone(vec.scale(thrust, 1.0 / mag), up,
+                            2.0 * cfg.LANDING_MAX_TILT_DEG)
+    return DescentCommand(direction,
+                          vec.clamp(mag / max_accel, 0.0,
+                                    cfg.LANDING_THROTTLE_CAP), mag, feasible)
+
+
+def descent_tgo(env, r, v, height, mass, max_accel, cfg, lateral_floor,
+                touchdown_speed, hi=120.0, step=0.5):
+    """The shortest time-to-go whose whole profile fits the plan,
+    ``LANDING_THROTTLE_CAP / SUICIDE_MARGIN`` of the engines (the margin the
+    ignition trigger lights with), or None when none up to ``hi`` does."""
+    plan = max_accel * cfg.LANDING_THROTTLE_CAP / max(1.0, cfg.SUICIDE_MARGIN)
+
+    def fits(t):
+        return descent_command(env, r, v, height, mass, max_accel, cfg, t,
+                               lateral_floor, touchdown_speed, plan).feasible
+    t = cfg.LANDING_TGO_MIN_S
+    if fits(t):
+        return t
+    while t < hi:
+        if fits(t + step):
+            lo, top = t, t + step
+            for _ in range(12):
+                mid = 0.5 * (lo + top)
+                if fits(mid):
+                    top = mid
+                else:
+                    lo = mid
+            return top
+        t += step
+    return None
+
+
 def slew(previous, target, max_deg):
     """``target``, or the direction ``max_deg`` from ``previous`` toward it.
 

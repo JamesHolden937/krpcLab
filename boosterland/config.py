@@ -317,6 +317,17 @@ class Config:
 
     # --- Landing burn -----------------------------------------------------
     LANDING_THROTTLE_CAP: float = 0.95      # headroom for the throttle loop
+    LANDING_DESCENT_GUIDANCE: bool = False  # one law for the burn: thrust
+                                            # vector to the pad at a measured
+                                            # touchdown speed, upright; see
+                                            # guidance.descent_command
+    LANDING_TD_LIMIT_SHARE: float = 0.5     # touchdown speed: this share of
+                                            # the weakest touching part's
+                                            # impact tolerance (or the legs'
+                                            # vertical limit)
+    LANDING_LATERAL_FLOOR_TTP: float = 6.0   # lateral t_go floor in kRPC
+                                            # time_to_peaks: 6/t <= the attitude
+                                            # bandwidth (n1 in dv4-1115: 1.0/s)
     LANDING_THRUST_SHARE: bool = False      # the vertical profile plans at
                                             # cos(LANDING_MAX_TILT_DEG) of the
                                             # cap, its taper joined where it is
