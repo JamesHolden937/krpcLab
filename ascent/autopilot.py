@@ -59,6 +59,29 @@ DONE = "DONE"
 PROPELLANTS = ("LiquidFuel", "Oxidizer")
 ATM = 101325.0
 
+# KRPC.MechJeb (kRPC main) splits MechJeb's ascent settings over the autopilot
+# and its two paths: each setting not on the autopilot itself, by the
+# autopilot property that holds it.
+MJ_OWNER = {
+    "turn_shape_exponent": "ascent_path_classic",
+    "desired_apoapsis": "ascent_path_pvg",
+    "pitch_start_velocity": "ascent_path_pvg",
+    "pitch_rate": "ascent_path_pvg",
+}
+# Config.ASCENT_TYPE (0 classic, 1 PVG) -> MechJeb 2.15's ascent path index
+ASCENT_PATH_INDEX = {0: 0, 1: 2}
+
+
+def mj_set(obj, k, v):
+    """Set a MechJeb setting, refusing a name the service does not have: a
+    kRPC object takes any attribute, and one it does not know is kept in
+    Python and never reaches the game (every setting but the autopilot's own,
+    after the API split, until this refused)."""
+    if not isinstance(getattr(type(obj), k, None), property):
+        raise AttributeError("%s has no setting %r"
+                             % (type(obj).__name__, k))
+    setattr(obj, k, v)
+
 
 class Stack:
     """The booster and the upper stage, read off the vessel's staging."""
@@ -522,6 +545,7 @@ class Ascent:
             a = self.mj.ascent_autopilot
             self.mj_settings = self.ascent_settings(self.pad_roll())
             self.apply_settings(a, self.mj_settings)
+            c, g = a.ascent_path_classic, a.ascent_path_pvg
             a.autostage = False
             try:
                 self.mj.staging_controller.enabled = False
@@ -533,20 +557,21 @@ class Ascent:
                            "deg/s, turn shape %.2f, roll %.1f (pad, vs "
                            "heading %.0f), "
                            "autostage off; status %s"
-                           % (a.ascent_type, a.desired_orbit_altitude,
-                              a.desired_apoapsis, a.desired_inclination,
-                              a.pitch_start_velocity, a.pitch_rate,
-                              a.turn_shape_exponent,
+                           % (a.ascent_path_index, a.desired_orbit_altitude,
+                              g.desired_apoapsis, a.desired_inclination,
+                              g.pitch_start_velocity, g.pitch_rate,
+                              c.turn_shape_exponent,
                               a.vertical_roll, self.cfg.ROLL_REF_HEADING_DEG,
                               a.status))
             self.gui.set_start_label("RUNNING")
             self.enter(LAUNCH, ut)
 
     def ascent_settings(self, roll):
-        """What this script sets on MechJeb's ascent, by attribute."""
+        """What this script sets on MechJeb's ascent, by attribute (the
+        object that holds each is ``MJ_OWNER``'s)."""
         cfg = self.cfg
         return {
-            "ascent_type": int(cfg.ASCENT_TYPE),
+            "ascent_path_index": ASCENT_PATH_INDEX[int(cfg.ASCENT_TYPE)],
             "desired_orbit_altitude": float(cfg.ORBIT_ALT_M),
             # PVG (MechJeb 2.15) targets periapsis *and* apoapsis; left at
             # its default, it burned every upper stage to the end -- the
@@ -563,9 +588,15 @@ class Ascent:
         }
 
     @staticmethod
-    def apply_settings(a, settings):
+    def mj_owner(a, k):
+        """The object of MechJeb's ascent that holds setting ``k``."""
+        o = MJ_OWNER.get(k)
+        return getattr(a, o) if o else a
+
+    @classmethod
+    def apply_settings(cls, a, settings):
         for k, v in settings.items():
-            setattr(a, k, v)
+            mj_set(cls.mj_owner(a, k), k, v)
 
     def check_settings(self, ut, why):
         """Re-read MechJeb's ascent settings and put back any that differ.
@@ -576,14 +607,15 @@ class Ascent:
         a = self.mj.ascent_autopilot
         off = []
         for k, v in self.mj_settings.items():
+            obj = self.mj_owner(a, k)
             try:
-                now = getattr(a, k)
+                now = getattr(obj, k)
             except Exception:           # noqa: BLE001
                 continue
             if (isinstance(v, float) and abs(now - v) > 1e-6 * max(1.0, abs(v))) \
                     or (not isinstance(v, float) and now != v):
                 off.append("%s %s->%s" % (k, now, v))
-                setattr(a, k, v)
+                mj_set(obj, k, v)
         self.log.event(ut, "mechjeb settings %s: %s; enabled %s, status %s"
                        % (why, ", ".join(off) or "as set", a.enabled,
                           a.status))
@@ -701,7 +733,7 @@ class Ascent:
         t0 = time.monotonic()
         stack, cfg = self.stack, self.cfg
         body, frame = self.body, self.frame
-        a = self.mj.ascent_autopilot
+        a = self.mj.ascent_autopilot.ascent_path_classic
         pad_alt = self.pad_alt
         b_thrust_vac = sum(stack.thrust.values())
         gimbal, fixed = None, 0.0
@@ -758,7 +790,7 @@ class Ascent:
         curve = " ".join("%.2f:%.1f" % (r.shape, r.mass / 1e3)
                          for r in sorted(flown, key=lambda r: r.shape)[::2])
         if math.isfinite(best.mass):
-            a.turn_shape_exponent = float(best.shape)
+            mj_set(a, "turn_shape_exponent", float(best.shape))
             self.mj_settings["turn_shape_exponent"] = float(best.shape)
         self.log.event(ut, "turn shape: %s %.3f (orbit %.2f t, sep %.0f m "
                        "%.0f m out at %.0f s, circ %.0f m/s) path %.0f-%.0f m"

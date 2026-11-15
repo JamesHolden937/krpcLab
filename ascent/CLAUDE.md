@@ -80,11 +80,17 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
 
 **MechJeb over kRPC** needs KRPC.MechJeb built for MechJeb 2.15: the
 released 0.7.1 (Genhis) cannot find 2.15's ascent module. Installed is
-darchambault's fork **v0.8.1** (`krpc-mechjeb-0.8.1.zip`), in
+the KRPC.MechJeb of kRPC main (0.8.0-dev, since 2026-11-14), in
 `GameData/kRPC/` of the live game and every farm instance; MechJeb2 2.15.3
 is in the farm's `base/` (no longer stripped; per-craft MechJeb settings
 deleted so every instance starts at MechJeb's defaults). The API is
-flat: `ascent_autopilot.ascent_type` 0 classic / 1 PVG.
+split: `ascent_autopilot` holds the common settings and
+`ascent_path_index` (0 classic, 2 PVG; `ASCENT_TYPE` 0/1 maps to it),
+`ascent_path_classic` the turn (`turn_shape_exponent`, auto path),
+`ascent_path_pvg` `desired_apoapsis` and the pitch kick. `MJ_OWNER` in
+`autopilot.py` says which holds what; `mj_set` refuses a name the object
+lacks (a kRPC object otherwise keeps an unknown attribute in Python and the
+game never sees it).
 
 Saves: `qs_stack` (the shuttle stack, 366.8 t), `qs_stack_small` (one-Vector
 booster under a pod, 73.9 t), `qs_stack_stretch` (the small stack with a
