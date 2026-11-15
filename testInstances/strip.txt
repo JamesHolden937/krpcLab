@@ -83,3 +83,8 @@ AfbwKalFix
 TrackingStationEvolved
 PreciseEditor
 VolumetricExplosionFX
+# PersistentThrust: its AllEngines.cfg adds PersistentEngine to every engine, and on the farm that
+# zeroes the engine's thrust on a growing share of physics frames once the tanks are ~half empty
+# (throttle 1, propellant present, no flameout): booster flow halved from ~70 s, every ascent stack
+# suborbital (LOG16692/16693; removed on ksp0 2026-11-14: full flow). The farm never thrusts under warp.
+PersistentThrust

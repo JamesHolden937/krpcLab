@@ -10,6 +10,10 @@
   thrust 0 on more and more frames from 60-70 s at throttle 1, propellant present. Not MechJeb, krpcLab,
   kRPC 0.7 v 0.8, GimbalTorqueFix or the time scale (each removed in turn, no-MechJeb vertical flights);
   the user's live stack does it on the farm too; live 11-13 did not. Open: live build updated 11-14 15:26.
+- Farm rebuilt from the 11-14 live build: still stalled. Removing PersistentThrust from ksp0 gave full flow
+  (631 m/s at 90 s v 419). Live is unaffected because it also runs KOE's PropellantRequestFix, which the farm
+  strips. PersistentThrust stripped from the farm: LOG16694 (small, 9.353 t) and LOG16695 (shuttle stack,
+  64.380 t) both 80 x 80, within 1-2% of the solve's mass.
 
 ## Session, 2026-10-18 evening: first version
 

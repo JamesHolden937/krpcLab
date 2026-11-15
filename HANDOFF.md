@@ -15,7 +15,7 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); every stack loses booster thrust on the farm (open)
+## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
 **The user's live ascent died at liftoff (LOG16691, Heavy Shuttle):** `'AscentAutopilot' object has no attribute
 'auto_path'`. kRPC main's KRPC.MechJeb (installed 11-14 with kRPC 0.8) splits the ascent: `ascent_autopilot`
@@ -26,20 +26,19 @@ reached MechJeb. Fixed (652811c): `MJ_OWNER` routes each setting, `mj_set` refus
 `ASCENT_TYPE` 0/1 maps to the path index. Also (4a45566): a pod destroyed after separation ("The active vessel
 has no MechJeb") is logged as `upper stage lost`, not a crash. Defaults fingerprint unchanged. Not flown live.
 
-**Open, blocking every farm ascent: booster thrust cuts out from ~60-70 s.** LOG16692 (qs_stack_small) and
-LOG16693 (qs_stack) both lost the upper stage (apo 28 / 73 km, suborbital). The engine reads Nominal,
-throttle 1, not deprived, 2200 units available, flameout False, yet `finalThrust` and `fuelFlowGui` are 0 on
-a growing share of frames (half the flow by 80 s, ~0 later); onset is keyed to the propellant state (both
-booster tanks ~52%), not altitude. **Ruled out on ksp0, each with a no-MechJeb full-throttle vertical flight
-(scratch scripts, not kept):** MechJeb, krpcLab, kRPC 0.8 (0.7 backup swapped in: same), GimbalTorqueFix
-(removed: same), time scale (true 1x: same), MechJeb thrust limiters (all off). The user's own stack (live FMRS
-before_launch.sfs of 11-14 16:06) stalls the same on the farm (4.2 -> 2.1 t/s after 60 s). The live
-Heavy Shuttle ascent of 11-13 (LOG16370, kRPC 0.7) held 4.2 t/s to separation. Farm-only mods
-(BoosterlandAutoLoad/TimeScale, CollisionSpy) touch no propellant. **The live game was auto-updated to a newer
-Retooled build at 11-14 15:26** (Assembly-CSharp differs from the farm's 11-13 16:14 build).
-Next: (1) the user's next live ascent says whether live has it (`thr=` and `prop=` in the ASCENT telemetry, the
-`gimbals locked: no thrust` events). (2) Rebuild the farm from the current live build (kspfarm README) and
-re-fly; (3) if it persists, diff stripped mods (mkbase.sh) -- a live-only mod may be what fixes it.
+**Farm booster thrust cutouts: found and fixed (farm rebuilt 2026-11-14 ~17:15).** From ~60-70 s every stack's
+booster delivered 0 thrust on a growing share of frames (throttle 1, propellant present, no flameout): LOG16692
+(qs_stack_small) and LOG16693 (qs_stack) went suborbital. Cause: **PersistentThrust**, whose AllEngines.cfg adds
+`PersistentEngine` to every engine. The live game runs the same PersistentThrust at full flow because it also runs
+KerbalOverEngineering's `stock/PropellantRequestFix`, and the farm strips KOE (the user, 11-13: take it out of base).
+Ruled out first, each by a no-MechJeb vertical flight: MechJeb, krpcLab, kRPC 0.7 v 0.8, GimbalTorqueFix, time scale,
+the Retooled build. Fix: the farm rebuilt from today's live build (base Assembly-CSharp = live's; old base and
+ksp0-5 in `~/kspfarm/old-retooled-1113/`, safe to delete) and **PersistentThrust added to `testInstances/strip.txt`**
+(removed from base and all six clones). After: LOG16694 qs_stack_small 80 x 80, 9.353 t in orbit (solve 9.48);
+LOG16695 qs_stack 80 x 80, 64.380 t (solve 65.02). Alternative if the farm should match live more closely: keep
+PersistentThrust and install only KOE's PropellantRequestFix (it needs KerbalOverEngineering.Options).
+Next: the user's live ascent on the fixed code; boosterland comparisons across the rebuild are not like for like
+(new build, no PersistentThrust).
 
 **Trap:** kRPC 0.8 renamed nothing in `Module` beyond what 0.7 did (`common/partmodule.py` covers it), but any
 other kRPC class: an unknown attribute *set* is silent. Grep for setattr/assignments on kRPC objects after an API
