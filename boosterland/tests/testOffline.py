@@ -132,6 +132,24 @@ class TestPropagation(unittest.TestCase):
         self.assertLess(distances[0], distances[1])
         self.assertLess(distances[1], distances[2])
 
+    def test_burn_offset_tilts_the_burn(self):
+        """A nose held off retrograde toward the vertical brakes less of the
+        horizontal speed, so the burn carries the touchdown further downrange;
+        a zero offset is the plain retrograde burn."""
+        env = FakeEnv()
+        cfg = Config()
+        r, v = state_above_pad(6000.0, (-300.0, 0.0, 100.0))
+        back = vec.unit(vec.scale(v, -1.0))
+        up = vec.unit(vec.project_out((1.0, 0.0, 0.0), back))
+        plain = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg)
+        zero = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
+                                          burn_offset=(0.0, up))
+        tilted = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
+                                            burn_offset=(math.radians(6.0), up))
+        self.assertTrue(plain.powered)
+        self.assertAlmostEqual(zero.position[2], plain.position[2], places=6)
+        self.assertGreater(tilted.position[2], plain.position[2] + 5.0)
+
     def test_rotating_frame_terms_deflect_the_impact(self):
         cfg = Config()
         r, v = state_above_pad(40000.0, (0.0, 0.0, 600.0))

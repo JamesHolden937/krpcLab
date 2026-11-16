@@ -322,7 +322,7 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
 
 
 def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
-                    steer=None, drag_scale=1.0):
+                    steer=None, drag_scale=1.0, burn_offset=None):
     """Propagate to touchdown, including the landing burn's downrange creep.
 
     ``steer`` is the angle of attack the vehicle is going to fly (see
@@ -331,6 +331,9 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     that does not include the steering the booster is about to fly is a
     prediction of a trajectory nobody flies.
 
+
+    ``burn_offset`` is ``(angle, side)``: the burn's thrust flown that many
+    radians off retrograde toward ``side`` (see :func:`_fly_landing_burn`).
     """
     drag = drag_lookup(env, drag_area, drag_scale)
     r = tuple(r0)
@@ -405,7 +408,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
         r, v, burn_time, burn_steps = _fly_landing_burn(
-            env, r, v, mass, max_accel, cfg, drag)
+            env, r, v, mass, max_accel, cfg, drag, offset=burn_offset)
         steps += burn_steps
 
     return Prediction(
@@ -420,7 +423,8 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     )
 
 
-def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None):
+def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
+                      offset=None):
     """Integrate the suicide burn itself: thrust anti-velocity on the profile.
 
     Returns the touchdown state, how long the burn took and the steps spent.
@@ -428,9 +432,38 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None):
     trajectory bends toward the vertical as the horizontal speed is eaten --
     which is the part a closed form gets wrong, and the part that decides
     where the booster actually ends up.
+
+    ``offset`` -- ``(angle, side)``, radians and a body-frame direction -- is
+    the nose's measured tracking error, held: the thrust is flown ``angle``
+    off retrograde toward ``side`` (made perpendicular to the velocity each
+    step), and the body makes the lift of that angle of attack on the probed
+    curve (``env.lift_slope_held``).  A booster leaving the coast's angle of
+    attack keeps 5-7 deg of it for ~5 s at 0.77 throttle, and that tilted
+    thrust carried the touchdown 20-100 m long while this function assumed
+    the nose already on retrograde (nodiv-1115).  Held rather than modelled:
+    the caller re-reads it every tick, so a decaying error decays here too.
     """
     t = 0.0
     steps = 0
+    angle, side = offset if offset is not None else (0.0, None)
+    if angle > 1e-4 and side is not None:
+        n = vec.cross(v, side)
+        slope = getattr(env, "lift_slope_held", None)
+        if vec.norm(n) > 1e-9 and slope is not None:
+            steer = Steer(angle, vec.unit(n), slope)
+    else:
+        angle, side = 0.0, None
+
+    def thrust_dir(vv):
+        back = vec.scale(vec.unit(vv), -1.0)
+        if side is None:
+            return back
+        s = vec.project_out(side, back)
+        if vec.norm(s) < 1e-9:
+            return back
+        return vec.add(vec.scale(back, math.cos(angle)),
+                       vec.scale(vec.unit(s), math.sin(angle)))
+
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
         height = radius - env.target_radius
@@ -443,8 +476,8 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None):
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
 
         r, v = _step(env, r, v, mass, drag, dt, cfg,
-                     lambda rr, vv: vec.scale(vec.unit(vv),
-                                              -throttle * max_accel),
+                     lambda rr, vv: vec.scale(thrust_dir(vv),
+                                              throttle * max_accel),
                      steer=steer)
         t += dt
         steps += 1

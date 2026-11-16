@@ -368,6 +368,11 @@ class Config:
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
                                             # vertical for the last few m
     LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_command
+    LANDING_PREDICT_TRACKING: bool = False  # the burn's prediction flies the
+                                            # nose's measured tracking error
+                                            # (thrust along it, and its lift),
+                                            # re-read every tick; see
+                                            # trajectory._fly_landing_burn
     LANDING_DIVERT_MIN_ACCEL: float = 1.0   # thrust needed before steering means anything
     LANDING_DIVERT_THROTTLE_BUDGET: bool = True  # never tilt into the
                                             # braking: cap the tilt at the

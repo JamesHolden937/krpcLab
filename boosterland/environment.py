@@ -584,6 +584,13 @@ class Environment:
                                    self.mach(speed, altitude))
         return slope * self.aoa_tracking * self.aoa_tracking
 
+    def lift_slope_held(self, speed, altitude):
+        """Cl*A per radian squared of angle *held*, at this Mach: the probed
+        curve itself, for a caller that already has the real angle of attack
+        (``lift_slope_at`` discounts a command by the measured tracking)."""
+        return self._interp_curve(self._lift_machs, self._lift_areas,
+                                  self.mach(speed, altitude))
+
     def record_tracking(self, commanded_deg, held_deg):
         """Fold one (commanded, held) pair into ``aoa_tracking``.
 
