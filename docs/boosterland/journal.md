@@ -1244,3 +1244,24 @@ qs_finbooster3, 12 an arm, fresh farm, defaults 9c021039 against `LANDING_DIVERT
   79, 107 -> 98): the propagator flies the lower burn right. The divert only pulls ~35 -> ~16 m by 250 m.
 - So an unguided hoverslam would land within ~10 m of the ignition-time prediction once the post-ignition drift
   is modelled or removed; the coast already aims to within ~16 m at ignition.
+
+### 2026-11-15 evening: fine-tuned bands ruled out; one law (one-1115, LOG17113-17184)
+
+The user: the 2500/250/4 m steering bands are fitted to one booster and would break on others; fine-tuned
+methods are not permitted (now a root CLAUDE.md rule). trk-1115 (early divert / LANDING_PREDICT_TRACKING) was
+killed unread as a variant on top of those bands.
+
+`LANDING_ONE_LAW` (cdcb942): base = retrograde with its angle from vertical scaled by min(1, rate*speed/thrust)
+(`trajectory.base_direction`; rate = Autoland.null_rate, 0.5/time_to_peak), ZEM on the propagator's prediction
+of that base with gain min(6/t_go^2, rate^2), throttle side-speed share from the same rate, upright cone over the
+last 1/rate. 12 per arm and save:
+
+| save | def td med / p75 / max / lost / hs | one |
+|---|---|---|
+| qs_finbooster3 | 13.3 / 16 / 61 / 0 / 0.2 | 12.1 / 16 / 18 / 0 / 7.0 |
+| qs_finbooster | 33.0 / 44 / 80 / 4 / 11.0 | 41.9 / 63 / 156 / 5 / 5.7 |
+| qs_heavy | 66.2 / 176 / 1337 / 4 / 0.3 | 20.2 / 31 / 600 / 9 / 5.2 |
+
+Aim better on the heavy, no worse on fin3, but it touched down sideways: the position hold at rate^2 x against a
+velocity null at rate drives the booster at rate*x toward the pad (LOG17136: 14 m out, hs 2.1 -> 5.8 m/s in the
+last 20 m). Fix (352c772): the aiming gain fades by t^2/(t^2+T^2), T = 2/rate. Flown as one2-1115.
