@@ -3,11 +3,15 @@
 A prediction re-propagated every tick moves by its own noise (a drag
 estimate settling, a tick's worth of state) even when nothing real changed.
 A deadband smaller than that acts on noise; one larger is a dead zone the
-law cannot see into.  So deadbands are made of this: ``sd`` is the
-tick-to-tick scatter, ``sqrt(mean(|d|^2) / 2)`` over the last ``SAMPLES``
-differences (an exponential average), which is the sample's own noise when
-the differences are independent.  None until ``SAMPLES`` differences are in:
-an unknown noise is not a small one.
+law cannot see into.  So deadbands are made of this.
+
+It is the scatter about the quantity's own trend: second differences
+``p[k] - 2 p[k-1] + p[k-2]`` (a steady drift -- a burn walking the
+prediction ~750 m a tick, gen-1115 -- has none), ``sd = median|d2| /
+sqrt(6)`` over the last ``SAMPLES`` (white noise of sd s gives d2 of sd
+s sqrt(6)); the median ignores the occasional real jump (a drag re-sweep, a
+re-solve).  None until ``SAMPLES`` are in: an unknown noise is not a small
+one.
 """
 
 import math
@@ -22,29 +26,33 @@ class Jitter:
         self.reset()
 
     def reset(self):
-        self.last = None
-        self.mean_sq = None
-        self.count = 0
+        self.prev = []          # the last two values
+        self.diffs = []
 
     def update(self, value):
         """``value`` is a vector (tuple); returns :attr:`sd`."""
         if value is None:
             return self.sd
         value = tuple(value)
-        if self.last is not None:
-            d2 = vec.dot(vec.sub(value, self.last), vec.sub(value, self.last))
-            w = 1.0 / min(SAMPLES, self.count + 1)
-            self.mean_sq = d2 if self.mean_sq is None else (
-                (1.0 - w) * self.mean_sq + w * d2)
-            self.count += 1
-        self.last = value
+        if len(self.prev) == 2:
+            a, b = self.prev
+            d2 = vec.add(vec.sub(value, vec.scale(b, 2.0)), a)
+            self.diffs.append(vec.norm(d2))
+            if len(self.diffs) > SAMPLES:
+                self.diffs.pop(0)
+        self.prev = (self.prev + [value])[-2:]
         return self.sd
 
     @property
+    def count(self):
+        return len(self.diffs)
+
+    @property
     def sd(self):
-        if self.count < SAMPLES or self.mean_sq is None:
+        if len(self.diffs) < SAMPLES:
             return None
-        return math.sqrt(0.5 * self.mean_sq)
+        d = sorted(self.diffs)
+        return d[len(d) // 2] / math.sqrt(6.0)
 
     def band(self, sigmas):
         """``sigmas`` standard deviations, or None while unmeasured."""

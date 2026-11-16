@@ -414,11 +414,12 @@ class Vessel:
                                    _angle_between(self.pointing, target))
         rate = self.slew_deg_s + self.gimbal_deg_s * self._applied_throttle()
         step = math.radians(rate) * dt
+        limit = step
+        want = _angle_between(self.pointing, target)
         if self.lag_s:
-            limit = step
-            step = min(step, _angle_between(self.pointing, target)
-                       * (1.0 - math.exp(-dt / self.lag_s)))
-            self.control.pitch = step / limit if limit > 0.0 else 0.0
+            want *= 1.0 - math.exp(-dt / self.lag_s)
+        step = min(step, want)
+        self.control.pitch = step / limit if limit > 0.0 else 0.0
         self.pointing = _rotate_toward(self.pointing, target, step)
 
     def _applied_throttle(self):

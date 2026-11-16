@@ -1543,12 +1543,15 @@ class TestValveLimits(unittest.TestCase):
         from common.jitter import Jitter, SAMPLES
         lim = ValveLimits(Config())
         j = Jitter()
-        lim.measure(j, 3.0, None)
+        lim.measure(j, 3.0, None, None)
         self.assertFalse(lim.measured)
         self.assertEqual(lim.RCS_ERROR_ON_DEG, 0.0)
-        for i in range(SAMPLES + 2):
-            lim.measure(j, 3.0 + (0.4 if i % 2 else -0.4), 0.3)
+        for i in range(SAMPLES + 4):
+            lim.measure(j, 3.0, 0.3, math.radians(1.0))
         self.assertTrue(lim.measured)
+        # The valve shuts outside NOISE_SIGMAS of the loop's measured hunt.
+        self.assertAlmostEqual(lim.RCS_ERROR_OFF_DEG,
+                               Config().NOISE_SIGMAS * 1.0, places=6)
         self.assertGreater(lim.RCS_ERROR_ON_DEG, lim.RCS_ERROR_OFF_DEG)
         self.assertAlmostEqual(lim.RCS_SETTLE_S, Config().SETTLE_LAGS * 0.3)
 

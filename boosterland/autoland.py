@@ -34,7 +34,7 @@ from common.krpcpilot import (  # noqa: F401
 from common import cli
 from common.launchsite import launch_site
 from common.attitudelag import LagFit
-from common.jitter import Jitter
+from common.jitter import SAMPLES as JITTER_SAMPLES, Jitter
 from common.touchdown import landing_limits, read_legs, touchdown_limit
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
@@ -408,16 +408,20 @@ class ValveLimits:
     """The RCS valve's relay thresholds, measured rather than fitted; every
     other ``RCS_*`` field reads through to the config.
 
-    - off inside ``NOISE_SIGMAS`` sd of the pointing error's own tick scatter
-      (``common.jitter``): closer than that is not a turn, it is the hunt;
+    - off inside ``NOISE_SIGMAS`` times what a settled nose is off its
+      command: the loop's hunt -- the rms scatter of the nose about its
+      delayed command (``common.attitudelag``) -- plus the trail of a nose a
+      lag behind a moving command (command rate x lag), plus the pointing
+      error's own tick scatter (``common.jitter``): closer than that is not a
+      turn (a fin booster holds ~1 deg);
     - on past ``NOISE_SIGMAS`` times that (the relay's gap, so it cannot
       switch at the hunt's own frequency);
     - settled after ``SETTLE_LAGS`` measured nose lags inside; an input
       pinned for one lag is a saturation.
 
-    Until the scatter and the lag are measured, both angles are 0: the
-    valve is open whenever it is permitted -- an unknown is all the
-    authority there is, not none."""
+    Until the hunt and the lag are measured, both angles are 0: the valve is
+    open whenever it is permitted -- an unknown is all the authority there
+    is, not none."""
 
     def __init__(self, cfg):
         self._cfg = cfg
@@ -430,16 +434,18 @@ class ValveLimits:
     def __getattr__(self, name):
         return getattr(self._cfg, name)
 
-    def measure(self, jitter, error_deg, lag):
+    def measure(self, jitter, error_deg, lag, hunt=None, cmd_rate=None):
         if error_deg is not None and error_deg >= 0.0:
             jitter.update((error_deg, 0.0, 0.0))
         sd = jitter.sd
-        if sd is None or not lag:
+        if sd is None or not lag or hunt is None:
             return
         k = self._cfg.NOISE_SIGMAS
         self.measured = True
-        self.RCS_ERROR_OFF_DEG = k * sd
-        self.RCS_ERROR_ON_DEG = k * k * sd
+        # A nose a lag behind a command moving at cw is cw * lag off it.
+        trail = (cmd_rate or 0.0) * lag
+        self.RCS_ERROR_OFF_DEG = k * (math.degrees(hunt) + trail + sd)
+        self.RCS_ERROR_ON_DEG = k * self.RCS_ERROR_OFF_DEG
         self.RCS_SETTLE_S = self._cfg.SETTLE_LAGS * lag
         self.RCS_SAT_ON_S = lag
 
@@ -532,6 +538,7 @@ class Autoland:
         self.rcs = rcs_valve.Valve(self.rcs_limits, logbook)
         self.err_jitter = Jitter()      # the pointing error's tick scatter
         self.velocity_jitter = Jitter()  # the horizontal velocity's
+        self.cmd_rates = []             # recent command rates (deg/s)
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
         self.tune_logged = 0            # log_attitude_tune's progress
@@ -808,9 +815,10 @@ class Autoland:
                            % ("trim" if self.state == COAST
                               else "landing burn"))
         self.rcs_limits.measure(self.err_jitter, self.pointing_error(snap),
-                                self.lag.lag)
+                                self.lag.lag, self.lag.hunt,
+                                self.steady_cmd_rate())
         if self.rcs_limits.measured:
-            self.env.pointing_band = self.rcs_limits.RCS_ERROR_ON_DEG
+            self.env.pointing_band = self.rcs_limits.RCS_ERROR_OFF_DEG
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
@@ -1215,8 +1223,11 @@ class Autoland:
             # instances the same save exited 2.7 s apart -- 150 m at the pad
             # -- and nothing in the log said so.  Now it does.
             self.enter(COAST, snap.ut,
-                       "miss=%.0fm long=%+.0f held=%.2fs ticks=%d"
-                       % (distance, long, held, self.boostback_under))
+                       "miss=%.0fm long=%+.0f remaining=%s band=%.1f "
+                       "held=%.2fs ticks=%d"
+                       % (distance, long,
+                          "%+.0f" % remaining if remaining is not None
+                          else "-", band, held, self.boostback_under))
         elif elapsed > self.cfg.BOOSTBACK_MAX_BURN_S:
             self.set_throttle(0.0)
             self.enter(COAST, snap.ut, "TIMEOUT miss=%.0fm" % distance)
@@ -1900,6 +1911,18 @@ class Autoland:
         if lam is None:
             return None
         return lam * self.cfg.LANDING_MAX_TILT_DEG
+
+    def steady_cmd_rate(self):
+        """deg/s the command moves, the median of the last ``jitter.SAMPLES``
+        ticks: a command that steps (a new phase, a flip) is one tick of
+        enormous rate, and it is not a rate the nose trails."""
+        if self.cmd_rate is not None:
+            self.cmd_rates.append(self.cmd_rate)
+            if len(self.cmd_rates) > JITTER_SAMPLES:
+                self.cmd_rates.pop(0)
+        if not self.cmd_rates:
+            return None
+        return sorted(self.cmd_rates)[len(self.cmd_rates) // 2]
 
     def velocity_band(self, snap):
         """The horizontal speed below which the trajectory plane cannot be

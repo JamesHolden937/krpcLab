@@ -471,7 +471,7 @@ class Environment:
         if speed < 1e-6 or axis < 1e-6:
             return False
         cos = -vec.dot(nose, velocity) / (axis * speed)
-        return cos >= math.cos(math.radians(limit))
+        return cos >= math.cos(math.radians(limit)) - 1e-9   # float slack
 
     def sample_is_clean(self, velocity, nose):
         """Is the vehicle pointed near the attitude the descent is flown at?
@@ -575,7 +575,11 @@ class Environment:
         # Neither measured yet: no probe.
         if self.pointing_band is None:
             return None
-        aoa = max(self.descent_aoa or 0.0, math.radians(self.pointing_band))
+        # A degree at least: the probe's sideforce goes as the angle
+        # squared, and much under that it is lost in the float noise of the
+        # drag it rides on (a perfect nose read 3.5 for 12, testFlightSim).
+        aoa = max(self.descent_aoa or 0.0, math.radians(self.pointing_band),
+                  math.radians(1.0))
         if aoa <= 0.0:
             return None
         tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),

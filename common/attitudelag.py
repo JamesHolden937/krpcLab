@@ -60,6 +60,8 @@ class LagFit:
         self.lag = None
         self.samples = 0
         self.rel_error = None   # residual at the best delay / at none
+        self.hunt = None        # rad: rms scatter of the nose about the
+                                # delayed command (the loop's hunt)
         self.next_fit_ut = None
 
     def reset(self):
@@ -99,21 +101,33 @@ class LagFit:
         # The nose at tick i against the command in force k ticks before it
         # (h[i - k][2] has been in force since tick i - k - 1): k = 0 is the
         # command the nose has had one tick to follow.
+        # Every delay is scored on the same ticks (the newest half): scored
+        # on its own n - k, a longer delay dropped the oldest -- largest --
+        # errors and always looked better (lag ran away to 3.5 s, gen-1115).
         best = None
         base = None
-        for k in range(0, n // 2):
+        top = n // 2
+        for k in range(0, top):
             total = 0.0
-            for i in range(k, n):
+            for i in range(top, n):
                 total += _angle_sq(h[i][1], h[i - k][2])
-            mean = total / (n - k)
+            mean = total / (n - top)
             if base is None:
                 base = mean
             if best is None or mean < best[1]:
                 best = (k, mean)
+        dt = (h[-1][0] - h[0][0]) / (n - 1)
         if base <= 1e-12:
+            # The nose is on its command within a tick: a lag the loop
+            # cannot resolve, so one tick -- if the command moved at all.
+            moved = any(_angle_sq(h[i][2], h[i - 1][2]) > 1e-12
+                        for i in range(1, n))
+            if moved and self.rate is None:
+                self.lag, self.rate = dt, 1.0 / dt
+            if moved:
+                self.hunt = 0.0
             return
         self.rel_error = best[1] / base
-        dt = (h[-1][0] - h[0][0]) / (n - 1)
         if best[0] == 0:
             # Within a tick: the lag is shorter than the loop can resolve.
             if self.rate is None:
@@ -124,3 +138,4 @@ class LagFit:
         # k ticks of command age plus the tick the newest command has had.
         self.lag = (best[0] + 1) * dt
         self.rate = 1.0 / self.lag
+        self.hunt = math.sqrt(max(0.0, best[1]))
