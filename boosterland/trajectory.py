@@ -146,6 +146,50 @@ def planned_net(max_accel, g, cfg):
     return max_accel * cfg.LANDING_THROTTLE_CAP * share - g
 
 
+def one_law_rate(env, cfg):
+    """The attitude rate (1/s) the one-law burn closes at, or None when the
+    law is off or the rate is unread."""
+    if not cfg.LANDING_ONE_LAW:
+        return None
+    rate = getattr(env, "attitude_rate", None)
+    return rate if rate and rate > 0.0 else None
+
+
+def base_direction(v, up, thrust_accel, rate):
+    """The burn's braking direction under ``LANDING_ONE_LAW``.
+
+    Retrograde nulls the sideways speed for free, at a rate of
+    ``thrust / speed`` per second: negligible at 700 m/s, ~3/s at the last
+    few m/s, far faster than the nose can follow (the dv3-1115 last-20 m
+    oscillation).  So the angle retrograde makes with the vertical is scaled
+    by ``min(1, rate * speed / thrust)``: exactly retrograde while its
+    implied rate is under the attitude ``rate``, and continuously a vertical
+    reference nulling the sideways speed at ``rate`` once it is not (small
+    angle: lateral accel = thrust * angle = rate * v_h).  Nothing switches at
+    a height.  Going up, the same rate from vertical; with no thrust,
+    retrograde (or vertical when climbing), ready for the throttle.
+    """
+    speed = vec.norm(v)
+    if speed < 1e-6:
+        return tuple(up)
+    retro = vec.scale(v, -1.0 / speed)
+    lateral = vec.project_out(v, up)
+    h = vec.norm(lateral)
+    descending = vec.dot(v, up) < 0.0
+    if thrust_accel <= 1e-6:
+        return retro if descending else tuple(up)
+    if h < 1e-6:
+        return tuple(up)
+    if descending:
+        gamma = math.radians(vec.angle_between(retro, up))
+        theta = gamma * min(1.0, rate * speed / thrust_accel)
+    else:
+        theta = math.atan(min(1.0 / speed, rate / thrust_accel) * h)
+    side = vec.scale(lateral, -1.0 / h)
+    return vec.unit(vec.add(vec.scale(up, math.cos(theta)),
+                            vec.scale(side, math.sin(theta))))
+
+
 def landing_burn_state(env, r, v, max_accel, cfg, height=None):
     """(height, height needed to stop, net decel) right now.
 
@@ -193,7 +237,14 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         # band, where the divert takes over the lateral, none on the ground.
         down = max(0.0, -vertical_speed)
         side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
-        w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
+        rate = one_law_rate(env, cfg)
+        if rate is not None:
+            # The share of the sideways speed the thrust along the profile
+            # brakes: all of it while the base is retrograde, the rest left
+            # to the law once the base nulls it at ``rate`` (base_direction).
+            w = min(1.0, rate * speed / max(1e-6, max_accel))
+        else:
+            w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
         speed = math.sqrt(down * down + w * w * side_sq)
     net = max(0.1, planned_net(max_accel, g, cfg))
 
@@ -248,7 +299,8 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     # retrograde and a climbing booster's thrust still brakes it.
     if (vertical_speed is not None
             and vertical_speed >= 0.0
-            and height <= cfg.LANDING_NULL_ALT_M):
+            and (height <= cfg.LANDING_NULL_ALT_M
+                 or one_law_rate(env, cfg) is not None)):
         throttle = 0.0
     # The same floor bites a metre up without any ascent to give it away, and
     # there it is worse, because the vehicle is about to touch.  LOG446 was
@@ -454,8 +506,12 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
     else:
         angle, side = 0.0, None
 
-    def thrust_dir(vv):
+    rate = one_law_rate(env, cfg)
+
+    def thrust_dir(vv, rr=None, accel=0.0):
         back = vec.scale(vec.unit(vv), -1.0)
+        if rate is not None and rr is not None:
+            back = base_direction(vv, vec.unit(rr), accel, rate)
         if side is None:
             return back
         s = vec.project_out(side, back)
@@ -476,8 +532,9 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
 
         r, v = _step(env, r, v, mass, drag, dt, cfg,
-                     lambda rr, vv: vec.scale(thrust_dir(vv),
-                                              throttle * max_accel),
+                     lambda rr, vv: vec.scale(
+                         thrust_dir(vv, rr, throttle * max_accel),
+                         throttle * max_accel),
                      steer=steer)
         t += dt
         steps += 1

@@ -254,6 +254,19 @@ across instances, and re-clone rather than patch.
 
 These bite in both projects and are the ones a change most often violates.
 
+- **Fine-tuned methods are not permitted** (the user, 2026-11-15). A law
+  must work on every vehicle of its kind without re-fitting: no mode
+  switches at fitted altitudes, distances, speeds or times (the booster
+  burn's 2500/250/4 m steering bands are the example), no gains or margins
+  sized on one craft or one save. Every threshold and gain is derived from
+  a quantity the program measures on the craft in flight (thrust, attitude
+  bandwidth, torque, mass, drag) or from physics, and where a mode change is
+  needed it falls out of a continuous law (a gain capped by the measured
+  bandwidth) rather than a switch. A dimensionless policy (a tilt share, a
+  gain ratio from optimal control) is allowed; a length, time or speed
+  fitted to make one flight land is not. Don't fly a batch whose arms are
+  re-fits of such a constant: replace the constant first.
+
 - **A flag ends its life as the default or deleted -- never parked off.**
   A mechanism goes in behind a flag so it can be measured; once measured,
   it is promoted to the default (it won) or its code is deleted (refuted,

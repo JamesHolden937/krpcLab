@@ -408,6 +408,41 @@ class TerminalCommand:
     demand: float       # lateral acceleration the law wants, m/s^2
 
 
+def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
+                    tilt_budget_deg, rate):
+    """The burn's one steering law, ignition to touchdown (``LANDING_ONE_LAW``).
+
+    The base is ``trajectory.base_direction``: retrograde, scaled toward the
+    vertical as far as its implied sideways null rate would outrun the
+    attitude ``rate``.  On top, the zero-effort-miss law on the propagator's
+    prediction of that same base -- ``ZEM_GAIN / t_go^2`` -- with its gain
+    capped at ``rate^2``: the aiming loop never closes faster than the nose
+    that executes it, so near the ground it fades into a slow position hold
+    rather than switching off at a height.  The tilt the miss adds is held
+    inside ``LANDING_MAX_TILT_DEG`` and the throttle's budget, as the divert's
+    was.
+    """
+    up = vec.unit(r)
+    a = max(0.0, thrust_accel)
+    base = trajectory.base_direction(v, up, a, rate)
+    if zem is None or a < cfg.LANDING_DIVERT_MIN_ACCEL:
+        return TerminalCommand(base, 0.0)
+    t_go = max(1e-3, time_to_land)
+    gain = min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)
+    accel = vec.scale(vec.project_out(zem, up), -gain)
+    accel = vec.project_out(accel, base)
+    demand = vec.norm(accel)
+    if demand < 1e-6:
+        return TerminalCommand(base, 0.0)
+    limit = cfg.LANDING_MAX_TILT_DEG
+    if tilt_budget_deg is not None:
+        limit = min(limit, tilt_budget_deg)
+    tilt = min(math.atan2(demand, a), math.radians(max(0.0, limit)))
+    return TerminalCommand(
+        vec.unit(vec.add(base, vec.scale(vec.unit(accel), math.tan(tilt)))),
+        demand)
+
+
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                      zem=None, tilt_budget_deg=None, null_rate=None):
     """The burn's command, stood up for the last ``LANDING_UPRIGHT_ALT_M``.
@@ -422,6 +457,18 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     that narrows linearly from the full tilt at ``LANDING_UPRIGHT_ALT_M`` of
     leg height to ``LANDING_UPRIGHT_TILT_DEG`` at the ground.  0 is off.
     """
+    if cfg.LANDING_ONE_LAW and null_rate and cfg.LANDING_TERMINAL_GUIDANCE:
+        cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
+                              tilt_budget_deg, null_rate)
+        # Stood up over the last nose response (1 / rate) to touchdown.
+        frac = min(1.0, max(0.0, time_to_land) * null_rate)
+        if frac >= 1.0:
+            return cmd
+        full = cfg.LANDING_MAX_TILT_DEG * 2.0
+        floor = cfg.LANDING_UPRIGHT_TILT_DEG
+        return TerminalCommand(
+            within_cone(cmd.direction, vec.unit(r),
+                        floor + (full - floor) * frac), cmd.demand)
     cmd = _terminal_command(env, r, v, height, time_to_land, thrust_accel,
                             cfg, zem, tilt_budget_deg, null_rate)
     top = cfg.LANDING_UPRIGHT_ALT_M

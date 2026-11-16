@@ -368,6 +368,9 @@ class Config:
     LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
                                             # vertical for the last few m
     LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_command
+    LANDING_ONE_LAW: bool = False           # one steering law ignition to
+                                            # touchdown, no altitude bands:
+                                            # see guidance.one_law_command
     LANDING_PREDICT_TRACKING: bool = False  # the burn's prediction flies the
                                             # nose's measured tracking error
                                             # (thrust along it, and its lift),

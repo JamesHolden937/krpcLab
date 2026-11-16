@@ -132,6 +132,35 @@ class TestPropagation(unittest.TestCase):
         self.assertLess(distances[0], distances[1])
         self.assertLess(distances[1], distances[2])
 
+    def test_one_law_base_is_retrograde_fast_and_rate_bounded_slow(self):
+        """Fast, the base is retrograde; slow, it nulls the sideways speed
+        at the attitude rate (lateral accel = rate * v_h), with no height in
+        the law."""
+        up = (1.0, 0.0, 0.0)
+        fast = (-700.0, 0.0, 300.0)
+        d = trajectory.base_direction(fast, up, 25.0, 0.5)
+        retro = vec.unit(vec.scale(fast, -1.0))
+        self.assertLess(vec.angle_between(d, retro), 1e-6)
+        slow = (-5.0, 0.0, 2.0)
+        d = trajectory.base_direction(slow, up, 12.0, 0.5)
+        lateral = 12.0 * vec.dot(d, (0.0, 0.0, -1.0))
+        self.assertAlmostEqual(lateral, 0.5 * 2.0, delta=0.1)
+        self.assertGreater(vec.dot(d, up), 0.99)
+
+    def test_one_law_aiming_gain_is_capped_at_the_attitude_rate(self):
+        """Near touchdown the miss is held at rate^2, not ZEM_GAIN / t_go^2."""
+        cfg = apply_overrides(Config(), ["LANDING_ONE_LAW=True"])
+        env = FakeEnv()
+        r = (KERBIN_R + 30.0, 0.0, 0.0)
+        v = (-5.0, 0.0, 0.0)
+        zem = (0.0, 0.0, 10.0)
+        late = guidance.one_law_command(env, r, v, 0.5, 15.0, cfg, zem, None, 0.5)
+        self.assertAlmostEqual(late.demand, 0.25 * 10.0, places=6)
+        early = guidance.one_law_command(env, r, v, 20.0, 15.0, cfg, zem, None, 0.5)
+        self.assertAlmostEqual(early.demand,
+                               cfg.LANDING_ZEM_GAIN / 400.0 * 10.0, places=6)
+        self.assertLess(vec.dot(late.direction, (0.0, 0.0, 1.0)), 0.0)
+
     def test_burn_offset_tilts_the_burn(self):
         """A nose held off retrograde toward the vertical brakes less of the
         horizontal speed, so the burn carries the touchdown further downrange;

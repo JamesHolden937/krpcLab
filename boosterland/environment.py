@@ -93,6 +93,9 @@ class Environment:
         self._lift_machs = []
         self._lift_areas = []
         self.lift_slope = None          # the value at the current Mach, logged
+        self.attitude_rate = None       # 1/s the lateral loops may close at
+                                        # (Autoland.null_rate), for the
+                                        # burn's law and its propagation
         # The fraction of a commanded angle of attack the vehicle actually
         # holds; see ``record_tracking``.  1 until measured.
         self.aoa_tracking = 1.0

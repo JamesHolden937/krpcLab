@@ -590,6 +590,8 @@ class Autoland:
 
     def predict(self, snap, powered, steer=None):
         max_accel = snap.max_accel if powered else 0.0
+        if self.cfg.LANDING_ONE_LAW and self.env.attitude_rate is None:
+            self.env.attitude_rate = self.null_rate(snap)
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
             self.cfg, steer=steer, burn_offset=self.tracking_offset(snap))
@@ -1958,7 +1960,13 @@ class Autoland:
         # long as it steers -- the trim term only notices once the vehicle is
         # already fast -- so give back what the tilt takes.  Nothing changes
         # when the divert is off, because then the tilt is zero.
-        tilt = vec.angle_between(steer.direction, vec.scale(snap.velocity, -1.0))
+        brake = vec.scale(snap.velocity, -1.0)
+        rate = trajectory.one_law_rate(self.env, self.cfg)
+        if rate is not None:
+            brake = trajectory.base_direction(
+                snap.velocity, vec.unit(snap.position),
+                throttle * snap.max_accel, rate)
+        tilt = vec.angle_between(steer.direction, brake)
         if tilt > 1.0:
             throttle = min(self.cfg.LANDING_THROTTLE_CAP,
                            throttle / math.cos(math.radians(tilt)))
