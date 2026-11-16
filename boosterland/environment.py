@@ -95,6 +95,7 @@ class Environment:
         self.lift_slope = None          # the value at the current Mach, logged
         self.leg_clearance = 0.0        # COM to vessel bottom, m (telemetry)
         self.tip_angle_deg = None       # the legs' static tip-over angle
+        self.lateral_tolerance = None   # m/s sideways the legs survive
         self.descent_aoa = None         # rad, the coast's last command
         self.pointing_band = None       # deg, the pointing error's noise
         self.touchdown_tolerance = None  # m/s the craft survives at contact
@@ -535,7 +536,7 @@ class Environment:
         with its grid fins out is a wing, and it flies for a minute through
         air thick enough to decelerate it at more than a g.
 
-        The probe turns the *vessel* to an attitude ``AERO_STEER_PROBE_AOA_DEG``
+        The probe turns the *vessel* to the attitude the coast commands
         off retrograde, in the plane the steering is flown in, and leaves the
         airflow exactly where it really is (moving the airflow instead, see
         ``probe_direction``, flew the booster into the sea).
@@ -568,7 +569,13 @@ class Environment:
         normal = vec.unit(normal)
         side = vec.unit(vec.cross(normal, velocity))
         retrograde = vec.scale(vec.unit(velocity), -1.0)
-        aoa = math.radians(self.cfg.AERO_STEER_PROBE_AOA_DEG)
+        # At the angle the coast is commanding, so the coefficient is the
+        # one the solve flies (it falls ~20% from 2 to 20 deg); never below
+        # the pointing noise, the least angle the nose holds distinctly.
+        # Neither measured yet: no probe.
+        if self.pointing_band is None:
+            return None
+        aoa = max(self.descent_aoa or 0.0, math.radians(self.pointing_band))
         if aoa <= 0.0:
             return None
         tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),

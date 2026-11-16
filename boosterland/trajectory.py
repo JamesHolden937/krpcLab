@@ -178,6 +178,19 @@ def touchdown_speed(env, cfg):
     return cfg.SURVIVAL_SHARE * tol
 
 
+def lateral_allowance(env, cfg):
+    """The sideways speed the touchdown may carry: ``SURVIVAL_SHARE`` of what
+    the craft survives sideways -- the legs' measured lateral limit
+    (``env.lateral_tolerance``), else the weakest touching part's impact
+    tolerance."""
+    tol = getattr(env, "lateral_tolerance", None)
+    if not tol or tol <= 0.0:
+        tol = getattr(env, "touchdown_tolerance", None)
+    if not tol or tol <= 0.0:
+        tol = GAME_DEFAULT_CRASH_TOLERANCE
+    return cfg.SURVIVAL_SHARE * tol
+
+
 def base_direction(v, up, thrust_accel, rate):
     """The landing burn's braking direction.
 

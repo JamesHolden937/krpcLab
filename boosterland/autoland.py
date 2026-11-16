@@ -2038,6 +2038,8 @@ class Autoland:
             self.log.event(snap.ut, "landing limits: fewer than 3 feet")
             return
         self.landing_limits = lim
+        if lim.get("lateral") and lim["lateral"] > 0.0:
+            self.env.lateral_tolerance = lim["lateral"]
         if lim.get("h") and lim["h"] > 0.0:
             self.env.tip_angle_deg = math.degrees(math.atan2(lim["b"], lim["h"]))
         if lim.get("vertical") and (self.env.touchdown_tolerance is None

@@ -228,12 +228,6 @@ class Config:
                                             # the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
-    AERO_STEER_PROBE_AOA_DEG: float = 8.0   # the angle the *aerodynamic* probe
-                                            # is taken at, to measure Cl*A per
-                                            # radian.  Big enough to be well
-                                            # clear of the probe's own noise,
-                                            # small enough to stay in the
-                                            # linear part of the curve.
 
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
     AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a

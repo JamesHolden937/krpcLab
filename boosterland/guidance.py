@@ -447,13 +447,18 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     gain = min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)
     accel = vec.scale(vec.project_out(zem, up), -gain)
     # The aim, with the base's null, is a = rate * (v_aim - v): it asks for a
-    # sideways speed v_aim = accel / rate.  No more may be asked for than the
-    # craft can still brake to zero before touchdown -- its lateral
-    # authority, thrust * sin(LANDING_MAX_TILT_DEG), over the time left after
-    # one nose response.  A position hold near the ground otherwise lands
-    # the booster crossing toward the pad (one-1115: 5-7 m/s at contact).
+    # sideways speed v_aim = accel / rate.  No more may be asked for than
+    # the craft can still lose before touchdown: the base nulls sideways
+    # speed exponentially at ``rate``, so v_aim decays to v_aim exp(-rate
+    # t_go) by contact, and that must be inside what the craft survives
+    # sideways (``trajectory.lateral_allowance``).  Nor more than its lateral
+    # authority, thrust * sin(LANDING_MAX_TILT_DEG), can brake in the time
+    # left after one nose response.  Capped only by the authority, the aim
+    # landed fin2 crossing the pad at 12-22 m/s (nose-1115).
     authority = a * math.sin(math.radians(cfg.LANDING_MAX_TILT_DEG))
-    v_max = authority * max(0.0, t_go - 1.0 / rate)
+    v_max = min(authority * max(0.0, t_go - 1.0 / rate),
+                trajectory.lateral_allowance(env, cfg)
+                * math.exp(min(50.0, rate * t_go)))
     asked = vec.norm(accel) / rate
     if asked > v_max:
         accel = vec.scale(accel, v_max / asked)
