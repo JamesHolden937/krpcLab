@@ -809,6 +809,8 @@ class Autoland:
                               else "landing burn"))
         self.rcs_limits.measure(self.err_jitter, self.pointing_error(snap),
                                 self.lag.lag)
+        if self.rcs_limits.measured:
+            self.env.pointing_band = self.rcs_limits.RCS_ERROR_ON_DEG
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
@@ -1358,6 +1360,7 @@ class Autoland:
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             self.cfg)
         if steer is not None:
+            self.env.descent_aoa = abs(steer.aoa)
             self.prediction = steered
             self.env.set_descent_profile(steered.profile)
             self.steer = steer

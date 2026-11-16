@@ -882,11 +882,14 @@ class TestDescentAwareDragProbe(unittest.TestCase):
         env.cfg = Config()
         env.equatorial_radius = 600000.0
         env._descent_profile = ()
+        env.descent_aoa = None
+        env.pointing_band = None
         return env
 
     def test_descent_configuration_is_measured_from_retrograde(self):
         env = self.make_env()
-        env.cfg.DRAG_RESWEEP_AOA_DEG = 25.0
+        env.descent_aoa = 0.0
+        env.pointing_band = 25.0                # the measured pointing noise
         v = (0.0, -100.0, 0.0)                  # falling
         nose_up = (0.0, 1.0, 0.0)               # engines into the flow
         nose_down = (0.0, -1.0, 0.0)
@@ -896,9 +899,10 @@ class TestDescentAwareDragProbe(unittest.TestCase):
         # does not count.
         self.assertFalse(env.in_descent_configuration(v, (1.0, 0.0, 0.0)))
 
-    def test_the_resweep_can_be_switched_off(self):
+    def test_no_resweep_before_the_pointing_noise_is_measured(self):
         env = self.make_env()
-        env.cfg.DRAG_RESWEEP_AOA_DEG = 0.0
+        env.descent_aoa = None
+        env.pointing_band = None
         self.assertFalse(env.in_descent_configuration((0.0, -100.0, 0.0),
                                                       (0.0, 1.0, 0.0)))
 

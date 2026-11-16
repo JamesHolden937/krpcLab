@@ -95,6 +95,8 @@ class Environment:
         self.lift_slope = None          # the value at the current Mach, logged
         self.leg_clearance = 0.0        # COM to vessel bottom, m (telemetry)
         self.tip_angle_deg = None       # the legs' static tip-over angle
+        self.descent_aoa = None         # rad, the coast's last command
+        self.pointing_band = None       # deg, the pointing error's noise
         self.touchdown_tolerance = None  # m/s the craft survives at contact
                                         # (Autoland: weakest touching part,
                                         # the legs' suspension when lower)
@@ -423,15 +425,15 @@ class Environment:
         pd10-1016 (3 of 4 heavies lost) and keep1/gate1-1111 (median ~200 v
         22 on the fin booster, even with the brake fins kept deployed).
 
-        ``DRAG_PROBE_DESCENT_TILT_DEG`` > 0 evaluates the vessel at the
-        descent's *flown* attitude instead: retrograde tilted that far in the
-        trajectory plane, whenever it is not already within
-        ``DRAG_RESWEEP_AOA_DEG`` of retrograde.  The broadside curve reads
-        the boostback-exit trajectory ~1 km long of the descent re-sweep, the
-        curve at aoa 0 ~0.8 km short, and the descent flies at aoa 4-8.
+        Away from the descent's attitude the vessel is evaluated at it
+        instead: retrograde tilted by the angle the coast last commanded
+        (``descent_aoa``, radians; 0 before the coast, which is the
+        unsteered descent every coast solve starts from) in the trajectory
+        plane.  The broadside curve read the boostback-exit trajectory ~1 km
+        long of the descent re-sweep.
         """
-        tilt = self.cfg.DRAG_PROBE_DESCENT_TILT_DEG
-        if (tilt <= 0.0 or nose is None or vec.norm(velocity) < 1e-6
+        tilt = math.degrees(self.descent_aoa or 0.0)
+        if (nose is None or vec.norm(velocity) < 1e-6
                 or self.in_descent_configuration(velocity, nose)):
             return tuple(rotation), self.sample_is_clean(velocity, nose)
         retrograde = vec.scale(vec.unit(velocity), -1.0)
@@ -457,9 +459,12 @@ class Environment:
         and defaults to keeping all of them, while this one decides when the
         whole curve is worth taking again.
         """
-        limit = self.cfg.DRAG_RESWEEP_AOA_DEG
-        if limit <= 0.0 or nose is None:
+        # Within the commanded angle plus the pointing noise (measured by
+        # the autopilot's valve; unmeasured, never).
+        band = self.pointing_band
+        if band is None or nose is None:
             return False
+        limit = math.degrees(self.descent_aoa or 0.0) + band
         speed = vec.norm(velocity)
         axis = vec.norm(nose)
         if speed < 1e-6 or axis < 1e-6:

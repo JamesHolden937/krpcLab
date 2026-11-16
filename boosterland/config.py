@@ -381,24 +381,6 @@ class Config:
                                             # during boostback that is the
                                             # broadside samples.  See
                                             # Environment._record.
-    DRAG_PROBE_DESCENT_TILT_DEG: float = 16.0  # > 0: probe drag off the
-                                            # descent attitude at retrograde
-                                            # tilted this far, the angle the
-                                            # descent flies (0 = real attitude)
-    DRAG_RESWEEP_AOA_DEG: float = 8.0       # re-probe the *whole* curve the
-                                            # first time the vehicle is this
-                                            # near the attitude the descent
-                                            # is flown at.  The opening sweep
-                                            # is taken during boostback, i.e.
-                                            # broadside, and every bin it
-                                            # writes is a side-on area used
-                                            # to fly a nose-on descent; see
-                                            # Environment.refresh_drag and
-                                            # CLAUDE.md failure 13.  0 = off.
-                                            # At 25 the "descent" curve was
-                                            # taken mid-flip, broadside, ~4x
-                                            # high; gate1-1111: 8 median 22 v
-                                            # 40 (fin booster)
     DRAG_RESWEEP_INTERVAL_S: float = 10.0   # re-probe the whole curve this
                                             # often (in-game seconds) while
                                             # the vehicle is in its descent
