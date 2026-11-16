@@ -18,24 +18,29 @@ the nose sat off the braking direction.
 import argparse
 import re
 
-PLAN = re.compile(r"burn plan m=(\S+) acc=(\S+) .*samples=\[([^\]]*)\]")
+PLAN = re.compile(r"burn plan (?:(\w+) )?m=(\S+) acc=(\S+) .*samples=\[([^\]]*)\]")
 TICK = re.compile(r"\[\s*([\d.]+)\] burn tick (.*)")
 
 
 def parse(path):
-    plan, ticks, meta = None, [], {}
+    """``(plans, ticks, meta)``: plans by model name (``all`` for a log
+    from before the variants), in logged order."""
+    plans, ticks, meta = {}, [], {}
     for line in open(path):
         m = PLAN.search(line)
-        if m and plan is None:
-            meta = {"m": float(m.group(1)), "acc": float(m.group(2))}
-            plan = [tuple(float(x) for x in s.split(":"))
-                    for s in m.group(3).split()]
+        if m:
+            name = m.group(1) or "all"
+            if name not in plans:
+                meta = meta or {"m": float(m.group(2)),
+                                "acc": float(m.group(3))}
+                plans[name] = [tuple(float(x) for x in q.split(":"))
+                               for q in m.group(4).split()]
             continue
         m = TICK.search(line)
         if m:
             ticks.append({k: float(v) for k, v in
                           (kv.split("=") for kv in m.group(2).split())})
-    return plan, ticks, meta
+    return plans, ticks, meta
 
 
 def interp(plan, t, col):
@@ -69,21 +74,30 @@ def main():
     ap.add_argument("--rows", action="store_true")
     ap.add_argument("--every", type=float, default=1.0)
     a = ap.parse_args()
-    print("%-9s %6s %6s %7s %7s %6s %6s %6s %6s"
-          % ("log", "t_pln", "t_fly", "x_pln", "x_fly", "dx", "h0", "hs0",
-             "acc0"))
+    names = None
     for path in a.logs:
-        plan, ticks, meta = parse(path)
-        if not plan or not ticks:
+        plans, ticks, meta = parse(path)
+        if not plans or not ticks:
             print("%-9s no DIAG_BURN data" % path.split("/")[-1])
             continue
+        if names is None:
+            names = list(plans)
+            print("%-9s %6s %7s  %s" % ("log", "t_fly", "x_fly", "  ".join(
+                "%13s" % ("dx/dt " + n) for n in names)))
         # The flown burn up to contact (the plan stops at its own contact).
         flown = [x for x in ticks if x["h"] > 0.0] or ticks
-        x_plan = travel([(p[0], p[2]) for p in plan])
         x_fly = travel([(x["t"], x["hs"]) for x in flown])
-        print("%-9s %6.1f %6.1f %7.0f %7.0f %+6.0f %6.0f %6.1f %6.2f"
-              % (path.split("/")[-1], plan[-1][0], flown[-1]["t"], x_plan,
-                 x_fly, x_fly - x_plan, plan[0][1], plan[0][2], meta["acc"]))
+        cells = []
+        for n in names:
+            pl = plans.get(n)
+            if not pl:
+                cells.append("%13s" % "-")
+                continue
+            dx = travel([(p[0], p[2]) for p in pl]) - x_fly
+            cells.append("%+7.0f %+5.1f" % (dx, pl[-1][0] - flown[-1]["t"]))
+        print("%-9s %6.1f %7.0f  %s" % (path.split("/")[-1], flown[-1]["t"],
+                                        x_fly, "  ".join(cells)))
+        plan = plans[names[0]]
         if not a.rows:
             continue
         print("   t |    h pln/fly | hs pln/fly | vs pln/fly | thr pln/cmd/got"

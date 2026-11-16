@@ -1706,3 +1706,28 @@ class TestTheBoosterMeasuresTheTurnItIsFlying(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBurnPropellant(unittest.TestCase):
+    """The burn's propagation spends propellant and stops when it is gone."""
+
+    def fly(self, dry=None, isp=300.0):
+        env = FakeEnv()
+        env.burn_isp = isp
+        env.burn_dry_mass = dry
+        r = (KERBIN_R + 3000.0, 0.0, 0.0)
+        v = (-300.0, 0.0, 60.0)
+        return trajectory._fly_landing_burn(
+            env, r, v, 1e5, 40.0, Config(),
+            trajectory.drag_lookup(env, 0.0))
+
+    def test_dry_tanks_land_fast(self):
+        r_wet, v_wet, _, _ = self.fly()
+        r_dry, v_dry, _, _ = self.fly(dry=0.92e5)
+        self.assertLess(vec.norm(v_wet), 15.0)
+        self.assertGreater(vec.norm(v_dry), 50.0)
+
+    def test_wet_burn_unchanged_by_a_dry_mass_it_never_reaches(self):
+        a = self.fly()
+        b = self.fly(dry=1.0)
+        self.assertAlmostEqual(vec.norm(a[1]), vec.norm(b[1]), places=6)

@@ -628,6 +628,8 @@ class Autoland:
         self.miss_jitter.reset()
         self.env.miss_band = None
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
+        if state in (COAST, LANDING_BURN):
+            self.read_dry_mass(ut, state)
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
             # The boostback's record first (LOG<n>.bb.ap.csv): at shutdown
@@ -660,6 +662,7 @@ class Autoland:
         if snap.leg_clearance:
             self.env.leg_clearance = snap.leg_clearance
         self.env.attitude_rate = self.null_rate(snap)
+        self.update_burn_env(snap)
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
             self.cfg, steer=steer)
@@ -669,6 +672,38 @@ class Autoland:
         # See Environment.probe_altitude.
         self.env.set_descent_profile(self.prediction.profile)
         return self.prediction
+
+    def read_dry_mass(self, ut, why):
+        """The mass the burn's engines leave when their propellant is gone
+        (``env.burn_dry_mass``, kg): the vessel's mass less every resource
+        its engines burn.  The fin booster ran its tanks dry at 80-310 m on
+        6 flights of 6 (bp1-1116) while the propagation flew its burn to the
+        ground.  Read on entering the coast and the burn (a handful of kRPC
+        calls; the coast burns nothing the engines use)."""
+        try:
+            names = set()
+            for engine in self.vessel.parts.engines:
+                names.update(engine.propellant_names)
+            res = self.vessel.resources
+            prop = sum(res.amount(n) * res.density(n) for n in names)
+            mass = self.vessel.mass
+        except Exception as exc:                            # noqa: BLE001
+            self.log.event(ut, "propellant unreadable (%s): %r" % (why, exc))
+            return
+        self.env.burn_dry_mass = mass - prop
+        self.log.event(ut, "propellant %.2f t of %s, dry %.2f t (%s)"
+                       % (prop / 1000.0, "/".join(sorted(names)),
+                          (mass - prop) / 1000.0, why.lower()))
+
+    def update_burn_env(self, snap):
+        """What the burn's propagation reads off the vehicle as it is now:
+        its Isp, whether the burn's engines already deliver, the nose's
+        measured lag and where the nose points."""
+        if snap.isp and snap.isp > 0.0:
+            self.env.burn_isp = snap.isp
+        self.env.burn_lit = bool(self.state == LANDING_BURN and snap.thrust)
+        self.env.nose_lag = self.lag.lag
+        self.env.nose = snap.direction
 
     def aim(self, direction, snap=None):
         """Point the nose, roll the roof into the trajectory plane, and route
@@ -1411,6 +1446,8 @@ class Autoland:
         if self.cfg.COAST_RCS_TRIM:
             self.run_rcs_trim(snap)
         if snap.vertical_speed < 0.0 and height <= needed:
+            if self.cfg.DIAG_BURN:
+                self.log_burn_plans(snap)
             self.enter(LANDING_BURN, snap.ut,
                        "h=%.0f needed=%.0f miss=%.0f"
                        % (height, needed, distance))
@@ -2041,6 +2078,52 @@ class Autoland:
                           vec.angle_between(snap.direction, snap.position)))
             self.log_touchdown(snap)
 
+    # DIAG_BURN's model variants: which of the burn propagation's terms each
+    # leaves out (env attribute -> the value that switches it off).
+    BURN_PLAN_VARIANTS = (
+        # burn_lit True: no dead time (and the nose starts where it is).
+        ("all", {}),
+        ("base", {"burn_isp": None, "nose_lag": None, "burn_lit": True}),
+        ("isp", {"nose_lag": None, "burn_lit": True}),
+        ("dead", {"burn_isp": None, "nose_lag": None}),
+        ("lag", {"burn_isp": None, "burn_lit": True}),
+        ("wet", {"burn_dry_mass": None}),
+    )
+
+    def log_burn_plans(self, snap):
+        """DIAG_BURN: the burn each propagation model flies from here, one
+        ``burn plan`` line each (``all`` first: what the coast aims with)."""
+        self.burn_plan_ut = snap.ut
+        self.update_burn_env(snap)
+        for name, off in self.BURN_PLAN_VARIANTS:
+            saved = {k: getattr(self.env, k, None)
+                     for k in ("burn_isp", "nose_lag", "burn_lit",
+                               "burn_dry_mass")}
+            try:
+                for k, val in off.items():
+                    setattr(self.env, k, val)
+                trace = []
+                trajectory.predict_landing(
+                    self.env, snap.position, snap.velocity, snap.mass,
+                    snap.max_accel, self.cfg, trace=trace)
+            finally:
+                for k, val in saved.items():
+                    setattr(self.env, k, val)
+            out, next_t = [], 0.0
+            for t, h, hs, vs, thr in trace:
+                if t >= next_t:
+                    out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % (t, h, hs, vs, thr))
+                    next_t = t + 0.25
+            if trace:
+                out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % trace[-1])
+            self.log.event(snap.ut, "burn plan %s m=%.2f acc=%.3f isp=%s "
+                           "lag=%s rate=%s legs=%.2f samples=[%s]"
+                           % (name, snap.mass / 1000.0, snap.max_accel,
+                              self.env.burn_isp, self.env.nose_lag,
+                              trajectory.one_law_rate(self.env, self.cfg),
+                              trajectory.leg_clearance(self.env),
+                              " ".join(out)))
+
     def log_burn_diag(self, snap, throttle, brake):
         """DIAG_BURN: the burn the prediction flies, once at the first burn
         tick, then the flown burn every tick on the same clock and heights,
@@ -2049,26 +2132,7 @@ class Autoland:
         h_com = (radius - self.env.target_radius
                  - trajectory.leg_clearance(self.env))
         if self.burn_plan_ut is None:
-            self.burn_plan_ut = snap.ut
-            trace = []
-            trajectory.predict_landing(
-                self.env, snap.position, snap.velocity, snap.mass,
-                snap.max_accel, self.cfg, trace=trace)
-            out, next_t = [], 0.0
-            for t, h, hs, vs, thr in trace:
-                if t >= next_t:
-                    out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % (t, h, hs, vs, thr))
-                    next_t = t + 0.25
-            if trace:
-                t, h, hs, vs, thr = trace[-1]
-                out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % (t, h, hs, vs, thr))
-            self.log.event(snap.ut, "burn plan m=%.2f acc=%.3f rate=%s taper=%s "
-                           "legs=%.2f samples=[%s]"
-                           % (snap.mass / 1000.0, snap.max_accel,
-                              trajectory.one_law_rate(self.env, self.cfg),
-                              self.env.taper_rate,
-                              trajectory.leg_clearance(self.env),
-                              " ".join(out)))
+            self.log_burn_plans(snap)
         vs = vec.dot(snap.velocity, vec.unit(snap.position))
         hs = math.sqrt(max(0.0, snap.speed ** 2 - vs * vs))
         delivered = (snap.thrust / snap.mass

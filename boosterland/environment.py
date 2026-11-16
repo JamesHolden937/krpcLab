@@ -108,6 +108,15 @@ class Environment:
         self.attitude_rate = None       # 1/s the lateral loops may close at
                                         # (Autoland.null_rate), for the
                                         # burn's law and its propagation
+        self.burn_isp = None            # s, the engines' Isp as last read:
+                                        # the burn propagation's mass flow
+        self.burn_lit = False           # the landing burn's engines are
+                                        # delivering (no reaction to wait)
+        self.nose_lag = None            # s, the nose behind its command
+        self.burn_dry_mass = None       # kg, the vessel with its engines'
+                                        # propellant gone (Autoland.
+                                        # read_dry_mass)
+        self.nose = None                # where the nose points now
         # The fraction of a commanded angle of attack the vehicle actually
         # holds; see ``record_tracking``.  1 until measured.
         self.aoa_tracking = 1.0

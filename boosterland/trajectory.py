@@ -14,11 +14,15 @@ rock would hit -- by kilometres for a fast, weakly-braking booster -- so
 boostback aims at the point the vehicle will actually touch down on.
 """
 
+import bisect
 import math
 from dataclasses import dataclass
 
 from common import vec
 from common.geo import gravity_at, surface_distance  # noqa: F401
+
+# The g0 KSP converts Isp to mass flow with (Engine's own constant).
+STANDARD_GRAVITY = 9.80665
 
 
 @dataclass
@@ -566,11 +570,47 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     t = 0.0
     steps = 0
     rate = one_law_rate(env, cfg)
+    # The burn spends propellant: at the vehicle's measured Isp
+    # (``env.burn_isp``) the mass falls ~20% over a fin-booster burn, and
+    # the flown loop re-reads thrust / mass every tick, so its profile's
+    # deceleration rises as it goes.  Held at the ignition mass, the
+    # prediction flew a heavier booster's profile and drag than the one
+    # flown.
+    isp = getattr(env, "burn_isp", None)
+    thrust_max = max_accel * mass
+    # ... and stops when the tanks are dry (``env.burn_dry_mass``): the
+    # rest of the way down is a fall, and where that fall lands is where the
+    # booster lands.
+    dry = getattr(env, "burn_dry_mass", None) if isp else None
+    # The trigger lights ``reaction_time`` before the profile is met
+    # (landing_burn_state); the thrust arrives that much after it.  Lit
+    # instantly, the predicted burn braked from ~speed x reaction higher up
+    # than the flown one.
+    # Nothing to wait for once the engines are delivering (``env.burn_lit``).
+    dead = 0.0 if getattr(env, "burn_lit", False) else reaction_time(env)
 
     def thrust_dir(vv, rr, accel):
         if rate is not None:
             return base_direction(vv, vec.unit(rr), accel, rate)
         return vec.scale(vec.unit(vv), -1.0)
+
+    # The nose follows its command ``env.nose_lag`` seconds late (the
+    # measured delay, common.attitudelag), and the thrust is along the nose:
+    # thrust on the command itself nulled the sideways speed a lag sooner
+    # than the flown burn does.  Before the first command has aged a lag,
+    # the nose is where it is now (``env.nose``).
+    # A burn still to be lit starts with the nose on its first command (the
+    # coast unwinds its angle of attack onto it, ``SETTLE_LAGS``).
+    lag = getattr(env, "nose_lag", None) or 0.0
+    nose_now = (getattr(env, "nose", None)
+                if getattr(env, "burn_lit", False) else None)
+    times, dirs = [], []            # the commands, in time order
+
+    def delayed(when):
+        i = bisect.bisect_right(times, when) - 1
+        if i < 0:
+            return nose_now or dirs[0]
+        return dirs[i]
 
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
@@ -579,19 +619,35 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
         if height <= 0.0 or speed < touchdown_speed(env, cfg):
             break
 
+        if isp and mass > 0.0:
+            max_accel = thrust_max / mass
         throttle, _ = landing_command(env, radius, speed, height, max_accel,
                                       cfg, vec.dot(v, vec.unit(r)))
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
-        accel = throttle * max_accel
+        accel = throttle * max_accel if t >= dead else 0.0
+        if dry is not None and mass <= dry:
+            accel = 0.0
+        if dead > t:
+            dt = min(dt, max(1e-3, dead - t))
         if trace is not None:
-            # (t, height, horizontal, vertical speed, throttle): DIAG_BURN's
+            # (t, height, horizontal, vertical speed, delivered throttle):
+            # DIAG_BURN's
             # plan, read against the flown burn by burnplan.py.
             vs = vec.dot(v, vec.unit(r))
             trace.append((t, height, math.sqrt(max(0.0, speed * speed
-                                                   - vs * vs)), vs, throttle))
-        r, v = _step(env, r, v, mass, drag, dt, cfg,
-                     lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel),
-                                              accel))
+                                                   - vs * vs)), vs,
+                          accel / max_accel if max_accel > 0.0 else 0.0))
+        if lag > 0.0:
+            times.append(t)
+            dirs.append(thrust_dir(v, r, accel))
+            held = delayed(t - lag)
+            push = lambda rr, vv: vec.scale(held, accel)
+        else:
+            push = lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel), accel)
+        r, v = _step(env, r, v, mass, drag, dt, cfg, push)
+        if isp and mass > 0.0:
+            mass = max(dry if dry is not None else 1e-3 * mass,
+                       mass - accel * mass / (isp * STANDARD_GRAVITY) * dt)
         t += dt
         steps += 1
     return r, v, t, steps
