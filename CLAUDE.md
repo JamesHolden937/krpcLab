@@ -254,6 +254,13 @@ across instances, and re-clone rather than patch.
 
 These bite in both projects and are the ones a change most often violates.
 
+- **Never try ANYTHING that involves a ship-fitted constant** (the user,
+  2026-11-15). Not a flag, not a batch, not an arm, not an intermediate
+  step, not "measure it first and replace it later": if a mechanism, a
+  comparison or a flight depends on a number fitted to one craft or one
+  save, replace that number with a measured or physical quantity *before*
+  building or flying anything on it. If that cannot be done yet, the work
+  waits. Stop a running batch the moment it is found to rest on one.
 - **Fine-tuned methods are not permitted** (the user, 2026-11-15). A law
   must work on every vehicle of its kind without re-fitting: no mode
   switches at fitted altitudes, distances, speeds or times (the booster
