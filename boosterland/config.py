@@ -351,11 +351,6 @@ class Config:
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_ZEM_GAIN: float = 6.0           # position term (double-integrator optimal)
-    LANDING_PREDICT_TRACKING: bool = False  # the burn's prediction flies the
-                                            # nose's measured tracking error
-                                            # (thrust along it, and its lift),
-                                            # re-read every tick; see
-                                            # trajectory._fly_landing_burn
     LANDING_DIVERT_THROTTLE_BUDGET: bool = True  # never tilt into the
                                             # braking: cap the tilt at the
                                             # angle the *spare* throttle can

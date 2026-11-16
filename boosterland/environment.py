@@ -100,6 +100,9 @@ class Environment:
         self.engine_spool_s = None      # trigger to thrust (Autoland.
                                         # track_spool, the first ignition)
         self.control_interval = None    # game-s between control ticks
+        self.attitude_bandwidth = None  # 1/s the nose closes on its command
+                                        # (common.attitudelag), for the
+                                        # burn's modelled nose
         self.attitude_rate = None       # 1/s the lateral loops may close at
                                         # (Autoland.null_rate), for the
                                         # burn's law and its propagation

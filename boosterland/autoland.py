@@ -600,31 +600,17 @@ class Autoland:
         if snap.leg_clearance:
             self.env.leg_clearance = snap.leg_clearance
         self.env.attitude_rate = self.null_rate(snap)
+        self.env.attitude_bandwidth = self.lag.rate
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
-            self.cfg, steer=steer, burn_offset=self.tracking_offset(snap))
+            self.cfg, steer=steer,
+            nose=snap.direction if self.state == LANDING_BURN else None)
         # Hand the descent back to the estimator: the next aerodynamic probe
         # wants to know where the booster will be when it is doing each speed,
         # so that a Mach bin is measured in the air it is going to be used in.
         # See Environment.probe_altitude.
         self.env.set_descent_profile(self.prediction.profile)
         return self.prediction
-
-    def tracking_offset(self, snap):
-        """``(angle, side)`` of the nose off the burn's last command, for the
-        propagator to hold (``LANDING_PREDICT_TRACKING``), or None.  Off the
-        *command*, not retrograde: the divert's own tilt is the command's,
-        and the prediction is a zero-effort one."""
-        if (not self.cfg.LANDING_PREDICT_TRACKING or self.state != LANDING_BURN
-                or snap.speed < 1.0):
-            return None
-        back = vec.scale(vec.unit(snap.velocity), -1.0)
-        cmd = self.burn_cmd if self.burn_cmd is not None else back
-        nose = vec.unit(snap.direction)
-        err = vec.project_out(vec.sub(nose, vec.unit(cmd)), back)
-        if vec.norm(err) < 1e-9:
-            return None
-        return (math.radians(vec.angle_between(nose, cmd)), vec.unit(err))
 
     def aim(self, direction, snap=None):
         """Point the nose, roll the roof into the trajectory plane, and route
