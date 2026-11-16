@@ -468,6 +468,8 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         return TerminalCommand(vec.unit(r), 0.0)
     if not cfg.LANDING_TERMINAL_GUIDANCE or not null_rate:
         return TerminalCommand(retrograde, 0.0)
+    if not cfg.LANDING_BURN_AIM:
+        zem = None
     cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
                           tilt_budget_deg, null_rate)
     frac = min(1.0, max(0.0, time_to_land) * null_rate)

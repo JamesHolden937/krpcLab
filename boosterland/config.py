@@ -338,6 +338,11 @@ class Config:
                                             # it (its wing reads aoa 0), and
                                             # the -40..-98 m it leaves boostback
                                             # with is its touchdown miss
+    COAST_UNWIND_LAGS: float = 3.0          # the coast's angle of attack
+                                            # fades to zero over this many
+                                            # measured nose lags before the
+                                            # predicted ignition
+                                            # (Autoland.unwound)
     COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
     COAST_RCS_TRIM_START_M: float = 10.0    # start pushing past this ...
     COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # ... stop inside this; the valve
@@ -351,13 +356,11 @@ class Config:
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_ZEM_GAIN: float = 6.0           # position term (double-integrator optimal)
-    LANDING_NOSE_MODEL: bool = True         # the lit burn's predictions fly
-                                            # the real nose, closing on the
-                                            # command at the measured
-                                            # bandwidth (trajectory.
-                                            # _fly_landing_burn); off: the
-                                            # nose is the command.  Measured
-                                            # in nose-1115: promote or delete
+    LANDING_BURN_AIM: bool = True           # the burn steers at the pad
+                                            # (ZEM on top of the base); off:
+                                            # it only brakes and nulls the
+                                            # sideways speed, the coast aims.
+                                            # Measured in aim-1115
     LANDING_DIVERT_THROTTLE_BUDGET: bool = True  # never tilt into the
                                             # braking: cap the tilt at the
                                             # angle the *spare* throttle can

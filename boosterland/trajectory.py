@@ -440,7 +440,7 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
 
 
 def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
-                    steer=None, drag_scale=1.0, nose=None):
+                    steer=None, drag_scale=1.0):
     """Propagate to touchdown, including the landing burn's downrange creep.
 
     ``steer`` is the angle of attack the vehicle is going to fly (see
@@ -449,11 +449,6 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     that does not include the steering the booster is about to fly is a
     prediction of a trajectory nobody flies.
 
-
-    ``nose`` is the vehicle's nose now (body frame), for a burn already lit:
-    the burn's thrust starts along it and turns onto the law's command at the
-    measured attitude bandwidth (see :func:`_fly_landing_burn`).  None: the
-    nose starts on the command.
     """
     drag = drag_lookup(env, drag_area, drag_scale)
     r = tuple(r0)
@@ -523,13 +518,8 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # predicting a wing nobody is flying.  Left in, it costs the whole
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
-        # Before ignition the nose at the trigger is taken as the command:
-        # modelling the coast's angle of attack carried into the burn handed
-        # the coast's steering solve the thrust tilt as a lever, and it
-        # steered a booster with no wing (testFlightSim).  Once lit, the real
-        # nose is known and the burn's own predictions fly it.
         r, v, burn_time, burn_steps = _fly_landing_burn(
-            env, r, v, mass, max_accel, cfg, drag, nose=nose)
+            env, r, v, mass, max_accel, cfg, drag)
         steps += burn_steps
 
     return Prediction(
@@ -544,64 +534,23 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     )
 
 
-def follow(nose, cmd, bandwidth, dt):
-    """``nose`` after ``dt`` of a first-order follower closing on ``cmd`` at
-    ``bandwidth`` (1/s, ``env.attitude_bandwidth``); ``cmd`` itself when the
-    bandwidth is unmeasured."""
-    if nose is None or not bandwidth:
-        return cmd
-    n, c = vec.unit(nose), vec.unit(cmd)
-    angle = math.radians(vec.angle_between(n, c))
-    perp = vec.project_out(c, n)
-    if angle < 1e-9 or vec.norm(perp) < 1e-12:
-        return c
-    step = angle * (1.0 - math.exp(-bandwidth * dt))
-    return vec.unit(vec.add(vec.scale(n, math.cos(step)),
-                            vec.scale(vec.unit(perp), math.sin(step))))
-
-
-def nose_steer(env, nose, v):
-    """The lift of the nose's angle off retrograde, as a :class:`Steer` on the
-    probed curve (``env.lift_slope_held``: the angle really held), or None."""
-    slope = getattr(env, "lift_slope_held", None)
-    if slope is None:
-        return None
-    back = vec.scale(vec.unit(v), -1.0)
-    side = vec.project_out(vec.unit(nose), back)
-    if vec.norm(side) < 1e-6:
-        return None
-    n = vec.cross(v, side)
-    if vec.norm(n) < 1e-9:
-        return None
-    angle = math.radians(vec.angle_between(nose, back))
-    return Steer(angle, vec.unit(n), slope)
-
-
-def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, nose=None):
-    """Integrate the suicide burn itself: thrust along the nose, on the profile.
+def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag):
+    """Integrate the suicide burn itself: thrust along the law's base
+    direction, on the profile.
 
     Returns the touchdown state, how long the burn took and the steps spent.
     Gravity and drag are the same terms the ballistic phase uses, so the
     trajectory bends toward the vertical as the horizontal speed is eaten --
     which is the part a closed form gets wrong, and the part that decides
-    where the booster actually ends up.
-
-    The thrust is flown along a modelled nose, not the command: it starts at
-    ``nose`` and closes on the law's base direction as a first-order follower
-    at the measured attitude bandwidth (``env.attitude_bandwidth``, the
-    same fit ``common.attitudelag`` makes of the real nose), and the body
-    makes the lift of the nose's angle off retrograde.  A booster leaving
-    the coast's angle of attack keeps 5-7 deg of it for ~5 s, and that
-    tilted thrust carried the touchdown 20-100 m long while this function
-    assumed the nose already on its command (nodiv-1115).  Unmeasured, the
-    nose is the command.
+    where the booster actually ends up.  The nose is taken to be on the
+    command: the coast unwinds its angle of attack before ignition
+    (``COAST_UNWIND_LAGS``) so that it is.
     """
     t = 0.0
     steps = 0
     rate = one_law_rate(env, cfg)
-    bandwidth = getattr(env, "attitude_bandwidth", None)
 
-    def command(vv, rr, accel):
+    def thrust_dir(vv, rr, accel):
         if rate is not None:
             return base_direction(vv, vec.unit(rr), accel, rate)
         return vec.scale(vec.unit(vv), -1.0)
@@ -617,14 +566,9 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, nose=None):
                                       cfg, vec.dot(v, vec.unit(r)))
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
         accel = throttle * max_accel
-        cmd = command(v, r, accel)
-        if nose is None or not bandwidth:
-            nose = cmd
-        lift = nose_steer(env, nose, v) if nose is not cmd else None
-        along = nose
         r, v = _step(env, r, v, mass, drag, dt, cfg,
-                     lambda rr, vv: vec.scale(along, accel), steer=lift)
-        nose = follow(nose, command(v, r, accel), bandwidth, dt)
+                     lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel),
+                                              accel))
         t += dt
         steps += 1
     return r, v, t, steps

@@ -600,12 +600,9 @@ class Autoland:
         if snap.leg_clearance:
             self.env.leg_clearance = snap.leg_clearance
         self.env.attitude_rate = self.null_rate(snap)
-        self.env.attitude_bandwidth = self.lag.rate
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
-            self.cfg, steer=steer,
-            nose=(snap.direction if self.state == LANDING_BURN
-                  and self.cfg.LANDING_NOSE_MODEL else None))
+            self.cfg, steer=steer)
         # Hand the descent back to the estimator: the next aerodynamic probe
         # wants to know where the booster will be when it is doing each speed,
         # so that a Mach bin is measured in the air it is going to be used in.
@@ -1306,8 +1303,9 @@ class Autoland:
             self.env.set_descent_profile(steered.profile)
             self.steer = steer
             prediction = steered
-            self.aim(guidance.steer_attitude(snap.position, snap.velocity,
-                                             steer), snap)
+            self.aim(guidance.steer_attitude(
+                snap.position, snap.velocity,
+                self.unwound(steer, steered)), snap)
         else:
             self.steer = None
             prediction = self.predict(snap, powered=True)
@@ -1906,10 +1904,26 @@ class Autoland:
             return None
         return lam * self.cfg.LANDING_MAX_TILT_DEG
 
+    def unwound(self, steer, prediction):
+        """``steer`` with its angle faded to zero over the last
+        ``COAST_UNWIND_LAGS`` measured nose lags before the predicted
+        ignition, so the burn lights with the nose on retrograde.  A nose
+        still holding the coast's 5-7 deg when the engines lit kept it ~5 s
+        and the tilted thrust carried the touchdown 20-100 m long
+        (nodiv-1115).  The coast's predictions still fly the full angle; the
+        lift lost over the last second or so is re-solved every tick."""
+        lag = self.lag.lag
+        if (steer is None or not steer.aoa or lag is None
+                or prediction is None or not prediction.powered):
+            return steer
+        to_ignition = max(0.0, prediction.time_to_land - prediction.burn_time)
+        share = min(1.0, to_ignition / (self.cfg.COAST_UNWIND_LAGS * lag))
+        return replace(steer, aoa=steer.aoa * share)
+
     def null_rate(self, snap):
         """The lateral null's highest rate (1/s): ``LOOP_BANDWIDTH_SHARE`` of
-        the attitude loop's closing rate as measured in flight (``common.attitudelag``: the nose
-        fitted as a first-order follower of its command), or None until that
+        the attitude loop's closing rate as measured in flight (``common.attitudelag``: one over
+        the nose's measured delay behind its command), or None until that
         fit is confident.  A lateral loop faster than the nose that executes
         it is the last-20 m oscillation (dv3-1115).  Logged each time it
         moves by a quarter."""
@@ -1920,9 +1934,10 @@ class Autoland:
         last = self.lag_logged
         if last is None or abs(rate - last) > 0.25 * last:
             self.lag_logged = rate
-            self.log.event(snap.ut, "lateral null rate %.2f /s (attitude "
-                           "loop measured %.2f /s, +-%.0f%%, %d ticks, %s)"
-                           % (rate, lam, 100.0 * (self.lag.rel_error or 0.0),
+            self.log.event(snap.ut, "lateral null rate %.2f /s (nose lag "
+                           "%.2f s, residual %.0f%% of none, %d ticks, %s)"
+                           % (rate, self.lag.lag or 0.0,
+                              100.0 * (self.lag.rel_error or 0.0),
                               self.lag.samples, self.state))
         return rate
 

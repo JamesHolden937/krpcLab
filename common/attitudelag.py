@@ -1,36 +1,40 @@
 """The attitude loop's closing rate, measured in flight.
 
-The nose is fitted as a first-order follower of the command it was given:
-``d(nose)/dt = rate * error``, with ``error`` the small-angle vector from the
-nose to the command (radians, perpendicular to the nose).  Least squares over
-the ticks, with exponential forgetting over ``WINDOW`` time constants, so a
-change of plant (ignition, a valve, the throttle) is followed within a few of
-its own time constants:
+The nose is fitted as a *delayed copy* of the command it was given: the lag
+``tau`` that minimises the mean squared angle between the nose at ``t`` and
+the command ``tau`` earlier, over a window of recent ticks.  The rate is
+``1 / tau``.
 
-    rate = sum(w e . de/dt_nose) / sum(w e . e)
+A first-order fit (nose rate proportional to the error) was the first model
+and it read the farm's noses 3-10x slow: kRPC's attitude loop is PI, so it
+follows a moving command with almost no standing error -- the nose's rate is
+the command's, not the error's -- and a regression of rate on error measures
+only the small residual it is closing (LOG17411: err 2.2 deg against a
+command moving 6.9 deg/s, a ~0.3 s lag, fitted at 0.38 /s).  A delay is what
+the steering laws need anyway: how long after a command the nose is there.
 
 Ticks where a control input is pinned are left out: a saturated turn moves at
-the vehicle's angular-acceleration limit, not at the loop's bandwidth, and a
-flip read as a linear loop would call a fast loop slow.
+the vehicle's angular-acceleration limit, not at the loop's bandwidth.
 
-Nothing here is fitted to a craft: the window and the confidence asked for are
-dimensionless (counts of time constants, a relative standard error).  Until
-the fit is first confident, :attr:`rate` is None -- an unknown is not a value;
-after that it holds the last confident fit.
+Nothing here is fitted to a craft: the window is a count of lags, and the fit
+answers only when the best delay explains the nose clearly better than no
+delay does (a still command carries no information about the lag).  Until
+then :attr:`rate` is None; after that it holds the last confident fit.
 """
 
 import math
 
 from common import vec
 
-WINDOW = 4.0            # time constants of history the fit keeps
-CONFIDENCE = 0.25       # relative standard error below which it answers
+WINDOW = 8.0            # lags of history the fit keeps (at least 2 s)
+MIN_TICKS = 10          # a delay needs a few samples
+GAIN = 0.5              # the best delay must halve the no-delay residual
 PINNED = 1.0 - 1e-3     # an input at its limit (kRPC clamps at exactly 1)
 
 
 def error_vector(nose, cmd):
     """Radians from ``nose`` to ``cmd`` as a vector perpendicular to the
-    nose, or None when either is unusable."""
+    nose (zero when they coincide)."""
     n = vec.unit(nose)
     c = vec.unit(cmd)
     perp = vec.project_out(c, n)
@@ -41,79 +45,82 @@ def error_vector(nose, cmd):
     return vec.scale(perp, angle / s)
 
 
+def _angle_sq(a, b):
+    """~ the squared angle between unit vectors, without an acos."""
+    return 2.0 * (1.0 - max(-1.0, min(1.0, vec.dot(a, b))))
+
+
 class LagFit:
-    """Feed it every tick with :meth:`update`; read :attr:`rate` (1/s)."""
+    """Feed it every tick with :meth:`update`; read :attr:`rate` (1/s) and
+    :attr:`lag` (s)."""
 
     def __init__(self):
-        self.prev = None        # (ut, nose, cmd) of the last usable tick
-        self.see = 0.0          # sum w e.e      (rad^2 s)
-        self.sed = 0.0          # sum w e.ndot   (rad^2)
-        self.sdd = 0.0          # sum w ndot.ndot (rad^2 / s)
-        self.weight = 0.0       # sum w dt       (s)
-        self.samples = 0
+        self.hist = []          # (ut, nose, cmd in force since last tick)
         self.rate = None
-        self.fit = None         # the last estimate, confident or not
-        self.rel_error = None
+        self.lag = None
+        self.samples = 0
+        self.rel_error = None   # residual at the best delay / at none
+        self.next_fit_ut = None
 
     def reset(self):
         self.__init__()
 
     def gap(self):
-        """A tick that is not this plant's: the next one starts afresh,
-        with nothing differenced across the gap."""
-        self.prev = None
+        """A tick that is not this plant's: nothing is compared across it."""
+        self.hist = []
 
     def update(self, ut, nose, cmd, saturation=None):
-        """``cmd`` is the command that was in force since the last tick (the
-        one the nose has been following), ``nose`` this tick's nose."""
-        if nose is None or cmd is None or vec.norm(nose) < 0.5 \
-                or vec.norm(cmd) < 0.5:
-            self.prev = None
+        """``cmd`` is the command in force since the last tick, ``nose`` this
+        tick's nose."""
+        if (nose is None or cmd is None or vec.norm(nose) < 0.5
+                or vec.norm(cmd) < 0.5
+                or (saturation is not None and saturation >= PINNED)):
+            self.gap()
             return self.rate
-        prev, self.prev = self.prev, (ut, vec.unit(nose), vec.unit(cmd))
-        if prev is None:
+        if self.hist and ut <= self.hist[-1][0] + 1e-6:
             return self.rate
-        dt = ut - prev[0]
-        if dt <= 1e-4:
-            self.prev = prev
-            return self.rate
-        if saturation is not None and saturation >= PINNED:
-            return self.rate
-        # The command the nose was chasing over [prev, now] is the one
-        # passed now (the caller passes the command in force since its last
-        # tick); prev's was one tick older (the farm read the loop 2-5x slow).
-        e = error_vector(prev[1], self.prev[2])
-        ndot = vec.scale(vec.project_out(vec.sub(self.prev[1], prev[1]),
-                                         prev[1]), 1.0 / dt)
-        tau = 1.0 / self.fit if self.fit and self.fit > 0.0 else None
-        if tau is not None:
-            keep = math.exp(-dt / (WINDOW * tau))
-            self.see *= keep
-            self.sed *= keep
-            self.sdd *= keep
-            self.weight *= keep
-        self.see += vec.dot(e, e) * dt
-        self.sed += vec.dot(e, ndot) * dt
-        self.sdd += vec.dot(ndot, ndot) * dt
-        self.weight += dt
+        self.hist.append((ut, vec.unit(nose), vec.unit(cmd)))
         self.samples += 1
-        if self.see <= 1e-12:
+        span = max(2.0, WINDOW * (self.lag or 0.25))
+        while len(self.hist) > MIN_TICKS and ut - self.hist[0][0] > span:
+            self.hist.pop(0)
+        if self.next_fit_ut is not None and ut < self.next_fit_ut:
             return self.rate
-        fit = self.sed / self.see
-        if fit <= 0.0:
-            self.fit = None
-            self.rel_error = None
-            return self.rate
-        self.fit = fit
-        # The slope's standard error over the window's effective sample
-        # count (weight/dt).  Once confident the rate is held through a
-        # quiet or noisy stretch: the last measurement still stands.
-        rss = max(0.0, self.sdd - fit * self.sed)
-        n_eff = self.weight / dt
-        if n_eff <= 2.0:
-            return self.rate
-        se = math.sqrt(rss / (n_eff - 1.0) / self.see)
-        self.rel_error = se / fit
-        if self.rel_error < CONFIDENCE:
-            self.rate = fit
+        # A few refits per lag: a full search every tick is wasted work.
+        self.next_fit_ut = ut + 0.25 * (self.lag or 0.25)
+        self._fit()
         return self.rate
+
+    def _fit(self):
+        h = self.hist
+        n = len(h)
+        if n < MIN_TICKS:
+            return
+        # The nose at tick i against the command in force k ticks before it
+        # (h[i - k][2] has been in force since tick i - k - 1): k = 0 is the
+        # command the nose has had one tick to follow.
+        best = None
+        base = None
+        for k in range(0, n // 2):
+            total = 0.0
+            for i in range(k, n):
+                total += _angle_sq(h[i][1], h[i - k][2])
+            mean = total / (n - k)
+            if base is None:
+                base = mean
+            if best is None or mean < best[1]:
+                best = (k, mean)
+        if base <= 1e-12:
+            return
+        self.rel_error = best[1] / base
+        dt = (h[-1][0] - h[0][0]) / (n - 1)
+        if best[0] == 0:
+            # Within a tick: the lag is shorter than the loop can resolve.
+            if self.rate is None:
+                self.lag, self.rate = dt, 1.0 / dt
+            return
+        if self.rel_error > GAIN:
+            return
+        # k ticks of command age plus the tick the newest command has had.
+        self.lag = (best[0] + 1) * dt
+        self.rate = 1.0 / self.lag
