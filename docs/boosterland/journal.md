@@ -1285,3 +1285,7 @@ Sim (fakeksp) reproduced the sideways contact (5.3 m/s) and showed two causes:
   still be braked by touchdown.
 Promoted (3b3941b): the one law is the only burn law; the band law, bounded_null and their constants deleted.
 Sim: impact 6.5 -> 4.4 m/s, ttl 0 at contact. Flown as law-1115 against LANDING_PREDICT_TRACKING.
+
+law-1115 (3b3941b defaults v LANDING_PREDICT_TRACKING) killed at 18/72 flights, unread: the user ruled that nothing
+may be flown while the burn rests on any ship-fitted constant (SUICIDE_MARGIN, TOUCHDOWN_SPEED, flare, slew, the
+attitude rate from kRPC's time_to_peak). Root CLAUDE.md rule. The open list is in HANDOFF.

@@ -15,45 +15,62 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-15: boosterland -- landing burn: thrust shared with the divert, last 250 m null bounded
+## 2026-11-15 evening: boosterland -- one burn steering law; NO ship-fitted constants from now on
 
-**Defaults fingerprint 9c021039** (after 6304beb + c358e55). Committed, not pushed. Farm stopped. Not flown live:
-the user's next live booster flight is the first on these defaults. `tools/instancebench.py` and
-`docs/krpcFeatureRequests.md` are not this session's: leave them. howItWorks.pdf (boosterland) **not redone** (still
-describes RollTune; now also the burn profile and the near-ground law). Journal: `docs/boosterland/journal.md`
-"2026-11-15". Scoring now at the touchdown tick: TOUCHDOWN event has `td_pad td_hs td_tilt`; `logsum --segments`
-has `td`; per-arm table: scratchpad armsum.py pattern (parse rot file + TOUCHDOWN event).
+**The rule (the user, now root CLAUDE.md's first cross-cutting rule): never try ANYTHING that involves a
+ship-fitted constant** -- no flag, batch, arm or intermediate step resting on one. Replace it with a measured or
+physical quantity first, or the work waits. Two batches were stopped for breaking it (trk-1115, law-1115:
+law-1115 killed after 18/72 flights, unread). Fly nothing until the burn's list below is cleared.
 
-**What changed (defaults):**
-- `trajectory.planned_net`: the vertical profile and the ignition trigger plan at cos(LANDING_MAX_TILT_DEG) of
-  full thrust; `LANDING_THROTTLE_CAP` 0.95 -> **1.0**; the taper joins where k v = net (no 2 net demand at the
-  crossing). The divert keeps acos(thr/cap) >= ~15 deg to the ground.
-- `guidance.bounded_null` below `LANDING_NULL_ALT_M`: vertical + lateral null at
-  min(thrust/speed + 4/t_go, 0.5/time_to_peak) -- retrograde's own null rate (~3/s at the bottom) oscillated
-  hs 3 -> 13 m/s in the last 20 m (dv3).
-- Result (dv5, dv6, qs_finbooster3, 12 each): td median 13.6/14.2 m, **p75 17 m**, 0-1 destroyed, **td hs 0.2-1.1
-  m/s, tilt 0.7-1.1 deg**; old defaults 9.9/14.5 m, p75 35-47, 0-4 destroyed, hs 1.6-3.0, tilt 2.7.
-- Deleted after measuring: POINT_INTEGRAL, PLAN_THROTTLE, ALIGN_S, HOLD_AOA, NULL_RATE_MAX, DESCENT_GUIDANCE.
+State: **3b3941b + 94c0b64, committed, not pushed. Farm stopped** (swap ~21 GB at the last batch: restart
+before any batch). Not flown live. howItWorks.pdf (boosterland) **stale** (still describes the band law and
+RollTune). `tools/instancebench.py`, `docs/krpcFeatureRequests.md` are not this session's: leave them.
+Journal: `docs/boosterland/journal.md` "2026-11-15 evening" (nodiv, one, one2, one3). Per-arm summary:
+scratchpad `burnsum.py` pattern (td_pad/td_hs/td_tilt from the TOUCHDOWN event + predicted |long| at
+5000/2500/1000/250 m; key on arm+save). The rot files' N/E are rest positions after a topple -- use TOUCHDOWN.
 
-**Open, in order:**
-1. **The remaining long drift above 2.5 km** (still 20-70 m on some flights): the ~4 s turn from the coast's aoa
-   onto retrograde after ignition (fins saturated, nose ~10 deg off at Mach 2.5). HOLD_AOA modelled it and cut the
-   >60 m drifts 4/12 -> 1/12 but was null on td; re-try on the new defaults (the bottom no longer hides it).
-2. **Touchdown speed from what the craft survives** (the user: no fixed 2 m/s; shock absorption, joints).
-   `KrpcLabJoints.Parts` + `common/impact.py` + `actuators.py N SAVE --joints` exist; first read was right after
-   load (break forces ~1e20 kN, physics easing/KJR 3.9 -- read again in flight); the rigid-ground chain model
-   blows up (inf) and predicts < 1 m/s, contradicted by landings: model the contact's compliance, or calibrate
-   from landings (KSP.log names what broke). The legs' model (`common/touchdown.landing_limits`) already covers
-   suspension.
-3. **One-law guidance** (the user wants it general): the Apollo quadratic (c0075d5) failed in its end game
-   (balloons); a fix is ending the profile at a hover gate a few metres up, then the vertical-only null.
-4. Other boosters on the new defaults (qs_heavy legged, qs_heavyshuttlebooster, qs_finbooster): `planned_net`'s
-   share and the null rate are generic but unflown there.
-5. Carried: howItWorks.pdf; kspSim port to 0.8; the coast-entry/flip items of the section below.
+**Where the burn's error came from (nodiv-1115, qs_finbooster3):** all along-track, every flight long. The
+predicted miss is +0-16 m at ignition, grows to +22-107 by 2.5 km, then is flat to the ground (the propagator
+flies the lower burn right). Cause: at ignition the command drops to retrograde but the nose keeps 5-7 deg of the
+coast's aoa for ~5 s at ~0.77 throttle; the tilted thrust pushes it long, the predictor assumes the nose on
+retrograde. Drift scales with the coast's held aoa (7.8 deg -> +107, 3 deg -> +23). `long=`'s sign follows the
+horizontal velocity and flips in the final null: read |long| or N/E near the bottom.
 
-**Traps paid:** `| tail` after farmlaunch in a run_in_background command hides its first line and the 600 s start
-watchdog kills it. A merge that added `tilt_budget` to bounded_null silently disabled it at the cap (dv5 n1 at
-65 m): a flag measured twice can be two different mechanisms -- diff the code between batches.
+**What the burn flies now (defaults):** one law, ignition to touchdown, no altitudes (`guidance.one_law_command`):
+- base `trajectory.base_direction`: retrograde, its angle from vertical scaled by min(1, rate*speed/thrust) --
+  retrograde fast, a vertical reference nulling sideways speed at `rate` slow; climbing: rate from vertical.
+- aim: ZEM on the propagator's prediction of that base, gain min(6/t_go^2, rate^2); the asked-for sideways speed
+  (accel/rate) is capped at what can still be braked: thrust*sin(LANDING_MAX_TILT_DEG)*(t_go - 1/rate).
+- upright cone over the last 1/rate; throttle side-speed share min(1, rate*speed/max_accel); thrust cut whenever
+  climbing (any height).
+- `rate` = `Autoland.null_rate` = 0.5/kRPC time_to_peak, set on `env.attitude_rate` at the first powered predict.
+- the propagator now flies to the **legs** (`trajectory.leg_clearance`, env.leg_clearance from telemetry): it
+  flew the centre of mass to the pad radius, lit later, landed ~11 m lower, read 3-5 s ttl at contact.
+- Deleted: the 2500/250/4/50 m bands, bounded_null, the linear divert, LANDING_ZEV_GAIN, TGO_MIN_S, HVEL_TOL,
+  DIVERT_ON_PREDICTION, DIVERT_GAIN, the LANDING_ONE_LAW flag.
+
+**Last measurement (one3-1115, before the legs fix and the brakeable-speed cap; 12 per arm):** fin3 16.5 v 16.4 m
+median (old band law), heavy 35 v 59 (max 77 v 274, lost 5 v 3, td tilt 5.3 v 0.9), qs_finbooster 42 v 33 (both
+arms td hs ~8: it tips). The heavy's ~140 m is made before the burn (pred 144 m at 5 km, both arms). The current
+defaults (legs fix + cap) are **unmeasured on the farm**; fakeksp: impact 6.5 -> 4.4 m/s.
+
+**Open, in order -- each must be general before anything is flown:**
+1. **The attitude rate is not measured**: 0.5/time_to_peak is kRPC's tuning target, 1 s on every craft; measured
+   nose lag (err/cw) 0.5-1.5 s. Every limit in the law scales with it: measure the craft's response in flight.
+2. **Burn constants still fitted**: SUICIDE_MARGIN 1.18, SUICIDE_REACTION_S 1.5, TOUCHDOWN_SPEED 2 (the user:
+   from what the craft survives -- `KrpcLabJoints.Parts`, `common/impact.py`, legs' `landing_limits`),
+   FINAL_APPROACH_RATE 0.5, LANDING_THROTTLE_GAIN 6, LANDING_FLARE_ALT_M 12 / SPEED 8 / MARGIN 0.12,
+   LANDING_SLEW_SHARE 0.25 / SLEW_MIN_DEG_S 5 (fitted on qs_hot), LANDING_DIVERT_MIN_ACCEL 1.
+3. **`LANDING_PREDICT_TRACKING`** (15e3919, off, never measured): the burn prediction holds the nose's measured
+   tracking error (thrust along it + its lift on `env.lift_slope_held`). General; fly once 1-2 are done, then
+   promote or delete. The alternative cause-side fix: unwind the coast's aoa before ignition, modelled.
+4. **Audit separation, boostback and the coast** against the rule (the heavy's miss is made there).
+5. Then fly qs_finbooster3, qs_finbooster, qs_heavy, qs_heavyshuttlebooster; HANDOFF item "touchdown from what the
+   craft survives" and "other boosters" from the section below are folded into 2 and 5.
+
+**Traps paid:** a killed batch's waiter still reports "completed": count the rot lines. An Edit whose comment text
+did not match silently left the old value -- the python splice asserts; read the error before reporting.
+`time_to_land` is only meaningful once the propagator flies to the legs.
 
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
