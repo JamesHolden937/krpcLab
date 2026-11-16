@@ -389,15 +389,16 @@ class Config:
                                             # 30 m, overshot into a climb and
                                             # ran the tanks dry (LOG10237)
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
-    TOUCHDOWN_SPEED: float = 2.0            # target descent rate at cutoff
+    TOUCHDOWN_SPEED_SHARE: float = 0.25     # target descent rate at cutoff,
+                                            # as a share of what the craft
+                                            # survives (trajectory.
+                                            # touchdown_speed): 1/16 of the
+                                            # energy that breaks the weakest
+                                            # part that touches
     LANDING_THROTTLE_VERTICAL: bool = True   # profile on descent rate, not |v|
                                             # (vert1-1016: heavy 6/6 at 0.9-8.3 m/s
                                             # on the 2 km prediction +-30 m, v 4/6
                                             # drifting 300-750 m off it)
-    FINAL_APPROACH_RATE: float = 0.5        # m/s of descent allowed per metre up
-    LANDING_FLARE_ALT_M: float = 12.0       # this low and this slow, hover
-    LANDING_FLARE_SPEED: float = 8.0        # thrust is all that can be wanted
-    LANDING_FLARE_MARGIN: float = 0.12      # ... plus this much to settle with
     HOVER_CUT_ALT_M: float = 3.0            # ... or this low and not descending
     TOUCHDOWN_HOVER_VS: float = -0.5        # what counts as "not descending"
     LEG_CLEARANCE_MARGIN_M: float = 0.5     # padding under the bounding box

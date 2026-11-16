@@ -599,7 +599,8 @@ class TestGuidance(unittest.TestCase):
         low, _ = state_above_pad(cfg.TOUCHDOWN_ALT_M)
         near_pad = guidance.landing_throttle(env, low, (-5.0, 0.0, 0.0), 25.0, cfg)
         self.assertGreater(fast.target_speed, near_pad.target_speed)
-        self.assertAlmostEqual(near_pad.target_speed, cfg.TOUCHDOWN_SPEED)
+        self.assertAlmostEqual(near_pad.target_speed,
+                               trajectory.touchdown_speed(env, cfg))
 
     def test_the_landing_burn_kills_lateral_speed_it_cannot_null_late(self):
         """The half LOG7's divert was missing.
@@ -1060,6 +1061,7 @@ class TestNoGoAround(unittest.TestCase):
 
     def setUp(self):
         self.env = FakeEnv()
+        self.env.attitude_rate = 0.5    # the taper's rate, measured in flight
         self.cfg = Config()
 
     def command(self, height, speed, vertical_speed):
@@ -1095,16 +1097,24 @@ class TestNoGoAround(unittest.TestCase):
         span floor.  A 3.5 g booster does not land under full throttle; it
         tips, and the lit engine takes it sideways at 30 m/s.
         """
-        hover = (self.env.mu / (KERBIN_R ** 2)) / 34.0
-        throttle = self.command(1.6, 5.3, -3.5)
-        self.assertLessEqual(throttle, hover + self.cfg.LANDING_FLARE_MARGIN + 1e-9)
+        g = self.env.mu / (KERBIN_R ** 2)
+        hover = g / 34.0
+        throttle = self.command(1.6, 3.5, -3.5)
+        # The taper's own deceleration plus the trim on its speed error: a
+        # hover and a little, never the cap.
+        v_t = trajectory.touchdown_speed(self.env, self.cfg) + 0.5 * 1.4
+        bound = (g + 0.5 * v_t + self.cfg.LANDING_THROTTLE_GAIN
+                 * max(0.0, 3.5 - v_t)) / 34.0
+        self.assertLessEqual(throttle, bound + 1e-9)
+        self.assertLess(throttle, 0.6)
         self.assertGreater(throttle, 0.0, "it still has to hold itself up")
+        self.assertGreater(throttle, 0.5 * hover)
 
     def test_a_fast_arrival_low_down_still_gets_everything(self):
         """The cap is for a vehicle that cannot want the thrust, not for one
         that is late -- that one needs all of it and the cap is not what is
         wrong with it."""
-        fast = self.cfg.LANDING_FLARE_SPEED + 30.0
+        fast = 38.0
         self.assertGreater(self.command(10.0, fast, -fast), 0.5)
 
     def test_the_propagator_and_the_control_loop_share_the_guard(self):

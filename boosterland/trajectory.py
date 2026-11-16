@@ -163,6 +163,21 @@ def one_law_rate(env, cfg):
     return rate if rate and rate > 0.0 else None
 
 
+# KSP's own Part.crashTolerance before a part's cfg sets one (Assembly-CSharp,
+# Part's constructor): the tolerance of a craft whose parts cannot be read.
+GAME_DEFAULT_CRASH_TOLERANCE = 9.0
+
+
+def touchdown_speed(env, cfg):
+    """The descent rate the profile lands at: ``TOUCHDOWN_SPEED_SHARE`` of
+    what the craft survives (``env.touchdown_tolerance``: the weakest part
+    that touches, or the legs' suspension when lower), read in flight."""
+    tol = getattr(env, "touchdown_tolerance", None)
+    if not tol or tol <= 0.0:
+        tol = GAME_DEFAULT_CRASH_TOLERANCE
+    return cfg.TOUCHDOWN_SPEED_SHARE * tol
+
+
 def base_direction(v, up, thrust_accel, rate):
     """The landing burn's braking direction.
 
@@ -231,6 +246,7 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     callers have the velocity vector, so both pass it.
     """
     g = env.mu / (radius * radius)
+    rate = one_law_rate(env, cfg)
     if cfg.LANDING_THROTTLE_VERTICAL and vertical_speed is not None:
         # The profile is a *descent* profile.  On total speed, a booster
         # sliding 15 m/s sideways at 20 m reads 15 m/s against a 3 m/s
@@ -247,31 +263,46 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         # brakes: all of it while the base is retrograde, the rest left to
         # the law once the base nulls it at ``rate`` (base_direction).  With
         # no rate read, the base is retrograde: all of it.
-        rate = one_law_rate(env, cfg)
         w = (1.0 if rate is None
              else min(1.0, rate * speed / max(1e-6, max_accel)))
         speed = math.sqrt(down * down + w * w * side_sq)
     net = max(0.1, planned_net(max_accel, g, cfg))
 
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    # The taper v = TOUCHDOWN_SPEED + k h decelerates at k v, which grows
-    # with height; joined to the constant-deceleration curve where k v
-    # reaches ``net``, no point asks for more than the plan.  The old
-    # join (the min of the two) asks for 2 net where they cross.
-    k = max(1e-3, cfg.FINAL_APPROACH_RATE)
-    v_join = max(cfg.TOUCHDOWN_SPEED, net / k)
-    h_join = (v_join - cfg.TOUCHDOWN_SPEED) / k
-    if remaining <= h_join:
-        target_speed = cfg.TOUCHDOWN_SPEED + k * remaining
+    v_td = touchdown_speed(env, cfg)
+    # The taper v = v_td + k h decelerates at k v, which grows with height;
+    # joined to the constant-deceleration curve where k v reaches ``net``,
+    # no point asks for more than the plan.  k is the attitude rate the
+    # lateral null closes at (``one_law_rate``): the descent slows over the
+    # same time constant the sideways speed is nulled in, so both arrive
+    # together.  With no rate measured, no taper: constant deceleration to
+    # v_td at the ground.
+    k = rate
+    if k is None or k <= 0.0:
+        v_join, h_join = v_td, 0.0
+    else:
+        v_join = max(v_td, net / k)
+        h_join = (v_join - v_td) / k
+    taper = h_join > 0.0 and remaining <= h_join   # h_join > 0 only with a k
+    if taper:
+        target_speed = v_td + k * remaining
     else:
         target_speed = math.sqrt(v_join * v_join
                                  + 2.0 * net * (remaining - h_join))
     if max_accel <= 0.0:
         return 0.0, target_speed
 
-    # Feedforward: the deceleration that reaches touchdown speed exactly.
-    span = max(1.0, remaining)
-    a_required = (speed * speed - cfg.TOUCHDOWN_SPEED ** 2) / (2.0 * span)
+    # Feedforward: the deceleration that reaches touchdown speed exactly,
+    # above the taper; in it, the taper's own deceleration k * v_target,
+    # which falls to k * v_td at the ground.  The exact form divides by the
+    # height left, and a metre up at a few m/s it asked for full thrust on a
+    # vehicle that wanted a hover (LOG446: 0.95 at 1.6 m, 3.5 m/s).  The
+    # trim below takes any speed error, at the same gain at any height.
+    if taper:
+        a_required = k * target_speed
+    else:
+        span = max(1e-3, remaining)
+        a_required = (speed * speed - v_td ** 2) / (2.0 * span)
     throttle = (a_required + g) / max_accel
     # The trim is an acceleration, so the loop gain is the same whatever the
     # thrust-to-weight: a throttle gain fitted to one booster is a loop that
@@ -301,24 +332,6 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     # vertical (base_direction), so thrust only adds climb.
     if vertical_speed is not None and vertical_speed >= 0.0:
         throttle = 0.0
-    # The same floor bites a metre up without any ascent to give it away, and
-    # there it is worse, because the vehicle is about to touch.  LOG446 was
-    # textbook -- 22 m at 0.30 throttle, 5.7 m at 0.30, `pad=17` throughout --
-    # and then at **1.6 m, descending at 3.5 m/s**, the feedforward asked for
-    # 0.95.  A 3.5 g booster does not land under that; it tips, and the lit
-    # engine drove it sideways at 30 m/s.  It spent the next twenty seconds
-    # circling the pad between 12 and 19 m, throttle flapping against the
-    # guard above, and ran the tanks dry.
-    #
-    # A vehicle this low and already this slow cannot need more than a hover:
-    # it is within a second of the ground at walking pace, and the extra
-    # thrust has nowhere to go but up.  A *fast* arrival is left alone --
-    # that one still needs everything it has, and the cap is not what is
-    # wrong with it.
-    if (height <= cfg.LANDING_FLARE_ALT_M
-            and speed <= cfg.LANDING_FLARE_SPEED):
-        hover = g / max_accel
-        throttle = min(throttle, hover + cfg.LANDING_FLARE_MARGIN)
     return vec.clamp(throttle, 0.0, cfg.LANDING_THROTTLE_CAP), target_speed
 
 
@@ -523,7 +536,7 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
         radius = vec.norm(r)
         height = radius - env.target_radius - leg_clearance(env)
         speed = vec.norm(v)
-        if height <= 0.0 or speed < cfg.TOUCHDOWN_SPEED:
+        if height <= 0.0 or speed < touchdown_speed(env, cfg):
             break
 
         throttle, _ = landing_command(env, radius, speed, height, max_accel,

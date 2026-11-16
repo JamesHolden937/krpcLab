@@ -33,6 +33,7 @@ from common.krpcpilot import (  # noqa: F401
     set_autopilot_attitude, set_autopilot_engaged)
 from common import cli
 from common.launchsite import launch_site
+from common.attitudelag import LagFit
 from common.touchdown import landing_limits, read_legs, touchdown_limit
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
@@ -463,6 +464,9 @@ class Autoland:
         else:
             logbook.event(ut, "touchdown limit %.1f m/s (%s, weakest of %d "
                           "that touch)" % self.touchdown_limit)
+            self.env.touchdown_tolerance = self.touchdown_limit[0]
+        logbook.event(ut, "touchdown target %.1f m/s"
+                      % trajectory.touchdown_speed(self.env, cfg))
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
                                    logbook)
         self.proximity = ProximityScan(conn, self.vessel, self.frame, cfg,
@@ -544,7 +548,9 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
-        self.null_rate_value = None     # Autoland.null_rate: read once
+        self.lag = LagFit()             # the attitude loop's measured
+                                        # closing rate (Autoland.null_rate)
+        self.lag_logged = None          # the rate last logged
         self.slew_read_ut = -1e9
         self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
@@ -592,8 +598,7 @@ class Autoland:
         max_accel = snap.max_accel if powered else 0.0
         if snap.leg_clearance:
             self.env.leg_clearance = snap.leg_clearance
-        if self.env.attitude_rate is None and powered:
-            self.env.attitude_rate = self.null_rate(snap)
+        self.env.attitude_rate = self.null_rate(snap)
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
             self.cfg, steer=steer, burn_offset=self.tracking_offset(snap))
@@ -1922,19 +1927,23 @@ class Autoland:
 
     def null_rate(self, snap):
         """The lateral null's highest rate (1/s): half the attitude loop's
-        own bandwidth, 1 / (2 time_to_peak) of kRPC's slower of pitch and
-        yaw, read once a burn.  A lateral loop faster than the nose that
-        executes it is the last-20 m oscillation (dv3-1115)."""
-        if self.null_rate_value is None:
-            try:
-                ttp = self.autopilot.time_to_peak
-                ttp, why = max(ttp[0], ttp[2]), "kRPC time_to_peak"
-            except Exception:                       # noqa: BLE001
-                ttp, why = 1.0, "time_to_peak unreadable: kRPC's default 1 s"
-            self.null_rate_value = 0.5 / max(0.1, ttp)
-            self.log.event(snap.ut, "lateral null rate %.2f /s (%s)"
-                           % (self.null_rate_value, why))
-        return self.null_rate_value
+        closing rate as measured in flight (``common.attitudelag``: the nose
+        fitted as a first-order follower of its command), or None until that
+        fit is confident.  A lateral loop faster than the nose that executes
+        it is the last-20 m oscillation (dv3-1115).  Logged each time it
+        moves by a quarter."""
+        lam = self.lag.rate
+        if lam is None:
+            return None
+        rate = 0.5 * lam
+        last = self.lag_logged
+        if last is None or abs(rate - last) > 0.25 * last:
+            self.lag_logged = rate
+            self.log.event(snap.ut, "lateral null rate %.2f /s (attitude "
+                           "loop measured %.2f /s, +-%.0f%%, %d ticks, %s)"
+                           % (rate, lam, 100.0 * (self.lag.rel_error or 0.0),
+                              self.lag.samples, self.state))
+        return rate
 
     def run_landing_burn(self, snap):
         self.log_attitude_tune(snap)
@@ -2028,6 +2037,12 @@ class Autoland:
             self.log.event(snap.ut, "landing limits: fewer than 3 feet")
             return
         self.landing_limits = lim
+        if lim.get("vertical") and (self.env.touchdown_tolerance is None
+                                    or lim["vertical"]
+                                    < self.env.touchdown_tolerance):
+            self.env.touchdown_tolerance = lim["vertical"]
+            self.log.event(snap.ut, "touchdown target %.1f m/s (the legs)"
+                           % trajectory.touchdown_speed(self.env, self.cfg))
         self.log.event(snap.ut, "landing limits: vertical %s m/s (damper %s, "
                        "stroke %.1f), lateral %.1f m/s stuck; COM %.1f m over a "
                        "%.1f m support margin, %.1f deg suspension tilt; %s"
@@ -2091,7 +2106,7 @@ class Autoland:
         height itself is only an estimate -- terrain-relative, measured at the
         centre of mass, offset by a bounding box.  So the burn is flown until
         the game reports the vehicle down; the profile has it at
-        ``TOUCHDOWN_SPEED`` by then.  The other two cases are backstops for a
+        the touchdown speed by then.  The other two cases are backstops for a
         contact that never gets reported.
         """
         situation = self.conn.space_center.VesselSituation
@@ -2236,6 +2251,11 @@ class Autoland:
         vehicle (and will overshoot) from one losing to a standing moment."""
         prev = self.prev_nose
         self.prev_nose = (snap.ut, snap.direction, snap.rotation)
+        # The command in force since the last tick is the one the nose has
+        # been following: aim() has not run yet this tick.
+        if self.state != STANDBY:
+            self.lag.update(snap.ut, snap.direction, self.commanded_direction,
+                            snap.input_saturation)
         if prev is not None and snap.ut - prev[0] > 1e-3:
             dt = snap.ut - prev[0]
             self.nose_rate = vec.angle_between(prev[1], snap.direction) / dt
