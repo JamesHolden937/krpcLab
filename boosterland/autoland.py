@@ -539,6 +539,9 @@ class Autoland:
         self.trim_cmd = (0.0, 0.0, 0.0)  # right, forward, up last sent
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
+        self.last_ut = None             # the last tick's game time
+        self.spool_from = None          # (ut, demand) of an ignition being
+                                        # timed (track_spool)
         self.cluster = None             # EngineCluster, built at START
         self.roll_order = 1             # roll symmetry (ROLL_SYMMETRY)
         self.roll_slot = None           # which of its equivalent roofs
@@ -551,8 +554,6 @@ class Autoland:
         self.lag = LagFit()             # the attitude loop's measured
                                         # closing rate (Autoland.null_rate)
         self.lag_logged = None          # the rate last logged
-        self.slew_read_ut = -1e9
-        self.slew_accel = None          # rad/s^2 per unit throttle
         self.cmd_rate = None            # deg/s the command itself moves
         self.roll_rate = None           # deg/s about the nose, signed
         self.throttle_diverged = False
@@ -791,6 +792,12 @@ class Autoland:
         Every phase goes through here so ``check_throttle`` has something to
         compare the vessel's actual throttle against.
         """
+        if (throttle > 0.0 and self.demand <= 0.0
+                and getattr(self, "last_ut", None) is not None
+                and self.env.engine_spool_s is None):
+            self.spool_from = (self.last_ut, throttle)
+        elif throttle <= 0.0 and hasattr(self, "spool_from"):
+            self.spool_from = None
         self.demand = throttle
         cluster = self.cluster
         if cluster is not None and len(cluster.groups) > 1:
@@ -1900,34 +1907,21 @@ class Autoland:
         except Exception as exc:                            # noqa: BLE001
             self.log.event(snap.ut, "attitude tune unreadable: %r" % exc)
 
-    def burn_slew_rate(self, snap):
-        """deg/s the landing burn's command may move: LANDING_SLEW_SHARE
-        seconds of the vehicle's own angular acceleration, the weaker of
-        pitch and yaw, from kRPC's credited torque (the gimbal delivers 91-93%
-        of it, torqueprobe on qs_hot).  Gimbal torque goes with thrust, so
-        the acceleration per unit throttle is re-read once a game second
-        while lit and scaled by *this* tick's throttle: read once and held,
-        the full-thrust rate outlived the throttle cut that starts the
-        oscillation (slew1-1017, LOG11667: 80 deg/s at 46 m)."""
-        throttle = self.demand if self.cluster is not None else snap.throttle
-        if snap.ut - self.slew_read_ut >= 1.0 and throttle > 0.2:
-            self.slew_read_ut = snap.ut
-            try:
-                torque = self.vessel.available_torque[0]
-                moi = self.vessel.moment_of_inertia
-                self.slew_accel = (min(torque[0] / moi[0], torque[2] / moi[2])
-                                   / throttle)
-            except Exception:                           # noqa: BLE001
-                pass
-        if self.slew_accel is None:
-            return None             # no torque read yet: an unknown is no limit
-        return max(math.degrees(self.slew_accel * throttle)
-                   * self.cfg.LANDING_SLEW_SHARE,
-                   self.cfg.LANDING_SLEW_MIN_DEG_S)
+    def burn_slew_rate(self):
+        """deg/s the landing burn's command may move: what the nose follows
+        to within the burn's own tilt allowance, the attitude loop's measured
+        closing rate times ``LANDING_MAX_TILT_DEG`` (a first-order follower
+        lags a ramp of w by w / rate).  A command that steps is one no vehicle
+        flies: unslewed, the old law's command reversed 60 deg in a tick and
+        the booster chased it (cmd1-1017).  None (unslewed) until measured."""
+        lam = self.lag.rate
+        if lam is None:
+            return None
+        return lam * self.cfg.LANDING_MAX_TILT_DEG
 
     def null_rate(self, snap):
-        """The lateral null's highest rate (1/s): half the attitude loop's
-        closing rate as measured in flight (``common.attitudelag``: the nose
+        """The lateral null's highest rate (1/s): ``LOOP_BANDWIDTH_SHARE`` of
+        the attitude loop's closing rate as measured in flight (``common.attitudelag``: the nose
         fitted as a first-order follower of its command), or None until that
         fit is confident.  A lateral loop faster than the nose that executes
         it is the last-20 m oscillation (dv3-1115).  Logged each time it
@@ -1935,7 +1929,7 @@ class Autoland:
         lam = self.lag.rate
         if lam is None:
             return None
-        rate = 0.5 * lam
+        rate = self.cfg.LOOP_BANDWIDTH_SHARE * lam
         last = self.lag_logged
         if last is None or abs(rate - last) > 0.25 * last:
             self.lag_logged = rate
@@ -1982,8 +1976,7 @@ class Autoland:
                            throttle / math.cos(math.radians(tilt)))
         self.set_throttle(throttle)
         direction = steer.direction
-        rate = (self.burn_slew_rate(snap)
-                if self.cfg.LANDING_SLEW_SHARE > 0.0 else None)
+        rate = self.burn_slew_rate()
         if rate is not None:
             direction = guidance.slew(
                 self.burn_cmd, direction,
@@ -2252,10 +2245,16 @@ class Autoland:
         prev = self.prev_nose
         self.prev_nose = (snap.ut, snap.direction, snap.rotation)
         # The command in force since the last tick is the one the nose has
-        # been following: aim() has not run yet this tick.
-        if self.state != STANDBY:
+        # been following: aim() has not run yet this tick.  Powered ticks
+        # only: the burn turns on its gimbals, and the unpowered coast (fins,
+        # RCS, the air) is another plant -- its rate, ~1/3 of the boostback's
+        # in the sim, predicted a burn nobody flew and lit it 500 m high.
+        if self.state != STANDBY and self.demand > 0.0 and (
+                snap.thrust is None or snap.thrust > 0.0):
             self.lag.update(snap.ut, snap.direction, self.commanded_direction,
                             snap.input_saturation)
+        else:
+            self.lag.gap()
         if prev is not None and snap.ut - prev[0] > 1e-3:
             dt = snap.ut - prev[0]
             self.nose_rate = vec.angle_between(prev[1], snap.direction) / dt
@@ -2273,9 +2272,33 @@ class Autoland:
             else:
                 self.roll_rate = 0.0
 
+    def track_spool(self, snap):
+        """Time the engines from the throttle-up to (1 - 1/e) of the thrust
+        commanded, once, at the first ignition (the boostback's), for the
+        landing burn's trigger (``trajectory.reaction_time``); and keep the
+        control interval the trigger is checked at."""
+        if self.last_ut is not None and snap.ut > self.last_ut:
+            self.env.control_interval = snap.ut - self.last_ut
+        self.last_ut = snap.ut
+        start = self.spool_from
+        if start is None or snap.thrust is None or snap.available_thrust <= 0:
+            return
+        if snap.thrust >= (1.0 - math.exp(-1.0)) * start[1] \
+                * snap.available_thrust:
+            self.spool_from = None
+            # Less the tick the reading itself is late by: the throttle went
+            # up during the last tick, the thrust is seen on this one.
+            self.env.engine_spool_s = max(
+                0.0, snap.ut - start[0] - (self.env.control_interval or 0.0))
+            self.log.event(snap.ut, "engine spool-up %.2f s (to 63%% of "
+                           "throttle %.2f; tick %.2f s)"
+                           % (self.env.engine_spool_s, start[1],
+                              self.env.control_interval or 0.0))
+
     def _tick(self):
         snap = self.telemetry.sample(self.env)
         self.track_nose_rate(snap)
+        self.track_spool(snap)
         if self.gui.terminate_pressed():
             self.log.event(snap.ut, "TERMINATE pressed in game")
             self.finish("terminated from GUI")

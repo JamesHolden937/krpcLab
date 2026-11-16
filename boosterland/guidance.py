@@ -426,7 +426,7 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     up = vec.unit(r)
     a = max(0.0, thrust_accel)
     base = trajectory.base_direction(v, up, a, rate)
-    if zem is None or a < cfg.LANDING_DIVERT_MIN_ACCEL:
+    if zem is None or a <= 0.0:
         return TerminalCommand(base, 0.0)
     t_go = max(1e-3, time_to_land)
     gain = min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)

@@ -121,6 +121,9 @@ class Body:
 class Control:
     def __init__(self):
         self.throttle = 0.0
+        # Read back like kRPC's: 1 while the turn is at the vehicle's rate
+        # limit (an input pinned), else the share of it the turn uses.
+        self.pitch = self.yaw = self.roll = 0.0
         self.rcs = False
         self.gear = False
         self.sas = False
@@ -247,7 +250,7 @@ class Vessel:
 
     def __init__(self, r, v, mass, thrust, isp, bottom=11.0, atmosphere=False,
                  slew_deg_s=None, min_throttle=0.0, gimbal_deg_s=0.0,
-                 lift_per_rad=0.0):
+                 lift_per_rad=0.0, lag_s=None):
         self.lift_per_rad = lift_per_rad    # Cl*A per radian; 0 = no wing
         self.r, self.v = tuple(r), tuple(v)
         self.bottom = bottom               # centre of mass to the leg feet
@@ -259,6 +262,12 @@ class Vessel:
         # CORRECTION burn spent 36 s commanding an attitude 45-72 deg away and
         # never got there, and an instant autopilot cannot show that.
         self.slew_deg_s = slew_deg_s
+        # The attitude loop's time constant: a small error closes as
+        # exp(-t / lag_s), a large one at the slew rate.  None: a pure rate
+        # limit, which closes any error under one step's slew in one step --
+        # a loop of infinite bandwidth that no kRPC autopilot is (the farm's
+        # nose lags its command 0.5-1.5 s, one2-1115).
+        self.lag_s = lag_s
         # Extra turn rate available *while the engines are burning*, in
         # proportion to the throttle: the gimbal.  A booster falling through
         # thick air has very little authority without it, and with
@@ -404,8 +413,13 @@ class Vessel:
         self.max_align_error = max(self.max_align_error,
                                    _angle_between(self.pointing, target))
         rate = self.slew_deg_s + self.gimbal_deg_s * self._applied_throttle()
-        self.pointing = _rotate_toward(self.pointing, target,
-                                       math.radians(rate) * dt)
+        step = math.radians(rate) * dt
+        if self.lag_s:
+            limit = step
+            step = min(step, _angle_between(self.pointing, target)
+                       * (1.0 - math.exp(-dt / self.lag_s)))
+            self.control.pitch = step / limit if limit > 0.0 else 0.0
+        self.pointing = _rotate_toward(self.pointing, target, step)
 
     def _applied_throttle(self):
         """What the engines actually run at, floor included."""

@@ -321,8 +321,6 @@ class Config:
                                             # MAX_TILT_DEG) of it, leaving the
                                             # rest to the divert's tilt
                                             # (trajectory.planned_net)
-    SUICIDE_MARGIN: float = 1.18            # light the engines this much early
-    SUICIDE_REACTION_S: float = 1.5         # engine spool-up allowance
     LANDING_RCS_HELD: bool = True           # RCS valve held open through the
                                             # landing burn, not relayed: keeps
                                             # kRPC's auto-tuned gains steady
@@ -358,7 +356,6 @@ class Config:
                                             # (thrust along it, and its lift),
                                             # re-read every tick; see
                                             # trajectory._fly_landing_burn
-    LANDING_DIVERT_MIN_ACCEL: float = 1.0   # thrust needed before steering means anything
     LANDING_DIVERT_THROTTLE_BUDGET: bool = True  # never tilt into the
                                             # braking: cap the tilt at the
                                             # angle the *spare* throttle can
@@ -368,26 +365,16 @@ class Config:
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # the burn's command narrows to
                                             # this at touchdown, over the last
                                             # 1/rate; see guidance.terminal_command
-    LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
-                                            # this many seconds of the vehicle's
-                                            # angular acceleration per second
-                                            # (0 = unslewed); see burn_slew_rate.
-                                            # slew2-1017 v unslewed: qs_hot miss
-                                            # mean 13 v 30, worst 25 v 66, burn
-                                            # err 15 v 50 deg; heavy err 7 v 37,
-                                            # worst 90 v 112 but median 56 v 32
-    LANDING_SLEW_MIN_DEG_S: float = 5.0     # floor under the slew rate (none is
-                                            # applied before a torque is read)
-    LANDING_THROTTLE_GAIN: float = 6.0      # m/s^2 of trim per m/s of speed
-                                            # error; the throttle is this over
-                                            # max_accel.  It was 0.12 throttle
-                                            # per m/s, which is this gain on
-                                            # the original booster (~50 m/s^2
-                                            # empty) and twice it on a 9 g
-                                            # one: five Vectors on 55 t
-                                            # flapped 0 <-> 0.95 on the last
-                                            # 30 m, overshot into a climb and
-                                            # ran the tanks dry (LOG10237)
+    LOOP_BANDWIDTH_SHARE: float = 0.25      # an outer loop closes at this
+                                            # share of the measured bandwidth
+                                            # of the loop that executes it:
+                                            # the lateral null of the attitude
+                                            # loop's (common.attitudelag), the
+                                            # descent-rate trim of the
+                                            # throttle's (spool-up + one tick).
+                                            # Cascade separation; a fixed 0.5/s
+                                            # flew like this in the sim, the
+                                            # half (0.5) 20% wider
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
     TOUCHDOWN_SPEED_SHARE: float = 0.25     # target descent rate at cutoff,
                                             # as a share of what the craft

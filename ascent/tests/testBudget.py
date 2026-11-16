@@ -65,7 +65,11 @@ class TestBudget(unittest.TestCase):
         rec = budget.recovery(KERBIN, SHUTTLE, SHUTTLE_SEP, cda=shuttle_cda)
         self.assertAlmostEqual(rec.apex, 34200.0, delta=0.05 * 34200.0)
         self.assertAlmostEqual(rec.terminal, 680.0, delta=0.05 * 680.0)
-        self.assertAlmostEqual(rec.landing_dv, 850.0, delta=0.05 * 850.0)
+        # ~850 m/s was measured (LOG16184) under the old trigger, lit 18%
+        # plus 1.5 s high; the profile's own trigger lights lower and holds
+        # the booster up for less time: between the speed and that.
+        self.assertGreater(rec.landing_dv, rec.terminal)
+        self.assertLess(rec.landing_dv, 850.0 * 1.05)
 
     def test_the_shuttle_booster_could_not_have_separated_there(self):
         # it flamed out short of the ground: the budget has to say so

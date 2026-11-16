@@ -70,13 +70,15 @@ class TestClosedLoop(unittest.TestCase):
     # is a command it never obeys.  ~30 deg/s is what LOG7's booster managed
     # (a ~150 deg boostback flip inside 5 s).
     SLEW = 30.0
+    LAG = 0.7           # s, the farm's nose against its command (one2-1115)
 
     def make_booster(self, atmosphere=True, slew=SLEW):
         """Post-separation state: 45 km up, 25 km downrange, still coasting up."""
         r = (fakeksp.RADIUS + 45000.0, 0.0, 25000.0)
         v = (250.0, 0.0, 1100.0)
         return fakeksp.Vessel(r, v, mass=60000.0, thrust=1.6e6, isp=290.0,
-                              atmosphere=atmosphere, slew_deg_s=slew)
+                              atmosphere=atmosphere, slew_deg_s=slew,
+                              lag_s=self.LAG if slew else None)
 
     def make_upper_stage(self, vessel, gap=25.0, push=3.0):
         """A stage that has fallen behind, so the boostback burn points at it.
@@ -95,7 +97,8 @@ class TestClosedLoop(unittest.TestCase):
         r = (fakeksp.RADIUS + 18478.0, 0.0, 16073.0)
         v = (377.5, 0.0, 582.9)
         return fakeksp.Vessel(r, v, mass=29660.0, thrust=520000.0, isp=300.0,
-                              atmosphere=True, slew_deg_s=self.SLEW)
+                              atmosphere=True, slew_deg_s=self.SLEW,
+                              lag_s=self.LAG)
 
     def test_booster_lands_through_an_atmosphere(self):
         """The same flight with drag the guidance has to estimate as it goes.

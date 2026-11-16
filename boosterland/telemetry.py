@@ -39,6 +39,7 @@ class Snapshot:
     # 0-1, or None when kRPC gave no read-back.  The RCS valve fires on it.
     input_saturation: object = None
     inputs: object = None              # (pitch, yaw, roll) read back, or None
+    thrust: object = None              # delivered now, N; None if unread
 
     @property
     def speed(self):
@@ -120,6 +121,7 @@ class Telemetry:
             "mass": add(getattr, vessel, "mass"),
             "available_thrust": add(getattr, vessel, "available_thrust"),
             "max_thrust": add(getattr, vessel, "max_thrust"),
+            "thrust": add(getattr, vessel, "thrust"),
             "isp": add(getattr, vessel, "specific_impulse"),
             "situation": add(getattr, vessel, "situation"),
             "surface_altitude": add(getattr, flight, "surface_altitude"),
@@ -160,6 +162,7 @@ class Telemetry:
             mass=s["mass"],
             available_thrust=s["available_thrust"],
             max_thrust=s["max_thrust"],
+            thrust=s["thrust"],
             isp=isp,
             surface_altitude=surface_altitude,
             vertical_speed=s["vertical_speed"],

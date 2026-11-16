@@ -1103,7 +1103,7 @@ class TestNoGoAround(unittest.TestCase):
         # The taper's own deceleration plus the trim on its speed error: a
         # hover and a little, never the cap.
         v_t = trajectory.touchdown_speed(self.env, self.cfg) + 0.5 * 1.4
-        bound = (g + 0.5 * v_t + self.cfg.LANDING_THROTTLE_GAIN
+        bound = (g + 0.5 * v_t + trajectory.throttle_gain(self.env, self.cfg)
                  * max(0.0, 3.5 - v_t)) / 34.0
         self.assertLessEqual(throttle, bound + 1e-9)
         self.assertLess(throttle, 0.6)
@@ -1329,9 +1329,15 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
         self.cfg.AERO_STEER_CROSS = False
         steer, _ = guidance.solve_steer(self.env, r, v, 20000.0, 18.0,
                                         self.cfg)
-        _, cross0 = self.miss_of(None, r, v)
-        _, cross1 = self.miss_of(steer, r, v)
-        self.assertAlmostEqual(cross1, cross0, delta=max(1.0, abs(cross0) * 0.1))
+        # Out of the trajectory plane (y here), not ``cross``: that is
+        # resolved on the approach from r to a target 900 m off the plane,
+        # so an along-track move alone turns it.
+        flat = trajectory.predict_landing(self.env, r, v, 20000.0, 18.0,
+                                          self.cfg)
+        steered = trajectory.predict_landing(self.env, r, v, 20000.0, 18.0,
+                                             self.cfg, steer=steer)
+        self.assertAlmostEqual(steered.position[1], flat.position[1],
+                               delta=1.0)
 
     def test_the_command_stays_inside_the_angle_the_vehicle_can_hold(self):
         r, v = self.entry()

@@ -213,21 +213,104 @@ def base_direction(v, up, thrust_accel, rate):
                             vec.scale(side, math.sin(theta))))
 
 
+def throttle_gain(env, cfg):
+    """The descent-rate trim's gain, 1/s (m/s^2 per m/s of speed error):
+    ``LOOP_BANDWIDTH_SHARE`` of the throttle's own bandwidth, one over its
+    measured reaction (``reaction_time``: spool-up plus one control tick).
+    A tick of 0.04 game-s and instant engines give 6.25 /s."""
+    lag = reaction_time(env)
+    if lag <= 0.0:
+        lag = cfg.LOOP_SLEEP_S
+    return cfg.LOOP_BANDWIDTH_SHARE / lag
+
+
+def reaction_time(env):
+    """Seconds from the trigger to braking thrust, as measured in flight: the
+    engines' spool-up (``env.engine_spool_s``, timed at the boostback's
+    ignition) plus one control interval (``env.control_interval``: the
+    trigger is only looked at once a tick).  Unread parts count 0."""
+    return ((getattr(env, "engine_spool_s", None) or 0.0)
+            + (getattr(env, "control_interval", None) or 0.0))
+
+
+def profile_speed(env, cfg, speed, vertical_speed, max_accel):
+    """The speed the descent profile is flown on: the descent rate plus the
+    share of the sideways speed the thrust along the profile brakes.
+
+    The profile is a *descent* profile.  On total speed, a booster sliding
+    15 m/s sideways at 20 m reads 15 m/s against a 3 m/s target, opens to the
+    cap (which zeroes the divert's tilt budget), climbs, is cut by the
+    go-around guard, falls, and repeats -- every tick, on both boosters,
+    drifting 100-750 m (dlaw1-1016).  Thrust along the vertical cannot take
+    out sideways speed; the steering law can, given throttle that is neither
+    0 nor the cap.  Higher up the sideways speed has to be braked like any
+    other (the closed-loop sim hit at 54 m/s on descent rate alone): all of
+    it while the base is retrograde, the rest left to the law once the base
+    nulls it at ``rate`` (base_direction).  With no rate read, the base is
+    retrograde: all of it."""
+    if not cfg.LANDING_THROTTLE_VERTICAL or vertical_speed is None:
+        return speed
+    rate = one_law_rate(env, cfg)
+    down = max(0.0, -vertical_speed)
+    side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
+    w = (1.0 if rate is None
+         else min(1.0, rate * speed / max(1e-6, max_accel)))
+    return math.sqrt(down * down + w * w * side_sq)
+
+
+def descent_profile(env, cfg, max_accel, g):
+    """``(v_td, k, net, v_join, h_join)``: the descent profile's shape.
+
+    Constant deceleration ``net`` from high up, joined where ``k v`` reaches
+    ``net`` to the taper ``v = v_td + k h``, which decelerates at ``k v`` and
+    lands at the touchdown speed.  k is the attitude rate the lateral null
+    closes at (``one_law_rate``): the descent slows over the same time
+    constant the sideways speed is nulled in, so both arrive together.  With
+    no rate measured, no taper (k None): constant deceleration to v_td."""
+    net = max(0.1, planned_net(max_accel, g, cfg))
+    v_td = touchdown_speed(env, cfg)
+    k = one_law_rate(env, cfg)
+    if k is None:
+        return v_td, None, net, v_td, 0.0
+    v_join = max(v_td, net / k)
+    return v_td, k, net, v_join, (v_join - v_td) / k
+
+
+def profile_height(profile, speed):
+    """The height above the cutoff at which the profile asks for ``speed``:
+    the profile read backwards (0 at or under the touchdown speed)."""
+    v_td, k, net, v_join, h_join = profile
+    if speed <= v_td:
+        return 0.0
+    if k is not None and speed <= v_join:
+        return (speed - v_td) / k
+    return h_join + (speed * speed - v_join * v_join) / (2.0 * net)
+
+
 def landing_burn_state(env, r, v, max_accel, cfg, height=None):
     """(height, height needed to stop, net decel) right now.
+
+    The burn is lit where the vehicle meets its own descent profile -- the
+    profile ``landing_command`` flies, read backwards at the speed it would
+    fly it on -- plus the distance covered in the measured reaction time.
+    Lit any higher, the profile's target is above the vehicle's speed and the
+    throttle sits at zero until the two meet: a fixed 18% margin and 1.5 s
+    allowance coasted ~1.5 s inside the burn on every flight (LOG17300).
 
     ``height`` defaults to the height above the pad's radius, but the caller
     should pass the terrain-relative leg height when it has one: the pad radius
     is only the ground under the booster when it is coming down on the pad.
     """
+    radius = vec.norm(r)
     if height is None:
-        height = vec.norm(r) - env.target_radius
+        height = radius - env.target_radius
     speed = vec.norm(v)
-    g = env.mu / (vec.norm(r) ** 2)
-    net = planned_net(max_accel, g, cfg)
-    needed = stopping_distance(speed, net) * cfg.SUICIDE_MARGIN
-    needed += speed * cfg.SUICIDE_REACTION_S
-    return height, needed, net
+    g = env.mu / (radius * radius)
+    profile = descent_profile(env, cfg, max_accel, g)
+    flown = profile_speed(env, cfg, speed, vec.dot(v, r) / radius, max_accel)
+    needed = (profile_height(profile, flown) + cfg.TOUCHDOWN_ALT_M
+              + speed * reaction_time(env))
+    return height, needed, profile[2]
 
 
 def landing_command(env, radius, speed, height, max_accel, cfg,
@@ -246,44 +329,10 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     callers have the velocity vector, so both pass it.
     """
     g = env.mu / (radius * radius)
-    rate = one_law_rate(env, cfg)
-    if cfg.LANDING_THROTTLE_VERTICAL and vertical_speed is not None:
-        # The profile is a *descent* profile.  On total speed, a booster
-        # sliding 15 m/s sideways at 20 m reads 15 m/s against a 3 m/s
-        # target, opens to the cap (which zeroes the divert's tilt budget),
-        # climbs, is cut by the go-around guard, falls, and repeats -- every
-        # tick, on both boosters, drifting 100-750 m (dlaw1-1016).  Thrust
-        # along the vertical cannot take out sideways speed; the divert law
-        # can, given throttle that is neither 0 nor the cap.  Higher up the
-        # sideways speed has to be braked like any other (the closed-loop
-        # sim hit at 54 m/s on descent rate alone), so it is weighted below.
-        down = max(0.0, -vertical_speed)
-        side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
-        # The share of the sideways speed the thrust along the profile
-        # brakes: all of it while the base is retrograde, the rest left to
-        # the law once the base nulls it at ``rate`` (base_direction).  With
-        # no rate read, the base is retrograde: all of it.
-        w = (1.0 if rate is None
-             else min(1.0, rate * speed / max(1e-6, max_accel)))
-        speed = math.sqrt(down * down + w * w * side_sq)
-    net = max(0.1, planned_net(max_accel, g, cfg))
-
+    speed = profile_speed(env, cfg, speed, vertical_speed, max_accel)
+    v_td, k, net, v_join, h_join = descent_profile(env, cfg, max_accel, g)
     remaining = max(0.0, height - cfg.TOUCHDOWN_ALT_M)
-    v_td = touchdown_speed(env, cfg)
-    # The taper v = v_td + k h decelerates at k v, which grows with height;
-    # joined to the constant-deceleration curve where k v reaches ``net``,
-    # no point asks for more than the plan.  k is the attitude rate the
-    # lateral null closes at (``one_law_rate``): the descent slows over the
-    # same time constant the sideways speed is nulled in, so both arrive
-    # together.  With no rate measured, no taper: constant deceleration to
-    # v_td at the ground.
-    k = rate
-    if k is None or k <= 0.0:
-        v_join, h_join = v_td, 0.0
-    else:
-        v_join = max(v_td, net / k)
-        h_join = (v_join - v_td) / k
-    taper = h_join > 0.0 and remaining <= h_join   # h_join > 0 only with a k
+    taper = k is not None and remaining <= h_join
     if taper:
         target_speed = v_td + k * remaining
     else:
@@ -307,7 +356,7 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     # The trim is an acceleration, so the loop gain is the same whatever the
     # thrust-to-weight: a throttle gain fitted to one booster is a loop that
     # oscillates on a stronger one.
-    throttle += cfg.LANDING_THROTTLE_GAIN * (speed - target_speed) / max_accel
+    throttle += throttle_gain(env, cfg) * (speed - target_speed) / max_accel
 
     # A booster near the ground must never be thrusting while it is going
     # *up*.  ``span`` is floored at a metre, so a height that reads near zero
@@ -416,13 +465,9 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         descending = vec.dot(v, up) < 0.0
 
         if max_accel > 0.0:
-            # Stop where the *trigger* will stop, not where a theoretical
-            # full-throttle stop would: landing_burn_state adds
-            # SUICIDE_MARGIN and the reaction allowance, so the real burn
-            # starts a fifth of its stopping distance higher.  Predicting the
-            # tighter burn quietly under-states how far the vehicle creeps
-            # downrange while braking -- which is the whole reason this
-            # function exists.
+            # Light where the *trigger* will light (landing_burn_state: the
+            # profile read backwards, plus the reaction time), so the
+            # prediction flies the burn that will be flown.
             _, needed, net = landing_burn_state(
                 env, r, v, max_accel, cfg, height=height)
             if descending and height <= needed:

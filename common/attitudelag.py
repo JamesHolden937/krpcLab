@@ -58,6 +58,11 @@ class LagFit:
     def reset(self):
         self.__init__()
 
+    def gap(self):
+        """A tick that is not this plant's: the next one starts afresh,
+        with nothing differenced across the gap."""
+        self.prev = None
+
     def update(self, ut, nose, cmd, saturation=None):
         """``cmd`` is the command that was in force since the last tick (the
         one the nose has been following), ``nose`` this tick's nose."""

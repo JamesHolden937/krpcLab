@@ -97,6 +97,9 @@ class Environment:
         self.touchdown_tolerance = None  # m/s the craft survives at contact
                                         # (Autoland: weakest touching part,
                                         # the legs' suspension when lower)
+        self.engine_spool_s = None      # trigger to thrust (Autoland.
+                                        # track_spool, the first ignition)
+        self.control_interval = None    # game-s between control ticks
         self.attitude_rate = None       # 1/s the lateral loops may close at
                                         # (Autoland.null_rate), for the
                                         # burn's law and its propagation

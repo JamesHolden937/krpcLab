@@ -25,9 +25,9 @@ within a few percent of that (``tests/testBudget``).
 atmosphere (``fall``: the body's own density profile, gravity, the
 horizontal speed the boostback left it), and the landing burn is the one
 boosterland flies: lit at the height its law asks for
-(``trajectory.landing_burn_state``: the stopping distance at
-``LANDING_THROTTLE_CAP`` x ``SUICIDE_MARGIN``, plus ``SUICIDE_REACTION_S`` of
-speed), then a constant deceleration to the ground.  Over that height the
+(``trajectory.landing_burn_state``: where the booster meets its descent
+profile, read backwards; no reaction time or attitude rate is known before
+the flight, so none is counted), then a constant deceleration to the ground.  Over that height the
 burn's dv is the speed plus the gravity it holds up: ``v + 2 g s H / v``,
 ``s`` the vertical share of the velocity.  The fall's drag is the craft's
 own Cd*A at the speed (``cda``: the ascent's zero-alpha table of the
@@ -43,6 +43,7 @@ after both, before the margin.
 import math
 from dataclasses import dataclass
 
+from boosterland import trajectory
 from boosterland.guidance import drift_rate, flip_throttle
 
 from boosterland.config import Config as _BoosterConfig
@@ -52,8 +53,14 @@ FLIP_ALIGN_DEG = _BCFG.FLIP_ALIGN_DEG    # the flip is over inside
 # boosterland's landing law (trajectory.landing_burn_state), which the
 # budget has to fly:
 LANDING_THROTTLE_CAP = _BCFG.LANDING_THROTTLE_CAP
-SUICIDE_MARGIN = _BCFG.SUICIDE_MARGIN
-SUICIDE_REACTION_S = _BCFG.SUICIDE_REACTION_S
+
+
+class _Unmeasured:
+    """boosterland's in-flight measurements, none taken yet."""
+    touchdown_tolerance = None
+    attitude_rate = None
+    engine_spool_s = None
+    control_interval = None
 
 G0 = 9.80665
 
@@ -219,11 +226,10 @@ def ignition(speed, accel, g):
     """The height boosterland lights the landing burn at, for a booster at
     ``speed`` with ``accel`` of full thrust; None when the engines cannot
     hold it up."""
-    net = accel * LANDING_THROTTLE_CAP - g
-    if net <= 0.0:
+    if trajectory.planned_net(accel, g, _BCFG) <= 0.0:
         return None
-    return (speed * speed / (2.0 * net) * SUICIDE_MARGIN
-            + speed * SUICIDE_REACTION_S)
+    profile = trajectory.descent_profile(_Unmeasured, _BCFG, accel, g)
+    return trajectory.profile_height(profile, speed) + _BCFG.TOUCHDOWN_ALT_M
 
 
 def fall(body, booster, mass, after, cd, cda=None, dt=0.5, max_s=900.0):
