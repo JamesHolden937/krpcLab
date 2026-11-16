@@ -22,7 +22,7 @@ ship-fitted constant** -- no flag, batch, arm or intermediate step resting on on
 physical quantity first, or the work waits. Two batches were stopped for breaking it (trk-1115, law-1115:
 law-1115 killed after 18/72 flights, unread). Fly nothing until the burn's list below is cleared.
 
-State: **3b3941b + 94c0b64, committed, not pushed. Farm stopped** (swap ~21 GB at the last batch: restart
+State: **3b3941b + 94c0b64, committed and pushed. Farm stopped** (swap ~21 GB at the last batch: restart
 before any batch). Not flown live. howItWorks.pdf (boosterland) **stale** (still describes the band law and
 RollTune). `tools/instancebench.py`, `docs/krpcFeatureRequests.md` are not this session's: leave them.
 Journal: `docs/boosterland/journal.md` "2026-11-15 evening" (nodiv, one, one2, one3). Per-arm summary:
