@@ -209,7 +209,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     shorten it.
 
     It is solved rather than tuned.  Propagations at zero and at
-    ``AERO_STEER_SOLVE_AOA_DEG`` measure how far the touchdown point moves,
+    the holdable angle measure how far the touchdown point moves,
     and the answer is the angle that puts the miss at zero, clamped to what
     the vehicle can hold.  There is no gain to fit, and a vehicle with a
     different shape or mass gets a different answer from the same code,
@@ -263,12 +263,14 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         # propagator caps each of them at the hold limit step by step.
         return None, None
     limit = most
-    probe = math.radians(cfg.AERO_STEER_SOLVE_AOA_DEG)
-    if most > 1e-3:
-        # A probe past the limit would be capped by the propagator and
-        # under-read the sensitivity by (most / probe)^2.
-        probe = min(probe, most)
     zero, flat, m0 = fly((0.0, 0.0))
+    # Probe at the limit itself: the plant is quadratic in the angle, so any
+    # probe inside the holdable range reads the same coefficient, and the
+    # largest reads it furthest above the propagation's noise.  Past the
+    # limit it would be capped by the propagator and under-read.
+    probe = most
+    if probe <= 1e-3:
+        return zero, flat
 
     # Do not act on the prediction until the prediction is worth acting on.
     # At the boostback exit it reads about -175 m on this booster and the
@@ -472,7 +474,8 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                      zem=None, tilt_budget_deg=None, null_rate=None):
     """The landing burn's command, ignition to touchdown: ``one_law_command``,
     stood up over the last nose response (``1 / rate``) inside a cone that
-    narrows to ``LANDING_UPRIGHT_TILT_DEG`` at touchdown -- a lean at contact
+    narrows at touchdown to ``SURVIVAL_SHARE`` of the legs' measured tip
+    angle (atan(support margin / centre-of-mass height); none known: upright) -- a lean at contact
     pries a booster over on its legs (tip1-1018, LOG12086).  With no attitude
     rate read there is no bandwidth to steer at, so it flies retrograde.
     """
@@ -489,7 +492,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     if frac >= 1.0:
         return cmd
     full = cfg.LANDING_MAX_TILT_DEG * 2.0
-    floor = cfg.LANDING_UPRIGHT_TILT_DEG
+    floor = cfg.SURVIVAL_SHARE * (getattr(env, "tip_angle_deg", None) or 0.0)
     return TerminalCommand(
         within_cone(cmd.direction, vec.unit(r), floor + (full - floor) * frac),
         cmd.demand)

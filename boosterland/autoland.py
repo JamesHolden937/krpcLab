@@ -531,6 +531,7 @@ class Autoland:
         self.rcs_limits = ValveLimits(cfg)
         self.rcs = rcs_valve.Valve(self.rcs_limits, logbook)
         self.err_jitter = Jitter()      # the pointing error's tick scatter
+        self.velocity_jitter = Jitter()  # the horizontal velocity's
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
         self.tune_logged = 0            # log_attitude_tune's progress
@@ -690,7 +691,7 @@ class Autoland:
                     previous_nose = snap.direction
                 up = guidance.roll_reference(snap.position, snap.velocity,
                                              direction, previous,
-                                             self.cfg.ROLL_PLANE_MIN_HS_MPS,
+                                             self.velocity_band(snap),
                                              previous_nose
                                              if self.cfg.ROLL_TRANSPORT
                                              or previous is not self.roll_up
@@ -1710,8 +1711,8 @@ class Autoland:
         until it reads deployed, then fired back.  Each part's time goes in
         ``gearcache`` under its part name, so a craft whose parts are all
         there skips the cycle -- every flight after the first.
-        ``landing_gear`` drops them ``GEAR_LEAD_FACTOR`` times the slowest,
-        plus ``GEAR_LEAD_S``, before the ground.  No legs, or a cycle that
+        ``landing_gear`` drops them the slowest's time, plus a few measured
+        reaction times, before the ground.  No legs, or a cycle that
         does not finish: the legs drop when the burn lights, as untimed.
         """
         cfg = self.cfg
@@ -1789,8 +1790,10 @@ class Autoland:
                               self.gear_lead()))
 
     def gear_lead(self):
-        return (self.cfg.GEAR_LEAD_FACTOR * self.gear_deploy_s
-                + self.cfg.GEAR_LEAD_S)
+        # The legs' measured deploy time, plus SETTLE_LAGS measured
+        # reaction times for the command to reach them.
+        return (self.gear_deploy_s + self.cfg.SETTLE_LAGS
+                * trajectory.reaction_time(self.env))
 
     def fire_gear(self, down):
         self.control.gear = down
@@ -1813,8 +1816,8 @@ class Autoland:
 
         The command in force is the one the last tick set; the angle held is
         the nose's real angle off retrograde.  A pair counts only once the
-        command has stayed within ``AERO_STEER_TRACK_STEADY_DEG`` for
-        ``AERO_STEER_TRACK_STEADY_S`` -- a command that just moved has not had
+        command has stayed within the pointing noise for ``SETTLE_LAGS``
+        nose lags -- a command that just moved has not had
         time to be held, and reading the turn as the vehicle's limit would
         throw away lift it does have.  See ``Environment.lift_slope_at``.
         """
@@ -1822,21 +1825,28 @@ class Autoland:
         if self.steer is None:
             self.steer_history = []
             return
+        # Steady for SETTLE_LAGS measured nose lags, to within the pointing
+        # error's own noise (ValveLimits): both measured, or no sample.
+        lag = self.lag.lag
+        noise = self.rcs_limits.RCS_ERROR_OFF_DEG
+        if not lag or not self.rcs_limits.measured:
+            return
+        settle = cfg.SETTLE_LAGS * lag
         commanded = math.degrees(abs(self.steer.aoa))
         self.steer_history.append((snap.ut, commanded))
-        window = snap.ut - cfg.AERO_STEER_TRACK_STEADY_S
+        window = snap.ut - settle
         while len(self.steer_history) > 1 and self.steer_history[1][0] <= window:
             self.steer_history.pop(0)
         if self.steer_history[0][0] > window:
             return                                  # not steady for long enough
         values = [c for _, c in self.steer_history]
-        if max(values) - min(values) > cfg.AERO_STEER_TRACK_STEADY_DEG:
+        if max(values) - min(values) > noise or commanded < noise:
             return
         held = vec.angle_between(vec.scale(snap.direction, -1.0),
                                  snap.velocity)
-        if snap.ut - self.phase_start_ut < cfg.AERO_STEER_TRACK_SETTLE_S:
+        if snap.ut - self.phase_start_ut < settle:
             return              # still swinging back from the last phase
-        if held > max(values) + cfg.AERO_STEER_TRACK_STEADY_DEG:
+        if held > max(values) + noise:
             # Holding *more* than asked is a nose still coming back from
             # somewhere else, not authority: every first sample after a
             # correction read 46-88 deg against a 4-7 deg command and pinned
@@ -1887,6 +1897,15 @@ class Autoland:
         if lam is None:
             return None
         return lam * self.cfg.LANDING_MAX_TILT_DEG
+
+    def velocity_band(self, snap):
+        """The horizontal speed below which the trajectory plane cannot be
+        read: ``NOISE_SIGMAS`` sd of the horizontal velocity's tick scatter.
+        Unmeasured: infinite (no plane)."""
+        horizontal = vec.project_out(snap.velocity, vec.unit(snap.position))
+        self.velocity_jitter.update(horizontal)
+        band = self.velocity_jitter.band(self.cfg.NOISE_SIGMAS)
+        return float("inf") if band is None else band
 
     def unwound(self, steer, prediction):
         """``steer`` with its angle faded to zero over the last
@@ -2016,6 +2035,8 @@ class Autoland:
             self.log.event(snap.ut, "landing limits: fewer than 3 feet")
             return
         self.landing_limits = lim
+        if lim.get("h") and lim["h"] > 0.0:
+            self.env.tip_angle_deg = math.degrees(math.atan2(lim["b"], lim["h"]))
         if lim.get("vertical") and (self.env.touchdown_tolerance is None
                                     or lim["vertical"]
                                     < self.env.touchdown_tolerance):
@@ -2108,11 +2129,9 @@ class Autoland:
             # a skid has `vs` of nearly nothing and is now let through to the
             # height backstops below, which cut it.
             return False
-        if command.height <= self.cfg.TOUCHDOWN_ALT_M:
-            return True                       # effectively on the deck already
-        # Stopped descending short of the ground: cut rather than hover.
-        return (command.height <= self.cfg.HOVER_CUT_ALT_M
-                and snap.vertical_speed >= self.cfg.TOUCHDOWN_HOVER_VS)
+        # Stopped descending short of the ground needs no cut here: the
+        # profile gives no thrust while not descending (landing_command).
+        return command.height <= self.cfg.TOUCHDOWN_ALT_M
 
     def run_touchdown(self, snap):
         self.set_throttle(0.0)

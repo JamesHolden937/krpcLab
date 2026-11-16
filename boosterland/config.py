@@ -185,7 +185,6 @@ class Config:
                                         # (guidance.transport_roof)
     ROLL_SEED_ACTUAL: bool = True       # first roof on the side nearest the
                                         # vehicle's own, not away from the body
-    ROLL_PLANE_MIN_HS_MPS: float = 5.0  # below this horizontal speed the roof
                                         # is carried, not re-taken from the
                                         # trajectory plane (0 = never)
     # When the engines light after the flip, reset kRPC's autopilot if it
@@ -194,7 +193,6 @@ class Config:
     # its own runaway gain, and the latch floors that axis for the rest of
     # the flight (Autoland.clear_krpc_latches).
     KRPC_CLEAR_LATCH_ON_THRUST: bool = True
-    ROLL_BRAKE_DEG: float = 5.0         # the roll-rate cap stops within this
     # From the coast on, the roof is held at the nearest of the n roll
     # orientations the aerodynamic surfaces look the same in (autoland.
     # symmetry_order: 6 for the fin booster), so the roll error stays under
@@ -230,9 +228,6 @@ class Config:
                                             # the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
-    AERO_STEER_SOLVE_AOA_DEG: float = 4.0   # the angle the second propagation
-                                            # probes, to measure metres of
-                                            # miss per radian
     AERO_STEER_PROBE_AOA_DEG: float = 8.0   # the angle the *aerodynamic* probe
                                             # is taken at, to measure Cl*A per
                                             # radian.  Big enough to be well
@@ -240,19 +235,6 @@ class Config:
                                             # small enough to stay in the
                                             # linear part of the curve.
 
-    AERO_STEER_TRACK_SETTLE_S: float = 10.0  # no tracking sample this soon
-                                            # after entering COAST
-    AERO_STEER_TRACK_MIN_DEG: float = 1.0   # measure how much of a commanded
-                                            # angle the vehicle holds (see
-                                            # Environment.lift_slope_at) only
-                                            # from commands at least this big.
-                                            # Small commands count: the
-                                            # original booster held 0.1 of a
-                                            # 1.5 deg command, and a lift it
-                                            # does not make must not be
-                                            # credited at any size
-    AERO_STEER_TRACK_STEADY_S: float = 2.0  # ... that have held within
-    AERO_STEER_TRACK_STEADY_DEG: float = 1.0  # this much for this long
     AERO_STEER_TRACK_SMOOTHING: float = 0.1  # EMA weight per sample
     AERO_STEER_TRACK_FLOOR: float = 0.05    # a tracking of 0 would read as a
                                             # vehicle with no air at all
@@ -313,9 +295,6 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
-    LANDING_UPRIGHT_TILT_DEG: float = 2.0   # the burn's command narrows to
-                                            # this at touchdown, over the last
-                                            # 1/rate; see guidance.terminal_command
     NOISE_SIGMAS: float = 2.0               # every deadband is this many
                                             # sd of the prediction's own
                                             # tick-to-tick scatter
@@ -334,18 +313,18 @@ class Config:
                                             # (meas-1115); the old fixed
                                             # 0.5 /s was ~half the loop
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
-    TOUCHDOWN_SPEED_SHARE: float = 0.25     # target descent rate at cutoff,
-                                            # as a share of what the craft
-                                            # survives (trajectory.
-                                            # touchdown_speed): 1/16 of the
-                                            # energy that breaks the weakest
-                                            # part that touches
+    SURVIVAL_SHARE: float = 0.25            # the touchdown is flown at this
+                                            # share of what the craft
+                                            # survives: the descent rate of
+                                            # the weakest part that touches
+                                            # (trajectory.touchdown_speed,
+                                            # 1/16 of the breaking energy),
+                                            # the lean of the legs' tip angle
+                                            # (guidance.terminal_command)
     LANDING_THROTTLE_VERTICAL: bool = True   # profile on descent rate, not |v|
                                             # (vert1-1016: heavy 6/6 at 0.9-8.3 m/s
                                             # on the 2 km prediction +-30 m, v 4/6
                                             # drifting 300-750 m off it)
-    HOVER_CUT_ALT_M: float = 3.0            # ... or this low and not descending
-    TOUCHDOWN_HOVER_VS: float = -0.5        # what counts as "not descending"
     LEG_CLEARANCE_MARGIN_M: float = 0.5     # padding under the bounding box
     LEG_CLEARANCE_MAX_M: float = 100.0      # longer than this is not a booster
     LEG_CLEARANCE_FALLBACK_M: float = 10.0  # used only while the game will not say
@@ -358,15 +337,6 @@ class Config:
     GEAR_TIMED: bool = True                 # cycle the legs once early in the
                                             # coast to time them, then drop
                                             # them this long before touchdown:
-    GEAR_LEAD_FACTOR: float = 1.25          # ... x the measured deploy time
-    GEAR_LEAD_S: float = 1.0                # ... plus this; see landing_gear.
-                                            # The time-to-go is the coast's fall
-                                            # rate, which the burn stretches:
-                                            # the legs are down ~13.5 s before
-                                            # contact for this 6.8 s lead.
-                                            # Timed on the burn's prediction
-                                            # instead it was worse (def2-1018:
-                                            # 22 m, 7/12 stood v 13 m, 10/12)
     GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
     TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
     TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s

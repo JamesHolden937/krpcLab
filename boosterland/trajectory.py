@@ -169,13 +169,13 @@ GAME_DEFAULT_CRASH_TOLERANCE = 9.0
 
 
 def touchdown_speed(env, cfg):
-    """The descent rate the profile lands at: ``TOUCHDOWN_SPEED_SHARE`` of
+    """The descent rate the profile lands at: ``SURVIVAL_SHARE`` of
     what the craft survives (``env.touchdown_tolerance``: the weakest part
     that touches, or the legs' suspension when lower), read in flight."""
     tol = getattr(env, "touchdown_tolerance", None)
     if not tol or tol <= 0.0:
         tol = GAME_DEFAULT_CRASH_TOLERANCE
-    return cfg.TOUCHDOWN_SPEED_SHARE * tol
+    return cfg.SURVIVAL_SHARE * tol
 
 
 def base_direction(v, up, thrust_accel, rate):

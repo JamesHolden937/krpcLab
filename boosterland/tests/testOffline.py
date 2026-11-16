@@ -620,12 +620,12 @@ class TestGuidance(unittest.TestCase):
         aim = guidance.terminal_command(env, r, v, 3.0, 0.0, 25.0, cfg,
                                         (0.0, 0.0, 300.0), null_rate=0.5)
         self.assertLessEqual(vec.angle_between(aim.direction, vec.unit(r)),
-                             cfg.LANDING_UPRIGHT_TILT_DEG + 1e-6)
+                             1e-6)      # no legs measured: upright
         high = guidance.terminal_command(env, state_above_pad(2000.0)[0],
                                          v, 2000.0, 0.0, 25.0, cfg,
                                          (0.0, 0.0, 300.0), null_rate=0.5)
         self.assertLessEqual(vec.angle_between(high.direction, vec.unit(r)),
-                             cfg.LANDING_UPRIGHT_TILT_DEG + 1e-6)
+                             1e-6)
 
     def test_terminal_guidance_can_be_switched_off(self):
         """LANDING_TERMINAL_GUIDANCE=False is the pure-retrograde burn."""
@@ -1004,11 +1004,12 @@ class TestTerminalOnPrediction(unittest.TestCase):
 
     def test_the_command_stands_up_near_the_ground(self):
         # 2.5 m/s down and 2 m/s sideways, 3 m up, at touchdown: the command
-        # is inside LANDING_UPRIGHT_TILT_DEG of vertical; a nose response
+        # is inside the legs' allowed lean of vertical; a nose response
         # (1 / rate) or more out, the cone is open.
         r, v = state_above_pad(3.0, (-2.5, 0.0, 2.0))
         up = vec.unit(r)
-        self.cfg.LANDING_UPRIGHT_TILT_DEG = 2.0
+        # A tip angle of 8 deg at a quarter: 2 deg.
+        self.env.tip_angle_deg = 2.0 / self.cfg.SURVIVAL_SHARE
         upright = guidance.terminal_command(self.env, r, v, 3.0, 0.0, 10.0,
                                             self.cfg, null_rate=0.5)
         self.assertLessEqual(vec.angle_between(upright.direction, up),

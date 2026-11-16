@@ -94,6 +94,7 @@ class Environment:
         self._lift_areas = []
         self.lift_slope = None          # the value at the current Mach, logged
         self.leg_clearance = 0.0        # COM to vessel bottom, m (telemetry)
+        self.tip_angle_deg = None       # the legs' static tip-over angle
         self.touchdown_tolerance = None  # m/s the craft survives at contact
                                         # (Autoland: weakest touching part,
                                         # the legs' suspension when lower)
@@ -604,15 +605,13 @@ class Environment:
     def record_tracking(self, commanded_deg, held_deg):
         """Fold one (commanded, held) pair into ``aoa_tracking``.
 
-        The caller only passes pairs taken under a steady command at least
-        ``AERO_STEER_TRACK_MIN_DEG`` -- small commands are dominated by the
+        The caller only passes pairs taken under a steady command bigger
+        than the pointing noise -- small commands are dominated by the
         autopilot's own deadband, and a command that just changed has not had
         time to be held.  Clamped to ``[AERO_STEER_TRACK_FLOOR, 1]``: holding
         more than commanded is an oscillation, not authority.
         """
         cfg = self.cfg
-        if commanded_deg < cfg.AERO_STEER_TRACK_MIN_DEG:
-            return
         sample = vec.clamp(held_deg / commanded_deg,
                            cfg.AERO_STEER_TRACK_FLOOR, 1.0)
         if self.tracking_samples == 0:
