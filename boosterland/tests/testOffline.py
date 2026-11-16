@@ -1722,8 +1722,10 @@ class TestBurnPropellant(unittest.TestCase):
             trajectory.drag_lookup(env, 0.0))
 
     def test_dry_tanks_land_fast(self):
-        r_wet, v_wet, _, _ = self.fly()
-        r_dry, v_dry, _, _ = self.fly(dry=0.92e5)
+        r_wet, v_wet, _, _, m_wet = self.fly()
+        r_dry, v_dry, _, _, m_dry = self.fly(dry=0.92e5)
+        self.assertAlmostEqual(m_dry, 0.92e5)
+        self.assertLess(m_wet, 0.92e5)
         self.assertLess(vec.norm(v_wet), 15.0)
         self.assertGreater(vec.norm(v_dry), 50.0)
 

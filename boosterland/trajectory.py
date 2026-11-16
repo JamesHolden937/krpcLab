@@ -35,6 +35,8 @@ class Prediction:
     powered: bool            # False => pure ballistic impact (no thrust)
     steps: int
     profile: tuple = ()      # (speed, altitude) along the way down
+    final_mass: float = None  # kg at touchdown, the burn's propellant spent
+                              # (env.burn_isp; the mass now without it)
 
 
 
@@ -523,6 +525,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     radius = vec.norm(r)
     speed = vec.norm(v)
     burn_time = 0.0
+    final_mass = mass
     burn_altitude = radius - env.target_radius - leg_clearance(env)
     if powered and net > 0.0:
         # Fly the burn rather than estimating it.  The closed form this
@@ -539,7 +542,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # predicting a wing nobody is flying.  Left in, it costs the whole
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
-        r, v, burn_time, burn_steps = _fly_landing_burn(
+        r, v, burn_time, burn_steps, final_mass = _fly_landing_burn(
             env, r, v, mass, max_accel, cfg, drag, trace)
         steps += burn_steps
 
@@ -552,6 +555,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         powered=powered,
         steps=steps,
         profile=tuple(profile),
+        final_mass=final_mass,
     )
 
 
@@ -650,7 +654,7 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
                        mass - accel * mass / (isp * STANDARD_GRAVITY) * dt)
         t += dt
         steps += 1
-    return r, v, t, steps
+    return r, v, t, steps, mass
 
 
 def miss_vector(env, prediction):

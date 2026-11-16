@@ -262,23 +262,118 @@ def fall(body, booster, mass, after, cd, cda=None, dt=0.5, max_s=900.0):
     return float("inf"), math.hypot(u, w), h
 
 
+class PlaneEnv(_Unmeasured):
+    """``body`` as boosterland's propagator reads an ``Environment``: the
+    pad at (R, 0, 0), the booster's flight in the x-y plane, the air the
+    ascent read off the game, the stack's Cd*A.  Heights are above the pad
+    (``Body.radius``, as everywhere here); the body does not turn (the
+    states are already ground-relative)."""
+
+    def __init__(self, body, drag):
+        self.mu = body.mu
+        self.equatorial_radius = body.radius
+        self.target_radius = body.radius
+        self.target = (body.radius, 0.0, 0.0)
+        self.omega = (0.0, 0.0, 0.0)
+        self.atmosphere_depth = (len(body.density) * body.step
+                                 if body.density_pad > 0.0 else 0.0)
+        self._body = body
+        self._drag = drag
+        self.leg_clearance = None
+
+    def density(self, altitude):
+        return density(self._body, altitude)
+
+    def drag_area_at(self, speed, altitude):
+        return self._drag(altitude, speed)
+
+
+def _plane_state(body, state, extra_u=0.0):
+    """``state`` as (r, v) in PlaneEnv's frame; ``extra_u`` m/s more
+    towards the pad."""
+    theta = state.downrange / body.radius
+    up = (math.cos(theta), math.sin(theta), 0.0)
+    away = (-math.sin(theta), math.cos(theta), 0.0)
+    rr = body.radius + max(0.0, state.height)
+    u = state.v_away - extra_u
+    r = tuple(rr * c for c in up)
+    v = tuple(u * a + state.v_up * b for a, b in zip(away, up))
+    return r, v
+
+
+def predicted_landing(body, booster, mass, after, drag, extra_u=0.0):
+    """boosterland's own prediction from the boostback's burn-out: the fall
+    with drag, the landing burn lit and flown on its law, its propellant
+    spent at the pad's Isp with no floor.  Returns (downrange of the
+    touchdown, + beyond the pad on the separation's side; the mass left;
+    the speed the burn lights at)."""
+    env = PlaneEnv(body, drag)
+    env.burn_isp = booster.isp_sl
+    r, v = _plane_state(body, after, extra_u)
+    accel = booster.thrust_sl / max(1.0, mass)
+    p = trajectory.predict_landing(env, r, v, mass, accel, _BCFG)
+    x = math.atan2(p.position[1], p.position[0]) * body.radius
+    m = p.final_mass if p.powered and p.final_mass is not None else mass
+    return x, m, p.entry_speed, p.powered
+
+
 def recovery(body, booster, state, cd=1.0, flip_rate_deg=30.0, cda=None):
     """The propellant the booster would land with if it separated in
     ``state``.  ``cda(height, speed)``: the falling booster's Cd*A, m^2
-    (None: ``cd`` x the frontal area)."""
+    (None: ``cd`` x the frontal area).
+
+    The boostback is the burn above, aimed by a vacuum return; boosterland
+    aims it by its prediction, which falls through air: the drag takes
+    horizontal speed on the way down and the vacuum aim lands short (the
+    fin booster's real boostback spent ~4 t more than this burn).  So the
+    burn-out is carried on (``extra``, m/s more towards the pad, solved by
+    secant) until boosterland's own prediction -- the fall, the trigger,
+    the landing burn on its law, its propellant spent -- touches down on
+    the pad, and what that burn leaves is what the booster lands with."""
     propellant = booster.mass - booster.dry_mass
     bb_dv, m1, burn_s, after = boostback(body, booster, state, flip_rate_deg)
     g = gravity(body, after.height)
+    drag = cda if cda is not None else (
+        lambda h, v, k=cd * math.pi * booster.radius ** 2: k)
+    if not math.isfinite(m1) or m1 <= 0.0:
+        return Recovery(bb_dv, float("inf"), burn_s, 0.0, after.height,
+                        -float("inf"), propellant)
+
+    def landed(extra):
+        m = m1 * math.exp(-abs(extra) / (booster.isp_vac * G0))
+        return (predicted_landing(body, booster, m, after, drag, extra), m)
+
+    extra = 0.0
+    (x0, m_end, v_t, powered), m_bb = landed(extra)
+    # A miss of x needs ~ x / (fall time) of horizontal speed; the secant
+    # takes over from that first step.
+    fall_s = max(1.0, fall_time(after.height, after.v_up, g))
+    e_prev, x_prev = extra, x0
+    extra = x0 / fall_s
+    for _ in range(SOLVE_ITERATIONS):
+        (x, m_end, v_t, powered), m_bb = landed(extra)
+        if abs(x) <= LANDING_TOLERANCE_M or x == x_prev:
+            break
+        step = (extra - e_prev) * x / (x - x_prev)
+        e_prev, x_prev = extra, x
+        extra -= step
+    bb_dv += abs(extra)
     apex = after.height + max(0.0, after.v_up) ** 2 / (2.0 * g)
-    land_dv, v_t, _ = fall(body, booster, m1, after, cd, cda)
-    if math.isfinite(land_dv):
-        m2 = m1 * math.exp(-land_dv / (booster.isp_sl * G0))
+    if powered and m_end > 0.0:
+        land_dv = booster.isp_sl * G0 * math.log(m_bb / m_end)
     else:
-        m2 = -float("inf")
+        land_dv, m_end = float("inf"), -float("inf")
     return Recovery(boostback_dv=bb_dv, landing_dv=land_dv, burn_s=burn_s,
                     terminal=v_t, apex=apex,
-                    propellant_left=m2 - booster.dry_mass,
+                    propellant_left=m_end - booster.dry_mass,
                     propellant=propellant)
+
+
+# The secant on the boostback's last metres: a few predictions per
+# recovery, and a touchdown within a booster's own length of the pad (the
+# margin is the reserve's job, not the aim's).
+SOLVE_ITERATIONS = 4
+LANDING_TOLERANCE_M = 20.0
 
 
 def separation_target(upper_accel, booster_mass, booster_thrust_now, ratio):
