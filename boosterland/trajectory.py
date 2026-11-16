@@ -270,6 +270,11 @@ def descent_profile(env, cfg, max_accel, g):
     net = max(0.1, planned_net(max_accel, g, cfg))
     v_td = touchdown_speed(env, cfg)
     k = one_law_rate(env, cfg)
+    if k is not None:
+        # ... and no faster than the descent-rate trim that flies it can
+        # follow (the same cascade share of its gain): a nose fast enough to
+        # read as instant left no taper at all, and the sim hit at 8 m/s.
+        k = min(k, cfg.LOOP_BANDWIDTH_SHARE * throttle_gain(env, cfg))
     if k is None:
         return v_td, None, net, v_td, 0.0
     v_join = max(v_td, net / k)

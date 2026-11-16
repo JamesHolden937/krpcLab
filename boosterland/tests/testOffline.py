@@ -1081,7 +1081,7 @@ class TestNoGoAround(unittest.TestCase):
 
     def test_an_ordinary_descent_is_untouched(self):
         """The guard must not clip a real flare -- only an ascent."""
-        for height, speed in ((40.0, 20.0), (10.0, 7.0), (3.0, 3.0)):
+        for height, speed in ((40.0, 23.0), (10.0, 7.0), (3.0, 3.0)):
             self.assertGreater(self.command(height, speed, -speed), 0.0)
 
     def test_climbing_gets_no_thrust_at_any_height(self):

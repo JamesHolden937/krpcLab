@@ -79,8 +79,10 @@ class LagFit:
             return self.rate
         if saturation is not None and saturation >= PINNED:
             return self.rate
-        # The command the nose was chasing over [prev, now] is prev's cmd.
-        e = error_vector(prev[1], prev[2])
+        # The command the nose was chasing over [prev, now] is the one
+        # passed now (the caller passes the command in force since its last
+        # tick); prev's was one tick older (the farm read the loop 2-5x slow).
+        e = error_vector(prev[1], self.prev[2])
         ndot = vec.scale(vec.project_out(vec.sub(self.prev[1], prev[1]),
                                          prev[1]), 1.0 / dt)
         tau = 1.0 / self.fit if self.fit and self.fit > 0.0 else None

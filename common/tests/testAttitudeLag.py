@@ -23,6 +23,7 @@ def fly(lam, dt=0.1, seconds=40.0, slew=None, noise=0.0, seed=1):
     fit = LagFit()
     nose = (0.0, 1.0, 0.0)
     t = 0.0
+    last = None             # the command in force since the last update
     while t < seconds:
         a = 0.3 * math.sin(0.7 * t) + 0.2 * math.sin(1.9 * t + 1.0)
         b = 0.25 * math.cos(1.3 * t)
@@ -30,7 +31,8 @@ def fly(lam, dt=0.1, seconds=40.0, slew=None, noise=0.0, seed=1):
         seen = nose
         if noise:
             seen = vec.unit(tuple(x + rnd.gauss(0.0, noise) for x in nose))
-        fit.update(t, seen, cmd)
+        fit.update(t, seen, last)
+        last = cmd
         e = vec.norm(error_vector(nose, cmd))
         step = e * (1.0 - math.exp(-lam * dt))
         if slew is not None:

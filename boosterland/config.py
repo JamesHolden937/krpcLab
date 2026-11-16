@@ -365,16 +365,18 @@ class Config:
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # the burn's command narrows to
                                             # this at touchdown, over the last
                                             # 1/rate; see guidance.terminal_command
-    LOOP_BANDWIDTH_SHARE: float = 0.25      # an outer loop closes at this
+    LOOP_BANDWIDTH_SHARE: float = 0.5       # an outer loop closes at this
                                             # share of the measured bandwidth
                                             # of the loop that executes it:
                                             # the lateral null of the attitude
                                             # loop's (common.attitudelag), the
                                             # descent-rate trim of the
                                             # throttle's (spool-up + one tick).
-                                            # Cascade separation; a fixed 0.5/s
-                                            # flew like this in the sim, the
-                                            # half (0.5) 20% wider
+                                            # Cascade separation.  0.25 lit
+                                            # the fin boosters at 7 km on a
+                                            # slow taper and missed ~1 km
+                                            # (meas-1115); the old fixed
+                                            # 0.5 /s was ~half the loop
     TOUCHDOWN_ALT_M: float = 0.2            # legs-above-ground cutoff height
     TOUCHDOWN_SPEED_SHARE: float = 0.25     # target descent rate at cutoff,
                                             # as a share of what the craft

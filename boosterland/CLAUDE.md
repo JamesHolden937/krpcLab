@@ -1,5 +1,10 @@
 # boosterland
 
+> **Current target: `qs_finbooster2` only** (the user, 2026-11-15). Fly every booster batch on it and
+> nothing else until it flies under general formulas (no ship-fitted constants, root CLAUDE.md). Only
+> then look at the other boosters. The heavy (`qs_heavy`) is probably fundamentally problematic: don't
+> spend batches on it.
+
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
 Target pad lat `-0.097162`, lon `-74.557679` (`Config.PAD_LAT/PAD_LON`). It
