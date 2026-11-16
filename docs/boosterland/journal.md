@@ -1230,3 +1230,17 @@ in the TOUCHDOWN event; `logsum --segments` has a `td` column) so a legless topp
   `actuators.py --joints`. First read right after load: break forces ~1e20 kN (easing/KJR), springs 2.2e7 kN/m;
   a rigid-ground chain model then predicts breaks below 1 m/s, which landings contradict -- the contact's
   compliance sets the load. Open.
+
+### 2026-11-15 evening: divert off -- where the burn's miss is made (nodiv-1115, LOG17089-17112)
+
+qs_finbooster3, 12 an arm, fresh farm, defaults 9c021039 against `LANDING_DIVERT_MAX_ALT_M=250` (retrograde to
+250 m, then only `bounded_null`). td miss median **17 v 30 m**, max 29 v 98; 12/12 v 11/12 landed.
+- The miss is all along-track and one-signed: **every flight lands long** (rest positions west of the pad, cross
+  0). The `long=` sign flips at ~250 m in every log with the magnitude unchanged -- it follows the horizontal
+  velocity, which reverses in the null -- so read the N/E or |long| near the bottom, not the sign.
+- Predicted long at ignition (~6 km) +0-16; at 5 km +12-67; at 2.5 km +22-107. **The error is made between
+  ignition and 2.5 km**: the turn from the coast's aoa onto retrograde (open item 1).
+- With no divert the prediction is flat from 2.5 km to the ground and lands within ~10 m of it (46 -> 38, 89 ->
+  79, 107 -> 98): the propagator flies the lower burn right. The divert only pulls ~35 -> ~16 m by 250 m.
+- So an unguided hoverslam would land within ~10 m of the ignition-time prediction once the post-ignition drift
+  is modelled or removed; the coast already aims to within ~16 m at ignition.
