@@ -169,23 +169,39 @@ class TestPropagation(unittest.TestCase):
             cfg.LANDING_MAX_TILT_DEG)) * 2.0 + 1e-6)
         self.assertLess(vec.dot(late.direction, (0.0, 0.0, 1.0)), 0.0)
 
-    def test_burn_offset_tilts_the_burn(self):
-        """A nose held off retrograde toward the vertical brakes less of the
-        horizontal speed, so the burn carries the touchdown further downrange;
-        a zero offset is the plain retrograde burn."""
+    def test_a_lagging_nose_tilts_the_burn(self):
+        """A nose that starts the burn 6 deg off retrograde moves the
+        touchdown while it turns -- by less the faster it closes; with no
+        bandwidth measured the nose is the command."""
         env = FakeEnv()
         cfg = Config()
         r, v = state_above_pad(6000.0, (-300.0, 0.0, 100.0))
         back = vec.unit(vec.scale(v, -1.0))
         up = vec.unit(vec.project_out((1.0, 0.0, 0.0), back))
+        tilted = vec.unit(vec.add(vec.scale(back, math.cos(math.radians(6.0))),
+                                  vec.scale(up, -math.sin(math.radians(6.0)))))
         plain = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg)
-        zero = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
-                                          burn_offset=(0.0, up))
-        tilted = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
-                                            burn_offset=(math.radians(6.0), up))
+        unmeasured = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
+                                                nose=tilted)
+        env.attitude_bandwidth = 0.3
+        slow = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
+                                          nose=tilted)
+        env.attitude_bandwidth = 3.0
+        fast = trajectory.predict_landing(env, r, v, 4e4, 40.0, cfg,
+                                          nose=tilted)
         self.assertTrue(plain.powered)
-        self.assertAlmostEqual(zero.position[2], plain.position[2], places=6)
-        self.assertGreater(tilted.position[2], plain.position[2] + 5.0)
+        self.assertAlmostEqual(unmeasured.position[2], plain.position[2],
+                               places=6)
+        # Further from the plain burn the slower the nose closes.
+        self.assertGreater(abs(slow.position[2] - plain.position[2]),
+                           abs(fast.position[2] - plain.position[2]) + 1.0)
+
+    def test_the_follower_closes_at_its_bandwidth(self):
+        nose, cmd = (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)
+        after = trajectory.follow(nose, cmd, 1.0, 1.0)
+        left = math.radians(vec.angle_between(after, cmd))
+        self.assertAlmostEqual(left, math.pi / 2 * math.exp(-1.0), places=6)
+        self.assertEqual(trajectory.follow(nose, cmd, None, 1.0), cmd)
 
     def test_rotating_frame_terms_deflect_the_impact(self):
         cfg = Config()
