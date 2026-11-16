@@ -1272,3 +1272,16 @@ one2-1115 (fade T = 2/rate, LOG17185-17256): fin3 12.1 -> 13.1 m median (p75 16,
 err/cw 0.5-1.5 s on both arms, so rate 0.5/s is about right and the time scale was wrong: the velocity null
 settles in 4/rate = 8 s. The defaults are clean because they stop aiming ~7.5 s out, and overshoot 20-35 m
 because the null carries the 14-17 m/s left at 130 m past the pad. f4f75e7: T = 4/rate. Flown as one3-1115.
+
+one3-1115 (fade T = 4/rate, LOG17257-17328): fin3 16.5 v 16.4 (td hs 1.1 v 0.2), heavy 34.6 v 59.0 median, max
+77 v 274, 5 v 3 lost (td tilt 5.3 v 0.9), fin 41.7 v 33.4 (both arms td hs ~8: that booster tips). Heavy's misses
+are made before the burn (pred 144 m at 5 km, both arms); the law tilts to close ~100 m from 140 m up.
+Sim (fakeksp) reproduced the sideways contact (5.3 m/s) and showed two causes:
+- the propagator flew the burn to the pad radius at the centre of mass while the trigger and throttle fly the
+  legs' height: it lit later, landed one leg clearance (~11 m) lower, and read 3-5 s of ttl at contact (farm
+  and sim alike). Fixed: `trajectory.leg_clearance` (env.leg_clearance from telemetry).
+- a fade is a time scale; a large miss at small gain is still a large push. Replaced by a physical bound: the
+  aim's asked-for sideways speed (accel / rate) <= thrust * sin(LANDING_MAX_TILT_DEG) * (t_go - 1/rate), what can
+  still be braked by touchdown.
+Promoted (3b3941b): the one law is the only burn law; the band law, bounded_null and their constants deleted.
+Sim: impact 6.5 -> 4.4 m/s, ttl 0 at contact. Flown as law-1115 against LANDING_PREDICT_TRACKING.
