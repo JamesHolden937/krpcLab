@@ -1268,6 +1268,7 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
 
     def setUp(self):
         self.env = FakeEnv(atmosphere=True)
+        self.env.miss_band = 2.0        # the prediction's measured noise
         self.env.drag_area = 15.0
         self.env.lift_slope = 140.0     # what liftprobe.py measures on the
                                         # real booster, Cl*A per rad^2
@@ -1522,6 +1523,30 @@ class TestConfig(unittest.TestCase):
             apply_overrides(Config(), ["NOPE=1"])
 
 
+def autoland_limits():
+    from boosterland.autoland import ValveLimits
+    lim = ValveLimits(Config())
+    lim.RCS_ERROR_ON_DEG, lim.RCS_ERROR_OFF_DEG = 5.0, 1.5
+    lim.RCS_SETTLE_S, lim.RCS_SAT_ON_S = 2.0, 0.5
+    return lim
+
+
+class TestValveLimits(unittest.TestCase):
+    def test_open_until_measured_then_from_the_scatter(self):
+        from boosterland.autoland import ValveLimits
+        from common.jitter import Jitter, SAMPLES
+        lim = ValveLimits(Config())
+        j = Jitter()
+        lim.measure(j, 3.0, None)
+        self.assertFalse(lim.measured)
+        self.assertEqual(lim.RCS_ERROR_ON_DEG, 0.0)
+        for i in range(SAMPLES + 2):
+            lim.measure(j, 3.0 + (0.4 if i % 2 else -0.4), 0.3)
+        self.assertTrue(lim.measured)
+        self.assertGreater(lim.RCS_ERROR_ON_DEG, lim.RCS_ERROR_OFF_DEG)
+        self.assertAlmostEqual(lim.RCS_SETTLE_S, Config().SETTLE_LAGS * 0.3)
+
+
 class TestTheRcsValve(unittest.TestCase):
     """Monopropellant is spent on turns, not on holding still.
 
@@ -1540,7 +1565,9 @@ class TestTheRcsValve(unittest.TestCase):
     """
 
     def setUp(self):
-        self.cfg = Config()
+        # The booster's thresholds are measured in flight (ValveLimits);
+        # the relay itself is tested on fixed ones, the spaceplane's shape.
+        self.cfg = autoland_limits()
         self.applied = []
 
     def valve(self):
@@ -1625,7 +1652,8 @@ class TestTheRcsValve(unittest.TestCase):
         self.assertTrue(self.drive(v, 0.0, 40.0, q=40000.0))
 
     def test_a_configured_ceiling_shuts_it(self):
-        self.cfg = apply_overrides(Config(), ["RCS_Q_MAX_PA=500"])
+        self.cfg = autoland_limits()
+        self.cfg._cfg = apply_overrides(Config(), ["RCS_Q_MAX_PA=500"])
         v = self.valve()
         self.drive(v, 0.0, 40.0, q=100.0)
         self.assertTrue(v.on)

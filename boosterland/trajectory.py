@@ -544,7 +544,7 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag):
     which is the part a closed form gets wrong, and the part that decides
     where the booster actually ends up.  The nose is taken to be on the
     command: the coast unwinds its angle of attack before ignition
-    (``COAST_UNWIND_LAGS``) so that it is.
+    (``SETTLE_LAGS``) so that it is.
     """
     t = 0.0
     steps = 0

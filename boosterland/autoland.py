@@ -34,6 +34,7 @@ from common.krpcpilot import (  # noqa: F401
 from common import cli
 from common.launchsite import launch_site
 from common.attitudelag import LagFit
+from common.jitter import Jitter
 from common.touchdown import landing_limits, read_legs, touchdown_limit
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
@@ -399,6 +400,46 @@ class EngineCluster:
                 pass
 
 
+class ValveLimits:
+    """The RCS valve's relay thresholds, measured rather than fitted; every
+    other ``RCS_*`` field reads through to the config.
+
+    - off inside ``NOISE_SIGMAS`` sd of the pointing error's own tick scatter
+      (``common.jitter``): closer than that is not a turn, it is the hunt;
+    - on past ``NOISE_SIGMAS`` times that (the relay's gap, so it cannot
+      switch at the hunt's own frequency);
+    - settled after ``SETTLE_LAGS`` measured nose lags inside; an input
+      pinned for one lag is a saturation.
+
+    Until the scatter and the lag are measured, both angles are 0: the
+    valve is open whenever it is permitted -- an unknown is all the
+    authority there is, not none."""
+
+    def __init__(self, cfg):
+        self._cfg = cfg
+        self.measured = False
+        self.RCS_ERROR_OFF_DEG = 0.0
+        self.RCS_ERROR_ON_DEG = 0.0
+        self.RCS_SETTLE_S = 0.0
+        self.RCS_SAT_ON_S = 0.0
+
+    def __getattr__(self, name):
+        return getattr(self._cfg, name)
+
+    def measure(self, jitter, error_deg, lag):
+        if error_deg is not None and error_deg >= 0.0:
+            jitter.update((error_deg, 0.0, 0.0))
+        sd = jitter.sd
+        if sd is None or not lag:
+            return
+        k = self._cfg.NOISE_SIGMAS
+        self.measured = True
+        self.RCS_ERROR_OFF_DEG = k * sd
+        self.RCS_ERROR_ON_DEG = k * k * sd
+        self.RCS_SETTLE_S = self._cfg.SETTLE_LAGS * lag
+        self.RCS_SAT_ON_S = lag
+
+
 class Autoland:
     def __init__(self, conn, cfg, logbook):
         self.conn = conn
@@ -483,7 +524,9 @@ class Autoland:
         self.roll_hold = None    # rad: the roof's angle from roll_up at the
                                  # first aim, held for the whole flight
         self.roll_cmd = None     # the up vector actually commanded
-        self.rcs = rcs_valve.Valve(cfg, logbook)
+        self.rcs_limits = ValveLimits(cfg)
+        self.rcs = rcs_valve.Valve(self.rcs_limits, logbook)
+        self.err_jitter = Jitter()      # the pointing error's tick scatter
         self.rcs_permitted = False      # STANDBY gets none; START opens it
         self.commanded_direction = None  # what ``aim`` last asked for
         self.tune_logged = 0            # log_attitude_tune's progress
@@ -551,6 +594,10 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
+        self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
+                                        # tick scatter: every deadband
+        self.rcs_accel = None           # m/s^2 the RCS translates at (read
+                                        # while the valve is open)
         self.lag = LagFit()             # the attitude loop's measured
                                         # closing rate (Autoland.null_rate)
         self.lag_logged = None          # the rate last logged
@@ -567,6 +614,9 @@ class Autoland:
         self.log.event(ut, "phase %s -> %s %s" % (self.state, state, note))
         self.state = state
         self.phase_start_ut = ut
+        # Each phase predicts under its own law: its own scatter.
+        self.miss_jitter.reset()
+        self.env.miss_band = None
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
@@ -755,6 +805,8 @@ class Autoland:
             self.log.event(snap.ut, "rcs released after the %s"
                            % ("trim" if self.state == COAST
                               else "landing burn"))
+        self.rcs_limits.measure(self.err_jitter, self.pointing_error(snap),
+                                self.lag.lag)
         self.rcs.update(snap.ut, self.rcs_permitted,
                         self.pointing_error(snap), None,
                         apply=self._apply_rcs,
@@ -1331,8 +1383,9 @@ class Autoland:
             self.extra_lines.append("brakes  : %8.0f deg" % (
                 self.deploy_angle if self.deploy_angle is not None
                 else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
-        if (not self.coast_settled and self.pointing_error(snap)
-                <= self.cfg.COAST_RCS_TRIM_SETTLE_DEG):
+        if (not self.coast_settled and self.rcs_limits.measured
+                and 0.0 <= self.pointing_error(snap)
+                <= self.rcs_limits.RCS_ERROR_ON_DEG):
             self.coast_settled = True
             self.log.event(snap.ut, "coast settled: err %.1f deg after %.1fs"
                            % (self.pointing_error(snap),
@@ -1372,13 +1425,21 @@ class Autoland:
             self.log.event(snap.ut, "rcs trim: armed at cross=%+.0f long=%+.0f"
                            % (cross, long))
         long, cross = self.miss_components(snap)
-        if (not self.trim_pushing
-                and abs(cross) > self.cfg.COAST_RCS_TRIM_START_M):
+        band = self.env.miss_band
+        if band is None:
+            return                  # the noise unmeasured: nothing to act on
+        if (not self.trim_pushing and abs(cross) > band):
             self.trim_pushing = True
             self.log.event(snap.ut, "rcs trim: push at cross=%+.0f long=%+.0f"
                            % (cross, long))
         axes = trajectory.miss_axes(self.env.target, snap.position)
-        world = (guidance.rcs_trim_command(cross, axes[1], self.cfg)
+        if self.trim_pushing and self.rcs_accel is None:
+            self.rcs_accel = self.read_rcs_accel(snap)
+        to_go = (self.prediction.time_to_land - self.prediction.burn_time
+                 if self.prediction.powered else self.prediction.time_to_land)
+        world = (guidance.rcs_trim_command(
+                    cross, axes[1], band / self.cfg.NOISE_SIGMAS,
+                    self.rcs_accel, to_go)
                  if axes is not None and self.trim_pushing else None)
         if world is None:
             if self.trim_pushing:
@@ -1395,9 +1456,8 @@ class Autoland:
         if self.trim_run is None or self.trim_run[2] != side:
             self.trim_run = (snap.ut, abs(cross), side)
         elif (not self.trim_confirmed
-              and snap.ut - self.trim_run[0] >= self.cfg.COAST_RCS_TRIM_CHECK_S
-              and abs(cross) > self.trim_run[1]
-              + self.cfg.COAST_RCS_TRIM_CHECK_M):
+              and snap.ut - self.trim_run[0] >= self.trim_check_time(band, to_go)
+              and abs(cross) > self.trim_run[1] + band):
             if self.trim_flips == 0:
                 self.trim_flips = 1
                 self.trim_sign = -self.trim_sign
@@ -1419,6 +1479,30 @@ class Autoland:
             return
         # Vessel frame x right, y nose, z bottom; Control.up pushes roofward.
         self.send_translation((body[0], body[1], -body[2]))
+
+    def read_rcs_accel(self, snap):
+        """The weakest sideways RCS acceleration (m/s^2, the vessel's x and
+        z, both senses), read once while the valve is open: kRPC counts the
+        thrusters only then.  None if unreadable or nothing."""
+        try:
+            pos, neg = self.vessel.available_rcs_acceleration
+        except Exception:                                   # noqa: BLE001
+            return None
+        lateral = [abs(pos[0]), abs(neg[0]), abs(pos[2]), abs(neg[2])]
+        accel = min(lateral)
+        if accel <= 0.0:
+            return None
+        self.log.event(snap.ut, "rcs trim: lateral acceleration %.3f m/s^2"
+                       % accel)
+        return accel
+
+    def trim_check_time(self, band, to_go):
+        """How long a push must run before a growing miss means a wrong sign:
+        the time full input takes to move the touchdown by ``band``
+        (dv x time left), or one nose lag while the RCS is unread."""
+        if self.rcs_accel and to_go and to_go > 0.0:
+            return band / (self.rcs_accel * to_go)
+        return self.lag.lag or 0.0
 
     def send_translation(self, command):
         """``(right, forward, up)``, each sent only when it has moved."""
@@ -1517,7 +1601,8 @@ class Autoland:
 
         step = 0.0
         how = "hold"
-        if abs(long) > cfg.DEPLOY_DEADBAND_M:
+        band = self.env.miss_band
+        if band is not None and abs(long) > band:
             if self.deploy_k is None:
                 # No reading of the brakes yet: a fixed step the right way
                 # (more drag shortens, so a long miss opens them).
@@ -1673,7 +1758,8 @@ class Autoland:
                 mid = 0.5 * (lo + hi)
                 f = long_at(mid)
                 switch = mid
-                if abs(f) <= cfg.DEPLOY_LATE_TOL_M or hi - lo < 5.0:
+                band = env.miss_band
+                if (band is not None and abs(f) <= band) or hi - lo < 1.0:
                     break
                 if f > 0.0:
                     lo = mid
@@ -1906,7 +1992,7 @@ class Autoland:
 
     def unwound(self, steer, prediction):
         """``steer`` with its angle faded to zero over the last
-        ``COAST_UNWIND_LAGS`` measured nose lags before the predicted
+        ``SETTLE_LAGS`` measured nose lags before the predicted
         ignition, so the burn lights with the nose on retrograde.  A nose
         still holding the coast's 5-7 deg when the engines lit kept it ~5 s
         and the tilted thrust carried the touchdown 20-100 m long
@@ -1917,7 +2003,7 @@ class Autoland:
                 or prediction is None or not prediction.powered):
             return steer
         to_ignition = max(0.0, prediction.time_to_land - prediction.burn_time)
-        share = min(1.0, to_ignition / (self.cfg.COAST_UNWIND_LAGS * lag))
+        share = min(1.0, to_ignition / (self.cfg.SETTLE_LAGS * lag))
         return replace(steer, aoa=steer.aoa * share)
 
     def null_rate(self, snap):
@@ -2322,6 +2408,9 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
+        if self.prediction is not None:
+            self.miss_jitter.update(self.prediction.position)
+            self.env.miss_band = self.miss_jitter.band(self.cfg.NOISE_SIGMAS)
         if (self.cfg.KRPC_AP_DIAG and self.cfg.KRPC_AP_DIAG_BELOW_M > 0.0
                 and self.state == COAST and not self.diag_restarted
                 and snap.mean_altitude < self.cfg.KRPC_AP_DIAG_BELOW_M):

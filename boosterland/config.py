@@ -80,7 +80,6 @@ class Config:
                                             # 1062: late-brake probe at aoa 21)
     DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
                                             # scatter (dep1-1016)
-    DEPLOY_DEADBAND_M: float = 30.0
     DEPLOY_SENS_EPS: float = 0.05           # drag scale of the sensitivity probe
     DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
     DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
@@ -97,7 +96,6 @@ class Config:
                                             # slower at the burn.  See
                                             # Autoland.run_late_deploy
     DEPLOY_LATE_STEP_S: float = 5.0         # re-solve the switch this often
-    DEPLOY_LATE_TOL_M: float = 10.0         # ... to this along-track miss
     ENGINE_ALLOCATION: bool = True          # throttle = center engine first,
                                             # then symmetric pairs, each to
                                             # full; see autoland.EngineCluster.
@@ -138,12 +136,8 @@ class Config:
     # stream the input leaves the error relay below in charge.  See
     # ``common.rcs``.
     RCS_SAT_INPUT: float = 0.95
-    RCS_SAT_ON_S: float = 0.5
     RCS_SAT_CLOSING_FRACTION: float = 0.2
     RCS_SAT_RELEASE: float = 0.6
-    RCS_ERROR_ON_DEG: float = 5.0
-    RCS_ERROR_OFF_DEG: float = 1.5
-    RCS_SETTLE_S: float = 2.0
     # No dynamic-pressure ceiling on this vehicle: the spaceplane shuts its
     # thrusters off in thick air because its control surfaces own the
     # attitude there, and a booster's do not -- the descent is flown on RCS,
@@ -270,13 +264,6 @@ class Config:
                                             # the landing burn has
                                             # ~10 m of authority.  Costs one
                                             # more propagation a tick.
-    AERO_STEER_DEADBAND_M: float = 2.0      # ... and do not steer against a
-                                            # miss already this small
-    AERO_STEER_MIN_AUTHORITY_M: float = 1.0  # metres the air must be able to
-                                            # move the touchdown point before
-                                            # the solve is trusted; under this
-                                            # it holds retrograde rather than
-                                            # divide by nothing
     AERO_STEER_SOLVE_AOA_DEG: float = 4.0   # the angle the second propagation
                                             # probes, to measure metres of
                                             # miss per radian
@@ -338,21 +325,14 @@ class Config:
                                             # it (its wing reads aoa 0), and
                                             # the -40..-98 m it leaves boostback
                                             # with is its touchdown miss
-    COAST_UNWIND_LAGS: float = 3.0          # the coast's angle of attack
-                                            # fades to zero over this many
-                                            # measured nose lags before the
-                                            # predicted ignition
-                                            # (Autoland.unwound)
-    COAST_RCS_TRIM_SETTLE_DEG: float = 10.0  # start once the flip is this close
-    COAST_RCS_TRIM_START_M: float = 10.0    # start pushing past this ...
-    COAST_RCS_TRIM_DEADBAND_M: float = 3.0  # ... stop inside this; the valve
-                                            # is held open only while pushing
-                                            # (open all coast: 1.6 t, LOG12465)
-    COAST_RCS_TRIM_FULL_M: float = 30.0     # full input at this cross-track
-    COAST_RCS_TRIM_CHECK_S: float = 4.0     # after this long translating one
-    COAST_RCS_TRIM_CHECK_M: float = 15.0    # way, a cross grown by this much
-                                            # means the axis sign is wrong:
-                                            # flip it once, then give up
+    SETTLE_LAGS: float = 3.0                # a nose is settled this many
+                                            # measured lags after a command:
+                                            # the coast's angle of attack
+                                            # fades to zero over them before
+                                            # the predicted ignition
+                                            # (Autoland.unwound), the RCS
+                                            # valve waits them out
+                                            # (ValveLimits)
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
     LANDING_ZEM_GAIN: float = 6.0           # position term (double-integrator optimal)
@@ -370,6 +350,11 @@ class Config:
     LANDING_UPRIGHT_TILT_DEG: float = 2.0   # the burn's command narrows to
                                             # this at touchdown, over the last
                                             # 1/rate; see guidance.terminal_command
+    NOISE_SIGMAS: float = 2.0               # every deadband is this many
+                                            # sd of the prediction's own
+                                            # tick-to-tick scatter
+                                            # (common.jitter): act on a miss
+                                            # only when it is not noise
     LOOP_BANDWIDTH_SHARE: float = 0.5       # an outer loop closes at this
                                             # share of the measured bandwidth
                                             # of the loop that executes it:

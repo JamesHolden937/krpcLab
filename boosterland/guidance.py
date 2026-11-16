@@ -144,17 +144,21 @@ def held_boostback(env, r, prediction, heading, cfg):
     return vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV, 0.0, 1.0), remaining
 
 
-def rcs_trim_command(cross, left, cfg):
+def rcs_trim_command(cross, left, deadband, accel, to_go):
     """The world-frame translation that walks the cross-track miss to zero.
 
-    A sideways ``dv`` moves the touchdown point by about ``dv`` times the
-    time left, so pushing toward ``-left`` takes a positive ``cross`` down.
-    Proportional out to ``COAST_RCS_TRIM_FULL_M``, nothing inside the
-    deadband.  Returns a vector of length 0..1, or None for no translation.
+    A sideways acceleration ``a`` held for the time left ``t`` moves the
+    touchdown by ``a t^2 / 2``, so the input that nulls ``cross`` exactly is
+    ``|cross| / (accel t^2 / 2)`` (re-solved every tick, capped at 1); with
+    the RCS unread, full input.  Pushing toward ``-left`` takes a positive
+    ``cross`` down.  Nothing inside ``deadband`` (the prediction's noise).
+    Returns a vector of length 0..1, or None for no translation.
     """
-    if cross != cross or abs(cross) <= cfg.COAST_RCS_TRIM_DEADBAND_M:
+    if cross != cross or abs(cross) <= deadband:
         return None
-    level = min(1.0, abs(cross) / max(cfg.COAST_RCS_TRIM_FULL_M, 1e-6))
+    level = 1.0
+    if accel and to_go and to_go > 0.0:
+        level = min(1.0, abs(cross) / (0.5 * accel * to_go * to_go))
     return vec.scale(vec.unit(left), -math.copysign(level, cross))
 
 
@@ -274,7 +278,8 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     if getattr(env, "reswept_ut", None) is None:
         return zero, flat
 
-    if math.hypot(m0[0], m0[1]) <= cfg.AERO_STEER_DEADBAND_M:
+    band = getattr(env, "miss_band", None)
+    if band is None or math.hypot(m0[0], m0[1]) <= band:
         # Already on the pad.  Commanding an angle against sub-metre noise is
         # how the solve spends its authority on nothing.
         return zero, flat
@@ -284,7 +289,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         # it is the one with flight time on it.
         _, _, m1 = fly((probe, 0.0))
         per_square = (m1[0] - m0[0]) / (probe * abs(probe))
-        if abs(per_square) * limit * limit < cfg.AERO_STEER_MIN_AUTHORITY_M:
+        if abs(per_square) * limit * limit < band:
             return zero, flat
         wanted = -m0[0] / per_square
         u = (vec.clamp(math.copysign(math.sqrt(abs(wanted)), wanted),
@@ -310,13 +315,13 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
          (m1[1] - m0[1]) / q, (m2[1] - m0[1]) / q)
     det = j[0] * j[3] - j[1] * j[2]
     span = limit * limit
-    if abs(det) * span * span < cfg.AERO_STEER_MIN_AUTHORITY_M ** 2:
+    if abs(det) * span * span < band ** 2:
         # Singular or feeble: the two axes are not independent enough to
         # invert, or the air cannot move the landing point from here.  Fall
         # back to the downrange axis alone rather than divide by nothing --
         # a badly conditioned inverse commands a large angle on no evidence.
         per_square = j[0]
-        if abs(per_square) * span < cfg.AERO_STEER_MIN_AUTHORITY_M:
+        if abs(per_square) * span < band:
             return zero, flat
         wanted = -m0[0] / per_square
         u = (vec.clamp(math.copysign(math.sqrt(abs(wanted)), wanted),
