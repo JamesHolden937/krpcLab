@@ -604,7 +604,8 @@ class Autoland:
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
             self.cfg, steer=steer,
-            nose=snap.direction if self.state == LANDING_BURN else None)
+            nose=(snap.direction if self.state == LANDING_BURN
+                  and self.cfg.LANDING_NOSE_MODEL else None))
         # Hand the descent back to the estimator: the next aerodynamic probe
         # wants to know where the booster will be when it is doing each speed,
         # so that a Mach bin is measured in the air it is going to be used in.
