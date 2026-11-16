@@ -3,7 +3,7 @@
 Every number the guidance uses lives here so tuning never means editing
 control logic.  Override any of them from the command line, e.g.::
 
-    ./run.sh --set BOOSTBACK_TOLERANCE_M=250 --set LOG_INTERVAL_UT=1
+    ./run.sh --set NOISE_SIGMAS=3 --set LOG_INTERVAL_UT=1
 """
 
 from dataclasses import dataclass
@@ -42,27 +42,13 @@ class Config:
     SEPARATION_COAST_S: float = 3.0     # drift before the flip, scan disabled
     SEPARATION_CLEARANCE_SCAN: bool = True  # flip when clear, not on a timer
     SEPARATION_MAX_COAST_S: float = 5.0     # ... nor wait longer for clearance
-    AIRBRAKE_DEPLOY_ANGLE_DEG: float = 60.0  # every airbrake, deployed at START.
-                                            # new1-1016 medians, 90 -> 60:
-                                            # qs_hot 247 -> 31, heavy 79 -> 63,
-                                            # quicksave 79 -> 55.
-                                            # Boostback aims on the drag of
-                                            # this angle, so it is also where
-                                            # the deploy law starts: at the
-                                            # top of its range the law can
-                                            # only lengthen
-    DEPLOY_LAW: bool = True                 # COAST steps the airbrakes' deploy
-                                            # angle against the along-track
-                                            # miss; see Autoland.run_deploy.
-                                            # ov1-1016 (with OVERSHOOT_ONLY):
-                                            # heavy 17-386 m, median 74, v
-                                            # 328-619; quicksave 8-245 v two
-                                            # 2.3-2.7 km splashes in six
-    DEPLOY_STEP_S: float = 10.0             # one Newton step per this
-    DEPLOY_SETTLE_S: float = 2.0            # re-sweep drag this long after
-                                            # a step (the brakes animate)
-    DEPLOY_MAX_STEP_DEG: float = 20.0       # rate limit, not a gain
-    DEPLOY_MAX_DEG: float = 90.0
+    DEPLOY_LAW: bool = True                 # the brakes fly closed (their
+                                            # floor) and open fully at the
+                                            # height whose prediction lands
+                                            # on the pad (Autoland.
+                                            # run_late_deploy)
+    DEPLOY_MAX_DEG: float = 90.0            # the law's unit: full travel of
+                                            # every brake
     FINS_HELD_KEEP_DEPLOY: bool = True      # BOOSTBACK_FINS_HELD holds the
                                             # surfaces by their ignore flags,
                                             # so brake fins stay deployed and
@@ -78,23 +64,6 @@ class Config:
                                             # 10 an arm: median 42 v 460 m,
                                             # 9/10 within 102 m (LOG15574
                                             # 1062: late-brake probe at aoa 21)
-    DEPLOY_MIN_DEG: float = 30.0            # 0 doubled the heavy's cross-track
-                                            # scatter (dep1-1016)
-    DEPLOY_SENS_EPS: float = 0.05           # drag scale of the sensitivity probe
-    DEPLOY_PROBE_DEG: float = 10.0          # first step, before k is measured
-    DEPLOY_NEWTON_FRACTION: float = 0.7     # of the full Newton step
-    DEPLOY_LEARN_MIN_DEG: float = 3.0       # measure k only from a step this big
-    DEPLOY_UNSTEERED: bool = True           # the brakes null the miss of the
-                                            # *unsteered* prediction: drag
-                                            # carries the range, the lift
-                                            # only trims what is left
-    DEPLOY_LATE: bool = True                # aim long on brakes held at
-                                            # DEPLOY_MIN_DEG, then open them to
-                                            # DEPLOY_MAX_DEG at the altitude
-                                            # that lands on the pad (solved
-                                            # on a measured full-brake curve):
-                                            # slower at the burn.  See
-                                            # Autoland.run_late_deploy
     DEPLOY_LATE_STEP_S: float = 5.0         # re-solve the switch this often
     ENGINE_ALLOCATION: bool = True          # throttle = center engine first,
                                             # then symmetric pairs, each to
@@ -146,9 +115,6 @@ class Config:
     RCS_Q_MAX_PA: float = 0.0
 
     # --- Boostback --------------------------------------------------------
-    BOOSTBACK_EXIT_TICKS: int = 4           # consecutive ticks under tolerance
-    BOOSTBACK_TOLERANCE_M: float = 190.0    # stop burning inside this miss
-    BOOSTBACK_TAPER_DV: float = 60.0        # throttle down under this dv left
     BOOSTBACK_MAX_BURN_S: float = 180.0     # abort guard, in-game seconds
     BOOSTBACK_HEADING_HOLD: bool = True     # in the taper, hold the aim
                                             # taken at its first tick and burn
@@ -161,7 +127,10 @@ class Config:
                                             # the cross-track one took over the
                                             # direction -- the yaw at the end
                                             # of boostback.
-    FLIP_ALIGN_DEG: float = 25.0            # hold throttle until aligned
+    FLIP_THRUST_LOSS: float = 0.1           # the flip is over when thrust
+                                            # along the nose loses this
+                                            # share to the angle off the aim
+                                            # (acos(0.9) = 25.8 deg)
     FLIP_UNDER_POWER: bool = True           # ignore that gate: light, then flip
     # The user's 2026-10-18 proposal: during the flip, burn only the
     # throttle that makes the turn cheapest -- gimbal authority bought with
@@ -174,9 +143,6 @@ class Config:
     # (median 43 v 20 m).  flip1-1018 (ascent stacks): boostback -3.3 t on
     # the shuttle stack, all of it spent on the climb.
     FLIP_THROTTLE_LAW: bool = True
-    FLIP_GIMBAL_SHARE: float = 0.9          # of the geometric gimbal torque
-                                            # the attitude loop delivers (91-
-                                            # 93% measured, burn_slew_rate)
     BOOSTBACK_CLEAR_NOSE: bool = True       # ... but not while thrust along
                                             # the nose as it points now would
                                             # close on a neighbour

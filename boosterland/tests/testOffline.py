@@ -519,6 +519,7 @@ class TestGuidance(unittest.TestCase):
         r, v = state_above_pad(30000.0, (0.0, 0.0, 500.0))
         prediction = trajectory.predict_landing(env, r, v, 4e4, 0.0, cfg)
         prediction.time_to_land = 1e5          # so dv/tick is tiny
+        env.control_interval = 0.05            # a measured reaction time
         solution = guidance.boostback_solution(env, r, v, 4e4, 20.0, 280.0,
                                                prediction, cfg)
         self.assertLess(solution.throttle, 1.0)
@@ -1511,11 +1512,11 @@ class TestLiftPeak(unittest.TestCase):
 
 class TestConfig(unittest.TestCase):
     def test_overrides_are_type_coerced(self):
-        cfg = apply_overrides(Config(), ["BOOSTBACK_TOLERANCE_M=250",
-                                         "AIRBRAKE_DEPLOY_ANGLE_DEG=45",
+        cfg = apply_overrides(Config(), ["NOISE_SIGMAS=3",
+                                         "DEPLOY_MAX_DEG=45",
                                          "ENABLE_RCS=false"])
-        self.assertEqual(cfg.BOOSTBACK_TOLERANCE_M, 250.0)
-        self.assertEqual(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, 45.0)
+        self.assertEqual(cfg.NOISE_SIGMAS, 3.0)
+        self.assertEqual(cfg.DEPLOY_MAX_DEG, 45.0)
         self.assertIs(cfg.ENABLE_RCS, False)
 
     def test_unknown_field_is_rejected(self):

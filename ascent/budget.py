@@ -49,7 +49,7 @@ from boosterland.guidance import drift_rate, flip_throttle
 from boosterland.config import Config as _BoosterConfig
 
 _BCFG = _BoosterConfig()
-FLIP_ALIGN_DEG = _BCFG.FLIP_ALIGN_DEG    # the flip is over inside
+FLIP_ALIGN_DEG = math.degrees(math.acos(1.0 - _BCFG.FLIP_THRUST_LOSS))    # the flip is over inside
 # boosterland's landing law (trajectory.landing_burn_state), which the
 # budget has to fly:
 LANDING_THROTTLE_CAP = _BCFG.LANDING_THROTTLE_CAP

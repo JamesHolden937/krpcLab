@@ -38,7 +38,7 @@ class Environment:
         # vehicle.  The booster's miss is not random: over three flights from
         # one quicksave it landed 105, 106 and 102 m west and 16-17 m north of
         # the pad -- a spread of about 2 m around a systematic 105 m.  Nothing
-        # in the guidance can null that (BOOSTBACK_TOLERANCE_M is quantised by
+        # in the guidance can null that (the boostback tolerance is quantised by
         # how fast the predicted miss falls: 175 and 190 stop on the *same*
         # tick, 205 stops 3.3 s earlier and lands 290 m the other side), but a
         # bias that repeatable can simply be aimed off.  Measure it, put it
@@ -77,7 +77,7 @@ class Environment:
         self._last_sweep_ut = None      # ... and when that last happened
         self._next_curve_bin = 0
         self._next_aero_ut = None
-        # The curve at full airbrake, taken once (DEPLOY_LATE), and the
+        # The curve at full airbrake, taken once (DEPLOY_LAW), and the
         # altitude below which the propagator flies it: the brakes are going
         # to open there, so every prediction has to know it.  None = no switch.
         self._full_machs, self._full_areas = [], []

@@ -196,7 +196,7 @@ def deploy_brake_fins(vessel, cfg):
             done += 1
         except Exception as exc:        # noqa: BLE001 -- KSP-side failure
             why = str(exc).splitlines()[0] if str(exc) else repr(exc)
-    got = set_airbrake_angle(vessel, cfg.AIRBRAKE_DEPLOY_ANGLE_DEG, cfg)
+    got = set_airbrake_angle(vessel, 0.0, cfg)
     top = fins[0][0].max_deploy_angle if fins else float("nan")
     return ("brake fins deployed: %d of %d, alternate directions, angle %s "
             "of max %.1f%s"
@@ -244,7 +244,7 @@ def prepare_vehicle(vessel, cfg):
 
     This replaces firing an action group, which only worked on a craft whose
     builder had put the right parts on AG2.  Airbrakes are found by their
-    part module, set to ``AIRBRAKE_DEPLOY_ANGLE_DEG`` and deployed; their
+    part module, set to their range's floor (the late law opens them) and deployed; their
     control axes are left as the craft has them.  Liquid engines
     are those burning ``LiquidFuel``; activating one leaves the throttle where
     it is, which is zero in STANDBY.  Returns the lines to log: the deploy
@@ -261,8 +261,7 @@ def prepare_vehicle(vessel, cfg):
             if module is None:
                 continue
             if partmodule.has_field(module, "Deploy Angle"):
-                partmodule.set_field_float(module, "Deploy Angle",
-                                       float(cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+                partmodule.set_field_float(module, "Deploy Angle", 0.0)
                 angles.append(partmodule.get_field(module, "Deploy Angle"))
             # Deployed, but *not* made pitch/yaw control surfaces: an
             # airbrake that steers modulates its own deployment, so the drag
@@ -277,9 +276,8 @@ def prepare_vehicle(vessel, cfg):
         except Exception as exc:        # noqa: BLE001 -- KSP-side failure
             lines.append("airbrake %s refused: %s"
                          % (part.title, str(exc).splitlines()[0]))
-    lines.append("airbrakes deployed: %d, deploy angle %s (asked %.0f)"
-                 % (brakes, "/".join(sorted(set(angles))) or "n/a",
-                    cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+    lines.append("airbrakes deployed: %d, deploy angle %s (asked 0)"
+                 % (brakes, "/".join(sorted(set(angles))) or "n/a"))
     if cfg.FIN_BRAKES:
         lines.append(deploy_brake_fins(vessel, cfg))
     lit = 0
@@ -398,6 +396,12 @@ class EngineCluster:
                 engine.thrust_limit = 1.0
             except Exception:           # noqa: BLE001
                 pass
+
+
+def flip_done_deg(cfg):
+    """The flip is over when thrust along the nose loses no more than
+    ``FLIP_THRUST_LOSS`` of itself to the angle off the aim."""
+    return math.degrees(math.acos(1.0 - cfg.FLIP_THRUST_LOSS))
 
 
 class ValveLimits:
@@ -548,17 +552,14 @@ class Autoland:
         self.gear_names = []
         self.gear_done = []             # per part: seconds, or False if broken
         self.gear_t1 = None
-        self.late_state = None          # DEPLOY_LATE; see run_late_deploy
+        self.late_state = None          # see run_late_deploy
         self.late_ut = None
         self.late_next_ut = 0.0
         self.late_resweep_ut = None
         self.steer = None               # the angle of attack the coast flies
         self.steer_history = []         # (ut, commanded aoa deg), for tracking
         self.deploy_angle = None        # DEPLOY_LAW's command, deg
-        self.deploy_next_ut = 0.0
-        self.deploy_record = None       # (angle, curve, ut) at the last step
-        self.deploy_k = None            # d ln(Cd*A) / d angle, per degree
-        self.deploy_resweep_ut = None   # re-sweep once the brakes have moved
+        self.brake_probe = None         # Cd*A probed last tick (brakes_settled)
         self.deploy_none = False        # no airbrake answered: law off
         self.boostback_under = 0        # consecutive ticks inside the tolerance
         self.boostback_under_since = None   # ... and when that run started
@@ -1129,9 +1130,9 @@ class Autoland:
         remaining = None
         if self.cfg.BOOSTBACK_HEADING_HOLD:
             if (self.boostback_heading is None
-                    and solution.dv < self.cfg.BOOSTBACK_TAPER_DV
+                    and solution.throttle < 1.0
                     and vec.angle_between(snap.direction, solution.aim)
-                    <= self.cfg.FLIP_ALIGN_DEG):
+                    <= flip_done_deg(self.cfg)):
                 self.boostback_heading = solution.aim
                 self.log.event(snap.ut, "boostback heading held: miss=%.0fm "
                                "long=%+.0f cross=%+.0f dv=%.1f"
@@ -1140,7 +1141,7 @@ class Autoland:
                 aim = self.boostback_heading
                 throttle, remaining = guidance.held_boostback(
                     self.env, snap.position, prediction,
-                    self.boostback_heading, self.cfg)
+                    self.boostback_heading, self.cfg, snap.max_accel)
         self.aim(aim, snap)
 
         align = vec.angle_between(snap.direction, aim)
@@ -1156,7 +1157,7 @@ class Autoland:
         # ended boostback 3 s apart at the same miss (186 and 184); those 3 s
         # of burn are 370 m at the pad, and the two landed 4 m and 362 m out.
         # The phase was not imprecise, it was bimodal.  Requiring the miss to
-        # stay inside the tolerance for BOOSTBACK_EXIT_TICKS ticks makes a
+        # stay inside the tolerance for a measured nose lag makes a
         # single dip unable to end the burn.
         #
         # The test is on the *signed* longitudinal miss, and that half is not
@@ -1178,9 +1179,14 @@ class Autoland:
         # so it is the miss *along* the heading that has to be inside the
         # tolerance -- or the burn could never end with a cross-track miss
         # bigger than the tolerance.
-        closed = (remaining <= self.cfg.BOOSTBACK_TOLERANCE_M
-                  if remaining is not None
-                  else distance <= self.cfg.BOOSTBACK_TOLERANCE_M)
+        # The tolerance is the prediction's own noise: past the pad by no
+        # more than the phases after it would read as a miss at all.  A
+        # 190 m tolerance left the fin boosters 150-170 m short at coast
+        # entry with nothing after it able to lengthen (nose-1115).
+        band = self.env.miss_band
+        closed = band is not None and (remaining <= band
+                                       if remaining is not None
+                                       else distance <= band)
         under = closed
         if under:
             self.boostback_under += 1
@@ -1196,7 +1202,8 @@ class Autoland:
         # seconds as well pins the debounce to the vehicle rather than to the
         held = (snap.ut - self.boostback_under_since
                 if self.boostback_under_since is not None else 0.0)
-        if self.boostback_under >= self.cfg.BOOSTBACK_EXIT_TICKS:
+        if (self.boostback_under >= 2
+                and held >= (self.lag.lag or 0.0)):
             self.set_throttle(0.0)
             # `held` and the tick count go in the event because the debounce
             # is the one thing here that is paced by the *host* rather than
@@ -1216,10 +1223,10 @@ class Autoland:
             # FLIP_UNDER_POWER lights the engines without waiting for
             # alignment, so this is the check that replaces that wait.
             self.set_throttle(0.0)
-        elif align > self.cfg.FLIP_ALIGN_DEG and not self.cfg.FLIP_UNDER_POWER:
+        elif align > flip_done_deg(self.cfg) and not self.cfg.FLIP_UNDER_POWER:
             # Still flipping: hold thrust so the flip does not add error.
             self.set_throttle(0.0)
-        elif (align > self.cfg.FLIP_ALIGN_DEG and self.cfg.BOOSTBACK_CLEAR_NOSE
+        elif (align > flip_done_deg(self.cfg) and self.cfg.BOOSTBACK_CLEAR_NOSE
               and self.nose_blocked(snap)):
             # Lit mid-flip, the thrust is along the nose, not the aim -- and
             # at the start of the flip the nose points at the stage it just
@@ -1264,8 +1271,7 @@ class Autoland:
                     torque += thrust * math.sin(travel) * lever
                 except Exception:       # noqa: BLE001 -- KSP-side failure
                     continue
-            self.flip_gimbal = (self.cfg.FLIP_GIMBAL_SHARE * torque
-                                / inertia)
+            self.flip_gimbal = torque / inertia
         rcs = self.env._control_torque("available_rcs_torque") or 0.0
         wheels = self.env._control_torque(
             "available_reaction_wheel_torque") or 0.0
@@ -1276,9 +1282,9 @@ class Autoland:
 
     def flip_law(self, snap, align, prediction):
         """FLIP_THROTTLE_LAW: the throttle for this tick of the flip, or 1
-        once the nose is within FLIP_ALIGN_DEG (the flip is over, and the
+        once the nose is within flip_done_deg (the flip is over, and the
         boostback's own throttle rules)."""
-        if align <= self.cfg.FLIP_ALIGN_DEG:
+        if align <= flip_done_deg(self.cfg):
             self.flip_done = True
             if self.flip_start is not None:
                 ut0, m0 = self.flip_start
@@ -1376,13 +1382,9 @@ class Autoland:
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
         if self.cfg.DEPLOY_LAW:
-            if self.cfg.DEPLOY_LATE and self.late_state != "handed":
-                self.run_late_deploy(snap)
-            else:
-                self.run_deploy(snap)
+            self.run_late_deploy(snap)
             self.extra_lines.append("brakes  : %8.0f deg" % (
-                self.deploy_angle if self.deploy_angle is not None
-                else self.cfg.AIRBRAKE_DEPLOY_ANGLE_DEG))
+                self.deploy_angle if self.deploy_angle is not None else 0.0))
         if (not self.coast_settled and self.rcs_limits.measured
                 and 0.0 <= self.pointing_error(snap)
                 <= self.rcs_limits.RCS_ERROR_ON_DEG):
@@ -1516,127 +1518,12 @@ class Autoland:
                     pass
         self.trim_cmd = command
 
-    def run_deploy(self, snap):
-        """Range by drag: step the airbrakes' deploy angle onto the pad.
-
-        The only control after boostback that can make the booster land
-        *longer* -- correction burns and the landing burn only shorten.
-        Every ``DEPLOY_STEP_S`` it takes a Newton step on a gain it works out
-        for itself, as the product of two things any vehicle can be
-        measured for, so no constant here belongs to one craft:
-
-        * ``S``, metres of along-track miss per unit of ln(Cd*A): the
-          propagator flown twice, the second time with the drag curve scaled
-          by ``1 + DEPLOY_SENS_EPS`` and the same steering.  Exact for this
-          trajectory and this vehicle, and recomputed every step, so it
-          follows the sensitivity as it collapses toward the ground.
-        * ``k``, ln(Cd*A) per degree of deploy: the drag probe simulates the
-          vessel as it is now, so the curve swept after a step against the
-          curve before it, bin by bin, is this vehicle's brake authority at
-          this angle.  The first step is a fixed ``DEPLOY_PROBE_DEG`` that
-          takes the first reading.
-
-        The step is ``-long / (S k)`` times ``DEPLOY_NEWTON_FRACTION``,
-        rate-limited by ``DEPLOY_MAX_STEP_DEG``.  ``long`` is measured along
-        the horizontal velocity, the axis drag acts on.  The curve is
-        re-swept ``DEPLOY_SETTLE_S`` after a step, once the brakes have
-        finished moving.  It acts for the whole coast.
-        """
-        cfg = self.cfg
-        if self.deploy_none:
-            return
-        if (self.deploy_resweep_ut is not None
-                and snap.ut >= self.deploy_resweep_ut):
-            self.deploy_resweep_ut = None
-            self.env.request_resweep()
-        if snap.ut < self.deploy_next_ut or self.deploy_resweep_ut is not None:
-            return
-        up = vec.unit(snap.position)
-        along = vec.project_out(snap.velocity, up)
-        if vec.norm(along) < 1.0:
-            return
-        along = vec.unit(along)
-
-        def long_of(prediction):
-            miss = vec.project_out(vec.sub(prediction.position,
-                                           self.env.target), up)
-            return vec.dot(miss, along)
-
-        eps = cfg.DEPLOY_SENS_EPS
-        # Which miss the brakes answer.  The lift solve re-nulls the *steered*
-        # prediction every tick, so judged on that the brakes see ~0 while
-        # the lift creeps to its limit, and only when it saturates does the
-        # miss appear -- all at once, late (LOG10637: 0 -> -500 m at 12.7 km,
-        # 0 -> +240 at 4.7 km, brakes 30 -> 50 -> 30 -> 50).  Judged on the
-        # unsteered prediction, drag carries the range and the lift is left
-        # the residual and the cross-track.
-        steer = None if cfg.DEPLOY_UNSTEERED else self.steer
-        base = trajectory.predict_landing(
-            self.env, snap.position, snap.velocity, snap.mass,
-            snap.max_accel, cfg, steer=steer)
-        more = trajectory.predict_landing(
-            self.env, snap.position, snap.velocity, snap.mass,
-            snap.max_accel, cfg, steer=steer, drag_scale=1.0 + eps)
-        long = long_of(base)
-        sens = (long_of(more) - long) / math.log(1.0 + eps)
-
-        angle = (self.deploy_angle if self.deploy_angle is not None
-                 else cfg.AIRBRAKE_DEPLOY_ANGLE_DEG)
-        curve = self.env.curve_bins()
-        swept = self.env.last_sweep_ut()
-        if self.deploy_record is not None:
-            a0, c0, t0 = self.deploy_record
-            da = angle - a0
-            if (abs(da) >= cfg.DEPLOY_LEARN_MIN_DEG and swept is not None
-                    and swept > t0):
-                ratios = sorted(math.log(n / o) for n, o in zip(curve, c0)
-                                if n and o and n > 0.0 and o > 0.0)
-                if ratios:
-                    k = ratios[len(ratios) // 2] / da
-                    if k > 0.0:
-                        self.deploy_k = (k if self.deploy_k is None else
-                                         0.5 * self.deploy_k + 0.5 * k)
-        self.deploy_record = (angle, curve, snap.ut)
-        self.deploy_next_ut = snap.ut + cfg.DEPLOY_STEP_S
-
-        step = 0.0
-        how = "hold"
-        band = self.env.miss_band
-        if band is not None and abs(long) > band:
-            if self.deploy_k is None:
-                # No reading of the brakes yet: a fixed step the right way
-                # (more drag shortens, so a long miss opens them).
-                step = math.copysign(cfg.DEPLOY_PROBE_DEG, long * -sens)
-                how = "probe"
-            elif abs(sens * self.deploy_k) > 1e-9:
-                step = (-long / (sens * self.deploy_k)
-                        * cfg.DEPLOY_NEWTON_FRACTION)
-                how = "newton"
-            step = max(-cfg.DEPLOY_MAX_STEP_DEG,
-                       min(cfg.DEPLOY_MAX_STEP_DEG, step))
-        new = max(cfg.DEPLOY_MIN_DEG,
-                  min(cfg.DEPLOY_MAX_DEG, angle + step))
-        if abs(new - angle) >= 0.5:
-            got = set_airbrake_angle(self.vessel, new, self.cfg)
-            if not got:
-                self.deploy_none = True
-                self.log.event(snap.ut, "brakes: no airbrake answered, law off")
-                return
-            self.deploy_resweep_ut = snap.ut + cfg.DEPLOY_SETTLE_S
-            self.log.event(
-                snap.ut, "brakes %.0f -> %.0f %s long=%+.0f S=%.0f k=%s"
-                " (read %s)" % (angle, new, how, long, sens,
-                                "%.4f" % self.deploy_k
-                                if self.deploy_k is not None else "-",
-                                "/".join(sorted(set(map(str, got))))))
-        self.deploy_angle = new
-
     def run_late_deploy(self, snap):
         """Aim long on closed brakes, and open them all where that lands.
 
         Drag is the only braking that costs nothing, and the landing burn
         pays for every m/s the coast leaves it.  So rather than hold the
-        brakes part-open the whole way down, hold them at ``DEPLOY_MIN_DEG``
+        brakes part-open the whole way down, hold them closed (their floor)
         -- long -- and open them to ``DEPLOY_MAX_DEG`` low down, in the
         dense air where they brake hardest, at the altitude whose prediction
         lands on the pad.  The switch is the control, solved by bisection
@@ -1649,8 +1536,10 @@ class Autoland:
         to matter, the brakes open to the top, the whole curve is probed,
         and they close to the bottom with the current curve re-taken
         outright (a blended re-sweep would read a quarter of the change).
-        Corrections wait for all of it.  Once the brakes open the ordinary
-        ``run_deploy`` takes over from the top of its range.
+        Corrections wait for all of it.  Once open they stay open: the switch
+        was solved to land on the pad, and the lift trims what is left.
+        Every wait for the brakes to move is ``brakes_settled``: the drag
+        probed at this instant until it stops changing.
         """
         cfg = self.cfg
         if self.late_state in ("off", "switched", "handed"):
@@ -1673,28 +1562,28 @@ class Autoland:
                 self.log.event(snap.ut, "brakes: no airbrake answered, law off")
                 return
             self.late_state = "full"
-            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.brake_probe = None
             self.log.event(snap.ut, "late brakes: open to %.0f to measure"
                            % cfg.DEPLOY_MAX_DEG)
             return
         if self.late_state == "full":
-            if snap.ut < self.late_ut:
+            if not self.brakes_settled(snap):
                 return
             bins = self.env.sweep_bins(snap.position, snap.velocity,
                                        snap.rotation, snap.direction)
-            set_airbrake_angle(self.vessel, cfg.DEPLOY_MIN_DEG, self.cfg)
-            self.deploy_angle = cfg.DEPLOY_MIN_DEG
+            set_airbrake_angle(self.vessel, 0.0, self.cfg)
+            self.deploy_angle = 0.0
             if not self.env.set_full_curve(bins):
-                # No curve: the ordinary law, from the bottom of its range.
-                self.late_state = "handed"
+                # No curve: nothing to solve the switch on; brakes closed.
+                self.late_state = "off"
                 self.log.event(snap.ut, "late brakes: full curve unreadable,"
-                               " ordinary deploy law")
+                               " brakes closed")
                 return
             self.late_state = "settling"
-            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.brake_probe = None
             return
         if self.late_state == "settling":
-            if snap.ut < self.late_ut:
+            if not self.brakes_settled(snap):
                 return
             if self.late_resweep_ut is None:
                 self.env.request_resweep(replace=True)
@@ -1705,15 +1594,13 @@ class Autoland:
                 return
             self.late_resweep_ut = None
             ratio = self.env.full_curve_ratio()
-            self.log.event(snap.ut, "late brakes: Cd*A at %.0f deg is %s x"
-                           " at %.0f" % (cfg.DEPLOY_MAX_DEG,
-                                         "%.2f" % ratio if ratio else "-",
-                                         cfg.DEPLOY_MIN_DEG))
+            self.log.event(snap.ut, "late brakes: Cd*A open is %s x closed"
+                           % ("%.2f" % ratio if ratio else "-"))
             if ratio is None or ratio <= 1.0:
                 # Opening the brakes cannot reduce drag: a bad measurement.
-                self.late_state = "handed"
+                self.late_state = "off"
                 self.log.event(snap.ut, "late brakes: not more drag open,"
-                               " ordinary deploy law")
+                               " brakes closed")
                 return
             self.late_state = "armed"
             self.late_next_ut = snap.ut
@@ -1722,10 +1609,24 @@ class Autoland:
         self.late_next_ut = snap.ut + cfg.DEPLOY_LATE_STEP_S
         self.solve_late_switch(snap)
 
+    def brakes_settled(self, snap):
+        """True once the brakes have stopped moving: the drag the game's own
+        aerodynamics give for this instant's state (one probe a tick) reads
+        the same two ticks running.  Measured, so it holds for any brake's
+        animation; a probe that cannot be read is not settled."""
+        env = self.env
+        altitude = vec.norm(snap.position) - env.equatorial_radius
+        cda = env._probe(snap.position, vec.unit(snap.velocity), snap.speed,
+                         altitude, snap.rotation)
+        last, self.brake_probe = self.brake_probe, cda
+        if cda is None or last is None:
+            return False
+        return abs(cda - last) <= 1e-3 * max(abs(cda), abs(last))
+
     def solve_late_switch(self, snap):
         """Bisect for the brake-opening altitude that nulls the long miss.
 
-        The unsteered prediction, like ``run_deploy``: drag carries the
+        The unsteered prediction: drag carries the
         range and the lift trims what is left.  Higher opens sooner and
         lands shorter.  Long even opening now: open now.  Short even never
         opening: never (the law cannot lengthen past closed brakes).
@@ -1784,12 +1685,11 @@ class Autoland:
             self.deploy_angle = cfg.DEPLOY_MAX_DEG
             env.late_switch_alt = float("inf")  # all of it at full now
             self.late_state = "switched"
-            self.late_ut = snap.ut + cfg.DEPLOY_SETTLE_S
+            self.brake_probe = None
             self.log.event(snap.ut, "late brakes %.0f -> %.0f at %.0f m,"
-                           " %.0f m/s" % (cfg.DEPLOY_MIN_DEG,
-                                          cfg.DEPLOY_MAX_DEG,
+                           " %.0f m/s" % (0.0, cfg.DEPLOY_MAX_DEG,
                                           snap.height_above_pad, snap.speed))
-        elif self.late_state == "switched" and snap.ut >= self.late_ut:
+        elif self.late_state == "switched" and self.brakes_settled(snap):
             if self.late_resweep_ut is None:
                 env.request_resweep(replace=True)
                 self.late_resweep_ut = snap.ut
@@ -1799,8 +1699,6 @@ class Autoland:
                 return
             env.late_switch_alt = None
             self.late_state = "handed"
-            self.deploy_next_ut = snap.ut
-            self.deploy_record = None
 
     def time_gear(self, snap):
         """How long the legs take to deploy: from the cache, or timed once.
@@ -2431,7 +2329,7 @@ class Autoland:
             self.send_translation((0.0, 0.0, 0.0))
         if self.cfg.GEAR_TIMED:
             self.time_gear(snap)
-        if self.cfg.DEPLOY_LATE:
+        if self.cfg.DEPLOY_LAW:
             self.late_switch(snap)
         self.landing_gear(snap)
         # After the handler, so the error is measured against the attitude

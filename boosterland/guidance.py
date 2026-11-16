@@ -5,7 +5,7 @@ touchdown point by roughly ``dv * time_to_land``, so the burn direction is the
 horizontal miss vector reversed and the remaining dv is the miss divided by the
 time left in the flight.  Both are re-derived from a fresh prediction every
 tick, which makes the burn self-correcting -- it simply stops when the
-prediction lands inside ``BOOSTBACK_TOLERANCE_M``.
+prediction lands inside its own noise (``Environment.miss_band``).
 """
 
 import math
@@ -106,16 +106,28 @@ def boostback_solution(env, r, v, mass, max_accel, isp, prediction, cfg):
         mass_flow = thrust / exhaust
         burn_time = mass / mass_flow * (1.0 - math.exp(-dv / exhaust))
 
-    if dv >= cfg.BOOSTBACK_TAPER_DV:
-        throttle = 1.0
-    else:
-        throttle = vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV, 0.0, 1.0)
+    throttle = taper_throttle(env, cfg, dv, max_accel)
 
     return BoostbackSolution(aim=aim, miss=miss, miss_distance=distance,
                              dv=dv, burn_time=burn_time, throttle=throttle)
 
 
-def held_boostback(env, r, prediction, heading, cfg):
+def taper_throttle(env, cfg, dv, max_accel):
+    """The boostback's throttle for ``dv`` still to burn: full until the dv
+    left is what full thrust delivers in ``SETTLE_LAGS`` measured reaction
+    times (spool-up plus a control tick, ``trajectory.reaction_time``), then
+    proportional, so the dv closes exponentially over that time and the
+    burn can stop inside the prediction's noise instead of a tick's worth of
+    full thrust past it.  Unmeasured: full."""
+    if dv <= 0.0:
+        return 0.0
+    span = max_accel * cfg.SETTLE_LAGS * trajectory.reaction_time(env)
+    if span <= 0.0:
+        return 1.0
+    return vec.clamp(dv / span, 0.0, 1.0)
+
+
+def held_boostback(env, r, prediction, heading, cfg, max_accel):
     """The boostback taper flown on a fixed ``heading``.
 
     ``boostback_solution`` re-aims opposite the miss every tick, which is
@@ -137,11 +149,7 @@ def held_boostback(env, r, prediction, heading, cfg):
         return 0.0, 0.0
     remaining = -vec.dot(miss, vec.unit(flat))
     dv = max(0.0, remaining) / max(1.0, prediction.time_to_land)
-    if dv <= 0.0:
-        return 0.0, remaining
-    if dv >= cfg.BOOSTBACK_TAPER_DV:
-        return 1.0, remaining
-    return vec.clamp(dv / cfg.BOOSTBACK_TAPER_DV, 0.0, 1.0), remaining
+    return taper_throttle(env, cfg, dv, max_accel), remaining
 
 
 def rcs_trim_command(cross, left, deadband, accel, to_go):

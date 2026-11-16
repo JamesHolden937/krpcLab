@@ -213,7 +213,7 @@ class TestClosedLoop(unittest.TestCase):
 
         LOG9 flipped a 30 t booster at 19 km and 584 m/s on reaction wheels
         alone, because BOOSTBACK held the throttle shut until it was inside
-        ``FLIP_ALIGN_DEG``.  With ``FLIP_UNDER_POWER`` the throttle comes up
+        ``flip_done_deg``.  With ``FLIP_UNDER_POWER`` the throttle comes up
         on the first BOOSTBACK tick however far off the aim the vehicle is,
         so the gimbal has authority for the whole turn.  The separation coast
         is still engines-off: the upper stage has to clear.
@@ -248,7 +248,7 @@ class TestClosedLoop(unittest.TestCase):
                            "waited for the flip before lighting the engines")
         aim = vessel.auto_pilot.target_direction     # radians, as the fake works
         self.assertGreater(fakeksp._angle_between(vessel.pointing, aim),
-                           math.radians(cfg.FLIP_ALIGN_DEG),
+                           math.radians(autoland.flip_done_deg(cfg)),
                            "already aligned; the test proves nothing")
 
     def _first_boostback_throttle(self, stage, clear_nose):

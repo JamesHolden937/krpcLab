@@ -14,6 +14,8 @@ R = 600000.0
 class FakeEnv:
     def __init__(self, target):
         self.target = target
+        self.control_interval = 0.05    # measured in flight
+        self.engine_spool_s = 0.0
 
 
 def prediction_at(point, ttl=140.0):
@@ -33,21 +35,23 @@ class TestHeldBoostback(unittest.TestCase):
         # 2 km short along the heading, 150 m off to the side.
         pred = prediction_at((R, 150.0, -2000.0))
         throttle, remaining = guidance.held_boostback(
-            self.env, self.r, pred, self.heading, self.cfg)
+            self.env, self.r, pred, self.heading, self.cfg, 50.0)
         self.assertAlmostEqual(remaining, 2000.0, delta=5.0)
-        self.assertAlmostEqual(throttle, 2000.0 / 140.0 / 60.0, places=2)
+        span = 50.0 * self.cfg.SETTLE_LAGS * 0.05
+        self.assertAlmostEqual(throttle, min(1.0, 2000.0 / 140.0 / span),
+                               places=2)
 
     def test_cross_track_alone_does_not_burn(self):
         pred = prediction_at((R, 150.0, 0.0))
         throttle, remaining = guidance.held_boostback(
-            self.env, self.r, pred, self.heading, self.cfg)
+            self.env, self.r, pred, self.heading, self.cfg, 50.0)
         self.assertAlmostEqual(remaining, 0.0, delta=1.0)
         self.assertEqual(throttle, 0.0)
 
     def test_past_the_pad_stops(self):
         pred = prediction_at((R, 0.0, 300.0))
         throttle, remaining = guidance.held_boostback(
-            self.env, self.r, pred, self.heading, self.cfg)
+            self.env, self.r, pred, self.heading, self.cfg, 50.0)
         self.assertLess(remaining, 0.0)
         self.assertEqual(throttle, 0.0)
 
@@ -64,18 +68,22 @@ class TestRcsTrim(unittest.TestCase):
         point = vec.add(target, vec.scale(left, 15.0))
         _, cross = trajectory.miss_components(None, point, target, here)
         self.assertAlmostEqual(cross, 15.0, delta=0.1)
-        cmd = guidance.rcs_trim_command(cross, left, self.cfg)
-        self.assertAlmostEqual(vec.dot(cmd, left), -0.5, places=3)
+        # 0.1 m/s^2 for 20 s moves it 20 m: 15 m asks for 0.75.
+        cmd = guidance.rcs_trim_command(cross, left, 3.0, 0.1, 20.0)
+        self.assertAlmostEqual(vec.dot(cmd, left), -0.75, places=3)
         self.assertAlmostEqual(vec.dot(cmd, along), 0.0, places=6)
 
     def test_saturates_and_deadbands(self):
         left = (0.0, 1.0, 0.0)
-        cmd = guidance.rcs_trim_command(-90.0, left, self.cfg)
+        cmd = guidance.rcs_trim_command(-90.0, left, 3.0, 0.1, 20.0)
         self.assertAlmostEqual(vec.norm(cmd), 1.0)
         self.assertGreater(cmd[1], 0.0)
-        self.assertIsNone(guidance.rcs_trim_command(2.0, left, self.cfg))
+        self.assertIsNone(guidance.rcs_trim_command(2.0, left, 3.0, 0.1, 20.0))
         self.assertIsNone(guidance.rcs_trim_command(float("nan"), left,
-                                                    self.cfg))
+                                                    3.0, 0.1, 20.0))
+        # The RCS unread: full input.
+        self.assertAlmostEqual(vec.norm(guidance.rcs_trim_command(
+            5.0, left, 3.0, None, 20.0)), 1.0)
 
 
 class TestBodyVector(unittest.TestCase):

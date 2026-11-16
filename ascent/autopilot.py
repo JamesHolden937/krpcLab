@@ -490,7 +490,7 @@ class Ascent:
             if ut is not None and (self.flip_auth is None or ut
                                    - self.flip_auth_ut
                                    >= self.cfg.AUTHORITY_REFRESH_S):
-                self.flip_auth = stack.authority(self.bcfg.FLIP_GIMBAL_SHARE)
+                self.flip_auth = stack.authority(1.0)
                 self.flip_auth_ut = ut
             if self.flip_auth is not None:
                 gimbal, fixed = self.flip_auth[0], self.flip_auth[1]
@@ -738,7 +738,7 @@ class Ascent:
         b_thrust_vac = sum(stack.thrust.values())
         gimbal, fixed = None, 0.0
         if self.bcfg.FLIP_THROTTLE_LAW:
-            gimbal, fixed, _ = stack.authority(self.bcfg.FLIP_GIMBAL_SHARE)
+            gimbal, fixed, _ = stack.authority(1.0)
         booster = budget.Booster(
             mass=stack.mass(), dry_mass=stack.dry, thrust_vac=b_thrust_vac,
             thrust_sl=self._thrust_sl, isp_vac=self._isp[0],
