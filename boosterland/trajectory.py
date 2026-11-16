@@ -142,7 +142,8 @@ def planned_net(max_accel, g, cfg):
     the ground: planned at the cap, the throttle pinned from ~600 m and the
     burn had no lateral authority for its last 600 m whatever its TWR.
     """
-    share = math.cos(math.radians(cfg.LANDING_MAX_TILT_DEG))
+    share = (math.cos(math.radians(cfg.LANDING_MAX_TILT_DEG))
+             * cfg.LANDING_HEADROOM)
     return max_accel * cfg.LANDING_THROTTLE_CAP * share - g
 
 
@@ -282,7 +283,10 @@ def descent_profile(env, cfg, max_accel, g):
     no rate measured, no taper (k None): constant deceleration to v_td."""
     net = max(0.1, planned_net(max_accel, g, cfg))
     v_td = touchdown_speed(env, cfg)
-    k = one_law_rate(env, cfg)
+    # The taper's rate is the one held from ignition (``env.taper_rate``):
+    # re-read every tick it moved the target under a committed burn
+    # (0.19 -> 2.5 /s in one burn, gen2-1115: 77 m/s at 28 m).
+    k = getattr(env, "taper_rate", None) or one_law_rate(env, cfg)
     if k is not None:
         # ... and no faster than the descent-rate trim that flies it can
         # follow (the same cascade share of its gain): a nose fast enough to

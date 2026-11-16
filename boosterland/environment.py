@@ -101,6 +101,7 @@ class Environment:
         self.touchdown_tolerance = None  # m/s the craft survives at contact
                                         # (Autoland: weakest touching part,
                                         # the legs' suspension when lower)
+        self.taper_rate = None          # 1/s, held from ignition
         self.engine_spool_s = None      # trigger to thrust (Autoland.
                                         # track_spool, the first ignition)
         self.control_interval = None    # game-s between control ticks

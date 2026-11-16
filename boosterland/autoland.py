@@ -1971,6 +1971,14 @@ class Autoland:
         return rate
 
     def run_landing_burn(self, snap):
+        if self.env.taper_rate is None:
+            rate = trajectory.one_law_rate(self.env, self.cfg)
+            if rate is not None:
+                self.env.taper_rate = min(
+                    rate, self.cfg.LOOP_BANDWIDTH_SHARE
+                    * trajectory.throttle_gain(self.env, self.cfg))
+                self.log.event(snap.ut, "taper rate held at %.2f /s"
+                               % self.env.taper_rate)
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)

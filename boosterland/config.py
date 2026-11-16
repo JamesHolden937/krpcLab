@@ -289,6 +289,13 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
+    LANDING_HEADROOM: float = 0.85          # the profile is planned at this
+                                            # share of the thrust left after
+                                            # the tilt: the trim's room to
+                                            # correct (policy; the inverse of
+                                            # the old 1.18 margin).  At 1 the
+                                            # burn had none: gen2-1115, 77 m/s
+                                            # at 28 m on full thrust
     NOISE_SIGMAS: float = 2.0               # every deadband is this many
                                             # sd of the prediction's own
                                             # tick-to-tick scatter
