@@ -155,11 +155,11 @@ class TestPropagation(unittest.TestCase):
         v = (-5.0, 0.0, 0.0)
         zem = (0.0, 0.0, 10.0)
         late = guidance.one_law_command(env, r, v, 5.0, 15.0, cfg, zem, None, 0.5)
-        self.assertAlmostEqual(late.demand, 0.24 * 10.0 * 25.0 / 41.0,
+        self.assertAlmostEqual(late.demand, 0.24 * 10.0 * 25.0 / 89.0,
                                places=6)
         early = guidance.one_law_command(env, r, v, 20.0, 15.0, cfg, zem, None, 0.5)
         self.assertAlmostEqual(early.demand, cfg.LANDING_ZEM_GAIN / 400.0
-                               * 10.0 * 400.0 / 416.0, places=6)
+                               * 10.0 * 400.0 / 464.0, places=6)
         touch = guidance.one_law_command(env, r, v, 0.01, 15.0, cfg, zem, None, 0.5)
         self.assertLess(touch.demand, 1e-4)
         self.assertLess(vec.dot(late.direction, (0.0, 0.0, 1.0)), 0.0)

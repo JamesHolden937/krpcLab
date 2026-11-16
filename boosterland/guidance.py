@@ -419,9 +419,8 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     capped at ``rate^2``: the aiming loop never closes faster than the nose
     that executes it, so near the ground it fades into a slow position hold
     rather than switching off at a height, and it fades out over the last
-    ``2 / rate`` so the speed it made is nulled by touchdown.  The tilt the
-    miss adds is held
-    inside ``LANDING_MAX_TILT_DEG`` and the throttle's budget, as the divert's
+    ``4 / rate`` (the null's settling time) so the speed it made is nulled
+    by touchdown.  The tilt the miss adds is held inside ``LANDING_MAX_TILT_DEG`` and the throttle's budget, as the divert's
     was.
     """
     up = vec.unit(r)
@@ -433,10 +432,11 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     # A position hold is a sideways speed: at rate^2 * x against a velocity
     # null of rate, the booster crosses toward the pad at rate * x and lands
     # still doing it (one-1115: 5-7 m/s at contact, 14 m out).  The aim has
-    # to be finished while there is time to null the speed it makes -- two of
-    # the lateral loop's time constants, 2 / rate -- so its gain fades by
-    # t^2 / (t^2 + T^2): ~1 up the burn, 0 at touchdown, continuously.
-    fade = 2.0 / rate
+    # to be finished while there is time to null the speed it makes: the
+    # velocity null (rate) settles to 2% in 4 / rate, so the gain fades by
+    # t^2 / (t^2 + T^2), T = 4 / rate: ~1 up the burn, 0 at touchdown,
+    # continuously (T = 2 / rate still landed at 3-4 m/s, one2-1115).
+    fade = 4.0 / rate
     gain = (min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)
             * t_go * t_go / (t_go * t_go + fade * fade))
     accel = vec.scale(vec.project_out(zem, up), -gain)
