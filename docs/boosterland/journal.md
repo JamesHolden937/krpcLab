@@ -1265,3 +1265,10 @@ last 1/rate. 12 per arm and save:
 Aim better on the heavy, no worse on fin3, but it touched down sideways: the position hold at rate^2 x against a
 velocity null at rate drives the booster at rate*x toward the pad (LOG17136: 14 m out, hs 2.1 -> 5.8 m/s in the
 last 20 m). Fix (352c772): the aiming gain fades by t^2/(t^2+T^2), T = 2/rate. Flown as one2-1115.
+
+one2-1115 (fade T = 2/rate, LOG17185-17256): fin3 12.1 -> 13.1 m median (p75 16, max 17, 0 lost) v def 19.9
+(p75 34, 1 lost); heavy 37 v 62 but 7 lost v 2; fin 45 v 35. td hs still 2.9-4.5 m/s, tilt ~7 deg (def 0.2,
+~1). End game: the aim still pulled at ~4 s out (LOG17216: 31 m out, hs 6.1 -> 5.3, toward the pad); nose lag
+err/cw 0.5-1.5 s on both arms, so rate 0.5/s is about right and the time scale was wrong: the velocity null
+settles in 4/rate = 8 s. The defaults are clean because they stop aiming ~7.5 s out, and overshoot 20-35 m
+because the null carries the 14-17 m/s left at 130 m past the pad. f4f75e7: T = 4/rate. Flown as one3-1115.
