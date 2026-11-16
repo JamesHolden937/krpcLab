@@ -603,6 +603,7 @@ class Autoland:
         self.prev_cmd = None            # (ut, commanded direction)
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
+        self.burn_plan_ut = None        # DIAG_BURN: when the plan was logged
         self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
                                         # tick scatter: every deadband
         self.rcs_accel = None           # m/s^2 the RCS translates at (read
@@ -2022,6 +2023,8 @@ class Autoland:
                 rate * max(0.0, snap.ut - self.burn_cmd_ut))
         self.burn_cmd, self.burn_cmd_ut = direction, snap.ut
         self.aim(direction, snap)
+        if self.cfg.DIAG_BURN:
+            self.log_burn_diag(snap, throttle, brake)
 
         self.extra_lines = [
             "miss    : %8.0f m" % self.miss_distance(),
@@ -2037,6 +2040,49 @@ class Autoland:
                           self.pad_distance(snap), snap.horizontal_speed,
                           vec.angle_between(snap.direction, snap.position)))
             self.log_touchdown(snap)
+
+    def log_burn_diag(self, snap, throttle, brake):
+        """DIAG_BURN: the burn the prediction flies, once at the first burn
+        tick, then the flown burn every tick on the same clock and heights,
+        so burnplan.py can say which term the two part on."""
+        radius = vec.norm(snap.position)
+        h_com = (radius - self.env.target_radius
+                 - trajectory.leg_clearance(self.env))
+        if self.burn_plan_ut is None:
+            self.burn_plan_ut = snap.ut
+            trace = []
+            trajectory.predict_landing(
+                self.env, snap.position, snap.velocity, snap.mass,
+                snap.max_accel, self.cfg, trace=trace)
+            out, next_t = [], 0.0
+            for t, h, hs, vs, thr in trace:
+                if t >= next_t:
+                    out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % (t, h, hs, vs, thr))
+                    next_t = t + 0.25
+            if trace:
+                t, h, hs, vs, thr = trace[-1]
+                out.append("%.2f:%.1f:%.1f:%.1f:%.3f" % (t, h, hs, vs, thr))
+            self.log.event(snap.ut, "burn plan m=%.2f acc=%.3f rate=%s taper=%s "
+                           "legs=%.2f samples=[%s]"
+                           % (snap.mass / 1000.0, snap.max_accel,
+                              trajectory.one_law_rate(self.env, self.cfg),
+                              self.env.taper_rate,
+                              trajectory.leg_clearance(self.env),
+                              " ".join(out)))
+        vs = vec.dot(snap.velocity, vec.unit(snap.position))
+        hs = math.sqrt(max(0.0, snap.speed ** 2 - vs * vs))
+        delivered = (snap.thrust / snap.mass
+                     if snap.thrust is not None and snap.mass > 0 else float("nan"))
+        altitude = radius - self.env.equatorial_radius
+        self.log.event(snap.ut, "burn tick t=%.2f h=%.1f hl=%.1f hs=%.2f vs=%.2f "
+                       "thr=%.3f got=%.3f acc=%.3f max=%.3f m=%.2f off=%.2f "
+                       "cda=%.2f M=%.2f"
+                       % (snap.ut - self.burn_plan_ut, h_com, snap.landing_height,
+                          hs, vs, throttle, snap.throttle, delivered,
+                          snap.max_accel, snap.mass / 1000.0,
+                          vec.angle_between(snap.direction, brake),
+                          self.env.drag_area_at(snap.speed, altitude),
+                          self.env.mach(snap.speed, altitude)))
 
     def read_landing_limits(self, snap, why):
         """The legs' live suspension, deployed, as touchdown limits: once.

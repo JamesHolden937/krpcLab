@@ -405,6 +405,10 @@ class Config:
                                             # whole Cd*A curve each tick, so a
                                             # prediction can be re-flown
                                             # offline; see replay.py
+    DIAG_BURN: bool = False                 # log the landing burn the
+                                            # prediction flies at ignition,
+                                            # and the flown burn every tick;
+                                            # see burnplan.py
 
     # kRPC 0.8's AutoPilot.limit_angular_velocity (on by kRPC's default):
     # caps the nose's rate at the rate the flight path turns at the

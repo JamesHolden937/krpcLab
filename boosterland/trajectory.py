@@ -457,7 +457,7 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
 
 
 def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
-                    steer=None, drag_scale=1.0):
+                    steer=None, drag_scale=1.0, trace=None):
     """Propagate to touchdown, including the landing burn's downrange creep.
 
     ``steer`` is the angle of attack the vehicle is going to fly (see
@@ -536,7 +536,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
         r, v, burn_time, burn_steps = _fly_landing_burn(
-            env, r, v, mass, max_accel, cfg, drag)
+            env, r, v, mass, max_accel, cfg, drag, trace)
         steps += burn_steps
 
     return Prediction(
@@ -551,7 +551,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     )
 
 
-def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag):
+def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     """Integrate the suicide burn itself: thrust along the law's base
     direction, on the profile.
 
@@ -583,6 +583,12 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag):
                                       cfg, vec.dot(v, vec.unit(r)))
         dt = min(cfg.PREDICT_DT_ATMO, max(0.05, 0.25 * height / speed))
         accel = throttle * max_accel
+        if trace is not None:
+            # (t, height, horizontal, vertical speed, throttle): DIAG_BURN's
+            # plan, read against the flown burn by burnplan.py.
+            vs = vec.dot(v, vec.unit(r))
+            trace.append((t, height, math.sqrt(max(0.0, speed * speed
+                                                   - vs * vs)), vs, throttle))
         r, v = _step(env, r, v, mass, drag, dt, cfg,
                      lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel),
                                               accel))
