@@ -410,7 +410,7 @@ class TerminalCommand:
 
 def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
                     tilt_budget_deg, rate):
-    """The burn's one steering law, ignition to touchdown (``LANDING_ONE_LAW``).
+    """The burn's one steering law, ignition to touchdown .
 
     The base is ``trajectory.base_direction``: retrograde, scaled toward the
     vertical as far as its implied sideways null rate would outrun the
@@ -418,9 +418,9 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     prediction of that same base -- ``ZEM_GAIN / t_go^2`` -- with its gain
     capped at ``rate^2``: the aiming loop never closes faster than the nose
     that executes it, so near the ground it fades into a slow position hold
-    rather than switching off at a height, and it fades out over the last
-    ``4 / rate`` (the null's settling time) so the speed it made is nulled
-    by touchdown.  The tilt the miss adds is held inside ``LANDING_MAX_TILT_DEG`` and the throttle's budget, as the divert's
+    rather than switching off at a height; and it never asks for a sideways
+    speed the craft could not brake to zero by touchdown.  The tilt the miss
+    adds is held inside ``LANDING_MAX_TILT_DEG`` and the throttle's budget, as the divert's
     was.
     """
     up = vec.unit(r)
@@ -429,17 +429,19 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     if zem is None or a < cfg.LANDING_DIVERT_MIN_ACCEL:
         return TerminalCommand(base, 0.0)
     t_go = max(1e-3, time_to_land)
-    # A position hold is a sideways speed: at rate^2 * x against a velocity
-    # null of rate, the booster crosses toward the pad at rate * x and lands
-    # still doing it (one-1115: 5-7 m/s at contact, 14 m out).  The aim has
-    # to be finished while there is time to null the speed it makes: the
-    # velocity null (rate) settles to 2% in 4 / rate, so the gain fades by
-    # t^2 / (t^2 + T^2), T = 4 / rate: ~1 up the burn, 0 at touchdown,
-    # continuously (T = 2 / rate still landed at 3-4 m/s, one2-1115).
-    fade = 4.0 / rate
-    gain = (min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)
-            * t_go * t_go / (t_go * t_go + fade * fade))
+    gain = min(cfg.LANDING_ZEM_GAIN / (t_go * t_go), rate * rate)
     accel = vec.scale(vec.project_out(zem, up), -gain)
+    # The aim, with the base's null, is a = rate * (v_aim - v): it asks for a
+    # sideways speed v_aim = accel / rate.  No more may be asked for than the
+    # craft can still brake to zero before touchdown -- its lateral
+    # authority, thrust * sin(LANDING_MAX_TILT_DEG), over the time left after
+    # one nose response.  A position hold near the ground otherwise lands
+    # the booster crossing toward the pad (one-1115: 5-7 m/s at contact).
+    authority = a * math.sin(math.radians(cfg.LANDING_MAX_TILT_DEG))
+    v_max = authority * max(0.0, t_go - 1.0 / rate)
+    asked = vec.norm(accel) / rate
+    if asked > v_max:
+        accel = vec.scale(accel, v_max / asked)
     accel = vec.project_out(accel, base)
     demand = vec.norm(accel)
     if demand < 1e-6:
@@ -455,235 +457,27 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
 
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
                      zem=None, tilt_budget_deg=None, null_rate=None):
-    """The burn's command, stood up for the last ``LANDING_UPRIGHT_ALT_M``.
-
-    Below 250 m the law points retrograde within ``LANDING_MAX_TILT_DEG`` of
-    vertical, plus whatever the lateral nulling adds, all the way to the
-    ground -- and retrograde swings toward the horizontal as the descent
-    stops, so any sideways speed left became a lean: the last burn tick sat
-    8-15 deg off vertical on nearly every flight, and the booster pried
-    itself over on its legs at 0.4 m/s sideways (tip1-1018, LOG12086: cv
-    12.7).  So the whole command -- base and divert -- is held inside a cone
-    that narrows linearly from the full tilt at ``LANDING_UPRIGHT_ALT_M`` of
-    leg height to ``LANDING_UPRIGHT_TILT_DEG`` at the ground.  0 is off.
-    """
-    if cfg.LANDING_ONE_LAW and null_rate and cfg.LANDING_TERMINAL_GUIDANCE:
-        cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
-                              tilt_budget_deg, null_rate)
-        # Stood up over the last nose response (1 / rate) to touchdown.
-        frac = min(1.0, max(0.0, time_to_land) * null_rate)
-        if frac >= 1.0:
-            return cmd
-        full = cfg.LANDING_MAX_TILT_DEG * 2.0
-        floor = cfg.LANDING_UPRIGHT_TILT_DEG
-        return TerminalCommand(
-            within_cone(cmd.direction, vec.unit(r),
-                        floor + (full - floor) * frac), cmd.demand)
-    cmd = _terminal_command(env, r, v, height, time_to_land, thrust_accel,
-                            cfg, zem, tilt_budget_deg, null_rate)
-    top = cfg.LANDING_UPRIGHT_ALT_M
-    if top <= 0.0 or height >= top:
-        return cmd
-    full = cfg.LANDING_MAX_TILT_DEG * 2.0    # base cone plus the divert
-    floor = cfg.LANDING_UPRIGHT_TILT_DEG
-    cone = floor + (full - floor) * max(0.0, height) / top
-    return TerminalCommand(within_cone(cmd.direction, vec.unit(r), cone),
-                           cmd.demand)
-
-
-def _terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
-                      zem=None, tilt_budget_deg=None, null_rate=None):
-    """Steer the landing burn onto the pad, arriving with no sideways speed.
-
-    The old divert was position feedback alone -- tilt proportional to the miss
-    -- and that is why it had to be switched off.  A law with no velocity term
-    cannot do anything *but* arrive moving: LOG7 held 20 deg for nine seconds,
-    closed 36 m of a 1190 m miss, and put the booster on the ground doing
-    10 m/s sideways, which tipped it over (failure 5).  Turning that gain back
-    up would reproduce it exactly.
-
-    So this targets both ends of the trajectory at once.  Horizontally the
-    booster is a double integrator, and the minimum-energy steering that
-    brings *position and velocity* to zero together at ``t_go`` is
-
-        a = -(6/t_go^2) e - (4/t_go) v_h
-
-    with ``e`` the horizontal offset from the pad and ``v_h`` the horizontal
-    velocity.  The velocity term is the whole point: as the offset closes, the
-    law is already pulling the lateral speed out, so the vehicle arrives over
-    the pad *stopped* rather than crossing it.  Both gains come from the
-    closed-form solution rather than being tuned, which is why they are 6 and
-    4 and not round numbers.
-
-    Three guards, and each is load-bearing:
-
-    * ``t_go`` is floored.  Both gains go to infinity at touchdown, and an
-      unbounded command in the last second is a vehicle tipping over on the
-      pad -- the LOG7 failure by a different route.
-    * the tilt is bounded by ``LANDING_MAX_TILT_DEG`` **and** by
-      ``tilt_budget_deg``, the angle the throttle can actually pay for.  The
-      fixed bound alone is not enough and that was measured, twice.  Thrust
-      tilted by theta brakes with only its cosine, so the caller has to open
-      the throttle by 1/cos(theta) to stand still -- and when the profile is
-      already asking for the cap there is nothing left to open.  The tilt then
-      comes straight out of the braking, silently, for as long as it steers.
-      Three round-4 flights arrived at 17.6, 35.7 and 43.7 m/s carrying
-      17-42 m/s sideways, one of them still descending at 36 m/s a metre and a
-      half up: that is failure 5 again, by way of the throttle cap.  The
-      caller passes ``acos(demanded / cap)``, which goes to zero exactly when
-      the vehicle needs all of its thrust to stop.
-    * below ``LANDING_NULL_ALT_M`` the position term is dropped and the law
-      steers on the lateral *velocity* alone, and it keeps doing that all the
-      way down to ``LANDING_DIVERT_MIN_ALT_M``.  This is the half that was
-      missing, and it is what the in-game divert died of: the previous shape
-      chased the offset down to 15 m and then stopped steering outright, so
-      whatever lateral speed the chase had built up was still on the vehicle
-      when the legs arrived -- 3.4 m/s at 16 m up on ``quicksave``, which
-      topples a booster, and the still-lit engine then threw it back to
-      950 m.  Aiming and stopping are different jobs and the last stretch
-      belongs to the second one: the offset is whatever it is by 250 m up,
-      and landing upright beats landing close (failure 5, which is the same
-      lesson one layer down).  ``LANDING_DIVERT_MIN_ALT_M`` is now only the
-      floor under *that*, held for the last few metres so the vehicle is
-      standing vertical when it touches.
-
-    By default the error is measured from the *vehicle's own position*, so
-    this stays a closed loop on the real state and does not care that the
-    propagator flies the burn without a divert.  Pass ``zem`` -- the predicted
-    touchdown point minus the pad -- to close the loop on the propagator's
-    answer instead; see the ``zem`` branch below for why that is the better
-    signal on a booster still doing 200 m/s through thick air, and
-    ``LANDING_DIVERT_ON_PREDICTION`` for the flag that supplies it.
-
-    Two things about ``thrust_accel`` that cost a sweep to find.  It is the
-    acceleration the vehicle is *actually making* -- throttle times the best
-    it has -- not its maximum.  Sizing the tilt against the maximum quietly
-    under-delivers whenever the throttle is part open: on the 60 km entry
-    state the law asked for 9.6 m/s^2 of lateral at ``thr=0.46`` and got 4.2,
-    so the offset never closed and the command sat on the bound the whole
-    way down.  And when the throttle is shut there is no steering to be had
-    at any attitude, so below ``LANDING_DIVERT_MIN_ACCEL`` this does not
-    pretend otherwise.
-
-    ``LANDING_DIVERT_MAX_ALT_M`` is the other half.  The law above is a flat
-    double integrator: no drag, no gravity turn, no curvature.  That is a
-    good description of the last kilometre and a poor one of a burn that
-    starts at 27 km and spends half of it coasting at zero throttle, where
-    the predictor -- which models all three -- is the better authority.  So
-    high up the burn stays retrograde and the trajectory is left to the
-    propagator that shaped it.
+    """The landing burn's command, ignition to touchdown: ``one_law_command``,
+    stood up over the last nose response (``1 / rate``) inside a cone that
+    narrows to ``LANDING_UPRIGHT_TILT_DEG`` at touchdown -- a lean at contact
+    pries a booster over on its legs (tip1-1018, LOG12086).  With no attitude
+    rate read there is no bandwidth to steer at, so it flies retrograde.
     """
     retrograde = vec.unit(vec.scale(v, -1.0))
     if vec.norm(retrograde) < 1e-9:
         return TerminalCommand(vec.unit(r), 0.0)
-    if not cfg.LANDING_TERMINAL_GUIDANCE:
+    if not cfg.LANDING_TERMINAL_GUIDANCE or not null_rate:
         return TerminalCommand(retrograde, 0.0)
-    up = vec.unit(r)
-    # The last stretch is referenced to the ground, not the airflow.
-    # Retrograde is a fine thing to point at while the booster is falling
-    # fast; it stops being one as the descent stops, because it swings toward
-    # the horizontal as the vertical speed goes to zero and points *down*
-    # once it changes sign.  A heavy booster (LOG10237: 9 g, five Vectors)
-    # overshot into a climb at 8 m, was told to point retrograde, and
-    # tumbled to 122 degrees off it; LOG10236 did the same live and broke
-    # up.  Below ``LANDING_NULL_ALT_M`` retrograde is kept -- while the
-    # booster falls steeply it is what brakes the lateral speed for free, and
-    # at the throttle cap it is the *only* thing that does, because the tilt
-    # budget is zero there (pure vertical let 5 m/s grow to 14 on qs
-    # LOG10246) -- but held inside ``LANDING_MAX_TILT_DEG`` of vertical, and
-    # vertical outright once the booster is going up.
-    near = height <= cfg.LANDING_NULL_ALT_M
-    if near and null_rate:
-        return TerminalCommand(bounded_null(v, up, thrust_accel, time_to_land,
-                                            cfg, null_rate, tilt_budget_deg), 0.0)
-    base = (within_cone(retrograde, up, cfg.LANDING_MAX_TILT_DEG) if near
-            else retrograde)
-    if not (cfg.LANDING_DIVERT_MIN_ALT_M < height
-            <= cfg.LANDING_DIVERT_MAX_ALT_M):
-        return TerminalCommand(base, 0.0)
-
-    offset = vec.project_out(vec.sub(r, env.target), up)    # where we are, vs the pad
-    lateral = vec.project_out(v, up)
-    t_go = max(cfg.LANDING_TGO_MIN_S, time_to_land)
-
-    if height <= cfg.LANDING_NULL_ALT_M:
-        # The last stretch is for stopping, not for aiming.  Drop the position
-        # term entirely -- whichever signal was supplying it -- and drive the
-        # lateral speed to zero, so the legs arrive over whatever point the
-        # aiming left them above rather than crossing it sideways.  The gain
-        # is the same 4/t_go the full law uses, so this is not a separate
-        # controller, it is the same one with its other half switched off.
-        if vec.norm(lateral) <= cfg.LANDING_HVEL_TOL:
-            return TerminalCommand(base, 0.0)
-        accel = vec.scale(lateral, -cfg.LANDING_ZEV_GAIN / t_go)
-    elif zem is None:
-        accel = vec.add(vec.scale(offset, -cfg.LANDING_ZEM_GAIN / (t_go * t_go)),
-                        vec.scale(lateral, -cfg.LANDING_ZEV_GAIN / t_go))
-    else:
-        # ``zem`` is the propagator's own answer to "where does this land if I
-        # steer no further" -- the predicted touchdown point minus the pad.
-        # The two terms above are a *linearisation* of that same question:
-        # position plus velocity times the time left, with no drag, no gravity
-        # turn, and no model of the braking profile that is about to eat most
-        # of the horizontal speed.  On a booster arriving at 200 m/s through
-        # thick air those three are not small corrections, and the propagator
-        # models all of them and is called every tick anyway.
-        #
-        # The velocity term goes with them.  It exists in the linear law to
-        # stop the vehicle crossing the pad still moving; here the prediction
-        # already flies the burn to a stop, so its residual lateral speed is
-        # inside the zero-effort miss rather than beside it, and adding a
-        # separate term for it would count it twice.
-        accel = vec.scale(vec.project_out(zem, up),
-                          -cfg.LANDING_ZEM_GAIN / (t_go * t_go))
-    accel = vec.project_out(accel, base)         # only the part that tilts us
-    demand = vec.norm(accel)
-    if demand < 1e-6:
-        return TerminalCommand(base, 0.0)
-    # The demand is a property of the trajectory, so it is reported even when
-    # there is no thrust to meet it -- that is exactly the case the caller
-    # needs to know about, because it can open the throttle and create some.
-    if thrust_accel < cfg.LANDING_DIVERT_MIN_ACCEL:
-        return TerminalCommand(base, demand)
-
-    limit = cfg.LANDING_MAX_TILT_DEG
-    if tilt_budget_deg is not None:
-        limit = min(limit, tilt_budget_deg)
-    tilt = math.atan2(demand, thrust_accel)
-    tilt = min(tilt, math.radians(max(0.0, limit)))
+    cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
+                          tilt_budget_deg, null_rate)
+    frac = min(1.0, max(0.0, time_to_land) * null_rate)
+    if frac >= 1.0:
+        return cmd
+    full = cfg.LANDING_MAX_TILT_DEG * 2.0
+    floor = cfg.LANDING_UPRIGHT_TILT_DEG
     return TerminalCommand(
-        vec.unit(vec.add(base,
-                         vec.scale(vec.unit(accel), math.tan(tilt)))), demand)
-
-
-def bounded_null(v, up, thrust_accel, time_to_land, cfg, rate_max,
-                 tilt_budget_deg=None):
-    """The last stretch's nose: vertical, tilted to null the lateral speed at
-    a rate the attitude loop can follow (``rate_max``, half kRPC's attitude
-    bandwidth: ``Autoland.null_rate``).
-
-    Retrograde nulls the lateral speed too, at a rate of thrust/speed per
-    second -- harmless at 60 m/s, but ~3/s at the last few m/s of descent,
-    far faster than a nose that lags its command by 1-2 s.  The speed is
-    nulled, overshoots, retrograde flips to the other side and the nose
-    chases it: hs grew 3 -> 13 m/s in the last 15 m (dv3-1115, LOG16929,
-    LOG16935, LOG16911).  This flies the same retrograde braking while that
-    rate is low, plus the ``LANDING_ZEV_GAIN / t_go`` null, and caps the sum.
-    """
-    lateral = vec.project_out(v, up)
-    if thrust_accel < cfg.LANDING_DIVERT_MIN_ACCEL or vec.norm(lateral) < 1e-6:
-        return up
-    t_go = max(cfg.LANDING_TGO_MIN_S, time_to_land)
-    rate = min(thrust_accel / max(vec.norm(v), 0.1)
-               + cfg.LANDING_ZEV_GAIN / t_go, rate_max)
-    limit = cfg.LANDING_MAX_TILT_DEG
-    if tilt_budget_deg is not None:
-        limit = min(limit, tilt_budget_deg)
-    tilt = min(math.atan2(rate * vec.norm(lateral), thrust_accel),
-               math.radians(max(0.0, limit)))
-    side = vec.scale(vec.unit(lateral), -1.0)
-    return vec.unit(vec.add(vec.scale(up, math.cos(tilt)),
-                            vec.scale(side, math.sin(tilt))))
+        within_cone(cmd.direction, vec.unit(r), floor + (full - floor) * frac),
+        cmd.demand)
 
 
 def slew(previous, target, max_deg):

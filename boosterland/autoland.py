@@ -590,7 +590,9 @@ class Autoland:
 
     def predict(self, snap, powered, steer=None):
         max_accel = snap.max_accel if powered else 0.0
-        if self.cfg.LANDING_ONE_LAW and self.env.attitude_rate is None:
+        if snap.leg_clearance:
+            self.env.leg_clearance = snap.leg_clearance
+        if self.env.attitude_rate is None and powered:
             self.env.attitude_rate = self.null_rate(snap)
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
@@ -1947,8 +1949,7 @@ class Autoland:
                                             self.cfg,
                                             height=snap.landing_height)
         throttle = command.throttle
-        zem = (trajectory.miss_vector(self.env, prediction)
-               if self.cfg.LANDING_DIVERT_ON_PREDICTION else None)
+        zem = trajectory.miss_vector(self.env, prediction)
         budget = self.tilt_budget(throttle)
         steer = guidance.terminal_command(
             self.env, snap.position, snap.velocity, snap.landing_height,

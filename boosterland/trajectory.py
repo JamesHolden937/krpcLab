@@ -146,17 +146,25 @@ def planned_net(max_accel, g, cfg):
     return max_accel * cfg.LANDING_THROTTLE_CAP * share - g
 
 
+def leg_clearance(env):
+    """Centre of mass to the bottom of the vessel (``env.leg_clearance``,
+    measured off the bounding box).  The real trigger and throttle fly the
+    *legs'* height (``Snapshot.landing_height``); a propagation flown on the
+    centre of mass lit the burn later and landed that much lower, ~11 m on
+    the fin boosters, and read 3-5 s of time-to-go at contact."""
+    c = getattr(env, "leg_clearance", None)
+    return c if c and c > 0.0 else 0.0
+
+
 def one_law_rate(env, cfg):
-    """The attitude rate (1/s) the one-law burn closes at, or None when the
-    law is off or the rate is unread."""
-    if not cfg.LANDING_ONE_LAW:
-        return None
+    """The attitude rate (1/s) the burn's law closes at (``env.attitude_rate``,
+    ``Autoland.null_rate``), or None while unread."""
     rate = getattr(env, "attitude_rate", None)
     return rate if rate and rate > 0.0 else None
 
 
 def base_direction(v, up, thrust_accel, rate):
-    """The burn's braking direction under ``LANDING_ONE_LAW``.
+    """The landing burn's braking direction.
 
     Retrograde nulls the sideways speed for free, at a rate of
     ``thrust / speed`` per second: negligible at 700 m/s, ~3/s at the last
@@ -232,19 +240,16 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
         # along the vertical cannot take out sideways speed; the divert law
         # can, given throttle that is neither 0 nor the cap.  Higher up the
         # sideways speed has to be braked like any other (the closed-loop
-        # sim hit at 54 m/s on descent rate alone), so it is weighted by
-        # height / LANDING_NULL_ALT_M: all of it at the top of the nulling
-        # band, where the divert takes over the lateral, none on the ground.
+        # sim hit at 54 m/s on descent rate alone), so it is weighted below.
         down = max(0.0, -vertical_speed)
         side_sq = max(0.0, speed * speed - vertical_speed * vertical_speed)
+        # The share of the sideways speed the thrust along the profile
+        # brakes: all of it while the base is retrograde, the rest left to
+        # the law once the base nulls it at ``rate`` (base_direction).  With
+        # no rate read, the base is retrograde: all of it.
         rate = one_law_rate(env, cfg)
-        if rate is not None:
-            # The share of the sideways speed the thrust along the profile
-            # brakes: all of it while the base is retrograde, the rest left
-            # to the law once the base nulls it at ``rate`` (base_direction).
-            w = min(1.0, rate * speed / max(1e-6, max_accel))
-        else:
-            w = vec.clamp(height / max(1.0, cfg.LANDING_NULL_ALT_M), 0.0, 1.0)
+        w = (1.0 if rate is None
+             else min(1.0, rate * speed / max(1e-6, max_accel)))
         speed = math.sqrt(down * down + w * w * side_sq)
     net = max(0.1, planned_net(max_accel, g, cfg))
 
@@ -292,15 +297,9 @@ def landing_command(env, radius, speed, height, max_accel, cfg,
     # trade away by cutting it -- the vehicle falls back onto a profile that
     # knows what to do with it.
     #
-    # "This low" is where the attitude law stops pointing retrograde:
-    # below ``LANDING_NULL_ALT_M`` the thrust is held near vertical, and
-    # vertical outright once the vehicle climbs (guidance.terminal_command),
-    # so thrust there while ascending only adds climb.  Above it the nose is
-    # retrograde and a climbing booster's thrust still brakes it.
-    if (vertical_speed is not None
-            and vertical_speed >= 0.0
-            and (height <= cfg.LANDING_NULL_ALT_M
-                 or one_law_rate(env, cfg) is not None)):
+    # At any height: climbing, the burn's base is within the attitude rate of
+    # vertical (base_direction), so thrust only adds climb.
+    if vertical_speed is not None and vertical_speed >= 0.0:
         throttle = 0.0
     # The same floor bites a metre up without any ascent to give it away, and
     # there it is worse, because the vehicle is about to touch.  LOG446 was
@@ -398,7 +397,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
 
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
-        height = radius - env.target_radius
+        height = radius - env.target_radius - leg_clearance(env)
         up = vec.scale(r, 1.0 / radius)
         speed = vec.norm(v)
         descending = vec.dot(v, up) < 0.0
@@ -443,7 +442,7 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
     radius = vec.norm(r)
     speed = vec.norm(v)
     burn_time = 0.0
-    burn_altitude = radius - env.target_radius
+    burn_altitude = radius - env.target_radius - leg_clearance(env)
     if powered and net > 0.0:
         # Fly the burn rather than estimating it.  The closed form this
         # replaced -- horizontal speed times half of speed/net -- assumed a
@@ -522,7 +521,7 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, steer=None,
 
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
-        height = radius - env.target_radius
+        height = radius - env.target_radius - leg_clearance(env)
         speed = vec.norm(v)
         if height <= 0.0 or speed < cfg.TOUCHDOWN_SPEED:
             break

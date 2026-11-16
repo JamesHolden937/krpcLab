@@ -149,19 +149,24 @@ class TestPropagation(unittest.TestCase):
 
     def test_one_law_aiming_gain_is_capped_at_the_attitude_rate(self):
         """Near touchdown the miss is held at rate^2, not ZEM_GAIN / t_go^2."""
-        cfg = apply_overrides(Config(), ["LANDING_ONE_LAW=True"])
+        cfg = Config()
         env = FakeEnv()
         r = (KERBIN_R + 30.0, 0.0, 0.0)
         v = (-5.0, 0.0, 0.0)
         zem = (0.0, 0.0, 10.0)
         late = guidance.one_law_command(env, r, v, 5.0, 15.0, cfg, zem, None, 0.5)
-        self.assertAlmostEqual(late.demand, 0.24 * 10.0 * 25.0 / 89.0,
-                               places=6)
+        self.assertAlmostEqual(late.demand, 0.24 * 10.0, places=6)
         early = guidance.one_law_command(env, r, v, 20.0, 15.0, cfg, zem, None, 0.5)
         self.assertAlmostEqual(early.demand, cfg.LANDING_ZEM_GAIN / 400.0
-                               * 10.0 * 400.0 / 464.0, places=6)
-        touch = guidance.one_law_command(env, r, v, 0.01, 15.0, cfg, zem, None, 0.5)
-        self.assertLess(touch.demand, 1e-4)
+                               * 10.0, places=6)
+        # Within one nose response of touchdown nothing can be braked.
+        touch = guidance.one_law_command(env, r, v, 1.9, 15.0, cfg, zem, None, 0.5)
+        self.assertLess(touch.demand, 1e-9)
+        # A huge miss late asks for no more speed than can be braked.
+        big = guidance.one_law_command(env, r, v, 4.0, 15.0, cfg,
+                                       (0.0, 0.0, 1e4), None, 0.5)
+        self.assertLessEqual(big.demand / 0.5, 15.0 * math.sin(math.radians(
+            cfg.LANDING_MAX_TILT_DEG)) * 2.0 + 1e-6)
         self.assertLess(vec.dot(late.direction, (0.0, 0.0, 1.0)), 0.0)
 
     def test_burn_offset_tilts_the_burn(self):
@@ -622,30 +627,21 @@ class TestGuidance(unittest.TestCase):
             cfg.LANDING_MAX_TILT_DEG + 1e-6)
 
     def test_the_landing_burn_stops_steering_before_it_lands(self):
-        """Both gains diverge at touchdown; neither may reach the vehicle.
-
-        An unbounded lateral command in the last second is LOG7's tipped
-        booster by another route, so the law stops steering below
-        LANDING_DIVERT_MIN_ALT_M and the floor under t_go holds everywhere
-        above it.
-        """
+        """At zero time-to-go the command is upright, and a zero time-to-go
+        high up produces no wild command: no sideways speed can be braked."""
         env = FakeEnv()
         cfg = Config()
-        r = state_above_pad(cfg.LANDING_DIVERT_MIN_ALT_M - 1.0)[0]
+        r = state_above_pad(3.0)[0]
         v = (-20.0, 0.0, 5.0)
-        aim = guidance.terminal_command(
-            env, r, v, cfg.LANDING_DIVERT_MIN_ALT_M - 1.0, 0.0, 25.0,
-            cfg).direction
-        # Within the cone round vertical, whatever retrograde does: it
-        # swings to the horizontal as the descent stops (LOG10237).
-        self.assertLessEqual(vec.angle_between(aim, vec.unit(r)),
-                             cfg.LANDING_MAX_TILT_DEG + 1e-6)
-        # And well above it, a zero time-to-go must not produce a wild command.
+        aim = guidance.terminal_command(env, r, v, 3.0, 0.0, 25.0, cfg,
+                                        (0.0, 0.0, 300.0), null_rate=0.5)
+        self.assertLessEqual(vec.angle_between(aim.direction, vec.unit(r)),
+                             cfg.LANDING_UPRIGHT_TILT_DEG + 1e-6)
         high = guidance.terminal_command(env, state_above_pad(2000.0)[0],
-                                         v, 2000.0, 0.0, 25.0, cfg).direction
-        self.assertLessEqual(
-            vec.angle_between(high, vec.unit(vec.scale(v, -1.0))),
-            cfg.LANDING_MAX_TILT_DEG + 1e-6)
+                                         v, 2000.0, 0.0, 25.0, cfg,
+                                         (0.0, 0.0, 300.0), null_rate=0.5)
+        self.assertLessEqual(vec.angle_between(high.direction, vec.unit(r)),
+                             cfg.LANDING_UPRIGHT_TILT_DEG + 1e-6)
 
     def test_terminal_guidance_can_be_switched_off(self):
         """LANDING_TERMINAL_GUIDANCE=False is the pure-retrograde burn."""
@@ -992,7 +988,7 @@ class TestTerminalOnPrediction(unittest.TestCase):
         # back the other way.
         zem = (0.0, 0.0, 200.0)
         cmd = guidance.terminal_command(self.env, r, v, 1000.0, 12.0, 15.0,
-                                        self.cfg, zem)
+                                        self.cfg, zem, null_rate=0.5)
         retrograde = vec.unit(vec.scale(v, -1.0))
         lean = vec.sub(cmd.direction, vec.scale(retrograde,
                                                 vec.dot(cmd.direction, retrograde)))
@@ -1002,7 +998,7 @@ class TestTerminalOnPrediction(unittest.TestCase):
     def test_a_prediction_on_the_pad_asks_for_no_tilt(self):
         r, v = state_above_pad(1000.0, (-200.0, 0.0, 10.0))
         cmd = guidance.terminal_command(self.env, r, v, 1000.0, 12.0, 15.0,
-                                        self.cfg, (0.0, 0.0, 0.0))
+                                        self.cfg, (0.0, 0.0, 0.0), null_rate=0.5)
         retrograde = vec.unit(vec.scale(v, -1.0))
         self.assertAlmostEqual(vec.angle_between(cmd.direction, retrograde),
                                0.0, places=6)
@@ -1012,37 +1008,39 @@ class TestTerminalOnPrediction(unittest.TestCase):
         retrograde = vec.unit(vec.scale(v, -1.0))
         # A big miss and plenty of thrust: unbounded, this leans hard.
         loose = guidance.terminal_command(self.env, r, v, 1000.0, 12.0, 15.0,
-                                          self.cfg, (0.0, 0.0, 400.0), 20.0)
+                                          self.cfg, (0.0, 0.0, 400.0), 20.0,
+                                          null_rate=0.5)
         self.assertGreater(vec.angle_between(loose.direction, retrograde), 1.0)
         # Same demand with no throttle to spare: the braking wins.
         tight = guidance.terminal_command(self.env, r, v, 1000.0, 12.0, 15.0,
-                                          self.cfg, (0.0, 0.0, 400.0), 0.0)
+                                          self.cfg, (0.0, 0.0, 400.0), 0.0,
+                                          null_rate=0.5)
         self.assertAlmostEqual(vec.angle_between(tight.direction, retrograde),
                                0.0, places=6)
 
     def test_the_command_stands_up_near_the_ground(self):
-        # 2.5 m/s down and 2 m/s sideways, 3 m up: retrograde is ~39 deg off
-        # vertical, and the cone alone would land it leaning 15.
+        # 2.5 m/s down and 2 m/s sideways, 3 m up, at touchdown: the command
+        # is inside LANDING_UPRIGHT_TILT_DEG of vertical; a nose response
+        # (1 / rate) or more out, the cone is open.
         r, v = state_above_pad(3.0, (-2.5, 0.0, 2.0))
         up = vec.unit(r)
-        saved = self.cfg.LANDING_UPRIGHT_ALT_M
-        self.cfg.LANDING_UPRIGHT_ALT_M = 0.0
-        loose = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
-                                          self.cfg)
-        self.assertGreater(vec.angle_between(loose.direction, up), 10.0)
-        self.cfg.LANDING_UPRIGHT_ALT_M = 30.0
         self.cfg.LANDING_UPRIGHT_TILT_DEG = 2.0
-        upright = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
-                                            self.cfg)
+        upright = guidance.terminal_command(self.env, r, v, 3.0, 0.0, 10.0,
+                                            self.cfg, null_rate=0.5)
         self.assertLessEqual(vec.angle_between(upright.direction, up),
-                             2.0 + 0.1 * 28.0 + 1e-6)
-        self.cfg.LANDING_UPRIGHT_ALT_M = saved
+                             2.0 + 1e-6)
+        half = guidance.terminal_command(self.env, r, v, 3.0, 1.0, 10.0,
+                                         self.cfg, null_rate=0.5)
+        self.assertLessEqual(vec.angle_between(half.direction, up),
+                             2.0 + 0.5 * (2 * self.cfg.LANDING_MAX_TILT_DEG
+                                          - 2.0) + 1e-6)
 
     def test_the_tilt_is_bounded(self):
         r, v = state_above_pad(1000.0, (-200.0, 0.0, 10.0))
         self.cfg.LANDING_MAX_TILT_DEG = 15.0
         cmd = guidance.terminal_command(self.env, r, v, 1000.0, 3.0, 5.0,
-                                        self.cfg, (0.0, 0.0, 9000.0))
+                                        self.cfg, (0.0, 0.0, 9000.0),
+                                        null_rate=0.5)
         retrograde = vec.unit(vec.scale(v, -1.0))
         self.assertLessEqual(vec.angle_between(cmd.direction, retrograde),
                              15.0 + 1e-6)
@@ -1075,7 +1073,7 @@ class TestNoGoAround(unittest.TestCase):
         self.assertEqual(self.command(0.3, 7.4, +1.0), 0.0)
 
     def test_it_cuts_the_moment_the_descent_is_arrested(self):
-        low = self.cfg.LANDING_NULL_ALT_M - 10.0
+        low = 240.0
         self.assertEqual(self.command(low, 5.0, 0.0), 0.0)
         self.assertEqual(self.command(low, 35.0, +2.0), 0.0)
 
@@ -1084,12 +1082,10 @@ class TestNoGoAround(unittest.TestCase):
         for height, speed in ((40.0, 20.0), (10.0, 7.0), (3.0, 3.0)):
             self.assertGreater(self.command(height, speed, -speed), 0.0)
 
-    def test_it_does_not_reach_up_where_a_burn_is_still_being_flown(self):
-        """High up, an ascending vehicle is a different situation entirely."""
-        # Fast enough to be *above* the profile, so the throttle is
-        # genuinely open and the guard is the only thing that could shut it.
-        high = self.cfg.LANDING_NULL_ALT_M + 500.0
-        self.assertGreater(self.command(high, 220.0, +5.0), 0.0)
+    def test_climbing_gets_no_thrust_at_any_height(self):
+        """The burn's base is within the attitude rate of vertical when
+        climbing, so thrust only adds climb -- high up as well as low."""
+        self.assertEqual(self.command(750.0, 220.0, +5.0), 0.0)
 
     def test_a_slow_arrival_a_metre_up_gets_a_hover_and_no_more(self):
         """LOG446's tick: 1.6 m, descending 3.5 m/s, and it asked for 0.95.
@@ -1441,14 +1437,10 @@ class TestTwoAxisAeroSteer(unittest.TestCase):
 
 
 class TestTerminalVelocityNulling(unittest.TestCase):
-    """The last stretch of the burn stops aiming and starts stopping.
+    """The burn's one law near the ground: it nulls the sideways speed at the
+    attitude rate, and the aim may ask for no speed it could not brake."""
 
-    A divert that chases the offset all the way down hands the legs whatever
-    sideways speed the chase built up, and that is what the in-game divert
-    died of -- 3.4 m/s at 16 m up, a toppled booster, and a lit engine
-    throwing it back to 950 m.  Below LANDING_NULL_ALT_M the position term is
-    gone and only the velocity term remains.
-    """
+    RATE = 0.5
 
     def setUp(self):
         self.env = FakeEnv(atmosphere=True)
@@ -1460,15 +1452,12 @@ class TestTerminalVelocityNulling(unittest.TestCase):
         return r, v
 
     def test_low_down_it_leans_against_the_lateral_speed(self):
-        r, v = self.low(self.cfg.LANDING_NULL_ALT_M - 50.0, (0.0, 4.0))
-        cmd = guidance.terminal_command(self.env, r, v, 
-                                        self.cfg.LANDING_NULL_ALT_M - 50.0,
-                                        6.0, 15.0, self.cfg)
-        retrograde = vec.unit(vec.scale(v, -1.0))
-        lean = vec.project_out(cmd.direction, retrograde)
+        r, v = self.low(200.0, (0.0, 4.0))
+        cmd = guidance.terminal_command(self.env, r, v, 200.0, 6.0, 15.0,
+                                        self.cfg, null_rate=self.RATE)
+        sideways = vec.project_out(cmd.direction, vec.unit(r))
         # +z is the way it is drifting, so the tilt has to go -z.
-        self.assertLess(lean[2], 0.0)
-        self.assertGreater(cmd.demand, 0.0)
+        self.assertLess(sideways[2], 0.0)
 
     def test_an_ascending_booster_is_not_pointed_down(self):
         """LOG10237: overshot into a climb at 8 m; retrograde pointed down."""
@@ -1476,39 +1465,29 @@ class TestTerminalVelocityNulling(unittest.TestCase):
         r = state_above_pad(height)[0]
         v = (2.4, 0.0, 6.0)            # climbing, drifting
         cmd = guidance.terminal_command(self.env, r, v, height, 3.0, 0.0,
-                                        self.cfg)
+                                        self.cfg, null_rate=self.RATE)
         self.assertLess(vec.angle_between(cmd.direction, vec.unit(r)),
                         self.cfg.LANDING_MAX_TILT_DEG + 1e-6)
 
-    def test_low_down_it_ignores_the_offset_entirely(self):
-        """Same state, wildly different aiming signals, identical command."""
-        height = self.cfg.LANDING_NULL_ALT_M - 50.0
-        r, v = self.low(height, (0.0, 4.0))
-        plain = guidance.terminal_command(self.env, r, v, height, 6.0, 15.0,
-                                          self.cfg)
-        # A 400 m predicted miss the other way must not pull it off the null.
-        with_zem = guidance.terminal_command(self.env, r, v, height, 6.0, 15.0,
-                                             self.cfg, (0.0, 0.0, -400.0))
+    def test_too_late_to_brake_the_aim_asks_for_nothing(self):
+        """Within one nose response of touchdown no sideways speed can be
+        braked, so a 400 m predicted miss does not move the command."""
+        r, v = self.low(30.0, (0.0, 4.0))
+        plain = guidance.terminal_command(self.env, r, v, 30.0, 1.5, 15.0,
+                                          self.cfg, (0.0, 0.0, 0.0),
+                                          null_rate=self.RATE)
+        with_zem = guidance.terminal_command(self.env, r, v, 30.0, 1.5, 15.0,
+                                             self.cfg, (0.0, 0.0, -400.0),
+                                             null_rate=self.RATE)
         self.assertAlmostEqual(
             vec.angle_between(plain.direction, with_zem.direction), 0.0,
             places=6)
 
-    def test_a_stopped_booster_is_left_on_retrograde(self):
-        height = self.cfg.LANDING_NULL_ALT_M - 50.0
-        r, v = self.low(height, (0.0, self.cfg.LANDING_HVEL_TOL / 2.0))
-        cmd = guidance.terminal_command(self.env, r, v, height, 6.0, 15.0,
-                                        self.cfg, (0.0, 0.0, 400.0))
-        retrograde = vec.unit(vec.scale(v, -1.0))
-        self.assertAlmostEqual(vec.angle_between(cmd.direction, retrograde),
-                               0.0, places=6)
-        self.assertEqual(cmd.demand, 0.0)
-
     def test_high_up_it_still_aims(self):
-        """The nulling is a floor on the law, not a replacement for it."""
-        height = self.cfg.LANDING_NULL_ALT_M + 500.0
-        r, v = self.low(height, (0.0, 0.0))
-        cmd = guidance.terminal_command(self.env, r, v, height, 12.0, 15.0,
-                                        self.cfg, (0.0, 0.0, 400.0))
+        r, v = self.low(750.0, (0.0, 0.0))
+        cmd = guidance.terminal_command(self.env, r, v, 750.0, 12.0, 15.0,
+                                        self.cfg, (0.0, 0.0, 400.0),
+                                        null_rate=self.RATE)
         lean = vec.project_out(cmd.direction, vec.unit(vec.scale(v, -1.0)))
         self.assertLess(lean[2], 0.0, "leaned away from the overshoot")
 

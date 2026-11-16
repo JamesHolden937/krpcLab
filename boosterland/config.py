@@ -352,25 +352,7 @@ class Config:
                                             # flip it once, then give up
     LANDING_TERMINAL_GUIDANCE: bool = True   # steer the landing burn; see
                                             # guidance.terminal_command
-    LANDING_DIVERT_ON_PREDICTION: bool = True    # steer on the propagator's
-                                            # predicted touchdown rather than
-                                            # on a linear extrapolation of the
-                                            # current state; see
-                                            # guidance.terminal_command
     LANDING_ZEM_GAIN: float = 6.0           # position term (double-integrator optimal)
-    LANDING_ZEV_GAIN: float = 4.0           # velocity term; 6/4 is the energy solution
-    LANDING_TGO_MIN_S: float = 2.5          # floor under time-to-go, or gains blow up
-    LANDING_NULL_ALT_M: float = 250.0       # below this the steering stops
-                                            # aiming and only nulls the
-                                            # lateral speed, so the legs
-                                            # arrive going straight down
-    LANDING_HVEL_TOL: float = 0.3           # lateral speed that counts as nulled
-    LANDING_DIVERT_MIN_ALT_M: float = 4.0   # floor under the nulling: stand on
-                                            # vertical for the last few m
-    LANDING_DIVERT_MAX_ALT_M: float = 2500.0  # nor above this: see terminal_command
-    LANDING_ONE_LAW: bool = False           # one steering law ignition to
-                                            # touchdown, no altitude bands:
-                                            # see guidance.one_law_command
     LANDING_PREDICT_TRACKING: bool = False  # the burn's prediction flies the
                                             # nose's measured tracking error
                                             # (thrust along it, and its lift),
@@ -383,10 +365,9 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
-    LANDING_UPRIGHT_ALT_M: float = 50.0     # leg height below which the
-                                            # burn's whole command narrows
-    LANDING_UPRIGHT_TILT_DEG: float = 2.0   # ... to this at the ground; see
-                                            # guidance.terminal_command
+    LANDING_UPRIGHT_TILT_DEG: float = 2.0   # the burn's command narrows to
+                                            # this at touchdown, over the last
+                                            # 1/rate; see guidance.terminal_command
     LANDING_SLEW_SHARE: float = 0.25        # s: the burn's command moves at most
                                             # this many seconds of the vehicle's
                                             # angular acceleration per second
@@ -397,7 +378,6 @@ class Config:
                                             # worst 90 v 112 but median 56 v 32
     LANDING_SLEW_MIN_DEG_S: float = 5.0     # floor under the slew rate (none is
                                             # applied before a torque is read)
-    LANDING_DIVERT_GAIN: float = 0.12       # degrees of tilt per metre of miss
     LANDING_THROTTLE_GAIN: float = 6.0      # m/s^2 of trim per m/s of speed
                                             # error; the throttle is this over
                                             # max_accel.  It was 0.12 throttle
