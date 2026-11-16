@@ -1289,3 +1289,39 @@ Sim: impact 6.5 -> 4.4 m/s, ttl 0 at contact. Flown as law-1115 against LANDING_
 law-1115 (3b3941b defaults v LANDING_PREDICT_TRACKING) killed at 18/72 flights, unread: the user ruled that nothing
 may be flown while the burn rests on any ship-fitted constant (SUICIDE_MARGIN, TOUCHDOWN_SPEED, flare, slew, the
 attitude rate from kRPC's time_to_peak). Root CLAUDE.md rule. The open list is in HANDOFF.
+
+### 2026-11-15 night: every fitted constant replaced; fin2 is the target (meas, nose, gen, gen2, gen3-1115)
+
+The user: qs_finbooster2 only until it flies on general formulas (boosterland/CLAUDE.md); the heavy is probably
+fundamentally problematic. Then: check the whole autopilot for fitted constants before building anything more.
+
+meas-1115 (7142919, burn constants from measurements; fin3/fin/heavy, 12 each): fin3 951 m, fin 1097 m, heavy 26 m.
+The first-order attitude fit read the nose 3-10x slow (kRPC's PI loop follows a moving command with no standing
+error: LOG17411 err 2.2 deg at cw 6.9 deg/s, a ~0.3 s lag, fitted 0.38 /s) and the lateral share 0.25 made a ~1 km
+taper: lit at 7.1 km, the base went vertical with 270 m/s sideways. Fit replaced by a delay fit; share 0.5.
+
+nose-1115 (fin2, 12 an arm): modelled nose 28.9 m v nose-as-command 27.8, td hs ~16 m/s both. Deleted. The td hs
+was the aim asking for sideways speed the null (at `rate`, not at full tilt) cannot remove: capped since.
+
+Audit (docs/boosterland/constants.md) and replacements, commits 0da9516..0802b29: deadbands from the prediction's
+scatter (common.jitter), RCS relay from the nose's hunt and trail, boostback exit inside the noise and a
+proportional taper over measured reaction times, brakes closed until the solved height then open (Newton law
+deleted), brakes_settled by drag probe, aero probe at the holdable/commanded angle, tracking samples settled over
+SETTLE_LAGS lags, gear lead from deploy time, upright lean from the legs' tip angle, hover cut deleted.
+
+gen-1115 (fa077a3^, fin2 aim v simple): 472 / 505 m, all long east, made before the burn: the jitter (mean square
+of first differences) read the boostback burn's own 750 m/tick walk as noise (band 1.5 km, exit +369 m), the lag
+fit ran away to 3.5 s (each longer delay dropped the largest errors), and a ~1 deg standing pointing error was never
+"settled" against a sub-degree scatter, so drag was never re-swept and neither aero steer nor late brakes acted.
+Fixed (fa077a3): second-difference median jitter, common-range lag scoring, valve/pointing band = NOISE_SIGMAS x
+(hunt + command rate x lag + scatter). Sim (wing): boostback exits 4 m out, re-sweep, steers, lands 1 m.
+
+gen2-1115 (fa077a3): **predicted miss at 5 km 14-16 m (best yet)**; td 76 aim / 60 simple, lost 1 / 4, td hs 16 /
+12, tilt 14 / 19. LOG17462: planned on 96.6 % of full thrust, the taper rate following a lag fit that swung
+0.19-2.5 /s in the burn; 77 m/s at 28 m at full throttle. Fix (0802b29): LANDING_HEADROOM 0.85 (policy, the old
+1.18 margin's inverse) and the taper rate held from ignition.
+
+gen3-1115 (0802b29): worse -- td 116 aim / 98 simple, lost 5 / 0; pred 13-24 at 5 km, 75-96 at 2.5 km. LOG17485
+(31 m): the burn's predicted long jumps +57 -> +83 -> +133 -> +11 -> -44 between log lines, i.e. the burn
+prediction is noisy, not drifting; and the vehicle fell behind the taper at ~176 m (thr 0.40 at 342 m, 78 m/s at
+176 m with a 60 m/s target).
