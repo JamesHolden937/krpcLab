@@ -182,3 +182,14 @@ craft", "you shouldn't have to hope it lands somewhere").
   ~1 deg, LOG13036). Not yet flown: model2-1019 was stopped part-way.
 - Small stack: predicted 10.34 t, flew 10.17; stretch 10.26 / 10.11 (both
   before the turn-start fix).
+
+## 2026-11-16/17: the budget flies boosterland's prediction
+
+qs_finbooster2's propellant (the 11-12 live separation) was sized by a cheaper landing than today's; the booster runs
+dry in the burn. `budget.recovery` now lands by boosterland's `predict_landing` (drag-aware fall, its trigger and
+burn law, propellant spent) and carries the boostback on until that prediction is on the pad. Its fall uses the
+booster's own Cd*A as boosterland measured it (`boosterland/dragcache`); the stack's zero-alpha table, the only one
+the ascent can read, is 2-3x high and made the return look cheap. On fin2's farm separation: lit at 765 m/s (flown
+~750), 1.8 t short (flown: dry, ~120 m/s short); the boostback model is still ~3 t optimistic. `SEP_SAVE` writes the
+separation save under `HANDOFF=booster`. The user's stack craft is in `saves/craft/VAB/Heavy Shuttle.craft`; no pad
+save yet, nothing flown.

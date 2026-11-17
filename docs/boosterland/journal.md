@@ -1325,3 +1325,14 @@ gen3-1115 (0802b29): worse -- td 116 aim / 98 simple, lost 5 / 0; pred 13-24 at 
 (31 m): the burn's predicted long jumps +57 -> +83 -> +133 -> +11 -> -44 between log lines, i.e. the burn
 prediction is noisy, not drifting; and the vehicle fell behind the taper at ~176 m (thr 0.40 at 342 m, 78 m/s at
 176 m with a 60 m/s target).
+
+### 2026-11-16/17: the burn's prediction was right; fin2 runs dry (bp1-1116, LOG17509-17532)
+
+The user: fix the burn's prediction, not the burn. `DIAG_BURN` (25f0b56) logs the propagator's burn at the trigger
+and the flown burn per tick (`burnplan.py`). bp1-1116 (qs_finbooster2, 12 simple + 12 aim, a1079928-era code):
+the plan's burn travel was within -29..+114 m of the flown one (two outliers, +223/+287), but **24/24 ran dry** at
+80-310 m, falling 77-107 m/s with 20-32 m/s sideways; older fingerprints show the same (21/24 on 9135d2fa, 24/24 on
+ee8dd7eb). The misses and hard touchdowns are the fall after the tanks empty, which no prediction modelled.
+b476e09: the burn propagation spends propellant (measured Isp), stops at the engines' dry mass, waits the reaction
+time and lags the thrust by the nose lag; DIAG_BURN now logs one plan per variant. 92037ed: boosterland records its
+measured Cd*A curve per booster (`dragcache`) for the ascent's budget. Unflown.
