@@ -37,6 +37,7 @@ from dataclasses import fields
 
 import krpc
 
+from boosterland import dragcache
 from common import vec
 from common.idle import IdleGimbals, VacuumSurfaces
 from common import cli
@@ -725,7 +726,48 @@ class Ascent:
         craft = turnshape.Craft(None, None, 0.0, 0.0, None, False,
                                 heights, speeds, table)
         self.fall_cda = (lambda h, v: turnshape.cda_at(craft, h, v))
+        own = self.booster_drag()
+        if own is not None:
+            self.fall_cda = own
         return self._drag
+
+    def booster_drag(self):
+        """The booster's own Cd*A(height, speed), from the curve boosterland
+        measured the last time it flew (``boosterland.dragcache``), or None
+        (logged) when it has not flown: the fall is then budgeted on the
+        stack's drag, which is 2-3 times the booster's and makes the return
+        look cheap."""
+        key = dragcache.booster_key(self.stack.parts)
+        curve = dragcache.lookup(key)
+        if curve is None:
+            self.log.event(0.0, "booster drag: none measured for %s -- the "
+                           "fall is budgeted on the stack's zero-alpha drag"
+                           % key)
+            return None
+        machs, areas = curve
+        body, pad_alt = self.body, self.pad_alt
+        step = 1000.0
+        depth = body.atmosphere_depth if body.has_atmosphere else 0.0
+        sound = []
+        for k in range(int(max(0.0, depth - pad_alt) / step) + 2):
+            c = 340.0
+            try:
+                p = body.pressure_at(pad_alt + k * step)
+                rho = body.density_at(pad_alt + k * step)
+                if p > 0.0 and rho > 0.0:
+                    c = math.sqrt(1.4 * p / rho)
+            except Exception:           # noqa: BLE001
+                pass
+            sound.append(c)
+        self.log.event(0.0, "booster drag: %s measured, %d bins, Cd*A %s "
+                       "at M%s" % (key, len(machs),
+                                   "/".join("%.1f" % a for a in areas),
+                                   "/".join("%.2f" % m for m in machs)))
+
+        def cda(h, v):
+            k = min(len(sound) - 1, max(0, int(h / step)))
+            return dragcache.interp(machs, areas, v / sound[k])
+        return cda
 
     def solve_turn_shape(self, ut):
         """Set MechJeb's classic turn shape to the one ``turnshape.solve``
@@ -785,7 +827,8 @@ class Ascent:
                               flip_rate_deg=cfg.FLIP_RATE_DEG_S)
         craft = turnshape.Craft(
             booster, b_engines, upper_mass, upper_prop, u_engines,
-            any(e.active for e in stack.upper), heights, speeds, table)
+            any(e.active for e in stack.upper), heights, speeds, table,
+            fall_cda=self.fall_cda)
         best, flown = turnshape.solve(craft, world, path)
         curve = " ".join("%.2f:%.1f" % (r.shape, r.mass / 1e3)
                          for r in sorted(flown, key=lambda r: r.shape)[::2])
@@ -1136,6 +1179,13 @@ def fly_booster(conn, ascent, args_set, pacing_game_time=False):
         time.sleep(0.05)
     else:
         raise RuntimeError("switch to the booster timed out")
+    if ascent.cfg.SEP_SAVE:
+        try:
+            sc.save(ascent.cfg.SEP_SAVE)
+            ascent.log.event(sc.ut, "separation saved as %s"
+                             % ascent.cfg.SEP_SAVE)
+        except Exception as exc:        # noqa: BLE001
+            ascent.log.event(sc.ut, "separation save failed: %r" % exc)
     bcfg = booster_overrides(BoosterConfig(), args_set)
     if pacing_game_time:
         bcfg.LOOP_PACING_GAME_TIME = True

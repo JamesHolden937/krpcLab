@@ -63,6 +63,9 @@ class Craft:
     heights: list = field(default_factory=list)
     speeds: list = field(default_factory=list)
     cda: list = field(default_factory=list)
+    # The booster's own Cd*A(height, speed) for its fall home, as boosterland
+    # measured it (``boosterland.dragcache``); None: the stack's table.
+    fall_cda: object = None
 
 
 @dataclass
@@ -175,7 +178,8 @@ def fly(craft, world, path, shape, dt=0.2, max_s=900.0, recover_every=1.0,
     the body, so the pad's own angle omega*t comes off."""
     R = world.body.radius
     mu = world.body.mu
-    fall_cda = ((lambda h, v: cda_at(craft, h, v)) if craft.cda else None)
+    fall_cda = craft.fall_cda or (
+        (lambda h, v: cda_at(craft, h, v)) if craft.cda else None)
     r, theta = R, 0.0
     vr, vt = 0.0, world.omega * R
     b = craft.booster

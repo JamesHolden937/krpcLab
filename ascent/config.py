@@ -107,6 +107,10 @@ class Config:
     HANDOFF: str = "upper"
     # Seconds the switch to the booster may take.
     SWITCH_TIMEOUT_S: float = 10.0
+    # HANDOFF=booster: also quicksave the booster's separation under this
+    # name ("": none), the farm's equivalent of FMRS's separation save, so
+    # the booster can be flown again from it (testInstances/fly.sh --save).
+    SEP_SAVE: str = ""
 
     # --- Engine grouping (passed to boosterland.engines) --------------------
     ENGINE_AXIS_TOL_M: float = 0.3

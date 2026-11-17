@@ -25,6 +25,7 @@ from . import gearcache, guidance, trajectory
 from common import rcs as rcs_valve
 from .config import Config, apply_overrides, defaults_fingerprint
 from .engines import allocate, group_engines
+from . import dragcache
 from .environment import Environment
 from common.panel import ACCENT_BOOSTER, ControlPanel
 from .gui import telemetry_lines
@@ -604,6 +605,7 @@ class Autoland:
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
         self.burn_plan_ut = None        # DIAG_BURN: when the plan was logged
+        self.drag_key = None            # dragcache's key for this booster
         self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
                                         # tick scatter: every deadband
         self.rcs_accel = None           # m/s^2 the RCS translates at (read
@@ -630,6 +632,10 @@ class Autoland:
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
         if state in (COAST, LANDING_BURN):
             self.read_dry_mass(ut, state)
+        if state == COAST and self.drag_key is None:
+            # The coast burns nothing and waits: the part reads are free here.
+            self.drag_key = dragcache.booster_key(
+                lambda: self.vessel.parts.all) or ""
         if (self.cfg.KRPC_AP_DIAG and state == COAST
                 and self.cfg.KRPC_AP_DIAG_BELOW_M <= 0.0):
             # The boostback's record first (LOG<n>.bb.ap.csv): at shutdown
@@ -2532,6 +2538,22 @@ class Autoland:
         except Exception as exc:                    # noqa: BLE001
             self.log.event(0.0, "kRPC diagnostic log unreadable: %r" % exc)
 
+    def record_drag(self, ut):
+        """Leave the Cd*A curve this flight measured in ``dragcache``, for the
+        ascent of the next stack carrying this booster to budget with."""
+        curve = self.env.curve_snapshot()
+        if not self.drag_key or len(curve) < 2:
+            return
+        try:
+            dragcache.record(self.drag_key, [m for m, _ in curve],
+                             [a for _, a in curve],
+                             note=self.log.path.split("/")[-1])
+            self.log.event(ut, "drag curve recorded (%s, %d bins, M%.2f-%.2f)"
+                           % (self.drag_key, len(curve), curve[0][0],
+                              curve[-1][0]))
+        except OSError as exc:
+            self.log.event(ut, "drag curve not recorded: %r" % exc)
+
     def shutdown(self, reason):
         """Hand control back to the player in a safe, predictable state."""
         ut = 0.0
@@ -2555,6 +2577,7 @@ class Autoland:
         except Exception as exc:                     # game closed / vessel gone
             self.log.event(ut, "shutdown control error: %r" % exc)
         self.log.event(ut, "shutdown: %s" % reason)
+        self.record_drag(ut)
         self.log.event(ut, self.loop_rate.report())
         self.telemetry.close()
         self.gui.close()
