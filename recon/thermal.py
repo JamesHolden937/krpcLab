@@ -94,7 +94,14 @@ class PartHeat:
 
     def peak(self, rho, speed, mach, t_env, duration, step=1.0):
         """The highest fraction of either limit this part reaches over
-        ``duration`` s at (rho, speed): (frac, t_s, t_i at the end)."""
+        ``duration`` s at (rho, speed): (frac, t_s, t_i at the end); 2 when
+        the integration runs away."""
+        try:
+            return self._peak(rho, speed, mach, t_env, duration, step)
+        except (OverflowError, ValueError, ZeroDivisionError):
+            return 2.0, self.t_s, self.t_i
+
+    def _peak(self, rho, speed, mach, t_env, duration, step):
         t_sh = shock_temperature(speed, mach)
         hc = coefficient(rho, speed, mach) * self.a_c
         ts, ti = self.t_s, self.t_i

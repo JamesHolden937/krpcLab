@@ -981,7 +981,8 @@ def run(conn, cfg, log, autostart=False):
         reason = "interrupted (SIGINT)"
         raise
     except Exception as exc:                            # noqa: BLE001
-        log.event(0.0, "FATAL %r" % exc)
+        import traceback
+        log.event(0.0, "FATAL %r\n%s" % (exc, traceback.format_exc()))
         reason = "error: %r" % exc
     finally:
         pilot.shutdown(reason)
