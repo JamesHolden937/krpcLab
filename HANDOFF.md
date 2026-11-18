@@ -15,101 +15,69 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-17 night: boosterland -- the burn's prediction error: four fixes, the error not closed; how to confirm a prediction
+## 2026-11-17 late: boosterland -- the burn's prediction: drag curve fixed at its source, burn lift measured, not yet closed
 
-State: **boosterland defaults fingerprint 970e99ac** (was a1079928: two new off-by-default flags, below). Ascent
-a68b023d unchanged. Everything committed on main (last: 626c480), **not pushed**; farm up, idle (restart it before
-the next comparison). howItWorks.pdf (boosterland) stale. `tools/instancebench.py`, `docs/krpcFeatureRequests.md`
-are not ours: leave them. Fly booster work on `qs_finbooster4` only.
+State: **boosterland defaults fingerprint d8a430b8** (was 970e99ac). Everything committed on main (last: 5752bef + this
+handoff), pushed. Farm up; **batch lift3-1117 was still flying at wrap-up** (24 flights, ends ~2207; read it, below).
+howItWorks.pdf (boosterland) **stale** (not regenerated this session). `tools/instancebench.py`,
+`docs/krpcFeatureRequests.md` are not ours: leave them. Worktree `.wt-burnlift` is merged; remove it. Fly booster work
+on `qs_finbooster4` only. Full measurements: `docs/boosterland/journal.md`, 2026-11-17 late.
 
-**The question (the user's):** is the booster's landing prediction accurate, and when prediction and flight disagree,
-is it a bad model or bad flying? Root CLAUDE.md now has the rule: a prediction error found is fixed first, at its
-source, never hidden.
+**Found and fixed at the source (defaults now):**
+1. **The burn flew the coast's fins.** Every drag probe sees the fins as they sit; the coast holds its angle of
+   attack on them, pinned most of the way down, so the curve read 1.3-2.5x the drag of the booster with fins
+   neutral (drg-1117: M2.4 8.3 -> 3.1 m^2 within a second of holding them). The burn steers on the gimbals with the
+   fins near neutral. Now `Environment.burn_drag_area_at`: a burn curve swept in the coast with the fins held
+   neutral (`Autoland.sweep_burn_curve` / `sweep_neutral`), flown by `_fly_landing_burn` only; the coast keeps its
+   own curve.
+2. **The propagated nose aged ~1.8x the lag.** `_fly_landing_burn` held the lagged command over each 0.5 s step and
+   every RK4 substep. Now the command exactly one lag old at each substep, interpolated (`_rk4` passes substep time
+   to a `timed` thrust).
+3. **The late brakes' measurement was noise.** Its open/closed sweeps were taken with the fins steering and settled
+   the tick after the command (ratio 0.89-1.97 on one craft). Now both run inside a fins-neutral hold (ignore
+   flags, brakes stay deployed), `brakes_settled` needs the drag to have moved first, and the open and closed
+   tables are both fins-neutral.
 
-**The measured error, with the burn's aim off** (`LANDING_BURN_AIM=False`: the burn only brakes and nulls sideways
-speed, and the propagator flies that same law, so landed minus predicted is the prediction's own error). 12 flights
-each on qs_finbooster4, `boosterland/tools/predvsland.py logs/rot-<tag>.txt`:
+**Measured, behind a flag: `BURN_LIFT`** (off). The burn's body normal force at the propagated nose's angle off the
+airflow, plus drag's rise with angle (`Environment.burn_aero`, `trajectory._with_body_aero`). It's large: ~1.1 m^2
+Cn*A per degree at M2 against 3.1 m^2 drag (lad-1117 ladder; shape 0.96/1/1.09/1.24/1.42 at 1/2/4/8/15 deg, the same
+M0.6-2.0), acting opposite the nose's tilt. The fix for the old, overstated drag uncovered it: that drag had been
+cancelling it.
 
-| batch | code | landed-pred E median (sd) | N sd | plan-flown travel |
-|---|---|---|---|---|
-| noaim-1117 | before | -68 (63) | 100 | ~-50 |
-| lit-1117 | + engines lit on the trigger tick (1a8a265) | -53 (60) | 43 | ~-55 |
-| tick-1117 | + median tick interval (776de90) | -74 (55) | 32 | ~-75 |
-| unw-1117 | + coast unwind on the coast's own nose lag (c6297ff) | **-62 (67)** | 22 | ~-58 |
-| lift-1117 | + burn lift ClA0 (ff8796c) | -186 (159) | 56 | worse: **reverted (626c480)** |
+| batch (aim off, qs_finbooster4) | code | landed-pred E median (sd) | N median (sd) |
+|---|---|---|---|
+| unw-1117 (12) | session start | -62 (67) | sd 22 |
+| ncv-1117 (12) | + burn curve, re-swept every 10 s | -102 (120) | +54 (67): holds wrecked the coast |
+| lift-1117 c / l (12/12) | once-only hold / + BURN_LIFT | -68 (87) / +60 (105) | lift ~2x: the nose-age bug |
+| lift2-1117 c / l (10/10) | + nose timing | **-60 (41)** / +22 (124) | +11 (32) / +63 (76) |
+| lift3-1117 c / l (12/12) | + fins-neutral brake tables | **unread** | |
 
-Approach is westbound: E negative = long. Standard error of a 12-flight median ~17 m, so **the first three fixes
-did not move the along-track error**; only the cross-track scatter fell (N sd 100 -> 22). Each removed a real
-mismatch, kept because each is a physical correction, but **none was the ~60 m**.
+lift2's `l` scatter came from the late brakes: 9/10 opened them (5/10 in `c`), and an open-brake burn flew the
+fins-steering full curve with no lift table. That is what 5752bef fixes, and what lift3 tests.
 
-**What each fix found (all default now, no flag):**
-1. Ignition delay: the throttle opened on the tick after the trigger, after the burn's one-off entry work (dry mass,
-   gimbals, gear, RCS, DIAG plans): 0.3-0.4 s unbraked at ~420/720 m/s. Now set on the trigger tick.
-2. Taper rate: `env.control_interval` was the last tick's length; the burn's taper was held off the 0.4 s entry tick
-   (0.38-0.62 /s v the ~0.78 the prediction planned), so the burn flew slower and 1-3.7 s longer. Now the median of
-   recent ticks: burn duration matches the plan to 0.3 s.
-3. Unwind: the coast's AoA fade before ignition was timed on the *powered* nose lag (boostback, ~0.8 s); the unpowered
-   coast nose is slower, ignition was 9-13 deg off retrograde. Now `coast_lag` (a second LagFit, unpowered coast ticks)
-   times it, and the coast's predictions fly the same fade (`trajectory.unwind_share`). Ignition now 0-5 deg off on
-   10/12; **the coast lag fit is noisy (0.16-3.28 s)** and the two flights it read short (LOG17619/17623, 0.22/0.33 s)
-   still lit 12.7 deg off and are the two outliers (-256, -195).
-4. Refuted: a per-Mach "zero-AoA lift" probed in the coast at nose-on-retrograde. The values flip sign bin to bin and
-   flight to flight (the coast leaves this booster's roll free), the burn flew noise. Reverted.
+**Next, in order:**
+1. **Read lift3-1117**: `for a in c l; do grep " $a qs_" logs/rot-lift3-1117.txt > logs/rot-lift3-1117-$a.txt;
+   .venv-pypy/bin/python boosterland/tools/predvsland.py logs/rot-lift3-1117-$a.txt; done`. Split by brake
+   opening (`grep -c "late brakes 0 -> "`) and check the logs' `late brakes: Cd*A open is` ratios are now
+   consistent (>1, similar across flights). If `l` is centred within its standard error (~17 m) on both axes with
+   sd near `c`'s, promote BURN_LIFT; else localise with `burnplan.py --rows` (plan v flown hs/vs).
+2. `c` alone still lands ~60 m long, consistent with the missing lift: don't call the burn curve "the fix".
+3. Watch the coast: the neutral holds cost it attitude (nose 4-29 deg off at hand-back on some flights) and the
+   late-brake measurement now holds the fins for its whole open/close cycle at the top of the coast. Check the
+   coast's predicted miss at ignition (last COAST line) hasn't grown.
+4. The coast's own lift model `K aoa|aoa|` is probed with the fins deflected; the ladder says fins-neutral normal
+   force is near-linear at small angles. Same question for the coast, once the burn is closed.
+5. Then, from the old list: the burn's aim (`LANDING_AERO_DIVERT`, `LANDING_STAND_UP`, unflown) on the corrected
+   prediction; low-thrust attitude saturation at touchdown; regenerate howItWorks.pdf.
 
-**Where the remaining ~58 m accrues** (cumulative plan-flown travel, median over unw-1117, interpolated at equal t):
--10 m by 6 s, -20 by 12 s, -38 more in the last 8 s (below ~1100 m; flown hs 4-6 m/s above the plan there).
-Ruled out offline: the propagator's step (dt 0.5 -> reaction_time removes the plan's 1.0/0.3 throttle limit cycle
-but moves travel 0.7 m; not committed), the lateral null rate (0.67 v 2.5 /s moves it 5 m).
-Not understood: frc-1117 (6 flights, DIAG force budget) found the measured d(hs)/dt matches thrust + the game's
-simulated aero force (`simulate_aerodynamic_force_at` at the real state) within 0.0-1.4 m/s^2, and the model's
-drag-along-v brakes 1-3.6 m/s^2 harder (above 2 km) -- but that size of gap would open a far larger hs gap than the
-1-2 m/s the plan-v-flown rows show early in the burn, so something offsets it. **Unresolved: bad model or the
-flown burn not flying the plan's law** (nose lag, `burn_slew_rate` slew, the touchdown cone, throttle).
-The force logging (`log_burn_forces`) runs on every DIAG_BURN tick since b21fd65 (the flag that split it off was
-reverted with ff8796c): it adds a call a tick and slowed those flights (misses -66..-247). **Split it behind its own
-flag again before any DIAG_BURN accuracy batch.**
+**Diagnostics:** `DIAG_DRAG` logs real-state Cd*A v the curve per tick, the burn force budget (moved off
+DIAG_BURN, which no longer adds that latency), and a lift ladder in the coast and at M2/1.2/0.6 in the burn. Delete
+it, or keep it as a tool, once BURN_LIFT is decided. `burn plan` variants don't toggle BURN_LIFT.
 
-**For the next agent: confirm a prediction thoroughly -- the procedure.**
-1. Measure the prediction alone: aim-off batch, 12 flights, `SAVES_LIST=qs_finbooster4 LAPS=2
-   boosterland/tools/brot.sh <tag> "n:DIAG_BURN=True,LANDING_BURN_AIM=False"` (restart the farm first, check
-   `syncSaves.sh check` and `swapon --show`), then `predvsland.py logs/rot-<tag>.txt`. The prediction is accurate when
-   landed-pred is centred within its standard error (~17 m) on both axes.
-2. Localise: `burnplan.py LOGs` (plan v flown travel and duration), `--rows` (by time and by height), and the
-   cumulative-travel-by-time table above (script it into burnplan; the trapezoid must interpolate both sides to the
-   same t -- an un-interpolated version read a fake -140 m at 2 s). `burnplan.py` was itself wrong until 1a8a265 (it
-   skipped the burn's first 0.4 s and gave the gap the wrong sign): check a tool against a hand calculation first.
-3. **Change the method: build an offline replay** (three null fixes in a row is the signal, root CLAUDE.md). Re-fly
-   `trajectory._fly_landing_burn` from each logged trigger state (the `burn plan` line's first sample, with the
-   logged m, acc, isp, lag, rate, legs; add whatever else DIAG_BURN needs to log for this) and substitute the flown
-   inputs one at a time from the `burn tick` lines: (a) the flown throttle history, (b) the flown nose direction
-   (log it: `snap.direction` is not in the tick line yet), (c) the game's aero force (`burn force`), (d) mass.
-   Whichever substitution makes the replay land where the booster landed is the cause: model term or flown law.
-   Run it on unw-1117 (LOG17612-17623; DIAG_BURN, no forces) and frc-1117 (LOG17624-17629; with forces).
-4. Fix only that term, at its source; confirm with step 1. **A fix counts only if landed-pred moves outside its
-   standard error.** A real mismatch that does not move it is noted and kept or dropped on its own merits, never
-   reported as the fix.
-5. Then the coast: the coast's lift model is `K aoa|aoa|` (K probed at the commanded angle, so any zero-angle force is
-   folded into K / aoa^2); check its predictions the same way (the coast's predicted miss at ignition v the burn's
-   plan), and steady the noisy coast lag fit (item 3 above).
-
-**Flags added this session, unflown (promote or delete after the prediction is fixed; neither has data):**
-- `LANDING_STAND_UP` (guidance.stand_up_cone): the burn's lean ramps down at its slew so the nose is upright one lag
-  before contact, and the divert asks for no sideways speed the stand-up cannot brake. Why: every one of fb4-1117's
-  12 touched down leaning 11-28 deg (9 lost parts). Even aim-off (cmd 0) touched down 2-23 deg: below ~20 m the
-  attitude saturates (`sat=1.00`) at thr 0.15-0.2 -- a separate, unexplained problem.
-- `LANDING_AERO_DIVERT` (guidance.solve_tilt): the divert credits the tilt's measured body lift (q ClA/m from
-  `lift_slope_held`): supersonic a tilt pushes the wrong way past ~2-5 deg (LOG17542: 66 sin t v -800 t^2). The
-  sideways-speed cap stays on thrust-only authority.
-- sup-1117 (d / s / sa arms) was stopped after 4 flights an arm by the user: no result.
-
-**Next, in order:** the replay (procedure step 3) -> fix the term it names -> aim-off batch to confirm -> then the
-burn's aim (`LANDING_AERO_DIVERT`, `LANDING_STAND_UP`) on the corrected prediction -> the low-thrust attitude
-saturation at touchdown. Ascent (unchanged since 11-17 evening, LOG17551): the Heavy Shuttle craft autostruts its
-three landing gears Heaviest across the booster's decoupler -- tell the user.
-
-**Traps paid for:** `burnplan.py`'s travel skipped the flown burn's first 0.4 s (fixed); the force call per tick is a
-latency (it changed the result it measured); killing a brot batch leaves `fly.sh`/flight children -- `pkillf` them and
-restart the farm; live `.sfs` files are CRLF; `quickfly.py --instance N` does not set the port.
+**Traps paid for:** a fix that removes one error can make the result worse by uncovering an offsetting one (ncv);
+`git commit -a` sweeps in `tools/instancebench.py` (not ours); a fin hold through `deflection_override` retracts
+deployed brake fins (use the ignore flags); a probe the tick after a surface command reads the old position; one
+farm instance can fail to boot (`start.sh` "not up: 2"): 10-flight arms.
 
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 

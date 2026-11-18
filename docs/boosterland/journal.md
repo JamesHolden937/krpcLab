@@ -1,5 +1,50 @@
 # boosterland journal
 
+## Session, 2026-11-17 late: the burn's prediction error -- the drag curve was the coast's fins, and the burn's body lift
+
+**Method.** Aim off throughout (`LANDING_BURN_AIM=False`), qs_finbooster4, `predvsland.py` (landed minus the last
+COAST line's prediction; E negative = long) and `burnplan.py --rows` (plan v flown hs/vs at equal t).
+
+**Where the gap opens (unw-1117, LOG17612-17623, re-read).** The first 0.4-0.6 s: flown hs +3..+8, vs -5..-11
+(less braking) -- the plan's 0.5 s-step throttle limit cycle starts at full throttle and gives it back by 1.4 s.
+After that a horizontal-only gap stays and grows (vs closes: the throttle loop holds the profile). Throttle is
+flown as commanded (delivered/max = cmd within 0.01 on every tick).
+
+**frc-1117 force budget (LOG17624-17629), re-read.** The game's aero force in the burn points 5-30 deg more
+vertical than -v, and along -v it is 0.45-0.8 of the model's drag on the five flights whose brakes stayed closed
+(LOG17629, brakes opened at 20.5 km, matches the model). The flown thrust sits 3-8 deg behind retrograde for the
+first ~4 s, then 0.3-0.7 deg (the nose lag).
+
+**drg-1117 (LOG17642-17647, DIAG_DRAG).** Fins held neutral for 2 s at M2.4, 20 km: the real-state Cd*A falls 8.3 ->
+3.1 m^2 in ~0.8 s and jumps back to 5-10 when the coast's steering takes them again (sat 1.00). The probe-altitude
+mapping is fine (map ~ real within 3-10%). In the burn the fins sit at inputs ~0.02-0.16 and Cd*A is 2.6-3.3 against
+the curve's 3.6-4.5. **Cause: the curve the burn flew was swept with the coast's fins pinned.** Fix 3e65f38: a burn
+curve swept in the coast with the fins held neutral.
+
+**ncv-1117 (LOG17648-17659, 12 flights): worse.** landed-pred E -102 sd 120, N +54 sd 67 (from -62 sd 67 / N sd 22).
+The plan now brakes horizontally *more* than the flight (hs gap +5..+25, vs gap +5..+14): the overstated drag had been
+cancelling a missing term. Also: the neutral holds every 10 s threw the coast's nose 17-25 deg off; the first sweep
+settled falsely after 0.12 s. Hold made once-only, from a settled nose, settled only after the drag has fallen (f0d5c13).
+
+**lad-1117 (LOG17660-17665): the lift ladder.** Fins neutral, nose 0-15 deg off retrograde in the vertical plane:
+normal force ~1.1 m^2 Cn*A per degree at M2 (3.1 m^2 Cd*A at 0), 1.3 at M1.2, 2.9 at M0.6; shape (normalised at 2
+deg) 0.96/1/1.09/1.24/1.42 at 1/2/4/8/15 deg, the same within ~10% from M0.6 to M2; drag x1.09 at 2 deg, x1.25 at 4,
+x1.75 at 8. Acts opposite the nose's tilt (nose behind retrograde -> pushed forward and up). Coast ladder = burn
+ladder at the same Mach. BURN_LIFT (cc91870): per-Mach slope at LANDING_MAX_TILT/8 plus the ladder's shape, applied
+at the propagated nose's angle off the airflow.
+
+**lift-1117 (24 flights, c = burn curve, l = + BURN_LIFT):** c E -68 sd 87; l E +60 sd 105 -- overcorrected ~2x.
+Cause: the propagated nose was held at the step's start (and through every RK4 substep), so it aged lag + up to 0.5 s,
+~1.8x the lag. Fixed for every burn propagation (ca1f114): the command exactly one lag old at each substep,
+interpolated.
+
+**lift2-1117 (20 flights, ksp2 did not boot):** c E -60 sd 41, N +11 sd 32; l E +22 sd 124, N +63 sd 76. Every l
+outlier had opened the late brakes (9/10 l v 5/10 c: the lift lengthens the coast's prediction, the law opens them),
+and an open-brake burn flew the full curve, swept with the fins steering, with no lift table; the brakes' open/closed
+ratio read 0.89-1.84 on one craft. Fix 5752bef: the brake measurement runs inside a fins-neutral hold (ignore flags,
+the brakes stay deployed), each wait settles only after the drag has moved, and the open and closed tables (curve and
+lift) are both fins-neutral; the coast keeps its own curve.
+
 ## Session, 2026-11-17 evening: fin2 from the user's own stack -- the burn's divert loses supersonic
 
 **Pad save and separation (LOG17537/17538).** `qs_stack_fin`: the live "Heavy Shuttle" craft on ksp1's pad
