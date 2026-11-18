@@ -143,6 +143,10 @@ class ReconPilot:
         self.last_fuel = None
         self.around = False         # going home the long way round
         self.res = self.vessel.resources
+        self.cla = None             # [(alpha rad, Cl*A m^2)], low speed
+        self.alpha_rot = 0.0
+        self.v_liftoff = 0.0
+        self.rotating = False
 
     # -- reads ------------------------------------------------------------------
     def read(self):
@@ -198,6 +202,8 @@ class ReconPilot:
                 self.engine.active = True
             except Exception as exc:                    # noqa: BLE001
                 self.log.event(ut, "engine: %r" % exc)
+        self.rho_ground = self.flight.atmosphere_density or 1.2
+        self.plan_takeoff(ut)
         self.plane.take_over(ut)
         c = self.vessel.control
         c.brakes = False
@@ -218,6 +224,140 @@ class ReconPilot:
     def finish(self, reason):
         self.exit_reason = reason
         self.finished = True
+
+    def lift_curve(self, ut):
+        """Cl*A over alpha 0..LIFT_SWEEP_MAX_DEG, from KSP's own
+        aerodynamics at the vessel's place and attitude (wings level), the
+        airflow at alpha below the nose in its plane of symmetry."""
+        cfg = self.cfg
+        ref = self.body.reference_frame
+        vf = self.vessel.reference_frame
+        sc = self.sc
+        pos = self.vessel.position(ref)
+        rot = self.vessel.rotation(ref)
+        nose = sc.transform_direction((0.0, 1.0, 0.0), vf, ref)
+        belly = sc.transform_direction((0.0, 0.0, 1.0), vf, ref)
+        rho = self.flight.atmosphere_density or 1.2
+        v = 100.0
+        q = 0.5 * rho * v * v
+        out = []
+        for deg in range(0, int(cfg.LIFT_SWEEP_MAX_DEG) + 1):
+            a = math.radians(deg)
+            d = tuple(math.cos(a) * n + math.sin(a) * b
+                      for n, b in zip(nose, belly))
+            try:
+                f = self.flight.simulate_aerodynamic_force_at(
+                    self.body, pos, tuple(v * x for x in d), rot)
+            except Exception:                           # noqa: BLE001
+                continue
+            # Lift: the force's part against the belly, square to the flow.
+            up = tuple(-b for b in belly)
+            lift_dir = tuple(u - d_ * sum(uu * dd for uu, dd in zip(up, d))
+                             for u, d_ in zip(up, d))
+            norm = math.sqrt(sum(x * x for x in lift_dir)) or 1.0
+            lift = sum(fx * lx / norm for fx, lx in zip(f, lift_dir))
+            out.append((a, lift / q))
+        self.cla = out or None
+        if self.cla:
+            peak = max(self.cla, key=lambda x: x[1])
+            self.log.event(ut, "lift curve (rho %.3f): Cl*A %s; peak %.2f m^2 "
+                           "at %.0f deg" % (rho, " ".join(
+                               "%d:%.2f" % (round(math.degrees(a)), c)
+                               for a, c in self.cla[::5]), peak[1],
+                               math.degrees(peak[0])))
+
+    def cla_at(self, alpha):
+        """Cl*A at ``alpha`` off the swept curve (linear between)."""
+        pts = self.cla or [(0.0, 0.0)]
+        if alpha <= pts[0][0]:
+            return pts[0][1]
+        for (a0, c0), (a1, c1) in zip(pts, pts[1:]):
+            if alpha <= a1:
+                return c0 + (c1 - c0) * (alpha - a0) / (a1 - a0)
+        return pts[-1][1]
+
+    def cla_max(self):
+        return max(c for _, c in self.cla) if self.cla else None
+
+    def tail_strike(self, ut):
+        """The pitch at which the aft-most low corner of any part touches
+        the runway, pivoting on the main wheels (vessel frame: y forward,
+        z down)."""
+        vf = self.vessel.reference_frame
+        wheels = set()
+        try:
+            wheels = {w.part for w in self.vessel.parts.wheels}
+        except Exception:                               # noqa: BLE001
+            pass
+        boxes = []
+        for pt in self.parts:
+            try:
+                lo, hi = pt.bounding_box(vf)
+            except Exception:                           # noqa: BLE001
+                continue
+            boxes.append((pt in wheels, lo, hi))
+        gear = [b for b in boxes if b[0]]
+        if not gear:
+            return None
+        ground_z = max(hi[2] for _, lo, hi in gear)
+        # The main wheels: the aft-most ones.
+        main_y = min((lo[1] + hi[1]) / 2 for _, lo, hi in gear)
+        best = None
+        for is_wheel, lo, hi in boxes:
+            if is_wheel:
+                continue
+            y, z = lo[1], hi[2]         # aft end, bottom
+            if y >= main_y:
+                continue
+            ang = math.atan2(ground_z - z, main_y - y)
+            if best is None or ang < best:
+                best = ang
+        if best is not None:
+            self.log.event(ut, "tail strike at %.1f deg of pitch"
+                           % math.degrees(best))
+        return best
+
+    def plan_takeoff(self, ut):
+        """The rotation angle and the lift-off speed it gives."""
+        cfg = self.cfg
+        self.lift_curve(ut)
+        tail = self.tail_strike(ut)
+        if not self.cla:
+            self.alpha_rot, self.v_liftoff = math.radians(10.0), 100.0
+            self.log.event(ut, "no lift curve: rotating at 100 m/s to 10 deg")
+            return
+        peak_a = max(self.cla, key=lambda x: x[1])[0]
+        a = peak_a
+        if tail is not None:
+            a = min(a, tail - math.radians(cfg.TAIL_CLEARANCE_DEG))
+        a = max(a, 0.0)
+        mass = self.vessel.mass
+        rho = self.flight.atmosphere_density or 1.2
+        thrust = 0.0
+        try:
+            thrust = self.vessel.available_thrust
+        except Exception:                               # noqa: BLE001
+            pass
+        weight = mass * gd.G0 - thrust * math.sin(a)
+        cla = self.cla_at(a)
+        self.alpha_rot = a
+        self.v_liftoff = math.sqrt(max(weight, 0.0) / (0.5 * rho * cla)) \
+            if cla > 0 else 100.0
+        self.log.event(ut, "take-off: rotate to %.1f deg (lift peak %.0f, "
+                       "tail %s), Cl*A %.2f, lift-off %.0f m/s at %.0f kg"
+                       % (math.degrees(a), math.degrees(peak_a),
+                          "%.1f" % math.degrees(tail) if tail else "?",
+                          cla, self.v_liftoff, mass))
+
+    def approach_speed(self, mass, rho):
+        """APPROACH_STALL_RATIO times the stall speed at this mass in
+        sea-level-ish air (the runway's: ``rho`` taken only once it is
+        thicker, so the speed is never planned for thinner air than the
+        landing's)."""
+        cmax = self.cla_max() or 1.0
+        r = max(rho or 0.0, self.rho_ground)
+        return self.cfg.APPROACH_STALL_RATIO * math.sqrt(
+            mass * gd.G0 / (0.5 * r * cmax))
 
     def seek_altitude(self, alt, agl, heat_thr, dt):
         """The cruise altitude, searched for: up while heat holds the
@@ -352,8 +492,17 @@ class ReconPilot:
             if not ground and agl > 3.0:
                 self.airborne = True
             if not self.airborne:
-                pitch_hold = (math.radians(cfg.ROTATE_PITCH_DEG)
-                              if speed >= cfg.ROTATE_SPEED_M_S else 0.0)
+                # Nose up to the rotation angle as early as it can be: the
+                # rotation (at the pitch-rate cap) starts so that it ends as
+                # the speed reaches lift-off.
+                lead = self.alpha_rot / math.radians(
+                    pcfg.MAX_PITCH_RATE_DEG_S) * max(self.accel, 0.0)
+                pitch_hold = (self.alpha_rot
+                              if speed >= self.v_liftoff - lead else 0.0)
+                if pitch_hold and not self.rotating:
+                    self.rotating = True
+                    self.log.event(ut, "rotate at %.0f m/s (lift-off %.0f, "
+                                   "lead %.0f)" % (speed, self.v_liftoff, lead))
             else:
                 gamma_cmd = math.radians(cfg.CLIMB_GAMMA_DEG) * min(
                     1.0, agl / 300.0)
@@ -412,7 +561,7 @@ class ReconPilot:
                 math.radians(cfg.DESCENT_GAMMA_DEG))
             # Slow on the drag measured in the approach's air.
             k = cfg.COAST_DRAG_SHARE * 1.2 * self.cda / (2.0 * mass)
-            v_cmd = gd.coast_speed(cfg.APPROACH_SPEED_M_S, dist, k)
+            v_cmd = gd.coast_speed(self.approach_speed(mass, rho), dist, k)
             throttle = min(throttle, gd.clamp(
                 (v_cmd - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))
             along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,
@@ -436,7 +585,7 @@ class ReconPilot:
             gamma_cmd = gd.flight_path_command(
                 h_cmd, alt, speed, 4.0, math.radians(10.0),
                 -math.atan(cfg.FINAL_SLOPE) - math.radians(4.0))
-            throttle = gd.clamp((cfg.APPROACH_SPEED_M_S - speed)
+            throttle = gd.clamp((self.approach_speed(mass, rho) - speed)
                                 / cfg.SPEED_BAND_M_S, 0.0, 1.0)
             bank_cap = math.radians(30.0)
             if self.state == FINAL and agl < cfg.FLARE_AGL_M:

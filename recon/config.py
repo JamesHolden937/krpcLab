@@ -50,10 +50,16 @@ class Config:
     HEAT_NO_DESCENT: float = 0.8
 
     # --- the profile -----------------------------------------------------------
-    # Take-off: full throttle; the nose comes up to ROTATE_PITCH_DEG at
-    # ROTATE_SPEED_M_S; gear up at GEAR_UP_AGL_M.
-    ROTATE_SPEED_M_S: float = 90.0
-    ROTATE_PITCH_DEG: float = 12.0
+    # Take-off: full throttle; the nose comes up as early as it can, to the
+    # best-lifting angle of attack short of a tail strike (both computed at
+    # START: the lift curve from KSP's own aerodynamics,
+    # ``simulate_aerodynamic_force_at``, swept 0..LIFT_SWEEP_MAX_DEG; the
+    # tail-strike angle from the parts' bounding boxes about the main
+    # wheels, less TAIL_CLEARANCE_DEG for the pitch loop's overshoot); the
+    # rotation starts so the nose is up as the speed reaches the lift-off
+    # speed that angle gives (thrust's lift counted).
+    LIFT_SWEEP_MAX_DEG: float = 30.0
+    TAIL_CLEARANCE_DEG: float = 1.0
     GEAR_UP_AGL_M: float = 50.0
     # The cruise altitude is searched for in flight, never set: the
     # altitude command climbs at ALT_SEEK_RATE_M_S while heat holds the
@@ -91,11 +97,12 @@ class Config:
     RUNWAY_ALT_M: float = 70.0
     # The final approach: from FINAL_M out on the centreline at
     # FINAL_SLOPE (tan of the glide slope), aimed AIM_M past the threshold,
-    # at APPROACH_SPEED_M_S.
+    # at APPROACH_STALL_RATIO times the stall speed (the lift curve's peak
+    # at the mass then; 1.3 is the airliner rule).
     FINAL_M: float = 12000.0
     FINAL_SLOPE: float = 0.07
     AIM_M: float = 300.0
-    APPROACH_SPEED_M_S: float = 110.0
+    APPROACH_STALL_RATIO: float = 1.3
     # The descent home: altitude on DESCENT_SLOPE above the final's gate;
     # speed what a drag-only coast slows to APPROACH_SPEED at the gate
     # (guidance.coast_speed, on the drag measured in flight, times
