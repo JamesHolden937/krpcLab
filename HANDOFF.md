@@ -37,11 +37,11 @@ boosterland/CLAUDE.md). Not finbooster3/4.
 
 **Open, in order:**
 1. **fin2 runs dry**: 14/24 ended in the air, tanks empty (38.7 t at the coast over 122.65 t dry; the burn needs more
-   than it has). Every miss on fin2 is mixed with a free fall. The pilot cannot add propellant: what it can change
-   is how the total is split between boostback and landing burn (e.g. more drag in the coast -- brakes open longer --
-   paid for by a longer boostback aim), or the burn's own profile. Measure first: the burn plan's propellant at
-   touchdown (`burn plan` lines, DIAG_BURN) against the coast's drag options; propose before building. Ask the user
-   whether the save's propellant (an ascent decision, the reason qs_finbooster3/4 exist) is in scope.
+   than it has). Every miss on fin2 is mixed with a free fall. The user (2026-11-18): when the boostback's budget
+   changes, re-fly the ascent for a new separation with the right propellant (boosterland/CLAUDE.md) -- **not done
+   yet, on purpose: the user said not now.** Next session: re-fly the ascent with the booster's current budget
+   (`ascent/CLAUDE.md`, FMRS save -> `boosterland/fmrs.py`), make the new separation the fin2 save, then re-read the
+   E bias on flights that land under power.
 2. Remaining E bias ~-36 m (short) with BURN_LIFT: not inside its standard error (~24 m)? borderline; re-read once
    flights stop running dry.
 3. Six ratio outliers (2.03-3.77) in fin2trv and LOG17811 (no brake measurement at all, 353 m off): read why.

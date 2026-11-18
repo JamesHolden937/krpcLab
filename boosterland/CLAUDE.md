@@ -6,6 +6,11 @@
 > (no ship-fitted constants, root CLAUDE.md). Only then look at the other boosters. Its known problem is that it
 > runs dry 30-140 m up (pf1-1114): that is the booster's problem to solve, not a reason to change save. The heavy
 > (`qs_heavy`) is probably fundamentally problematic: don't spend batches on it.
+>
+> **When the booster's propellant budget changes** (the boostback or the landing burn needs a different amount),
+> re-fly the ascent to get a new separation with the right propellant (the user, 2026-11-18): the ascent drops the
+> booster when it has just enough to fly home, so it is the ascent's budget that sets what the save carries. The new
+> separation replaces `qs_finbooster2`'s state; don't hand-edit propellant into the save.
 
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
