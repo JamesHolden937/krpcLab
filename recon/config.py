@@ -48,6 +48,10 @@ class Config:
     # held on the throttle; the proportional governor above is the
     # backstop.
     THERMAL_PLAN_S: float = 2.0
+    # The fuel-limited speed (the fastest the fuel left covers home: drag
+    # from KSP's aerodynamics, LF per N s measured) holds only in cruise:
+    # flight path within CRUISE_LEVEL_DEG of level.
+    CRUISE_LEVEL_DEG: float = 2.0
 
     # --- the profile -----------------------------------------------------------
     # Take-off: full throttle; the nose comes up as early as it can, to the

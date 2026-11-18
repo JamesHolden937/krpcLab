@@ -139,6 +139,7 @@ class ReconPilot:
         self.sfc = None             # LiquidFuel per newton-second, measured
         self.fuel = None
         self.v_fuel_logged = None
+        self.level = False
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -459,7 +460,10 @@ class ReconPilot:
         self.next_plan = ut + cfg.THERMAL_PLAN_S
         v = th.speed_limit(self.heat_models, rho, sound, t_env or 250.0,
                            remaining, cfg.HEAT_MAX)
-        vf = self.fuel_speed(remaining, v)
+        # The fuel's speed is a cruise's: drag at this attitude in a climb
+        # (30 deg off the airflow at 140 m/s) asked for less speed, which
+        # steepened the climb, which asked for less (LOG17748).
+        vf = self.fuel_speed(remaining, v) if self.level else None
         if vf is not None and (v is None or vf < v):
             if self.v_fuel_logged is None or abs(vf - self.v_fuel_logged) > 20:
                 self.log.event(ut, "fuel: %.0f m/s is the fastest the %.0f LF "
@@ -664,6 +668,7 @@ class ReconPilot:
         # The pitch rate the load allows: (n - 1) g / V.
         q_max = (normal - 1.0) * gd.G0 / max(speed, 50.0)
 
+        self.level = abs(gamma) < math.radians(cfg.CRUISE_LEVEL_DEG)
         heat_thr = gd.heat_throttle(hfrac, hrate, cfg.HEAT_MAX,
                                     cfg.HEAT_LOOKAHEAD_S, cfg.HEAT_BAND)
         g_thr = 0.0 if gforce > g_line else 1.0
