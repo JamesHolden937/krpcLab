@@ -70,9 +70,12 @@ class Config:
     # On the wheels the nose stops rising while any non-wheel part is
     # closer than this to the ground (measured each tick).
     TAIL_CLEARANCE_M: float = 0.3
-    # The rotation raises the pitch target at ROTATE_RATE_MAX_DEG_S; the
-    # clearance is watched until CLEAR_UNTIL_AGL_M.
-    ROTATE_RATE_MAX_DEG_S: float = 10.0
+    # The rotation raises the pitch target at ROTATE_RATE_MAX_DEG_S, briskly:
+    # both mains must leave together (at 10 deg/s one unloaded first and the
+    # craft snapped 70 deg off the runway, LOG17746; at 40 it climbed away
+    # straight, LOG17747).  The clearance is watched until
+    # CLEAR_UNTIL_AGL_M.
+    ROTATE_RATE_MAX_DEG_S: float = 40.0
     CLEAR_UNTIL_AGL_M: float = 5.0
     GEAR_UP_AGL_M: float = 50.0
     # The cruise altitude is searched for in flight, never set: the

@@ -469,9 +469,10 @@ class ReconPilot:
                                    self.sfc, "%.0f" % v if v else "?"))
                 self.v_fuel_logged = vf
             v = vf
-        if v is not None and (self.v_heat is None
-                              or abs(v - self.v_heat) > 20.0):
-            hot = max((p for p in self.heat_models if p.ready()),
+        ready = [p for p in self.heat_models if p.ready()]
+        if v is not None and ready and (self.v_heat is None
+                                        or abs(v - self.v_heat) > 20.0):
+            hot = max(ready,
                       key=lambda p: p.peak(rho, v, v / sound, t_env or 250.0,
                                            min(remaining / v, 3600.0))[0])
             self.log.event(ut, "thermal: %.0f m/s safe for the %.0f km left "
