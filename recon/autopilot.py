@@ -783,8 +783,12 @@ class ReconPilot:
             dist = gd.distance(lat, lon, glat, glon, self.radius)
             course = gd.bearing(lat, lon, glat, glon)
             if self.around:
-                # The long way: the same great circle, the other way.
-                if abs(gd.wrap(course - math.radians(hdg or 0.0))) < math.pi / 2:
+                # The long way: the same great circle, the other way, until
+                # the short way home is the shorter (past the runway's
+                # antipode).  By distance, not heading: a tumble at 41 km
+                # swung the heading through the bearing home and turned it
+                # back 900 km out (LOG17753).
+                if dist <= math.pi * self.radius:
                     self.around = False
                     self.log.event(ut, "round the far side: home %.0f km "
                                    "ahead" % (dist / 1e3))
