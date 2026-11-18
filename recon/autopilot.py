@@ -422,6 +422,21 @@ class ReconPilot:
         a = peak_a
         if tail is not None:
             a = min(a, tail - math.radians(cfg.TAIL_CLEARANCE_DEG))
+        # The angle the tail clearance measured now allows (the parts'
+        # boxes against the ground, about the main wheels): the bounding-box
+        # estimate above said 23.9 deg and the nozzle struck at 9 (LOG17738).
+        # Rotating there lifts the craft off as the nose comes up: a
+        # nose-high roll on the wheels at low speed is directionally
+        # unstable on this airframe (heading diverged at 44 m/s with the
+        # nose at 7 deg, roll and yaw inputs off, LOG17743).
+        clear0 = self.clearance(self.flight.surface_altitude or 0.0)
+        if clear0 is not None:
+            a_clear = math.atan2(max(clear0 - cfg.TAIL_CLEARANCE_M, 0.0),
+                                 self.tail_arm)
+            self.log.event(ut, "tail clearance at rest %.2f m, arm %.2f m: "
+                           "%.1f deg of rotation" % (clear0, self.tail_arm,
+                                                     math.degrees(a_clear)))
+            a = min(a, a_clear)
         a = max(a, 0.0)
         mass = self.vessel.mass
         rho = self.flight.atmosphere_density or 1.2
