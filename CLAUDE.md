@@ -50,7 +50,7 @@ from the previous batch's round length times the rounds left.
 **Clear the conversation between batches** (the user, 2026-11-18: token cost
 is calls x context size; sessions averaged 236k tokens per call). When a
 batch's result is in and read, and no batch, waiter or worktree build is
-still running: (a) rewrite this pilot's HANDOFF.md section so a cold session
+still running: (a) rewrite this pilot's `docs/<pilot>/handoff.md` section so a cold session
 can carry on -- the result with its log/batch names, what it means, the exact
 next batch to fly and why, and anything the user said this session that no
 doc records yet (a standing instruction goes into CLAUDE.md or memory, not
@@ -59,14 +59,26 @@ with `session_id: "self"` (load it with ToolSearch first), and end the turn
 with one line: what was saved and the next batch. Skip the clear while the
 user is mid-conversation with you (a question open, a decision pending) or
 the context is still small (under ~100k tokens). The fresh session starts
-from HANDOFF.md as usual.
+from HANDOFF.md as usual (see "Continuing after the clear" below).
+
+**Continuing after the clear (no "go on" needed).** When the next batch is
+already decided, launch it (with its waiter, `run_in_background`) in the same
+turn, *then* clear. Its waiter's output must start with the line
+`AUTO-CONTINUE <pilot>: this conversation was cleared after the last batch.
+Read HANDOFF.md and docs/<pilot>/handoff.md, then this batch's result below.`
+The batch's completion notice then wakes the fresh conversation, which
+orients itself from that line. A fresh conversation whose first message is
+such a notice treats it as the session procedure's step 1 and carries on.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
    running, then released once the farm is idle. Don't run nosleep by hand.
-1. **Start by reading [HANDOFF.md](HANDOFF.md)**, the last session's state:
-   what changed, which flags exist and what they measured, the blocker,
-   what's next, and the traps. Then the pilot's own `CLAUDE.md`.
+1. **Start by reading [HANDOFF.md](HANDOFF.md)** (the index: every pilot's
+   status in one line, cross-pilot open items, general traps), then
+   `docs/<pilot>/handoff.md` for the pilot you will work on -- the last
+   session's state: what changed, which flags exist and what they measured,
+   the blocker, what's next, and the traps. Then the pilot's own `CLAUDE.md`.
+   Read another pilot's handoff only when the work touches it.
    `testInstances/HANDOFF.md` is the farm's build history, not this.
 1a. **Screen in kspSim whenever the question is one it models** (~10x
    faster, many at once): guidance, propagator, phase logic, anything a
@@ -74,11 +86,14 @@ from HANDOFF.md as usual.
    go straight to it only where the sim is known not to follow the game
    (`kspSim/CLAUDE.md`, "Known gaps" -- e.g. the shuttle's high-alpha
    lateral moments). Say which it was and why. Never sims beside the farm.
-2. **End by rewriting HANDOFF.md.** Also do it before any long pause or when
-   the user asks for a summary. It holds **one section per autopilot**,
-   the most recently worked first: rewrite the section of the pilot(s) this
-   session touched in place (move it to the top) and leave the others as
-   they are -- they are the last word on pilots nobody has flown since.
+2. **End by rewriting the handoff.** Also do it before any long pause or when
+   the user asks for a summary. Each pilot's state is in
+   `docs/<pilot>/handoff.md`, the most recent section first: rewrite the
+   section of the pilot(s) this session touched in place (move it to the
+   top) and leave the other pilots' files as they are -- they are the last
+   word on pilots nobody has flown since. Then update that pilot's row in
+   HANDOFF.md's table (date, one-line state/next) and HANDOFF.md's own
+   sections only for cross-pilot items or general traps.
    Record the date, the defaults fingerprint, commit state, where each
    airframe stands, every flag added and what it measured (with log/batch
    names), the blocker and the proposed next step, open items in order, and

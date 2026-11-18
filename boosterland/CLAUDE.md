@@ -19,13 +19,13 @@ lands a median ~12-30 m (qs_hot) to ~13-20 m (qs_heavy, at first contact)
 from the pad. Boostback holds its heading through the taper; the coast's
 flip runs on the RCS error relay; once settled, the coast pushes sideways on
 the RCS to null the cross-track (`COAST_RCS_TRIM`); what is left is
-along-track, ~+28 m long at the burn (HANDOFF). The legged heavy stands
+along-track, ~+28 m long at the burn (`docs/boosterland/handoff.md`). The legged heavy stands
 ~10 times in 12, but falls about half the time it touches 10-34 m out: the
 KSC pad model's own colliders and the launch clamps are there. The 18-part
 booster has no legs and falls over on its engine bell. The legs are timed
 once per part type and dropped by time-to-go (in practice ~13.5 s early);
 the airbrakes fly closed and long, then open fully at a solved height --
-see the root HANDOFF.md. The root
+see `docs/boosterland/handoff.md`. The root
 `CLAUDE.md` (conventions, farm, cross-cutting rules) applies here in full.
 
 ```

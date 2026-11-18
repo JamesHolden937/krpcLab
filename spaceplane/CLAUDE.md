@@ -17,7 +17,7 @@ comes from that fresh prediction.
 | read | when |
 |---|---|
 | this file | the current state and what to do next |
-| the root [HANDOFF.md](../HANDOFF.md) | the last session's state -- read it first |
+| [docs/spaceplane/handoff.md](../docs/spaceplane/handoff.md) | the last session's state -- read it first (index: the root HANDOFF.md) |
 | [docs/spaceplane/journal.md](../docs/spaceplane/journal.md) | what each session measured, oldest first -- **append new sessions here** |
 | [docs/spaceplane/design.md](../docs/spaceplane/design.md) | the runway, the airframe measurements, the architecture phase by phase |
 | [docs/spaceplane/failures.md](../docs/spaceplane/failures.md) | **before undoing anything** -- numbered failures, cited everywhere by number |
@@ -77,7 +77,7 @@ In every winged phase roll is held back only as far as the rudder can coordinate
 - **The approach turns:** `APPROACH_REENGAGE` (default) resets kRPC's integrators at the cone's exit. Turn ratio median 0.88 against 0.16.
 - The cone saves `qs_s2_hac*` are stale (overshoot 5-14 km): retake them.
 
-Root HANDOFF.md has the numbers.
+`docs/spaceplane/handoff.md` has the numbers.
 
 ## Earlier (2026-10-22 night, fingerprint `9eec0e1f`)
 
@@ -161,7 +161,7 @@ low-speed rollouts that ran off the edge.
 
 ## Next, in order
 
-The root [HANDOFF.md](../HANDOFF.md): the approach turn on kRPC 0.7, then retaking the cone saves and derived tables; then `docs/spaceplane/constantsAudit.md` top-down.
+[docs/spaceplane/handoff.md](../docs/spaceplane/handoff.md): the approach turn on kRPC 0.7, then retaking the cone saves and derived tables; then `docs/spaceplane/constantsAudit.md` top-down.
 
 ## Standing facts (each paid for; the journal has the evidence)
 

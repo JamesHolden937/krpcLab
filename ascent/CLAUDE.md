@@ -108,5 +108,5 @@ second X200-32, `tools/stretchcraft.py`, 91.9 t) -- all on the pad.
 .venv-pypy/bin/python -m unittest ascent.tests     # testBudget, testTurnShape
 ```
 
-Where it stands, what is open: the root `HANDOFF.md`, section "ascent";
+Where it stands, what is open: `docs/ascent/handoff.md` (index: the root `HANDOFF.md`);
 history in `docs/ascent/journal.md`.
