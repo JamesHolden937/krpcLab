@@ -22,8 +22,10 @@ Phase machine::
   airplane hold's turn load and pitch-rate cap; measured g over the line
   shuts the throttle.
 * **Navigation**: great-circle course to the goal; heading error into a
-  coordinated turn's bank.  OUT climbs to ``CRUISE_ALT_M`` and flies to the
-  target; past it, HOME descends to the final gate of whichever runway the
+  coordinated turn's bank.  OUT flies to the target at an altitude it
+  searches for (``seek_altitude``: up while heat limits, down while thrust
+  does); past it, it turns back or carries on round the planet on the same
+  great circle, whichever is quicker (``guidance.route_home``), and HOME descends to the final gate of whichever runway the
   return comes in on, slowing on the measured drag
   (``guidance.coast_speed``); FINAL flies localizer and glide slope at the
   approach speed; FLARE eases the sink; ROLLOUT brakes on the centreline.
@@ -122,6 +124,7 @@ class ReconPilot:
         self.sflight = self.vessel.flight(self.vessel.surface_reference_frame)
         self.gui = ControlPanel(conn, "RECON", "START", ACCENT_RECON)
         self.parts = list(self.vessel.parts.all)
+        self.part_names = [pt.name for pt in self.parts]
         self.engine = None
         self.target = None
         self.runway = None          # (lat, lon, course) of the chosen threshold
@@ -134,6 +137,12 @@ class ReconPilot:
         self.cda = 0.87
         self.start_ut = None
         self.throttle = 0.0
+        self.h_seek = None          # the searched cruise altitude
+        self.accel = 0.0            # dV/dt, filtered
+        self.fuel_rate = None       # LiquidFuel per game second, filtered
+        self.last_fuel = None
+        self.around = False         # going home the long way round
+        self.res = self.vessel.resources
 
     # -- reads ------------------------------------------------------------------
     def read(self):
@@ -147,7 +156,8 @@ class ReconPilot:
                  (getattr, (fl, "mach")), (getattr, (fl, "atmosphere_density")),
                  (getattr, (v, "thrust")), (getattr, (v, "mass")),
                  (getattr, (v, "situation")),
-                 (getattr, (self.sflight, "pitch"))]
+                 (getattr, (self.sflight, "pitch")),
+                 (self.res.amount, ("LiquidFuel",))]
         for pt in self.parts:
             calls += [(getattr, (pt, "temperature")),
                       (getattr, (pt, "max_temperature")),
@@ -156,15 +166,16 @@ class ReconPilot:
         return ask(self.conn, calls)
 
     def hottest(self, got):
-        frac, name = 0.0, ""
+        frac, name, lost = 0.0, "", []
         for i, pt in enumerate(self.parts):
             t, tm, s, sm = got[4 * i:4 * i + 4]
             if None in (t, tm, s, sm) or tm <= 0 or sm <= 0:
+                lost.append(self.part_names[i])
                 continue
             f = max(t / tm, s / sm)
             if f > frac:
-                frac, name = f, pt.name
-        return frac, name
+                frac, name = f, self.part_names[i]
+        return frac, name, lost
 
     # -- takeover ---------------------------------------------------------------
     def take_over(self, ut):
@@ -208,6 +219,42 @@ class ReconPilot:
         self.exit_reason = reason
         self.finished = True
 
+    def seek_altitude(self, alt, agl, heat_thr, dt):
+        """The cruise altitude, searched for: up while heat holds the
+        throttle back, down while the throttle is full and the speed has
+        stopped growing (thrust-limited); held within 2 km of the craft."""
+        cfg = self.cfg
+        if self.h_seek is None:
+            self.h_seek = alt
+        step = cfg.ALT_SEEK_RATE_M_S * dt
+        if heat_thr < 0.98:
+            self.h_seek += step
+        elif self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
+            self.h_seek -= step
+        floor = alt - agl + cfg.ALT_FLOOR_AGL_M
+        self.h_seek = gd.clamp(self.h_seek, max(floor, alt - 2000.0),
+                               alt + 2000.0)
+
+    def choose_route(self, ut, lat, lon, speed, normal, fuel):
+        """Back, or on round the planet, whichever is quicker."""
+        cfg = self.cfg
+        a = (cfg.RUNWAY_09_LAT, cfg.RUNWAY_09_LON)
+        b = (cfg.RUNWAY_27_LAT, cfg.RUNWAY_27_LON)
+        home = gd.distance(lat, lon, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2,
+                           self.radius)
+        t_back, t_round = gd.route_times(home, self.radius, speed, normal)
+        need = None
+        if self.fuel_rate is not None and self.fuel_rate > 0.0:
+            need = self.fuel_rate * t_round * cfg.FUEL_RESERVE
+        enough = need is not None and fuel is not None and fuel >= need
+        self.around = bool(cfg.AROUND_ALLOWED and t_round < t_back and enough)
+        self.log.event(ut, "route: back %.0f s (%.0f km + the turn), round "
+                       "%.0f s (%.0f km); fuel %.0f, the long way needs %s: %s"
+                       % (t_back, home / 1e3, t_round,
+                          (2 * math.pi * self.radius - home) / 1e3,
+                          fuel or 0.0, "%.0f" % need if need else "?",
+                          "ROUND" if self.around else "BACK"))
+
     def choose_runway(self, lat, lon):
         """The threshold whose landing course best matches the way home."""
         cfg = self.cfg
@@ -224,7 +271,7 @@ class ReconPilot:
         cfg = self.cfg
         got = self.read()
         (lat, lon, speed, vs, alt, agl, hdg, gforce, mach, rho, thrust, mass,
-         situation, pitch) = got[:14]
+         situation, pitch, fuel) = got[:15]
         if None in (lat, lon, speed, alt):
             return
         speed = speed or 0.0
@@ -233,7 +280,11 @@ class ReconPilot:
         gforce = gforce or 0.0
         mass = mass or 1.0
         thrust = thrust or 0.0
-        frac, name = self.hottest(got[14:])
+        frac, name, lost = self.hottest(got[15:])
+        if lost:
+            self.log.event(ut, "parts lost: %s" % ", ".join(lost))
+            self.finish("craft broken: %s" % ", ".join(lost))
+            return
         sit = str(situation).lower()
         ground = "landed" in sit or "pre_launch" in sit
         dt = 0.0
@@ -260,6 +311,17 @@ class ReconPilot:
             cda = 2.0 * mass * drag / (rho * speed * speed)
             if 0.05 < cda < 10.0:
                 self.cda += min(1.0, dt / 5.0) * (cda - self.cda)
+        if dt > 0.0 and self.last is not None:
+            a = min(1.0, dt / 2.0)
+            self.accel += a * ((speed - self.last[1]) / dt - self.accel)
+        if fuel is not None:
+            if self.last_fuel is not None and ut > self.last_fuel[0] + 1.0:
+                r = (self.last_fuel[1] - fuel) / (ut - self.last_fuel[0])
+                self.fuel_rate = r if self.fuel_rate is None else \
+                    self.fuel_rate + 0.1 * (r - self.fuel_rate)
+                self.last_fuel = (ut, fuel)
+            elif self.last_fuel is None:
+                self.last_fuel = (ut, fuel)
         self.last = (ut, speed)
         # Load: the axial g the thrust puts on the pilot, and what is left
         # for the wings.
@@ -305,8 +367,9 @@ class ReconPilot:
             tlat, tlon = self.target[1], self.target[2]
             dist = gd.distance(lat, lon, tlat, tlon, self.radius)
             course = gd.bearing(lat, lon, tlat, tlon)
+            self.seek_altitude(alt, agl, heat_thr, dt)
             gamma_cmd = gd.flight_path_command(
-                cfg.CRUISE_ALT_M, alt, speed, cfg.ALT_TAU_S,
+                self.h_seek, alt, speed, cfg.ALT_TAU_S,
                 math.radians(cfg.CLIMB_GAMMA_DEG),
                 math.radians(cfg.DESCENT_GAMMA_DEG))
             if self.closest is None or dist < self.closest[0]:
@@ -319,7 +382,8 @@ class ReconPilot:
                            "%.0f m, %.0f m/s, %.0f s after START"
                            % (self.closest[0], self.closest[2],
                               self.closest[3], self.closest[1] - self.start_ut))
-            note = "tgt %.1f km" % (dist / 1e3)
+                self.choose_route(ut, lat, lon, speed, normal, fuel)
+            note = "tgt %.1f km h_seek %.0f" % (dist / 1e3, self.h_seek)
         if self.state == HOME:
             if self.runway is None:
                 self.runway = self.choose_runway(lat, lon)
@@ -330,8 +394,18 @@ class ReconPilot:
             gate_alt = cfg.RUNWAY_ALT_M + cfg.FINAL_M * cfg.FINAL_SLOPE
             dist = gd.distance(lat, lon, glat, glon, self.radius)
             course = gd.bearing(lat, lon, glat, glon)
+            if self.around:
+                # The long way: the same great circle, the other way.
+                if abs(gd.wrap(course - math.radians(hdg or 0.0))) < math.pi / 2:
+                    self.around = False
+                    self.log.event(ut, "round the far side: home %.0f km "
+                                   "ahead" % (dist / 1e3))
+                else:
+                    course = (course + math.pi) % (2.0 * math.pi)
+                    dist = 2.0 * math.pi * self.radius - dist
+            self.seek_altitude(alt, agl, heat_thr, dt)
             h_cmd = gd.glide_altitude(dist, gate_alt, cfg.DESCENT_SLOPE,
-                                      cfg.CRUISE_ALT_M)
+                                      self.h_seek)
             gamma_cmd = gd.flight_path_command(
                 h_cmd, alt, speed, cfg.ALT_TAU_S,
                 math.radians(cfg.CLIMB_GAMMA_DEG),

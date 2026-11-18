@@ -46,6 +46,17 @@ class TestHeat(unittest.TestCase):
         self.assertTrue(0.0 < mid < 1.0)
 
 
+class TestRoute(unittest.TestCase):
+    def test_near_target_turns_back(self):
+        back, round_ = gd.route_times(200e3, R, 1450.0, 13.0)
+        self.assertLess(back, round_)
+
+    def test_near_the_antipode_goes_round(self):
+        # 10 km short of the antipode: the half turn costs more than 20 km.
+        back, round_ = gd.route_times(math.pi * R - 10e3, R, 1450.0, 13.0)
+        self.assertLess(round_, back)
+
+
 class TestEnergy(unittest.TestCase):
     def test_coast_speed(self):
         self.assertAlmostEqual(gd.coast_speed(100.0, 0.0, 1e-4), 100.0)

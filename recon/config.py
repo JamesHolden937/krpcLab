@@ -1,6 +1,6 @@
 """All tunables for the recon pilot (the QUDRAC only).
 
-    ./run.sh --pilot recon --set CRUISE_ALT_M=22000
+    ./run.sh --pilot recon --set HEAT_MAX=0.8
 
 This pilot is fitted to one craft on purpose (the user, 2026-11-17: "this
 autopilot is just for that plane, so you can ... tune it for that
@@ -23,6 +23,12 @@ class Config:
     # Overhead: the closest approach is logged; the target is passed once it
     # is behind (more than 90 deg off the nose) or within this distance.
     PASS_RADIUS_M: float = 500.0
+    # Past the target: turn back, or carry on round the planet on the same
+    # great circle, whichever is quicker at the present speed (the turn's
+    # time at the present load budget counted) -- the long way only with
+    # FUEL_RESERVE times the fuel it needs at the burn rate measured.
+    AROUND_ALLOWED: bool = True
+    FUEL_RESERVE: float = 1.3
 
     # --- limits ----------------------------------------------------------------
     # Total load on the pilot (thrust's push included), g.  The wings get
@@ -49,8 +55,19 @@ class Config:
     ROTATE_SPEED_M_S: float = 90.0
     ROTATE_PITCH_DEG: float = 12.0
     GEAR_UP_AGL_M: float = 50.0
-    # The cruise altitude (m), climbed to at CLIMB_GAMMA_DEG.
-    CRUISE_ALT_M: float = 22000.0
+    # The cruise altitude is searched for in flight, never set: the
+    # altitude command climbs at ALT_SEEK_RATE_M_S while heat holds the
+    # throttle back (thinner air: more speed for the same heat) and sinks
+    # at it while the throttle is full and the speed no longer grows by
+    # SEEK_ACCEL_M_S2 (thrust is the limit: thicker air gives the RAPIER
+    # more).  It settles where the two limits meet: the fastest speed the
+    # craft can hold without burning.  Probes (logs/probe1): heat-limited
+    # at ~1370 m/s at 15 km, ~1475 at 20 km, ~1480 at 25 km.
+    ALT_SEEK_RATE_M_S: float = 150.0
+    SEEK_ACCEL_M_S2: float = 0.3
+    # Never closer to the ground than this while seeking (m).
+    ALT_FLOOR_AGL_M: float = 2000.0
+    # Climbs and descents at most these flight-path angles.
     CLIMB_GAMMA_DEG: float = 30.0
     DESCENT_GAMMA_DEG: float = -15.0
     # Altitude error closed in ALT_TAU_S; flight path error into pitch

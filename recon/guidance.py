@@ -115,3 +115,19 @@ def localizer_course(rwy_course, cross, speed, tau, max_cut):
     zero in about ``tau`` s, cut at most ``max_cut``."""
     lead = max(speed * tau, 1.0)
     return rwy_course - clamp(math.atan2(cross, lead), -max_cut, max_cut)
+
+
+def turn_time(speed, normal_g, angle=math.pi):
+    """How long a level turn through ``angle`` takes at ``normal_g``."""
+    lat = math.sqrt(max(1e-6, normal_g * normal_g - 1.0))
+    return angle * speed / (G0 * lat)
+
+
+def route_times(home, radius, speed, normal_g):
+    """From over the target, ``home`` metres from the runway the short way:
+    (turn back: ``home`` plus a half turn, on round: the rest of the great
+    circle, no turn), seconds at ``speed``."""
+    v = max(speed, 1.0)
+    back = home / v + turn_time(v, normal_g)
+    round_ = (2.0 * math.pi * radius - home) / v
+    return back, round_
