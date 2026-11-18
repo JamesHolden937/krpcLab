@@ -198,6 +198,37 @@ namespace KrpcLab
         }
 
         // -- the active vessel's actuators ---------------------------------
+        static readonly System.Reflection.FieldInfo csAction = typeof(ModuleControlSurface).GetField(
+            "action", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+        static readonly System.Reflection.FieldInfo csDeflection = typeof(ModuleControlSurface).GetField(
+            "deflection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+
+        /// <summary>How far the active vessel's control surfaces still have
+        /// to travel: the largest |action - deflection| over every
+        /// ModuleControlSurface (airbrakes included), as a fraction of that
+        /// surface's ctrlSurfaceRange.  ModuleControlSurface.FixedUpdate
+        /// moves deflection toward action at actuatorSpeed, so 0 means every
+        /// surface stands where it was last told to (as of the last physics
+        /// frame; a field written since is picked up on the next).  -1
+        /// outside flight or when the game's fields cannot be read.</summary>
+        [KRPCProcedure]
+        public static float SurfaceTravel()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || csAction == null || csDeflection == null) return -1f;
+            var v = FlightGlobals.ActiveVessel;
+            if (v == null) return -1f;
+            float worst = 0f;
+            foreach (var p in v.parts)
+                foreach (var m in p.Modules)
+                {
+                    var cs = m as ModuleControlSurface;
+                    if (cs == null || cs.ctrlSurfaceRange <= 0f) continue;
+                    float a = (float)csAction.GetValue(cs), d = (float)csDeflection.GetValue(cs);
+                    worst = Mathf.Max(worst, Mathf.Abs(a - d) / cs.ctrlSurfaceRange);
+                }
+            return worst;
+        }
+
         /// <summary>The active vessel's control authority and its control
         /// surfaces' actuators, from the game's own modules (kRPC reports
         /// neither actuator speed nor range).  First line: "total" and the

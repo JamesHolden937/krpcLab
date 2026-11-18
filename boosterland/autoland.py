@@ -455,6 +455,10 @@ class ValveLimits:
 class Autoland:
     def __init__(self, conn, cfg, logbook):
         self.conn = conn
+        # The window mod's read of every surface's travel left (launcherMod
+        # SurfaceTravel); None without the mod (kspSim, tests).
+        self._surface_travel = getattr(
+            getattr(conn, "krpc_lab_launcher", None), "surface_travel", None)
         self.cfg = cfg
         self.log = logbook
         self.vessel = conn.space_center.active_vessel
@@ -1705,10 +1709,28 @@ class Autoland:
         self.solve_late_switch(snap)
 
     def brakes_settled(self, snap):
-        """True once the brakes have stopped moving: the drag the game's own
-        aerodynamics give for this instant's state (one probe a physics
-        frame) reads the same two frames running.  Measured, so it holds for
-        any brake's animation; a probe that cannot be read is not settled."""
+        """True once the brakes have stopped moving.  With the window mod,
+        the game's own surfaces: every one has travelled to its target
+        (``SurfaceTravel``), after having been seen moving.  Without it, the
+        drag the game's aerodynamics give for this instant's state (one probe
+        a physics frame) reads the same two frames running; a probe that
+        cannot be read is not settled."""
+        travel = None
+        if self._surface_travel is not None:
+            try:
+                travel = self._surface_travel()
+            except Exception:                   # noqa: BLE001 -- KSP-side failure
+                travel = None
+        if travel is not None and travel >= 0.0:
+            # The game's own surfaces, not their drag: still drag is no proof
+            # they stopped (open settled 0.4-0.7 s into the fin booster's
+            # opening on half of fin2lift-1118, open/closed 1.55-2.5 against
+            # 2.7-3.65 for those that waited).  The tick after the command
+            # can read the old target at rest, so travel must be seen first.
+            if travel > 1e-3:
+                self.brake_moved = True
+                return False
+            return self.brake_moved
         env = self.env
         last = self.brake_probe
         if last is not None and snap.ut <= last[0]:
