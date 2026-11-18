@@ -236,6 +236,7 @@ class ReconPilot:
         self.rho_ground = self.flight.atmosphere_density or 1.2
         self.plan_takeoff(ut)
         self.plane.take_over(ut)
+        self.plane.ground_roll_yaw_off = cfg.GROUND_ROLL_YAW_OFF
         c = self.vessel.control
         c.brakes = False
         self.start_ut = ut

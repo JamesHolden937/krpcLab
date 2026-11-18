@@ -109,6 +109,10 @@ class AirplanePilot:
         # A pilot flying this one may set the pitch input outright (recon's
         # rotation: full up until the nose is up); None: the loop flies it.
         self.pitch_override = None
+        # A pilot flying this one may leave roll and yaw alone on the
+        # wheels (recon's measurement of whether its ground roll's swings
+        # are the airframe's or this loop's).
+        self.ground_roll_yaw_off = False
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
                                                len(self.vessel.parts.all)))
@@ -493,6 +497,8 @@ class AirplanePilot:
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))
             out.append(law.clamp(u - s, -1.0, 1.0) if active[i] else u)
+        if ground and self.ground_roll_yaw_off:
+            out[1] = out[2] = 0.0
         self.command(out)
         # The input this tick flies until the next: ours, the player's stick
         # and the trim (KSP adds all three).
