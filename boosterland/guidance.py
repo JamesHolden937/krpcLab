@@ -531,7 +531,8 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     # lift-boosted one, or the divert builds a speed it cannot straighten
     # out of before touchdown.
     braking = min(authority, a * math.sin(limit))
-    v_max = min(braking * max(0.0, t_go - 1.0 / rate),
+    v_max = min(braking * max(0.0, t_go - 1.0 / rate
+                              - stand_up_time(cfg, rate)),
                 trajectory.lateral_allowance(env, cfg)
                 * math.exp(min(50.0, rate * t_go)))
     asked = vec.norm(accel) / rate
@@ -569,14 +570,49 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
         zem = None
     cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
                           tilt_budget_deg, null_rate, mass=mass)
+    floor = cfg.SURVIVAL_SHARE * (getattr(env, "tip_angle_deg", None) or 0.0)
+    if cfg.LANDING_STAND_UP:
+        allowed = stand_up_cone(cfg, null_rate, time_to_land, floor)
+        if allowed >= 90.0:
+            return cmd
+        return TerminalCommand(
+            within_cone(cmd.direction, vec.unit(r), allowed), cmd.demand)
     frac = min(1.0, max(0.0, time_to_land) * null_rate)
     if frac >= 1.0:
         return cmd
     full = cfg.LANDING_MAX_TILT_DEG * 2.0
-    floor = cfg.SURVIVAL_SHARE * (getattr(env, "tip_angle_deg", None) or 0.0)
     return TerminalCommand(
         within_cone(cmd.direction, vec.unit(r), floor + (full - floor) * frac),
         cmd.demand)
+
+
+def nose_rate(cfg, null_rate):
+    """The nose's measured closing rate (1/s, one over its lag behind the
+    command), recovered from the lateral null's rate, which is
+    ``LOOP_BANDWIDTH_SHARE`` of it (``Autoland.null_rate``)."""
+    return null_rate / cfg.LOOP_BANDWIDTH_SHARE
+
+
+def stand_up_cone(cfg, null_rate, time_to_land, floor):
+    """deg off vertical the command may lean with ``time_to_land`` left, so
+    that the nose is upright (within ``floor``) at contact: the command moves
+    at most the burn's slew, ``lam * LANDING_MAX_TILT_DEG`` deg/s
+    (``Autoland.burn_slew_rate``), and the nose follows it one lag ``1/lam``
+    behind.  So the lean allowed is the slew times the time left after that
+    lag -- a ramp, no switch at a height."""
+    lam = nose_rate(cfg, null_rate)
+    return floor + cfg.LANDING_MAX_TILT_DEG * max(
+        0.0, lam * max(0.0, time_to_land) - 1.0)
+
+
+def stand_up_time(cfg, rate):
+    """Seconds the stand-up takes from a full divert's tilt
+    (``stand_up_cone`` inverted at ``LANDING_MAX_TILT_DEG``): the sideways
+    speed must be braked before it starts.  0 with ``LANDING_STAND_UP``
+    off."""
+    if not cfg.LANDING_STAND_UP:
+        return 0.0
+    return 2.0 / nose_rate(cfg, rate)
 
 
 def slew(previous, target, max_deg):

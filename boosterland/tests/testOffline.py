@@ -426,6 +426,32 @@ class TestAeroDivert(unittest.TestCase):
             None, (6e5, 0, 0), (0, -500, 0), 1e5, Config()))
 
 
+class TestStandUp(unittest.TestCase):
+    """guidance.stand_up_cone: upright one nose lag before contact."""
+
+    def test_upright_one_lag_before_contact(self):
+        cfg = Config()
+        rate = cfg.LOOP_BANDWIDTH_SHARE * 2.0          # nose lag 0.5 s
+        self.assertEqual(guidance.stand_up_cone(cfg, rate, 0.5, 1.0), 1.0)
+        self.assertEqual(guidance.stand_up_cone(cfg, rate, 0.2, 1.0), 1.0)
+
+    def test_ramps_at_the_slew(self):
+        cfg = Config()
+        rate = cfg.LOOP_BANDWIDTH_SHARE * 2.0
+        a = guidance.stand_up_cone(cfg, rate, 1.0, 0.0)
+        b = guidance.stand_up_cone(cfg, rate, 1.5, 0.0)
+        self.assertAlmostEqual(b - a, cfg.LANDING_MAX_TILT_DEG * 2.0 * 0.5)
+        self.assertAlmostEqual(a, cfg.LANDING_MAX_TILT_DEG)
+
+    def test_stand_up_time_inverts_the_cone(self):
+        cfg = Config()
+        cfg.LANDING_STAND_UP = True
+        rate = cfg.LOOP_BANDWIDTH_SHARE * 2.0
+        t = guidance.stand_up_time(cfg, rate)
+        self.assertAlmostEqual(guidance.stand_up_cone(cfg, rate, t, 0.0),
+                               cfg.LANDING_MAX_TILT_DEG)
+
+
 class TestSlew(unittest.TestCase):
     """The landing burn's command ramps; it never steps."""
 

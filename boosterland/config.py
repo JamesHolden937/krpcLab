@@ -289,6 +289,12 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
+    LANDING_STAND_UP: bool = False          # the divert's lean ramps down
+                                            # at the burn's slew so the nose
+                                            # is upright one lag before
+                                            # contact (guidance.stand_up_cone),
+                                            # and no sideways speed is asked
+                                            # that the stand-up cannot brake
     LANDING_AERO_DIVERT: bool = False       # the divert credits the tilt's
                                             # measured body lift (q ClA/m,
                                             # guidance.solve_tilt), not only
