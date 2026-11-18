@@ -547,21 +547,30 @@ class ReconPilot:
         # 4.5 at 4.4 km and meet the heat limit there, LOG17750).
         up = self.speed * math.sin(math.radians(cfg.CLIMB_GAMMA_DEG))
         down = self.speed * math.sin(math.radians(-cfg.DESCENT_GAMMA_DEG))
+        gentle = self.speed * math.sin(math.radians(cfg.HEAT_SEEK_GAMMA_DEG))
         at_cap = self.v_heat is not None and \
             self.speed >= self.v_heat - cfg.SPEED_BAND_M_S
+        top = alt + up * cfg.ALT_TAU_S
         if self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
             # Thrust is the limit (the engine starving up high too).
             self.h_seek -= down * dt
-        elif heat_thr < 0.98 or at_cap or (
-                self.throttle >= 0.99 and self.accel >= cfg.SEEK_ACCEL_M_S2):
-            # Heat or fuel binds, or spare thrust: thinner air.
+        elif self.throttle >= 0.99 and self.accel >= cfg.SEEK_ACCEL_M_S2:
+            # Spare thrust: up, as steeply as allowed (the acceleration
+            # answers at once).
             self.h_seek += up * dt
+        elif heat_thr < 0.98 or at_cap:
+            # Heat or fuel binds: up gently, never far ahead -- the heat
+            # answers in tens of seconds, and climbing at 24 deg on it at
+            # Mach 4.6 carried the craft to 49 km, past where the engine
+            # breathes (LOG17753).
+            self.h_seek = min(self.h_seek, alt + gentle * cfg.ALT_TAU_S)
+            self.h_seek += gentle * dt
+            top = alt + gentle * cfg.ALT_TAU_S
         # (Throttled back for no limit: hold.  Climbing on every
         # not-thrust-limited tick took it unpowered to 42 km, LOG17752.)
         floor = alt - agl + cfg.ALT_FLOOR_AGL_M
-        lead = max(up, down) * cfg.ALT_TAU_S
-        self.h_seek = gd.clamp(self.h_seek, max(floor, alt - lead),
-                               alt + lead)
+        self.h_seek = gd.clamp(self.h_seek, max(floor, alt - down
+                                                * cfg.ALT_TAU_S), top)
 
     def choose_route(self, ut, lat, lon, speed, fuel):
         """Home the long way: on round the planet on the same great circle

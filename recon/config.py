@@ -94,6 +94,9 @@ class Config:
     # throttle just holds the speed.  Probes (logs/probe1): heat-limited at
     # ~1370 m/s at 15 km, ~1475 at 20 km, ~1480 at 25 km.
     SEEK_ACCEL_M_S2: float = 0.3
+    # Climbing because heat or fuel binds, the command moves along this
+    # path (a search: the heat answers in tens of seconds).
+    HEAT_SEEK_GAMMA_DEG: float = 3.0
     # Never closer to the ground than this while seeking (m).
     ALT_FLOOR_AGL_M: float = 2000.0
     # Climbs and descents at most these flight-path angles.
