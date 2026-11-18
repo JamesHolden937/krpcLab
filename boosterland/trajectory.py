@@ -441,19 +441,21 @@ def _rk4(env, r, v, mass, drag, dt, thrust=None, steer=None):
     ``thrust`` is an extra ``(r, v) -> acceleration`` term, so the landing
     burn integrates on the same scheme as the coast.
     """
-    def deriv(rr, vv):
+    timed = getattr(thrust, "timed", False)
+
+    def deriv(rr, vv, tau):
         a = acceleration(env, rr, vv, mass, drag, steer)
         if thrust is not None:
-            a = vec.add(a, thrust(rr, vv))
+            a = vec.add(a, thrust(rr, vv, tau) if timed else thrust(rr, vv))
         return vv, a
 
-    k1r, k1v = deriv(r, v)
+    k1r, k1v = deriv(r, v, 0.0)
     k2r, k2v = deriv(vec.add(r, vec.scale(k1r, dt * 0.5)),
-                     vec.add(v, vec.scale(k1v, dt * 0.5)))
+                     vec.add(v, vec.scale(k1v, dt * 0.5)), dt * 0.5)
     k3r, k3v = deriv(vec.add(r, vec.scale(k2r, dt * 0.5)),
-                     vec.add(v, vec.scale(k2v, dt * 0.5)))
+                     vec.add(v, vec.scale(k2v, dt * 0.5)), dt * 0.5)
     k4r, k4v = deriv(vec.add(r, vec.scale(k3r, dt)),
-                     vec.add(v, vec.scale(k3v, dt)))
+                     vec.add(v, vec.scale(k3v, dt)), dt)
     w = dt / 6.0
     r = vec.add(r, vec.scale(vec.add(vec.add(k1r, vec.scale(k2r, 2.0)),
                                      vec.add(vec.scale(k3r, 2.0), k4r)), w))
@@ -468,7 +470,8 @@ def _step(env, r, v, mass, drag, dt, cfg, thrust=None, steer=None):
         return _rk4(env, r, v, mass, drag, dt, thrust, steer)
     a = acceleration(env, r, v, mass, drag, steer)
     if thrust is not None:
-        a = vec.add(a, thrust(r, v))
+        a = vec.add(a, thrust(r, v, 0.0) if getattr(thrust, "timed", False)
+                    else thrust(r, v))
     v = vec.add(v, vec.scale(a, dt))
     r = vec.add(r, vec.scale(v, dt))
     return r, v
@@ -638,11 +641,24 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
                 if getattr(env, "burn_lit", False) else None)
     times, dirs = [], []            # the commands, in time order
 
-    def delayed(when):
+    def delayed(when, now, current):
+        """The command of ``when``: interpolated between the stored ones,
+        and between the last stored and ``current`` (the command at ``now``,
+        a substep's own time) past them.  Held at the step's start instead,
+        the nose aged a lag plus up to a step (0.5 s) -- nearly twice the
+        lag -- and the angle off the airflow with it."""
+        if not times or when < times[0]:
+            return nose_now or (dirs[0] if dirs else current)
         i = bisect.bisect_right(times, when) - 1
-        if i < 0:
-            return nose_now or dirs[0]
-        return dirs[i]
+        if i + 1 < len(times):
+            t0, t1 = times[i], times[i + 1]
+            d0, d1 = dirs[i], dirs[i + 1]
+        else:
+            t0, t1, d0, d1 = times[i], now, dirs[i], current
+        if t1 <= t0:
+            return d1
+        f = min(1.0, max(0.0, (when - t0) / (t1 - t0)))
+        return vec.unit(vec.add(vec.scale(d0, 1.0 - f), vec.scale(d1, f)))
 
     while t < cfg.PREDICT_MAX_TIME_S:
         radius = vec.norm(r)
@@ -672,14 +688,19 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
         if lag > 0.0:
             times.append(t)
             dirs.append(thrust_dir(v, r, accel))
-            held = delayed(t - lag)
-            push = lambda rr, vv: vec.scale(held, accel)
+
+            def nose(rr, vv, tau, t=t, accel=accel):
+                return delayed(t + tau - lag, t + tau,
+                               thrust_dir(vv, rr, accel))
         else:
-            push = lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel), accel)
+            def nose(rr, vv, tau, accel=accel):
+                return thrust_dir(vv, rr, accel)
+
+        def push(rr, vv, tau, nose=nose, accel=accel):
+            return vec.scale(nose(rr, vv, tau), accel)
+        push.timed = True
         if aero is not None:
-            push = _with_body_aero(env, mass, drag, aero, push,
-                                   held if lag > 0.0 else None,
-                                   lambda rr, vv: thrust_dir(vv, rr, accel))
+            push = _with_body_aero(env, mass, drag, aero, push, nose)
         r, v = _step(env, r, v, mass, drag, dt, cfg, push)
         if isp and mass > 0.0:
             mass = max(dry if dry is not None else 1e-3 * mass,
@@ -689,17 +710,18 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     return r, v, t, steps, mass
 
 
-def _with_body_aero(env, mass, drag, aero, push, held, command):
+def _with_body_aero(env, mass, drag, aero, push, nose_at):
     """``push`` plus the body's aerodynamics beyond drag on the airflow:
     the normal force (``aero``'s Cn*A, opposite the nose's tilt off
-    retrograde) and the drag's rise with that angle.  The nose is ``held``
-    (the lagged command), or on the command when there is no lag."""
-    def total(rr, vv):
-        a = push(rr, vv)
+    retrograde) and the drag's rise with that angle.  ``nose_at(r, v, tau)``
+    is the nose at a substep (``push`` and it both take the substep's
+    time)."""
+    def total(rr, vv, tau=0.0):
+        a = push(rr, vv, tau)
         speed = vec.norm(vv)
         if speed < 1.0 or mass <= 0.0:
             return a
-        nose = held if held is not None else command(rr, vv)
+        nose = nose_at(rr, vv, tau)
         retro = vec.scale(vv, -1.0 / speed)
         tilt = vec.project_out(nose, retro)
         alpha = vec.norm(tilt)
@@ -717,6 +739,7 @@ def _with_body_aero(env, mass, drag, aero, push, held, command):
         if alpha > 1e-9:
             a = vec.add(a, vec.scale(tilt, -q * cn / alpha))
         return a
+    total.timed = True
     return total
 
 

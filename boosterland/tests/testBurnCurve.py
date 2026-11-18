@@ -91,9 +91,10 @@ class TestBurnLift(unittest.TestCase):
         nose = vec.add(vec.scale(retro, math.cos(a)), vec.scale(side, math.sin(a)))
         aero = lambda s, h, alpha: (10.0 * alpha, 1.0)
         total = trajectory._with_body_aero(
-            env, 1.0, lambda s, h: 0.0, aero, lambda rr, vv: (0.0, 0.0, 0.0),
-            nose, None)
-        f = total(r, v)
+            env, 1.0, lambda s, h: 0.0, aero,
+            lambda rr, vv, tau: (0.0, 0.0, 0.0),
+            lambda rr, vv, tau: nose)
+        f = total(r, v, 0.0)
         q = 0.5 * vec.norm(v) ** 2
         self.assertAlmostEqual(vec.dot(f, side), -q * 10.0 * a, places=3)
         self.assertAlmostEqual(vec.dot(f, retro), 0.0, places=6)
