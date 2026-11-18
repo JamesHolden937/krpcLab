@@ -12,6 +12,15 @@ fall's apex 34.2 km; the landing burn lit at 5.2 km doing 680 m/s (623 down,
 288 across) and flamed out at 29 m after ~737 m/s, still 18 m/s down: it
 needed ~850 m/s.  The stack's zero-alpha Cd*A at 5 km is the ascent log's
 "cda" row.
+
+LOG17830 (qs_finbooster2, the same 13-Vector booster with six fins, defaults
+d8a430b8): separated at 23783 m above the pad, 23994 m out, 795.2 m/s away
+and 424.2 up, 230.62 t, dry 122.65 t.  The boostback left it 161.14 t at the
+coast; the landing burn lit doing 774 m/s and ran dry 72 m up at 68 m/s with
+37.12 t burned: it needed ~40.8 t.  The fall's Cd*A is the log's ``cda``
+column (brakes closed all the way down), half the 9.9 m^2 at M2.4 the
+booster's dragcache had recorded after the burn -- on which the budget lit
+at 729 m/s and charged the landing 36.75 t.
 """
 
 import math
@@ -51,7 +60,38 @@ def shuttle_cda(h, v):
     return _CDA[-1]
 
 
+FIN2 = budget.Booster(mass=230620.0, dry_mass=122650.0, thrust_vac=13.0e6,
+                      thrust_sl=12.185e6, isp_vac=315.0, isp_sl=295.0,
+                      radius=2.61, gimbal_accel=0.0, fixed_accel=0.059)
+FIN2_SEP = budget.State(height=23783.0, downrange=23994.0, v_away=795.2,
+                        v_cross=0.0, v_up=424.2)
+_FIN2_SPEEDS = (300, 350, 400, 450, 500, 550, 600, 650, 700, 750)
+_FIN2_CDA = (14.9, 15.0, 12.0, 10.4, 7.8, 6.5, 5.7, 5.5, 5.4, 3.9)
+
+
+def _table(speeds, areas, v):
+    if v <= speeds[0]:
+        return areas[0]
+    for i in range(len(speeds) - 1):
+        if v <= speeds[i + 1]:
+            f = (v - speeds[i]) / (speeds[i + 1] - speeds[i])
+            return areas[i] * (1 - f) + areas[i + 1] * f
+    return areas[-1]
+
+
+def fin2_cda(h, v):
+    return _table(_FIN2_SPEEDS, _FIN2_CDA, v)
+
+
 class TestBudget(unittest.TestCase):
+    def test_fin_booster_flown_on_its_falls_drag(self):
+        rec = budget.recovery(KERBIN, FIN2, FIN2_SEP, cda=fin2_cda)
+        m_coast = FIN2.mass * math.exp(-rec.boostback_dv / (315.0 * budget.G0))
+        self.assertAlmostEqual(m_coast, 161140.0, delta=1500.0)
+        self.assertAlmostEqual(rec.terminal, 774.0, delta=0.03 * 774.0)
+        landing = m_coast - (rec.propellant_left + FIN2.dry_mass)
+        self.assertAlmostEqual(landing, 40800.0, delta=2000.0)
+
     def test_boostback_matches_the_measured_burn(self):
         rec = budget.recovery(KERBIN, HEAVY, SEP)
         self.assertAlmostEqual(rec.boostback_dv, 1251.0, delta=0.05 * 1251.0)

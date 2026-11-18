@@ -625,6 +625,7 @@ class Autoland:
         self.neutral_fell = False       # ... its drag has started falling
         self.ladder_machs = [2.0, 1.2, 0.6]     # DIAG_DRAG: burn ladders
         self.drag_key = None            # dragcache's key for this booster
+        self.fall_curve = None          # the curve at the burn's ignition
         self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
                                         # tick scatter: every deadband
         self.rcs_accel = None           # m/s^2 the RCS translates at (read
@@ -653,6 +654,12 @@ class Autoland:
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
         if state in (COAST, LANDING_BURN):
             self.read_dry_mass(ut, state)
+        if state == LANDING_BURN:
+            # The drag the fall was flown on, for dragcache: past here the
+            # gear comes down and the probes read the burn's and then the
+            # wreck's air (LOG17830 recorded 9.9 m^2 at M2.4 against the
+            # fall's 4-5, and the ascent's budget fell on it 45 m/s slow).
+            self.fall_curve = self.env.curve_snapshot()
         if state == COAST and self.drag_key is None:
             # The coast burns nothing and waits: the part reads are free here.
             self.drag_key = dragcache.booster_key(
@@ -2897,8 +2904,10 @@ class Autoland:
 
     def record_drag(self, ut):
         """Leave the Cd*A curve this flight measured in ``dragcache``, for the
-        ascent of the next stack carrying this booster to budget with."""
-        curve = self.env.curve_snapshot()
+        ascent of the next stack carrying this booster to budget with: the
+        curve the fall flew, as it stood when the landing burn lit (the
+        coast's, brakes as they were), else the curve now."""
+        curve = self.fall_curve or self.env.curve_snapshot()
         if not self.drag_key or len(curve) < 2:
             return
         try:
