@@ -348,7 +348,11 @@ class ReconPilot:
         # moves as asked.
         self.rot_u = gd.clamp((self.rot_u or 0.0) + (want - q) / qmax
                               / cfg.ROTATE_CLOSE_S * dt, -1.0, 1.0)
-        self.plane.pitch_override = self.rot_u
+        # ... and a proportional term, full travel for an error of the full
+        # rate: the integral alone let the nose fall at 50 deg/s once it
+        # had wound back (LOG17741).
+        self.plane.pitch_override = gd.clamp(self.rot_u + (want - q) / qmax,
+                                             -1.0, 1.0)
         self.rot_pitch = max(self.rot_pitch or 0.0, theta) \
             if want > 0 else theta
         return min(target, self.rot_pitch)
