@@ -62,15 +62,14 @@ the context is still small (under ~100k tokens). The fresh session starts
 from HANDOFF.md as usual (see "Continuing after the clear" below).
 
 **Continuing after the clear.** A self-clear kills this conversation's
-background jobs and CronCreate wakes, and a scheduled task's completion notice
-does not wake a cleared conversation (both tested 2026-11-18). Follow
-`~/.claude/docs/autoContinue.md`: launch the next batch with
+background jobs and CronCreate wakes; a scheduled task survives, and another
+session's `send_message` wakes a cleared idle session (all tested 2026-11-18).
+Follow `~/.claude/docs/autoContinue.md`: launch the next batch with
 `detachjob start NAME -- farmlaunch ... -- BATCH` (a systemd unit, survives
 the clear), write NAME and the ETA into the handoff, arm a one-time scheduled
-task (mcp__scheduled-tasks, fireAt = ETA) with the AUTO-CONTINUE prompt, then
-clear. That task's run is a fresh session that reads the handoff, waits on
-NAME and carries on; a session whose first message is an AUTO-CONTINUE prompt
-treats it as step 1 and carries on without asking.
+task (mcp__scheduled-tasks, fireAt = ETA) whose run waits on NAME and messages
+this session (id from `get_session "self"`) the AUTO-CONTINUE prompt, then
+clear. Woken by that message, read the handoff and carry on without asking.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
