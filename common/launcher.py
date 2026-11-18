@@ -48,6 +48,7 @@ PILOTS = [
     ("ASCENT TO ORBIT", "ascent", "ascent.autopilot"),
     ("AIRPLANE: CRUISE / HOLD", "airplane", "airplane.autopilot"),
     ("PROP PITCH FOR TOP SPEED", "prop", "propPitch.autopilot"),
+    ("QUDRAC: OVER THE WAYPOINT AND HOME", "recon", "recon.autopilot"),
 ]
 
 # run.sh --pilot accepts these as well as the names above.

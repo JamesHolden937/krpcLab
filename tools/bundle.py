@@ -66,7 +66,7 @@ import pystrip  # noqa: E402
 
 # Every package an autopilot in ``common.launcher.PILOTS`` imports.
 PACKAGES = ["common", "spaceplane", "boosterland", "ascent", "propPitch",
-            "airplane"]
+            "airplane", "recon"]
 NAME = "krpcLab.py"
 
 

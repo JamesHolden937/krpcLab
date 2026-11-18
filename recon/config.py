@@ -1,0 +1,108 @@
+"""All tunables for the recon pilot (the QUDRAC only).
+
+    ./run.sh --pilot recon --set CRUISE_ALT_M=22000
+
+This pilot is fitted to one craft on purpose (the user, 2026-11-17: "this
+autopilot is just for that plane, so you can ... tune it for that
+specifically"); the craft is ``saves/craft/SPH/QUDRAC.craft``.  The numbers
+quoted are from ``recon/tools/probe.py`` on the farm (logs/probe-*.txt).
+"""
+
+from dataclasses import dataclass
+
+from common.config import apply_overrides, differences, fingerprint  # noqa: F401
+
+
+@dataclass
+class Config:
+    # --- the target ----------------------------------------------------------
+    # The last custom waypoint on the vessel's body (stock map view: "Place
+    # waypoint" / the waypoint tool); with none, these (deg) if set.
+    TARGET_LAT: float = float("nan")
+    TARGET_LON: float = float("nan")
+    # Overhead: the closest approach is logged; the target is passed once it
+    # is behind (more than 90 deg off the nose) or within this distance.
+    PASS_RADIUS_M: float = 500.0
+
+    # --- limits ----------------------------------------------------------------
+    # Total load on the pilot (thrust's push included), g.  The wings get
+    # what is left after the axial load (guidance.normal_g_budget), less
+    # G_MARGIN; measured g over G_LIMIT - G_MARGIN shuts the throttle and
+    # rolls the pull back.
+    G_LIMIT: float = 15.0
+    G_MARGIN: float = 2.0
+    # Heat: every part's internal and skin temperature against its own
+    # limit, the hottest one.  The throttle is proportional on where it
+    # will be HEAT_LOOKAHEAD_S from now: full HEAT_BAND under HEAT_MAX,
+    # shut at it.  Probe 1: the cockpit skin (limit 2000 K) went 1000 ->
+    # 2142 K in 2 s at Mach 4.8 at 5.5 km, and the craft burned.
+    HEAT_MAX: float = 0.85
+    HEAT_BAND: float = 0.08
+    HEAT_LOOKAHEAD_S: float = 6.0
+    # Heat-limited with the throttle shut, the descent stops (the flight
+    # path is held at or above level) until the heat falls.
+    HEAT_NO_DESCENT: float = 0.8
+
+    # --- the profile -----------------------------------------------------------
+    # Take-off: full throttle; the nose comes up to ROTATE_PITCH_DEG at
+    # ROTATE_SPEED_M_S; gear up at GEAR_UP_AGL_M.
+    ROTATE_SPEED_M_S: float = 90.0
+    ROTATE_PITCH_DEG: float = 12.0
+    GEAR_UP_AGL_M: float = 50.0
+    # The cruise altitude (m), climbed to at CLIMB_GAMMA_DEG.
+    CRUISE_ALT_M: float = 22000.0
+    CLIMB_GAMMA_DEG: float = 30.0
+    DESCENT_GAMMA_DEG: float = -15.0
+    # Altitude error closed in ALT_TAU_S; flight path error into pitch
+    # attitude at most PITCH_STEP_DEG off the present pitch.
+    ALT_TAU_S: float = 15.0
+    PITCH_STEP_DEG: float = 6.0
+    # Heading error closed in HEADING_TAU_S (a coordinated turn's rate);
+    # bank never past BANK_MAX_DEG.
+    HEADING_TAU_S: float = 6.0
+    BANK_MAX_DEG: float = 80.0
+
+    # --- home ------------------------------------------------------------------
+    # The runways (spaceplane's surveyed thresholds): 09 lands east from the
+    # west end, 27 west from the east end; whichever the return comes in
+    # nearer to.
+    RUNWAY_09_LAT: float = -0.0485761
+    RUNWAY_09_LON: float = -74.724466
+    RUNWAY_27_LAT: float = -0.0501756
+    RUNWAY_27_LON: float = -74.495283
+    RUNWAY_LENGTH_M: float = 2400.0
+    RUNWAY_ALT_M: float = 70.0
+    # The final approach: from FINAL_M out on the centreline at
+    # FINAL_SLOPE (tan of the glide slope), aimed AIM_M past the threshold,
+    # at APPROACH_SPEED_M_S.
+    FINAL_M: float = 12000.0
+    FINAL_SLOPE: float = 0.07
+    AIM_M: float = 300.0
+    APPROACH_SPEED_M_S: float = 110.0
+    # The descent home: altitude on DESCENT_SLOPE above the final's gate;
+    # speed what a drag-only coast slows to APPROACH_SPEED at the gate
+    # (guidance.coast_speed, on the drag measured in flight, times
+    # COAST_DRAG_SHARE: drag falls as the air thins, and a coast that is
+    # too fast cannot be slowed).
+    DESCENT_SLOPE: float = 0.12
+    COAST_DRAG_SHARE: float = 0.6
+    # Localizer: cross-track closed in LOC_TAU_S, cut at most LOC_CUT_DEG.
+    LOC_TAU_S: float = 12.0
+    LOC_CUT_DEG: float = 30.0
+    # Flare from FLARE_AGL_M: the sink rate ramps to TOUCHDOWN_SINK_M_S.
+    FLARE_AGL_M: float = 25.0
+    TOUCHDOWN_SINK_M_S: float = 1.5
+    # Speed held by throttle: (want - speed) / SPEED_BAND_M_S.
+    SPEED_BAND_M_S: float = 20.0
+
+    # --- loop and log ------------------------------------------------------------
+    LOOP_SLEEP_S: float = 0.05
+    LOOP_PACING_GAME_TIME: bool = False
+    LOG_INTERVAL_UT: float = 0.5
+    LOG_DIR: str = "logs"
+    # Stop after this many game seconds (0 = until stopped or landed).
+    RUN_TIME_S: float = 0.0
+
+
+def defaults_fingerprint():
+    return fingerprint(Config)

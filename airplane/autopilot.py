@@ -63,7 +63,7 @@ WRITE_STEP = 0.001
 
 
 class AirplanePilot:
-    def __init__(self, conn, cfg, log):
+    def __init__(self, conn, cfg, log, headless=False):
         self.conn = conn
         self.cfg = cfg
         self.log = log
@@ -117,6 +117,7 @@ class AirplanePilot:
         self.air_flight = self.vessel.flight(
             self.sc.ReferenceFrame.create_hybrid(
                 position=body.reference_frame, rotation=self.vf))
+        # headless: flown inside another pilot (recon), whose panel is drawn.
         self.gui = ControlPanel(conn, "AIRPLANE", "START", ACCENT_AIRPLANE, [
             choice("mode", "", MODES, cfg.MODE),
             toggle("prop", "prop plane", cfg.PROP_PLANE),
@@ -124,7 +125,7 @@ class AirplanePilot:
             field("rpm_pitch", "pitch rate limit (RPM)", cfg.PITCH_RATE_RPM),
             field("rpm_roll", "roll rate limit (RPM)", cfg.ROLL_RATE_RPM),
             field("rpm_yaw", "yaw rate limit (RPM)", cfg.YAW_RATE_RPM),
-        ])
+        ], draw=not headless)
 
     # -- takeover -----------------------------------------------------------
     def take_over(self, ut):
