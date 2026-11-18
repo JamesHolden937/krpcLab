@@ -640,6 +640,10 @@ class Autoland:
         self.telemetry.remeasure_leg_clearance(ut, state.lower())
         if state in (COAST, LANDING_BURN):
             self.read_dry_mass(ut, state)
+        if state == LANDING_BURN:
+            self.log.event(ut, "burn lift ClA0 by Mach: %s" % (" ".join(
+                "%.2f:%.2f" % (m, a) for m, a in zip(
+                    self.env._lift0_machs, self.env._lift0_areas)) or "none"))
         if state == COAST and self.drag_key is None:
             # The coast burns nothing and waits: the part reads are free here.
             self.drag_key = dragcache.booster_key(
@@ -1405,6 +1409,8 @@ class Autoland:
                               snap.rotation, snap.direction)
         self.env.refresh_lift(snap.position, snap.velocity, snap.rotation,
                               snap.direction)
+        self.env.refresh_lift0(snap.ut, snap.position, snap.velocity,
+                               snap.rotation, snap.direction)
         first = self.env.holdable_deg is None
         self.env.refresh_holdable(snap.ut, snap.position, snap.velocity,
                                   snap.rotation, snap.direction)
@@ -2072,6 +2078,8 @@ class Autoland:
         self.log_attitude_tune(snap)
         self.env.refresh_drag(snap.ut, snap.position, snap.velocity,
                               snap.rotation, snap.direction)
+        self.env.refresh_lift0(snap.ut, snap.position, snap.velocity,
+                               snap.rotation, snap.direction)
         prediction = self.predict(snap, powered=True)
         # Throttle first: the steering law has to know how much acceleration
         # it is actually going to get, not how much the vehicle could make at
@@ -2199,7 +2207,8 @@ class Autoland:
                           vec.angle_between(snap.direction, brake),
                           self.env.drag_area_at(snap.speed, altitude),
                           self.env.mach(snap.speed, altitude)))
-        self.log_burn_forces(snap, altitude)
+        if self.cfg.DIAG_BURN_FORCES:
+            self.log_burn_forces(snap, altitude)
 
     def log_burn_forces(self, snap, altitude):
         """DIAG_BURN: the horizontal force budget, m/s^2, against the

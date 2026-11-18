@@ -68,12 +68,58 @@ def at_height(rows, h, key_h, key):
     return None
 
 
+FORCE = re.compile(r"burn force (.*)")
+BANDS = (8000, 4000, 2000, 1000, 500, 200, 50, 0, -1e9)
+
+
+def forces(paths):
+    """Per height band, the mean of each ``burn force`` field over every
+    log: what the game's air does horizontally (aH) against what the model's
+    drag does (mH), so a missing or wrong aerodynamic term shows as a
+    standing difference in one band."""
+    sums = {}
+    for path in paths:
+        h = None
+        for line in open(path):
+            m = TICK.search(line)
+            if m:
+                kv = dict(x.split("=") for x in m.group(2).split())
+                h = float(kv["h"])
+                continue
+            m = FORCE.search(line)
+            if not m or h is None:
+                continue
+            kv = {k: float(v) for k, v in
+                  (x.split("=") for x in m.group(1).split())}
+            band = next(b for b in BANDS if h >= b)
+            acc = sums.setdefault(band, {})
+            for k, v in kv.items():
+                acc[k] = acc.get(k, 0.0) + v
+            acc["n"] = acc.get("n", 0) + 1
+    print("  h >=  |    aH     mH   aH-mH |    aV     mV |    tH  side |    n")
+    for band in BANDS:
+        acc = sums.get(band)
+        if not acc:
+            continue
+        n = acc["n"]
+        g = lambda k: acc.get(k, 0.0) / n
+        print("%6d | %6.2f %6.2f %6.2f | %6.2f %6.2f | %6.2f %5.2f | %4d"
+              % (band, g("aH"), g("mH"), g("aH") - g("mH"), g("aV"), g("mV"),
+                 g("tH"), g("side"), n))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("logs", nargs="+")
     ap.add_argument("--rows", action="store_true")
     ap.add_argument("--every", type=float, default=1.0)
+    ap.add_argument("--forces", action="store_true",
+                    help="the burn's force budget by height band (m/s^2): "
+                         "game aero v model drag, thrust's horizontal part")
     a = ap.parse_args()
+    if a.forces:
+        forces(a.logs)
+        return
     names = None
     for path in a.logs:
         plans, ticks, meta = parse(path)

@@ -90,6 +90,13 @@ class Steer:
                                 # credited at no more than that
 
 
+def lift0_direction(position, velocity):
+    """See ``environment.lift0_direction`` (the same definition: the burn's
+    lift is measured and flown along one direction)."""
+    n = vec.project_out(vec.unit(position), vec.unit(velocity))
+    return vec.unit(n) if vec.norm(n) > 1e-9 else None
+
+
 def unwind_share(to_ignition, t, span):
     """The share of the coast's angle still held ``t`` seconds into a
     propagation that predicts ignition ``to_ignition`` seconds out: 1 until
@@ -625,6 +632,23 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     # the nose is where it is now (``env.nose``).
     # A burn still to be lit starts with the nose on its first command (the
     # coast unwinds its angle of attack onto it, ``SETTLE_LAGS``).
+    # The body's lift at the burn's attitude (Environment.probe_lift0): an
+    # asymmetric booster lifts with its nose on retrograde.
+    lift0_at = getattr(env, "lift0_at", None)
+
+    def body_lift(rr, vv):
+        if lift0_at is None:
+            return (0.0, 0.0, 0.0)
+        speed = vec.norm(vv)
+        altitude = vec.norm(rr) - env.equatorial_radius
+        cla = lift0_at(speed, altitude) if speed > 20.0 else None
+        n = lift0_direction(rr, vv) if cla else None
+        if n is None:
+            return (0.0, 0.0, 0.0)
+        return vec.scale(n, 0.5 * env.density(altitude) * speed * speed
+                         * cla / mass_now[0])
+
+    mass_now = [mass]
     lag = getattr(env, "nose_lag", None) or 0.0
     nose_now = (getattr(env, "nose", None)
                 if getattr(env, "burn_lit", False) else None)
@@ -661,13 +685,16 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
             trace.append((t, height, math.sqrt(max(0.0, speed * speed
                                                    - vs * vs)), vs,
                           accel / max_accel if max_accel > 0.0 else 0.0))
+        mass_now[0] = mass
         if lag > 0.0:
             times.append(t)
             dirs.append(thrust_dir(v, r, accel))
             held = delayed(t - lag)
-            push = lambda rr, vv: vec.scale(held, accel)
+            push = lambda rr, vv: vec.add(vec.scale(held, accel),
+                                          body_lift(rr, vv))
         else:
-            push = lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel), accel)
+            push = lambda rr, vv: vec.add(
+                vec.scale(thrust_dir(vv, rr, accel), accel), body_lift(rr, vv))
         r, v = _step(env, r, v, mass, drag, dt, cfg, push)
         if isp and mass > 0.0:
             mass = max(dry if dry is not None else 1e-3 * mass,
