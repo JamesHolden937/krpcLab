@@ -1377,3 +1377,19 @@ ee8dd7eb). The misses and hard touchdowns are the fall after the tanks empty, wh
 b476e09: the burn propagation spends propellant (measured Isp), stops at the engines' dry mass, waits the reaction
 time and lags the thrust by the nose lag; DIAG_BURN now logs one plan per variant. 92037ed: boosterland records its
 measured Cd*A curve per booster (`dragcache`) for the ascent's budget. Unflown.
+
+## 2026-11-17 night: the burn's prediction error (aim-off batches noaim/lit/tick/unw/frc/lift-1117)
+
+The user asked whether improving the coast's prediction would improve accuracy. fb4-1117 showed the coast's
+predicted miss at ignition was 2-51 m, so the burn made the miss; noaim-1117 (aim off) showed the prediction itself
+lands the booster ~68 m long of where it predicts at ignition. Four source fixes were tried, each confirmed by an
+aim-off batch of 12 on qs_finbooster4: engines lit on the trigger tick (lit-1117: -53), median tick interval for
+reaction_time (tick-1117: -74; burn duration now matches), coast unwind timed on the coast's own nose lag
+(unw-1117: -62; N sd 100 -> 22), and a coast-probed zero-AoA burn lift (lift-1117: -186, reverted -- the probe reads
+noise because the coast leaves the roll free). Standard error ~17 m: the along-track error did not move. frc-1117
+logged the game's aero force per tick: the measured horizontal deceleration matches it, not the model's drag, but
+the implied gap is larger than the plan-v-flown speeds show, so the cause is not settled. Refuted offline: the
+propagator's coarse step (0.7 m) and the null rate (5 m). Also built, unflown: LANDING_STAND_UP and
+LANDING_AERO_DIVERT (the supersonic divert reverses past ~2-5 deg of tilt). Method change proposed in HANDOFF: an
+offline replay substituting flown inputs one at a time. The user added to CLAUDE.md: a prediction error is fixed
+first, at its source, never hidden.
