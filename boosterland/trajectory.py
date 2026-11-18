@@ -16,7 +16,7 @@ boostback aims at the point the vehicle will actually touch down on.
 
 import bisect
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from common import vec
 from common.geo import gravity_at, surface_distance  # noqa: F401
@@ -88,6 +88,15 @@ class Steer:
     hold: object = None         # (speed, altitude) -> the most the vehicle
                                 # can hold, radians, or None; the lift is
                                 # credited at no more than that
+
+
+def unwind_share(to_ignition, t, span):
+    """The share of the coast's angle still held ``t`` seconds into a
+    propagation that predicts ignition ``to_ignition`` seconds out: 1 until
+    ``span`` before it, falling linearly to 0 at ignition."""
+    if not span or span <= 0.0:
+        return 1.0
+    return max(0.0, min(1.0, (to_ignition - t) / span))
 
 
 def lift_direction(steer, v):
@@ -474,6 +483,12 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
 
     """
     drag = drag_lookup(env, drag_area, drag_scale)
+    # The coast fades its angle of attack to zero before ignition
+    # (Autoland.unwound): fly the same fade, or the prediction credits lift
+    # the vehicle will not make.
+    unwind_in = getattr(env, "unwind_in", None)
+    unwind_span = getattr(env, "unwind_span", None) if unwind_in is not None \
+        else None
     r = tuple(r0)
     v = tuple(v0)
     t = 0.0
@@ -518,7 +533,12 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         if descending:
             profile.append((speed, altitude))
 
-        r, v = _step(env, r, v, mass, drag, dt, cfg, steer=steer)
+        flown = steer
+        if steer is not None and steer.aoa and unwind_span:
+            share = unwind_share(unwind_in, t, unwind_span)
+            if share < 1.0:
+                flown = replace(steer, aoa=steer.aoa * share)
+        r, v = _step(env, r, v, mass, drag, dt, cfg, steer=flown)
         t += dt
         steps += 1
 

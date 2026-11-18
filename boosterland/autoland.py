@@ -534,6 +534,7 @@ class Autoland:
         self.autostart = False   # --autostart: STANDBY acts as if START was pressed
         self.phase_start_ut = ut
         self.prediction = None
+        self.prediction_ut = None       # when it was taken
         self.roll_up = None      # last roll reference, for continuity
         self.roll_nose = None    # the commanded nose roll_up was taken for
         self.roll_hold = None    # rad: the roof's angle from roll_up at the
@@ -617,6 +618,8 @@ class Autoland:
                                         # while the valve is open)
         self.lag = LagFit()             # the attitude loop's measured
                                         # closing rate (Autoland.null_rate)
+        self.coast_lag = LagFit()       # the same, unpowered in the coast
+                                        # (fins, RCS, the air): another plant
         self.lag_logged = None          # the rate last logged
         self.cmd_rate = None            # deg/s the command itself moves
         self.roll_rate = None           # deg/s about the nose, signed
@@ -674,6 +677,7 @@ class Autoland:
             self.env.leg_clearance = snap.leg_clearance
         self.env.attitude_rate = self.null_rate(snap)
         self.update_burn_env(snap)
+        self.prediction_ut = snap.ut
         self.prediction = trajectory.predict_landing(
             self.env, snap.position, snap.velocity, snap.mass, max_accel,
             self.cfg, steer=steer)
@@ -1414,12 +1418,14 @@ class Autoland:
         # The angle is *solved* against the propagator and then handed back to
         # it, so the stored prediction is of the trajectory the booster is
         # about to fly rather than of a ballistic one it is not.
+        self.set_unwind(snap)
         steer, steered = guidance.solve_steer(
             self.env, snap.position, snap.velocity, snap.mass, snap.max_accel,
             self.cfg)
         if steer is not None:
             self.env.descent_aoa = abs(steer.aoa)
             self.prediction = steered
+            self.prediction_ut = snap.ut
             self.env.set_descent_profile(steered.profile)
             self.steer = steer
             prediction = steered
@@ -1998,14 +2004,40 @@ class Autoland:
         still holding the coast's 5-7 deg when the engines lit kept it ~5 s
         and the tilted thrust carried the touchdown 20-100 m long
         (nodiv-1115).  The coast's predictions still fly the full angle; the
-        lift lost over the last second or so is re-solved every tick."""
-        lag = self.lag.lag
-        if (steer is None or not steer.aoa or lag is None
+        lift lost over the last second or so is re-solved every tick.
+
+        The lag is the *unpowered* nose's (``coast_lag``): the boostback's
+        gimballed one read 0.8 s where the coast's nose took ~3 s, so the
+        fade ended with the nose 9-13 deg off retrograde at ignition and the
+        burn braked ~10 m/s less sideways than predicted (tick-1117).  The
+        coast's predictions fly the same fade (``trajectory.unwind_share``,
+        ``set_unwind``)."""
+        span = self.unwind_span()
+        if (steer is None or not steer.aoa or span is None
                 or prediction is None or not prediction.powered):
             return steer
         to_ignition = max(0.0, prediction.time_to_land - prediction.burn_time)
-        share = min(1.0, to_ignition / (self.cfg.SETTLE_LAGS * lag))
-        return replace(steer, aoa=steer.aoa * share)
+        return replace(steer, aoa=steer.aoa
+                       * trajectory.unwind_share(to_ignition, 0.0, span))
+
+    def unwind_span(self):
+        """Seconds the coast's angle fades over before ignition:
+        ``SETTLE_LAGS`` of the unpowered nose's measured lag; None until it
+        is measured."""
+        lag = self.coast_lag.lag
+        return None if lag is None else self.cfg.SETTLE_LAGS * lag
+
+    def set_unwind(self, snap):
+        """Tell the coast's predictions when the fade runs: the last
+        prediction's ignition, from now, and the span."""
+        p = self.prediction
+        span = self.unwind_span()
+        if p is None or not p.powered or span is None:
+            self.env.unwind_in = self.env.unwind_span = None
+            return
+        self.env.unwind_in = max(0.0, p.time_to_land - p.burn_time
+                                 - (snap.ut - self.prediction_ut))
+        self.env.unwind_span = span
 
     def null_rate(self, snap):
         """The lateral null's highest rate (1/s): ``LOOP_BANDWIDTH_SHARE`` of
@@ -2429,6 +2461,21 @@ class Autoland:
                             snap.input_saturation)
         else:
             self.lag.gap()
+        if self.state == COAST and self.demand <= 0.0:
+            before = self.coast_lag.lag
+            self.coast_lag.update(snap.ut, snap.direction,
+                                  self.commanded_direction,
+                                  snap.input_saturation)
+            if self.coast_lag.lag is not None and (
+                    before is None
+                    or abs(self.coast_lag.lag - before) > 0.25 * before):
+                self.log.event(snap.ut, "coast nose lag %.2f s (residual "
+                               "%.0f%% of none, %d ticks)"
+                               % (self.coast_lag.lag,
+                                  100.0 * (self.coast_lag.rel_error or 0.0),
+                                  self.coast_lag.samples))
+        else:
+            self.coast_lag.gap()
         if prev is not None and snap.ut - prev[0] > 1e-3:
             dt = snap.ut - prev[0]
             self.nose_rate = vec.angle_between(prev[1], snap.direction) / dt

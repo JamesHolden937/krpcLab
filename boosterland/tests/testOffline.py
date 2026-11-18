@@ -452,6 +452,16 @@ class TestStandUp(unittest.TestCase):
                                cfg.LANDING_MAX_TILT_DEG)
 
 
+class TestUnwind(unittest.TestCase):
+    """trajectory.unwind_share: the coast's angle fades to 0 at ignition."""
+
+    def test_share(self):
+        self.assertEqual(trajectory.unwind_share(10.0, 0.0, 4.0), 1.0)
+        self.assertAlmostEqual(trajectory.unwind_share(10.0, 8.0, 4.0), 0.5)
+        self.assertEqual(trajectory.unwind_share(10.0, 11.0, 4.0), 0.0)
+        self.assertEqual(trajectory.unwind_share(10.0, 9.0, None), 1.0)
+
+
 class TestSlew(unittest.TestCase):
     """The landing burn's command ramps; it never steps."""
 

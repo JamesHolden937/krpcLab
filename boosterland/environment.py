@@ -110,6 +110,9 @@ class Environment:
                                         # burn's law and its propagation
         self.burn_isp = None            # s, the engines' Isp as last read:
                                         # the burn propagation's mass flow
+        self.unwind_in = None           # s to the predicted ignition, and
+        self.unwind_span = None         # the s the coast's angle fades over
+                                        # before it (Autoland.set_unwind)
         self.burn_lit = False           # the landing burn's engines are
                                         # delivering (no reaction to wait)
         self.nose_lag = None            # s, the nose behind its command
