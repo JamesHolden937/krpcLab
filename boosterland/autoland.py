@@ -614,6 +614,7 @@ class Autoland:
         self.drag_diag_next = 0.0       # DIAG_DRAG: next probe
         self.fin_hold = None            # hold_fins' surfaces (ignore flags)
         self.brake_moved = False        # brakes_settled: the drag has moved
+        self.brake_cmd_ut = None        # when the brakes were last commanded
         self.neutral_from = None        # sweep_burn_curve: fins held since
         self.neutral_last = None        # ... the last probe while held
         self.neutral_next_ut = 0.0      # ... the next sweep, not before
@@ -1653,6 +1654,7 @@ class Autoland:
             # deflection drag swamped the brakes' (open/closed read 0.89-1.97
             # on one craft, lift2-1117).
             self.hold_fins(True)
+            self.brake_cmd_ut = snap.ut
             self.late_state = "full"
             self.brake_probe = None
             self.brake_moved = False
@@ -1662,7 +1664,10 @@ class Autoland:
         if self.late_state == "full":
             if not self.brakes_settled(snap):
                 return
+            self.log.event(snap.ut, "late brakes: open settled after %.2f s"
+                           % (snap.ut - self.brake_cmd_ut))
             swept = self.sweep_neutral(snap, full=True)
+            self.brake_cmd_ut = snap.ut
             set_airbrake_angle(self.vessel, 0.0, self.cfg)
             self.deploy_angle = 0.0
             if not swept:
@@ -1679,6 +1684,8 @@ class Autoland:
         if self.late_state == "settling":
             if not self.brakes_settled(snap):
                 return
+            self.log.event(snap.ut, "late brakes: closed settled after %.2f s"
+                           % (snap.ut - self.brake_cmd_ut))
             self.sweep_neutral(snap, full=False)
             self.hold_fins(False)
             ratio = self.env.full_curve_ratio()
@@ -1699,17 +1706,24 @@ class Autoland:
 
     def brakes_settled(self, snap):
         """True once the brakes have stopped moving: the drag the game's own
-        aerodynamics give for this instant's state (one probe a tick) reads
-        the same two ticks running.  Measured, so it holds for any brake's
-        animation; a probe that cannot be read is not settled."""
+        aerodynamics give for this instant's state (one probe a physics
+        frame) reads the same two frames running.  Measured, so it holds for
+        any brake's animation; a probe that cannot be read is not settled."""
         env = self.env
+        last = self.brake_probe
+        if last is not None and snap.ut <= last[0]:
+            # Two ticks inside one physics frame probe the same brake
+            # position and read identical drag: "still" mid-travel.  The full
+            # curve was swept 0.5 s into a ~4 s opening on half of lift3-1117
+            # (open/closed 1.68-3.33 on one craft).
+            return False
         altitude = vec.norm(snap.position) - env.equatorial_radius
         cda = env._probe(snap.position, vec.unit(snap.velocity), snap.speed,
                          altitude, snap.rotation)
-        last, self.brake_probe = self.brake_probe, cda
+        self.brake_probe = None if cda is None else (snap.ut, cda)
         if cda is None or last is None:
             return False
-        still = abs(cda - last) <= 1e-3 * max(abs(cda), abs(last))
+        still = abs(cda - last[1]) <= 1e-3 * max(abs(cda), abs(last[1]))
         if not still:
             self.brake_moved = True
         # A probe the tick after the command reads the brakes where they
