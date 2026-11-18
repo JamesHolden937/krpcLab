@@ -4,11 +4,24 @@ Nothing in this project writes to stdout/stderr on purpose: the only output is
 ``logs/LOG<n>``, a fresh numbered file per run.  Periodic telemetry lines are
 gated on universal time (``SpaceCenter.ut``), so a paused game logs nothing and
 a time-warped game still logs every ``LOG_INTERVAL_UT`` *in-game* seconds.
+
+The logs are read by Claude, never by a person, so every line is written
+tight (`_tight`): no column padding, which costs tokens and carries nothing.
+Readers must match ``key=\\s*value`` and ``\\[\\s*UT\\]`` (older logs are
+padded), never fixed columns.
 """
 
 import os
 import re
 import time
+
+_PAD_AFTER_EQ = re.compile(r"(?<==) +(?=\S)")
+_SPACE_RUN = re.compile(r" {2,}")
+
+
+def _tight(text):
+    """``alt=   23965  vs=  422.1`` -> ``alt=23965 vs=422.1``."""
+    return _SPACE_RUN.sub(" ", _PAD_AFTER_EQ.sub("", text))
 
 
 class Logbook:
@@ -24,12 +37,12 @@ class Logbook:
     # -- writing -----------------------------------------------------------
     def event(self, ut, text):
         """Always written, regardless of the interval gate."""
-        self._fh.write("[%10.2f] %s\n" % (ut, text))
+        self._fh.write("[%.2f] %s\n" % (ut, _tight(text)))
 
     def telemetry(self, ut, text):
         """Written only once per ``interval_ut`` in-game seconds."""
         if self._next_ut is None or ut >= self._next_ut:
-            self._fh.write("[%10.2f] %s\n" % (ut, text))
+            self._fh.write("[%.2f] %s\n" % (ut, _tight(text)))
             # Re-anchor rather than accumulate, so a time warp that skips a
             # whole interval produces one line instead of a burst.
             self._next_ut = ut + self.interval_ut

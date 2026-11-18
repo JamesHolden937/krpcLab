@@ -15,6 +15,15 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
+## 2026-11-18 evening: logs written unpadded (common/logbook.py)
+
+`Logbook` now strips column padding from every line (`[3575.76] COAST alt=16697 vs=-574.8`, not
+`[   3575.76] COAST        alt=   16697 vs= -574.8`): ~6 % fewer bytes, nothing lost. The user never reads the
+logs; they are for Claude. Every reader in the repo already matched `key=\s*value`; logsum, budgetcheck, burnplan,
+replay, shapetrack, flightsum give identical output on tightened copies. **Readers must not assume fixed columns.**
+Key=value per line was kept on purpose (grep by key, no column counting). Read logs through the pilots' summary
+tools, not raw.
+
 ## 2026-11-18 afternoon: ascent -- the separation budget measured against 30 fin2 flights; its error was the fall's drag
 
 State: ascent defaults unchanged; boosterland defaults fingerprint unchanged (080e48b5). Committed on main, pushed.
