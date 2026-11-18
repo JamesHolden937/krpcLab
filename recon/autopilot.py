@@ -830,8 +830,11 @@ class ReconPilot:
                 h_cmd, alt, speed, cfg.ALT_TAU_S,
                 math.radians(cfg.CLIMB_GAMMA_DEG),
                 math.radians(cfg.DESCENT_GAMMA_DEG))
-            # Slow on the drag measured in the approach's air.
-            k = cfg.COAST_DRAG_SHARE * 1.2 * self.cda / (2.0 * mass)
+            # Slow on the drag measured, in the air the craft is in now: the
+            # descent only thickens it, so the coast this plans is the
+            # longest one.  (Planned in sea-level air it began slowing 25 km
+            # out and reached the gate at 1328 m/s from 12.7 km, LOG17755.)
+            k = cfg.COAST_DRAG_SHARE * (rho or 0.0) * self.cda / (2.0 * mass)
             v_cmd = gd.coast_speed(self.approach_speed(mass, rho), dist, k)
             throttle = min(throttle, gd.clamp(
                 (v_cmd - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))
