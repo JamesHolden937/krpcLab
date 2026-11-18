@@ -2044,7 +2044,7 @@ class Autoland:
         steer = guidance.terminal_command(
             self.env, snap.position, snap.velocity, snap.landing_height,
             prediction.time_to_land, throttle * snap.max_accel, self.cfg, zem,
-            budget, self.null_rate(snap))
+            budget, self.null_rate(snap), mass=snap.mass)
         # Thrust tilted off retrograde brakes with only its cosine, and the
         # vertical profile above sized the throttle as though all of it were
         # braking.  Left alone, a divert quietly under-brakes for exactly as

@@ -289,6 +289,11 @@ class Config:
                                             # pay for.  Only bites when the
                                             # divert is on at all.
     LANDING_MAX_TILT_DEG: float = 15.0
+    LANDING_AERO_DIVERT: bool = False       # the divert credits the tilt's
+                                            # measured body lift (q ClA/m,
+                                            # guidance.solve_tilt), not only
+                                            # thrust*sin: supersonic it
+                                            # tilts the other way
     LANDING_HEADROOM: float = 0.85          # the profile is planned at this
                                             # share of the thrust left after
                                             # the tilt: the trim's room to

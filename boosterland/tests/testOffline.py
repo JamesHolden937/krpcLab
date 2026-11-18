@@ -380,6 +380,36 @@ class TestRollTransport(unittest.TestCase):
             guidance.roll_reference(self.r, self.v, nxt, up0)), 1e-9)
 
 
+class TestAeroDivert(unittest.TestCase):
+    """guidance.solve_tilt: the divert's tilt when the body's lift opposes
+    the thrust's (LOG17542 at Mach 2.5: a 33 m/s^2, q ClA/m -800)."""
+
+    def test_thrust_only_is_atan(self):
+        t, auth = guidance.solve_tilt(33.0, 0.0, 3.0, math.radians(15))
+        self.assertAlmostEqual(t, math.asin(3.0 / 33.0), places=4)
+        self.assertAlmostEqual(auth, 33.0 * math.sin(math.radians(15)), 3)
+
+    def test_small_demand_stays_on_the_thrust_branch(self):
+        t, _ = guidance.solve_tilt(33.0, -800.0, 0.2, math.radians(15))
+        self.assertGreater(t, 0.0)
+        self.assertAlmostEqual(guidance.tilt_lateral(33.0, -800.0, t), 0.2, 4)
+
+    def test_large_demand_tilts_the_other_way(self):
+        t, auth = guidance.solve_tilt(33.0, -800.0, 10.0, math.radians(15))
+        self.assertLess(t, 0.0)
+        self.assertAlmostEqual(guidance.tilt_lateral(33.0, -800.0, t), 10.0, 3)
+        self.assertGreater(auth, 40.0)
+
+    def test_unreachable_takes_the_most(self):
+        t, auth = guidance.solve_tilt(33.0, -800.0, 1e9, math.radians(15))
+        self.assertAlmostEqual(t, -math.radians(15), places=6)
+        self.assertAlmostEqual(guidance.tilt_lateral(33.0, -800.0, t), auth, 6)
+
+    def test_off_by_default(self):
+        self.assertIsNone(guidance.burn_lift_coefficient(
+            None, (6e5, 0, 0), (0, -500, 0), 1e5, Config()))
+
+
 class TestSlew(unittest.TestCase):
     """The landing burn's command ramps; it never steps."""
 

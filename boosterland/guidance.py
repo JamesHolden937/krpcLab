@@ -423,8 +423,70 @@ class TerminalCommand:
     demand: float       # lateral acceleration the law wants, m/s^2
 
 
+def burn_lift_coefficient(env, r, v, mass, cfg):
+    """The burn's sideways lift per radian squared of tilt off retrograde,
+    m/s^2: ``q * ClA / m`` from the probed lift curve
+    (``Environment.lift_slope_held``) at this Mach, signed as the probe
+    signs it (negative: tilting the thrust one way lifts the body the
+    other).  ``None`` with ``LANDING_AERO_DIVERT`` off, no mass, or no
+    measured curve -- then the divert credits the thrust alone."""
+    if not cfg.LANDING_AERO_DIVERT or not mass or mass <= 0.0:
+        return None
+    held = getattr(env, "lift_slope_held", None)
+    if held is None:
+        return None
+    speed = vec.norm(v)
+    altitude = vec.norm(r) - env.equatorial_radius
+    try:
+        slope = held(speed, altitude)
+    except (ValueError, IndexError, ZeroDivisionError):
+        return None
+    if not slope:
+        return None
+    rho = env.density(altitude)
+    return 0.5 * rho * speed * speed * slope / mass
+
+
+def tilt_lateral(a, c, t):
+    """Sideways acceleration of a tilt ``t`` (rad, signed) off retrograde:
+    the thrust's ``a sin t`` and the body's lift ``c t|t|``."""
+    return a * math.sin(t) + (c * t * abs(t) if c else 0.0)
+
+
+def solve_tilt(a, c, demand, limit, samples=48):
+    """The tilt inside ``[-limit, limit]`` whose sideways acceleration is
+    ``demand``, the least such tilt; when none reaches it, the tilt that
+    gives the most.  Supersonic the lift ``c`` can cancel the thrust a few
+    degrees off retrograde and reverse it beyond, so the divert is then
+    flown by tilting the *other* way, as the coast's aero steer does.
+    Returns ``(tilt, authority)``, authority the most any tilt gives."""
+    if limit <= 0.0:
+        return 0.0, 0.0
+    ts = [-limit + 2.0 * limit * i / samples for i in range(samples + 1)]
+    fs = [tilt_lateral(a, c, t) for t in ts]
+    best = max(range(len(ts)), key=lambda i: fs[i])
+    authority = max(0.0, fs[best])
+    root = None
+    for i in range(len(ts) - 1):
+        lo, hi = ts[i], ts[i + 1]
+        flo, fhi = fs[i] - demand, fs[i + 1] - demand
+        if flo * fhi > 0.0:
+            continue
+        for _ in range(30):
+            mid = 0.5 * (lo + hi)
+            fm = tilt_lateral(a, c, mid) - demand
+            if (fm <= 0.0) == (flo <= 0.0):
+                lo, flo = mid, fm
+            else:
+                hi = mid
+        t = 0.5 * (lo + hi)
+        if root is None or abs(t) < abs(root):
+            root = t
+    return (root if root is not None else ts[best]), authority
+
+
 def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
-                    tilt_budget_deg, rate):
+                    tilt_budget_deg, rate, mass=None):
     """The burn's one steering law, ignition to touchdown .
 
     The base is ``trajectory.base_direction``: retrograde, scaled toward the
@@ -455,7 +517,15 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     # authority, thrust * sin(LANDING_MAX_TILT_DEG), can brake in the time
     # left after one nose response.  Capped only by the authority, the aim
     # landed fin2 crossing the pad at 12-22 m/s (nose-1115).
-    authority = a * math.sin(math.radians(cfg.LANDING_MAX_TILT_DEG))
+    lift = burn_lift_coefficient(env, r, v, mass, cfg)
+    limit = cfg.LANDING_MAX_TILT_DEG
+    if tilt_budget_deg is not None:
+        limit = min(limit, tilt_budget_deg)
+    limit = math.radians(max(0.0, limit))
+    if lift is None:
+        authority = a * math.sin(math.radians(cfg.LANDING_MAX_TILT_DEG))
+    else:
+        authority = solve_tilt(a, lift, float("inf"), limit)[1]
     v_max = min(authority * max(0.0, t_go - 1.0 / rate),
                 trajectory.lateral_allowance(env, cfg)
                 * math.exp(min(50.0, rate * t_go)))
@@ -466,17 +536,18 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
     demand = vec.norm(accel)
     if demand < 1e-6:
         return TerminalCommand(base, 0.0)
-    limit = cfg.LANDING_MAX_TILT_DEG
-    if tilt_budget_deg is not None:
-        limit = min(limit, tilt_budget_deg)
-    tilt = min(math.atan2(demand, a), math.radians(max(0.0, limit)))
+    if lift is None:
+        tilt = min(math.atan2(demand, a), limit)
+    else:
+        tilt = solve_tilt(a, lift, demand, limit)[0]
     return TerminalCommand(
         vec.unit(vec.add(base, vec.scale(vec.unit(accel), math.tan(tilt)))),
         demand)
 
 
 def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
-                     zem=None, tilt_budget_deg=None, null_rate=None):
+                     zem=None, tilt_budget_deg=None, null_rate=None,
+                     mass=None):
     """The landing burn's command, ignition to touchdown: ``one_law_command``,
     stood up over the last nose response (``1 / rate``) inside a cone that
     narrows at touchdown to ``SURVIVAL_SHARE`` of the legs' measured tip
@@ -492,7 +563,7 @@ def terminal_command(env, r, v, height, time_to_land, thrust_accel, cfg,
     if not cfg.LANDING_BURN_AIM:
         zem = None
     cmd = one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
-                          tilt_budget_deg, null_rate)
+                          tilt_budget_deg, null_rate, mass=mass)
     frac = min(1.0, max(0.0, time_to_land) * null_rate)
     if frac >= 1.0:
         return cmd
