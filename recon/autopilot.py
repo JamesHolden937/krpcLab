@@ -74,6 +74,21 @@ def pick_waypoint(sc, body):
     return found
 
 
+class _EventsOnly:
+    """The inner hold's log: its events go into ours, its telemetry does
+    not (one logbook's interval gate would let only one of the two FLY
+    lines through)."""
+
+    def __init__(self, log):
+        self.log = log
+
+    def event(self, ut, text):
+        self.log.event(ut, "plane: " + text)
+
+    def telemetry(self, ut, text):
+        return False
+
+
 class ReconPilot:
     def __init__(self, conn, cfg, log):
         self.conn = conn
@@ -99,8 +114,9 @@ class ReconPilot:
         # The attitude hold: the airplane pilot, CRUISE, headless.
         pcfg = PlaneConfig()
         pcfg.MODE = 0
-        pcfg.LOG_INTERVAL_UT = 1e9          # its FLY line would double ours
-        self.plane = AirplanePilot(conn, pcfg, log, headless=True)
+        self.plane = AirplanePilot(conn, pcfg, _EventsOnly(log),
+                                   headless=True)
+        self.airborne = False
         self.flight = self.vessel.flight(self.body.reference_frame)
         # Pitch and heading against the horizon (the body frame's read odd).
         self.sflight = self.vessel.flight(self.vessel.surface_reference_frame)
@@ -271,7 +287,9 @@ class ReconPilot:
 
         if self.state == TAKEOFF:
             course = self.runway_course
-            if ground:
+            if not ground and agl > 3.0:
+                self.airborne = True
+            if not self.airborne:
                 pitch_hold = (math.radians(cfg.ROTATE_PITCH_DEG)
                               if speed >= cfg.ROTATE_SPEED_M_S else 0.0)
             else:
