@@ -18,9 +18,11 @@
 ## 2026-11-17 late: boosterland -- the burn's prediction: drag curve fixed at its source, burn lift measured, not yet closed
 
 State: **boosterland defaults fingerprint d8a430b8** (was 970e99ac). Everything committed on main (last: 5752bef + this
-handoff), pushed. Farm up; **batch lift3-1117 was still flying at wrap-up** (24 flights, ends ~2207; read it, below).
+handoff), pushed. **Farm down** (stopped by the user's request mid-batch: lift3-1117 has 18 of 24 flights; restart before the
+next comparison).
 howItWorks.pdf (boosterland) **stale** (not regenerated this session). `tools/instancebench.py`,
-`docs/krpcFeatureRequests.md` are not ours: leave them. Worktree `.wt-burnlift` is merged; remove it. Fly booster work
+`docs/krpcFeatureRequests.md` are not ours: leave them. Merged worktrees removed; `.wt-pytune` (branch pyTune, unmerged) and
+`.claude/worktrees/part-prune-*` are not ours: leave them. Fly booster work
 on `qs_finbooster4` only. Full measurements: `docs/boosterland/journal.md`, 2026-11-17 late.
 
 **Found and fixed at the source (defaults now):**
@@ -50,14 +52,16 @@ cancelling it.
 | ncv-1117 (12) | + burn curve, re-swept every 10 s | -102 (120) | +54 (67): holds wrecked the coast |
 | lift-1117 c / l (12/12) | once-only hold / + BURN_LIFT | -68 (87) / +60 (105) | lift ~2x: the nose-age bug |
 | lift2-1117 c / l (10/10) | + nose timing | **-60 (41)** / +22 (124) | +11 (32) / +63 (76) |
-| lift3-1117 c / l (12/12) | + fins-neutral brake tables | **unread** | |
+| lift3-1117 c / l (18 of 24) | + fins-neutral brake tables | **unread, partial: re-fly** | |
 
 lift2's `l` scatter came from the late brakes: 9/10 opened them (5/10 in `c`), and an open-brake burn flew the
 fins-steering full curve with no lift table. That is what 5752bef fixes, and what lift3 tests.
 
 **Next, in order:**
-1. **Read lift3-1117**: `for a in c l; do grep " $a qs_" logs/rot-lift3-1117.txt > logs/rot-lift3-1117-$a.txt;
-   .venv-pypy/bin/python boosterland/tools/predvsland.py logs/rot-lift3-1117-$a.txt; done`. Split by brake
+1. **Re-fly lift3** (it was stopped at 18 of 24: part of a batch is not a result), same arms:
+   `SAVES_LIST=qs_finbooster4 LAPS=2 boosterland/tools/brot.sh <tag> "c:DIAG_BURN=True,LANDING_BURN_AIM=False"
+   "l:DIAG_BURN=True,LANDING_BURN_AIM=False,BURN_LIFT=True"`, then read it per arm: `for a in c l; do grep " $a qs_" logs/rot-<tag>.txt > logs/rot-<tag>-$a.txt;
+   .venv-pypy/bin/python boosterland/tools/predvsland.py logs/rot-<tag>-$a.txt; done`. Split by brake
    opening (`grep -c "late brakes 0 -> "`) and check the logs' `late brakes: Cd*A open is` ratios are now
    consistent (>1, similar across flights). If `l` is centred within its standard error (~17 m) on both axes with
    sd near `c`'s, promote BURN_LIFT; else localise with `burnplan.py --rows` (plan v flown hs/vs).
