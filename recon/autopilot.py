@@ -44,9 +44,11 @@ from common.pacing import LoopRate, sleeper
 from common.panel import ControlPanel
 from common.rpccount import RpcCounter
 from . import guidance as gd
+from . import thermal as th
 from .config import Config, apply_overrides, defaults_fingerprint, differences
 
 ACCENT_RECON = (1.0, 0.45, 0.35)
+PER_PART = 10
 
 STANDBY = "STANDBY"
 TAKEOFF = "TAKEOFF"
@@ -147,6 +149,9 @@ class ReconPilot:
         self.alpha_rot = 0.0
         self.v_liftoff = 0.0
         self.rotating = False
+        self.heat_models = None
+        self.v_heat = None          # the computed fastest safe speed
+        self.next_plan = 0.0
 
     # -- reads ------------------------------------------------------------------
     def read(self):
@@ -162,17 +167,25 @@ class ReconPilot:
                  (getattr, (v, "situation")),
                  (getattr, (self.sflight, "pitch")),
                  (self.res.amount, ("LiquidFuel",))]
+        calls += [(getattr, (fl, "static_air_temperature")),
+                  (getattr, (fl, "speed_of_sound"))]
         for pt in self.parts:
             calls += [(getattr, (pt, "temperature")),
                       (getattr, (pt, "max_temperature")),
                       (getattr, (pt, "skin_temperature")),
-                      (getattr, (pt, "max_skin_temperature"))]
+                      (getattr, (pt, "max_skin_temperature")),
+                      (getattr, (pt, "thermal_convection_flux")),
+                      (getattr, (pt, "thermal_radiation_flux")),
+                      (getattr, (pt, "thermal_skin_to_internal_flux")),
+                      (getattr, (pt, "thermal_conduction_flux")),
+                      (getattr, (pt, "thermal_mass")),
+                      (getattr, (pt, "thermal_skin_mass"))]
         return ask(self.conn, calls)
 
     def hottest(self, got):
         frac, name, lost = 0.0, "", []
         for i, pt in enumerate(self.parts):
-            t, tm, s, sm = got[4 * i:4 * i + 4]
+            t, tm, s, sm = got[PER_PART * i:PER_PART * i + 4]
             if None in (t, tm, s, sm) or tm <= 0 or sm <= 0:
                 lost.append(self.part_names[i])
                 continue
@@ -359,6 +372,45 @@ class ReconPilot:
         return self.cfg.APPROACH_STALL_RATIO * math.sqrt(
             mass * gd.G0 / (0.5 * r * cmax))
 
+    def update_thermal(self, parts_got, rho, speed, mach, t_env, dt):
+        """Measure each part's thermal constants (thermal.PartHeat)."""
+        if self.heat_models is None:
+            self.heat_models = []
+            for i, name in enumerate(self.part_names):
+                r = parts_got[PER_PART * i:PER_PART * i + PER_PART]
+                self.heat_models.append(th.PartHeat(name, r[1] or 1e9,
+                                                    r[3] or 1e9))
+        if dt <= 0.0 or None in (rho, mach, t_env):
+            return
+        a = min(1.0, dt / 3.0)
+        for i, m in enumerate(self.heat_models):
+            r = parts_got[PER_PART * i:PER_PART * i + PER_PART]
+            if None in r[:4]:
+                continue
+            m.update(r[0], r[2], r[4], r[5], r[6], r[7], r[8], r[9], rho,
+                     speed, mach, t_env, a)
+
+    def plan_speed(self, ut, rho, sound, t_env, remaining):
+        """The fastest speed every part survives for the rest of the
+        flight at this altitude's air (thermal.speed_limit), every
+        THERMAL_PLAN_S."""
+        cfg = self.cfg
+        if ut < self.next_plan or not self.heat_models or not sound:
+            return
+        self.next_plan = ut + cfg.THERMAL_PLAN_S
+        v = th.speed_limit(self.heat_models, rho, sound, t_env or 250.0,
+                           remaining, cfg.HEAT_MAX)
+        if v is not None and (self.v_heat is None
+                              or abs(v - self.v_heat) > 20.0):
+            hot = max((p for p in self.heat_models if p.ready()),
+                      key=lambda p: p.peak(rho, v, v / sound, t_env or 250.0,
+                                           min(remaining / v, 3600.0))[0])
+            self.log.event(ut, "thermal: %.0f m/s safe for the %.0f km left "
+                           "(rho %.4f; binding %s: A_c %.3f eA %.3f G %.4f)"
+                           % (v, remaining / 1e3, rho, hot.name, hot.a_c,
+                              hot.e_a, hot.g))
+        self.v_heat = v
+
     def seek_altitude(self, alt, agl, heat_thr, dt):
         """The cruise altitude, searched for: up while heat holds the
         throttle back, down while the throttle is full and the speed has
@@ -367,7 +419,9 @@ class ReconPilot:
         if self.h_seek is None:
             self.h_seek = alt
         step = cfg.ALT_SEEK_RATE_M_S * dt
-        if heat_thr < 0.98:
+        at_heat = self.v_heat is not None and \
+            self.speed >= self.v_heat - cfg.SPEED_BAND_M_S
+        if heat_thr < 0.98 or at_heat:
             self.h_seek += step
         elif self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
             self.h_seek -= step
@@ -411,16 +465,17 @@ class ReconPilot:
         cfg = self.cfg
         got = self.read()
         (lat, lon, speed, vs, alt, agl, hdg, gforce, mach, rho, thrust, mass,
-         situation, pitch, fuel) = got[:15]
+         situation, pitch, fuel, t_env, sound) = got[:17]
         if None in (lat, lon, speed, alt):
             return
         speed = speed or 0.0
+        self.speed = speed
         vs = vs or 0.0
         agl = agl if agl is not None else alt
         gforce = gforce or 0.0
         mass = mass or 1.0
         thrust = thrust or 0.0
-        frac, name, lost = self.hottest(got[15:])
+        frac, name, lost = self.hottest(got[17:])
         if lost:
             self.log.event(ut, "parts lost: %s" % ", ".join(lost))
             self.finish("craft broken: %s" % ", ".join(lost))
@@ -441,6 +496,7 @@ class ReconPilot:
             self.heat = (f1, r0 + a * ((f1 - f0) / dt - r0))
         self.heat_name = name
         hfrac, hrate = self.heat
+        self.update_thermal(got[17:], rho, speed, mach, t_env, dt)
         # Drag, from the speed's change: what thrust and gravity do not
         # explain.  Kept below Mach 0.9 (the approach's air) on level-ish
         # flight and real q.
@@ -516,6 +572,12 @@ class ReconPilot:
             tlat, tlon = self.target[1], self.target[2]
             dist = gd.distance(lat, lon, tlat, tlon, self.radius)
             course = gd.bearing(lat, lon, tlat, tlon)
+            back = gd.distance(tlat, tlon, cfg.RUNWAY_09_LAT,
+                               cfg.RUNWAY_09_LON, self.radius)
+            self.plan_speed(ut, rho, sound, t_env, dist + back)
+            if self.v_heat is not None:
+                throttle = min(throttle, gd.clamp(
+                    (self.v_heat - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))
             self.seek_altitude(alt, agl, heat_thr, dt)
             gamma_cmd = gd.flight_path_command(
                 self.h_seek, alt, speed, cfg.ALT_TAU_S,
@@ -552,6 +614,10 @@ class ReconPilot:
                 else:
                     course = (course + math.pi) % (2.0 * math.pi)
                     dist = 2.0 * math.pi * self.radius - dist
+            self.plan_speed(ut, rho, sound, t_env, dist + cfg.FINAL_M)
+            if self.v_heat is not None:
+                throttle = min(throttle, gd.clamp(
+                    (self.v_heat - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))
             self.seek_altitude(alt, agl, heat_thr, dt)
             h_cmd = gd.glide_altitude(dist, gate_alt, cfg.DESCENT_SLOPE,
                                       self.h_seek)
@@ -654,11 +720,12 @@ class ReconPilot:
         self.log.telemetry(ut, (
             "%s spd=%6.1f M=%4.2f alt=%6.0f agl=%6.0f vs=%+6.1f hdg=%5.1f "
             "crs=%5.1f bank=%+5.1f gam=%+5.1f/%+5.1f pitch=%+5.1f/%+5.1f "
-            "thr=%.2f heat=%.3f%+.4f/s %s g=%4.1f ax=%.1f nrm=%.1f cda=%.2f "
+            "thr=%.2f vheat=%.0f hseek=%.0f heat=%.3f%+.4f/s %s g=%4.1f ax=%.1f nrm=%.1f cda=%.2f "
             "lat=%.4f lon=%.4f %s"
             % (self.state, speed, mach or 0.0, alt, agl, vs, hdg or 0.0,
                deg(course) % 360, deg(bank), deg(gamma), deg(gamma_cmd),
-               deg(theta), deg(pitch_cmd), throttle, hfrac, hrate, name,
+               deg(theta), deg(pitch_cmd), throttle, self.v_heat or 0.0,
+               self.h_seek or 0.0, hfrac, hrate, name,
                gforce, axial, normal, self.cda, lat, lon, note)))
         self.lines = [
             "phase   : %s %s" % (self.state, note),

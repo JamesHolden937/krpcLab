@@ -48,6 +48,12 @@ class Config:
     # Heat-limited with the throttle shut, the descent stops (the flight
     # path is held at or above level) until the heat falls.
     HEAT_NO_DESCENT: float = 0.8
+    # The fastest speed every part survives for the rest of the flight is
+    # computed (recon/thermal.py: KSP's heating formulas, each part's
+    # constants read off kRPC's flux numbers) every THERMAL_PLAN_S and
+    # held on the throttle; the proportional governor above is the
+    # backstop.
+    THERMAL_PLAN_S: float = 2.0
 
     # --- the profile -----------------------------------------------------------
     # Take-off: full throttle; the nose comes up as early as it can, to the
