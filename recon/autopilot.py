@@ -145,6 +145,7 @@ class ReconPilot:
         self.d_max = None           # the short way home's farthest, going round
         self.a_clear = None         # the pitch the tail clearance allows
         self.derot = None           # the rollout's lowering pitch
+        self.braking = False
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -899,7 +900,11 @@ class ReconPilot:
                 cfg.DEROTATE_RATE_DEG_S) * dt)
             pitch_hold = self.derot
             throttle = 0.0
-            brakes = True
+            # The brakes only once the nose is on its wheel: braking on the
+            # mains alone at 80 m/s (below the centre of mass) threw the
+            # nose to -16 deg onto the intake and the craft tumbled
+            # (LOG17758).
+            brakes = self.derot <= 0.0 and theta_now < math.radians(1.0)
             along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,
                                           self.radius)
             if speed < 0.5:
@@ -958,8 +963,11 @@ class ReconPilot:
                 throttle in (0.0, 1.0) and throttle != self.throttle):
             c.throttle = throttle
             self.throttle = throttle
-        if brakes:
-            c.brakes = True
+        if brakes != self.braking:
+            c.brakes = brakes
+            self.braking = brakes
+            if brakes:
+                self.log.event(ut, "brakes on at %.0f m/s" % speed)
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
         deg = math.degrees
