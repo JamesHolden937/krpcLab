@@ -81,6 +81,9 @@ class Environment:
         # altitude below which the propagator flies it: the brakes are going
         # to open there, so every prediction has to know it.  None = no switch.
         self._full_machs, self._full_areas = [], []
+        # The landing burn's curve (set_burn_curve): swept with the fins
+        # held neutral, as the burn flies them.
+        self._burn_machs, self._burn_areas = [], []
         self.late_switch_alt = None
         self._replace_next = False      # the next sweep replaces, not blends
         self._descent_profile = ()      # (speed, altitude) down to the pad
@@ -268,6 +271,36 @@ class Environment:
         self._full_machs = [m for m, _ in pairs]
         self._full_areas = [a for _, a in pairs]
         return bool(pairs)
+
+    def set_burn_curve(self, bins):
+        """The landing burn's curve, from :meth:`sweep_bins` taken with the
+        fins held neutral (``Autoland.sweep_burn_curve``); False if empty."""
+        pairs = [(self._bin_mach(i), a) for i, a in enumerate(bins)
+                 if a is not None and a > 0.0]
+        if not pairs:
+            return False
+        self._burn_machs = [m for m, _ in pairs]
+        self._burn_areas = [a for _, a in pairs]
+        return True
+
+    def burn_drag_area_at(self, speed, altitude):
+        """Cd*A in the landing burn: the burn's own curve where the brakes
+        are as it was swept, else :meth:`drag_area_at`.
+
+        The coast holds its angle of attack on the fins, pinned at full
+        deflection most of the way down, and a probe evaluates the fins as
+        they sit: the coast's curve reads 1.3-2.5 times the drag of the same
+        booster with the fins neutral (drg-1117: M2.4 8.3 -> 3.1 m^2 within
+        a second of holding them).  The burn steers on the gimbals with the
+        fins near neutral, and flown on the coast's curve its prediction
+        braked harder than the booster does."""
+        if (self.late_switch_alt is not None and self._full_machs
+                and altitude <= self.late_switch_alt):
+            return self.drag_area_at(speed, altitude)
+        if not self._burn_machs:
+            return self.drag_area_at(speed, altitude)
+        return self._interp_curve(self._burn_machs, self._burn_areas,
+                                  self.mach(speed, altitude))
 
     def full_curve_ratio(self):
         """Median full-brake / current Cd*A over the bins both hold."""

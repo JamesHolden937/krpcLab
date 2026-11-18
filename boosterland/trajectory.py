@@ -41,20 +41,23 @@ class Prediction:
 
 
 
-def drag_lookup(env, drag_area=None, scale=1.0):
+def drag_lookup(env, drag_area=None, scale=1.0, burn=False):
     """Cd*A as a function of ``(speed, altitude)``.
 
     A constant is a bad model of a booster's drag: Cd has a transonic hump,
     and one propagation runs the vehicle through Mach 3 to Mach 0.  Passing an
     explicit ``drag_area`` pins it anyway, which is what the gradient probes
     and the offline tests want -- they compare two propagations and only need
-    both to see the same air.
+    both to see the same air.  ``burn``: the landing burn's curve
+    (``Environment.burn_drag_area_at``) where the environment has one.
     """
     if drag_area is not None:
         return lambda speed, altitude: drag_area * scale
+    area = (getattr(env, "burn_drag_area_at", None) if burn else None) \
+        or env.drag_area_at
     if scale != 1.0:
-        return lambda speed, altitude: env.drag_area_at(speed, altitude) * scale
-    return env.drag_area_at
+        return lambda speed, altitude: area(speed, altitude) * scale
+    return area
 
 
 @dataclass
@@ -563,7 +566,8 @@ def predict_landing(env, r0, v0, mass, max_accel, cfg, drag_area=None,
         # benefit on a short coast: the 60 km entry state predicted a miss of
         # 0 m on every tick of the descent and landed 119 m out.
         r, v, burn_time, burn_steps, final_mass = _fly_landing_burn(
-            env, r, v, mass, max_accel, cfg, drag, trace)
+            env, r, v, mass, max_accel, cfg,
+            drag_lookup(env, drag_area, drag_scale, burn=True), trace)
         steps += burn_steps
 
     return Prediction(
