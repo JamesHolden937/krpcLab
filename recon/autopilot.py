@@ -245,7 +245,7 @@ class ReconPilot:
         t_back, t_round = gd.route_times(home, self.radius, speed, normal)
         need = None
         if self.fuel_rate is not None and self.fuel_rate > 0.0:
-            need = self.fuel_rate * t_round * cfg.FUEL_RESERVE
+            need = self.fuel_rate * t_round
         enough = need is not None and fuel is not None and fuel >= need
         self.around = bool(cfg.AROUND_ALLOWED and t_round < t_back and enough)
         self.log.event(ut, "route: back %.0f s (%.0f km + the turn), round "

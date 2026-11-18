@@ -25,10 +25,10 @@ class Config:
     PASS_RADIUS_M: float = 500.0
     # Past the target: turn back, or carry on round the planet on the same
     # great circle, whichever is quicker at the present speed (the turn's
-    # time at the present load budget counted) -- the long way only with
-    # FUEL_RESERVE times the fuel it needs at the burn rate measured.
+    # time at the present load budget counted) -- the long way only if the
+    # fuel left covers it at the burn rate measured in flight (the cruise's
+    # burn: the idle descent home burns less).
     AROUND_ALLOWED: bool = True
-    FUEL_RESERVE: float = 1.3
 
     # --- limits ----------------------------------------------------------------
     # Total load on the pilot (thrust's push included), g.  The wings get
