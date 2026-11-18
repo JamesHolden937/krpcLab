@@ -420,12 +420,6 @@ class Config:
                                             # prediction flies at ignition,
                                             # and the flown burn every tick;
                                             # see burnplan.py
-    BURN_LIFT: bool = False                 # the burn's propagation flies
-                                            # the body's normal force and
-                                            # the drag's rise at the nose's
-                                            # angle off the airflow, swept
-                                            # with the fins neutral
-                                            # (Environment.burn_aero)
     DIAG_DRAG: bool = False                 # log the game's Cd*A at the
                                             # real state beside the curve's,
                                             # and the burn's force budget

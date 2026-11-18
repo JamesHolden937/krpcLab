@@ -2369,8 +2369,7 @@ class Autoland:
         return self.fin_hold._set(hold)
 
     def sweep_neutral(self, snap, full):
-        """With the fins held neutral: the whole curve, and with BURN_LIFT
-        the normal force, into the burn's tables for the brakes as they
+        """With the fins held neutral: the whole curve and the normal force, into the burn's tables for the brakes as they
         are now (``full``: open).  False if the curve would not read."""
         env = self.env
         bins = env.sweep_bins(snap.position, snap.velocity, snap.rotation,
@@ -2383,24 +2382,23 @@ class Autoland:
                        % (name, " ".join("M%.2f %.1f" % (env._bin_mach(i), a)
                                          for i, a in enumerate(bins)
                                          if a is not None)))
-        if self.cfg.BURN_LIFT:
-            top = math.radians(self.cfg.LANDING_MAX_TILT_DEG)
-            got = env.sweep_burn_lift(
-                snap.position, snap.velocity, snap.rotation, snap.direction,
-                [top / 8.0, top / 4.0, top / 2.0, top])
-            if got is not None and env.set_burn_lift(*got, full=full):
-                slopes, shape = got
-                self.log.event(snap.ut, "%s lift swept, fins neutral: "
-                               "Cn*A/rad %s; shape %s" % (
-                                   name, " ".join(
-                                       "M%.2f %.1f" % (env._bin_mach(i), k)
-                                       for i, k in enumerate(slopes)
-                                       if k is not None),
-                                   " ".join("%.1f:%.2f/%.2f"
-                                            % (math.degrees(a), n, d)
-                                            for a, n, d in shape)))
-            else:
-                self.log.event(snap.ut, "%s lift: probe unreadable" % name)
+        top = math.radians(self.cfg.LANDING_MAX_TILT_DEG)
+        got = env.sweep_burn_lift(
+            snap.position, snap.velocity, snap.rotation, snap.direction,
+            [top / 8.0, top / 4.0, top / 2.0, top])
+        if got is not None and env.set_burn_lift(*got, full=full):
+            slopes, shape = got
+            self.log.event(snap.ut, "%s lift swept, fins neutral: "
+                           "Cn*A/rad %s; shape %s" % (
+                               name, " ".join(
+                                   "M%.2f %.1f" % (env._bin_mach(i), k)
+                                   for i, k in enumerate(slopes)
+                                   if k is not None),
+                               " ".join("%.1f:%.2f/%.2f"
+                                        % (math.degrees(a), n, d)
+                                        for a, n, d in shape)))
+        else:
+            self.log.event(snap.ut, "%s lift: probe unreadable" % name)
         if self.cfg.DIAG_DRAG:
             self.log_lift_ladder(snap, "coast, fins neutral, %s" % name)
         return True

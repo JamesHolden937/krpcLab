@@ -634,9 +634,8 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     # coast unwinds its angle of attack onto it, ``SETTLE_LAGS``).
     lag = getattr(env, "nose_lag", None) or 0.0
     # The body's normal force at the nose's angle off the airflow
-    # (``env.burn_aero``, BURN_LIFT).
-    aero = (getattr(env, "burn_aero", None)
-            if getattr(cfg, "BURN_LIFT", False) else None)
+    # (``env.burn_aero``).
+    aero = getattr(env, "burn_aero", None)
     nose_now = (getattr(env, "nose", None)
                 if getattr(env, "burn_lit", False) else None)
     times, dirs = [], []            # the commands, in time order
