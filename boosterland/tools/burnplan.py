@@ -86,7 +86,11 @@ def main():
                 "%13s" % ("dx/dt " + n) for n in names)))
         # The flown burn up to contact (the plan stops at its own contact).
         flown = [x for x in ticks if x["h"] > 0.0] or ticks
-        x_fly = travel([(x["t"], x["hs"]) for x in flown])
+        # Both start at the trigger: the plan's first sample is the state
+        # the flown burn starts from, before its first tick (0.3-0.4 s later).
+        start = next(iter(plans.values()))[0]
+        x_fly = travel([(start[0], start[2])]
+                       + [(x["t"], x["hs"]) for x in flown])
         cells = []
         for n in names:
             pl = plans.get(n)

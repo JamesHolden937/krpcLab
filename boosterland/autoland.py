@@ -1456,6 +1456,15 @@ class Autoland:
         if self.cfg.COAST_RCS_TRIM:
             self.run_rcs_trim(snap)
         if snap.vertical_speed < 0.0 and height <= needed:
+            # Light the engines on this tick, before the burn's one-off work
+            # (dry mass, gimbal roll, gear, RCS, DIAG_BURN's plans): the
+            # propagation lights them ``reaction_time`` after the trigger,
+            # and the 0.3-0.4 s that work took at full speed was flown
+            # unbraked -- the burn landed ~70 m long of its own prediction
+            # (noaim-1117).
+            self.set_throttle(guidance.landing_throttle(
+                self.env, snap.position, snap.velocity, snap.max_accel,
+                self.cfg, height=snap.landing_height).throttle)
             if self.cfg.DIAG_BURN:
                 self.log_burn_plans(snap)
             self.enter(LANDING_BURN, snap.ut,
