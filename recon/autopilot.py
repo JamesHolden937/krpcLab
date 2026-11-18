@@ -157,6 +157,15 @@ class ReconPilot:
         self.heat_models = None
         self.v_heat = None          # the computed fastest safe speed
         self.next_plan = 0.0
+        self.sfc = None             # LiquidFuel per newton-second, measured
+        self.fuel = None
+        self.v_fuel_logged = None
+        self.clear_logged = False
+        try:
+            wheels = {w.part for w in self.vessel.parts.wheels}
+        except Exception:                               # noqa: BLE001
+            wheels = set()
+        self.low_parts = [pt for pt in self.parts if pt not in wheels]
 
     # -- reads ------------------------------------------------------------------
     def read(self):
@@ -297,6 +306,18 @@ class ReconPilot:
     def cla_max(self):
         return max(c for _, c in self.cla) if self.cla else None
 
+    def clearance(self, agl):
+        """The lowest non-wheel part's height above the ground (m): its
+        bounding box in the surface frame (x up, origin the vessel's centre
+        of mass) against the ground, ``agl`` below the centre of mass."""
+        sf = self.vessel.surface_reference_frame
+        calls = [(pt.bounding_box, (sf,)) for pt in self.low_parts]
+        got = ask(self.conn, calls)
+        lows = [b[0][0] for b in got if b is not None]
+        if not lows:
+            return None
+        return min(lows) + agl
+
     def tail_strike(self, ut):
         """The pitch at which the aft-most low corner of any part touches
         the runway, pivoting on the main wheels (vessel frame: y forward,
@@ -405,6 +426,16 @@ class ReconPilot:
         self.next_plan = ut + cfg.THERMAL_PLAN_S
         v = th.speed_limit(self.heat_models, rho, sound, t_env or 250.0,
                            remaining, cfg.HEAT_MAX)
+        vf = self.fuel_speed(remaining, v)
+        if vf is not None and (v is None or vf < v):
+            if self.v_fuel_logged is None or abs(vf - self.v_fuel_logged) > 20:
+                self.log.event(ut, "fuel: %.0f m/s is the fastest the %.0f LF "
+                               "left covers for %.0f km (%.2e LF per N s; "
+                               "heat allows %s)" % (
+                                   vf, self.fuel or 0.0, remaining / 1e3,
+                                   self.sfc, "%.0f" % v if v else "?"))
+                self.v_fuel_logged = vf
+            v = vf
         if v is not None and (self.v_heat is None
                               or abs(v - self.v_heat) > 20.0):
             hot = max((p for p in self.heat_models if p.ready()),
@@ -415,6 +446,53 @@ class ReconPilot:
                            % (v, remaining / 1e3, rho, hot.name, hot.a_c,
                               hot.e_a, hot.g))
         self.v_heat = v
+
+    def drag_at(self, speed):
+        """Drag (N) at ``speed`` along the present airflow, at this
+        place and attitude: KSP's own aerodynamics."""
+        ref = self.body.reference_frame
+        try:
+            vel = self.vessel.velocity(ref)
+            n = math.sqrt(sum(x * x for x in vel)) or 1.0
+            d = tuple(x / n for x in vel)
+            f = self.flight.simulate_aerodynamic_force_at(
+                self.body, self.vessel.position(ref),
+                tuple(speed * x for x in d), self.vessel.rotation(ref))
+        except Exception:                               # noqa: BLE001
+            return None
+        return -sum(a * b for a, b in zip(f, d))
+
+    def fuel_speed(self, remaining, v_hi):
+        """The fastest speed whose fuel for ``remaining`` metres (drag x
+        LF per N s x time) fits in the tank: fuel per metre grows with the
+        drag, so faster costs more.  None until the burn is measured."""
+        if not self.sfc or self.fuel is None or remaining <= 0.0:
+            return None
+
+        def need(v):
+            d = self.drag_at(v)
+            if d is None:
+                return None
+            return self.sfc * max(d, 0.0) * remaining / v
+        lo, hi = 150.0, v_hi or 3000.0
+        n = need(hi)
+        if n is None:
+            return None
+        if n <= self.fuel:
+            return hi
+        n = need(lo)
+        if n is None or n > self.fuel:
+            return lo
+        for _ in range(12):
+            mid = 0.5 * (lo + hi)
+            n = need(mid)
+            if n is None:
+                return lo
+            if n <= self.fuel:
+                lo = mid
+            else:
+                hi = mid
+        return lo
 
     def seek_altitude(self, alt, agl, heat_thr, dt):
         """The cruise altitude, searched for: up while heat holds the
@@ -536,6 +614,11 @@ class ReconPilot:
                 self.last_fuel = (ut, fuel)
             elif self.last_fuel is None:
                 self.last_fuel = (ut, fuel)
+            self.fuel = fuel
+            if self.fuel_rate is not None and thrust > 1000.0:
+                s = self.fuel_rate / thrust
+                self.sfc = s if self.sfc is None else \
+                    self.sfc + min(1.0, dt / 10.0) * (s - self.sfc)
         self.last = (ut, speed)
         # Load: the axial g the thrust puts on the pilot, and what is left
         # for the wings.
@@ -587,8 +670,20 @@ class ReconPilot:
                 # nose is nearly there: the loop's input cap rotated it at
                 # half stick, 2 deg by 75 m/s, balanced on the mains, and it
                 # rolled over (LOG17737).
+                # Never a non-wheel part onto the runway: the lowest one's
+                # clearance, measured each tick, stops the nose rising
+                # (LOG17738: the nozzle struck at 9 deg against a 23.9 deg
+                # bounding-box estimate).
+                clear = self.clearance(agl)
+                if clear is not None and clear < cfg.TAIL_CLEARANCE_M:
+                    pitch_hold = min(pitch_hold, theta_now)
+                    if not self.clear_logged:
+                        self.log.event(ut, "tail clearance %.2f m at %.1f deg "
+                                       "of pitch: holding the nose"
+                                       % (clear, math.degrees(theta_now)))
+                        self.clear_logged = True
                 self.plane.pitch_override = (
-                    1.0 if pitch_hold and theta_now < self.alpha_rot
+                    1.0 if pitch_hold and theta_now < pitch_hold
                     - math.radians(3.0) else None)
                 self.plane.ground_pitch_integral = bool(pitch_hold)
                 if pitch_hold and not self.rotating:
@@ -610,9 +705,12 @@ class ReconPilot:
             tlat, tlon = self.target[1], self.target[2]
             dist = gd.distance(lat, lon, tlat, tlon, self.radius)
             course = gd.bearing(lat, lon, tlat, tlon)
+            # The rest of the flight: on to the target, then on round the
+            # same great circle home.
             back = gd.distance(tlat, tlon, cfg.RUNWAY_09_LAT,
                                cfg.RUNWAY_09_LON, self.radius)
-            self.plan_speed(ut, rho, sound, t_env, dist + back)
+            self.plan_speed(ut, rho, sound, t_env,
+                            dist + 2.0 * math.pi * self.radius - back)
             if self.v_heat is not None:
                 throttle = min(throttle, gd.clamp(
                     (self.v_heat - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))

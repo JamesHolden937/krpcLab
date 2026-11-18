@@ -60,6 +60,9 @@ class Config:
     # speed that angle gives (thrust's lift counted).
     LIFT_SWEEP_MAX_DEG: float = 30.0
     TAIL_CLEARANCE_DEG: float = 1.0
+    # On the wheels the nose stops rising while any non-wheel part is
+    # closer than this to the ground (measured each tick).
+    TAIL_CLEARANCE_M: float = 0.3
     GEAR_UP_AGL_M: float = 50.0
     # The cruise altitude is searched for in flight, never set: the
     # altitude command climbs at ALT_SEEK_RATE_M_S while heat holds the
