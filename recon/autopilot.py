@@ -533,19 +533,22 @@ class ReconPilot:
         return lo
 
     def seek_altitude(self, alt, agl, heat_thr, dt):
-        """The cruise altitude, searched for: up while heat holds the
-        throttle back, down while the throttle is full and the speed has
-        stopped growing (thrust-limited); held within 2 km of the craft."""
+        """The cruise altitude, searched for: down while thrust is the
+        limit (the throttle full and the speed no longer growing by
+        SEEK_ACCEL_M_S2: thicker air gives the RAPIER more), up otherwise --
+        while heat or a computed speed holds the throttle back (thinner air:
+        more speed for the same heat or fuel) and while the craft still
+        accelerates (spare thrust: thinner air is where its top speed is).
+        Held within 2 km of the craft.  (Climbing only on a binding limit
+        left it at Mach 3.3 at 1.7 km, LOG17749.)"""
         cfg = self.cfg
         if self.h_seek is None:
             self.h_seek = alt
         step = cfg.ALT_SEEK_RATE_M_S * dt
-        at_heat = self.v_heat is not None and \
-            self.speed >= self.v_heat - cfg.SPEED_BAND_M_S
-        if heat_thr < 0.98 or at_heat:
-            self.h_seek += step
-        elif self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
+        if self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
             self.h_seek -= step
+        else:
+            self.h_seek += step
         floor = alt - agl + cfg.ALT_FLOOR_AGL_M
         self.h_seek = gd.clamp(self.h_seek, max(floor, alt - 2000.0),
                                alt + 2000.0)

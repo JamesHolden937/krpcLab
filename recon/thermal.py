@@ -108,12 +108,18 @@ class PartHeat:
         ds = dt / sub
         for _ in range(n):
             for _ in range(sub):
+                if ts > 3.0 * self.s_max or ti > 3.0 * self.t_max:
+                    break
                 q_in = hc * (t_sh - ts)
                 q_out = self.e_a * SIGMA * (ts ** 4 - t_env ** 4)
                 q_si = self.g * (ts - ti)
                 ts += ds * (q_in - q_out - q_si) / self.c_s
                 ti += ds * (q_si + self.q_cond) / self.c_i
             worst = max(worst, ts / self.s_max, ti / self.t_max)
+            if worst > 2.0 or not (math.isfinite(ts) and math.isfinite(ti)):
+                # Well past the limit (or diverged): no need to know by how
+                # much.
+                return max(worst, 2.0), ts, ti
         return worst, ts, ti
 
 
@@ -126,6 +132,15 @@ def speed_limit(parts, rho, sound, t_env, distance, frac_max, v_lo=200.0,
     ready = [p for p in parts if p.ready()]
     if not ready:
         return None
+    try:
+        return _speed_limit(ready, rho, sound, t_env, distance, frac_max,
+                            v_lo, v_hi, iters)
+    except (OverflowError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _speed_limit(ready, rho, sound, t_env, distance, frac_max, v_lo, v_hi,
+                 iters):
 
     def ok(v):
         dur = min(distance / v, 3600.0)

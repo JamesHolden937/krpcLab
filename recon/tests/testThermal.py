@@ -23,6 +23,7 @@ class TestFormulas(unittest.TestCase):
 class TestPrediction(unittest.TestCase):
     def test_skin_settles_and_interior_lags(self):
         p = cockpit()
+        p.s_max = p.t_max = 1e9
         f60, ts60, ti60 = p.peak(0.05, 1500.0, 5.0, 220.0, 60.0)
         f600, ts600, ti600 = p.peak(0.05, 1500.0, 5.0, 220.0, 600.0)
         self.assertAlmostEqual(ts60, ts600, delta=20.0)   # skin at equilibrium
