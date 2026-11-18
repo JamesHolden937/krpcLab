@@ -630,6 +630,10 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
     # A burn still to be lit starts with the nose on its first command (the
     # coast unwinds its angle of attack onto it, ``SETTLE_LAGS``).
     lag = getattr(env, "nose_lag", None) or 0.0
+    # The body's normal force at the nose's angle off the airflow
+    # (``env.burn_aero``, BURN_LIFT).
+    aero = (getattr(env, "burn_aero", None)
+            if getattr(cfg, "BURN_LIFT", False) else None)
     nose_now = (getattr(env, "nose", None)
                 if getattr(env, "burn_lit", False) else None)
     times, dirs = [], []            # the commands, in time order
@@ -672,6 +676,10 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
             push = lambda rr, vv: vec.scale(held, accel)
         else:
             push = lambda rr, vv: vec.scale(thrust_dir(vv, rr, accel), accel)
+        if aero is not None:
+            push = _with_body_aero(env, mass, drag, aero, push,
+                                   held if lag > 0.0 else None,
+                                   lambda rr, vv: thrust_dir(vv, rr, accel))
         r, v = _step(env, r, v, mass, drag, dt, cfg, push)
         if isp and mass > 0.0:
             mass = max(dry if dry is not None else 1e-3 * mass,
@@ -679,6 +687,37 @@ def _fly_landing_burn(env, r, v, mass, max_accel, cfg, drag, trace=None):
         t += dt
         steps += 1
     return r, v, t, steps, mass
+
+
+def _with_body_aero(env, mass, drag, aero, push, held, command):
+    """``push`` plus the body's aerodynamics beyond drag on the airflow:
+    the normal force (``aero``'s Cn*A, opposite the nose's tilt off
+    retrograde) and the drag's rise with that angle.  The nose is ``held``
+    (the lagged command), or on the command when there is no lag."""
+    def total(rr, vv):
+        a = push(rr, vv)
+        speed = vec.norm(vv)
+        if speed < 1.0 or mass <= 0.0:
+            return a
+        nose = held if held is not None else command(rr, vv)
+        retro = vec.scale(vv, -1.0 / speed)
+        tilt = vec.project_out(nose, retro)
+        alpha = vec.norm(tilt)
+        altitude = vec.norm(rr) - env.equatorial_radius
+        rho = env.density(altitude)
+        if rho <= 0.0:
+            return a
+        out = aero(speed, altitude, math.asin(min(1.0, alpha)))
+        if out is None:
+            return a
+        cn, d_f = out
+        q = 0.5 * rho * speed * speed / mass
+        a = vec.add(a, vec.scale(retro, q * drag(speed, altitude)
+                                 * (d_f - 1.0)))
+        if alpha > 1e-9:
+            a = vec.add(a, vec.scale(tilt, -q * cn / alpha))
+        return a
+    return total
 
 
 def miss_vector(env, prediction):

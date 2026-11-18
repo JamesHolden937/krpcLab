@@ -2390,6 +2390,24 @@ class Autoland:
                               " ".join("M%.2f %.1f" % (env._bin_mach(i), a)
                                        for i, a in enumerate(bins)
                                        if a is not None)))
+            if self.cfg.BURN_LIFT:
+                top = math.radians(self.cfg.LANDING_MAX_TILT_DEG)
+                got = env.sweep_burn_lift(
+                    snap.position, snap.velocity, snap.rotation,
+                    snap.direction, [top / 8.0, top / 4.0, top / 2.0, top])
+                if got is not None and env.set_burn_lift(*got):
+                    slopes, shape = got
+                    self.log.event(snap.ut, "burn lift swept, fins neutral: "
+                                   "Cn*A/rad %s; shape %s" % (
+                                       " ".join("M%.2f %.1f"
+                                                % (env._bin_mach(i), k)
+                                                for i, k in enumerate(slopes)
+                                                if k is not None),
+                                       " ".join("%.1f:%.2f/%.2f"
+                                                % (math.degrees(a), n, d)
+                                                for a, n, d in shape)))
+                else:
+                    self.log.event(snap.ut, "burn lift: probe unreadable")
             if self.cfg.DIAG_DRAG:
                 self.log_lift_ladder(snap, "coast, fins neutral")
             self.release_fins(snap, None)

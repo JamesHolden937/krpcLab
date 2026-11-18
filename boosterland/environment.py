@@ -84,6 +84,11 @@ class Environment:
         # The landing burn's curve (set_burn_curve): swept with the fins
         # held neutral, as the burn flies them.
         self._burn_machs, self._burn_areas = [], []
+        # ... and its normal force: Cn*A per radian at the reference angle,
+        # per Mach, and the shape in angle ((alpha, lift factor, drag
+        # factor), set_burn_lift).
+        self._lift_machs, self._lift_slopes = [], []
+        self._lift_shape = []
         self.late_switch_alt = None
         self._replace_next = False      # the next sweep replaces, not blends
         self._descent_profile = ()      # (speed, altitude) down to the pad
@@ -282,6 +287,105 @@ class Environment:
         self._burn_machs = [m for m, _ in pairs]
         self._burn_areas = [a for _, a in pairs]
         return True
+
+    def set_burn_lift(self, slopes, shape):
+        """The burn's normal force: ``slopes`` one Cn*A per radian per Mach
+        bin (None where unread), at the shape's first angle; ``shape``
+        ``[(alpha, lift factor, drag factor), ...]`` from one ladder, the
+        lift factor normalised to the first angle's slope and the drag
+        factor to the drag on the airflow.  False if either is empty."""
+        pairs = [(self._bin_mach(i), k) for i, k in enumerate(slopes)
+                 if k is not None]
+        if not pairs or not shape:
+            return False
+        self._lift_machs = [m for m, _ in pairs]
+        self._lift_slopes = [k for _, k in pairs]
+        self._lift_shape = sorted(shape)
+        return True
+
+    def sweep_burn_lift(self, position, velocity, rotation, nose, angles):
+        """Probe the normal force for :meth:`set_burn_lift`, as the vessel
+        is now: ``(slopes, shape)``, or None if the probe would not answer.
+
+        ``angles`` (radians, ascending) are the nose's tilts off retrograde
+        in the vertical plane; the shape is read here at each, the per-Mach
+        slope at the first in each bin's air (``probe_altitude``)."""
+        speed = vec.norm(velocity)
+        altitude = vec.norm(position) - self.equatorial_radius
+        rho = self.density(altitude)
+        if speed < 20.0 or rho <= 0.0 or not angles:
+            return None
+        retro = vec.scale(velocity, -1.0 / speed)
+        side = vec.project_out(vec.unit(position), retro)
+        if vec.norm(side) < 1e-6:
+            return None
+        side = vec.unit(side)
+
+        def tilted(a):
+            return vec.rotation_onto(rotation, nose, vec.add(
+                vec.scale(retro, math.cos(a)), vec.scale(side, math.sin(a))))
+
+        def coefficients(pos, vel, rot, q):
+            f = self._probe_force(pos, vel, rot) if rot is not None else None
+            if f is None:
+                return None
+            return vec.dot(f, retro) / q, -vec.dot(f, side) / q
+
+        q = 0.5 * rho * speed * speed
+        zero = coefficients(position, velocity, tilted(0.0), q)
+        ladder = [coefficients(position, velocity, tilted(a), q)
+                  for a in angles]
+        if zero is None or zero[0] <= 0.0 or ladder[0] is None \
+                or ladder[0][1] == 0.0:
+            return None
+        ref = ladder[0][1] / angles[0]
+        shape = [(a, c[1] / (ref * a), c[0] / zero[0])
+                 for a, c in zip(angles, ladder) if c is not None]
+        rot = tilted(angles[0])
+        c = self.speed_of_sound(altitude)
+        slopes = []
+        for i in range(self._bins):
+            s = self._bin_mach(i) * c
+            at = self.probe_altitude(s, altitude)
+            rho_at = self.density(at)
+            out = (coefficients(self.probe_position(position, at),
+                                vec.scale(retro, -s), rot,
+                                0.5 * rho_at * s * s)
+                   if rho_at > 0.0 else None)
+            slopes.append(out[1] / angles[0] if out is not None else None)
+        return slopes, shape
+
+    def burn_aero(self, speed, altitude, alpha):
+        """``(Cn*A, drag factor)`` with the nose ``alpha`` radians off the
+        airflow in the burn, or None before set_burn_lift.
+
+        Cn*A acts opposite the nose's tilt: a booster falling engine-first
+        with its nose held behind retrograde is pushed forward and up.  It
+        is not small: at M2 with the fins neutral the fin booster makes
+        1.1 m^2 of it per degree beside 3.1 m^2 of drag (lad-1117), so the
+        0.3-0.7 deg the nose lags its command through the burn, and the few
+        degrees it lights with, take a fifth to all of the drag's
+        horizontal braking away.  Below the first angle the slope is held,
+        and the drag factor runs linearly from 1 on the airflow; past the
+        last, both are held."""
+        if not self._lift_machs or not self._lift_shape:
+            return None
+        slope = self._interp_curve(self._lift_machs, self._lift_slopes,
+                                   self.mach(speed, altitude))
+        shape = self._lift_shape
+        a0, n0, d0 = shape[0]
+        if alpha <= a0:
+            n_f = n0
+            d_f = 1.0 + (d0 - 1.0) * (alpha / a0 if a0 > 0.0 else 1.0)
+        else:
+            n_f, d_f = shape[-1][1], shape[-1][2]
+            for (a1, n1, d1), (a2, n2, d2) in zip(shape, shape[1:]):
+                if alpha <= a2:
+                    f = (alpha - a1) / (a2 - a1) if a2 > a1 else 1.0
+                    n_f = n1 + (n2 - n1) * f
+                    d_f = d1 + (d2 - d1) * f
+                    break
+        return slope * alpha * n_f, d_f
 
     def burn_drag_area_at(self, speed, altitude):
         """Cd*A in the landing burn: the burn's own curve where the brakes
