@@ -54,7 +54,8 @@ def load(instance, save):
     rpc, stream = paths.ports(instance)
     for _ in range(40):
         try:
-            conn = krpc.connect(name="instancebench", port=rpc)
+            conn = krpc.connect(name="instancebench", rpc_port=rpc,
+                                stream_port=stream)
             break
         except Exception:                               # noqa: BLE001
             time.sleep(3.0)
