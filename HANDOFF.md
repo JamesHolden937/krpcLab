@@ -42,6 +42,23 @@ comparing).
 - burnplan (plan - flown burn travel): default +86 sd 78 m over ~3.7 km; nose lag -70 m (keep), dead time null,
   isp alone +42 (the wrong way: an unmodelled term). All terms stay (physical; trigger shares reaction_time).
 
+**In progress when stopped (the user's question: can the coast be more accurate, and is the burn's scatter bad
+prediction or something else?):**
+- Found so far: the coast's own prediction jitters -- in its last 20 s the predicted long/cross jumps a median 1-72 m
+  between 2 s lines (±90 m in LOG17539/17549); only LOG17543/17550 held steady (1 m), and they landed 23/25 m. The
+  coast's `cla` estimate swings -558..-1204 within 10 s (LOG17542), which the prediction's aero steering carries.
+- `boosterland/tools/predvsland.py logs/rot-<tag>.txt`: ignition prediction (last COAST line; approach westbound,
+  long ~ -E, cross ~ +N) against the landed N/E. fb4-1117 (aim on): predicted |miss| median 26 m, but landed minus
+  predicted sd 107 m N / 73 m E -- the burn does not land where ignition predicted.
+- **Not yet flown:** `noaim-1117`, 12 x `DIAG_BURN=True,LANDING_BURN_AIM=False` on qs_finbooster4 (stopped by the
+  user before any flight finished; `logs/rot-noaim-1117.txt` is empty). With aim off the burn only brakes and nulls
+  sideways speed, and the propagator flies that same law, so landed-minus-predicted is the prediction's own error.
+  Relaunch: `SAVES_LIST=qs_finbooster4 LAPS=2 boosterland/tools/brot.sh noaim-1117
+  "n:DIAG_BURN=True,LANDING_BURN_AIM=False"` (restart the farm first), then `predvsland.py` on both rot files.
+  Small error with aim off -> the aim's execution (supersonic divert, item 1) is the scatter; large -> the
+  prediction (then: why the coast's prediction jitters -- cla/aoa estimate noise -- and smoothing it from the
+  recorded `dragCurves.json` / a filtered slope rather than one tick's).
+
 **Next, in order:**
 1. **Test the supersonic-divert hypothesis**: `one_law_command` credits a tilt with thrust*sin(tilt) only; the
    tilt's aero force (cla reads -1123 in the burn, fins at the top) may cancel or reverse it at high q. Measure
