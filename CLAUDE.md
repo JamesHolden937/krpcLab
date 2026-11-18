@@ -315,6 +315,17 @@ These bite in both projects and are the ones a change most often violates.
   is one separation state and a number tuned against it proves nothing about
   the next. Fit a calibration from two points, never from one flight's
   residual.
+- **A prediction error found is the top priority, and it is fixed at its
+  source -- never hidden** (the user, 2026-11-17). The moment a prediction
+  and the flight disagree (landed minus predicted, plan minus flown), stop
+  the work in hand and find *why*: which term, which delay, which tick. Fix
+  that cause in the code or the vehicle's handling. Do not absorb it with a
+  bias, a margin, a gain, a closed loop that steers it out late, or a
+  re-fitted constant -- each of those leaves the error in place and only
+  hides it. The booster burn landed ~70 m long of its own ignition
+  prediction for weeks while the divert spent its authority steering it
+  out; the cause was the throttle opening 0.3-0.4 s after the trigger
+  (noaim-1117).
 - **The propagator must fly the law the vehicle flies.** `landing_command` and
   the spaceplane's speed cap are shared by the predictor and the control loop
   on purpose: a prediction of a law nobody flies is a prediction of a
