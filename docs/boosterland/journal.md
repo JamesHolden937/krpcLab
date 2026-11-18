@@ -1438,3 +1438,29 @@ propagator's coarse step (0.7 m) and the null rate (5 m). Also built, unflown: L
 LANDING_AERO_DIVERT (the supersonic divert reverses past ~2-5 deg of tilt). Method change proposed in HANDOFF: an
 offline replay substituting flown inputs one at a time. The user added to CLAUDE.md: a prediction error is fixed
 first, at its source, never hidden.
+
+## 2026-11-18: back on qs_finbooster2; the brakes' settle read from the game; BURN_LIFT promoted (fin2lift/fin2trv-1118)
+
+The user: the target is **qs_finbooster2**, not finbooster4 (CLAUDE.md, HANDOFF). lift4-1118 (finbooster4) was stopped
+at 6 of 24 and is not a result.
+
+**The late brakes' open/closed measurement was settling mid-travel.** lift3-1117 read open/closed 1.68-3.33 on one
+craft. First fix (99ddcea): compare only probes from different physics frames. fin2lift-1118 (qs_finbooster2, 12 c / 12
+l, 24 flights): still 1.55-3.65, and the ratio followed the logged settle time -- open "settled" 0.38-0.74 s after the
+command on half the flights (ratio 1.55-2.5), 1.1-18 s on the rest (2.7-3.65). Still drag is no proof the surfaces
+stopped. Second fix (67aa25c): `launcherMod` `SurfaceTravel` returns max |action - deflection| / ctrlSurfaceRange over
+the vessel's ModuleControlSurfaces (protected fields, read by reflection; ModuleControlSurface.FixedUpdate moves
+deflection to action at actuatorSpeed -- read from Assembly-CSharp IL), and `brakes_settled` waits for travel seen > 0
+then <= 1e-3 (drag stillness kept as the fallback without the mod). fin2trv-1118: open settles 1.50-1.90 s on every
+flight, closed 0.92-1.00 s; ratio 3.29-3.35 on 17 of 23 (outliers 2.03, 2.72, 2.86, 2.95, 3.12, 3.77 -- unexplained;
+LOG17811 never took the measurement at all and landed 353 m off its prediction).
+
+**BURN_LIFT, fin2trv-1118 (qs_finbooster2, aim off, DIAG_BURN, 12 a side):**
+
+| arm | landed-pred E median (sd) | N median (sd) | landed miss median | ended flying (dry) |
+|---|---|---|---|---|
+| c (off) | -106 (88) | -28 (24) | 99 m | 7/12 |
+| l (on) | -36 (84) | -10 (92; LOG17811 -324) | 66 m | 7/12 |
+
+Brakes-open flights only: c -114 sd 95 (n 7), l -36 sd 72 (n 10). Promoted (c729f33), flag deleted; defaults 080e48b5.
+The E residual (~-36 m, short) and the running dry are both still there: 14/24 ended in the air with the tanks empty.
