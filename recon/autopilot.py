@@ -35,7 +35,7 @@ import sys
 import time
 
 from common import cli
-from common.krpcpilot import set_autopilot_engaged
+from common.krpcpilot import set_autopilot_attitude, set_autopilot_engaged
 from common.krpcbatch import ask
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
@@ -108,6 +108,12 @@ class ReconPilot:
         self.flight = self.vessel.flight(self.body.reference_frame)
         # Pitch and heading against the horizon (the body frame's read odd).
         self.sflight = self.vessel.flight(self.vessel.surface_reference_frame)
+        # The velocity through the air in the surface frame's axes.
+        self.hflight = self.vessel.flight(
+            self.sc.ReferenceFrame.create_hybrid(
+                position=self.body.reference_frame,
+                rotation=self.vessel.surface_reference_frame))
+        self.path_i = 0.0
         self.gui = ControlPanel(conn, "RECON", "START", ACCENT_RECON)
         self.parts = list(self.vessel.parts.all)
         self.part_names = [pt.name for pt in self.parts]
@@ -172,7 +178,8 @@ class ReconPilot:
                  (getattr, (self.sflight, "pitch")),
                  (self.res.amount, ("LiquidFuel",))]
         calls += [(getattr, (self.sflight, "angle_of_attack")),
-                  (getattr, (self.sflight, "roll"))]
+                  (getattr, (self.sflight, "roll")),
+                  (getattr, (self.hflight, "velocity"))]
         calls += [(getattr, (fl, "static_air_temperature")),
                   (getattr, (fl, "speed_of_sound"))]
         for pt in self.parts:
@@ -300,6 +307,20 @@ class ReconPilot:
             if alpha <= a1:
                 return c0 + (c1 - c0) * (alpha - a0) / (a1 - a0)
         return pts[-1][1]
+
+    def alpha_for(self, cla):
+        """The angle of attack giving ``cla`` (m^2) off the swept curve, up
+        to its peak."""
+        pts = self.cla or [(0.0, 0.0), (self.alpha_peak, 1.0)]
+        peak = max(pts, key=lambda x: x[1])
+        if cla >= peak[1]:
+            return peak[0]
+        for (a0, c0), (a1, c1) in zip(pts, pts[1:]):
+            if c0 <= cla <= c1 and c1 > c0:
+                return a0 + (a1 - a0) * (cla - c0) / (c1 - c0)
+            if a1 >= peak[0]:
+                break
+        return 0.0 if cla <= pts[0][1] else peak[0]
 
     def cla_max(self):
         return max(c for _, c in self.cla) if self.cla else None
@@ -651,7 +672,7 @@ class ReconPilot:
         cfg = self.cfg
         got = self.read()
         (lat, lon, speed, vs, alt, agl, hdg, gforce, mach, rho, thrust, mass,
-         situation, pitch, fuel, aoa, roll, t_env, sound) = got[:19]
+         situation, pitch, fuel, aoa, roll, vel_s, t_env, sound) = got[:20]
         if None in (lat, lon, speed, alt):
             return
         speed = speed or 0.0
@@ -661,7 +682,7 @@ class ReconPilot:
         gforce = gforce or 0.0
         mass = mass or 1.0
         thrust = thrust or 0.0
-        frac, name, lost = self.hottest(got[19:])
+        frac, name, lost = self.hottest(got[20:])
         if lost:
             self.log.event(ut, "parts lost: %s" % ", ".join(lost))
             self.finish("craft broken: %s" % ", ".join(lost))
@@ -682,7 +703,7 @@ class ReconPilot:
             self.heat = (f1, r0 + a * ((f1 - f0) / dt - r0))
         self.heat_name = name
         hfrac, hrate = self.heat
-        self.update_thermal(got[19:], rho, speed, mach, t_env, dt)
+        self.update_thermal(got[20:], rho, speed, mach, t_env, dt)
         # Drag, from the speed's change: what thrust and gravity do not
         # explain.  Kept below Mach 0.9 (the approach's air) on level-ish
         # flight and real q.
@@ -717,8 +738,6 @@ class ReconPilot:
         normal = max(1.0, gd.normal_g_budget(g_line, axial))
         if gforce > g_line:
             normal = max(1.0, normal * g_line / gforce)
-        # The pitch rate the load allows: (n - 1) g / V.
-        q_max = (normal - 1.0) * gd.G0 / max(speed, 50.0)
 
         self.level = abs(gamma) < math.radians(cfg.CRUISE_LEVEL_DEG)
         heat_thr = gd.heat_throttle(hfrac, hrate, cfg.HEAT_MAX,
@@ -931,46 +950,60 @@ class ReconPilot:
         hdg_r = math.radians(hdg or 0.0)
         if course is None:
             course = hdg_r
-        err = gd.wrap(course - hdg_r)
-        bank = gd.bank_for_turn(err / cfg.HEADING_TAU_S, speed, normal)
-        bank = gd.clamp(bank, -bank_cap, bank_cap)
         # Heat-limited with the throttle shut: no descent.
         if hfrac >= cfg.HEAT_NO_DESCENT and throttle <= 0.0 and \
                 self.state in (OUT, HOME):
             gamma_cmd = max(gamma_cmd, 0.0)
         theta = math.radians(pitch or 0.0)
-        if self.state in (FINAL, FLARE, ROLLOUT) and self.a_clear is not None:
-            # The nose never past the angle the tail clearance allows on the
-            # runway: the flare at 53 m/s set the nozzle down (LOG17754).
-            pitch_cap = self.a_clear
-        else:
-            pitch_cap = None
-        if pitch_hold is not None:
-            pitch_cmd = pitch_hold
-        else:
-            # The flight-path error into attitude, never further from the
-            # present pitch than a second of the load's pitch rate.
-            # Against the flight path, not the nose: the nose is the path
-            # plus the angle of attack it flies at (held to the lift
-            # curve's peak), plus the path error, at most a second of the
-            # load's pitch rate.  "Present pitch + error" fed on itself in
-            # thin air: nose 87 deg up on a -13 deg path (LOG17752).
-            # The angle of attack's vertical share only: in a bank the lift
-            # (and the angle it is flown at) is mostly sideways.  Taken as
-            # pitch less path, the 80 deg turn's pull fed back as nose-up
-            # and the turn zoomed to 40 km (LOG17755).
-            step = min(math.radians(cfg.PITCH_STEP_DEG), q_max)
-            a_max = self.alpha_peak
-            alpha = gd.clamp(math.radians(aoa or 0.0), -a_max, a_max)
-            phi = math.radians(roll or 0.0)
-            pitch_cmd = gamma + alpha * math.cos(phi) + gd.clamp(
-                gamma_cmd - gamma, -step, step)
-        if pitch_cap is not None:
-            pitch_cmd = min(pitch_cmd, pitch_cap)
         ap = self.ap
-        ap.target_pitch = math.degrees(pitch_cmd)
-        ap.target_heading = math.degrees(course) % 360.0
-        ap.target_roll = math.degrees(bank)
+        alpha_cmd = None
+        if pitch_hold is not None or vel_s is None or ground:
+            # On the wheels (and the rotation): pitch, heading, wings level.
+            err = gd.wrap(course - hdg_r)
+            bank = 0.0
+            pitch_cmd = pitch_hold if pitch_hold is not None else theta
+            if self.state in (FINAL, FLARE, ROLLOUT) and self.a_clear:
+                pitch_cmd = min(pitch_cmd, self.a_clear)
+            ap.target_pitch_and_heading(math.degrees(pitch_cmd),
+                                        math.degrees(course) % 360.0)
+            ap.target_roll = 0.0
+            self.path_i = 0.0
+        else:
+            # In the air the path is flown, not an attitude: the
+            # acceleration square to the velocity that closes the path angle
+            # (against gravity) and turns to the course, held to the load
+            # budget, vertical first; the lift along it, at the angle of
+            # attack the lift curve gives for it at this q; the nose that
+            # angle above the velocity toward the lift, the roof along it.
+            # (Pitch and heading targets with a bank set apart from them
+            # gave a turn no lift where it was wanted: it zoomed to 40 km,
+            # LOG17755, and sank into the ground at 80 deg of bank,
+            # LOG17760.)
+            track = math.atan2(vel_s[2], vel_s[1])
+            err = gd.wrap(course - track)
+            a_max = normal * gd.G0
+            a_up, a_right = gd.normal_accel(
+                speed, gamma, gamma_cmd, err, cfg.PATH_TAU_S,
+                cfg.HEADING_TAU_S, a_max, bank_cap)
+            # The path's integral: what the lift curve (taken at low speed)
+            # does not know of the craft at this Mach.
+            if dt > 0.0:
+                self.path_i = gd.clamp(
+                    self.path_i + speed * (gamma_cmd - gamma)
+                    / (cfg.PATH_TAU_S * cfg.PATH_I_TAU_S) * dt,
+                    -0.5 * a_max, 0.5 * a_max)
+            a_up += self.path_i
+            q_dyn = 0.5 * (rho or 0.0) * speed * speed
+            need = mass * math.hypot(a_up, a_right)
+            alpha_cmd = self.alpha_for(need / q_dyn if q_dyn > 1.0 else 1e9)
+            if self.state in (FINAL, FLARE) and self.a_clear:
+                # The nose never past the tail clearance's pitch on the
+                # runway (the flare at 53 m/s set the nozzle down, LOG17754).
+                alpha_cmd = min(alpha_cmd, max(0.0, self.a_clear - gamma))
+            nose, roof, bank = gd.path_attitude(vel_s, a_up, a_right,
+                                                alpha_cmd)
+            set_autopilot_attitude(ap, nose, roof)
+            pitch_cmd = math.asin(gd.clamp(nose[0], -1.0, 1.0))
         c = self.vessel.control
         if abs(throttle - self.throttle) > 0.005 or (
                 throttle in (0.0, 1.0) and throttle != self.throttle):
@@ -986,12 +1019,14 @@ class ReconPilot:
         deg = math.degrees
         self.log.telemetry(ut, (
             "%s spd=%6.1f M=%4.2f alt=%6.0f agl=%6.0f vs=%+6.1f hdg=%5.1f "
-            "crs=%5.1f bank=%+5.1f gam=%+5.1f/%+5.1f pitch=%+5.1f/%+5.1f "
+            "crs=%5.1f bank=%+5.1f gam=%+5.1f/%+5.1f pitch=%+5.1f/%+5.1f a=%+5.1f/%s pi=%+.1f "
             "thr=%.2f vheat=%.0f vpred=%.0f hseek=%.0f heat=%.3f%+.4f/s %s g=%4.1f ax=%.1f nrm=%.1f cda=%.2f "
             "lat=%.4f lon=%.4f %s"
             % (self.state, speed, mach or 0.0, alt, agl, vs, hdg or 0.0,
                deg(course) % 360, deg(bank), deg(gamma), deg(gamma_cmd),
-               deg(theta), deg(pitch_cmd), throttle, self.v_heat or 0.0,
+               deg(theta), deg(pitch_cmd), aoa or 0.0,
+               "%.1f" % deg(alpha_cmd) if alpha_cmd is not None else "-",
+               self.path_i, throttle, self.v_heat or 0.0,
                self.v_pred or 0.0,
                self.h_seek or 0.0, hfrac, hrate, name,
                gforce, axial, normal, self.cda, lat, lon, note)))

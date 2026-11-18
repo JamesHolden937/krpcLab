@@ -66,3 +66,23 @@ class TestEnergy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPathAttitude(unittest.TestCase):
+    def test_level_east_no_turn(self):
+        nose, roof, bank = gd.path_attitude((0.0, 0.0, 100.0), 9.8, 0.0, 0.1)
+        self.assertAlmostEqual(bank, 0.0)
+        self.assertGreater(nose[0], 0.0)          # nose above the path
+        self.assertGreater(roof[0], 0.9)          # roof up
+
+    def test_right_turn_banks_right(self):
+        # Flying north, turning right (east): the roof leans east.
+        nose, roof, bank = gd.path_attitude((0.0, 100.0, 0.0), 9.8, 9.8, 0.1)
+        self.assertGreater(bank, 0.0)
+        self.assertGreater(roof[2], 0.5)
+
+    def test_vertical_first(self):
+        a_up, a_right = gd.normal_accel(1000.0, 0.0, 0.0, 1.0, 5.0, 6.0,
+                                        20.0, math.radians(80.0))
+        self.assertAlmostEqual(a_up, 9.80665, places=3)
+        self.assertLessEqual(math.hypot(a_up, a_right), 20.0 + 1e-9)

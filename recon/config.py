@@ -102,10 +102,12 @@ class Config:
     # Climbs and descents at most these flight-path angles.
     CLIMB_GAMMA_DEG: float = 30.0
     DESCENT_GAMMA_DEG: float = -15.0
-    # Altitude error closed in ALT_TAU_S; flight path error into pitch
-    # attitude at most PITCH_STEP_DEG off the present pitch.
+    # The altitude error is closed in ALT_TAU_S.
     ALT_TAU_S: float = 15.0
-    PITCH_STEP_DEG: float = 6.0
+    # In the air the path angle is closed in PATH_TAU_S (the acceleration
+    # square to the velocity), its integral PATH_I_TAU_S slower.
+    PATH_TAU_S: float = 2.0
+    PATH_I_TAU_S: float = 4.0
     # Heading error closed in HEADING_TAU_S (a coordinated turn's rate);
     # bank never past BANK_MAX_DEG.
     HEADING_TAU_S: float = 6.0

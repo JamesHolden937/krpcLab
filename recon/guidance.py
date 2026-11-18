@@ -116,3 +116,54 @@ def localizer_course(rwy_course, cross, speed, tau, max_cut):
     lead = max(speed * tau, 1.0)
     return rwy_course - clamp(math.atan2(cross, lead), -max_cut, max_cut)
 
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def _unit(a):
+    n = math.sqrt(sum(x * x for x in a))
+    return tuple(x / n for x in a) if n > 1e-9 else None
+
+
+def path_attitude(vel, a_up, a_right, alpha):
+    """The nose and roof for flying ``vel`` (surface frame: x up, y north,
+    z east) with a normal acceleration of ``a_up`` (in the vertical plane
+    through the velocity, upward positive) and ``a_right`` (horizontal, to
+    the right), at angle of attack ``alpha``: the lift points along that
+    acceleration, the nose ``alpha`` above the velocity toward it, the
+    roof along the lift.  Returns (nose, roof, bank) or None for no
+    velocity."""
+    v = _unit(vel)
+    if v is None:
+        return None
+    up = (1.0, 0.0, 0.0)
+    right = _unit(_cross(up, v)) or (0.0, 0.0, 1.0)
+    n_up = _cross(v, right)
+    lift = _unit(tuple(a_up * u + a_right * r for u, r in zip(n_up, right)))
+    if lift is None:
+        lift = n_up
+    nose = tuple(math.cos(alpha) * x + math.sin(alpha) * l
+                 for x, l in zip(v, lift))
+    roof = tuple(math.cos(alpha) * l - math.sin(alpha) * x
+                 for x, l in zip(v, lift))
+    bank = math.atan2(a_right, a_up)
+    return nose, roof, bank
+
+
+def normal_accel(speed, gamma, gamma_cmd, heading_err, tau_path, tau_heading,
+                 a_max, bank_cap):
+    """The acceleration square to the path that flies it: up, to close the
+    path angle in ``tau_path`` against gravity's share; right, the turn
+    closing the heading in ``tau_heading``.  The total held to ``a_max``,
+    the vertical first; the turn's share to ``bank_cap`` of bank."""
+    g = G0
+    a_up = speed * (gamma_cmd - gamma) / tau_path + g * math.cos(gamma)
+    a_up = clamp(a_up, -a_max, a_max)
+    a_right = speed * heading_err / tau_heading
+    room = math.sqrt(max(0.0, a_max * a_max - a_up * a_up))
+    cap = abs(a_up) * math.tan(bank_cap) if a_up > 0 else room
+    a_right = clamp(a_right, -min(room, cap), min(room, cap))
+    return a_up, a_right
