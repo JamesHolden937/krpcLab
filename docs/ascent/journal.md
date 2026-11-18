@@ -193,3 +193,15 @@ the ascent can read, is 2-3x high and made the return look cheap. On fin2's farm
 ~750), 1.8 t short (flown: dry, ~120 m/s short); the boostback model is still ~3 t optimistic. `SEP_SAVE` writes the
 separation save under `HANDOFF=booster`. The user's stack craft is in `saves/craft/VAB/Heavy Shuttle.craft`; no pad
 save yet, nothing flown.
+
+## 2026-11-18: the budget against 24 fin2 flights -- the error was the fall's drag, not the boostback
+
+Replayed `budget.recovery` on fin2trv-1118's separation (LOG17807-17830). Boostback: the model reaches the coast
+at 160.1-160.3 t, flown 161.1 t (0.9 t pessimistic; flown with the flip coasting, gimbal 0, as the law chose).
+The "~3 t optimistic boostback" of 11-16/17 was misattributed. The fall: `dragcache` held 9.9 m^2 at M2.4 where
+the fall flew 4-5 (deceleration gives 3.3-6): `record_drag` saved the curve at shutdown, after the gear-down
+burn and the wreck's probes had walked it up. On it the budget lit at 729 m/s on every flight (flown 735-786)
+and charged the landing 36.75 t; on the fall's own curve it lights within ~12 m/s and charges 37.3-41.7 t
+against ~37-41 t needed (flights that ran dry high). Fix: boosterland records the curve as it stood at the
+landing burn's ignition (843438e). The coast spends 0.7-5.2 t of LFO on RCS (LOG17812: ~50 s saturated,
+err 5-10 deg), which the budget does not model.

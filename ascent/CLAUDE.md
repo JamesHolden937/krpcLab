@@ -25,8 +25,13 @@ STANDBY -> LAUNCH -> ASCENT -> THROTTLE_DOWN -> SEPARATE -> HANDOFF
   boosterland's law lights it (`LANDING_THROTTLE_CAP`, `SUICIDE_MARGIN`,
   `SUICIDE_REACTION_S`), dv = v + 2 g s H / v. Matches LOG12758's boostback
   (1251 m/s) and the Heavy Shuttle booster's fall and burn (LOG16184: lit
-  at 680 m/s, ~850 m/s) -- `tests/testBudget.py`. Errs high on boosters
-  with airbrakes (their drag is not in the table).
+  at 680 m/s, ~850 m/s) -- `tests/testBudget.py`. On `qs_finbooster2`'s
+  separation, fed the drag its fall flew, it gives the coast mass within
+  0.9 t, the burn's light speed within ~12 m/s and the landing within ~1 t
+  (fin2trv-1118, 24 flights; `testBudget` holds LOG17830). The fall's drag
+  is `boosterland/dragcache`, recorded at the landing burn's ignition. Not
+  modelled: propellant the coast spends on RCS (0.7-5.2 t on fin2, a
+  coast-attitude limit cycle in boosterland, not a budget term).
 - `turnshape.py` -- pure: MechJeb classic's pitch-vs-altitude path
   (`90 - ((h-h0)/(end-h0))**shape * 90`; the vertical climb ends at
   MechJeb's start height or start speed, whichever first, and h0 is the
