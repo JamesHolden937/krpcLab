@@ -15,6 +15,35 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
+## 2026-11-18 afternoon: ascent -- the separation budget measured against 30 fin2 flights; its error was the fall's drag
+
+State: ascent defaults unchanged; boosterland defaults fingerprint unchanged (080e48b5). Committed on main, pushed.
+Farm down. howItWorks.pdf (ascent, boosterland) not regenerated (stale since 11-17). Journal: `docs/ascent/journal.md`
+2026-11-18. kRPC 0.8 MechJeb split API (652811c) and PersistentThrust stripped from the farm (11-14) still stand.
+
+**How accurate the budget is now** (`ascent/tools/budgetcheck.py LOG...`: `budget.recovery` from each boosterland
+log's separation, on the dragcache curve and on the log's own fall, against the flight):
+- Boostback: coast mass 160.2-160.3 t against 161.1-161.5 flown (~1 t pessimistic). The "~3 t optimistic
+  boostback" of 11-16/17 was wrong.
+- Fall: on the old cache it lit at 729 m/s every flight (flown 735-786) and charged the landing 36.75 t, ~3-4 t
+  low. Cause: `record_drag` saved the env's curve at shutdown, after the gear-down burn's and the wreck's probes had
+  walked it to 2x (9.9 m^2 at M2.4 against the fall's 4-5). **Fixed (843438e):** boosterland records the curve as
+  it stood at the landing burn's ignition. fin2rec-1118 (6 flights, defaults) rewrote the cache (5.3 at M2.4): the
+  budget now lights at 763 m/s (flown 742-764) and charges 39.1 t, within ~1 t of the flights' own fall.
+- Not modelled: the coast's RCS spends 0.65-5.2 t of LFO (LOG17812: ~50 s saturated, err 5-10 deg): a
+  boosterland coast-attitude limit cycle, to fix there, not to budget.
+- On fin2's separation the budget now says it lands **1.5 t short before the coast's RCS** (was "0.85 t spare").
+
+**Open, in order:**
+1. The coast's RCS limit cycle (boosterland): 0.65-5.2 t a flight on one save; the largest unpredicted term now.
+2. Re-fly the ascent for a new fin2 separation on the corrected budget (deferred by the user, 2026-11-18).
+3. The landing burn's Isp is budgeted at the pad's (295); the flight reads ~307 at ignition. Small, check.
+
+**Traps:** `dragcache` holds one entry per booster key; `budgetcheck` picks the entry whose note is one of the given
+logs (`--key` otherwise). The offline suite's 2 kspSim wire-codec errors (krpc type code 203) are pre-existing.
+A kRPC object takes any `setattr` silently: grep assignments after an API change, not only reads.
+
+
 ## 2026-11-18 morning: boosterland -- back on qs_finbooster2; brake settle read from the game; BURN_LIFT promoted
 
 State: **boosterland defaults fingerprint 080e48b5** (was d8a430b8). Everything committed on main (last: 304dbb5 + this
@@ -39,7 +68,8 @@ boosterland/CLAUDE.md). Not finbooster3/4.
 1. **fin2 runs dry**: 14/24 ended in the air, tanks empty (38.7 t at the coast over 122.65 t dry; the burn needs more
    than it has). Every miss on fin2 is mixed with a free fall. The user (2026-11-18): when the boostback's budget
    changes, re-fly the ascent for a new separation with the right propellant (boosterland/CLAUDE.md) -- **not done
-   yet, on purpose: the user said not now.** Next session: re-fly the ascent with the booster's current budget
+   yet, on purpose: the user said not now.** (Afternoon: the budget's fall drag fixed, it now says fin2's separation
+   is 1.5 t short before the coast's RCS -- see the ascent section.) Next session: re-fly the ascent with the booster's current budget
    (`ascent/CLAUDE.md`, FMRS save -> `boosterland/fmrs.py`), make the new separation the fin2 save, then re-read the
    E bias on flights that land under power.
 2. Remaining E bias ~-36 m (short) with BURN_LIFT: not inside its standard error (~24 m)? borderline; re-read once
@@ -88,35 +118,6 @@ qs_warbird first); kRPC-removed waypoints leave map nodes that throw every frame
 pitch = "present pitch + error" runs away in thin air; climbing on every not-thrust-limited tick
 went to 42-55 km; the airplane pilot's hold sagged after lift-off (reverted to as it was);
 ground-roll heading departs below ~95 m/s with one wheel unloaded (ROTATE_MIN_Q_PA).
-
-## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
-
-**The user's live ascent died at liftoff (LOG16691, Heavy Shuttle):** `'AscentAutopilot' object has no attribute
-'auto_path'`. kRPC main's KRPC.MechJeb (installed 11-14 with kRPC 0.8) splits the ascent: `ascent_autopilot`
-keeps the common settings and `ascent_path_index` (0 classic, **2** PVG), `ascent_path_classic` the turn
-(`turn_shape_exponent`, auto path), `ascent_path_pvg` `desired_apoapsis` and the pitch kick. Worse than the
-crash: a kRPC object takes any `setattr`, so every split setting had been stored on the Python object and never
-reached MechJeb. Fixed (652811c): `MJ_OWNER` routes each setting, `mj_set` refuses a name the object lacks,
-`ASCENT_TYPE` 0/1 maps to the path index. Also (4a45566): a pod destroyed after separation ("The active vessel
-has no MechJeb") is logged as `upper stage lost`, not a crash. Defaults fingerprint unchanged. Not flown live.
-
-**Farm booster thrust cutouts: found and fixed (farm rebuilt 2026-11-14 ~17:15).** From ~60-70 s every stack's
-booster delivered 0 thrust on a growing share of frames (throttle 1, propellant present, no flameout): LOG16692
-(qs_stack_small) and LOG16693 (qs_stack) went suborbital. Cause: **PersistentThrust**, whose AllEngines.cfg adds
-`PersistentEngine` to every engine. The live game runs the same PersistentThrust at full flow because it also runs
-KerbalOverEngineering's `stock/PropellantRequestFix`, and the farm strips KOE (the user, 11-13: take it out of base).
-Ruled out first, each by a no-MechJeb vertical flight: MechJeb, krpcLab, kRPC 0.7 v 0.8, GimbalTorqueFix, time scale,
-the Retooled build. Fix: the farm rebuilt from today's live build (base Assembly-CSharp = live's; old base and
-ksp0-5 in `~/kspfarm/old-retooled-1113/`, safe to delete) and **PersistentThrust added to `testInstances/strip.txt`**
-(removed from base and all six clones). After: LOG16694 qs_stack_small 80 x 80, 9.353 t in orbit (solve 9.48);
-LOG16695 qs_stack 80 x 80, 64.380 t (solve 65.02). Alternative if the farm should match live more closely: keep
-PersistentThrust and install only KOE's PropellantRequestFix (it needs KerbalOverEngineering.Options).
-Next: the user's live ascent on the fixed code; boosterland comparisons across the rebuild are not like for like
-(new build, no PersistentThrust).
-
-**Trap:** kRPC 0.8 renamed nothing in `Module` beyond what 0.7 did (`common/partmodule.py` covers it), but any
-other kRPC class: an unknown attribute *set* is silent. Grep for setattr/assignments on kRPC objects after an API
-change, not only reads.
 
 ## 2026-11-14 (+ 11-13 night): boosterland -- the boostback oscillation (gimbal lag, the roll latch, gimbalTorqueFix)
 
