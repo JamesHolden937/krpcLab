@@ -420,6 +420,12 @@ class Config:
                                             # prediction flies at ignition,
                                             # and the flown burn every tick;
                                             # see burnplan.py
+    DIAG_DRAG: bool = False                 # log the game's Cd*A at the
+                                            # real state beside the curve's,
+                                            # the burn's force budget, and
+                                            # hold the fins neutral once in
+                                            # the coast to measure what their
+                                            # deflection costs
 
     # kRPC 0.8's AutoPilot.limit_angular_velocity (on by kRPC's default):
     # caps the nose's rate at the rate the flight path turns at the

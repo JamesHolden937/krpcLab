@@ -611,6 +611,9 @@ class Autoland:
         self.burn_cmd = None            # last landing-burn command, slewed
         self.burn_cmd_ut = 0.0
         self.burn_plan_ut = None        # DIAG_BURN: when the plan was logged
+        self.drag_diag_next = 0.0       # DIAG_DRAG: next probe, and the
+        self.drag_neutral = None        # fins-neutral window's start
+        self.drag_neutral_done = False
         self.drag_key = None            # dragcache's key for this booster
         self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
                                         # tick scatter: every deadband
@@ -2199,7 +2202,8 @@ class Autoland:
                           vec.angle_between(snap.direction, brake),
                           self.env.drag_area_at(snap.speed, altitude),
                           self.env.mach(snap.speed, altitude)))
-        self.log_burn_forces(snap, altitude)
+        if self.cfg.DIAG_DRAG:
+            self.log_burn_forces(snap, altitude)
 
     def log_burn_forces(self, snap, altitude):
         """DIAG_BURN: the horizontal force budget, m/s^2, against the
@@ -2233,6 +2237,72 @@ class Autoland:
                           thrust * vec.dot(snap.direction, fwd),
                           vec.norm(vec.project_out(
                               vec.project_out(force, up), fwd)) / snap.mass))
+
+    def log_drag_diag(self, snap):
+        """DIAG_DRAG: the game's Cd*A at this very state (``real``), what a
+        sweep would record for this speed now (``map``: the same attitude,
+        at the bin's probe altitude), and what the curve says (``curve``),
+        twice a game-second in the coast and four times in the burn.  Once
+        in the coast, below 20 km with the brakes closed, the fins are held
+        neutral for 2 s (``neutral=1``, probed every tick): what their
+        deflection is worth in drag, in the same air at the same attitude."""
+        if self.state not in (COAST, LANDING_BURN) or snap.speed < 20.0:
+            self.drag_neutral_release(snap)
+            return
+        env = self.env
+        altitude = vec.norm(snap.position) - env.equatorial_radius
+        if (self.state == COAST and self.drag_neutral is None
+                and (self.deploy_angle or 0.0) == 0.0
+                and self.coast_settled and altitude < 20000.0):
+            ok = self.hold_fins(True)
+            self.drag_neutral = snap.ut if ok else -1.0
+            self.log.event(snap.ut, "drag diag: fins held neutral (%s)"
+                           % ("ok" if ok else "failed"))
+        neutral = (self.drag_neutral is not None and self.drag_neutral > 0.0
+                   and not self.drag_neutral_done)
+        if neutral and snap.ut - self.drag_neutral >= 2.0:
+            self.drag_neutral_release(snap)
+            neutral = False
+        if not neutral and snap.ut < self.drag_diag_next:
+            return
+        self.drag_diag_next = snap.ut + (0.5 if self.state == COAST else 0.25)
+        unit = vec.unit(snap.velocity)
+        real = env._probe(snap.position, unit, snap.speed, altitude,
+                          snap.rotation)
+        at = env.probe_altitude(snap.speed, altitude)
+        mapped = env._probe(env.probe_position(snap.position, at), unit,
+                            snap.speed, at, snap.rotation)
+        inputs = getattr(snap, "inputs", None)
+        self.log.event(snap.ut, "drag diag st=%s M=%.2f alt=%.0f real=%s "
+                       "map=%s at=%.0f curve=%.2f aoa=%.1f dep=%.0f "
+                       "neutral=%d in=%s"
+                       % (self.state, env.mach(snap.speed, altitude), altitude,
+                          "%.2f" % real if real is not None else "-",
+                          "%.2f" % mapped if mapped is not None else "-",
+                          at, env.drag_area_at(snap.speed, altitude),
+                          vec.angle_between(snap.direction,
+                                            vec.scale(unit, -1.0)),
+                          self.deploy_angle or 0.0, int(neutral),
+                          "%+.2f/%+.2f/%+.2f" % inputs if inputs else "-"))
+
+    def hold_fins(self, hold):
+        """DIAG_DRAG: every control surface held at no deflection (kRPC's
+        override), or handed back."""
+        try:
+            for cs in self.vessel.parts.control_surfaces:
+                cs.deflection_override = hold
+                if hold:
+                    cs.deflection = 0.0
+        except Exception:                               # noqa: BLE001
+            return False
+        return True
+
+    def drag_neutral_release(self, snap):
+        if (self.drag_neutral is not None and self.drag_neutral > 0.0
+                and not self.drag_neutral_done):
+            self.drag_neutral_done = True
+            self.hold_fins(False)
+            self.log.event(snap.ut, "drag diag: fins released")
 
     def read_landing_limits(self, snap, why):
         """The legs' live suspension, deployed, as touchdown limits: once.
@@ -2610,6 +2680,8 @@ class Autoland:
             self.time_gear(snap)
         if self.cfg.DEPLOY_LAW:
             self.late_switch(snap)
+        if self.cfg.DIAG_DRAG:
+            self.log_drag_diag(snap)
         self.landing_gear(snap)
         # After the handler, so the error is measured against the attitude
         # this tick actually commanded rather than the last one's.
