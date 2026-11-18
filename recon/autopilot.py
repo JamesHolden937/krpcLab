@@ -561,6 +561,7 @@ class ReconPilot:
         brakes = False
         note = ""
 
+        theta_now = math.radians(pitch or 0.0)
         if self.state == TAKEOFF:
             rlat, rlon, rc, _ = self.takeoff_runway
             along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,
@@ -582,6 +583,13 @@ class ReconPilot:
                     pcfg.MAX_PITCH_RATE_DEG_S) * max(self.accel, 0.0)
                 pitch_hold = (self.alpha_rot
                               if speed >= self.v_liftoff - lead else 0.0)
+                # The rotation on the elevator outright, full up until the
+                # nose is nearly there: the loop's input cap rotated it at
+                # half stick, 2 deg by 75 m/s, balanced on the mains, and it
+                # rolled over (LOG17737).
+                self.plane.pitch_override = (
+                    1.0 if pitch_hold and theta_now < self.alpha_rot
+                    - math.radians(3.0) else None)
                 self.plane.ground_pitch_integral = bool(pitch_hold)
                 if pitch_hold and not self.rotating:
                     self.rotating = True
@@ -593,6 +601,7 @@ class ReconPilot:
                 gamma_cmd = max(gamma_cmd, math.radians(5.0))
                 bank_cap = math.radians(5.0) if agl < 100 else bank_cap
                 self.plane.ground_pitch_integral = False
+                self.plane.pitch_override = None
                 if agl > cfg.GEAR_UP_AGL_M:
                     self.vessel.control.gear = False
                     self.enter(OUT, ut, "gear up at %.0f m, %.0f m/s"

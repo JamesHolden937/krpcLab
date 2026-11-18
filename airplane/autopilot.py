@@ -106,6 +106,9 @@ class AirplanePilot:
         # ground (recon's rotation: the elevons must push until the nose
         # is up, which a proportional term alone does not).
         self.ground_pitch_integral = False
+        # A pilot flying this one may set the pitch input outright (recon's
+        # rotation: full up until the nose is up); None: the loop flies it.
+        self.pitch_override = None
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
                                                len(self.vessel.parts.all)))
@@ -466,6 +469,9 @@ class AirplanePilot:
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
             kps.append(kp)
+            if i == 0 and self.pitch_override is not None and not active[0]:
+                out.append(law.clamp(self.pitch_override, -1.0, 1.0))
+                continue
             if active[i] and not constant:
                 # The player flies the axis; the hold keeps only its trim.
                 out.append(self.loops[i].step(want[i], rate[i], kp, ki, dt,
