@@ -60,6 +60,13 @@ class Config:
     # speed that angle gives (thrust's lift counted).
     LIFT_SWEEP_MAX_DEG: float = 30.0
     TAIL_CLEARANCE_DEG: float = 1.0
+    # ... but not before this dynamic pressure (Pa): below it the QUDRAC's
+    # one small fin cannot hold the heading as the wheels unload -- it
+    # yawed 70 deg and rolled 54 at 66 m/s just off the runway, on kRPC's
+    # autopilot as on the airplane hold (LOG17743-5); the probes that left
+    # the runway near 100 m/s flew.  Fitted to this craft (allowed: the
+    # user, 2026-11-17).
+    ROTATE_MIN_Q_PA: float = 5000.0
     # On the wheels the nose stops rising while any non-wheel part is
     # closer than this to the ground (measured each tick).
     TAIL_CLEARANCE_M: float = 0.3

@@ -410,6 +410,11 @@ class ReconPilot:
         self.alpha_rot = a
         self.v_liftoff = math.sqrt(max(weight, 0.0) / (0.5 * rho * cla)) \
             if cla > 0 else 100.0
+        v_q = math.sqrt(2.0 * cfg.ROTATE_MIN_Q_PA / rho)
+        if v_q > self.v_liftoff:
+            self.log.event(ut, "take-off: lift-off at %.0f m/s would do; the "
+                           "fin needs %.0f" % (self.v_liftoff, v_q))
+            self.v_liftoff = v_q
         self.log.event(ut, "take-off: rotate to %.1f deg (lift peak %.0f, "
                        "tail %s), Cl*A %.2f, lift-off %.0f m/s at %.0f kg"
                        % (math.degrees(a), math.degrees(peak_a),
