@@ -59,17 +59,18 @@ with `session_id: "self"` (load it with ToolSearch first), and end the turn
 with one line: what was saved and the next batch. Skip the clear while the
 user is mid-conversation with you (a question open, a decision pending) or
 the context is still small (under ~100k tokens). The fresh session starts
-from HANDOFF.md as usual; it needs the user's prompt to start (see
-"Continuing after the clear" below).
+from HANDOFF.md as usual (see "Continuing after the clear" below).
 
-**Continuing after the clear needs the user's "go on".** A self-clear kills
-this conversation's background jobs (tested 2026-11-18: a `sleep 90` launched
-just before `clear_session self` was `[killed]` 2 s after the turn ended, and
-no notice ever reached the fresh conversation). So never clear with a batch,
-waiter or build running, and never launch the next batch in the clearing turn.
-Write the next batch into the handoff instead, clear, and end with one line:
-"cleared; send `go on` to fly <next batch>". The fresh conversation reads the
-handoff (step 1) and launches it.
+**Continuing after the clear.** A self-clear kills this conversation's
+background jobs (tested 2026-11-18), so a batch launched with
+`run_in_background` in the clearing turn dies with it. Follow
+`~/.claude/docs/autoContinue.md` instead: launch the next batch with
+`detachjob start NAME -- farmlaunch ... -- BATCH` (a systemd unit, survives
+the clear), write NAME and the ETA into the handoff, arm a CronCreate
+one-shot AUTO-CONTINUE wake at the ETA, then clear. If that doc's STATUS says
+the wake does not survive a clear, end with one line "cleared; send `go on`
+to pick up <NAME>" instead. A fresh conversation whose first message is an
+AUTO-CONTINUE prompt treats it as step 1 and carries on.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
