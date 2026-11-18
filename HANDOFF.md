@@ -15,6 +15,46 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
+## 2026-11-18 morning: boosterland -- back on qs_finbooster2; brake settle read from the game; BURN_LIFT promoted
+
+State: **boosterland defaults fingerprint 080e48b5** (was d8a430b8). Everything committed on main (last: 304dbb5 + this
+handoff), pushed. **Farm down.** launcherMod rebuilt (new `SurfaceTravel` procedure), installed in the farm and the live
+game. howItWorks.pdf (boosterland) **stale** (not regenerated since 11-17). `tools/instancebench.py`,
+`docs/krpcFeatureRequests.md`, `.wt-pytune`, `.claude/worktrees/part-prune-*` are not ours: leave them.
+Full measurements: `docs/boosterland/journal.md`, 2026-11-18.
+
+**Fly booster work on `qs_finbooster2` only** (the user, 2026-11-18: finbooster4 was the wrong save; in
+boosterland/CLAUDE.md). Not finbooster3/4.
+
+**Done this session:**
+1. **The late brakes' open/closed measurement settled mid-travel** (ratio 1.55-3.65 on one craft; low ratios = settled
+   0.4-0.7 s into a ~1.7 s opening). Now `brakes_settled` reads the game's own surfaces: `launcherMod`
+   `SurfaceTravel` (max |action - deflection| / range, by reflection), travel seen then <= 1e-3; drag stillness is
+   only the fallback without the mod (kspSim, tests). fin2trv-1118: open settles 1.5-1.9 s every flight, ratio
+   3.29-3.35 on 17/23.
+2. **BURN_LIFT promoted** (flag deleted): landed-pred E -36 sd 84 against -106 sd 88 (12 a side, fin2trv-1118).
+3. `predvsland.py` splits by brake opening and prints each flight's open/closed ratio.
+
+**Open, in order:**
+1. **fin2 runs dry**: 14/24 ended in the air, tanks empty (38.7 t at the coast over 122.65 t dry; the burn needs more
+   than it has). Every miss on fin2 is mixed with a free fall. The pilot cannot add propellant: what it can change
+   is how the total is split between boostback and landing burn (e.g. more drag in the coast -- brakes open longer --
+   paid for by a longer boostback aim), or the burn's own profile. Measure first: the burn plan's propellant at
+   touchdown (`burn plan` lines, DIAG_BURN) against the coast's drag options; propose before building. Ask the user
+   whether the save's propellant (an ascent decision, the reason qs_finbooster3/4 exist) is in scope.
+2. Remaining E bias ~-36 m (short) with BURN_LIFT: not inside its standard error (~24 m)? borderline; re-read once
+   flights stop running dry.
+3. Six ratio outliers (2.03-3.77) in fin2trv and LOG17811 (no brake measurement at all, 353 m off): read why.
+4. Old list: the coast's own lift model probed with fins deflected; the burn's aim (`LANDING_AERO_DIVERT`,
+   `LANDING_STAND_UP`, unflown); regenerate howItWorks.pdf; `DIAG_DRAG` -- delete or keep as a tool now BURN_LIFT
+   is decided.
+
+**Traps paid for:** still drag is not still surfaces (a brake's drag barely moves near the ends of its travel, and
+ticks inside one physics frame read identical drag); the farm's first restart can fail with every instance's nested
+X server timing out ("XIO fatal IO error 110" in ksp<n>-boot.log): stop.sh and start again; swap reaches 15 GB after
+one 24-flight batch on six instances -- restart before each comparison; the offline suite has 2 kspSim wire-codec
+errors (krpc client type code 203), not boosterland's.
+
 ## 2026-11-18 00:50: recon -- new pilot for the QUDRAC; flies the whole mission but no intact landing yet (d47f98c)
 
 The user (2026-11-17): "I select a point on the map, and the script will fly over that point and
@@ -48,74 +88,6 @@ qs_warbird first); kRPC-removed waypoints leave map nodes that throw every frame
 pitch = "present pitch + error" runs away in thin air; climbing on every not-thrust-limited tick
 went to 42-55 km; the airplane pilot's hold sagged after lift-off (reverted to as it was);
 ground-roll heading departs below ~95 m/s with one wheel unloaded (ROTATE_MIN_Q_PA).
-
-## 2026-11-17 late: boosterland -- the burn's prediction: drag curve fixed at its source, burn lift measured, not yet closed
-
-State: **boosterland defaults fingerprint d8a430b8** (was 970e99ac). Everything committed on main (last: 5752bef + this
-handoff), pushed. **Farm down** (stopped by the user's request mid-batch: lift3-1117 has 18 of 24 flights; restart before the
-next comparison).
-howItWorks.pdf (boosterland) **stale** (not regenerated this session). `tools/instancebench.py`,
-`docs/krpcFeatureRequests.md` are not ours: leave them. Merged worktrees removed; `.wt-pytune` (branch pyTune, unmerged) and
-`.claude/worktrees/part-prune-*` are not ours: leave them. Fly booster work
-on `qs_finbooster2` only (the user, 2026-11-18: finbooster4 was the wrong save; see boosterland/CLAUDE.md). Full measurements: `docs/boosterland/journal.md`, 2026-11-17 late.
-
-**Found and fixed at the source (defaults now):**
-1. **The burn flew the coast's fins.** Every drag probe sees the fins as they sit; the coast holds its angle of
-   attack on them, pinned most of the way down, so the curve read 1.3-2.5x the drag of the booster with fins
-   neutral (drg-1117: M2.4 8.3 -> 3.1 m^2 within a second of holding them). The burn steers on the gimbals with the
-   fins near neutral. Now `Environment.burn_drag_area_at`: a burn curve swept in the coast with the fins held
-   neutral (`Autoland.sweep_burn_curve` / `sweep_neutral`), flown by `_fly_landing_burn` only; the coast keeps its
-   own curve.
-2. **The propagated nose aged ~1.8x the lag.** `_fly_landing_burn` held the lagged command over each 0.5 s step and
-   every RK4 substep. Now the command exactly one lag old at each substep, interpolated (`_rk4` passes substep time
-   to a `timed` thrust).
-3. **The late brakes' measurement was noise.** Its open/closed sweeps were taken with the fins steering and settled
-   the tick after the command (ratio 0.89-1.97 on one craft). Now both run inside a fins-neutral hold (ignore
-   flags, brakes stay deployed), `brakes_settled` needs the drag to have moved first, and the open and closed
-   tables are both fins-neutral.
-
-**Measured, behind a flag: `BURN_LIFT`** (off). The burn's body normal force at the propagated nose's angle off the
-airflow, plus drag's rise with angle (`Environment.burn_aero`, `trajectory._with_body_aero`). It's large: ~1.1 m^2
-Cn*A per degree at M2 against 3.1 m^2 drag (lad-1117 ladder; shape 0.96/1/1.09/1.24/1.42 at 1/2/4/8/15 deg, the same
-M0.6-2.0), acting opposite the nose's tilt. The fix for the old, overstated drag uncovered it: that drag had been
-cancelling it.
-
-| batch (aim off, qs_finbooster4) | code | landed-pred E median (sd) | N median (sd) |
-|---|---|---|---|
-| unw-1117 (12) | session start | -62 (67) | sd 22 |
-| ncv-1117 (12) | + burn curve, re-swept every 10 s | -102 (120) | +54 (67): holds wrecked the coast |
-| lift-1117 c / l (12/12) | once-only hold / + BURN_LIFT | -68 (87) / +60 (105) | lift ~2x: the nose-age bug |
-| lift2-1117 c / l (10/10) | + nose timing | **-60 (41)** / +22 (124) | +11 (32) / +63 (76) |
-| lift3-1117 c / l (18 of 24) | + fins-neutral brake tables | **unread, partial: re-fly** | |
-
-lift2's `l` scatter came from the late brakes: 9/10 opened them (5/10 in `c`), and an open-brake burn flew the
-fins-steering full curve with no lift table. That is what 5752bef fixes, and what lift3 tests.
-
-**Next, in order:**
-1. **Re-fly lift3** (it was stopped at 18 of 24: part of a batch is not a result), same arms:
-   `SAVES_LIST=qs_finbooster2 LAPS=2 boosterland/tools/brot.sh <tag> "c:DIAG_BURN=True,LANDING_BURN_AIM=False"
-   "l:DIAG_BURN=True,LANDING_BURN_AIM=False,BURN_LIFT=True"`, then read it per arm: `for a in c l; do grep " $a qs_" logs/rot-<tag>.txt > logs/rot-<tag>-$a.txt;
-   .venv-pypy/bin/python boosterland/tools/predvsland.py logs/rot-<tag>-$a.txt; done`. Split by brake
-   opening (`grep -c "late brakes 0 -> "`) and check the logs' `late brakes: Cd*A open is` ratios are now
-   consistent (>1, similar across flights). If `l` is centred within its standard error (~17 m) on both axes with
-   sd near `c`'s, promote BURN_LIFT; else localise with `burnplan.py --rows` (plan v flown hs/vs).
-2. `c` alone still lands ~60 m long, consistent with the missing lift: don't call the burn curve "the fix".
-3. Watch the coast: the neutral holds cost it attitude (nose 4-29 deg off at hand-back on some flights) and the
-   late-brake measurement now holds the fins for its whole open/close cycle at the top of the coast. Check the
-   coast's predicted miss at ignition (last COAST line) hasn't grown.
-4. The coast's own lift model `K aoa|aoa|` is probed with the fins deflected; the ladder says fins-neutral normal
-   force is near-linear at small angles. Same question for the coast, once the burn is closed.
-5. Then, from the old list: the burn's aim (`LANDING_AERO_DIVERT`, `LANDING_STAND_UP`, unflown) on the corrected
-   prediction; low-thrust attitude saturation at touchdown; regenerate howItWorks.pdf.
-
-**Diagnostics:** `DIAG_DRAG` logs real-state Cd*A v the curve per tick, the burn force budget (moved off
-DIAG_BURN, which no longer adds that latency), and a lift ladder in the coast and at M2/1.2/0.6 in the burn. Delete
-it, or keep it as a tool, once BURN_LIFT is decided. `burn plan` variants don't toggle BURN_LIFT.
-
-**Traps paid for:** a fix that removes one error can make the result worse by uncovering an offsetting one (ncv);
-`git commit -a` sweeps in `tools/instancebench.py` (not ours); a fin hold through `deflection_override` retracts
-deployed brake fins (use the ignore flags); a probe the tick after a surface command reads the old position; one
-farm instance can fail to boot (`start.sh` "not up: 2"): 10-flight arms.
 
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
