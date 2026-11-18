@@ -13,7 +13,7 @@
 # Needs bazel (bazelisk in ~/.local/bin); the build is hermetic, ~4 min the first time.
 # Games must be stopped.  Source: KRPC_SRC (default ~/krpc, cloned if missing).
 set -euo pipefail
-COMMIT=34c70de        # krpc/krpc main, 2026-11-14 (#1352); #1348 is 2eca3b4
+COMMIT=bc748fd        # krpc/krpc main, 2026-11-17 (#1374); #1348 is 2eca3b4, #1360-1363 (gimbal speed, legs, joints, launch site) 9ce3736..2972ad9
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${KRPC_SRC:-$HOME/krpc}"
 FARM="${KSPFARM:-$HOME/kspfarm}"

@@ -1,32 +1,30 @@
-"""Where the active vessel was launched from, from the krpcLab window mod.
+"""Where the active vessel was launched from: kRPC's ``Vessel.launch_site``.
 
-``launcherMod/LaunchSite.cs`` records each launch's position against the root
-part's ``launchID`` (kept by every part through decoupling, and by FMRS and
-quick saves); failing a record it reads the vessel's ``launchedFrom`` site.
+kRPC (main, #1363) reads the vessel's ``launchedFrom`` -- kept by every part
+through decoupling, and by FMRS and quick saves -- and gives the launch
+site's first spawn point.
 """
 
-SERVICE = "krpc_lab_launch"
 
-
-def launch_site(conn):
+def launch_site(conn, vessel=None):
     """``{"source", "body", "lat", "lon", "alt", "site"}`` or None.
 
-    None when the mod is not installed or neither a record nor the site is
-    known -- the caller falls back to its configured coordinates.
+    None when kRPC has no ``launch_site`` (an older server, the offline
+    fakes) or the vessel names no known site -- the caller falls back to its
+    configured coordinates.
     """
-    service = getattr(conn, SERVICE, None)
-    if service is None:
-        return None
     try:
-        text = service.launch_site()
+        if vessel is None:
+            vessel = conn.space_center.active_vessel
+        site = vessel.launch_site
+        if site is None:
+            return None
+        lat, lon, alt = site.latitude, site.longitude, site.altitude
+        body = site.body.name
+        name = site.name
     except Exception:                                       # noqa: BLE001
         return None
-    fields = text.split("|") if text else []
-    if len(fields) < 6:
+    if lat != lat or lon != lon:                            # NaN: no spawn point
         return None
-    try:
-        return {"source": fields[0], "body": fields[1], "lat": float(fields[2]),
-                "lon": float(fields[3]), "alt": float(fields[4]),
-                "site": fields[5]}
-    except ValueError:
-        return None
+    return {"source": "site", "body": body, "lat": float(lat),
+            "lon": float(lon), "alt": float(alt), "site": name or ""}

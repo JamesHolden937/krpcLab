@@ -36,7 +36,8 @@ from common import cli
 from common.launchsite import launch_site
 from common.attitudelag import LagFit
 from common.jitter import SAMPLES as JITTER_SAMPLES, Jitter
-from common.touchdown import landing_limits, read_legs, touchdown_limit
+from common.touchdown import (landing_limits, read_leg_constants, read_legs,
+                              touchdown_limit)
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
 from .proximity import ProximityScan
@@ -491,7 +492,7 @@ class Autoland:
                 self.vessel, 0.0, 0.0, log=lambda text: self.log.event(
                     self.conn.space_center.ut, text),
                 keep_deploy=cfg.FINS_HELD_KEEP_DEPLOY)
-        site = launch_site(conn)
+        site = launch_site(conn, self.vessel)
         if site is None:
             logbook.event(ut, "launch site unknown; pad from PAD_LAT/PAD_LON")
         else:
@@ -517,6 +518,9 @@ class Autoland:
             logbook.event(ut, "touchdown limit %.1f m/s (%s, weakest of %d "
                           "that touch)" % self.touchdown_limit)
             self.env.touchdown_tolerance = self.touchdown_limit[0]
+        # The legs' cfg constants, for read_landing_limits (a few hundred
+        # batched calls: here, not in the descent).
+        self.leg_constants = read_leg_constants(conn, self.vessel)
         logbook.event(ut, "touchdown target %.1f m/s"
                       % trajectory.touchdown_speed(self.env, cfg))
         self.telemetry = Telemetry(conn, self.vessel, self.frame, cfg,
@@ -2157,10 +2161,13 @@ class Autoland:
     def read_landing_limits(self, snap, why):
         """The legs' live suspension, deployed, as touchdown limits: once.
 
-        One kRPC call (the window mod's ``KrpcLabLegs.Legs``) while the legs
-        are out -- the gear-timing cycle in the coast, or after gear down.
+        One batched kRPC round trip (``common.touchdown.read_legs``) while
+        the legs are out -- the gear-timing cycle in the coast, or after gear
+        down -- on the constants read before the flight.
         """
-        legs = read_legs(self.conn)
+        if not self.leg_constants:
+            self.leg_constants = read_leg_constants(self.conn, self.vessel)
+        legs = read_legs(self.conn, self.vessel, self.leg_constants)
         self.landing_limits = False
         if not legs:
             self.log.event(snap.ut, "landing limits: no legs read (%s)" % why)

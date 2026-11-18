@@ -57,37 +57,103 @@ def _weakest(hit):
 
 # --- Landing limits from the legs' live suspension ---------------------------
 
-LEGS_SERVICE = "krpc_lab_legs"
 PHYSICS_DT = 0.02           # KSP's physics step; ModuleWheelDamage compares
                             # the down-force change across one of them
 G0 = 9.81                   # PhysicsGlobals.GravitationalAcceleration
 
+# The legs' part-cfg constants kRPC has no property for, read off the
+# modules' KSPFields (``Module.field_list``, every field, shown or not).
+LEG_FIELDS = (("ModuleWheelSuspension", "springRatio", "spring_ratio"),
+              ("ModuleWheelSuspension", "damperRatio", "damper_ratio"),
+              ("ModuleWheelBase", "frictionPeak", "friction"))
 
-def read_legs(conn):
-    """The window mod's per-leg rows (``launcherMod/Legs.cs``) or None."""
-    service = getattr(conn, LEGS_SERVICE, None)
-    if service is None:
-        return None
+
+def read_leg_constants(conn, vessel):
+    """What does not change in flight, per leg: ``{"leg", "title",
+    "crash_tol", "impact_tol", "explode_mult", "spring_ratio",
+    "damper_ratio", "friction"}``; None when kRPC cannot say.
+
+    A few batched round trips (``common.krpcbatch``) of a few hundred calls:
+    before the flight, never in a control loop.
+    """
+    from common.krpcbatch import ask
     try:
-        rows = service.legs()
+        legs = list(vessel.parts.legs)
     except Exception:                                       # noqa: BLE001
         return None
-    keys = ("title", "x", "y", "z", "travel", "spring", "damper",
-            "spring_ratio", "damper_ratio", "impact_tol", "explode_mult",
-            "crash_tol", "friction", "wheel_radius", "deployed")
+    if not legs:
+        return []
+    parts = ask(conn, [(getattr, (leg, "part")) for leg in legs])
+    if any(p is None for p in parts):
+        return None
+    head = ask(conn, [c for p, leg in zip(parts, legs) for c in (
+        (getattr, (p, "title")), (getattr, (p, "impact_tolerance")),
+        (getattr, (leg, "impact_tolerance")),
+        (getattr, (leg, "explode_multiplier")),
+        (getattr, (p, "modules")))])
+    rows = []
+    for i, leg in enumerate(legs):
+        title, crash, tol, mult, modules = head[5 * i:5 * i + 5]
+        rows.append({"leg": leg, "title": title or "?", "crash_tol": crash,
+                     "impact_tol": tol, "explode_mult": mult,
+                     "modules": modules or []})
+    mods = [m for r in rows for m in r["modules"]]
+    names = ask(conn, [(getattr, (m, "name")) for m in mods])
+    wanted = {name for name, _, _ in LEG_FIELDS}
+    pick = []                                   # (row, module name, module)
+    k = 0
+    for r in rows:
+        for m in r.pop("modules"):
+            if names[k] in wanted:
+                pick.append((r, names[k], m))
+            k += 1
+    lists = ask(conn, [(getattr, (m, "field_list")) for _, _, m in pick])
+    fields = [(r, mod, f) for (r, mod, _), fl in zip(pick, lists)
+              for f in (fl or [])]
+    fnames = ask(conn, [(getattr, (f, "name")) for _, _, f in fields])
+    want = {(mod, field): key for mod, field, key in LEG_FIELDS}
+    found = [(r, want[(mod, n)], f) for (r, mod, f), n in zip(fields, fnames)
+             if (mod, n) in want]
+    values = ask(conn, [(getattr, (f, "float_value")) for _, _, f in found])
+    for (r, key, _), v in zip(found, values):
+        r[key] = v
+    for r in rows:
+        for _, _, key in LEG_FIELDS:
+            r.setdefault(key, None)
+    return rows
+
+
+def read_legs(conn, vessel, constants):
+    """Per leg, the feet as they are now: ``constants``
+    (:func:`read_leg_constants`) plus ``x, y, z`` (kRPC's
+    ``Leg.contact_position`` in the vessel's frame: the bottom of the foot,
+    at full extension in the air), ``travel``, the live ``spring`` and
+    ``damper`` (kN/m, kN s/m; 0 until grounded -- the game sets them from the
+    load) and ``deployed``.  One round trip; None when nothing was read.
+    """
+    from common.krpcbatch import ask
+    if not constants:
+        return None
+    frame = vessel.reference_frame
+    live = ask(conn, [c for r in constants for c in (
+        (r["leg"].contact_position, (frame,)),
+        (getattr, (r["leg"], "suspension_travel")),
+        (getattr, (r["leg"], "suspension_spring")),
+        (getattr, (r["leg"], "suspension_damper")),
+        (getattr, (r["leg"], "deployed")))])
     legs = []
-    for row in rows:
-        f = row.split("|")
-        if len(f) != len(keys):
+    for i, r in enumerate(constants):
+        pos, travel, spring, damper, deployed = live[5 * i:5 * i + 5]
+        if pos is None or travel is None or any(
+                r.get(k) is None for k in ("spring_ratio", "friction",
+                                           "impact_tol", "explode_mult")):
             continue
-        leg = {"title": f[0]}
-        try:
-            for k, v in zip(keys[1:], f[1:]):
-                leg[k] = float(v)
-        except ValueError:
-            continue
+        leg = {k: v for k, v in r.items() if k != "leg"}
+        leg.update(x=pos[0], y=pos[1], z=pos[2], travel=travel,
+                   spring=spring or 0.0, damper=damper or 0.0,
+                   deployed=bool(deployed))
         legs.append(leg)
-    return legs
+    return legs or None
 
 
 def _hull(points):
@@ -135,7 +201,8 @@ def landing_limits(mass, inertia, g, legs):
 
     ``mass`` kg, ``inertia`` the transverse moment of inertia about the COM
     (kg m^2, the smaller of the two), ``g`` local gravity, ``legs`` from
-    :func:`read_legs` with the feet where they will touch (deployed).
+    :func:`read_legs` with the feet where they will touch (deployed;
+    ``y`` the bottom of the foot).
 
     Vertical: a leg explodes when its down force jumps by ``impact_tol x
     explode_mult x g0/g`` (kN) within one physics step.  The damper is what
@@ -159,8 +226,7 @@ def landing_limits(mass, inertia, g, legs):
     feet = [l for l in legs if math.isfinite(l["y"])]
     if len(feet) < 3 or mass <= 0.0 or g <= 0.0:
         return None
-    radius = max(l["wheel_radius"] for l in feet)
-    h = -min(l["y"] for l in feet) + radius          # COM above the ground
+    h = -min(l["y"] for l in feet)                   # COM above the ground
     b = support_margin([(l["x"], l["z"]) for l in feet])
     if h <= 0.0 or b <= 0.0:
         return {"h": h, "b": b, "vertical": None, "lateral": 0.0,

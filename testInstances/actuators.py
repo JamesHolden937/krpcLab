@@ -48,13 +48,13 @@ if "--joints" in sys.argv:
     from common import impact  # noqa: E402
     parts = impact.read(conn)
     ground = set(impact.touching(parts))
-    print("%3s %3s %-36s %8s %6s %7s %7s %3s %10s %10s %10s" % (
-        "i", "par", "part", "mass t", "crash", "y", "low", "nj", "breakF kN",
+    print("%3s %3s %-36s %8s %6s %7s %7s %10s %10s %10s %10s" % (
+        "i", "par", "part", "mass t", "crash", "y", "low", "breakF kN", "breakT kNm",
         "spring", "damper"))
     for p in parts:
-        print("%3d %3d %-36s %8.3f %6.1f %7.2f %7.2f %3d %10s %10.0f %10.0f%s" % (
+        print("%3d %3d %-36s %8.3f %6.1f %7.2f %7.2f %10s %10s %10.0f %10.0f%s" % (
             p["index"], p["parent"], p["title"][:36], p["mass"], p["crash"],
-            p["y"], p["low"], p["joints"], "%.0f" % p["break_force"],
+            p["y"], p["low"], "%.0f" % p["break_force"], "%.0f" % p["break_torque"],
             p["spring"], p["damper"], "  <- touches" if p["index"] in ground else ""))
     for speed in (1, 2, 4, 8):
         print("contact %d m/s: worst ratio %.2f (%s)" % (

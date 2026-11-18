@@ -3,9 +3,10 @@
 A part's impact tolerance is an upper bound only: the stack above the parts
 that touch has to be stopped through the joints between them, and a joint
 breaks when PhysX's constraint force passes its ``breakForce`` -- often well
-before any part reaches its crash tolerance.  ``launcherMod``'s
-``KrpcLabJoints.Parts`` reads the live values (masses, crash tolerances,
-each part's attach joint: break force, spring, damper); this models the
+before any part reaches its crash tolerance.  :func:`read` takes the live
+values from kRPC (masses, crash tolerances,
+each part's attach joint: break force, spring, damper -- kRPC's
+``Part.joint_*``, #1362); this models the
 contact as a chain along the craft's axis -- every part a mass, every joint a
 spring and damper to its parent, the touching parts stopped dead by the
 ground -- integrates it, and bisects the contact speed for the highest one at
@@ -19,22 +20,6 @@ are KSP's physics units: t, m, s, kN.
 import math
 
 INF = float("inf")
-
-
-def parse_parts(rows):
-    """``KrpcLabJoints.Parts`` lines -> list of dicts."""
-    out = []
-    for row in rows:
-        f = row.split("|")
-        if len(f) < 14:
-            continue
-        num = lambda s: INF if s == "inf" else float(s)        # noqa: E731
-        out.append({"index": int(f[0]), "parent": int(f[1]), "title": f[2],
-                    "mass": float(f[3]), "crash": float(f[4]),
-                    "y": float(f[5]), "low": float(f[6]), "joints": int(f[7]),
-                    "break_force": num(f[8]), "break_torque": num(f[9]),
-                    "spring": float(f[10]), "damper": float(f[11])})
-    return out
 
 
 def touching(parts, band=1.0):
@@ -110,9 +95,43 @@ def survivable_speed(parts, hi=None, tol=0.05, band=1.0):
     return lo, who
 
 
-def read(conn):
-    """The active vessel's parts via the launcher mod, or [] without it."""
+# PhysX's "unbreakable" (float.MaxValue), and its sum over several joints
+UNBREAKABLE = 1e38
+
+
+def read(conn, vessel=None):
+    """The vessel's parts as the model wants them (``index, parent, title,
+    mass`` t, ``crash`` m/s, ``y``/``low`` along its axis from the centre of
+    mass, m, and the joint to the parent: ``break_force``, ``break_torque``
+    kN / kN m, ``spring``, ``damper``), or [] when nothing was read.  A few
+    hundred calls in two batched round trips: a tool's, never a loop's."""
+    from common.krpcbatch import ask
     try:
-        return parse_parts(conn.krpc_lab_joints.parts())
+        if vessel is None:
+            vessel = conn.space_center.active_vessel
+        frame = vessel.reference_frame
+        parts = list(vessel.parts.all)
     except Exception:                                       # noqa: BLE001
         return []
+    props = ("title", "mass", "impact_tolerance", "parent", "joint_break_force",
+             "joint_break_torque", "joint_spring", "joint_damper")
+    n = len(props) + 2
+    got = ask(conn, [c for p in parts for c in
+                     [(getattr, (p, k)) for k in props]
+                     + [(p.center_of_mass, (frame,)), (p.bounding_box, (frame,))]])
+    index = {p: i for i, p in enumerate(parts)}
+    num = lambda x: INF if x is not None and x >= UNBREAKABLE else x  # noqa: E731
+    out = []
+    for i, p in enumerate(parts):
+        title, mass, crash, parent, bf, bt, spring, damper, com, box = \
+            got[n * i:n * i + n]
+        if mass is None or com is None:
+            continue
+        low = min(box[0][1], box[1][1]) if box else com[1]
+        out.append({"index": i, "parent": index.get(parent, -1),
+                    "title": title or "?", "mass": mass / 1000.0,
+                    "crash": crash or 0.0, "y": com[1], "low": low,
+                    "break_force": num(bf) if bf is not None else 0.0,
+                    "break_torque": num(bt) if bt is not None else 0.0,
+                    "spring": spring or 0.0, "damper": damper or 0.0})
+    return out
