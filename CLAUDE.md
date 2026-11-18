@@ -68,8 +68,9 @@ Follow `~/.claude/docs/autoContinue.md`: launch the next batch with
 `detachjob start NAME -- farmlaunch ... -- BATCH` (a systemd unit, survives
 the clear), write NAME and the ETA into the handoff, arm a one-time scheduled
 task (mcp__scheduled-tasks, fireAt = ETA) whose run waits on NAME and messages
-this session (id from `get_session "self"`) the AUTO-CONTINUE prompt, then
-clear. Woken by that message, read the handoff and carry on without asking.
+this session (id from `get_session "self"`) the AUTO-CONTINUE prompt, title
+the session `⏳ krpcLab: NAME ~HH:MM | <what>` (the sidebar note while the
+transcript is empty), then clear. Woken by that message, read the handoff and carry on without asking.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
