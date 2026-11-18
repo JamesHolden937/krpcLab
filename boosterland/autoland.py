@@ -2199,6 +2199,40 @@ class Autoland:
                           vec.angle_between(snap.direction, brake),
                           self.env.drag_area_at(snap.speed, altitude),
                           self.env.mach(snap.speed, altitude)))
+        self.log_burn_forces(snap, altitude)
+
+    def log_burn_forces(self, snap, altitude):
+        """DIAG_BURN: the horizontal force budget, m/s^2, against the
+        model's: the game's aerodynamic force at this very state and
+        attitude, resolved along the horizontal velocity (``aH``, negative
+        braking) and vertical (``aV``), beside the model's drag on the same
+        axes (``mH``/``mV``: Cd*A q along -v) and the thrust's horizontal
+        part (``tH``).  burnplan.py --forces reads them."""
+        if snap.speed < 1.0 or snap.mass <= 0.0:
+            return
+        force = self.env._probe_force(snap.position, snap.velocity,
+                                      snap.rotation)
+        if force is None:
+            return
+        up = vec.unit(snap.position)
+        flat = vec.project_out(snap.velocity, up)
+        if vec.norm(flat) < 1e-6:
+            return
+        fwd = vec.unit(flat)
+        rho = self.env.density(altitude)
+        q = 0.5 * rho * snap.speed * snap.speed
+        model = vec.scale(vec.unit(snap.velocity),
+                          -q * self.env.drag_area_at(snap.speed, altitude))
+        thrust = (snap.thrust or 0.0) / snap.mass
+        self.log.event(snap.ut, "burn force aH=%.2f aV=%.2f mH=%.2f mV=%.2f "
+                       "tH=%.2f side=%.2f"
+                       % (vec.dot(force, fwd) / snap.mass,
+                          vec.dot(force, up) / snap.mass,
+                          vec.dot(model, fwd) / snap.mass,
+                          vec.dot(model, up) / snap.mass,
+                          thrust * vec.dot(snap.direction, fwd),
+                          vec.norm(vec.project_out(
+                              vec.project_out(force, up), fwd)) / snap.mass))
 
     def read_landing_limits(self, snap, why):
         """The legs' live suspension, deployed, as touchdown limits: once.
