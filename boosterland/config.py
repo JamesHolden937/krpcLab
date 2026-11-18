@@ -416,9 +416,6 @@ class Config:
                                             # whole Cd*A curve each tick, so a
                                             # prediction can be re-flown
                                             # offline; see replay.py
-    DIAG_BURN_FORCES: bool = False          # DIAG_BURN's force budget
-                                            # (one more call a tick: slows
-                                            # the loop; burnplan --forces)
     DIAG_BURN: bool = False                 # log the landing burn the
                                             # prediction flies at ignition,
                                             # and the flown burn every tick;

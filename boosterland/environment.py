@@ -20,14 +20,6 @@ import math
 from common import vec
 
 
-def lift0_direction(position, velocity):
-    """The way ``probe_lift0``'s lift is signed: perpendicular to the
-    velocity, in the plane of the velocity and the local vertical, toward
-    up.  None when the velocity is vertical (no plane)."""
-    n = vec.project_out(vec.unit(position), vec.unit(velocity))
-    return vec.unit(n) if vec.norm(n) > 1e-9 else None
-
-
 class Environment:
     def __init__(self, conn, vessel, body, cfg, logbook, ut):
         self.conn = conn
@@ -100,11 +92,6 @@ class Environment:
         self._lift = [None] * self._bins
         self._lift_machs = []
         self._lift_areas = []
-        self._lift0 = [None] * self._bins   # Cl*A at the burn's attitude
-        self._lift0_machs = []              # (nose on retrograde), m^2,
-        self._lift0_areas = []              # along lift0_direction
-        self._next_lift0_ut = None
-        self._lift0_turn = 0
         self.lift_slope = None          # the value at the current Mach, logged
         self.leg_clearance = 0.0        # COM to vessel bottom, m (telemetry)
         self.tip_angle_deg = None       # the legs' static tip-over angle
@@ -685,73 +672,6 @@ class Environment:
                 self._lift_machs.append(self._bin_mach(i))
                 self._lift_areas.append(value)
         self.lift_slope = self._lift[index]
-
-    def probe_lift0(self, position, velocity, rotation, nose):
-        """Cl*A (m^2) of the vehicle with its nose exactly on retrograde, at
-        its real roll: the lift the landing burn flies with.  A body that is
-        not axisymmetric (the Heavy Shuttle booster carries the orbiter's
-        mounts on one side) lifts with no angle of attack at all -- ~4.7 m^2
-        against a Cd*A of ~7.7 above 4 km on fin2 -- and the burn's
-        propagation had only drag along -v, so it braked the booster
-        sideways ~3.6 m/s^2 harder than the air did and predicted it ~55 m
-        short (frc-1117).  Signed along ``lift0_direction``; None where the
-        air or the geometry gives no answer."""
-        speed = vec.norm(velocity)
-        altitude = vec.norm(position) - self.equatorial_radius
-        rho = self.density(altitude)
-        if rho < 1e-9 or speed < 20.0 or nose is None:
-            return None
-        n = lift0_direction(position, velocity)
-        if n is None:
-            return None
-        turned = vec.rotation_onto(rotation, nose,
-                                   vec.scale(vec.unit(velocity), -1.0))
-        if turned is None:
-            return None
-        force = self._probe_force(position, velocity, turned)
-        if force is None:
-            return None
-        return vec.dot(force, n) / (0.5 * rho * speed * speed)
-
-    def refresh_lift0(self, ut, position, velocity, rotation, nose):
-        """Keep the burn-attitude lift curve current: one probe a refresh
-        (``AERO_REFRESH_UT``), into the bin the vehicle is in (blended as
-        the drag curve is)."""
-        if self._next_lift0_ut is not None and ut < self._next_lift0_ut:
-            return
-        self._next_lift0_ut = ut + self.cfg.AERO_REFRESH_UT
-        speed = vec.norm(velocity)
-        altitude = vec.norm(position) - self.equatorial_radius
-        here = self._bin_index(self.mach(speed, altitude))
-        # The bin it is in, and one more in turn at that bin's Mach (the
-        # same air, the airflow scaled): the trigger's prediction flies the
-        # burn down to Mach 0 before the vehicle has been there.
-        self._lift0_turn = (self._lift0_turn + 1) % self._bins
-        c = self.speed_of_sound(altitude)
-        for index in {here, self._lift0_turn}:
-            probe_v = velocity if index == here else vec.scale(
-                vec.unit(velocity), max(20.0, self._bin_mach(index) * c))
-            sample = self.probe_lift0(position, probe_v, rotation, nose)
-            if sample is None:
-                continue
-            previous = self._lift0[index]
-            if previous is None:
-                self._lift0[index] = sample
-            else:
-                w = self.cfg.DRAG_SMOOTHING
-                self._lift0[index] = previous * (1.0 - w) + sample * w
-        self._lift0_machs, self._lift0_areas = [], []
-        for i, value in enumerate(self._lift0):
-            if value is not None:
-                self._lift0_machs.append(self._bin_mach(i))
-                self._lift0_areas.append(value)
-
-    def lift0_at(self, speed, altitude):
-        """The burn-attitude Cl*A at this Mach, or None until measured."""
-        if not self._lift0_machs:
-            return None
-        return self._interp_curve(self._lift0_machs, self._lift0_areas,
-                                  self.mach(speed, altitude))
 
     def _probe_torque(self, position, velocity, rotation):
         try:
