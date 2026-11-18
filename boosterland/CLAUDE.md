@@ -1,6 +1,7 @@
 # boosterland
 
-> **Current target: `qs_finbooster2` only** (the user, 2026-11-15). Fly every booster batch on it and
+> **Current target: fin2 only** (the user, 2026-11-15), **from `qs_finbooster4`** (since 2026-11-17: the current
+> ascent's separation of the live Heavy Shuttle; `qs_finbooster2` runs dry). Fly every booster batch on it and
 > nothing else until it flies under general formulas (no ship-fitted constants, root CLAUDE.md). Only
 > then look at the other boosters. The heavy (`qs_heavy`) is probably fundamentally problematic: don't
 > spend batches on it.
