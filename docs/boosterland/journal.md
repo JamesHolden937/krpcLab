@@ -1,5 +1,34 @@
 # boosterland journal
 
+## Session, 2026-11-17 evening: fin2 from the user's own stack -- the burn's divert loses supersonic
+
+**Pad save and separation (LOG17537/17538).** `qs_stack_fin`: the live "Heavy Shuttle" craft on ksp1's pad
+(126 parts, 817 t). Its booster's part multiset (13 SSME, Size4 .02x2/.03/.04) hashes to `4507e5...`, fin2's
+recorded drag curve, and the ascent logged `booster drag: 4507e5... measured`. It staged at 21.2 km, 20.3 km out,
+822/516 m/s, 164.6 t propellant, predicting 28.2 t left at touchdown (reserve +7.7 t). Flown: 14 m, 0.9 m/s, 19.8 t
+left -- the budget 8.4 t optimistic, inside its reserve. `SEP_SAVE` wrote `qs_finbooster4`.
+
+**Ascent bug.** `Stack.upper` held only upper engines already active or staged with the decoupler; the Heavy
+Shuttle's two Rhinos are in stage 0 (lit by separation's light plan), so the turn-shape solve flew 0 kN upper
+thrust: "NO ORBIT, kept 0.400". Fixed (3e118b0): `Stack.upper_flight` = upper + the light plan's engines, used by
+the solve, the UPPER telemetry and the liftoff line; the throttle-down's `upper_accel` still reads only engines
+thrusting before separation. The craft also autostruts its three gears Heaviest across the decoupler (the
+qs_stack wing-loss configuration): the user's craft to change.
+
+**fb4-1117 (LOG17539-17550, qs_finbooster4, 12 x default + DIAG_BURN, 6 instances x 2 laps).** None ran dry
+(67-71 t at ignition). Miss sorted 4/6/11/23/23/25/37/63/81/138/236/322 m (median ~31), first-contact 5.6-14.5 m/s
+(median ~6.6), 1/12 destroyed (LOG17550, 25 m, 5.6 m/s). Swap 17.2 GB after the batch (3.1 before).
+- **The coast delivers; the burn adds the miss.** Predicted miss at the last COAST line 2-51 m on all 12; the
+  burn's peak 34-331 m. LOG17539/17542/17544: the predicted miss grows steadily while supersonic (to 190-260 m by
+  Mach 1.1) as the commanded tilt rises 1 -> 12-15 deg; subsonic the tilt pins at `LANDING_MAX_TILT_DEG` 15 and
+  the miss is only partly removed (long/cross swap as the velocity turns). Hypothesis: the tilt's aerodynamic
+  force (cla reads -1123, fins at the top) cancels or reverses its thrust component at high q; `one_law_command`
+  credits a tilt with thrust*sin(tilt) only.
+- **burnplan.py** (plan minus flown burn travel over 3.5-3.9 km): all (default) +86 sd 78; base +110 sd 68; isp
+  +152 sd 65; dead +110 sd 67; lag +40 sd 90. Nose lag helps (-70 m); dead time null (it is ~0 at the first burn
+  tick); spending propellant alone moves it the wrong way (+42 m), so some unmodelled term is being cancelled. All
+  three stay in (physical, and the trigger shares reaction_time).
+
 ## Session, 2026-11-17 late afternoon: kRPC main bc748fd -- the user's four issues merged
 
 kRPC #1360-1363 merged (gimbal response speed and axis toggles, legs' live suspension and damage limits, part joint

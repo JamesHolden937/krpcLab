@@ -15,72 +15,46 @@
 > - Install: `testInstances/miniSystem.sh`; back to stock: `testInstances/miniSystem.sh --stock`. Design: `~/minisystem/CLAUDE.md`.
 
 
-## 2026-11-17: boosterland + ascent -- fin2 runs out of propellant in the burn; the burn's prediction and the ascent's budget now model it
+## 2026-11-17 evening: boosterland + ascent -- fin2 from the user's own stack; the burn's divert loses supersonic
 
-State: **kRPC main bc748fd installed (farm, stockref, live, both venvs); code committed and pushed after it.
-Fingerprints unchanged: boosterland a1079928, ascent a68b023d. Farm stopped.** howItWorks.pdf (boosterland, ascent)
-stale. `tools/instancebench.py`, `docs/krpcFeatureRequests.md` are not ours: leave them.
+State: **kRPC main bc748fd everywhere. Fingerprints unchanged: boosterland a1079928, ascent a68b023d. All committed
+and pushed; farm stopped.** howItWorks.pdf (boosterland, ascent) stale. `tools/instancebench.py`,
+`docs/krpcFeatureRequests.md` are not ours: leave them. Journal: `docs/boosterland/journal.md` "2026-11-17 evening".
 
-**2026-11-17 later: kRPC main bc748fd** (`tools/krpcmain.sh` pinned to it). All four of the user's issues merged
-(#1360-1363), plus #1373 (autopilot: moving targets, flexible mitigations/oscillation state cleared after staging
-or parts change), #1374 (`load` no longer sticks on the loading screen). What changed for us:
-- **Legs** (`common/touchdown`): `read_leg_constants` before the flight (batched `Module.field_list` for
-  springRatio/damperRatio/frictionPeak, which kRPC has no property for; Leg impact/explode), `read_legs` one batched
-  round trip at gear down (`Leg.contact_position`, `suspension_travel/spring/damper`, `deployed`). launcherMod's
-  Legs.cs (reflection) deleted. **The plant numbers changed**: the foot is now the bottom of the foot at full
-  extension (was the collider transform + radius) and travel is the collider's (part rescale: 1.19 v 0.95 on the
-  LT-2). qs_heavy: h 9.1 -> 10.7 m, vertical limit 17.1 -> 21.4 m/s, lateral 1.8 -> 3.1 (LOG17536: 6 m, landed).
-  Spring/damper are 0 in the air either way (the game sets them on contact).
-- **Joints** (`common/impact.read`, `actuators.py --joints`): kRPC `Part.joint_*`; Joints.cs deleted. Rigid
-  attachments read spring 1e20-3e20, which the impact model's explicit integrator cannot step: it says "survives
-  0.0" on fin2/heavy. Diagnostic only, nothing flies on it; needs rigid joints merged into one mass.
-- **Launch site**: `Vessel.launch_site`; LaunchSite.cs (record file) deleted. The record had agreed with the site
-  to 0.1 m on every flight.
-- **Gimbal response speed / axis toggles**: readable now (`Engine.gimbal_response_speed`, 8.0 on the Vector), but no
-  pilot code needs it: `SurfaceActuators` already carries it in its one call. `gimbalTorqueFix/KrpcGimbalLag.cs`
-  (inert since 0.8) deleted; GimbalTorqueFix.cs's torque patch stays.
-- Fin2's drag curve is now recorded (LOG17535: 254 m, 8.1 m/s, `drag curve recorded 4507e5...`): next step 1 done.
-- Trap: `quickfly.py --instance N` does not set the port; pass `--rpc-port` (5010x) too.
+**New saves (d0fac0a):** `qs_stack_fin` (the live Heavy Shuttle craft on the pad, 126 parts, 817 t) and
+`qs_finbooster4` (its booster at the farm ascent's separation, LOG17537: 21.2 km, 822/516 m/s, 164.6 t propellant,
+staged by the budget with measured drag `4507e5...`). **Fly booster work on `qs_finbooster4` from now on** -- it is
+the separation the current ascent code produces; qs_finbooster2 carries a stale, too-light separation.
+LOG17538 flew it 14 m / 0.9 m/s with 19.8 t left (budget predicted 28.2 t: 8.4 t optimistic, inside its reserve).
 
-**Finding (bp1-1116, LOG17509-17532, qs_finbooster2, 12 simple + 12 aim, DIAG_BURN):** the burn's prediction is fine;
-**24/24 flights ran dry** (122.65 t) at 80-310 m, falling 77-107 m/s with 20-32 m/s sideways. That free fall is the
-miss and the hard touchdown. Up to that point the ignition plan's burn travel matched the flown one to -29..+114 m
-(two outliers, +223/+287). Older batches: 21/24 dry on 9135d2fa, 24/24 on ee8dd7eb. qs_finbooster2 carries the
-11-12 separation's propellant, which was sized for a cheaper landing than today's code flies.
+**Ascent fix (3e118b0, flown):** the turn-shape solve counted only upper engines already active or staged with the
+decoupler, so the Heavy Shuttle's stage-0 Rhinos gave it 0 kN ("NO ORBIT, kept 0.40"). `Stack.upper_flight` adds the
+engines separation lights. LOG17551: solved 0.339, predicted 117.7 t, flew 80 x 80 km with 116.6 t.
+**Tell the user:** the craft autostruts its three landing gears Heaviest across the booster's decoupler (the
+qs_stack wing-loss setup, fixed there by Grandparent).
 
-**Built (all unflown):**
-- `trajectory._fly_landing_burn`: spends propellant at `env.burn_isp` and stops thrust at `env.burn_dry_mass`
-  (`Autoland.read_dry_mass`, read on entering COAST and LANDING_BURN). Waits the reaction time before thrust unless
-  `env.burn_lit`, and puts the thrust on the command `env.nose_lag` late. `Prediction.final_mass`.
-- `DIAG_BURN` (diagnostic): `burn plan <variant>` lines at the trigger (all/base/isp/dead/lag/wet) plus a
-  `burn tick` line per burn tick. `boosterland/tools/burnplan.py LOG...` (`--rows`) sets each variant against the
-  flown burn. bp1 logs carry only the old single plan.
-- `boosterland/dragcache.py`: boosterland writes the Cd*A-vs-Mach curve it measured to
-  `boosterland/data/dragCurves.json` (gitignored) at every shutdown, keyed by the booster's engine and tank parts.
-  The ascent reads it (`Ascent.booster_drag`, also `turnshape.Craft.fall_cda`); with none recorded it falls back to
-  the stack's zero-alpha table, which is 2-3x the booster's own (logged as such).
-- `ascent/budget.recovery`: the landing is boosterland's `predict_landing` (`PlaneEnv`: fall with drag, its
-  trigger, the burn law, propellant spent with no floor). The boostback is carried on by secant until that
-  prediction lands on the pad. On fin2's farm separation with bp1's drag: lit at 765 m/s (flown ~750), lands
-  1.8 t short (flown: dry, ~120 m/s short); boostback still ~3 t optimistic (160.8 v 157.5 t after it).
-- `ascent` `SEP_SAVE=name` (with `HANDOFF=booster`): quicksaves the booster's separation, the farm's FMRS save.
-- `saves/craft/VAB/Heavy Shuttle.craft`: the user's live stack (2026-11-14, 126 parts) carrying fin2's booster.
-  All 35 part types exist on the farm. Not yet a save. The live `FMRS/before_launch.sfs` is a different launch
-  (a RAPIER plane), not this stack.
+**fb4-1117 (LOG17539-17550, 12 x default + DIAG_BURN on qs_finbooster4):** none dry; miss median ~31 m
+(4..322, three over 130), first contact median ~6.6 m/s, 1/12 destroyed. Swap 17.2 GB after (restart before
+comparing).
+- **The coast is fine (2-51 m predicted miss at ignition, all 12); the burn makes the miss.** In the three bad
+  flights the predicted miss grows steadily while supersonic (to 190-260 m by Mach 1.1) although the tilt command
+  rises; subsonic the tilt pins at `LANDING_MAX_TILT_DEG` (15) and removes only part of it.
+- burnplan (plan - flown burn travel): default +86 sd 78 m over ~3.7 km; nose lag -70 m (keep), dead time null,
+  isp alone +42 (the wrong way: an unmodelled term). All terms stay (physical; trigger shares reaction_time).
 
-**Next, in order (the user asked: re-fly the ascent so it knows where to stage):**
-1. (done, LOG17535) fin2's curve is in `dragCurves.json`.
-2. Make the pad save: copy the craft into `ksp1/saves/default/Ships/VAB/`, `launch_vessel("VAB", "Heavy Shuttle",
-   "LaunchPad")`, `save("qs_stack_fin")`, then `syncSaves.sh pull 1 qs_stack_fin`; add a README row. The first try
-   failed only because the farm was down.
-3. `ascent/tools/stackfly.py --instance N --save qs_stack_fin --set HANDOFF=booster --set SEP_SAVE=qs_finbooster4`
-   and check that the log says `booster drag: ... measured`. Pull the separation save and fly fin2's batches from it.
-4. Then the burn itself: `LANDING_HEADROOM` 0.85 and the tilt reserve stretch the burn (gravity loss). Promote or
-   delete `LANDING_BURN_AIM`, and use `burnplan.py` to promote or delete the nose-lag/dead-time terms.
-5. Carried from 11-15: the lag fit swings 0.2-2.6 s in the burn; `LEG_CLEARANCE_MARGIN_M`, the 20 m/s aero-probe floor.
+**Next, in order:**
+1. **Test the supersonic-divert hypothesis**: `one_law_command` credits a tilt with thrust*sin(tilt) only; the
+   tilt's aero force (cla reads -1123 in the burn, fins at the top) may cancel or reverse it at high q. Measure
+   from the burn ticks the lateral acceleration per degree of tilt against Mach (DIAG_BURN logs above have them;
+   extend burnplan.py), then put the measured aero term (`env.lift_slope_at`, as the coast's aero steer does)
+   into the divert's authority and direction -- no fitted constant.
+2. Then the burn's stretch: `LANDING_HEADROOM` 0.85, tilt reserve; promote or delete `LANDING_BURN_AIM`.
+3. The budget's 8.4 t optimism (LOG17537 v 17538): where between separation and touchdown it goes.
+4. Carried: the lag fit swings 0.2-2.6 s in the burn; `LEG_CLEARANCE_MARGIN_M`; the 20 m/s aero-probe floor.
 
-**Traps:** live `.sfs` files are CRLF; strip `\r` before awk. The farm can be found down after a night (check
-`swapon` and ports before flying).
+**Traps:** live `.sfs` files are CRLF; strip `\r` before awk. `quickfly.py --instance N` does not set the port;
+pass `--rpc-port`. Other projects (`~/kspfarm/koe`) take the farm lock: check `/run/user/1000/farmlaunch-kspfarm.lock`
+and wait on it with `flock -w`, never a process-name loop.
 
 ## 2026-11-14 evening: ascent -- kRPC 0.8's split MechJeb API (fixed); the farm's thrust cutouts were PersistentThrust (fixed, farm rebuilt)
 
