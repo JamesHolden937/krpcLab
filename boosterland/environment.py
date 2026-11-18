@@ -89,6 +89,7 @@ class Environment:
         # factor), set_burn_lift).
         self._lift_machs, self._lift_slopes = [], []
         self._lift_shape = []
+        self._full_lift = None          # (machs, slopes, shape), brakes open
         self.late_switch_alt = None
         self._replace_next = False      # the next sweep replaces, not blends
         self._descent_profile = ()      # (speed, altitude) down to the pad
@@ -288,7 +289,10 @@ class Environment:
         self._burn_areas = [a for _, a in pairs]
         return True
 
-    def set_burn_lift(self, slopes, shape):
+    def has_burn_curve(self):
+        return bool(self._burn_machs)
+
+    def set_burn_lift(self, slopes, shape, full=False):
         """The burn's normal force: ``slopes`` one Cn*A per radian per Mach
         bin (None where unread), at the shape's first angle; ``shape``
         ``[(alpha, lift factor, drag factor), ...]`` from one ladder, the
@@ -298,9 +302,11 @@ class Environment:
                  if k is not None]
         if not pairs or not shape:
             return False
-        self._lift_machs = [m for m, _ in pairs]
-        self._lift_slopes = [k for _, k in pairs]
-        self._lift_shape = sorted(shape)
+        table = ([m for m, _ in pairs], [k for _, k in pairs], sorted(shape))
+        if full:
+            self._full_lift = table
+        else:
+            self._lift_machs, self._lift_slopes, self._lift_shape = table
         return True
 
     def sweep_burn_lift(self, position, velocity, rotation, nose, angles):
@@ -368,11 +374,16 @@ class Environment:
         horizontal braking away.  Below the first angle the slope is held,
         and the drag factor runs linearly from 1 on the airflow; past the
         last, both are held."""
-        if not self._lift_machs or not self._lift_shape:
+        machs, slopes, shape = (self._lift_machs, self._lift_slopes,
+                                self._lift_shape)
+        if (self.late_switch_alt is not None and self._full_machs
+                and altitude <= self.late_switch_alt):
+            if self._full_lift is None:
+                return None
+            machs, slopes, shape = self._full_lift
+        if not machs or not shape:
             return None
-        slope = self._interp_curve(self._lift_machs, self._lift_slopes,
-                                   self.mach(speed, altitude))
-        shape = self._lift_shape
+        slope = self._interp_curve(machs, slopes, self.mach(speed, altitude))
         a0, n0, d0 = shape[0]
         if alpha <= a0:
             n_f = n0
@@ -407,10 +418,14 @@ class Environment:
                                   self.mach(speed, altitude))
 
     def full_curve_ratio(self):
-        """Median full-brake / current Cd*A over the bins both hold."""
+        """Median full-brake / closed Cd*A over the bins both hold: the
+        burn's curve where there is one (both fins-neutral), else the
+        current curve."""
         full = dict(zip(self._full_machs, self._full_areas))
-        ratios = sorted(full[m] / a for m, a in zip(self._curve_machs,
-                                                    self._curve_areas)
+        machs, areas = ((self._burn_machs, self._burn_areas)
+                        if self._burn_machs
+                        else (self._curve_machs, self._curve_areas))
+        ratios = sorted(full[m] / a for m, a in zip(machs, areas)
                         if m in full and a > 0.0)
         return ratios[len(ratios) // 2] if ratios else None
 

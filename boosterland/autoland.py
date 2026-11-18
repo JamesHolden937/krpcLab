@@ -612,6 +612,8 @@ class Autoland:
         self.burn_cmd_ut = 0.0
         self.burn_plan_ut = None        # DIAG_BURN: when the plan was logged
         self.drag_diag_next = 0.0       # DIAG_DRAG: next probe
+        self.fin_hold = None            # hold_fins' surfaces (ignore flags)
+        self.brake_moved = False        # brakes_settled: the drag has moved
         self.neutral_from = None        # sweep_burn_curve: fins held since
         self.neutral_last = None        # ... the last probe while held
         self.neutral_next_ut = 0.0      # ... the next sweep, not before
@@ -1646,38 +1648,39 @@ class Autoland:
                 self.deploy_none = True
                 self.log.event(snap.ut, "brakes: no airbrake answered, law off")
                 return
+            # Both curves are taken with the fins held neutral, as the burn
+            # flies them: with the coast steering on them, the fins' own
+            # deflection drag swamped the brakes' (open/closed read 0.89-1.97
+            # on one craft, lift2-1117).
+            self.hold_fins(True)
             self.late_state = "full"
             self.brake_probe = None
+            self.brake_moved = False
             self.log.event(snap.ut, "late brakes: open to %.0f to measure"
                            % cfg.DEPLOY_MAX_DEG)
             return
         if self.late_state == "full":
             if not self.brakes_settled(snap):
                 return
-            bins = self.env.sweep_bins(snap.position, snap.velocity,
-                                       snap.rotation, snap.direction)
+            swept = self.sweep_neutral(snap, full=True)
             set_airbrake_angle(self.vessel, 0.0, self.cfg)
             self.deploy_angle = 0.0
-            if not self.env.set_full_curve(bins):
+            if not swept:
                 # No curve: nothing to solve the switch on; brakes closed.
+                self.hold_fins(False)
                 self.late_state = "off"
                 self.log.event(snap.ut, "late brakes: full curve unreadable,"
                                " brakes closed")
                 return
             self.late_state = "settling"
             self.brake_probe = None
+            self.brake_moved = False
             return
         if self.late_state == "settling":
             if not self.brakes_settled(snap):
                 return
-            if self.late_resweep_ut is None:
-                self.env.request_resweep(replace=True)
-                self.late_resweep_ut = snap.ut
-                return
-            swept = self.env.last_sweep_ut()
-            if swept is None or swept < self.late_resweep_ut:
-                return
-            self.late_resweep_ut = None
+            self.sweep_neutral(snap, full=False)
+            self.hold_fins(False)
             ratio = self.env.full_curve_ratio()
             self.log.event(snap.ut, "late brakes: Cd*A open is %s x closed"
                            % ("%.2f" % ratio if ratio else "-"))
@@ -1706,7 +1709,14 @@ class Autoland:
         last, self.brake_probe = self.brake_probe, cda
         if cda is None or last is None:
             return False
-        return abs(cda - last) <= 1e-3 * max(abs(cda), abs(last))
+        still = abs(cda - last) <= 1e-3 * max(abs(cda), abs(last))
+        if not still:
+            self.brake_moved = True
+        # A probe the tick after the command reads the brakes where they
+        # were (the game moves them a frame later): settled only once the
+        # drag has moved and stopped (lift2-1117 measured open = 0.89-1.01
+        # x closed on three flights by settling at once).
+        return still and self.brake_moved
 
     def solve_late_switch(self, snap):
         """Bisect for the brake-opening altitude that nulls the long miss.
@@ -1771,6 +1781,7 @@ class Autoland:
             env.late_switch_alt = float("inf")  # all of it at full now
             self.late_state = "switched"
             self.brake_probe = None
+            self.brake_moved = False
             self.log.event(snap.ut, "late brakes %.0f -> %.0f at %.0f m,"
                            " %.0f m/s" % (0.0, cfg.DEPLOY_MAX_DEG,
                                           snap.height_above_pad, snap.speed))
@@ -2313,16 +2324,49 @@ class Autoland:
                                      " ".join(out)))
 
     def hold_fins(self, hold):
-        """Every control surface held at no deflection (kRPC's override,
-        which also retracts a deployed one: only with the brakes closed), or
+        """Every control surface's steering held off (its part menu's
+        ignore flags, so a fin deployed as a brake stays deployed), or
         handed back.  False if the game would not take it."""
-        try:
-            for cs in self.vessel.parts.control_surfaces:
-                cs.deflection_override = hold
-                if hold:
-                    cs.deflection = 0.0
-        except Exception:                               # noqa: BLE001
+        if self.fin_hold is None:
+            self.fin_hold = VacuumSurfaces(self.vessel, 0.0, 0.0,
+                                           keep_deploy=True)
+        return self.fin_hold._set(hold)
+
+    def sweep_neutral(self, snap, full):
+        """With the fins held neutral: the whole curve, and with BURN_LIFT
+        the normal force, into the burn's tables for the brakes as they
+        are now (``full``: open).  False if the curve would not read."""
+        env = self.env
+        bins = env.sweep_bins(snap.position, snap.velocity, snap.rotation,
+                              snap.direction)
+        ok = env.set_full_curve(bins) if full else env.set_burn_curve(bins)
+        if not ok:
             return False
+        name = "full-brake" if full else "burn"
+        self.log.event(snap.ut, "%s curve swept, fins neutral: %s"
+                       % (name, " ".join("M%.2f %.1f" % (env._bin_mach(i), a)
+                                         for i, a in enumerate(bins)
+                                         if a is not None)))
+        if self.cfg.BURN_LIFT:
+            top = math.radians(self.cfg.LANDING_MAX_TILT_DEG)
+            got = env.sweep_burn_lift(
+                snap.position, snap.velocity, snap.rotation, snap.direction,
+                [top / 8.0, top / 4.0, top / 2.0, top])
+            if got is not None and env.set_burn_lift(*got, full=full):
+                slopes, shape = got
+                self.log.event(snap.ut, "%s lift swept, fins neutral: "
+                               "Cn*A/rad %s; shape %s" % (
+                                   name, " ".join(
+                                       "M%.2f %.1f" % (env._bin_mach(i), k)
+                                       for i, k in enumerate(slopes)
+                                       if k is not None),
+                                   " ".join("%.1f:%.2f/%.2f"
+                                            % (math.degrees(a), n, d)
+                                            for a, n, d in shape)))
+            else:
+                self.log.event(snap.ut, "%s lift: probe unreadable" % name)
+        if self.cfg.DIAG_DRAG:
+            self.log_lift_ladder(snap, "coast, fins neutral, %s" % name)
         return True
 
     def sweep_burn_curve(self, snap):
@@ -2345,9 +2389,17 @@ class Autoland:
         if self.state != COAST:
             if self.neutral_from is not None:
                 self.release_fins(snap, "coast over")
+            elif (self.fin_hold is not None
+                  and self.fin_hold._saved is not None):
+                self.hold_fins(False)       # a brake measurement cut short
+                self.log.event(snap.ut, "fins handed back: coast over")
             return
         if self.neutral_from is None:
             if (snap.ut < self.neutral_next_ut or not self.coast_settled
+                    or (self.cfg.DEPLOY_LAW
+                        and self.late_state not in ("off", "armed",
+                                                    "switched", "handed"))
+                    or env.has_burn_curve()
                     or self.pointing_error(snap)
                     > self.rcs_limits.RCS_ERROR_OFF_DEG
                     or getattr(env, "reswept_ut", None) is None
@@ -2380,39 +2432,11 @@ class Autoland:
             # Not moving yet: the override reaches the fins a frame or two
             # after it is sent, and a probe before that reads them pinned.
             return
-        bins = env.sweep_bins(snap.position, snap.velocity, snap.rotation,
-                              snap.direction)
-        held = snap.ut - self.neutral_from
-        if env.set_burn_curve(bins):
-            self.log.event(snap.ut, "burn curve swept, fins neutral %.2f s "
-                           "(Cd*A here %.2f, coast's %.2f): %s"
-                           % (held, cda, env.drag_area_at(snap.speed, altitude),
-                              " ".join("M%.2f %.1f" % (env._bin_mach(i), a)
-                                       for i, a in enumerate(bins)
-                                       if a is not None)))
-            if self.cfg.BURN_LIFT:
-                top = math.radians(self.cfg.LANDING_MAX_TILT_DEG)
-                got = env.sweep_burn_lift(
-                    snap.position, snap.velocity, snap.rotation,
-                    snap.direction, [top / 8.0, top / 4.0, top / 2.0, top])
-                if got is not None and env.set_burn_lift(*got):
-                    slopes, shape = got
-                    self.log.event(snap.ut, "burn lift swept, fins neutral: "
-                                   "Cn*A/rad %s; shape %s" % (
-                                       " ".join("M%.2f %.1f"
-                                                % (env._bin_mach(i), k)
-                                                for i, k in enumerate(slopes)
-                                                if k is not None),
-                                       " ".join("%.1f:%.2f/%.2f"
-                                                % (math.degrees(a), n, d)
-                                                for a, n, d in shape)))
-                else:
-                    self.log.event(snap.ut, "burn lift: probe unreadable")
-            if self.cfg.DIAG_DRAG:
-                self.log_lift_ladder(snap, "coast, fins neutral")
-            self.release_fins(snap, None)
-            self.neutral_next_ut = float("inf")     # once
-            return
+        if self.sweep_neutral(snap, full=False):
+            self.log.event(snap.ut, "burn curve: fins neutral %.2f s (Cd*A "
+                           "here %.2f, coast's %.2f)"
+                           % (snap.ut - self.neutral_from, cda,
+                              env.drag_area_at(snap.speed, altitude)))
         self.release_fins(snap, None)
 
     def release_fins(self, snap, why):
