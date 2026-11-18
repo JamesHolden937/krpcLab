@@ -615,6 +615,8 @@ class Autoland:
         self.neutral_from = None        # sweep_burn_curve: fins held since
         self.neutral_last = None        # ... the last probe while held
         self.neutral_next_ut = 0.0      # ... the next sweep, not before
+        self.neutral_fell = False       # ... its drag has started falling
+        self.ladder_machs = [2.0, 1.2, 0.6]     # DIAG_DRAG: burn ladders
         self.drag_key = None            # dragcache's key for this booster
         self.miss_jitter = Jitter()     # the predicted touchdown's tick-to-
                                         # tick scatter: every deadband
@@ -2247,6 +2249,12 @@ class Autoland:
         game-second in the coast and four times in the burn."""
         if self.state not in (COAST, LANDING_BURN) or snap.speed < 20.0:
             return
+        env = self.env
+        if (self.state == LANDING_BURN and self.ladder_machs
+                and env.mach(snap.speed, vec.norm(snap.position)
+                             - env.equatorial_radius) < self.ladder_machs[0]):
+            self.ladder_machs.pop(0)
+            self.log_lift_ladder(snap, "burn")
         if snap.ut < self.drag_diag_next:
             return
         self.drag_diag_next = snap.ut + (0.5 if self.state == COAST else 0.25)
@@ -2273,6 +2281,36 @@ class Autoland:
                           self.deploy_angle or 0.0,
                           int(self.neutral_from is not None),
                           "%+.2f/%+.2f/%+.2f" % inputs if inputs else "-"))
+
+    def log_lift_ladder(self, snap, where):
+        """DIAG_DRAG: the aerodynamic force at the real state with the nose
+        turned 0-15 deg off retrograde in the vertical plane (+ toward the
+        vertical), as Cd*A along -v and Cn*A toward the tilt's side."""
+        env = self.env
+        altitude = vec.norm(snap.position) - env.equatorial_radius
+        q = 0.5 * env.density(altitude) * snap.speed ** 2
+        retro = vec.scale(vec.unit(snap.velocity), -1.0)
+        side = vec.project_out(vec.unit(snap.position), retro)
+        if q <= 0.0 or vec.norm(side) < 1e-6:
+            return
+        side = vec.unit(side)
+        out = []
+        for deg in (-15, -8, -4, -2, -1, 0, 1, 2, 4, 8, 15):
+            a = math.radians(deg)
+            target = vec.add(vec.scale(retro, math.cos(a)),
+                             vec.scale(side, math.sin(a)))
+            rot = vec.rotation_onto(snap.rotation, snap.direction, target)
+            f = env._probe_force(snap.position, snap.velocity, rot) \
+                if rot is not None else None
+            if f is None:
+                continue
+            out.append("%+d:%.2f/%+.3f" % (deg, vec.dot(f, retro) / q,
+                                           vec.dot(f, side) / q))
+        self.log.event(snap.ut, "lift ladder (%s) M=%.2f alt=%.0f real aoa "
+                       "%.1f: %s" % (where, env.mach(snap.speed, altitude),
+                                     altitude, vec.angle_between(
+                                         snap.direction, retro),
+                                     " ".join(out)))
 
     def hold_fins(self, hold):
         """Every control surface held at no deflection (kRPC's override,
@@ -2310,12 +2348,15 @@ class Autoland:
             return
         if self.neutral_from is None:
             if (snap.ut < self.neutral_next_ut or not self.coast_settled
+                    or self.pointing_error(snap)
+                    > self.rcs_limits.RCS_ERROR_OFF_DEG
                     or getattr(env, "reswept_ut", None) is None
                     or self.late_state in ("full", "settling")
                     or (self.deploy_angle or 0.0) != 0.0):
                 return
             if self.hold_fins(True):
                 self.neutral_from, self.neutral_last = snap.ut, None
+                self.neutral_fell = False
             else:
                 self.neutral_next_ut = float("inf")
                 self.log.event(snap.ut, "burn curve: fins cannot be held")
@@ -2330,7 +2371,14 @@ class Autoland:
         if cda is None:
             return
         last, self.neutral_last = self.neutral_last, cda
-        if last is None or cda < last * (1.0 - 1e-3):
+        if last is None:
+            return
+        if cda < last * (1.0 - 1e-3):
+            self.neutral_fell = True
+            return
+        if not self.neutral_fell:
+            # Not moving yet: the override reaches the fins a frame or two
+            # after it is sent, and a probe before that reads them pinned.
             return
         bins = env.sweep_bins(snap.position, snap.velocity, snap.rotation,
                               snap.direction)
@@ -2342,6 +2390,11 @@ class Autoland:
                               " ".join("M%.2f %.1f" % (env._bin_mach(i), a)
                                        for i, a in enumerate(bins)
                                        if a is not None)))
+            if self.cfg.DIAG_DRAG:
+                self.log_lift_ladder(snap, "coast, fins neutral")
+            self.release_fins(snap, None)
+            self.neutral_next_ut = float("inf")     # once
+            return
         self.release_fins(snap, None)
 
     def release_fins(self, snap, why):
