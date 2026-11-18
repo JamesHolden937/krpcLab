@@ -164,6 +164,7 @@ class ReconPilot:
         self.last_theta = None
         self.rot_pitch = None
         self.tail_arm = 2.0         # m, re-read from the parts at START
+        self.rot_u = None
         try:
             wheels = {w.part for w in self.vessel.parts.wheels}
         except Exception:                               # noqa: BLE001
@@ -317,6 +318,7 @@ class ReconPilot:
         if not target:
             self.plane.pitch_override = None
             self.last_theta = theta
+            self.rot_u = None
             return 0.0
         clear = self.clearance(agl)
         q = 0.0
@@ -324,11 +326,11 @@ class ReconPilot:
             q = (theta - self.last_theta) / dt
         self.last_theta = theta
         qmax = math.radians(cfg.ROTATE_RATE_MAX_DEG_S)
-        if clear is None:
-            want = qmax
-        else:
+        want = qmax
+        if clear is not None:
             # The pitch left before the margin: clearance over the arm
-            # from the main wheels to the lowest aft part.
+            # from the main wheels to the lowest aft part, closed in
+            # ROTATE_CLOSE_S.
             left = (clear - cfg.TAIL_CLEARANCE_M) / self.tail_arm
             want = gd.clamp(left / cfg.ROTATE_CLOSE_S, -qmax, qmax)
             if clear < cfg.TAIL_CLEARANCE_M and not self.clear_logged:
@@ -338,10 +340,15 @@ class ReconPilot:
                 self.clear_logged = True
         if theta >= target:
             want = min(want, 0.0)
-        eff = max(self.plane.effect(0), 1e-3)
-        # Rate error closed in ROTATE_CLOSE_S on the measured effect.
-        u = (want - q) / (eff * cfg.ROTATE_CLOSE_S)
-        self.plane.pitch_override = gd.clamp(u, -1.0, 1.0)
+        # The elevator integrates the rate error: on the wheels the nose
+        # gear holds the nose down and no authority figure says by how much
+        # (kRPC's, the cockpit's wheel alone, asked 0.02-0.05 and the nose
+        # never moved, LOG17740), so the input ramps -- full travel in
+        # ROTATE_CLOSE_S for an error of the full rate -- until the nose
+        # moves as asked.
+        self.rot_u = gd.clamp((self.rot_u or 0.0) + (want - q) / qmax
+                              / cfg.ROTATE_CLOSE_S * dt, -1.0, 1.0)
+        self.plane.pitch_override = self.rot_u
         self.rot_pitch = max(self.rot_pitch or 0.0, theta) \
             if want > 0 else theta
         return min(target, self.rot_pitch)
