@@ -142,6 +142,7 @@ class ReconPilot:
         self.level = False
         self.v_pred = None
         self.alpha_peak = math.radians(15.0)   # re-read off the lift curve
+        self.d_max = None           # the short way home's farthest, going round
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -585,14 +586,25 @@ class ReconPilot:
         rest = 2.0 * math.pi * self.radius - home
         self.around = True
         need = None
+        rate = self.fuel_rate
         if self.fuel_rate and self.fuel_rate > 0.0:
             need = self.fuel_rate * rest / max(speed, 1.0)
-        self.log.event(ut, "route: on round, %.0f km to go; fuel %.0f, needs "
-                       "%s at the measured burn%s"
-                       % (rest / 1e3, fuel or 0.0,
-                          "%.0f" % need if need else "?",
-                          " -- SHORT" if need and fuel is not None
-                          and need > fuel else ""))
+        # The most economical speed's need for the lap (the fuel planner's
+        # own law at its slowest): if even that is more than is left, the
+        # short way home.
+        econ = None
+        if self.sfc and fuel is not None:
+            econ = min((self.sfc * max(self.drag_at(v) or 0.0, 0.0) * rest / v
+                        for v in (300.0, 500.0, 800.0, 1200.0)), default=None)
+        if econ is not None and econ > fuel:
+            self.around = False
+        self.log.event(ut, "route: %s, %.0f km to go round; fuel %.0f, needs "
+                       "%s at the measured burn, %s at the most economical "
+                       "speed" % ("ON ROUND" if self.around else
+                                  "BACK the short way (fuel)", rest / 1e3,
+                                  fuel or 0.0,
+                                  "%.0f" % need if need else "?",
+                                  "%.0f" % econ if econ is not None else "?"))
 
     def runway_for_heading(self, heading):
         """The threshold whose course is nearest ``heading``."""
@@ -788,7 +800,9 @@ class ReconPilot:
                 # antipode).  By distance, not heading: a tumble at 41 km
                 # swung the heading through the bearing home and turned it
                 # back 900 km out (LOG17753).
-                if dist <= math.pi * self.radius:
+                self.d_max = max(self.d_max or 0.0, dist)
+                if self.d_max > 0.9 * math.pi * self.radius and \
+                        dist < self.d_max - 1000.0:
                     self.around = False
                     self.log.event(ut, "round the far side: home %.0f km "
                                    "ahead" % (dist / 1e3))
