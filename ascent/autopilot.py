@@ -117,6 +117,13 @@ class Stack:
         self.control_part = self._control_part(vessel, ids)
         self.light_stage, self.light_engines, self.light_note = \
             self._light_plan(vessel, ids, engines)
+        # The engines that fly the upper stage after separation: those
+        # already running or staged with the decoupler (``upper``, the only
+        # ones thrusting before it) plus the stage separation lights.  A
+        # stack whose upper engines sit in a later stage (the live Heavy
+        # Shuttle's two Rhinos, stage 0) gave the turn-shape solve 0 kN.
+        self.upper_flight = self.upper + [e for e in self.light_engines
+                                          if e not in self.upper]
         if self.control_part is None:
             logbook.event(ut, "WARNING upper stage has no control source: "
                           "no crewed command part and no probe core above "
@@ -131,7 +138,7 @@ class Stack:
                       "(%.1f t propellant), %d engines, radius %.2f m; "
                       "upper stage: %d engines, control %s"
                       % (stage, len(self.parts), self.mass0 / 1e3, prop / 1e3,
-                         len(self.engines), self.radius, len(self.upper),
+                         len(self.engines), self.radius, len(self.upper_flight),
                          self.control_part))
 
     def _light_plan(self, vessel, booster_parts, engines):
@@ -791,7 +798,7 @@ class Ascent:
             self._isp[0] + (self._isp[1] - self._isp[0])
             / max(1e-3, self.pad_pressure))
         f_u, inv_v, inv_s = 0.0, 0.0, 0.0
-        for e in stack.upper:
+        for e in stack.upper_flight:
             f = e.max_vacuum_thrust or e.max_thrust
             f_u += f
             inv_v += f / max(1.0, e.vacuum_specific_impulse)
@@ -1042,7 +1049,7 @@ class Ascent:
         apo, peri = orbit.apoapsis_altitude, orbit.periapsis_altitude
         self.extra = ["apo %.0f peri %.0f" % (apo, peri),
                       "mj      : %s" % status]
-        thrust = sum(e.thrust for e in self.stack.upper)
+        thrust = sum(e.thrust for e in self.stack.upper_flight)
         mass = self.vessel.mass
         self.log.telemetry(ut, "UPPER         apo=%9.0f peri=%9.0f "
                            "thrust=%5.0fkN m=%6.2ft mj=%s"
