@@ -63,6 +63,12 @@ class Config:
     # On the wheels the nose stops rising while any non-wheel part is
     # closer than this to the ground (measured each tick).
     TAIL_CLEARANCE_M: float = 0.3
+    # The rotation's pitch rate: clearance closed to the margin in
+    # ROTATE_CLOSE_S, never past ROTATE_RATE_MAX_DEG_S; watched until
+    # CLEAR_UNTIL_AGL_M.
+    ROTATE_CLOSE_S: float = 1.0
+    ROTATE_RATE_MAX_DEG_S: float = 10.0
+    CLEAR_UNTIL_AGL_M: float = 5.0
     GEAR_UP_AGL_M: float = 50.0
     # The cruise altitude is searched for in flight, never set: the
     # altitude command climbs at ALT_SEEK_RATE_M_S while heat holds the

@@ -161,6 +161,9 @@ class ReconPilot:
         self.fuel = None
         self.v_fuel_logged = None
         self.clear_logged = False
+        self.last_theta = None
+        self.rot_pitch = None
+        self.tail_arm = 2.0         # m, re-read from the parts at START
         try:
             wheels = {w.part for w in self.vessel.parts.wheels}
         except Exception:                               # noqa: BLE001
@@ -306,6 +309,43 @@ class ReconPilot:
     def cla_max(self):
         return max(c for _, c in self.cla) if self.cla else None
 
+    def rotate(self, ut, target, theta, agl, dt):
+        """The rotation's elevator: a pitch rate closing the lowest part's
+        clearance to TAIL_CLEARANCE_M, up to ``target`` pitch, flown on
+        the measured pitch effect.  Returns the pitch to hold after it."""
+        cfg = self.cfg
+        if not target:
+            self.plane.pitch_override = None
+            self.last_theta = theta
+            return 0.0
+        clear = self.clearance(agl)
+        q = 0.0
+        if self.last_theta is not None and dt > 0.0:
+            q = (theta - self.last_theta) / dt
+        self.last_theta = theta
+        qmax = math.radians(cfg.ROTATE_RATE_MAX_DEG_S)
+        if clear is None:
+            want = qmax
+        else:
+            # The pitch left before the margin: clearance over the arm
+            # from the main wheels to the lowest aft part.
+            left = (clear - cfg.TAIL_CLEARANCE_M) / self.tail_arm
+            want = gd.clamp(left / cfg.ROTATE_CLOSE_S, -qmax, qmax)
+            if clear < cfg.TAIL_CLEARANCE_M and not self.clear_logged:
+                self.log.event(ut, "tail clearance %.2f m at %.1f deg of "
+                               "pitch: the nose stops" % (clear,
+                                                          math.degrees(theta)))
+                self.clear_logged = True
+        if theta >= target:
+            want = min(want, 0.0)
+        eff = max(self.plane.effect(0), 1e-3)
+        # Rate error closed in ROTATE_CLOSE_S on the measured effect.
+        u = (want - q) / (eff * cfg.ROTATE_CLOSE_S)
+        self.plane.pitch_override = gd.clamp(u, -1.0, 1.0)
+        self.rot_pitch = max(self.rot_pitch or 0.0, theta) \
+            if want > 0 else theta
+        return min(target, self.rot_pitch)
+
     def clearance(self, agl):
         """The lowest non-wheel part's height above the ground (m): its
         bounding box in the surface frame (x up, origin the vessel's centre
@@ -351,6 +391,7 @@ class ReconPilot:
             ang = math.atan2(ground_z - z, main_y - y)
             if best is None or ang < best:
                 best = ang
+                self.tail_arm = max(0.5, main_y - y)
         if best is not None:
             self.log.event(ut, "tail strike at %.1f deg of pitch"
                            % math.degrees(best))
@@ -670,21 +711,15 @@ class ReconPilot:
                 # nose is nearly there: the loop's input cap rotated it at
                 # half stick, 2 deg by 75 m/s, balanced on the mains, and it
                 # rolled over (LOG17737).
-                # Never a non-wheel part onto the runway: the lowest one's
-                # clearance, measured each tick, stops the nose rising
-                # (LOG17738: the nozzle struck at 9 deg against a 23.9 deg
-                # bounding-box estimate).
-                clear = self.clearance(agl)
-                if clear is not None and clear < cfg.TAIL_CLEARANCE_M:
-                    pitch_hold = min(pitch_hold, theta_now)
-                    if not self.clear_logged:
-                        self.log.event(ut, "tail clearance %.2f m at %.1f deg "
-                                       "of pitch: holding the nose"
-                                       % (clear, math.degrees(theta_now)))
-                        self.clear_logged = True
-                self.plane.pitch_override = (
-                    1.0 if pitch_hold and theta_now < pitch_hold
-                    - math.radians(3.0) else None)
+                # Never a non-wheel part onto the runway.  The rotation is
+                # flown as a pitch rate on the elevator outright: the rate
+                # that brings the lowest part's clearance (measured each
+                # tick) down to TAIL_CLEARANCE_M in ROTATE_CLOSE_S, never
+                # past ROTATE_RATE_MAX_DEG_S, and nothing once it is there.
+                # Full stick rotated 15 deg in 1.6 s and the nozzle struck
+                # (LOG17739); the loop's input cap, 2 deg by 75 m/s
+                # (LOG17737).
+                self.rotate(ut, pitch_hold, theta_now, agl, dt)
                 self.plane.ground_pitch_integral = bool(pitch_hold)
                 if pitch_hold and not self.rotating:
                     self.rotating = True
@@ -696,7 +731,13 @@ class ReconPilot:
                 gamma_cmd = max(gamma_cmd, math.radians(5.0))
                 bank_cap = math.radians(5.0) if agl < 100 else bank_cap
                 self.plane.ground_pitch_integral = False
-                self.plane.pitch_override = None
+                if agl < cfg.CLEAR_UNTIL_AGL_M:
+                    # Just off: the same clearance watch, holding the pitch
+                    # the rotation reached.
+                    pitch_hold = self.rotate(ut, self.rot_pitch, theta_now,
+                                             agl, dt)
+                else:
+                    self.plane.pitch_override = None
                 if agl > cfg.GEAR_UP_AGL_M:
                     self.vessel.control.gear = False
                     self.enter(OUT, ut, "gear up at %.0f m, %.0f m/s"
