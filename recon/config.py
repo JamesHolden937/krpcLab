@@ -149,11 +149,6 @@ class Config:
     FLARE_AGL_M: float = 25.0
     # After touchdown the nose comes down at this rate (deg/s).
     DEROTATE_RATE_DEG_S: float = 3.0
-    # Measurement flag: the main wheels' friction for the landing (0: the
-    # craft's 10, the user's gear rule).  The touchdown at 0.9 m/s of sink
-    # threw the nose from +11 to -19 deg in 0.2 s (LOG17762): the mains
-    # grabbing below the centre of mass is the suspect.
-    LANDING_MAIN_FRICTION: float = 0.0
     TOUCHDOWN_SINK_M_S: float = 1.5
     # Speed held by throttle: (want - speed) / SPEED_BAND_M_S.
     SPEED_BAND_M_S: float = 20.0
