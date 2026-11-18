@@ -539,19 +539,24 @@ class ReconPilot:
         while heat or a computed speed holds the throttle back (thinner air:
         more speed for the same heat or fuel) and while the craft still
         accelerates (spare thrust: thinner air is where its top speed is).
-        Held within 2 km of the craft.  (Climbing only on a binding limit
+        Held within an altitude-loop time constant of climb of the craft.  (Climbing only on a binding limit
         left it at Mach 3.3 at 1.7 km, LOG17749.)"""
         cfg = self.cfg
         if self.h_seek is None:
             self.h_seek = alt
-        step = cfg.ALT_SEEK_RATE_M_S * dt
+        # As fast as the craft can climb or sink: its own speed along the
+        # steepest flight path allowed (a fixed 150 m/s let it reach Mach
+        # 4.5 at 4.4 km and meet the heat limit there, LOG17750).
+        up = self.speed * math.sin(math.radians(cfg.CLIMB_GAMMA_DEG))
+        down = self.speed * math.sin(math.radians(-cfg.DESCENT_GAMMA_DEG))
         if self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
-            self.h_seek -= step
+            self.h_seek -= down * dt
         else:
-            self.h_seek += step
+            self.h_seek += up * dt
         floor = alt - agl + cfg.ALT_FLOOR_AGL_M
-        self.h_seek = gd.clamp(self.h_seek, max(floor, alt - 2000.0),
-                               alt + 2000.0)
+        lead = max(up, down) * cfg.ALT_TAU_S
+        self.h_seek = gd.clamp(self.h_seek, max(floor, alt - lead),
+                               alt + lead)
 
     def choose_route(self, ut, lat, lon, speed, fuel):
         """Home the long way: on round the planet on the same great circle

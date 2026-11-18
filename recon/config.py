@@ -83,13 +83,13 @@ class Config:
     CLEAR_UNTIL_AGL_M: float = 5.0
     GEAR_UP_AGL_M: float = 50.0
     # The cruise altitude is searched for in flight, never set: the
-    # altitude command sinks at ALT_SEEK_RATE_M_S while thrust is the limit
+    # altitude command sinks (at the craft's speed along DESCENT_GAMMA_DEG)
+    # while thrust is the limit
     # (the throttle full and the speed no longer growing by
-    # SEEK_ACCEL_M_S2) and climbs at it otherwise (heat, fuel or spare
+    # SEEK_ACCEL_M_S2) and climbs (along CLIMB_GAMMA_DEG) otherwise (heat, fuel or spare
     # thrust: thinner air is where more speed is).  It settles where full
     # throttle just holds the speed.  Probes (logs/probe1): heat-limited at
     # ~1370 m/s at 15 km, ~1475 at 20 km, ~1480 at 25 km.
-    ALT_SEEK_RATE_M_S: float = 150.0
     SEEK_ACCEL_M_S2: float = 0.3
     # Never closer to the ground than this while seeking (m).
     ALT_FLOOR_AGL_M: float = 2000.0
