@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(ROOT, "airplane", "tools"))
 import krpc                                             # noqa: E402
 import farmflight                                       # noqa: E402
 import airfly                                           # noqa: E402
+from kspSim.tools import flighttest                     # noqa: E402
 from common import timescale as ts                       # noqa: E402
 
 EVENTS = ("target ", "phase ", "home:", "closest", "shutdown", "FATAL",
@@ -71,6 +72,10 @@ def main():
     farmflight.add_arguments(p)
     args = p.parse_args()
     rpc, stream = paths.ports(args.instance)
+    # A clean scene first: with a wreck as the active vessel the runway
+    # launch hung (twice).
+    c0 = flighttest.load_paused(args.instance, "qs_warbird")
+    c0.close()
     conn = airfly.launch_on_runway(args.instance, "QUDRAC", rpc, stream)
     sc = conn.space_center
     body = sc.active_vessel.orbit.body
