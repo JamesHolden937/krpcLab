@@ -153,6 +153,7 @@ class ReconPilot:
         self.derot = None           # the rollout's lowering pitch
         self.braking = False
         self.go_arounds = 0
+        self.friction_set = False
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -645,6 +646,24 @@ class ReconPilot:
                                   "%.0f" % need if need else "?",
                                   "%.0f" % econ if econ is not None else "?"))
 
+    def landing_friction(self, ut):
+        """Measurement flag LANDING_MAIN_FRICTION: the main wheels' (all
+        but the frontmost) friction for the landing; 0 leaves the craft's
+        (10, the user's gear rule)."""
+        target = self.cfg.LANDING_MAIN_FRICTION
+        if target <= 0.0 or self.friction_set:
+            return
+        self.friction_set = True
+        from common import wheels as wh
+        try:
+            ws = list(self.vessel.parts.wheels)
+            vf = self.vessel.reference_frame
+            front = max(ws, key=lambda w: w.part.position(vf)[1])
+            done = [wh.set_friction(w, target) for w in ws if w is not front]
+            self.log.event(ut, "main gear for landing: %s" % ", ".join(done))
+        except Exception as exc:                        # noqa: BLE001
+            self.log.event(ut, "main gear friction: %r" % exc)
+
     def runway_for_heading(self, heading):
         """The threshold whose course is nearest ``heading``."""
         cfg = self.cfg
@@ -877,6 +896,7 @@ class ReconPilot:
                     along > -cfg.FINAL_M and abs(cross) < 1500.0
                     and abs(gd.wrap(math.radians(hdg or 0.0) - rc)) < 0.5)):
                 self.vessel.control.gear = True
+                self.landing_friction(ut)
                 self.enter(FINAL, ut, "gate: %.0f m off, alt %.0f, %.0f m/s,"
                            " along %.0f cross %+.0f" % (dist, alt, speed,
                                                          along, cross))
