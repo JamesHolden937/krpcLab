@@ -129,6 +129,10 @@ class Config:
     FINAL_SLOPE: float = 0.07
     AIM_M: float = 300.0
     APPROACH_STALL_RATIO: float = 1.3
+    # The final is entered only at or under this many approach speeds;
+    # still airborne past GO_AROUND_SHARE of the runway, it goes around.
+    FINAL_SPEED_RATIO: float = 1.5
+    GO_AROUND_SHARE: float = 0.4
     # The descent home: altitude on DESCENT_SLOPE above the final's gate;
     # speed what a drag-only coast slows to APPROACH_SPEED at the gate
     # (guidance.coast_speed, on the drag measured in flight, times

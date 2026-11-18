@@ -146,6 +146,7 @@ class ReconPilot:
         self.a_clear = None         # the pitch the tail clearance allows
         self.derot = None           # the rollout's lowering pitch
         self.braking = False
+        self.go_arounds = 0
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -847,9 +848,15 @@ class ReconPilot:
                 (v_cmd - speed) / cfg.SPEED_BAND_M_S, 0.0, 1.0))
             along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,
                                           self.radius)
-            if dist < max(1500.0, 0.5 * gd.turn_radius(speed, normal)) or (
+            v_app = self.approach_speed(mass, rho)
+            # Onto the final only slow enough to fly it: otherwise on round
+            # the gate (steering at it circles it) while the coast slows
+            # (the gate at 656 m/s landed 2626 m along a 2400 m runway,
+            # LOG17759).
+            slow = speed <= cfg.FINAL_SPEED_RATIO * v_app
+            if slow and (dist < max(1500.0, 0.5 * gd.turn_radius(speed, normal)) or (
                     along > -cfg.FINAL_M and abs(cross) < 1500.0
-                    and abs(gd.wrap(math.radians(hdg or 0.0) - rc)) < 0.5):
+                    and abs(gd.wrap(math.radians(hdg or 0.0) - rc)) < 0.5)):
                 self.vessel.control.gear = True
                 self.enter(FINAL, ut, "gate: %.0f m off, alt %.0f, %.0f m/s,"
                            " along %.0f cross %+.0f" % (dist, alt, speed,
@@ -882,6 +889,12 @@ class ReconPilot:
                                                 0.0, 1.0))
                 throttle = 0.0
                 bank_cap = math.radians(5.0)
+            if not ground and along > cfg.GO_AROUND_SHARE * cfg.RUNWAY_LENGTH_M:
+                # Still flying past this share of the runway: around again.
+                self.vessel.control.gear = False
+                self.enter(HOME, ut, "go-around: %.0f m along at %.0f m, "
+                           "%.0f m/s" % (along, agl, speed))
+                self.go_arounds += 1
             if ground:
                 self.enter(ROLLOUT, ut, "touchdown %.0f m/s, sink %.1f, "
                            "along %.0f, cross %+.0f, g %.1f"
