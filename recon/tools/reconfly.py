@@ -74,12 +74,9 @@ def main():
     conn = airfly.launch_on_runway(args.instance, "QUDRAC", rpc, stream)
     sc = conn.space_center
     body = sc.active_vessel.orbit.body
-    for w in list(sc.waypoint_manager.waypoints):
-        try:
-            if not w.has_contract:
-                w.remove()
-        except Exception:                               # noqa: BLE001
-            pass
+    # Added, never removed: a waypoint removed through kRPC leaves its map
+    # node behind and the game throws on it every frame (53k exceptions,
+    # the next launch hung).  The pilot takes the newest custom one.
     sc.waypoint_manager.add_waypoint(args.lat, args.lon, body, "recon")
     conn.close()
     farmflight.install_reaper()
