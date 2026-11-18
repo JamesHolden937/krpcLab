@@ -47,6 +47,20 @@ nothing to build.
 roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
 from the previous batch's round length times the rounds left.
 
+**Clear the conversation between batches** (the user, 2026-11-18: token cost
+is calls x context size; sessions averaged 236k tokens per call). When a
+batch's result is in and read, and no batch, waiter or worktree build is
+still running: (a) rewrite this pilot's HANDOFF.md section so a cold session
+can carry on -- the result with its log/batch names, what it means, the exact
+next batch to fly and why, and anything the user said this session that no
+doc records yet (a standing instruction goes into CLAUDE.md or memory, not
+only HANDOFF); (b) commit; (c) call `mcp__ccd_session_mgmt__clear_session`
+with `session_id: "self"` (load it with ToolSearch first), and end the turn
+with one line: what was saved and the next batch. Skip the clear while the
+user is mid-conversation with you (a question open, a decision pending) or
+the context is still small (under ~100k tokens). The fresh session starts
+from HANDOFF.md as usual.
+
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
    running, then released once the farm is idle. Don't run nosleep by hand.
