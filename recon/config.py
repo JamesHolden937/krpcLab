@@ -48,6 +48,9 @@ class Config:
     # held on the throttle; the proportional governor above is the
     # backstop.
     THERMAL_PLAN_S: float = 2.0
+    # The prediction flies the throttle only with this on; off, it is
+    # logged (vpred=) beside the measured heat for checking.
+    THERMAL_FLY: bool = False
     # The fuel-limited speed (the fastest the fuel left covers home: drag
     # from KSP's aerodynamics, LF per N s measured) holds only in cruise:
     # flight path within CRUISE_LEVEL_DEG of level.

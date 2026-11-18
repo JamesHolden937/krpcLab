@@ -140,6 +140,8 @@ class ReconPilot:
         self.fuel = None
         self.v_fuel_logged = None
         self.level = False
+        self.v_pred = None
+        self.alpha_peak = math.radians(15.0)   # re-read off the lift curve
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -380,6 +382,7 @@ class ReconPilot:
             self.log.event(ut, "no lift curve: rotating at 100 m/s to 10 deg")
             return
         peak_a = max(self.cla, key=lambda x: x[1])[0]
+        self.alpha_peak = peak_a
         a = peak_a
         if tail is not None:
             a = min(a, tail - math.radians(cfg.TAIL_CLEARANCE_DEG))
@@ -451,15 +454,21 @@ class ReconPilot:
                      speed, mach, t_env, a)
 
     def plan_speed(self, ut, rho, sound, t_env, remaining):
-        """The fastest speed every part survives for the rest of the
-        flight at this altitude's air (thermal.speed_limit), every
-        THERMAL_PLAN_S."""
+        """The speed to hold, every THERMAL_PLAN_S: the fastest the fuel
+        left covers home (in level cruise), and -- with THERMAL_FLY -- the
+        fastest every part survives for the rest of the flight
+        (thermal.speed_limit).  Without THERMAL_FLY the thermal prediction
+        is logged (vpred=), not flown: its constants from kRPC's flux
+        numbers came out ~1000x small and it asked for 200 m/s at Mach 3
+        with the cockpit at 0.42 of its limit (LOG17752)."""
         cfg = self.cfg
         if ut < self.next_plan or not self.heat_models or not sound:
             return
         self.next_plan = ut + cfg.THERMAL_PLAN_S
-        v = th.speed_limit(self.heat_models, rho, sound, t_env or 250.0,
-                           remaining, cfg.HEAT_MAX)
+        vp = th.speed_limit(self.heat_models, rho, sound, t_env or 250.0,
+                            remaining, cfg.HEAT_MAX)
+        self.v_pred = vp
+        v = vp if cfg.THERMAL_FLY else None
         # The fuel's speed is a cruise's: drag at this attitude in a climb
         # (30 deg off the airflow at 140 m/s) asked for less speed, which
         # steepened the climb, which asked for less (LOG17748).
@@ -467,22 +476,11 @@ class ReconPilot:
         if vf is not None and (v is None or vf < v):
             if self.v_fuel_logged is None or abs(vf - self.v_fuel_logged) > 20:
                 self.log.event(ut, "fuel: %.0f m/s is the fastest the %.0f LF "
-                               "left covers for %.0f km (%.2e LF per N s; "
-                               "heat allows %s)" % (
-                                   vf, self.fuel or 0.0, remaining / 1e3,
-                                   self.sfc, "%.0f" % v if v else "?"))
+                               "left covers for %.0f km (%.2e LF per N s)"
+                               % (vf, self.fuel or 0.0, remaining / 1e3,
+                                  self.sfc))
                 self.v_fuel_logged = vf
             v = vf
-        ready = [p for p in self.heat_models if p.ready()]
-        if v is not None and ready and (self.v_heat is None
-                                        or abs(v - self.v_heat) > 20.0):
-            hot = max(ready,
-                      key=lambda p: p.peak(rho, v, v / sound, t_env or 250.0,
-                                           min(remaining / v, 3600.0))[0])
-            self.log.event(ut, "thermal: %.0f m/s safe for the %.0f km left "
-                           "(rho %.4f; binding %s: A_c %.3f eA %.3f G %.4f)"
-                           % (v, remaining / 1e3, rho, hot.name, hot.a_c,
-                              hot.e_a, hot.g))
         self.v_heat = v
 
     def drag_at(self, speed):
@@ -549,10 +547,17 @@ class ReconPilot:
         # 4.5 at 4.4 km and meet the heat limit there, LOG17750).
         up = self.speed * math.sin(math.radians(cfg.CLIMB_GAMMA_DEG))
         down = self.speed * math.sin(math.radians(-cfg.DESCENT_GAMMA_DEG))
+        at_cap = self.v_heat is not None and \
+            self.speed >= self.v_heat - cfg.SPEED_BAND_M_S
         if self.throttle >= 0.99 and self.accel < cfg.SEEK_ACCEL_M_S2:
+            # Thrust is the limit (the engine starving up high too).
             self.h_seek -= down * dt
-        else:
+        elif heat_thr < 0.98 or at_cap or (
+                self.throttle >= 0.99 and self.accel >= cfg.SEEK_ACCEL_M_S2):
+            # Heat or fuel binds, or spare thrust: thinner air.
             self.h_seek += up * dt
+        # (Throttled back for no limit: hold.  Climbing on every
+        # not-thrust-limited tick took it unpowered to 42 km, LOG17752.)
         floor = alt - agl + cfg.ALT_FLOOR_AGL_M
         lead = max(up, down) * cfg.ALT_TAU_S
         self.h_seek = gd.clamp(self.h_seek, max(floor, alt - lead),
@@ -867,8 +872,16 @@ class ReconPilot:
         else:
             # The flight-path error into attitude, never further from the
             # present pitch than a second of the load's pitch rate.
+            # Against the flight path, not the nose: the nose is the path
+            # plus the angle of attack it flies at (held to the lift
+            # curve's peak), plus the path error, at most a second of the
+            # load's pitch rate.  "Present pitch + error" fed on itself in
+            # thin air: nose 87 deg up on a -13 deg path (LOG17752).
             step = min(math.radians(cfg.PITCH_STEP_DEG), q_max)
-            pitch_cmd = theta + gd.clamp(gamma_cmd - gamma, -step, step)
+            a_max = self.alpha_peak
+            alpha = gd.clamp(theta - gamma, -a_max, a_max)
+            pitch_cmd = gamma + alpha + gd.clamp(gamma_cmd - gamma, -step,
+                                                 step)
         ap = self.ap
         ap.target_pitch = math.degrees(pitch_cmd)
         ap.target_heading = math.degrees(course) % 360.0
@@ -886,11 +899,12 @@ class ReconPilot:
         self.log.telemetry(ut, (
             "%s spd=%6.1f M=%4.2f alt=%6.0f agl=%6.0f vs=%+6.1f hdg=%5.1f "
             "crs=%5.1f bank=%+5.1f gam=%+5.1f/%+5.1f pitch=%+5.1f/%+5.1f "
-            "thr=%.2f vheat=%.0f hseek=%.0f heat=%.3f%+.4f/s %s g=%4.1f ax=%.1f nrm=%.1f cda=%.2f "
+            "thr=%.2f vheat=%.0f vpred=%.0f hseek=%.0f heat=%.3f%+.4f/s %s g=%4.1f ax=%.1f nrm=%.1f cda=%.2f "
             "lat=%.4f lon=%.4f %s"
             % (self.state, speed, mach or 0.0, alt, agl, vs, hdg or 0.0,
                deg(course) % 360, deg(bank), deg(gamma), deg(gamma_cmd),
                deg(theta), deg(pitch_cmd), throttle, self.v_heat or 0.0,
+               self.v_pred or 0.0,
                self.h_seek or 0.0, hfrac, hrate, name,
                gforce, axial, normal, self.cda, lat, lon, note)))
         self.lines = [
