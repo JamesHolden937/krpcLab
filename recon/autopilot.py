@@ -144,6 +144,7 @@ class ReconPilot:
         self.alpha_peak = math.radians(15.0)   # re-read off the lift curve
         self.d_max = None           # the short way home's farthest, going round
         self.a_clear = None         # the pitch the tail clearance allows
+        self.derot = None           # the rollout's lowering pitch
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -888,7 +889,15 @@ class ReconPilot:
         if self.state == ROLLOUT:
             rlat, rlon, rc, _ = self.runway
             course = rc
-            pitch_hold = 0.0
+            # The nose lowered at DEROTATE_RATE_DEG_S from where the
+            # touchdown left it: commanded straight to level, kRPC's
+            # autopilot slammed it from 12.5 deg and the intake struck the
+            # runway at 73 m/s (LOG17757).
+            if self.derot is None:
+                self.derot = theta_now
+            self.derot = max(0.0, self.derot - math.radians(
+                cfg.DEROTATE_RATE_DEG_S) * dt)
+            pitch_hold = self.derot
             throttle = 0.0
             brakes = True
             along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,

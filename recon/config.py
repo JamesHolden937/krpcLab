@@ -141,6 +141,8 @@ class Config:
     LOC_CUT_DEG: float = 30.0
     # Flare from FLARE_AGL_M: the sink rate ramps to TOUCHDOWN_SINK_M_S.
     FLARE_AGL_M: float = 25.0
+    # After touchdown the nose comes down at this rate (deg/s).
+    DEROTATE_RATE_DEG_S: float = 3.0
     TOUCHDOWN_SINK_M_S: float = 1.5
     # Speed held by throttle: (want - speed) / SPEED_BAND_M_S.
     SPEED_BAND_M_S: float = 20.0
