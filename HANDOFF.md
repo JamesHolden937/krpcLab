@@ -57,7 +57,7 @@ next comparison).
 howItWorks.pdf (boosterland) **stale** (not regenerated this session). `tools/instancebench.py`,
 `docs/krpcFeatureRequests.md` are not ours: leave them. Merged worktrees removed; `.wt-pytune` (branch pyTune, unmerged) and
 `.claude/worktrees/part-prune-*` are not ours: leave them. Fly booster work
-on `qs_finbooster4` only. Full measurements: `docs/boosterland/journal.md`, 2026-11-17 late.
+on `qs_finbooster2` only (the user, 2026-11-18: finbooster4 was the wrong save; see boosterland/CLAUDE.md). Full measurements: `docs/boosterland/journal.md`, 2026-11-17 late.
 
 **Found and fixed at the source (defaults now):**
 1. **The burn flew the coast's fins.** Every drag probe sees the fins as they sit; the coast holds its angle of
@@ -93,7 +93,7 @@ fins-steering full curve with no lift table. That is what 5752bef fixes, and wha
 
 **Next, in order:**
 1. **Re-fly lift3** (it was stopped at 18 of 24: part of a batch is not a result), same arms:
-   `SAVES_LIST=qs_finbooster4 LAPS=2 boosterland/tools/brot.sh <tag> "c:DIAG_BURN=True,LANDING_BURN_AIM=False"
+   `SAVES_LIST=qs_finbooster2 LAPS=2 boosterland/tools/brot.sh <tag> "c:DIAG_BURN=True,LANDING_BURN_AIM=False"
    "l:DIAG_BURN=True,LANDING_BURN_AIM=False,BURN_LIFT=True"`, then read it per arm: `for a in c l; do grep " $a qs_" logs/rot-<tag>.txt > logs/rot-<tag>-$a.txt;
    .venv-pypy/bin/python boosterland/tools/predvsland.py logs/rot-<tag>-$a.txt; done`. Split by brake
    opening (`grep -c "late brakes 0 -> "`) and check the logs' `late brakes: Cd*A open is` ratios are now

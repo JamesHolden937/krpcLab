@@ -1,10 +1,11 @@
 # boosterland
 
-> **Current target: fin2 only** (the user, 2026-11-15), **from `qs_finbooster4`** (since 2026-11-17: the current
-> ascent's separation of the live Heavy Shuttle; `qs_finbooster2` runs dry). Fly every booster batch on it and
-> nothing else until it flies under general formulas (no ship-fitted constants, root CLAUDE.md). Only
-> then look at the other boosters. The heavy (`qs_heavy`) is probably fundamentally problematic: don't
-> spend batches on it.
+> **Current target: `qs_finbooster2` only** (the user, 2026-11-15, restated 2026-11-18: "you're supposed to be
+> focusing on finbooster2"). Fly every booster batch on `SAVES_LIST=qs_finbooster2` and nothing else -- not
+> `qs_finbooster3`/`qs_finbooster4` (same airframe, other separations) -- until it flies under general formulas
+> (no ship-fitted constants, root CLAUDE.md). Only then look at the other boosters. Its known problem is that it
+> runs dry 30-140 m up (pf1-1114): that is the booster's problem to solve, not a reason to change save. The heavy
+> (`qs_heavy`) is probably fundamentally problematic: don't spend batches on it.
 
 Flies a KSP booster back to the KSC launchpad after stage separation,
 Superheavy-style: boostback burn, ballistic coast, suicide burn, touchdown.
