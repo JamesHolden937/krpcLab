@@ -168,6 +168,8 @@ class ReconPilot:
                  (getattr, (v, "situation")),
                  (getattr, (self.sflight, "pitch")),
                  (self.res.amount, ("LiquidFuel",))]
+        calls += [(getattr, (self.sflight, "angle_of_attack")),
+                  (getattr, (self.sflight, "roll"))]
         calls += [(getattr, (fl, "static_air_temperature")),
                   (getattr, (fl, "speed_of_sound"))]
         for pt in self.parts:
@@ -641,7 +643,7 @@ class ReconPilot:
         cfg = self.cfg
         got = self.read()
         (lat, lon, speed, vs, alt, agl, hdg, gforce, mach, rho, thrust, mass,
-         situation, pitch, fuel, t_env, sound) = got[:17]
+         situation, pitch, fuel, aoa, roll, t_env, sound) = got[:19]
         if None in (lat, lon, speed, alt):
             return
         speed = speed or 0.0
@@ -651,7 +653,7 @@ class ReconPilot:
         gforce = gforce or 0.0
         mass = mass or 1.0
         thrust = thrust or 0.0
-        frac, name, lost = self.hottest(got[17:])
+        frac, name, lost = self.hottest(got[19:])
         if lost:
             self.log.event(ut, "parts lost: %s" % ", ".join(lost))
             self.finish("craft broken: %s" % ", ".join(lost))
@@ -672,7 +674,7 @@ class ReconPilot:
             self.heat = (f1, r0 + a * ((f1 - f0) / dt - r0))
         self.heat_name = name
         hfrac, hrate = self.heat
-        self.update_thermal(got[17:], rho, speed, mach, t_env, dt)
+        self.update_thermal(got[19:], rho, speed, mach, t_env, dt)
         # Drag, from the speed's change: what thrust and gravity do not
         # explain.  Kept below Mach 0.9 (the approach's air) on level-ish
         # flight and real q.
@@ -918,11 +920,16 @@ class ReconPilot:
             # curve's peak), plus the path error, at most a second of the
             # load's pitch rate.  "Present pitch + error" fed on itself in
             # thin air: nose 87 deg up on a -13 deg path (LOG17752).
+            # The angle of attack's vertical share only: in a bank the lift
+            # (and the angle it is flown at) is mostly sideways.  Taken as
+            # pitch less path, the 80 deg turn's pull fed back as nose-up
+            # and the turn zoomed to 40 km (LOG17755).
             step = min(math.radians(cfg.PITCH_STEP_DEG), q_max)
             a_max = self.alpha_peak
-            alpha = gd.clamp(theta - gamma, -a_max, a_max)
-            pitch_cmd = gamma + alpha + gd.clamp(gamma_cmd - gamma, -step,
-                                                 step)
+            alpha = gd.clamp(math.radians(aoa or 0.0), -a_max, a_max)
+            phi = math.radians(roll or 0.0)
+            pitch_cmd = gamma + alpha * math.cos(phi) + gd.clamp(
+                gamma_cmd - gamma, -step, step)
         if pitch_cap is not None:
             pitch_cmd = min(pitch_cmd, pitch_cap)
         ap = self.ap
