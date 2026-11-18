@@ -23,12 +23,6 @@ class Config:
     # Overhead: the closest approach is logged; the target is passed once it
     # is behind (more than 90 deg off the nose) or within this distance.
     PASS_RADIUS_M: float = 500.0
-    # Past the target: turn back, or carry on round the planet on the same
-    # great circle, whichever is quicker at the present speed (the turn's
-    # time at the present load budget counted) -- the long way only if the
-    # fuel left covers it at the burn rate measured in flight (the cruise's
-    # burn: the idle descent home burns less).
-    AROUND_ALLOWED: bool = True
 
     # --- limits ----------------------------------------------------------------
     # Total load on the pilot (thrust's push included), g.  The wings get

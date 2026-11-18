@@ -24,8 +24,8 @@ Phase machine::
 * **Navigation**: great-circle course to the goal; heading error into a
   coordinated turn's bank.  OUT flies to the target at an altitude it
   searches for (``seek_altitude``: up while heat limits, down while thrust
-  does); past it, it turns back or carries on round the planet on the same
-  great circle, whichever is quicker (``guidance.route_home``), and HOME descends to the final gate of whichever runway the
+  does); past it, it carries on round the planet on the same great circle
+  (a turn at Mach 5 costs more than it saves), and HOME descends to the final gate of whichever runway the
   return comes in on, slowing on the measured drag
   (``guidance.coast_speed``); FINAL flies localizer and glide slope at the
   approach speed; FLARE eases the sink; ROLLOUT brakes on the centreline.
@@ -429,25 +429,38 @@ class ReconPilot:
         self.h_seek = gd.clamp(self.h_seek, max(floor, alt - 2000.0),
                                alt + 2000.0)
 
-    def choose_route(self, ut, lat, lon, speed, normal, fuel):
-        """Back, or on round the planet, whichever is quicker."""
+    def choose_route(self, ut, lat, lon, speed, fuel):
+        """Home the long way: on round the planet on the same great circle
+        (the user, 2026-11-17: at this speed a turn back costs more than it
+        saves).  Logs whether the fuel left covers it at the burn
+        measured."""
         cfg = self.cfg
         a = (cfg.RUNWAY_09_LAT, cfg.RUNWAY_09_LON)
         b = (cfg.RUNWAY_27_LAT, cfg.RUNWAY_27_LON)
         home = gd.distance(lat, lon, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2,
                            self.radius)
-        t_back, t_round = gd.route_times(home, self.radius, speed, normal)
+        rest = 2.0 * math.pi * self.radius - home
+        self.around = True
         need = None
-        if self.fuel_rate is not None and self.fuel_rate > 0.0:
-            need = self.fuel_rate * t_round
-        enough = need is not None and fuel is not None and fuel >= need
-        self.around = bool(cfg.AROUND_ALLOWED and t_round < t_back and enough)
-        self.log.event(ut, "route: back %.0f s (%.0f km + the turn), round "
-                       "%.0f s (%.0f km); fuel %.0f, the long way needs %s: %s"
-                       % (t_back, home / 1e3, t_round,
-                          (2 * math.pi * self.radius - home) / 1e3,
-                          fuel or 0.0, "%.0f" % need if need else "?",
-                          "ROUND" if self.around else "BACK"))
+        if self.fuel_rate and self.fuel_rate > 0.0:
+            need = self.fuel_rate * rest / max(speed, 1.0)
+        self.log.event(ut, "route: on round, %.0f km to go; fuel %.0f, needs "
+                       "%s at the measured burn%s"
+                       % (rest / 1e3, fuel or 0.0,
+                          "%.0f" % need if need else "?",
+                          " -- SHORT" if need and fuel is not None
+                          and need > fuel else ""))
+
+    def runway_for_heading(self, heading):
+        """The threshold whose course is nearest ``heading``."""
+        cfg = self.cfg
+        a = (cfg.RUNWAY_09_LAT, cfg.RUNWAY_09_LON)
+        b = (cfg.RUNWAY_27_LAT, cfg.RUNWAY_27_LON)
+        c09 = gd.bearing(a[0], a[1], b[0], b[1])
+        c27 = gd.bearing(b[0], b[1], a[0], a[1])
+        if abs(gd.wrap(heading - c09)) <= abs(gd.wrap(heading - c27)):
+            return (a[0], a[1], c09, "09")
+        return (b[0], b[1], c27, "27")
 
     def choose_runway(self, lat, lon):
         """The threshold whose landing course best matches the way home."""
@@ -544,7 +557,16 @@ class ReconPilot:
         note = ""
 
         if self.state == TAKEOFF:
-            course = self.runway_course
+            rlat, rlon, rc, _ = self.takeoff_runway
+            along, cross = gd.along_cross(lat, lon, rlat, rlon, rc,
+                                          self.radius)
+            course = gd.localizer_course(rc, cross, max(speed, 30.0),
+                                         cfg.LOC_TAU_S,
+                                         math.radians(cfg.LOC_CUT_DEG))
+            if ground:
+                # On the wheels: no more than a few degrees of cut.
+                course = gd.clamp(course, rc - math.radians(3.0),
+                                  rc + math.radians(3.0))
             if not ground and agl > 3.0:
                 self.airborne = True
             if not self.airborne:
@@ -555,6 +577,7 @@ class ReconPilot:
                     pcfg.MAX_PITCH_RATE_DEG_S) * max(self.accel, 0.0)
                 pitch_hold = (self.alpha_rot
                               if speed >= self.v_liftoff - lead else 0.0)
+                self.plane.ground_pitch_integral = bool(pitch_hold)
                 if pitch_hold and not self.rotating:
                     self.rotating = True
                     self.log.event(ut, "rotate at %.0f m/s (lift-off %.0f, "
@@ -564,6 +587,7 @@ class ReconPilot:
                     1.0, agl / 300.0)
                 gamma_cmd = max(gamma_cmd, math.radians(5.0))
                 bank_cap = math.radians(5.0) if agl < 100 else bank_cap
+                self.plane.ground_pitch_integral = False
                 if agl > cfg.GEAR_UP_AGL_M:
                     self.vessel.control.gear = False
                     self.enter(OUT, ut, "gear up at %.0f m, %.0f m/s"
@@ -593,7 +617,7 @@ class ReconPilot:
                            "%.0f m, %.0f m/s, %.0f s after START"
                            % (self.closest[0], self.closest[2],
                               self.closest[3], self.closest[1] - self.start_ut))
-                self.choose_route(ut, lat, lon, speed, normal, fuel)
+                self.choose_route(ut, lat, lon, speed, fuel)
             note = "tgt %.1f km h_seek %.0f" % (dist / 1e3, self.h_seek)
         if self.state == HOME:
             if self.runway is None:
@@ -749,7 +773,11 @@ class ReconPilot:
             if self.autostart or self.gui.start_pressed():
                 if self.take_over(ut):
                     self.gui.hide_start()
-                    self.runway_course = math.radians(self.flight.heading)
+                    self.takeoff_runway = self.runway_for_heading(
+                        math.radians(self.sflight.heading))
+                    self.log.event(ut, "take-off runway %s, course %.2f"
+                                   % (self.takeoff_runway[3], math.degrees(
+                                       self.takeoff_runway[2])))
                     landed = str(self.vessel.situation).lower()
                     if "landed" in landed or "pre_launch" in landed:
                         self.vessel.control.throttle = 1.0

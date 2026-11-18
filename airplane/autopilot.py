@@ -102,6 +102,10 @@ class AirplanePilot:
         self.prop_lines = []
         self.lines = []
         self.start_ut = None
+        # A pilot flying this one may let the pitch integrate on the
+        # ground (recon's rotation: the elevons must push until the nose
+        # is up, which a proportional term alone does not).
+        self.ground_pitch_integral = False
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
                                                len(self.vessel.parts.all)))
@@ -476,7 +480,8 @@ class AirplanePilot:
             # tail wheel it would wind nose-up all down the runway (+0.13
             # by 41 m/s, LOG15423) and pitch the plane up at lift-off.
             u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew,
-                                   integrate=not (ground and i == 0),
+                                   integrate=not (ground and i == 0)
+                                   or self.ground_pitch_integral,
                                    weight=cfg.RATE_SETPOINT_WEIGHT)
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
