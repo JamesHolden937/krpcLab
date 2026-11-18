@@ -437,8 +437,13 @@ class ReconPilot:
         landing's)."""
         cmax = self.cla_max() or 1.0
         r = max(rho or 0.0, self.rho_ground)
-        return self.cfg.APPROACH_STALL_RATIO * math.sqrt(
+        stall = self.cfg.APPROACH_STALL_RATIO * math.sqrt(
             mass * gd.G0 / (0.5 * r * cmax))
+        # ... and never under the speed the fin needs on the wheels (the
+        # rotation's ROTATE_MIN_Q_PA): at 61 m/s the touchdown snapped the
+        # heading 60 deg as the mains met the runway (LOG17756), the take-
+        # off's departure at the other end of the flight.
+        return max(stall, math.sqrt(2.0 * self.cfg.ROTATE_MIN_Q_PA / r))
 
     def update_thermal(self, parts_got, rho, speed, mach, t_env, dt):
         """Measure each part's thermal constants (thermal.PartHeat)."""
