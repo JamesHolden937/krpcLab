@@ -1,5 +1,17 @@
 # boosterland journal
 
+## Session, 2026-11-17 late afternoon: kRPC main bc748fd -- the user's four issues merged
+
+kRPC #1360-1363 merged (gimbal response speed and axis toggles, legs' live suspension and damage limits, part joint
+strength/stiffness, `Vessel.launch_site`). Installed everywhere via `tools/krpcmain.sh` (bc748fd). launcherMod's
+Legs.cs, Joints.cs and LaunchSite.cs and gimbalTorqueFix's KrpcGimbalLag.cs deleted; `common/touchdown`,
+`common/impact` and `common/launchsite` read kRPC instead (legs: cfg constants by `Module.field_list` before the
+flight, one batched round trip at gear down). kRPC's foot is the bottom of the foot at full extension and its
+travel is the collider's (rescaled): on qs_heavy h 9.1 -> 10.7 m, vertical limit 17.1 -> 21.4 m/s, lateral 1.8 ->
+3.1 m/s (LOG17536, landed 6 m off). fin2 (no legs) LOG17535: 254 m, 8.1 m/s; its drag curve recorded. The impact
+model cannot step rigid joints (spring 1e20+): "survives 0.0", diagnostic only. Gimbal response speed needed by no
+pilot (SurfaceActuators already reports it).
+
 ## Session, 2026-10-18 evening: the flip's throttle (from ascent)
 
 The user, working on `ascent/`: "do low throttle during flip, just enough to

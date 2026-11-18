@@ -17,9 +17,30 @@
 
 ## 2026-11-17: boosterland + ascent -- fin2 runs out of propellant in the burn; the burn's prediction and the ascent's budget now model it
 
-State: **92037ed, committed (hooks skipped: the bundle rebuilds on the next fly), pushed. Fingerprints: boosterland
-a1079928, ascent a68b023d. Farm stopped.** Nothing since 92037ed is flown. howItWorks.pdf (boosterland, ascent) stale.
-`tools/instancebench.py`, `docs/krpcFeatureRequests.md` are not ours: leave them.
+State: **kRPC main bc748fd installed (farm, stockref, live, both venvs); code committed and pushed after it.
+Fingerprints unchanged: boosterland a1079928, ascent a68b023d. Farm stopped.** howItWorks.pdf (boosterland, ascent)
+stale. `tools/instancebench.py`, `docs/krpcFeatureRequests.md` are not ours: leave them.
+
+**2026-11-17 later: kRPC main bc748fd** (`tools/krpcmain.sh` pinned to it). All four of the user's issues merged
+(#1360-1363), plus #1373 (autopilot: moving targets, flexible mitigations/oscillation state cleared after staging
+or parts change), #1374 (`load` no longer sticks on the loading screen). What changed for us:
+- **Legs** (`common/touchdown`): `read_leg_constants` before the flight (batched `Module.field_list` for
+  springRatio/damperRatio/frictionPeak, which kRPC has no property for; Leg impact/explode), `read_legs` one batched
+  round trip at gear down (`Leg.contact_position`, `suspension_travel/spring/damper`, `deployed`). launcherMod's
+  Legs.cs (reflection) deleted. **The plant numbers changed**: the foot is now the bottom of the foot at full
+  extension (was the collider transform + radius) and travel is the collider's (part rescale: 1.19 v 0.95 on the
+  LT-2). qs_heavy: h 9.1 -> 10.7 m, vertical limit 17.1 -> 21.4 m/s, lateral 1.8 -> 3.1 (LOG17536: 6 m, landed).
+  Spring/damper are 0 in the air either way (the game sets them on contact).
+- **Joints** (`common/impact.read`, `actuators.py --joints`): kRPC `Part.joint_*`; Joints.cs deleted. Rigid
+  attachments read spring 1e20-3e20, which the impact model's explicit integrator cannot step: it says "survives
+  0.0" on fin2/heavy. Diagnostic only, nothing flies on it; needs rigid joints merged into one mass.
+- **Launch site**: `Vessel.launch_site`; LaunchSite.cs (record file) deleted. The record had agreed with the site
+  to 0.1 m on every flight.
+- **Gimbal response speed / axis toggles**: readable now (`Engine.gimbal_response_speed`, 8.0 on the Vector), but no
+  pilot code needs it: `SurfaceActuators` already carries it in its one call. `gimbalTorqueFix/KrpcGimbalLag.cs`
+  (inert since 0.8) deleted; GimbalTorqueFix.cs's torque patch stays.
+- Fin2's drag curve is now recorded (LOG17535: 254 m, 8.1 m/s, `drag curve recorded 4507e5...`): next step 1 done.
+- Trap: `quickfly.py --instance N` does not set the port; pass `--rpc-port` (5010x) too.
 
 **Finding (bp1-1116, LOG17509-17532, qs_finbooster2, 12 simple + 12 aim, DIAG_BURN):** the burn's prediction is fine;
 **24/24 flights ran dry** (122.65 t) at 80-310 m, falling 77-107 m/s with 20-32 m/s sideways. That free fall is the
@@ -48,8 +69,7 @@ miss and the hard touchdown. Up to that point the ignition plan's burn travel ma
   (a RAPIER plane), not this stack.
 
 **Next, in order (the user asked: re-fly the ascent so it knows where to stage):**
-1. Start the farm; fly one fin2 flight so `dragCurves.json` gets fin2's curve (check the `drag curve recorded` and
-   `propellant ... dry` log lines and the `burn plan` variants).
+1. (done, LOG17535) fin2's curve is in `dragCurves.json`.
 2. Make the pad save: copy the craft into `ksp1/saves/default/Ships/VAB/`, `launch_vessel("VAB", "Heavy Shuttle",
    "LaunchPad")`, `save("qs_stack_fin")`, then `syncSaves.sh pull 1 qs_stack_fin`; add a README row. The first try
    failed only because the farm was down.
