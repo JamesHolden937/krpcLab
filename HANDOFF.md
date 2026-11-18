@@ -35,7 +35,8 @@ log's separation, on the dragcache curve and on the log's own fall, against the 
 - On fin2's separation the budget now says it lands **1.5 t short before the coast's RCS** (was "0.85 t spare").
 
 **Open, in order:**
-1. The coast's RCS limit cycle (boosterland): 0.65-5.2 t a flight on one save; the largest unpredicted term now.
+1. **NEXT PRIORITY (the user, 2026-11-18): the coast's RCS limit cycle (boosterland)** -- 0.65-5.2 t a flight on
+   one save; the largest unpredicted term now. Details in the boosterland section's open item 1.
 2. Re-fly the ascent for a new fin2 separation on the corrected budget (deferred by the user, 2026-11-18).
 3. The landing burn's Isp is budgeted at the pad's (295); the flight reads ~307 at ignition. Small, check.
 
@@ -65,6 +66,15 @@ boosterland/CLAUDE.md). Not finbooster3/4.
 3. `predvsland.py` splits by brake opening and prints each flight's open/closed ratio.
 
 **Open, in order:**
+0. **NEXT PRIORITY (the user, 2026-11-18): the coast's attitude limit cycle burns 0.65-5.2 t of LFO on RCS.**
+   Not valve chatter: the valve (a relay on pointing error) opens and *stays* open while the pitch/yaw loop
+   oscillates under it -- inputs saturated, flipping sign every few seconds (`in=-0.86/+1.00` <-> `+0.86/-1.00`,
+   sat=1.00), err swinging ~2-10 deg and never falling below the valve's off threshold. LOG17812: valve open
+   3640-3688 s, mass falling a steady ~60 kg/s (this craft's RCS burns the main LFO), 5.18 t spent in the coast.
+   Good case LOG17830: settled in 14 s, RCS off, mass flat (1.37 t). Spread over fin2trv-1118 + fin2rec-1118 (same
+   save): 0.65-5.2 t. A loop that will not converge (gain or lag against the RCS's authority) -- fix the controller
+   (`rolltune.py` / the coast's pitch-yaw bandwidth, `docs/boosterland/design.md`), not a budget margin. Measure
+   the coast's spend with `ascent/tools/budgetcheck.py` (column "coast spent").
 1. **fin2 runs dry**: 14/24 ended in the air, tanks empty (38.7 t at the coast over 122.65 t dry; the burn needs more
    than it has). Every miss on fin2 is mixed with a free fall. The user (2026-11-18): when the boostback's budget
    changes, re-fly the ascent for a new separation with the right propellant (boosterland/CLAUDE.md) -- **not done
