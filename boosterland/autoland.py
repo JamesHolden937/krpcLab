@@ -597,6 +597,7 @@ class Autoland:
         self.commanded_throttle = None  # what set_throttle last asked for
         self.demand = 0.0               # fraction of cluster thrust wanted
         self.last_ut = None             # the last tick's game time
+        self.tick_intervals = []        # recent ticks' game-s (median kept)
         self.spool_from = None          # (ut, demand) of an ignition being
                                         # timed (track_spool)
         self.cluster = None             # EngineCluster, built at START
@@ -2451,7 +2452,17 @@ class Autoland:
         landing burn's trigger (``trajectory.reaction_time``); and keep the
         control interval the trigger is checked at."""
         if self.last_ut is not None and snap.ut > self.last_ut:
-            self.env.control_interval = snap.ut - self.last_ut
+            # The loop's interval, not the last tick's: the trigger's tick
+            # carries the burn's one-off entry work (0.3-0.4 s), and the
+            # burn's taper rate, held from the next tick, was capped by a
+            # reaction time read off that one tick -- 0.54 /s against the
+            # 0.78 every coast prediction planned with, so the burn flew
+            # slower and longer than predicted (lit-1117).
+            self.tick_intervals.append(snap.ut - self.last_ut)
+            if len(self.tick_intervals) > JITTER_SAMPLES:
+                self.tick_intervals.pop(0)
+            ordered = sorted(self.tick_intervals)
+            self.env.control_interval = ordered[len(ordered) // 2]
         self.last_ut = snap.ut
         start = self.spool_from
         if start is None or snap.thrust is None or snap.available_thrust <= 0:
