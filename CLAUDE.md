@@ -59,16 +59,17 @@ with `session_id: "self"` (load it with ToolSearch first), and end the turn
 with one line: what was saved and the next batch. Skip the clear while the
 user is mid-conversation with you (a question open, a decision pending) or
 the context is still small (under ~100k tokens). The fresh session starts
-from HANDOFF.md as usual (see "Continuing after the clear" below).
+from HANDOFF.md as usual; it needs the user's prompt to start (see
+"Continuing after the clear" below).
 
-**Continuing after the clear (no "go on" needed).** When the next batch is
-already decided, launch it (with its waiter, `run_in_background`) in the same
-turn, *then* clear. Its waiter's output must start with the line
-`AUTO-CONTINUE <pilot>: this conversation was cleared after the last batch.
-Read HANDOFF.md and docs/<pilot>/handoff.md, then this batch's result below.`
-The batch's completion notice then wakes the fresh conversation, which
-orients itself from that line. A fresh conversation whose first message is
-such a notice treats it as the session procedure's step 1 and carries on.
+**Continuing after the clear needs the user's "go on".** A self-clear kills
+this conversation's background jobs (tested 2026-11-18: a `sleep 90` launched
+just before `clear_session self` was `[killed]` 2 s after the turn ended, and
+no notice ever reached the fresh conversation). So never clear with a batch,
+waiter or build running, and never launch the next batch in the clearing turn.
+Write the next batch into the handoff instead, clear, and end with one line:
+"cleared; send `go on` to fly <next batch>". The fresh conversation reads the
+handoff (step 1) and launches it.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
