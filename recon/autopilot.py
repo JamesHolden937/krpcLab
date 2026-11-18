@@ -143,6 +143,7 @@ class ReconPilot:
         self.v_pred = None
         self.alpha_peak = math.radians(15.0)   # re-read off the lift curve
         self.d_max = None           # the short way home's farthest, going round
+        self.a_clear = None         # the pitch the tail clearance allows
         self.clear_logged = False
         self.last_theta = None
         self.rot_pitch = None
@@ -402,6 +403,7 @@ class ReconPilot:
                            "%.1f deg of rotation" % (clear0, self.tail_arm,
                                                      math.degrees(a_clear)))
             a = min(a, a_clear)
+            self.a_clear = a_clear
         a = max(a, 0.0)
         mass = self.vessel.mass
         rho = self.flight.atmosphere_density or 1.2
@@ -556,9 +558,15 @@ class ReconPilot:
             # Thrust is the limit (the engine starving up high too).
             self.h_seek -= down * dt
         elif self.throttle >= 0.99 and self.accel >= cfg.SEEK_ACCEL_M_S2:
-            # Spare thrust: up, as steeply as allowed (the acceleration
-            # answers at once).
-            self.h_seek += up * dt
+            # Spare thrust: up on the excess power, the path whose climb
+            # holds the speed (sin gamma = a / g), no steeper than allowed.
+            # At the full 30 deg on any acceleration it climbed to 36 km at
+            # Mach 4.5, past where the engine breathes (LOG17754).
+            spare = self.speed * gd.clamp(self.accel / gd.G0, 0.0, math.sin(
+                math.radians(cfg.CLIMB_GAMMA_DEG)))
+            self.h_seek = min(self.h_seek, alt + spare * cfg.ALT_TAU_S)
+            self.h_seek += spare * dt
+            top = alt + max(spare, gentle) * cfg.ALT_TAU_S
         elif heat_thr < 0.98 or at_cap:
             # Heat or fuel binds: up gently, never far ahead -- the heat
             # answers in tens of seconds, and climbing at 24 deg on it at
@@ -894,6 +902,12 @@ class ReconPilot:
                 self.state in (OUT, HOME):
             gamma_cmd = max(gamma_cmd, 0.0)
         theta = math.radians(pitch or 0.0)
+        if self.state in (FINAL, FLARE, ROLLOUT) and self.a_clear is not None:
+            # The nose never past the angle the tail clearance allows on the
+            # runway: the flare at 53 m/s set the nozzle down (LOG17754).
+            pitch_cap = self.a_clear
+        else:
+            pitch_cap = None
         if pitch_hold is not None:
             pitch_cmd = pitch_hold
         else:
@@ -909,6 +923,8 @@ class ReconPilot:
             alpha = gd.clamp(theta - gamma, -a_max, a_max)
             pitch_cmd = gamma + alpha + gd.clamp(gamma_cmd - gamma, -step,
                                                  step)
+        if pitch_cap is not None:
+            pitch_cmd = min(pitch_cmd, pitch_cap)
         ap = self.ap
         ap.target_pitch = math.degrees(pitch_cmd)
         ap.target_heading = math.degrees(course) % 360.0
