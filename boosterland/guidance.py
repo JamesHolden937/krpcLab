@@ -526,7 +526,12 @@ def one_law_command(env, r, v, time_to_land, thrust_accel, cfg, zem,
         authority = a * math.sin(math.radians(cfg.LANDING_MAX_TILT_DEG))
     else:
         authority = solve_tilt(a, lift, float("inf"), limit)[1]
-    v_max = min(authority * max(0.0, t_go - 1.0 / rate),
+    # The sideways speed is braked late, subsonic, where the lift is gone:
+    # size what may be asked for on the thrust's own authority, never the
+    # lift-boosted one, or the divert builds a speed it cannot straighten
+    # out of before touchdown.
+    braking = min(authority, a * math.sin(limit))
+    v_max = min(braking * max(0.0, t_go - 1.0 / rate),
                 trajectory.lateral_allowance(env, cfg)
                 * math.exp(min(50.0, rate * t_go)))
     asked = vec.norm(accel) / rate

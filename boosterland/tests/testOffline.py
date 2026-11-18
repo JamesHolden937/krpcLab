@@ -405,6 +405,22 @@ class TestAeroDivert(unittest.TestCase):
         self.assertAlmostEqual(t, -math.radians(15), places=6)
         self.assertAlmostEqual(guidance.tilt_lateral(33.0, -800.0, t), auth, 6)
 
+    def test_lift_does_not_raise_the_sideways_speed_cap(self):
+        """The divert may not ask for more sideways speed with the lift's
+        help than the thrust alone can brake by touchdown."""
+        cfg = Config()
+        env = FakeEnv() if callable(FakeEnv) else None
+        r, v = (6.0e5 + 5000.0, 0.0, 0.0), (-400.0, 300.0, 0.0)
+        zem = (0.0, 0.0, 5000.0)
+        plain = guidance.one_law_command(env, r, v, 15.0, 33.0, cfg, zem,
+                                         None, 0.8)
+        cfg.LANDING_AERO_DIVERT = True
+        env.lift_slope_held = lambda speed, alt: -1123.0
+        env.density = lambda alt: 0.45
+        lifted = guidance.one_law_command(env, r, v, 15.0, 33.0, cfg, zem,
+                                          None, 0.8, mass=190e3)
+        self.assertLessEqual(lifted.demand, plain.demand + 1e-6)
+
     def test_off_by_default(self):
         self.assertIsNone(guidance.burn_lift_coefficient(
             None, (6e5, 0, 0), (0, -500, 0), 1e5, Config()))
