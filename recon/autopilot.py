@@ -9,20 +9,19 @@ Phase machine::
 
 * **The target** is the last custom waypoint on the body (stock map view's
   waypoint tool), read at START; ``TARGET_LAT``/``LON`` without one.
-* **The attitude** is the airplane pilot's CRUISE hold, run headless inside
-  this one: this pilot sets its bank and pitch targets every tick and the
-  airplane loops (rates measured in flight, sideslip nulled, turns
-  coordinated) fly them.  The player's stick still goes on top.
+* **The attitude** is kRPC's autopilot: this pilot sets its pitch, heading
+  and roll every tick (pitch never further than a second of the load's
+  pitch rate from where the nose is).
 * **Heat** governs the speed: the throttle is proportional on where the
   hottest part (internal or skin, each against its own limit) will be
   ``HEAT_LOOKAHEAD_S`` from now (``guidance.heat_throttle``).  At the heat
   limit with the throttle shut it stops descending.
 * **Load**: total g (thrust's push included) under ``G_LIMIT``: the wings
-  get what the axial load leaves (``guidance.normal_g_budget``) as the
-  airplane hold's turn load and pitch-rate cap; measured g over the line
+  get what the axial load leaves (``guidance.normal_g_budget``): the bank
+  and the pitch command's rate are held to it; measured g over the line
   shuts the throttle.
 * **Navigation**: great-circle course to the goal; heading error into a
-  coordinated turn's bank.  OUT flies to the target at an altitude it
+  turn's bank.  OUT flies to the target at an altitude it
   searches for (``seek_altitude``: up while heat limits, down while thrust
   does); past it, it carries on round the planet on the same great circle
   (a turn at Mach 5 costs more than it saves), and HOME descends to the final gate of whichever runway the
@@ -35,9 +34,8 @@ import math
 import sys
 import time
 
-from airplane.autopilot import AirplanePilot
-from airplane.config import Config as PlaneConfig
 from common import cli
+from common.krpcpilot import set_autopilot_engaged
 from common.krpcbatch import ask
 from common.logbook import Logbook
 from common.pacing import LoopRate, sleeper
@@ -78,26 +76,6 @@ def pick_waypoint(sc, body):
     return found
 
 
-class _InnerLog:
-    """The inner hold's log: into ours, prefixed "plane:", its telemetry
-    on its own interval gate (one logbook's gate would let only one of the
-    two lines a tick through)."""
-
-    def __init__(self, log):
-        self.log = log
-        self.next_ut = None
-
-    def event(self, ut, text):
-        self.log.event(ut, "plane: " + text)
-
-    def telemetry(self, ut, text):
-        if self.next_ut is None or ut >= self.next_ut:
-            self.log.event(ut, "plane: " + text)
-            self.next_ut = ut + self.log.interval_ut
-            return True
-        return False
-
-
 class ReconPilot:
     def __init__(self, conn, cfg, log):
         self.conn = conn
@@ -120,12 +98,13 @@ class ReconPilot:
         log.event(ut, "config: %s defaults_fingerprint=%s"
                   % (" ".join(differences(cfg)) or "(defaults)",
                      defaults_fingerprint()))
-        # The attitude hold: the airplane pilot, CRUISE, headless.
-        pcfg = PlaneConfig()
-        pcfg.MODE = 0
-        self.plane = AirplanePilot(conn, pcfg, _InnerLog(log),
-                                   headless=True)
+        # The attitude: kRPC's autopilot, pitch/heading/roll against the
+        # horizon (the airplane pilot's hold was tried first and let the
+        # nose sag into the runway after lift-off, LOG17744).
+        self.ap = self.vessel.auto_pilot
+        self.ap.reference_frame = self.vessel.surface_reference_frame
         self.airborne = False
+        self.pitch_tgt = 0.0
         self.flight = self.vessel.flight(self.body.reference_frame)
         # Pitch and heading against the horizon (the body frame's read odd).
         self.sflight = self.vessel.flight(self.vessel.surface_reference_frame)
@@ -164,7 +143,6 @@ class ReconPilot:
         self.last_theta = None
         self.rot_pitch = None
         self.tail_arm = 2.0         # m, re-read from the parts at START
-        self.rot_u = None
         try:
             wheels = {w.part for w in self.vessel.parts.wheels}
         except Exception:                               # noqa: BLE001
@@ -235,9 +213,14 @@ class ReconPilot:
                 self.log.event(ut, "engine: %r" % exc)
         self.rho_ground = self.flight.atmosphere_density or 1.2
         self.plan_takeoff(ut)
-        self.plane.take_over(ut)
-        self.plane.ground_roll_yaw_off = cfg.GROUND_ROLL_YAW_OFF
         c = self.vessel.control
+        c.sas = False
+        self.ap.target_pitch_and_heading(float(self.sflight.pitch),
+                                         float(self.sflight.heading))
+        self.ap.target_roll = 0.0
+        exc = set_autopilot_engaged(self.ap, True)
+        if exc is not None:
+            self.log.event(ut, "autopilot: %r" % exc)
         c.brakes = False
         self.start_ut = ut
         lat, lon = self.flight.latitude, self.flight.longitude
@@ -312,51 +295,28 @@ class ReconPilot:
         return max(c for _, c in self.cla) if self.cla else None
 
     def rotate(self, ut, target, theta, agl, dt):
-        """The rotation's elevator: a pitch rate closing the lowest part's
-        clearance to TAIL_CLEARANCE_M, up to ``target`` pitch, flown on
-        the measured pitch effect.  Returns the pitch to hold after it."""
+        """The rotation: the pitch target raised at ROTATE_RATE_MAX_DEG_S
+        toward ``target``, held where it is once any non-wheel part is
+        within TAIL_CLEARANCE_M of the ground (measured each tick).
+        Returns the pitch to command."""
         cfg = self.cfg
         if not target:
-            self.plane.pitch_override = None
-            self.last_theta = theta
-            self.rot_u = None
+            self.rot_pitch = None
             return 0.0
+        if self.rot_pitch is None:
+            self.rot_pitch = theta
         clear = self.clearance(agl)
-        q = 0.0
-        if self.last_theta is not None and dt > 0.0:
-            q = (theta - self.last_theta) / dt
-        self.last_theta = theta
-        qmax = math.radians(cfg.ROTATE_RATE_MAX_DEG_S)
-        want = qmax
-        if clear is not None:
-            # The pitch left before the margin: clearance over the arm
-            # from the main wheels to the lowest aft part, closed in
-            # ROTATE_CLOSE_S.
-            left = (clear - cfg.TAIL_CLEARANCE_M) / self.tail_arm
-            want = gd.clamp(left / cfg.ROTATE_CLOSE_S, -qmax, qmax)
-            if clear < cfg.TAIL_CLEARANCE_M and not self.clear_logged:
+        if clear is not None and clear < cfg.TAIL_CLEARANCE_M:
+            if not self.clear_logged:
                 self.log.event(ut, "tail clearance %.2f m at %.1f deg of "
                                "pitch: the nose stops" % (clear,
                                                           math.degrees(theta)))
                 self.clear_logged = True
-        if theta >= target:
-            want = min(want, 0.0)
-        # The elevator integrates the rate error: on the wheels the nose
-        # gear holds the nose down and no authority figure says by how much
-        # (kRPC's, the cockpit's wheel alone, asked 0.02-0.05 and the nose
-        # never moved, LOG17740), so the input ramps -- full travel in
-        # ROTATE_CLOSE_S for an error of the full rate -- until the nose
-        # moves as asked.
-        self.rot_u = gd.clamp((self.rot_u or 0.0) + (want - q) / qmax
-                              / cfg.ROTATE_CLOSE_S * dt, -1.0, 1.0)
-        # ... and a proportional term, full travel for an error of the full
-        # rate: the integral alone let the nose fall at 50 deg/s once it
-        # had wound back (LOG17741).
-        self.plane.pitch_override = gd.clamp(self.rot_u + (want - q) / qmax,
-                                             -1.0, 1.0)
-        self.rot_pitch = max(self.rot_pitch or 0.0, theta) \
-            if want > 0 else theta
-        return min(target, self.rot_pitch)
+            self.rot_pitch = min(self.rot_pitch, theta)
+        else:
+            self.rot_pitch = min(target, self.rot_pitch + math.radians(
+                cfg.ROTATE_RATE_MAX_DEG_S) * dt)
+        return self.rot_pitch
 
     def clearance(self, agl):
         """The lowest non-wheel part's height above the ground (m): its
@@ -695,11 +655,8 @@ class ReconPilot:
         normal = max(1.0, gd.normal_g_budget(g_line, axial))
         if gforce > g_line:
             normal = max(1.0, normal * g_line / gforce)
-        pcfg = self.plane.cfg
-        pcfg.TURN_MAX_G = normal
-        pcfg.MAX_PITCH_RATE_DEG_S = min(
-            15.0, math.degrees((normal - 1.0) * gd.G0 / max(speed, 50.0))
-            + 1.0)
+        # The pitch rate the load allows: (n - 1) g / V.
+        q_max = (normal - 1.0) * gd.G0 / max(speed, 50.0)
 
         heat_thr = gd.heat_throttle(hfrac, hrate, cfg.HEAT_MAX,
                                     cfg.HEAT_LOOKAHEAD_S, cfg.HEAT_BAND)
@@ -727,28 +684,14 @@ class ReconPilot:
             if not ground and agl > 3.0:
                 self.airborne = True
             if not self.airborne:
-                # Nose up to the rotation angle as early as it can be: the
-                # rotation (at the pitch-rate cap) starts so that it ends as
-                # the speed reaches lift-off.
+                # Nose up to the rotation angle: the rotation (at its rate)
+                # starts so that it ends as the speed reaches lift-off.
                 lead = self.alpha_rot / math.radians(
-                    pcfg.MAX_PITCH_RATE_DEG_S) * max(self.accel, 0.0)
-                pitch_hold = (self.alpha_rot
-                              if speed >= self.v_liftoff - lead else 0.0)
-                # The rotation on the elevator outright, full up until the
-                # nose is nearly there: the loop's input cap rotated it at
-                # half stick, 2 deg by 75 m/s, balanced on the mains, and it
-                # rolled over (LOG17737).
-                # Never a non-wheel part onto the runway.  The rotation is
-                # flown as a pitch rate on the elevator outright: the rate
-                # that brings the lowest part's clearance (measured each
-                # tick) down to TAIL_CLEARANCE_M in ROTATE_CLOSE_S, never
-                # past ROTATE_RATE_MAX_DEG_S, and nothing once it is there.
-                # Full stick rotated 15 deg in 1.6 s and the nozzle struck
-                # (LOG17739); the loop's input cap, 2 deg by 75 m/s
-                # (LOG17737).
-                self.rotate(ut, pitch_hold, theta_now, agl, dt)
-                self.plane.ground_pitch_integral = bool(pitch_hold)
-                if pitch_hold and not self.rotating:
+                    cfg.ROTATE_RATE_MAX_DEG_S) * max(self.accel, 0.0)
+                want = (self.alpha_rot
+                        if speed >= self.v_liftoff - lead else 0.0)
+                pitch_hold = self.rotate(ut, want, theta_now, agl, dt)
+                if want and not self.rotating:
                     self.rotating = True
                     self.log.event(ut, "rotate at %.0f m/s (lift-off %.0f, "
                                    "lead %.0f)" % (speed, self.v_liftoff, lead))
@@ -757,14 +700,11 @@ class ReconPilot:
                     1.0, agl / 300.0)
                 gamma_cmd = max(gamma_cmd, math.radians(5.0))
                 bank_cap = math.radians(5.0) if agl < 100 else bank_cap
-                self.plane.ground_pitch_integral = False
-                if agl < cfg.CLEAR_UNTIL_AGL_M:
-                    # Just off: the same clearance watch, holding the pitch
-                    # the rotation reached.
-                    pitch_hold = self.rotate(ut, self.rot_pitch, theta_now,
+                if agl < cfg.CLEAR_UNTIL_AGL_M and self.rot_pitch is not None:
+                    # Just off: the same clearance watch.
+                    pitch_hold = self.rotate(ut, max(self.rot_pitch,
+                                                     theta_now), theta_now,
                                              agl, dt)
-                else:
-                    self.plane.pitch_override = None
                 if agl > cfg.GEAR_UP_AGL_M:
                     self.vessel.control.gear = False
                     self.enter(OUT, ut, "gear up at %.0f m, %.0f m/s"
@@ -902,14 +842,18 @@ class ReconPilot:
         if hfrac >= cfg.HEAT_NO_DESCENT and throttle <= 0.0 and \
                 self.state in (OUT, HOME):
             gamma_cmd = max(gamma_cmd, 0.0)
-        plane = self.plane
         theta = math.radians(pitch or 0.0)
         if pitch_hold is not None:
             pitch_cmd = pitch_hold
         else:
-            step = math.radians(cfg.PITCH_STEP_DEG)
+            # The flight-path error into attitude, never further from the
+            # present pitch than a second of the load's pitch rate.
+            step = min(math.radians(cfg.PITCH_STEP_DEG), q_max)
             pitch_cmd = theta + gd.clamp(gamma_cmd - gamma, -step, step)
-        plane.target = [bank, pitch_cmd, course]
+        ap = self.ap
+        ap.target_pitch = math.degrees(pitch_cmd)
+        ap.target_heading = math.degrees(course) % 360.0
+        ap.target_roll = math.degrees(bank)
         c = self.vessel.control
         if abs(throttle - self.throttle) > 0.005 or (
                 throttle in (0.0, 1.0) and throttle != self.throttle):
@@ -917,7 +861,6 @@ class ReconPilot:
             self.throttle = throttle
         if brakes:
             c.brakes = True
-        plane.run_fly(ut)
         if cfg.RUN_TIME_S > 0 and ut - self.start_ut >= cfg.RUN_TIME_S:
             self.finish("run time")
         deg = math.degrees
@@ -989,7 +932,7 @@ class ReconPilot:
             pass
         if self.state not in (STANDBY,):
             try:
-                self.plane.hand_back(ut)
+                set_autopilot_engaged(self.ap, False)
                 self.vessel.control.throttle = 0.0
             except Exception:                           # noqa: BLE001
                 pass
@@ -1000,11 +943,10 @@ class ReconPilot:
         if self.rpc is not None:
             self.log.event(ut, self.rpc.report())
         self.log.event(ut, "shutdown: %s" % reason)
-        for g in (self.gui, self.plane.gui):
-            try:
-                g.close()
-            except Exception:                           # noqa: BLE001
-                pass
+        try:
+            self.gui.close()
+        except Exception:                               # noqa: BLE001
+            pass
 
 
 def run(conn, cfg, log, autostart=False):

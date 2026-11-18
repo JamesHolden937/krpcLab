@@ -63,7 +63,7 @@ WRITE_STEP = 0.001
 
 
 class AirplanePilot:
-    def __init__(self, conn, cfg, log, headless=False):
+    def __init__(self, conn, cfg, log):
         self.conn = conn
         self.cfg = cfg
         self.log = log
@@ -102,17 +102,6 @@ class AirplanePilot:
         self.prop_lines = []
         self.lines = []
         self.start_ut = None
-        # A pilot flying this one may let the pitch integrate on the
-        # ground (recon's rotation: the elevons must push until the nose
-        # is up, which a proportional term alone does not).
-        self.ground_pitch_integral = False
-        # A pilot flying this one may set the pitch input outright (recon's
-        # rotation: full up until the nose is up); None: the loop flies it.
-        self.pitch_override = None
-        # A pilot flying this one may leave roll and yaw alone on the
-        # wheels (recon's measurement of whether its ground roll's swings
-        # are the airframe's or this loop's).
-        self.ground_roll_yaw_off = False
         ut = self.sc.ut
         log.event(ut, "vessel=%s parts=%d" % (self.vessel.name,
                                                len(self.vessel.parts.all)))
@@ -128,7 +117,6 @@ class AirplanePilot:
         self.air_flight = self.vessel.flight(
             self.sc.ReferenceFrame.create_hybrid(
                 position=body.reference_frame, rotation=self.vf))
-        # headless: flown inside another pilot (recon), whose panel is drawn.
         self.gui = ControlPanel(conn, "AIRPLANE", "START", ACCENT_AIRPLANE, [
             choice("mode", "", MODES, cfg.MODE),
             toggle("prop", "prop plane", cfg.PROP_PLANE),
@@ -136,7 +124,7 @@ class AirplanePilot:
             field("rpm_pitch", "pitch rate limit (RPM)", cfg.PITCH_RATE_RPM),
             field("rpm_roll", "roll rate limit (RPM)", cfg.ROLL_RATE_RPM),
             field("rpm_yaw", "yaw rate limit (RPM)", cfg.YAW_RATE_RPM),
-        ], draw=not headless)
+        ])
 
     # -- takeover -----------------------------------------------------------
     def take_over(self, ut):
@@ -473,9 +461,6 @@ class AirplanePilot:
             ring = self.ringing[i]
             kp, ki = kp * ring.mult, ki * ring.mult
             kps.append(kp)
-            if i == 0 and self.pitch_override is not None and not active[0]:
-                out.append(law.clamp(self.pitch_override, -1.0, 1.0))
-                continue
             if active[i] and not constant:
                 # The player flies the axis; the hold keeps only its trim.
                 out.append(self.loops[i].step(want[i], rate[i], kp, ki, dt,
@@ -490,15 +475,12 @@ class AirplanePilot:
             # tail wheel it would wind nose-up all down the runway (+0.13
             # by 41 m/s, LOG15423) and pitch the plane up at lift-off.
             u = self.loops[i].step(want[i], rate[i], kp, ki, dt, slew=slew,
-                                   integrate=not (ground and i == 0)
-                                   or self.ground_pitch_integral,
+                                   integrate=not (ground and i == 0),
                                    weight=cfg.RATE_SETPOINT_WEIGHT)
             if ring.update(ut, u, dt):
                 self.log.event(ut, "%s ringing: gain x%.3f" % (AXES[i],
                                                                ring.mult))
             out.append(law.clamp(u - s, -1.0, 1.0) if active[i] else u)
-        if ground and self.ground_roll_yaw_off:
-            out[1] = out[2] = 0.0
         self.command(out)
         # The input this tick flies until the next: ours, the player's stick
         # and the trim (KSP adds all three).
