@@ -2,52 +2,43 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
-## 2026-11-18 late afternoon: boosterland -- constants audit; legs on fin2; the coast's RCS limit cycle traced to the deadband
+## 2026-11-18 evening: boosterland -- coast steering fixed at its source (lift probe + solve root); new fin2 separation; median miss ~6 m
 
-State: defaults fingerprint changed (LEG_CLEARANCE_MARGIN_M and TOUCHDOWN_BACKSTOP_SPEED deleted; read it off the next
-log's `config:` line). main committed through c9fa8d3 + docs + this handoff. **Branch `band` (worktree `.wt-band`,
-commit 85ce0c3): the coast deadband fix, WIP, untested, unflown -- not merged.** Farm stopped (the user stopped the
-session mid-batch, 16:20). howItWorks.pdf (boosterland) still stale. `docs/krpcFeatureRequests.md`,
-`tools/instancebench.py`, `.wt-pytune`, `.claude/worktrees/part-prune-*` are not ours.
+State: **defaults fingerprint b3480ed9.** main committed through 0206e9d + this handoff (not pushed). Farm up, idle.
+howItWorks.pdf (boosterland) stale. `docs/krpcFeatureRequests.md`, `tools/instancebench.py`, `.wt-pytune`,
+`.claude/worktrees/part-prune-*` are not ours. `.wt-band` worktree: merged, can be removed.
 
-**Done:**
-1. **Audit for fitted constants** (the user asked first thing): `config.py` and every numeric literal in
-   autoland/guidance/trajectory/environment/telemetry/proximity and the common modules they use. Nothing fitted to one
-   craft shapes the nominal flight. Two leftovers that acted on every landing are replaced (c9fa8d3):
-   - `LEG_CLEARANCE_MARGIN_M` (0.5 m padding under the bounding box) -> `Telemetry.set_feet`: the legs' lowest
-     `Leg.contact_position` (read in `read_landing_limits`), clearance = max(box tail, feet).
-   - `TOUCHDOWN_BACKSTOP_SPEED` (15 m/s) -> the weakest touching part's crash tolerance (`touchdown_limit[0]`, else
-     KSP's default 9).
-   Left as allowed (guards/numerics): the 20 m/s floor under aero probes (open, low value), roll gate +5/-1 deg,
-   `GEAR_DEPLOY_ALT_M` backstop, `SEPARATION_MAX_COAST_S`, `TOUCHDOWN_ALT_M` 0.2. `docs/boosterland/constants.md`
-   updated; boosterland/CLAUDE.md's attitude paragraph corrected (auto-tune on, RollTune deleted in 67ad1f3).
-2. **`saves/qs_finbooster2_legs`** (the user: fin2 has no legs, attach some to test the leg code): six LT-2s copied from
-   qs_heavy onto EnginePlate4, r 2.70, y -31.77; `splicebooster.py --legs-from` (saves/README.md has the command).
-3. **legs-1118** (`logs/rot-legs-1118.txt`, LOG17837-17854, 18 of 24 flown, one default arm with DIAG_BURN, both
-   saves, stopped by the user -- partial, not read beyond this): fin2 9 flights, legs 9; legs landed 2 (4 m/4.0 m/s,
-   21 m/3.4), destroyed 3; most end "flying" = ran dry (item 2).
-   **Leg clearance looks wrong:** on the legged save it reads 19.42 at connect (whole stack), 15.6-15.7 in the coast
-   (box), then **13.4-13.8 at gear down ("feet")** -- 2 m *less* than the box although the code takes the max. So at
-   that tick the box itself read lower (legs deploying in the box?) or the vessel frame is not CoM-centred for
-   contact_position. Read LOG17839/17844/17846 around 3720 s and find out before trusting it. With the hovering
-   suspicion: a too-small clearance means the burn thinks it is 2 m higher than it is -> hits harder.
+**Result: nsep-1118** (`logs/rot-nsep-1118.txt`, LOG17927-17950, 24 flights, defaults, 12 qs_finbooster2 + 12 _legs, the
+new save): miss median ~6 m (fin2 ~5, legs ~8), 20 of 24 within 36 m, outliers 135/187 m (LOG17937, LOG17942 -- read
+why next), 18 of 24 "landed" mostly at 1-4 m/s, none ran dry. Coast RCS spend median 1.2 t (0.73-2.04) against ~2.5
+(0.7-4.8) in band-1118/fp-1118.
+
+**What was wrong (the coast's 0.7-5 t RCS limit cycle), in order found:**
+1. `band` (merged, 85ce0c3 + ca2d6af): the deadband now measures the *unsteered* prediction's jitter
+   (`env.unsteered`); band fell to 1-3 m but the toggle stayed (band-1118, 18 of 24 flown -- killed by my farmlaunch
+   wrapping, see trap). Kept: it is the right series for the band.
+2. `sw=` on the coast line (which return `solve_steer` took). sw-1118 (6): every kept command was the 0.5x retry,
+   still +80..+234 m past a -205 m miss; other ticks `worse` -> 8 <-> 0 deg. Fix aed89e1: `verified()` finds an
+   overshooting command's root by false position (`STEER_ROOT_STEPS` 2, numerics). fp-1118 (24): 814 accepted v 26
+   worse -- but spend unchanged, because:
+3. **The lift probe read the fins' deflection** (4a09ace): `probe_lift_slope` tilts the vessel to the commanded angle
+   (>= 1 deg) and divides the side force by q a|a|; the force includes the fins as deflected now (saturated, flipping);
+   at ~1 deg it swamped the lift: `cla` -3800 <-> -225 tick to tick (LOG17905), command 0.8 <-> 7 deg. Now probed at
+   +aoa and -aoa, differenced: the deflection cancels. Flown in asc-1118 and nsep-1118 (the results above).
+4. Leg clearance "2 m low at gear down" (old item): **not a bug** -- the box clearance shrinks with propellant burned
+   (CoM moves to the engines): coast -0.2..-0.4 m for 1-5 t, burn ~-1.8 m for ~25 t; `legs=-1.4` at contact = 1.19 m
+   leg travel compressed. Stale only from ignition to gear down (re-read 5 s before contact). Closed.
 
 **Open, in order:**
-0. **The coast's RCS limit cycle (the user's priority) -- cause found, fix unflown.** Not the attitude loop: the
-   commanded aoa toggles ~10 deg <-> 0 every ~6 s (LOG17812 3640-3688: at 0 the miss is -255 m, at 10 deg +110). The
-   deadband `env.miss_band` is the jitter of `self.prediction`, which in the coast is the *steered* prediction; every
-   flip of the command jumps it ~365 m, the band swells past the 255 m miss, `solve_steer` returns zero ("already on
-   the pad"), the next tick steers again. The nose chases each 10 deg step saturated with the valve open = the
-   0.65-5.2 t. Branch `band`: `solve_steer` stores the zero-angle prediction as `env.unsteered`; the jitter is fed
-   from it in the coast; the coast line logs `band=`. Next: merge `band` into main, run the suite (farm down),
-   restart the farm, fly ~12 a side on qs_finbooster2 (+ the legs save), read `band=` against |miss| and the coast's
-   spend (`ascent/tools/budgetcheck.py`, "coast spent"). Also check the solve then settles at ~7 deg rather than
-   toggling: if it still bang-bangs, the quadratic per_square model vs the verified() halving is next.
-1. Leg clearance at gear down (item 3 above).
-2. fin2 runs dry (carried; the user said re-fly the ascent later, not now).
-3. Carried from the morning section: E bias ~-36 m, ratio outliers, howItWorks.pdf, DIAG_DRAG.
-4. Older carried items (the 11-14 boostback oscillation / roll latch / gimbalTorqueFix, the 11-13 landing-burn
-   margins, PITCH_YAW_TUNE): journal.md, "Former handoff sections (moved 2026-11-18)" at its top.
+1. Read the two outliers (LOG17937 135 m E+142, LOG17942 187 m E+192, both long east): logsum --trace.
+2. Re-fly the comparison with more flights only if a change is proposed; E bias now: read predvsland on nsep-1118.
+3. Coast spend 0.7-2 t remains: is it the flip (17 s) or the hold? budgetcheck splits only coast/burn.
+4. howItWorks.pdf regenerate; `DIAG_DRAG` keep/delete; old items in journal.md.
+
+**Traps paid for:** never wrap brot.sh in `farmlaunch` yourself (`detachjob start N -- ./boosterland/tools/brot.sh`):
+FARMLAUNCH set skips farmGuard's `--started-glob`, brot prints nothing, killed at 601 s mid-flight. The offline suite
+is refused by a hook while the farm is up: stop.sh, suite, start.sh. A probe through `simulate_aerodynamic_force_at`
+includes the control surfaces' *current* deflection -- difference mirrored probes.
 
 ## 2026-11-18 morning: boosterland -- back on qs_finbooster2; brake settle read from the game; BURN_LIFT promoted
 

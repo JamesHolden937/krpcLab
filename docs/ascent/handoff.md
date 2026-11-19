@@ -2,6 +2,14 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
+## 2026-11-18 evening: ascent -- re-flown on the corrected budget; new fin2 separation
+
+asc-1118 (`logs/rot-asc-1118.txt`, 6 x `qs_stack_fin`, `HANDOFF=booster,SEP_SAVE=fin2sep`): separations 18.5-19.0 km
+(one 20.2), 866-874/440-456 m/s, 166-169 t propellant, predicted 21.5-23.4 t at touchdown (reserve ~21); boosters
+landed 2-96 m (LOG17921-17926), finishing at 21.5-23.4 t over dry -- the budget's end state matches. budgetcheck: coast
+mass flown ~3 t above the budget's (boostback pessimistic). ksp3's (LOG17918) is the new `qs_finbooster2`
+(saves/README.md). Open: the boostback's ~3 t pessimism; landing-burn Isp (295 budgeted, ~307 flown).
+
 ## 2026-11-18 afternoon: ascent -- the separation budget measured against 30 fin2 flights; its error was the fall's drag
 
 State: ascent defaults unchanged; boosterland defaults fingerprint unchanged (080e48b5). Committed on main, pushed.

@@ -6,8 +6,8 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 pm | coast RCS limit cycle = deadband fed by the steered prediction; fix on branch `band` (unflown); leg clearance at gear down reads 2 m low on qs_finbooster2_legs |
-| ascent | docs/ascent/handoff.md | 2026-11-18 | separation budget's fall drag fixed (843438e); re-fly ascent for a new fin2 separation (deferred by the user) |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 eve | coast steering fixed (mirrored lift probe, solve root); new fin2 separation; nsep-1118 median miss ~6 m, 18/24 landed; next: read 2 outliers |
+| ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
 | propPitch | docs/propPitch/handoff.md | 2026-11-04 | tip limit + stop-when-still defaults; the user flies it live |
