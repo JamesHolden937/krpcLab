@@ -26,14 +26,19 @@ short, steering recovered it to 45 m by 11 km. Below 9 km cmd 17-18 deg = `can`,
 (`in=+0.51/+1.00`, sat=1.00), trk 0.90 -> 0.57; at 7.7 -> 7.0 km the miss jumped 203 -> 1370 m and stayed. So: `can`
 overstated what the fins could hold (the probe read saturated fins) -> asked for lift it could not make -> short.
 
-**DONE, UNREAD: detachjob `mirror1118`** (19:10-19:21, exit 0; farm stopped after): `SAVES_LIST="qs_finbooster2 qs_finbooster2_legs"
-LAPS=2 brot.sh mirror-1118 d:` -> `logs/rot-mirror-1118.txt`, 24 flights on fb61b3b (mirrored hold probe), defaults.
-Read: miss median and outliers v nsep-1118 (~6 m, 20/24 within 36 m); `can` v `hold` and `trk` below 10 km (can
-should no longer exceed what is held with sat=1.00; can should not bounce tick to tick); coast spend (budgetcheck).
-If no worse: tell the user it is ready to fly live. If worse: find which probe term moved (log `torque limit` lines).
+**mirror-1118 READ (2026-11-18 night): not comparable with nsep-1118, the arms differ in pacing.** `logs/rot-mirror-1118.txt`,
+LOG17953-17976, 24 flights on fb61b3b, pure defaults (fingerprint a68b023d). nsep-1118 flew `--set
+LOOP_PACING_GAME_TIME=True AIM_BIAS_EAST_M=0.0` (fingerprint b3480ed9). Miss median ~20 m (nsep ~6), 14/24 within 36 m
+(nsep 20/24), worst 103 m, 2 destroyed (LOG17953, LOG17968). The loss is upstream of the coast: 9/24 boostbacks exit
+early (ut ~17030, miss 61-212 m, long +13..+196) against 3/24 in nsep, and those 9 are the long landings (E +34..+113).
+The hold probe is not used in boostback, so the mirror fix cannot be blamed for these. The likely cause is wall-clock
+pacing (the default, and what the user flies live). The fingerprint moved too, so check why first (`git log` on configs
+after b3480ed9).
 
 **Next, in order:**
-1. Read mirror-1118 (above). Then the user flies live.
+1. Re-fly mirror with nsep's settings (`--set LOOP_PACING_GAME_TIME=True`) to isolate the probe fix. Separately, read
+   why boostback exits early under wall-clock pacing (LOG17970, LOG17973 v LOG17959): this matters live.
+   Test LOG17952's state: would the mirrored probe have given `can` 9-12 deg rather than 17-18?
 2. Old items from the evening section below (outliers LOG17937/17942, coast spend split, howItWorks.pdf, DIAG_DRAG).
 
 **Trap:** never compare budget/q across probes at different q -- the fixed term divides by q. Compare torque (N m).
