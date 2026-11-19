@@ -590,6 +590,7 @@ class Autoland:
         self.flip_start = None          # (ut, mass) at the first flip tick
         self.flip_u = []                # throttles the law chose
         self.coast_settled = False      # the coast's flip has come round
+        self.coast_inside_since = None  # ut the error last came inside
         self.trim_active = False        # COAST_RCS_TRIM: the flip has settled
         self.trim_pushing = False       # ... and it is translating now
         self.trim_sign = 1.0            # ... -1 once the check flipped it
@@ -1473,9 +1474,21 @@ class Autoland:
             self.run_late_deploy(snap)
             self.extra_lines.append("brakes  : %8.0f deg" % (
                 self.deploy_angle if self.deploy_angle is not None else 0.0))
-        if (not self.coast_settled and self.rcs_limits.measured
-                and 0.0 <= self.pointing_error(snap)
-                <= self.rcs_limits.RCS_ERROR_ON_DEG):
+        # Settled = inside the relay's on-angle for RCS_SETTLE_S (SETTLE_LAGS
+        # measured nose lags) without leaving it.  On the first tick inside,
+        # a nose swinging through at 47 deg/s read "settled" at 17.5 deg
+        # (live LOG17979): the trim pushed and the fins were measured through
+        # 30 s of oscillation.
+        error = self.pointing_error(snap)
+        inside = (self.rcs_limits.measured
+                  and 0.0 <= error <= self.rcs_limits.RCS_ERROR_ON_DEG)
+        if not inside:
+            self.coast_inside_since = None
+        elif self.coast_inside_since is None:
+            self.coast_inside_since = snap.ut
+        if (not self.coast_settled and inside
+                and snap.ut - self.coast_inside_since
+                >= self.rcs_limits.RCS_SETTLE_S):
             self.coast_settled = True
             self.log.event(snap.ut, "coast settled: err %.1f deg after %.1fs"
                            % (self.pointing_error(snap),
@@ -1650,7 +1663,11 @@ class Autoland:
             # full-brake curve has to wait for the coast's descent attitude
             # and the re-sweep taken there: measured mid-flip it read 0.92 x
             # the closed brakes' drag (LOG11855) and the solve flew on it.
+            # ... and for the coast to have settled: the measurement holds
+            # the fins neutral, and through a swing they are the attitude's
+            # authority (live LOG17979: opened mid-swing, 25 -> 75 deg).
             if not (self.env.reswept_ut is not None
+                    and self.coast_settled
                     and self.env.in_descent_configuration(snap.velocity,
                                                           snap.direction)):
                 return
