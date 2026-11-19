@@ -262,9 +262,9 @@ def stop_reasons(inp):
     last = inp.get("last_assistant_message") or last
     if "narrow mechanical relay" in first:
         return []
-    tail = last.strip().splitlines()[-1].strip() if last.strip() else ""
-    if tail.endswith("?"):
-        return []            # a question to the user: theirs to answer
+    paras = [x for x in re.split(r"\n\s*\n", last.strip()) if x.strip()]
+    if paras and re.search(r"\?\s*(\*\*)?\s*$", paras[-1], re.M):
+        return []            # the turn ends on a question to the user: theirs to answer
     if detachjob_running() or batch_holder():
         return []            # waiting on a batch is the procedure (relay armed, clear)
     why = []
