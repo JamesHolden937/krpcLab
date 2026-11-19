@@ -13,7 +13,13 @@ stdin, prints a hook JSON reply (or nothing), always exits 0.
             tree while a farm batch flies it (the batch rebuilds the bundle from
             the tree: an edit mid-batch splits it into two experiments).
   notice    UserPromptSubmit / PostToolUse(Bash): a new .git-bundle-error.log
-            (the post-commit bundle or background suite failed) is reported once.
+            (the post-commit bundle or background suite failed) is reported once;
+            and the CONTEXT LIMIT: once the conversation's context (the last
+            assistant turn's input + cache tokens, read from the transcript) is
+            over CONTEXT_LIMIT, a hard order to write the handoff and clear,
+            repeated every CONTEXT_REPEAT_S until it is done (the user,
+            2026-11-18: a judgement call to skip the clear "while the context is
+            small" was skipped at 205k).
 """
 import json
 import os
@@ -27,6 +33,8 @@ import batchHooks as bh  # noqa: E402
 
 LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "farmlaunch-kspfarm.lock")
 CODE_EXT = (".py", ".sh", ".cs", ".cfg", ".craft", ".sfs")
+CONTEXT_LIMIT = int(os.environ.get("KRPCLAB_CONTEXT_LIMIT", "100000"))   # tokens
+CONTEXT_REPEAT_S = 600          # the order is repeated this often until cleared
 
 
 def reply(event, **kw):
@@ -114,18 +122,64 @@ def edit(inp):
          % (h[3][:120], h[1]))
 
 
-def notice(inp):
+def context_tokens(path):
+    """The context the last assistant turn was sent with, from the transcript
+    (input + cache read + cache creation), or None."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 4_000_000))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if '"usage"' not in line:
+            continue
+        try:
+            u = json.loads(line).get("message", {}).get("usage")
+        except ValueError:
+            continue
+        if u:
+            return (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+                    + u.get("cache_creation_input_tokens", 0))
+    return None
+
+
+def context_order(inp):
+    tokens = context_tokens(inp.get("transcript_path") or "")
+    if tokens is None or tokens < CONTEXT_LIMIT:
+        return None
+    stamp = os.path.join(ROOT, "logs", ".ctxOrder-%s" % (inp.get("session_id") or "x"))
+    try:
+        if time.time() - os.path.getmtime(stamp) < CONTEXT_REPEAT_S:
+            return None
+    except OSError:
+        pass
+    os.makedirs(os.path.dirname(stamp), exist_ok=True)
+    with open(stamp, "w"):
+        pass
+    return ("HARD RULE -- CONTEXT LIMIT: this conversation's context is %dk tokens, over the %dk limit "
+            "(tools/claudeHooks.py, the user 2026-11-18). Not a judgement call. Finish only the step in hand "
+            "(if you are answering the user, answer first), then: (1) rewrite the handoff of every pilot "
+            "touched (docs/<pilot>/handoff.md + HANDOFF.md's row) with the results so far, the running job "
+            "and what to do with its outcome; (2) commit; (3) if a batch is flying or about to be: launch "
+            "it detached and arm the relay task (~/.claude/docs/autoContinue.md steps 2-4); (4) clear self "
+            "(mcp__ccd_session_mgmt__clear_session \"self\"). Do not start new analysis or another "
+            "batch in this context." % (tokens // 1000, CONTEXT_LIMIT // 1000))
+
+
+def bundle_error():
     log = os.path.join(ROOT, ".git-bundle-error.log")
     stamp = os.path.join(ROOT, "logs", ".bundleErrorSeen")
     try:
         t = os.path.getmtime(log)
         if os.path.getsize(log) == 0:
-            return
+            return None
     except OSError:
-        return
+        return None
     try:
         if os.path.getmtime(stamp) >= t:
-            return
+            return None
     except OSError:
         pass
     os.makedirs(os.path.dirname(stamp), exist_ok=True)
@@ -133,10 +187,16 @@ def notice(inp):
         pass
     with open(log, errors="replace") as f:
         tail = "".join(f.readlines()[-15:])
-    reply(inp.get("hook_event_name") or "PostToolUse",
-          additionalContext="The post-commit hook's bundle build or background offline suite FAILED "
-          "(%s, %s). Fix it before the next batch: every flight flies dist/krpcLab.py. Tail:\n%s"
-          % (log, bh.hhmm(t), tail))
+    return ("The post-commit hook's bundle build or background offline suite FAILED "
+            "(%s, %s). Fix it before the next batch: every flight flies dist/krpcLab.py. Tail:\n%s"
+            % (log, bh.hhmm(t), tail))
+
+
+def notice(inp):
+    parts = [m for m in (bundle_error(), context_order(inp)) if m]
+    if parts:
+        reply(inp.get("hook_event_name") or "PostToolUse",
+              additionalContext="\n\n".join(parts))
 
 
 if __name__ == "__main__":

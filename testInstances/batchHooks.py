@@ -209,8 +209,8 @@ NEXT = """NOW (batch over; token cost is calls x context, so a fresh context per
   3. Commit.
   4. Next batch: launch it detached (farmlaunch from a session prints the steps), then clear self.
      No next batch: clear self (mcp__ccd_session_mgmt__clear_session "self") with a one-line summary.
-     Skip the clear only while the user is mid-conversation (a question or decision open) or the
-     context is still small (under ~100k tokens)."""
+     Skip the clear only while the user is mid-conversation (a question or decision open). Over the
+     context limit (tools/claudeHooks.py CONTEXT_LIMIT) it is not optional: the hook orders it."""
 
 
 # Per pilot: the summary tool that reads a batch's logs (argv + log paths).
