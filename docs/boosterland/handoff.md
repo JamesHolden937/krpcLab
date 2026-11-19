@@ -2,6 +2,34 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
+## 2026-11-18 night (2): boosterland -- live LOG17979 read: flip overshoot, coast oscillation, 1.4 km short (unfixed)
+
+State: defaults b3480ed9, code fb61b3b (mirrored hold probe), nothing changed this session. Farm down.
+mirror-1118 (`logs/rot-mirror-1118.txt`) **still unread** -- read it with the items below.
+
+**LOG17979** (live, FMRS_save_1 'Heavy Shuttle Probe', 274 t, sep 16.5 km M2.75): landed 5.5 m/s 1411 m short, tipped
+(tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
+1. **Boostback flip overshoot:** flip law planned u=0, rcs+wheels 0.056 rad/s^2, 124 deg, turn 12.5 s; it turned in
+   **3.8 s** and "flip done" fired at w=54 deg/s (~10x the modelled authority: aero torque at M2.6/18 km, not in
+   `flip_authority`). `flip_law` (autoland.py ~1368) ends on angle only (`flip_done_deg`), no rate check -> full thrust
+   while spinning -> overshoot (hold 7.6 v cmd 18.6, err 26), settled 4 s later.
+2. **Coast flip back + oscillation:** 955-983 s (18.9-12.5 km) hold 151/56/45/101/68/25/75/37/23/32/4, sat=1.00,
+   w up to 47 deg/s. Overlaps 5 rcs-trim pushes (rcs held open) and the late-brake measurement (open 968, 25 -> 75 deg
+   after) -- that measurement read open = 0.83x closed, so brakes stayed closed (bogus).
+3. **Short:** miss 39 m at 12.2 km (983.0) -> 1047 at 11.5 km (985.0) in one tick, then ~1.5 km to the end (prediction
+   right afterwards); cmd pinned at `can` 12 -> 8 deg. At the jump: "coast nose lag" re-measured 0.08 -> 0.53/0.62 s
+   (used by trajectory.py:628), and an rcs trim push from 977.66 never logged "done" (tr= grew to -0.62/+0.79, held to
+   the burn). Cause not yet traced.
+
+**Next, in order:**
+1. Trace the 983->985 miss jump: replay the predictor at those ticks with nose_lag 0.08 v 0.6 and with/without the trim
+   translation (`boosterland/tools/replay.py`). A prediction error is top priority, fix at source.
+2. Flip: count measured aero torque in the flip authority (probe it, no fitted constant) and end the flip on rate
+   stopped, not angle alone.
+3. Coast: no rcs trim / brake measurement until the attitude has settled; find why the coast loop diverged (sat=1.00
+   for 30 s) -- fix the controller, not a window.
+4. Read mirror-1118 (see section below), then the earlier open items.
+
 ## 2026-11-18 late night: boosterland -- the live "10x less torque" was a misreading; the real fault was the hold probe reading the fins' deflection (fixed, unflown)
 
 State: defaults b3480ed9 unchanged (no config change); code change in `environment.refresh_holdable`, committed, **not flown**.

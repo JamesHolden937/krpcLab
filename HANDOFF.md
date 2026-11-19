@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 night | mirror-1118 worse (~20 m v ~6) but confounded: nsep flew game-time pacing; 9/24 early boostback exits; re-fly with pacing on |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 night | live LOG17979: flip overshoot (aero torque unmodelled, done on angle only), coast oscillation, miss jump 39->1047 m at 11.5 km untraced; mirror-1118 unread |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
