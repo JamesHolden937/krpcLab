@@ -107,6 +107,7 @@ class Telemetry:
         self.log = logbook
         self.surface_altitude_ok = True
         self.leg_clearance = None       # measured once the game will answer
+        self.feet_below = None          # COM to the legs' feet, once read
         self._leg_clearance_attempts = 0
         self._refresh_leg_clearance(0.0)
         flight = vessel.flight(frame)
@@ -219,8 +220,9 @@ class Telemetry:
         try:
             lower, _upper = self.vessel.bounding_box(self.vessel.reference_frame)
             # +y is through the nose, so the lower corner is the tail.  Deployed
-            # legs are not in the part bounding box, hence the extra margin.
-            clearance = max(0.0, -lower[1]) + self.cfg.LEG_CLEARANCE_MARGIN_M
+            # legs are not in the part bounding box: their feet are read
+            # separately (``set_feet``) and the lower of the two is what touches.
+            clearance = self._lowest(lower)
         except Exception:
             clearance = None
         if clearance is None or not math.isfinite(clearance) \
@@ -237,6 +239,23 @@ class Telemetry:
             self.log.event(ut, "leg clearance %.2f m (COM to feet)" % clearance)
         return clearance
 
+    def _lowest(self, lower):
+        """COM to whatever touches first: the bounding box's tail, or the
+        legs' feet (``Leg.contact_position``) when they reach lower."""
+        clearance = max(0.0, -lower[1])
+        if self.feet_below is not None:
+            clearance = max(clearance, self.feet_below)
+        return clearance
+
+    def set_feet(self, ut, lowest_y):
+        """The legs' lowest foot, ``y`` in the vessel's frame (kRPC's
+        ``Leg.contact_position`` at full extension): from now on the leg
+        clearance is the lower of the feet and the box."""
+        if lowest_y is None or not math.isfinite(lowest_y):
+            return
+        self.feet_below = max(0.0, -lowest_y)
+        self.remeasure_leg_clearance(ut, "feet")
+
     def remeasure_leg_clearance(self, ut, why=""):
         """Re-read the COM-to-feet offset; keep the old one if the box is junk.
 
@@ -248,7 +267,7 @@ class Telemetry:
         """
         try:
             lower, _upper = self.vessel.bounding_box(self.vessel.reference_frame)
-            clearance = max(0.0, -lower[1]) + self.cfg.LEG_CLEARANCE_MARGIN_M
+            clearance = self._lowest(lower)
         except Exception:                                   # noqa: BLE001
             return self.leg_clearance
         if not math.isfinite(clearance) or clearance > self.cfg.LEG_CLEARANCE_MAX_M:

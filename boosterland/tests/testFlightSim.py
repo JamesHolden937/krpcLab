@@ -613,7 +613,7 @@ class TestClosedLoop(unittest.TestCase):
         run.tick()
         log.close()
         self.assertAlmostEqual(run.telemetry.leg_clearance,
-                               vessel.bottom + cfg.LEG_CLEARANCE_MARGIN_M)
+                               vessel.bottom)
         self.assertIn("leg clearance", open(log.path).read())
 
     def test_terminate_button_stops_the_script(self):

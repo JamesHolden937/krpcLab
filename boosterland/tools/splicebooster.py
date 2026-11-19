@@ -24,10 +24,21 @@ LiquidFuel/Oxidizer is filled to the same fraction.
         --stack "~/KSP-Retooled/saves/default/FMRS/before_launch.sfs" \\
         --decoupler Decoupler.3 --mass 99.36 --name "heavy booster" \\
         --state saves/quicksave.sfs -o saves/qs_heavy.sfs
+
+With ``--legs-from`` it instead copies another save's landing legs onto the
+state's own booster (same symmetry, rotations and part modules), attached to
+the part named by ``--legs-on`` at ``--leg-radius`` from the axis and
+``--leg-y`` along it (the root's frame), the state unchanged otherwise:
+
+    ./boosterland/tools/splicebooster.py --legs-from saves/qs_heavy.sfs \\
+        --legs-on EnginePlate4 --leg-radius 2.70 --leg-y -31.77 \\
+        --state saves/qs_finbooster2.sfs -o saves/qs_finbooster2_legs.sfs
 """
 
 import argparse
+import math
 import os
+import random
 import re
 import sys
 
@@ -171,21 +182,112 @@ def other_mass(block):
     return mass
 
 
+def add_legs(args):
+    """``--legs-from``: the source's legs onto the state's active vessel."""
+    src = open(args.legs_from).read().split("\n")
+    active = int(next(l for l in src if l.strip().startswith(
+        "activeVessel = ")).split("=")[1])
+    vs, ve = vessels(src)[active]
+    sblocks = [src[s:e + 1] for s, e in parts_of(src, vs, ve)]
+    legs = [b for b in sblocks
+            if any(l.strip() == "name = ModuleWheelDeployment" for l in b)
+            and any(l.strip() == "name = ModuleWheelSuspension" for l in b)]
+    if not legs:
+        raise SystemExit("no legs in %s" % args.legs_from)
+    kinds = {field(b, "name") for b in legs}
+    if len(kinds) != 1:
+        raise SystemExit("several leg types: %s" % sorted(kinds))
+
+    dst = open(args.state).read().split("\n")
+    active = int(next(l for l in dst if l.strip().startswith(
+        "activeVessel = ")).split("=")[1])
+    ds, de = vessels(dst)[active]
+    dparts = parts_of(dst, ds, de)
+    dblocks = [dst[s:e + 1] for s, e in dparts]
+    hosts = [i for i, b in enumerate(dblocks) if field(b, "name") == args.legs_on]
+    if len(hosts) != 1:
+        raise SystemExit("%d parts named %s" % (len(hosts), args.legs_on))
+    host = hosts[0]
+    taken = {field(b, k) for b in dblocks for k in ("uid", "persistentId", "cid")}
+    first_new = len(dblocks)
+    new_index = list(range(first_new, first_new + len(legs)))
+    rng = random.Random(args.legs_on + args.state)
+
+    def fresh():
+        while True:
+            v = str(rng.randrange(1, 2 ** 32))
+            if v not in taken:
+                taken.add(v)
+                return v
+
+    out = []
+    for k, b in enumerate(legs):
+        x, _y, z = [float(v) for v in field(b, "position").split(",")]
+        az = math.atan2(z, x)
+        r = args.leg_radius if args.leg_radius is not None else math.hypot(x, z)
+        y = args.leg_y if args.leg_y is not None else _y
+        block = []
+        for line in b:
+            key = line.strip().split(" = ")[0] if line.startswith("\t\t\t\t") \
+                and not line.startswith("\t\t\t\t\t") else None
+            if key == "parent":
+                line = "\t\t\t\tparent = %d" % host
+            elif key == "position":
+                line = "\t\t\t\tposition = %r,%r,%r" % (
+                    r * math.cos(az), y, r * math.sin(az))
+            elif key in ("uid", "persistentId", "cid"):
+                line = "\t\t\t\t%s = %s" % (key, fresh())
+            elif key in ("mid", "launchID"):
+                line = "\t\t\t\t%s = %s" % (key, field(dblocks[host], key))
+            elif key == "sym":
+                continue
+            elif key == "srfN":
+                line = "\t\t\t\tsrfN = srfAttach, %d" % host
+            elif key in ("istg", "dstg", "sqor", "sepI", "sidx"):
+                line = "\t\t\t\t%s = %s" % (key, field(dblocks[host], key)
+                                               if key != "sidx" else "-1")
+            block.append(line)
+            if key == "srfN":
+                pass
+        # the leg's symmetry partners, right after sameVesselCollision
+        at = next(i for i, l in enumerate(block)
+                  if l.startswith("\t\t\t\tsrfN = "))
+        block[at:at] = ["\t\t\t\tsym = %d" % j for j in new_index
+                        if j != new_index[k]]
+        out.append(block)
+    last = dparts[-1][1]
+    merged = dst[:last + 1] + [l for b in out for l in b] + dst[last + 1:]
+    with open(args.out, "w") as f:
+        f.write("\n".join(merged))
+    print("%s: %d x %s on %s (part %d) at r %.2f, y %.2f"
+          % (args.out, len(out), kinds.pop(), args.legs_on, host,
+             args.leg_radius if args.leg_radius is not None else float("nan"),
+             args.leg_y if args.leg_y is not None else float("nan")))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--stack", required=True, help="save holding the stack")
+    p.add_argument("--stack", help="save holding the stack")
     p.add_argument("--vessel", default=None,
                    help="the stack's vessel name (default: the active one)")
-    p.add_argument("--decoupler", required=True,
+    p.add_argument("--decoupler",
                    help="part name of the decoupler the booster hangs from")
     p.add_argument("--state", required=True,
                    help="separation save whose active vessel is replaced")
-    p.add_argument("--mass", type=float, required=True,
+    p.add_argument("--mass", type=float,
                    help="booster mass at separation, tonnes")
-    p.add_argument("--name", required=True, help="the new vessel's name")
+    p.add_argument("--name", help="the new vessel's name")
+    p.add_argument("--legs-from", help="save whose active vessel's legs to copy")
+    p.add_argument("--legs-on", help="part name the legs attach to")
+    p.add_argument("--leg-radius", type=float, help="legs' distance from the axis, m")
+    p.add_argument("--leg-y", type=float, help="legs' height in the root's frame, m")
     p.add_argument("-o", "--out", required=True)
     args = p.parse_args(argv)
+    if args.legs_from:
+        return add_legs(args)
+    if not (args.stack and args.decoupler and args.mass and args.name):
+        p.error("--stack, --decoupler, --mass and --name (or --legs-from)")
 
     src = open(os.path.expanduser(args.stack)).read().split("\n")
     if args.vessel is None:

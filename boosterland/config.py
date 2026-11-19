@@ -337,7 +337,6 @@ class Config:
                                             # (vert1-1016: heavy 6/6 at 0.9-8.3 m/s
                                             # on the 2 km prediction +-30 m, v 4/6
                                             # drifting 300-750 m off it)
-    LEG_CLEARANCE_MARGIN_M: float = 0.5     # padding under the bounding box
     LEG_CLEARANCE_MAX_M: float = 100.0      # longer than this is not a booster
     LEG_CLEARANCE_FALLBACK_M: float = 10.0  # used only while the game will not say
     GEAR_DEPLOY_ALT_M: float = 350.0        # backstop only, see below
@@ -350,7 +349,6 @@ class Config:
                                             # coast to time them, then drop
                                             # them this long before touchdown:
     GEAR_MEASURE_TIMEOUT_S: float = 20.0    # a cycle not done by now: untimed
-    TOUCHDOWN_BACKSTOP_SPEED: float = 15.0  # height backstops only below this
     TOUCHDOWN_WATCH_S: float = 8.0          # stay this long after the 2 s
                                             # sign-off to see if it tips
 

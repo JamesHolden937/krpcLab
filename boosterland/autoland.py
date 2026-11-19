@@ -2501,6 +2501,7 @@ class Autoland:
         if not legs:
             self.log.event(snap.ut, "landing limits: no legs read (%s)" % why)
             return
+        self.telemetry.set_feet(snap.ut, min(l["y"] for l in legs))
         try:
             moi = self.vessel.moment_of_inertia
             transverse = min(moi[0], moi[2])
@@ -2595,12 +2596,16 @@ class Autoland:
         centre of mass, offset by a bounding box.  So the burn is flown until
         the game reports the vehicle down; the profile has it at
         the touchdown speed by then.  The other two cases are backstops for a
-        contact that never gets reported.
+        contact that never gets reported, and only while the descent is
+        slower than the weakest touching part survives (faster, the vehicle
+        is not about to be standing on the ground, whatever the height says).
         """
         situation = self.conn.space_center.VesselSituation
         if snap.situation in (situation.landed, situation.splashed):
             return True
-        if abs(snap.vertical_speed) > self.cfg.TOUCHDOWN_BACKSTOP_SPEED:
+        survives = (self.touchdown_limit[0] if self.touchdown_limit
+                    else trajectory.GAME_DEFAULT_CRASH_TOLERANCE)
+        if abs(snap.vertical_speed) > survives:
             # The backstops are height comparisons, and a height is an
             # estimate; a vehicle still descending at hundreds of m/s is not
             # about to be on the ground whatever the number says (LOG5 cut

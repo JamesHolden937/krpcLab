@@ -38,7 +38,7 @@ left and why it is allowed.
 ## Guards, numerics, game and site
 
 Pad coordinates; `AIM_BIAS_*` 0; `SEPARATION_COAST_S` (scan off only) and `SEPARATION_MAX_COAST_S`,
-`BOOSTBACK_MAX_BURN_S`, `GEAR_DEPLOY_ALT_M`, `GEAR_MEASURE_TIMEOUT_S`, `TOUCHDOWN_BACKSTOP_SPEED`,
+`BOOSTBACK_MAX_BURN_S`, `GEAR_DEPLOY_ALT_M`, `GEAR_MEASURE_TIMEOUT_S`, ``,
 `TOUCHDOWN_WATCH_S`, `DEAD_STREAM_*`, `THROTTLE_DIVERGENCE`, `MASS_LOSS_FRACTION` (timeouts and
 backstops); `CLEARANCE_*` (collision geometry); `PREDICT_*`, `DENSITY_SAMPLE_COUNT`, `DRAG_MACH_MAX`,
 `DRAG_CURVE_BINS`, `LOOP_*`, `LOG_INTERVAL_UT`; `TERRAIN_*`, `SOUND_SPEED_FALLBACK_M_S`, KSP's default
@@ -47,7 +47,6 @@ crashTolerance 9; `DEPLOY_MAX_DEG` (the brake law's unit); `ENGINE_AXIS/RING_TOL
 
 ## Still to look at
 
-- `LEG_CLEARANCE_MARGIN_M` 0.5: padding from the bounding box to the feet. Measure the feet (the legs'
-  contact points) instead.
+- (done 2026-11-18: `LEG_CLEARANCE_MARGIN_M` replaced by the legs' `Leg.contact_position`; `TOUCHDOWN_BACKSTOP_SPEED` by the weakest touching part's crash tolerance)
 - The 20 m/s floor under every aerodynamic probe (`environment.py`): below it a probe is noise; tie it to
   the probe's own resolution.

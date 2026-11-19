@@ -1220,6 +1220,7 @@ class TestTouchdownBackstop(unittest.TestCase):
             class space_center:
                 VesselSituation = Situations
         run.conn = Conn
+        run.touchdown_limit = None      # the game's default tolerance
         return run
 
     def snap(self, speed, vertical_speed, situation="flying"):
