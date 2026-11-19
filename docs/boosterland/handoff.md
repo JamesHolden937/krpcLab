@@ -2,6 +2,31 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
+## 2026-11-18 night (5): boosterland -- COAST_RATE_CAP A/B (cap1118b): no gain at the pad, cap sized 10x too small
+
+State: COAST_RATE_CAP=True is still the default (fingerprint 9e37f8ac), unflown live. Committed. Farm up (6).
+start.sh now relaunches an instance that hangs at boot (c004501/c30334d; the first launch, cap1118, lost to a ksp5 hang).
+
+**Batch cap1118b** (LOG17991-18014, logs/rot-cap1118.txt, qs_fin2live1118, 12 cap / 12 nocap):
+- pad distance: cap mean 496 m (251-918), nocap 405 m (154-780); destroyed cap 2 (LOG17997 7.6, LOG18004 15.8 m/s),
+  nocap 3 (LOG17993, LOG18005, LOG18014). Every flight lands EAST of the pad (E +150..+880), none short.
+- coast swing, peak hold= after the first pass below 20 deg: cap mean 40 deg (11-78), nocap 57 (18-82); ~1.3 sigma.
+  wmax cap 39, nocap 42 deg/s. Coast-end predicted long: cap -463, nocap -408 m.
+- **The cap is 2.4 deg/s** ("coast rate cap 2.4 deg/s (on-angle 0.7 deg)", LOG17992): theta_on = RCS_ERROR_ON_DEG is
+  0.7 deg, so sqrt(2 theta alpha) is far below the 30-48 deg/s the air drives. kRPC brakes always and still loses:
+  the controls are 2-3x weaker than the air's moment, so no rate limit can stop the pendulum.
+- **The farm no longer reproduces the miss it was built for**: coast-end long ~-0.4 km (LOG17986-17990: -1.2 km), and
+  touchdowns go 150-900 m east instead of 1.4 km short. Unknown which change did it (same save, defaults moved by
+  COAST_RATE_CAP only; nocap arm too).
+
+**Next, in order:**
+1. Find why both arms land east 150-900 m: read one nocap log (LOG18003, 180 m; LOG18000, 780 m) from coast end to
+   touchdown with the summary tools: which phase builds the east error, and what the prediction said there.
+2. Decide COAST_RATE_CAP: on this batch it is not better at the pad; delete it unless (1) shows the swing is what
+   drives the east error. A cap from the on-angle is the wrong quantity -- the braking budget is the controls vs the
+   air's moment, not a stop inside the valve angle.
+3. Then the old list below.
+
 ## 2026-11-18 night (4): boosterland -- the coast's overswing is kRPC pumping the air's pendulum; COAST_RATE_CAP (default, unflown)
 
 State: code + config change committed (COAST_RATE_CAP=True, new default fingerprint), **unflown** on farm and live.
