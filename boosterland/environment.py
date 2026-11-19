@@ -750,16 +750,27 @@ class Environment:
                   math.radians(1.0))
         if aoa <= 0.0:
             return None
-        tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),
-                                  vec.scale(side, math.sin(aoa))))
-        turned = vec.rotation_onto(rotation, nose, tilted)
-        if turned is None:
-            return None
-        force = self._probe_force(position, velocity, turned)
-        if force is None:
-            return None
+        # Mirrored: the vessel at +aoa and at -aoa, differenced.  The game's
+        # force includes the fins as they are deflected *now*, and in the coast
+        # the attitude loop holds them saturated, flipping sign every second
+        # or two; that force does not scale with the angle, so over a|a| at
+        # ~1 deg it swamped the lift: the slope read -3800 <-> -225 tick to
+        # tick (fp-1118 LOG17905), the solve's command swung 0.8 <-> 7 deg
+        # with it, and the RCS chased the swing.  The angle's lift changes
+        # sign with the angle; the deflection's does not, and cancels.
+        sides = []
+        for sign in (1.0, -1.0):
+            tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),
+                                      vec.scale(side, sign * math.sin(aoa))))
+            turned = vec.rotation_onto(rotation, nose, tilted)
+            if turned is None:
+                return None
+            force = self._probe_force(position, velocity, turned)
+            if force is None:
+                return None
+            sides.append(vec.dot(force, side))
         q = 0.5 * rho * speed * speed
-        return vec.dot(force, side) / (q * aoa * abs(aoa))
+        return (sides[0] - sides[1]) / (2.0 * q * aoa * abs(aoa))
 
     def lift_slope_at(self, speed, altitude):
         """Cl*A per radian squared of *commanded* angle, at this Mach.
