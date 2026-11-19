@@ -23,10 +23,17 @@ stdin, prints a hook JSON reply (or nothing), always exits 0.
             cut work the user wanted finished (the user, 2026-11-18: "only
             triggers after you start a farm batch"; earlier the same day a
             judgement call to skip the clear was skipped at 205k).
+  stop      Stop: refuses to end the turn while work is left (the user, 2026-11-18: "make
+            sure you don't stop when there's work left to do"): tracked changes uncommitted;
+            a batch ended with no handoff committed since; or nothing flying and the turn
+            does not end on a question to the user or a line `DONE: <why nothing is left>`.
+            Never blocks a scheduled relay run or while a detachjob runs (waiting is the
+            procedure); lets the stop through after STOP_MAX_BLOCKS refusals in a row.
 """
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -205,6 +212,99 @@ def notice(inp):
               additionalContext="\n\n".join(parts))
 
 
+STOP_MAX_BLOCKS = 4
+STOP_STATE = os.path.join(ROOT, "logs", ".stopHook.json")
+
+
+def transcript_texts(path):
+    """(first user message text, last assistant text) from the transcript."""
+    first = last = ""
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, TypeError):
+        return first, last
+    def text(e):
+        c = (e.get("message") or {}).get("content")
+        if isinstance(c, str):
+            return c
+        return "\n".join(x.get("text", "") for x in c or () if isinstance(x, dict) and x.get("type") == "text")
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") == "user" and not first:
+            first = text(e)
+        elif e.get("type") == "assistant":
+            t = text(e)
+            if t.strip():
+                last = t
+    return first, last
+
+
+def detachjob_running():
+    r = subprocess.run(["systemctl", "--user", "list-units", "detachjob-*", "--state=active",
+                        "--no-legend", "--plain"], capture_output=True, text=True, timeout=5)
+    return [l.split()[0] for l in r.stdout.splitlines() if l.strip()]
+
+
+def git(*a):
+    return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, timeout=10)
+
+
+def stop_reasons(inp):
+    first, last = transcript_texts(inp.get("transcript_path"))
+    last = inp.get("last_assistant_message") or last
+    if "narrow mechanical relay" in first:
+        return []
+    tail = last.strip().splitlines()[-1].strip() if last.strip() else ""
+    if tail.endswith("?"):
+        return []            # a question to the user: theirs to answer
+    if detachjob_running() or batch_holder():
+        return []            # waiting on a batch is the procedure (relay armed, clear)
+    why = []
+    dirty = [l[3:] for l in git("status", "--porcelain", "--untracked-files=no").stdout.splitlines()]
+    if dirty:
+        why.append("Tracked files are uncommitted (%s): finish and commit them, or revert."
+                   % ", ".join(dirty[:6]))
+    st = bh.load()
+    end = st.get("last_end")
+    if end:
+        r = git("log", "-1", "--format=%ct", "--", "HANDOFF.md", "docs")
+        t = int(r.stdout.strip() or 0)
+        if t < end:
+            why.append("Batch ended at %s and no handoff has been committed since: read its result "
+                       "(detachjob status NAME --tail 150), write docs/<pilot>/handoff.md, commit, "
+                       "launch the next batch." % bh.hhmm(end))
+    if not why and not re.search(r"(?m)^\s*\**DONE:", last):
+        why.append("Nothing is flying. If any step is left (your plan's pending items, the pilot "
+                   "handoff's next step, the next batch), do it now. Stop only if blocked on the user "
+                   "(end on the question) or truly done: end with a line `DONE: <why nothing is left>`.")
+    return why
+
+
+def stop(inp):
+    sid = inp.get("session_id") or "?"
+    try:
+        with open(STOP_STATE) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = {}
+    why = stop_reasons(inp)
+    n = st.get(sid, 0) + 1 if why else 0
+    st = {sid: n}
+    try:
+        with open(STOP_STATE, "w") as f:
+            json.dump(st, f)
+    except OSError:
+        pass
+    if why and n <= STOP_MAX_BLOCKS:
+        print(json.dumps({"decision": "block", "reason":
+                          "Work left (krpcLab stop hook, %d/%d):\n- " % (n, STOP_MAX_BLOCKS)
+                          + "\n- ".join(why)}))
+
+
 if __name__ == "__main__":
     ev = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
@@ -212,7 +312,7 @@ if __name__ == "__main__":
     except ValueError:
         inp = {}
     try:
-        {"session": session, "bash": bash, "edit": edit, "notice": notice}[ev](inp)
+        {"session": session, "bash": bash, "edit": edit, "notice": notice, "stop": stop}[ev](inp)
     except Exception:
         pass
     sys.exit(0)
