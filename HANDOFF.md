@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 20:40 | live1118b: farm reproduces coast miss swings (312-595 m); steered prediction credits lift it drops (tracking step); next: DIAG steering tables + steered replay |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 late | coast overswing = kRPC pumping the air pendulum; COAST_RATE_CAP default, unflown; next: A/B on qs_fin2live1118 |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |

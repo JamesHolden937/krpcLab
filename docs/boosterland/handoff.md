@@ -2,6 +2,39 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
+## 2026-11-18 night (4): boosterland -- the coast's overswing is kRPC pumping the air's pendulum; COAST_RATE_CAP (default, unflown)
+
+State: code + config change committed (COAST_RATE_CAP=True, new default fingerprint), **unflown** on farm and live.
+boosterland offline tests 206 OK. Farm down. The user asked: "that save [qs_fin2live1118] overswings, oscillates,
+then lands a kilometer short. fix it."
+
+**Diagnosis (live LOG17979, farm LOG17986-17990, all the same):** the coast starts with the nose 137-152 deg off
+retrograde (hold=). kRPC's stopping profile `speed = sqrt(2 e alpha)` (~/krpc AttitudeController.cs ~2395) counts only
+the control torque (wheels+RCS 2.05 MN m, surfaces 0.2-0.7). The air's restoring moment is 2-3x that at 45-90 deg
+(moment/q 870-1470 m^3 x q ~4.5 kPa, `diag hold`). So in every fall toward retrograde kRPC pushes *with* the air,
+and the swing is pumped back up: hold 151 -> 56 -> 45 -> 100 -> 67 -> 24 -> 74 -> 36 (LOG17979), sat=1.00, w=30-47
+deg/s, 20-30 s to settle. The broadside drag over those 15-25 s walks the miss from +90 to -1083 (live) / -1179
+(LOG17986) short. The steering then runs at its holdable limit (sw=v1.00, aoa=can) and cannot win it back: live
+landed 1411 m short, matching the coast-end prediction (-1417). The live jump 39 -> -1047 at 770985 is still
+unexplained (only event: coast nose lag 0.08 -> 0.62 s, which only stretches the unwind 0.24 -> 1.9 s, worth ~100-200 m).
+
+**Fix (COAST_RATE_CAP, autoland.coast_rate_cap/set_rate_cap):** in COAST, kRPC's `max_angular_velocity` (pitch,
+yaw) = sqrt(2 theta_on alpha). theta_on is the valve's measured RCS_ERROR_ON_DEG, and alpha is
+(env._hold_fixed + env._hold_surface q) / min(moi x, z). Whenever the air drives the nose faster than that, kRPC
+brakes, instead of pushing toward the target. It is re-set only when the value moves 10%, and the saved value is
+restored on leaving COAST. Event lines: "coast rate cap X deg/s", "coast rate cap released". My energy estimate:
+the first overshoot is still ~40-50 deg (the air beats full braking from 150 deg), then it settles in ~1.5 swings.
+
+**Next, in order:**
+1. A/B on the farm: `SAVES_LIST=qs_fin2live1118 LAPS=2 brot.sh cap1118 "cap:COAST_RATE_CAP=True,DIAG_STATE=True"
+   "nocap:COAST_RATE_CAP=False,DIAG_STATE=True"` (under detachjob; ~2.5 min a lap). Read: time to "coast settled",
+   peak hold= after the first crossing, coast peak_miss, pad distance, coast spend (budgetcheck).
+   Also qs_finbooster2 (the standing target).
+2. If it settles but the first swing is still the bulk: start braking before the fall gathers speed. The cap
+   cannot help while the nose hangs near prograde.
+3. Then the old list: the steered-prediction steps (section (3) below), the boostback flip.
+4. The user may fly it live first: the default is on.
+
 ## 2026-11-18 night (3): boosterland -- live1118b: the farm reproduces coast miss swings; the steered prediction credits lift it drops a tick later
 
 State: defaults b3480ed9 unchanged. Code 585b5b1 (coast settle dwell + brake measurement gated on it) **flown** in

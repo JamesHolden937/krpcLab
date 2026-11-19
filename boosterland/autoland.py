@@ -589,6 +589,8 @@ class Autoland:
         self.flip_prev = None           # (ut, align deg) last tick
         self.flip_start = None          # (ut, mass) at the first flip tick
         self.flip_u = []                # throttles the law chose
+        self.rate_cap = None            # COAST_RATE_CAP's last cap, rad/s
+        self.rate_cap_saved = None      # kRPC's max_angular_velocity before it
         self.coast_settled = False      # the coast's flip has come round
         self.coast_inside_since = None  # ut the error last came inside
         self.trim_active = False        # COAST_RCS_TRIM: the flip has settled
@@ -682,6 +684,8 @@ class Autoland:
                 self.fins.hold(state.lower())
             else:
                 self.fins.release(state.lower())
+        if state != COAST and self.rate_cap_saved is not None:
+            self.set_rate_cap(ut, None)
         if (state == LANDING_BURN and self.cfg.GIMBAL_ROLL_OFF
                 and self.cfg.GIMBAL_ROLL_UNTIL_BURN):
             # Boostback rolls cleanly on the gimbals at full thrust; the
@@ -1333,6 +1337,55 @@ class Autoland:
             "ttl     : %8.0f s" % prediction.time_to_land,
         ]
 
+    def coast_rate_cap(self, snap):
+        """COAST_RATE_CAP: rad/s from which the controls alone stop the nose
+        inside the valve's measured on-angle, sqrt(2 theta_on alpha), alpha
+        the wheels + RCS + surfaces at this q over the weaker tilt axis'
+        inertia (all measured; the air's own restoring moment near the
+        target, which would allow more, is left out).  None until measured."""
+        env = self.env
+        if not self.rcs_limits.measured or not env._hold_fixed:
+            return None
+        inertia = getattr(self, "flip_inertia", None)
+        if not inertia:
+            moi = self.vessel.moment_of_inertia
+            inertia = self.flip_inertia = max(1.0, min(moi[0], moi[2]))
+        rho = env.density(snap.mean_altitude)
+        q = 0.5 * rho * snap.speed * snap.speed
+        alpha = (env._hold_fixed + (env._hold_surface or 0.0) * q) / inertia
+        theta = math.radians(self.rcs_limits.RCS_ERROR_ON_DEG)
+        if alpha <= 0.0 or theta <= 0.0:
+            return None
+        return math.sqrt(2.0 * theta * alpha)
+
+    def set_rate_cap(self, ut, cap):
+        """Put ``cap`` (rad/s, pitch and yaw; roll left as it was) on kRPC's
+        max_angular_velocity, or restore the saved value (None).  Written only
+        when it moves by a tenth: one call, not one per tick."""
+        try:
+            if cap is None:
+                if self.rate_cap_saved is not None:
+                    self.autopilot.max_angular_velocity = self.rate_cap_saved
+                    self.log.event(ut, "coast rate cap released")
+                self.rate_cap_saved = self.rate_cap = None
+                return
+            last = self.rate_cap
+            if last is not None and abs(cap - last) <= 0.1 * last:
+                return
+            if self.rate_cap_saved is None:
+                self.rate_cap_saved = tuple(
+                    self.autopilot.max_angular_velocity)
+            roll = self.rate_cap_saved[1]
+            self.autopilot.max_angular_velocity = (cap, roll, cap)
+            if last is None:
+                self.log.event(ut, "coast rate cap %.1f deg/s (on-angle %.1f "
+                               "deg)" % (math.degrees(cap),
+                                         self.rcs_limits.RCS_ERROR_ON_DEG))
+            self.rate_cap = cap
+        except Exception as exc:                            # noqa: BLE001
+            self.log.event(ut, "coast rate cap not set (%r)" % (exc,))
+            self.rate_cap = cap
+
     def flip_authority(self):
         """Angular acceleration the flip can count on, rad/s^2: the gimbals'
         per unit throttle (geometry: each engine's thrust times the sine of
@@ -1433,6 +1486,8 @@ class Autoland:
             self.log.event(snap.ut, "holdable aoa %.1f deg (computed)"
                            % self.env.holdable_deg)
         self.measure_tracking(snap)
+        if self.cfg.COAST_RATE_CAP:
+            self.set_rate_cap(snap.ut, self.coast_rate_cap(snap))
         # Fly the air first, and only then think about the engines.  A booster
         # falling through 30 km of thickening atmosphere with its grid fins out
         # is a wing, and a wing costs no propellant, and no relight -- see guidance.solve_steer.

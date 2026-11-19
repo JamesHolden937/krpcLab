@@ -432,6 +432,16 @@ class Config:
     # nl1-1114 v rt1-1114 (qs_finbooster2, 12 an arm, auto-tune on): off,
     # burn input never pinned (0.00 v 0.12 of ticks), miss median 61 v 253.
     KRPC_LIMIT_ANGULAR_VELOCITY: bool = False
+    # COAST: kRPC's max_angular_velocity capped at the rate the controls stop
+    # inside the measured on-angle, sqrt(2 theta_on alpha) (alpha = wheels +
+    # RCS + surfaces at this q, over the inertia; all measured).  kRPC's
+    # stopping profile counts only its own torque; the air's restoring moment
+    # is 2-3x that at 45-90 deg, so every fall toward retrograde was driven
+    # (inputs pinned *toward* the target) and the swing was pumped back up:
+    # nose 150 -> 45 -> 100 -> 24 -> 74 deg, 20-30 s to settle, broadside
+    # drag walked the miss ~1 km short (live LOG17979; farm LOG17986-17990).
+    # Capped, any rate the air adds past the cap is braked.  Unflown.
+    COAST_RATE_CAP: bool = True
     KRPC_AP_DIAG: bool = False              # kRPC's own per-physics-tick
                                             # autopilot record (errors, rates,
                                             # gains, outputs per axis), saved
