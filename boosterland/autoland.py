@@ -3006,7 +3006,9 @@ def compact_line(state, snap, prediction, run):
                (" can=%.1f" % run.env.holdable_deg
                 if run.env.holdable_deg is not None else "")
                + (" band=%.0f" % run.env.miss_band
-                  if run.env.miss_band is not None else ""))
+                  if run.env.miss_band is not None else "")
+               + (" sw=%s" % run.env.steer_why
+                  if run.env.steer_why is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
                if any(getattr(run, "trim_cmd", (0.0,))) else ""))

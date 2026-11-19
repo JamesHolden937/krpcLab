@@ -239,10 +239,12 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     env.unsteered = None
     normal = steering_plane(r, v)
     if normal is None or not cfg.AERO_STEER:
+        env.steer_why = "noplane"
         return None, None
     slope = env.lift_slope_at(vec.norm(v),
                               vec.norm(r) - env.equatorial_radius)
     if not slope:
+        env.steer_why = "noslope"
         return None, None
 
     def fly(u):
@@ -264,6 +266,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         # unmeasured limit is not a licence to steer.  The probes below
         # still measure the sensitivity at their own angle, and the
         # propagator caps each of them at the hold limit step by step.
+        env.steer_why = "nohold"
         return None, None
     limit = most
     zero, flat, m0 = fly((0.0, 0.0))
@@ -274,6 +277,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # limit it would be capped by the propagator and under-read.
     probe = most
     if probe <= 1e-3:
+        env.steer_why = "probe0"
         return zero, flat
 
     # Do not act on the prediction until the prediction is worth acting on.
@@ -290,12 +294,14 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     # replaced: an event, not an altitude, so it holds on any booster and any
     # body (breadth2-1112: median 34 v 56 under a 25 km gate, the heavy 24 v 65).
     if getattr(env, "reswept_ut", None) is None:
+        env.steer_why = "noresweep"
         return zero, flat
 
     band = getattr(env, "miss_band", None)
     if band is None or math.hypot(m0[0], m0[1]) <= band:
         # Already on the pad.  Commanding an angle against sub-metre noise is
         # how the solve spends its authority on nothing.
+        env.steer_why = "inband"
         return zero, flat
     if not cfg.AERO_STEER_CROSS:
         # One axis: the lift stays in the trajectory plane and only the
@@ -304,6 +310,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         _, _, m1 = fly((probe, 0.0))
         per_square = (m1[0] - m0[0]) / (probe * abs(probe))
         if abs(per_square) * limit * limit < band:
+            env.steer_why = "feeble1"
             return zero, flat
         wanted = -m0[0] / per_square
         u = (vec.clamp(math.copysign(math.sqrt(abs(wanted)), wanted),
@@ -336,6 +343,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         # a badly conditioned inverse commands a large angle on no evidence.
         per_square = j[0]
         if abs(per_square) * span < band:
+            env.steer_why = "feeble2"
             return zero, flat
         wanted = -m0[0] / per_square
         u = (vec.clamp(math.copysign(math.sqrt(abs(wanted)), wanted),
@@ -346,6 +354,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
              (j[2] * m0[0] - j[0] * m0[1]) / det)
         mag = math.hypot(w[0], w[1])
         if mag < 1e-12:
+            env.steer_why = "w0"
             return zero, flat
         # |u| = sqrt(|w|), and u keeps w's direction: the plant is |u| u.
         aoa = min(math.sqrt(mag), limit)
@@ -388,10 +397,12 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
                                                  env.target, r)
         miss = math.hypot(long, cross)
         if miss <= flat_miss:
+            env.steer_why = "v%.1f" % scale
             return steer, prediction
         if best is None or miss < best[0]:
             best = (miss, steer, prediction)
     # Every angle tried is worse than flying straight.  Do that.
+    env.steer_why = "worse"
     return zero, flat
 
 

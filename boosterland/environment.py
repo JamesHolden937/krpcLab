@@ -112,6 +112,7 @@ class Environment:
                                         # the legs' suspension when lower)
         self.unsteered = None           # the coast's zero-angle prediction
         self.miss_band = None           # m, the prediction's noise (Autoland)
+        self.steer_why = None           # which way solve_steer last returned
         self.taper_rate = None          # 1/s, held from ignition
         self.engine_spool_s = None      # trigger to thrust (Autoland.
                                         # track_spool, the first ignition)
