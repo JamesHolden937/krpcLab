@@ -208,7 +208,10 @@ NEXT = """NOW (batch over; token cost is calls x context, so a fresh context per
      Update that pilot's row in HANDOFF.md.
   3. Commit.
   4. Next batch: launch it detached (farmlaunch from a session prints the steps), then clear self.
-     No next batch: clear self (mcp__ccd_session_mgmt__clear_session "self") with a one-line summary.
+     No next batch: first tell the user (PushNotification: the result in one line and that nothing is
+     flying), re-title the session without the hourglass (set_session_title "self",
+     "<project>: <result, <=8 words>"), then clear self (mcp__ccd_session_mgmt__clear_session "self").
+     A clear wipes everything shown in the conversation, so the notification is the only report.
      Skip the clear only while the user is mid-conversation (a question or decision open). Over the
      context limit (tools/claudeHooks.py CONTEXT_LIMIT) it is not optional: the hook orders it."""
 
