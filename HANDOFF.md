@@ -12,7 +12,7 @@ section there, not here.** Only cross-pilot items go here.
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
 | propPitch | docs/propPitch/handoff.md | 2026-11-04 | tip limit + stop-when-still defaults; the user flies it live |
 | spaceplane | docs/spaceplane/handoff.md | 2026-11-01 | APPROACH_BEST_LD deleted; next: fly heavy-1101 |
-| tooling | docs/handoffTooling.md | 2026-11-18 20:40 | Stop hook refuses to end a turn with work left (ecd19b3); batch end notify-send (505290a; desktop daemon not answering); relays fire at launch+1 min; 4 howItWorks PDFs stale |
+| tooling | docs/handoffTooling.md | 2026-11-18 21:15 | start.sh relaunches a boot hang (KSP.log silent 120 s; tested); Stop hook refuses to end a turn with work left (ecd19b3); batch end notify-send (505290a; desktop daemon not answering); relays fire at launch+1 min; 4 howItWorks PDFs stale |
 
 Farm state: MiniSystem and Retooled since 2026-11-06 / 11-13 (banner at the top of CLAUDE.md). Retooled flights
 start at LOG16368; earlier ones (stock 1.12.5) are not comparable.
