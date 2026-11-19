@@ -2,6 +2,30 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
+## 2026-11-18 night: boosterland -- live flight LOG17952 missed 1200 m short: the live booster has ~10x less control torque than the farm's
+
+State: defaults b3480ed9 unchanged, no code changed. The farm section below (nsep-1118, ~6 m) is still the farm's state.
+
+**LOG17952** (the user, live, FMRS_save_1 of 'Heavy Shuttle', 276.7 t at separation): boostback exit miss 35 m. The flip
+cost ~2.7 km of predicted miss (err 40-100 deg for 25 s at M1.5) and the aoa steering won it back (+44 m at 11 km).
+Below ~9 km it commanded 16-18 deg (`can`), held only 9-11 (`hold`); `trk` fell to 0.57 (lift x0.32) and the predicted
+miss jumped -203 -> -1370 m at 7.7-7.0 km. The burn started 1294 m off; touchdown 1200 m short at 13 m/s on terrain,
+broke up (144 -> 1.6 t). Brief "throttle DIVERGED" at boostback end (user's throttle?) -- not the cause.
+
+**Why live differs:** the control budget. `torque limit` line: farm LOG17950 budget/q 2734 (limit 90 deg); live
+budget/q 304 then 203 (limit 23.8, then 9.4 deg). The aero moment/q curves are about the same (22 deg: 341 farm, 289
+live). The fins' save settings are identical (6 fins, authorityLimiter 150, deployAngle 22.5, nothing ignored;
+FMRS_save_1 vs saves/qs_finbooster2). So it's the game's reported available torque (wheels + RCS + surfaces; the
+surface term dominates on the farm), not the craft's settings. Live mods that could change it: ReStock, KSPCommunityFixes,
+ModularFlightIntegrator, KJR, AFBW, Kopernicus expansion (live GameData list).
+
+**Next, in order:**
+1. Copy the live `~/KSP-Retooled/saves/default/FMRS/FMRS_save_1.sfs` into a farm save and fly it on the farm with
+   DIAG_STATE=True (the `diag hold` line splits fixed (wheels+RCS) from surface). Budget ~2700 -> it's the install
+   (diff GameData, bisect mods); ~300 -> it's the state (propellant, CoM, Mach, the separation).
+2. Separately: `can` (holdable_aoa) read 16-26 deg while the 770892 probe said 9.4 deg and the booster held ~10.
+   Find why it bounced between 5.6 and 26 deg in the coast (a prediction error: fix it at its source).
+
 ## 2026-11-18 evening: boosterland -- coast steering fixed at its source (lift probe + solve root); new fin2 separation; median miss ~6 m
 
 State: **defaults fingerprint b3480ed9.** main committed through 0206e9d + this handoff (not pushed). Farm up, idle.

@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 eve | coast steering fixed (mirrored lift probe, solve root); new fin2 separation; nsep-1118 median miss ~6 m, 18/24 landed; next: read 2 outliers |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 night | live LOG17952 1200 m short: live control torque ~10x below the farm (budget/q 304 v 2734), aoa not held; next: fly the live FMRS save on the farm with DIAG_STATE |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
