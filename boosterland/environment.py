@@ -108,9 +108,10 @@ class Environment:
         self.descent_aoa = None         # rad, the coast's last command
         self.pointing_band = None       # deg, the pointing error's noise
         self.touchdown_tolerance = None  # m/s the craft survives at contact
-        self.unsteered = None           # the coast's zero-angle prediction
                                         # (Autoland: weakest touching part,
                                         # the legs' suspension when lower)
+        self.unsteered = None           # the coast's zero-angle prediction
+        self.miss_band = None           # m, the prediction's noise (Autoland)
         self.taper_rate = None          # 1/s, held from ignition
         self.engine_spool_s = None      # trigger to thrust (Autoland.
                                         # track_spool, the first ignition)
