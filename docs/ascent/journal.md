@@ -1,5 +1,63 @@
 # ascent journal
 
+## Former handoff section (moved 2026-11-18; still current for the stacks unless a later handoff says otherwise)
+
+### 2026-10-19 night: ascent -- all three stacks reach 80 x 80; the shuttle keeps its wings (fingerprint `5a3c681f`)
+
+**2026-10-21 (farm-wide, see the spaceplane section):** kRPC 0.7.0;
+ascent's staging on `Vessel.stage_at`/`decouple_stage_at` (0.7 removed
+`Parts.in_stage`/`in_decouple_stage`/`resources_in_decouple_stage`).  One
+smoke flight (qs_stack): 81 x 79 km.  KRPC.MechJeb 0.8.1 still loads under
+0.7.
+
+
+All committed and pushed. Farm stopped. The user stopped the session and
+will fly the current defaults live themselves (no re-fly asked for).
+
+**Where it stands (defaults):** classic MechJeb, turn shape solved at
+liftoff, booster dropped by budget, upper stage followed to orbit.
+- qs_stack (shuttle, gears now autostrut Grandparent): 12/12 to 80 x 80,
+  **64.48 t sd ~0.1** in orbit (gs1-1019, LOG13070-13081), 0 joint breaks.
+  That leaves ~1.0 t LFO = **~51 m/s** (Rhino 340 s) -- the 34 t ore payload
+  eats the margin.
+- qs_stack_small 12/12 10.17 t; qs_stack_stretch 12/12 10.11 t
+  (fix1-1019, LOG13034-13069; Jebediah now in the pod).
+
+**This session changed:**
+1. Saves: small/stretch had an uncrewed pod -- no control source after
+   separation (all 24 lost). qs_stack gears Heaviest -> Grandparent: the
+   struts ran to the booster tank and tore the delta wings off at
+   separation (~11/12). Craft file fixed too. **The user's live VAB craft
+   still has Heaviest on the three gears** -- told them.
+2. Liftoff warnings (no flag, logging only): `upper stage: ... control X`
+   / `WARNING upper stage has no control source`; `WARNING autostruts
+   cross the booster's decoupler`.
+3. `check_settings`: MechJeb ascent settings re-read after separation and
+   re-applied if lost (they were not lost in any flight; a guard).
+4. turnshape: downrange along the ground (was inertial); the turn starts
+   at MechJeb's start speed or height, curve measured from there
+   (`Path.start_speed`). **Not flown yet** -- model2-1019 was stopped
+   part-way; its partial logs are not a result.
+5. `turn shape track:` log line + `ascent/tools/shapetrack.py` (model vs
+   telemetry). Before item 4 the model ran 1.4-3.6 km short in downrange
+   at separation on all three stacks.
+6. Hot staging tried and deleted (did not prevent the wing loss).
+
+**Next, in order:**
+1. Whatever the user's live flights report.
+2. One batch of the defaults on all three stacks (srot LAPS=2): does the
+   turn-start model move the solved shape, and do predicted mass and
+   shapetrack agree with the flights?
+3. Model gaps still open: drag at zero AoA, booster throttle-down and coast
+   drag left out; `RESERVE_FRACTION` per booster; `SEP_ACCEL_RATIO`.
+
+**Traps paid:** `pgrep -f`/`pkill -f` with a pattern that also appears in
+your own command line kills the tool's shell (again) -- kill by PID from a
+separate listing. The farm restart overwrites every KSP.log: read the
+CollisionSpy / explosion lines before restarting. A farm launch with every
+kerbal Missing produces an uncrewed pod silently. Swap read 10-15 GB right
+after each farm restart tonight (other memory pressure on the machine).
+
 ## Session, 2026-11-14 evening: kRPC 0.8's MechJeb API; the farm's booster thrust cutouts
 
 - Live LOG16691 crashed at liftoff on `auto_path`: KRPC.MechJeb of kRPC main splits the ascent settings

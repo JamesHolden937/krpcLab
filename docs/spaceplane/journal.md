@@ -6,6 +6,115 @@ time*; re-run the tools rather than quoting them (CLAUDE.md, "Re-run the tool").
 The design reference is [design.md](design.md); the current state is
 [`spaceplane/CLAUDE.md`](../../spaceplane/CLAUDE.md).
 
+## Former where-it-stands sections of spaceplane/CLAUDE.md (moved 2026-11-18)
+
+### Earlier (2026-10-31, fingerprint `72937e7a`)
+
+The measured spoiler can arm again: the brake probe had been blind since 2026-10-21 (it read its base as the vacuum hold let go, and with SAS still moving the surfaces) and live it never ran (it latched before the stall was known). Below 1 km/s the glide holds best L/D and steers range with bank, raising alpha only with bank at its stop (`GLIDE_LOW_ALPHA_SPEED_M_S`). Both default and unflown on the farm; the user is testing live. The root HANDOFF.md has the checks to read in the next live log.
+
+### Earlier (2026-10-28 evening, fingerprint `36bad8b6`)
+
+Every cargo bay is shut at startup, before the aero sweep (`CLOSE_BAYS_ON_START`): the live stack orbiter swept with its bay open, flew it shut, and dived out of the cone. The canard trim also learns while the nose falls short the way the stick pushes (`CANARD_TRIM_SHORTFALL`), and the cone's trim is the 1 g alpha at its *target* speed (`HAC_TRIM_AT_TARGET`), so a slow cone accelerates instead of mushing. Reproduce live flights from `qs_stackorb_live1028`. The root HANDOFF.md has the numbers.
+
+### Earlier (2026-10-28, fingerprint `f8787c59`)
+
+In every winged phase roll is held back only as far as the rudder can coordinate the turn (`coord_roll_floor`): the floor slews toward yaw's static figure as the yaw input nears full deflection (`yaw_headroom_used`, promoted 2026-10-29, coord3-1029). The 1.8 m wings-forward shuttle has regressed to 0/24 (suspect the 10-26 CoM changes). The root HANDOFF.md has the rest.
+
+### Earlier (2026-10-25, fingerprint `66612c16`)
+
+**The user's goal: neutral/unstable craft to the runway reliably.** The cargo shuttle is dropped (inherently problematic). The test family is the shuttle with its wings moved forward: `savegen.py --wing-forward M`, saves `qs_shuttle2_fwdwingNN_rigoff`.
+
+- **Defaults land through 1.5 m forward** (stock 7-8/8, 1.2 m 6/8, 1.5 m 8/8 on the runway). **1.8 m: 5/16.** 3 m and beyond: 0.
+- Stability is set by the **drained** airframe, which has a much more aft CoM than the orbital save. At 3 m it is statically unstable hypersonically; at 4 m the elevons cannot hold it at any alpha.
+- The fins move with the wing, so yaw stiffness falls too (1.8 m: -20%).
+- **1.8 m loss modes:**
+  - a hypersonic lateral limit cycle (slip +-17, roll input saturated);
+  - a transonic pitch oscillation (alpha 12-46 on +-0.2 input; the static pitch loop is too slow there).
+- **The approach turns:** `APPROACH_REENGAGE` (default) resets kRPC's integrators at the cone's exit. Turn ratio median 0.88 against 0.16.
+- The cone saves `qs_s2_hac*` are stale (overshoot 5-14 km): retake them.
+
+`docs/spaceplane/handoff.md` has the numbers.
+
+### Earlier (2026-10-22 night, fingerprint `9eec0e1f`)
+
+The plant has been the same since 2026-10-21: AtmosphereAutopilot removed (stock surfaces), kRPC 0.7.0, and `KRPC_WOBBLE_MITIGATION` off.
+
+`ATTITUDE_SLEW_FACTOR` is 1.0, retuned for 0.7's controller. slew-1021 measured 14/23 intact on the runway against 7/23 at 1.91.
+
+dead-1022 default arm, intact on the runway:
+- rigoff 6/6
+- inc 4/6
+- ecc 5/6
+- high 2/5
+
+**Blocker: the approach cannot turn.** Its heading rate is about 0.14 to -0.16 of a coordinated turn (0.82-0.97 on 0.6 + AA, or at 1.91). It hands the flare 200-400 m of cross-track, and the losses are touchdowns beside the runway.
+
+kRPC's pointing deadband is refuted as the cause (dead-1022). Next: log kRPC's target and error on the approach.
+
+The cone saves `qs_s2_hac*` and every derived table predate the plant change. Retake them.
+
+### Earlier (2026-10-21 evening, fingerprint `56d5a616`)
+
+Baseline on the new plant at slew 1.91 (6 each), intact on the runway:
+- rigoff 5/6
+- inc 2/6
+- ecc 3/6
+- high 3/6
+- cargo 0/6
+
+4/24 broke up on the runway at touchdown.
+
+### Earlier (2026-10-21 morning, fingerprint `fb9a9b61`)
+
+**The user's goals:** fly craft with minimum stability margin, and the
+shortest reliable time from deorbit burn to an intact stop.  Burn->stop
+is ~1100 s on `qs_shuttle2_rigoff` and 1150-1250 on ecc/high (was ~1560):
+the deorbit takes the *latest* window that still leaves the glide 15% of
+the first window's reach and costs no more than a surface periapsis
+(`DEORBIT_LATEST`); the coast turns to the entry attitude on the RCS relay
+(`COAST_RCS_TURN` -- on wheels alone a third of entries met the air
+25-62 deg in sideslip); reversals are slewed on wheel + surface torque
+only (`BANK_ACCEL_NO_RCS`); the short divert judges reach on the table's
+best glide over energy height (`ABORT_SHORT_BEST_GLIDE`).  On the runway:
+base 5/6, inc 6/6, ecc 22/26 -- **high 8/19 is the blocker**: clean
+entries bank -55 at Mach 7 and the propagator over-predicts range there,
+so the glide arrives at 12 km and ~180 m/s.  Score landings by the
+`DOWN:` line and by each log's own save/`config:` (arm labels slip when
+an instance dies).  The table's best glide is `env.best_ld`/`best_speed`.  The low-margin test
+airframe is `qs_shuttle2_fwdwing_rigoff`; `qs_stackorb` is not flown.
+
+### Earlier (2026-10-21 night, fingerprint `cb0ae1d4`)
+
+Burn->stop ~1100 s on rigoff via `DEORBIT_LATEST`, aim 1200,
+`ABORT_NORTH_TOLERANT`, the cone's energy speed and signed negative-alpha
+lift.
+
+### Earlier (2026-10-11 evening, fingerprint `b5651d39`)
+
+**The cone holds dynamic pressure** (`HAC_SPEED_Q`, promoted 2026-10-11):
+its speed target is the gate target's q at every height (~245 m/s true at
+12 km), not a constant true airspeed that is below the stall up high.
+speedq2-1011: **19/24 v 14/24**, RCS in the cone 15-40 s v 92-99.
+
+### Earlier (2026-10-10 late, fingerprint `bc9ac544`)
+
+**The terminal glide solves on cone-entry energy** (`GLIDE_TAEM_*`,
+promoted 2026-10-10): below Mach 4.5 the glide nulls the predicted energy
+height at the cone's entry against what the cone plans for (~14.1 km),
+with the prediction flying the alpha achieved.  taemfix-1010: **23/24 on
+the runway v 20/24, high orbit 6/6, 0 lost**.  Also default: brakes before
+weaving, the deorbit burn lined up on stock SAS, the azimuth floor.
+
+**The deorbit wait is planned** (2026-10-10 late, unflown): the window is
+found on the propagated orbit, `warp_to` takes the game there, SAS turns to
+*surface* retrograde in the lead (Maneuver mode held 4-5 deg off on an
+inclined orbit and never committed, LOG9598), and the coast `warp_to`s
+its release.
+
+Open: the touchdown bounce at 68-76 m/s (3 of 5 breakups); an inc-orbit
+glide energy deficit (one ~8-10 km short per 24, both arms); two
+low-speed rollouts that ran off the edge.
+
 ## 2026-09-17 .. 09-23: the old craft (`qs_plane`), condensed
 
 Pruned 2026-10-09.  These sessions flew the retired 23-part `qs_plane`; the
