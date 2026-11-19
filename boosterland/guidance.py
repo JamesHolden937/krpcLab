@@ -232,8 +232,11 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
     commanded angle*, so the caller stores a prediction of the trajectory the
     booster is about to fly rather than one of a trajectory nobody flies.
     Returns ``(None, None)`` when the vehicle cannot steer: no measured
-    slope, no usable plane, or no air.
+    slope, no usable plane, or no air.  Sets ``env.unsteered`` to the
+    zero-angle prediction when it was propagated (None otherwise): the
+    deadbands' noise is measured on it, never on the commanded one.
     """
+    env.unsteered = None
     normal = steering_plane(r, v)
     if normal is None or not cfg.AERO_STEER:
         return None, None
@@ -264,6 +267,7 @@ def solve_steer(env, r, v, mass, max_accel, cfg):
         return None, None
     limit = most
     zero, flat, m0 = fly((0.0, 0.0))
+    env.unsteered = flat        # the prediction no command moves (miss_band)
     # Probe at the limit itself: the plant is quadratic in the angle, so any
     # probe inside the holdable range reads the same coefficient, and the
     # largest reads it furthest above the propagation's noise.  Past the
