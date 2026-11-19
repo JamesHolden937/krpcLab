@@ -12,7 +12,7 @@ section there, not here.** Only cross-pilot items go here.
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
 | propPitch | docs/propPitch/handoff.md | 2026-11-04 | tip limit + stop-when-still defaults; the user flies it live |
 | spaceplane | docs/spaceplane/handoff.md | 2026-11-01 | APPROACH_BEST_LD deleted; next: fly heavy-1101 |
-| tooling | docs/handoffTooling.md | 2026-11-18 | event-triggered procedures moved out of the docs into hooks (CLAUDE.md "Procedures tied to an event"): batchHooks.py via farmlaunch pre/post, claudeHooks.py, githooks pre-push; 4 howItWorks PDFs stale (pre-push lists them) |
+| tooling | docs/handoffTooling.md | 2026-11-18 night | batch end with no next batch: notify + re-title before the self-clear (bedeec3, untested); event procedures live in hooks (batchHooks.py, claudeHooks.py, pre-push); 4 howItWorks PDFs stale |
 
 Farm state: MiniSystem and Retooled since 2026-11-06 / 11-13 (banner at the top of CLAUDE.md). Retooled flights
 start at LOG16368; earlier ones (stock 1.12.5) are not comparable.

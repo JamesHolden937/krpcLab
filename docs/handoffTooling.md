@@ -1,5 +1,14 @@
 # Tooling HANDOFF (older cross-cutting sections) -- read when touching launcherMod, the bundle or the farm harnesses
 
+## 2026-11-18 night: the end of a batch with no next batch notifies before the clear (`bedeec3`)
+
+- nsep1118 finished at 18:01. The waiting session woke, wrote the boosterland handoff (`d9815b2`) and cleared
+  itself at 18:05. The clear erased its report and left the stale title `⏳ ... ~18:03`, so the user could not
+  tell the batch was done. The wake itself worked: it was an in-conversation `run_in_background` wait, so no
+  relay task was armed.
+- `testInstances/batchHooks.py` batch-end step 4 (no next batch) now says: PushNotification with the result
+  and "nothing flying", re-title without ⏳, then clear. Not exercised yet: the next batch end is its test.
+
 ## 2026-11-04 late: the window mod is the only UI; the launcher survives scene changes (airplane `570902c5`, propPitch `ca612601`)
 
 The user's request, all done and committed; **nothing here was flown or
