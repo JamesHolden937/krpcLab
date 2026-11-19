@@ -10,8 +10,13 @@
   (default 120) counts as hung: `stop.sh N` (SIGKILL fallback) and relaunch, sharing the crash path's
   RETRIES. Measured on six healthy boots that night: longest pause between log lines 4.6-5.6 s, port open ~25 s
   after "Log started" (warm ModuleManager cache; a cold cache may pause longer, hence 120 s).
-- **Test:** SIGSTOP ksp5's game 8 s into a boot under the new start.sh -- RESULT_PENDING
-- **cap1118 still has to be re-flown** (boosterland handoff, next step 1).
+- **Tested:** `systemctl --user freeze ksp5-boosterland.scope` 14 s into a boot (21:09:36; alive and frozen at
+  +100 s). start.sh printed "ksp5 hung (KSP.log silent 120 s) at boot ... relaunch 1/3" and "all up" at 21:12:28.
+  A plain SIGSTOP of the game process is no test: it does not stay alive under Wine. Freeze the scope.
+  The test ran beside cap1118b's start.sh (launched 21:07:56 by the boosterland session), so the "hung" line in
+  cap1118b's output is this test, not a real hang. It cost that batch ~2.5 min of boot.
+- Cosmetic, open: the relaunch message quotes `tail -1 KSP.log`, which is blank (Restock lines end in blank
+  lines). It should quote the last non-blank line.
 
 ## 2026-11-18 night (2): batch-end notice, Stop hook, relay timing
 
