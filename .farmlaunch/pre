@@ -1,0 +1,3 @@
+#!/bin/sh
+# farmlaunch runs this with the lock held, before the batch (~/.local/bin/farmlaunch "Project hooks").
+exec python3 "$(dirname "$0")/../testInstances/batchHooks.py" pre

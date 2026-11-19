@@ -3,6 +3,9 @@
 # then, in the background, run the offline suite against it.  A failure is
 # reported, never blocks: the commit has already happened.
 cd "$(git rev-parse --show-toplevel)" || exit 0
+# A new craft or save in this commit: audit what it exposes before flying it.
+new=$(git diff-tree --no-commit-id --root -r --diff-filter=A --name-only HEAD -- 'saves/*.sfs' 'saves/craft/*' 2>/dev/null)
+[ -n "$new" ] && echo "post-commit: new in saves/: $(echo $new) -- if it is a new airframe, run testInstances/actuators.py <instance> <save> on it before anything else (every writable module setting, kRPC's torque and auto-pilot tuning), and say in saves/README.md which vehicle it is." >&2
 PY=python3
 [ -x .venv-pypy/bin/python ] && PY=.venv-pypy/bin/python
 "$PY" tools/bundle.py --quiet >/dev/null 2>.git-bundle-error.log \

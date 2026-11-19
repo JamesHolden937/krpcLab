@@ -119,14 +119,9 @@ files had **four different md5s** — one had been re-taken three minutes after
 the others. A session's worth of cone flights was read as "the glide scatters
 8 km from one state" when it was four different states.
 
-So before a batch:
-
-```bash
-md5sum testInstances/ksp*/saves/default/<save>.sfs | awk '{print $1}' | sort -u | wc -l
-```
-
-One line of output means one experiment. More than one means copy the
-canonical instance's save over the rest and start again — a save is a file,
+So every batch's start runs `syncSaves.sh check` (`testInstances/batchHooks.py
+pre`, through farmlaunch) and warns when an instance differs: copy the
+canonical save over the rest (`syncSaves.sh push`) and start again — a save is a file,
 not a measurement, and copying it is free.
 
 **Re-measured 2026-09-21, and `qs_plane` has since drifted apart**: ksp0-3
@@ -265,9 +260,10 @@ that looks like a guidance regression. Two arms flown either side of the
 degradation are not comparable however carefully the configuration was
 controlled.
 
-Check `free -m` and `swapon --show` before a batch *and after it* -- the
-before-check passes on a farm that will be thrashing by round six. Restart
-the instances between long sessions; they are cheap to restart and the
+Swap is checked before a batch *and after it* (`batchHooks.py`, through
+farmlaunch; the before-check passes on a farm that will be thrashing by round
+six), and the start warns when the farm was not restarted since the last
+batch. Restart the instances between long sessions; they are cheap to restart and the
 alternative is a day of measurements that disagree with each other.
 
 ### How fast an instance goes, and what is stopping it

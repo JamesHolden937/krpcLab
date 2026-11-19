@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """actuators.py <instance> [save] [--probe] -- every writable thing on the vessel.
 
-The standing audit CLAUDE.md asks for ("Every few batches, stop and audit the
+The standing audit batchHooks.py asks for every few batches ("audit the
 whole vehicle"): list each part's modules with their fields, events and
 actions, so what the craft *can* do can be diffed by eye against what the
 autopilot commands.  The shuttle found five things in one afternoon that

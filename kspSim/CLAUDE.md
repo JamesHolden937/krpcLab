@@ -185,7 +185,7 @@ wheel charge, surface potential torque, airbrakes, convection units.
 - `aerodynamic_force` in frame i+1 is frame i's force.
 - `pkill -f` from a shell whose command line holds the pattern kills the
   shell (exit 144): put kill loops in a script file.
-- A loaded sim keeps simulating when idle: stop sims after a batch.
+- A loaded sim keeps simulating when idle (a batch's end reports sims left running).
 - Surface tables need levels near zero (`probe.py --solo-levels`): drag
   is quadratic in deflection, and a new craft probed without them flies
   with too much trim drag.

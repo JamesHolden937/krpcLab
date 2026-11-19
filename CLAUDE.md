@@ -29,55 +29,40 @@ Interrupting is the user's job, not asking permission. **Commit before
 anything risky**: a default change, a batch on new code, a refactor or a
 scripted edit, so it can always be undone.
 
-**Once a batch starts, stop and wait until it ends.** Launch one background
-waiter that prints the summary when the batch finishes (`ROT DONE`), end the
-turn, and do nothing with the batch until that notification arrives. Don't
-poll, don't chain wait calls, don't read mid-flight logs: it wastes tokens,
-and part-batch data (one round, half the arms, a flight still in the glide)
-gets misread as a result. **Never sit waiting for a batch (or a save, a
-probe, a single flight) to finish before doing the next piece of work**
-(the user, 2026-10-25): look at what you will do next anyway -- the
-next flag, the tool to read the result, the fix for the failure you
-already see -- and build it now, in a git worktree (`git worktree add
-.wt-<name>`; the batch runs the main tree, which stays frozen), merging
-after the batch ends. Idle instances are work too: fly the next
-question on them. Ending the turn to wait is for when there is truly
-nothing to build.
-**Every time you stop to wait, tell the user
-roughly when it will finish, in 24-hour time** ("done ~1845"), estimated
-from the previous batch's round length times the rounds left.
+**Never sit waiting for a batch (or a save, a probe, a single flight) to
+finish before doing the next piece of work** (the user, 2026-10-25): build
+what you will do next anyway in a git worktree (`git worktree add
+.wt-<name>`; the batch flies the main tree, which stays frozen), and use idle
+instances for the next question. Don't poll or read mid-flight logs:
+part-batch data gets misread as a result. Every time you stop to wait, tell
+the user roughly when it will finish, in 24-hour time ("done ~1845"), from the
+previous batch's measured length.
 
-**Clear the conversation between batches** (the user, 2026-11-18: token cost
-is calls x context size; sessions averaged 236k tokens per call). When a
-batch's result is in and read, and no batch, waiter or worktree build is
-still running: (a) rewrite this pilot's `docs/<pilot>/handoff.md` section so a cold session
-can carry on -- the result with its log/batch names, what it means, the exact
-next batch to fly and why, and anything the user said this session that no
-doc records yet (a standing instruction goes into CLAUDE.md or memory, not
-only HANDOFF); (b) commit; (c) call `mcp__ccd_session_mgmt__clear_session`
-with `session_id: "self"` (load it with ToolSearch first), and end the turn
-with one line: what was saved and the next batch. Skip the clear while the
-user is mid-conversation with you (a question open, a decision pending) or
-the context is still small (under ~100k tokens). The fresh session starts
-from HANDOFF.md as usual (see "Continuing after the clear" below).
-
-**Continuing after the clear.** A self-clear kills this conversation's
-background jobs and CronCreate wakes; a scheduled task survives, and another
-session's `send_message` wakes a cleared idle session (all tested 2026-11-18).
-Follow `~/.claude/docs/autoContinue.md`: launch the next batch with
-`detachjob start NAME -- farmlaunch ... -- BATCH` (a systemd unit, survives
-the clear), write NAME and the ETA into the handoff, arm a one-time scheduled
-task (mcp__scheduled-tasks, fireAt = ETA) whose run waits on NAME and messages
-this session (id from `get_session "self"`) the AUTO-CONTINUE prompt, title
-the session `⏳ krpcLab: NAME ~HH:MM | <what>` (the sidebar note while the
-transcript is empty), then clear. farmlaunch (so every farmGuard script) refuses with exit 76 from a
-session unless under detachjob. Woken by that message, read the handoff and carry on without asking.
+**Procedures tied to an event are not written here: the event delivers them.**
+Each arrives in the output you read at that moment, so follow it when it
+appears:
+- *Session start* (`.claude/settings.json` -> `tools/claudeHooks.py session`):
+  HANDOFF.md injected, and the farm's state (up since, swap, restart advice).
+- *Batch launched from a session* (`~/.local/bin/farmlaunch`, the user's): exit
+  76 with the detach / handoff / relay / clear steps (`~/.claude/docs/autoContinue.md`).
+- *Batch start and end* (farmlaunch runs `.farmlaunch/pre|post` ->
+  `testInstances/batchHooks.py`): saves in sync, same GameData, nothing stray,
+  farm restarted, code committed; then swap after, leftovers, what to do now
+  (read, handoff, commit, clear) and the periodic whole-vehicle audit.
+  When woken by an AUTO-CONTINUE message, `detachjob status NAME --tail 60` shows it.
+- *Suite run beside the farm, or a code edit in the main tree mid-batch*
+  (`claudeHooks.py bash|edit`): refused, with what to do instead.
+- *Post-commit bundle/suite failure* (`claudeHooks.py notice`): reported once.
+- *New save or craft committed* (post-commit) and *push with a pilot's code
+  newer than its howItWorks.pdf* (`tools/githooks/pre-push`): reminders with
+  the procedure.
+Change a procedure in the script that prints it, not here.
 
 0. **The sleep inhibitor is automatic** (global Claude hooks): taken at each
    prompt, released at the end of a turn unless a farm instance is still
    running, then released once the farm is idle. Don't run nosleep by hand.
-1. **Start by reading [HANDOFF.md](HANDOFF.md)** (the index: every pilot's
-   status in one line, cross-pilot open items, general traps), then
+1. **[HANDOFF.md](HANDOFF.md)** (the index: every pilot's status in one line,
+   cross-pilot open items, general traps) arrives at session start; read
    `docs/<pilot>/handoff.md` for the pilot you will work on -- the last
    session's state: what changed, which flags exist and what they measured,
    the blocker, what's next, and the traps. Then the pilot's own `CLAUDE.md`.
@@ -102,17 +87,10 @@ session unless under detachjob. Woken by that message, read the handoff and carr
    names), the blocker and the proposed next step, open items in order, and
    traps paid for. Each section is a snapshot: replace it, don't append to
    it. The history goes in `docs/<pilot>/journal.md`.
-3. **On wrap-up: update the how-it-works PDFs, then commit and push to
-   GitHub** (`git push origin main`). `docs/<pilot>/howItWorks.pdf` is
-   the only tracked copy: when the code's behaviour changed, write the page
-   afresh in the scratchpad from the code (HTML with inline SVG figures)
-   and print it (`chromium --headless --no-pdf-header-footer
-   --print-to-pdf=docs/<pilot>/howItWorks.pdf page.html`); no HTML is kept.
-   **It says what the program does and what triggers what** -- phases,
-   transitions, the laws each phase flies, with figures -- and **never
-   history**: no earlier errors, refuted ideas, flight counts or "it used
-   to". Those belong in the journal. Then push, so the next session -- on
-   any machine -- starts from it.
+3. **On wrap-up: commit and push to GitHub** (`git push origin main`), so the
+   next session -- on any machine -- starts from it. `docs/<pilot>/howItWorks.pdf`
+   is the only tracked copy of each pilot's how-it-works page; the push says
+   when one is older than its code, and how to remake it.
    **Nothing that the repo plus a KSP instance can regenerate is tracked**
    (e.g. `kspSim/data/ksc_terrain.json`, `kspSim/models/`): gitignore it and
    say in the owning CLAUDE.md how to rebuild it.
@@ -163,7 +141,6 @@ rather than a stored plan.
    it (`spaceplane/tools/quickglide.py` is the model: subprocess, reaper,
    `--instance`, `--timescale`), and the saves it flies in `saves/`.
 6. `<name>/CLAUDE.md` for its current state, `docs/<name>/` for the rest.
-   Run `testInstances/actuators.py` on the new craft before anything else.
 7. Write its loop and its scripts by [docs/loopCost.md](docs/loopCost.md):
    a tick's wall cost is the farm's speed. Batch reads, cache constants,
    wait in game time, nothing under rails warp, keep one-off work out of
@@ -199,11 +176,8 @@ rather than a stored plan.
 #
 # **Six instances (0-5), and never beside the test suite.**  Six put 8-13 GB
 # into zram at ~4 GB each; a seventh saturated the CPU at boot (2026-10-02).
-# Restart the farm before every comparison -- swap grows round by round and
-# biases the results.  Harness defaults: PyPy (PYPY=0 / --cpython for
-# CPython), time-scale ceiling 20, six instances.  Check `swapon --show`
-# after each batch.  The unittest suite on top of the farm
-# is killed by memory pressure: stop the farm, run the suite, restart, fly.
+# Harness defaults: PyPy (PYPY=0 / --cpython for CPython), time-scale
+# ceiling 20, six instances.
 cd testInstances && ./mkbase.sh        # build a stripped KSP copy into ~/kspfarm/base (once, ~7.5 GB)
 ./mkclone.sh 0 && ./kwinRun.sh 0       # an unattended instance, invisible
 ./syncSaves.sh check                   # do the instances fly the reference saves?
@@ -212,7 +186,7 @@ cd testInstances && ./mkbase.sh        # build a stripped KSP copy into ~/kspfar
 ./stop.sh                              # stop them all (and the watchdog)
 ```
 
-**Every autopilot flies from `dist/krpcLab.py`**, the single-file bundle (`tools/bundle.py`, comments stripped): `run.sh`, the launcher's buttons and the farm harnesses rebuild it when a source is newer and run it, and the `post-commit` hook in `tools/githooks` rebuilds it on every commit (`run.sh` sets `core.hooksPath`), then, when the farm is down, runs the offline suite against it in the background; `.git-bundle-error.log` appears in the root if either fails. It is as small as plain text gets (~184 kB for ~1.6 MB of tree): comments and docstrings stripped, names renamed a, b, ... -- locals and the names nested functions read, parameters no call passes by keyword (`__init__`'s included), nested and module-level functions, classes, imports, and attributes only our classes define (never a kRPC/stdlib name: the build reads the game's `GameData/kRPC/*.json`) -- statements rewritten shorter (walrus, ternary returns and assignments, `a=b=0`, `pass`->`0`, merged imports; `pyshort.py`), builtins, repeated literals and other modules' functions (`vec.norm`, `math.radians`, where nothing rebinds them) read through one-letter aliases, whitespace squeezed, and every phrase worth it (a run of up to 12 tokens, line breaks included) written as a code of one to three printable characters -- the rarest characters become one-byte codes and two-byte leads, the text cut at its cheapest codes -- from a dictionary whose entries use shorter entries' codes, expanded in memory before compiling (`tools/pydict.py`; what runs is the plain text; ~40 ms of startup) (`tools/pystrip.py`, `pyminify.py`, `pyshort.py`, `pyalias.py`, `pycompact.py`, each proven by the parser; `pydict.py`, proven by reading the file back). A name any test or shell script could reach stays. Not compressed (zip is the last resort): starts in PyPy ~310 ms, CPython ~150 ms to `--help`. `tools/bundle.py --suite` runs the offline tests against it. Every farm harness (`quickglide`, `quickfly`, `stackfly`) starts its flight as a child through `tools/farmflight.py`; `--tree` flies the modules instead.
+**Every autopilot flies from `dist/krpcLab.py`**, the single-file bundle (`tools/bundle.py`, comments stripped): `run.sh`, the launcher's buttons and the farm harnesses rebuild it when a source is newer and run it, and the `post-commit` hook in `tools/githooks` rebuilds it on every commit (`run.sh` sets `core.hooksPath`), then, when the farm is down, runs the offline suite against it in the background; `.git-bundle-error.log` appears in the root if either fails, and the session is told. It is as small as plain text gets (~184 kB for ~1.6 MB of tree): comments and docstrings stripped, names renamed a, b, ... -- locals and the names nested functions read, parameters no call passes by keyword (`__init__`'s included), nested and module-level functions, classes, imports, and attributes only our classes define (never a kRPC/stdlib name: the build reads the game's `GameData/kRPC/*.json`) -- statements rewritten shorter (walrus, ternary returns and assignments, `a=b=0`, `pass`->`0`, merged imports; `pyshort.py`), builtins, repeated literals and other modules' functions (`vec.norm`, `math.radians`, where nothing rebinds them) read through one-letter aliases, whitespace squeezed, and every phrase worth it (a run of up to 12 tokens, line breaks included) written as a code of one to three printable characters -- the rarest characters become one-byte codes and two-byte leads, the text cut at its cheapest codes -- from a dictionary whose entries use shorter entries' codes, expanded in memory before compiling (`tools/pydict.py`; what runs is the plain text; ~40 ms of startup) (`tools/pystrip.py`, `pyminify.py`, `pyshort.py`, `pyalias.py`, `pycompact.py`, each proven by the parser; `pydict.py`, proven by reading the file back). A name any test or shell script could reach stays. Not compressed (zip is the last resort): starts in PyPy ~310 ms, CPython ~150 ms to `--help`. `tools/bundle.py --suite` runs the offline tests against it. Every farm harness (`quickglide`, `quickfly`, `stackfly`) starts its flight as a child through `tools/farmflight.py`; `--tree` flies the modules instead.
 
 Tools are run from the root. Each puts the root on `sys.path` itself and
 re-executes under the project venv if the interpreter has no `krpc`, so
@@ -240,24 +214,13 @@ need no third-party packages.
 - Other projects' instances may share the farm (`~/kspfarm/<project>/`). Never run them while
   these are up.
 
-**Three things make a farm batch a lie, and none of them announce it.**
-`pgrepf -a 'krpcLab.py --pilot spaceplane'` should show exactly one per busy instance --
-the harness runs the flight as a *child*, so a killed batch used to leave it
-flying (fixed, but check). `testInstances/syncSaves.sh check` should say every
-instance matches `saves/` -- each clone keeps its own quicksaves and they drift
-(on 2026-09-23 three clones were missing up to 17 saves and two held an older
-`qs_plane`). And `swapon --show` should be near zero *after* the batch as well
-as before: four instances left up for seven hours put 15.5 GB into zram and
-biased the spaceplane's arrivals **27 km long** with the spread unchanged.
-Restart the farm between sessions. See [docs/testInstances.md](docs/testInstances.md).
-
-**Instances are only comparable if they are the same game.** Three of them
-drifted to three different mod sets and it cost a session: one had
-`BetterTimeWarp` (which redefines the warp rate and changed which deorbit
-pass was flown, worth 23 km), another was missing the four mods `base/` keeps
-on purpose because they replace the spaceplane's control-surface modules.
-Diff `ksp<N>/GameData` against `base/GameData` before believing a comparison
-across instances, and re-clone rather than patch.
+**What makes a farm batch a lie without announcing it** -- a killed batch's
+flight still flying, a clone's quicksave drifted from `saves/`, swap grown
+over hours (seven hours biased the spaceplane's arrivals 27 km long, spread
+unchanged), an instance with a different mod set (`BetterTimeWarp` once moved
+a deorbit pass 23 km) -- is checked by `testInstances/batchHooks.py` at every
+batch's start and end. Re-clone rather than patch. See
+[docs/testInstances.md](docs/testInstances.md).
 
 ## Hard conventions
 
@@ -451,23 +414,6 @@ These bite in both projects and are the ones a change most often violates.
   decision. `conesum.py`, `landsum.py` and `armsum.py` recompute all of it
   in seconds. Failure 23's rule, aimed at the comments rather than the
   constants.
-
-- **Every few batches, stop and audit the whole vehicle and the whole
-  flight -- not the phase you are in.** Two standing checks, on a schedule
-  rather than when stuck: (1) *missing controls* -- list every actuator and
-  setting the craft exposes through kRPC (control-surface axes, deploy
-  angles, RCS, airbrakes, gimbals, drain valves, gear, brakes, SAS/throttle
-  modes) and every one the autopilot never commands or leaves at whatever
-  the craft file happened to set; the shuttle found five of those in one
-  afternoon after ~2800 flights on one craft, and `Drain Mode` had been right
-  only by inheritance. (2) *breadth* -- before the next batch on the phase
-  you have been working, glance at the others' summaries (`oscsum.py`,
-  `landsum.py`, `loop rate`, touchdown survival) on **more than one orbit
-  and, when there is one, more than one airframe of the family**. Sessions here have repeatedly spent a day on the approach's
-  last 900 m while the entry scattered 200 km on another airframe, or tuned
-  one save while a second save's bimodality sat unread. The goal is accuracy
-  across ships and orbits, and the largest error is rarely in the part you
-  are looking at.
 
 - **When three attempts on one mechanism come back null, the next thing to
   change is the method, not the fourth value.** A refuted mechanism is
