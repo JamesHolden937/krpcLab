@@ -25,8 +25,8 @@ brakes, instead of pushing toward the target. It is re-set only when the value m
 restored on leaving COAST. Event lines: "coast rate cap X deg/s", "coast rate cap released". My energy estimate:
 the first overshoot is still ~40-50 deg (the air beats full braking from 150 deg), then it settles in ~1.5 swings.
 
-**RUNNING: detachjob `cap1118`** (launched 20:48, ETA ~2102: farm start + 2 laps x 2 arms on 6 instances), the A/B below.
-On its end: `detachjob status cap1118 --tail 150`, read `logs/rot-cap1118.txt`, compare arms as in 1.
+**RUNNING: detachjob `cap1118b`** (launched 21:08, ETA ~2125; the first launch, `cap1118`, flew nothing: ksp5 hung mid-load and start.sh hit its 900 s deadline -- start.sh now relaunches a hung instance, c004501), the A/B below.
+On its end: `detachjob status cap1118b --tail 150`, read `logs/rot-cap1118.txt`, compare arms as in 1.
 
 **Next, in order:**
 1. A/B on the farm (flying as cap1118): `SAVES_LIST=qs_fin2live1118 LAPS=2 brot.sh cap1118 "cap:COAST_RATE_CAP=True,DIAG_STATE=True"

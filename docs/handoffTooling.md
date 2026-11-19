@@ -1,5 +1,18 @@
 # Tooling HANDOFF (older cross-cutting sections) -- read when touching launcherMod, the bundle or the farm harnesses
 
+## 2026-11-18 night (3): start.sh relaunches an instance that hangs at boot (c004501, c30334d)
+
+- **What happened:** cap1118 (boosterland A/B, launched 20:48) never flew. ksp5's game froze 8 s into its boot
+  (KSP.log last written 20:49:57, Restock "No files found" lines after ModuleManager; process alive, ~4 % CPU, no
+  port). `start.sh` relaunched only *missing* processes, so it waited until START_TIMEOUT (900 s) and exited 1 at
+  21:04:55; brot.sh never ran.
+- **Fix:** an instance with no port that is alive but whose KSP.log has not been written for `START_HANG` s
+  (default 120) counts as hung: `stop.sh N` (SIGKILL fallback) and relaunch, sharing the crash path's
+  RETRIES. Measured on six healthy boots that night: longest pause between log lines 4.6-5.6 s, port open ~25 s
+  after "Log started" (warm ModuleManager cache; a cold cache may pause longer, hence 120 s).
+- **Test:** SIGSTOP ksp5's game 8 s into a boot under the new start.sh -- RESULT_PENDING
+- **cap1118 still has to be re-flown** (boosterland handoff, next step 1).
+
 ## 2026-11-18 night (2): batch-end notice, Stop hook, relay timing
 
 - **Why no notification after live1118b:** the relay was armed at ETA+3 (20:07), the batch ended 20:03, and the
