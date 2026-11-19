@@ -21,9 +21,19 @@ the 11 deg moment/q read 159 then 243 eight seconds apart at the same Mach. Same
 (4a09ace). **Fix:** each angle probed at +aoa and -aoa; restoring moment = half-sum along each side's own axis, lift =
 half-difference of the side force, drag = mean. Doubles the hold probe's calls (16 -> 32 per 2 s refresh).
 
+**How LOG17952 was lost (re-read 2026-11-18 19:05):** boostback exit 35 m; the flip took the prediction to 2.8 km
+short, steering recovered it to 45 m by 11 km. Below 9 km cmd 17-18 deg = `can`, but held 9-12, pitch input pinned
+(`in=+0.51/+1.00`, sat=1.00), trk 0.90 -> 0.57; at 7.7 -> 7.0 km the miss jumped 203 -> 1370 m and stayed. So: `can`
+overstated what the fins could hold (the probe read saturated fins) -> asked for lift it could not make -> short.
+
+**IN FLIGHT: detachjob `mirror1118`** (started 19:10, ETA ~19:30): `SAVES_LIST="qs_finbooster2 qs_finbooster2_legs"
+LAPS=2 brot.sh mirror-1118 d:` -> `logs/rot-mirror-1118.txt`, 24 flights on fb61b3b (mirrored hold probe), defaults.
+Read: miss median and outliers v nsep-1118 (~6 m, 20/24 within 36 m); `can` v `hold` and `trk` below 10 km (can
+should no longer exceed what is held with sat=1.00; can should not bounce tick to tick); coast spend (budgetcheck).
+If no worse: tell the user it is ready to fly live. If worse: find which probe term moved (log `torque limit` lines).
+
 **Next, in order:**
-1. Fly it: nsep comparison on qs_finbooster2 (+_legs), 24 flights, read `can` v `hold` below 10 km and miss v nsep-1118.
-   Then the user flies live.
+1. Read mirror-1118 (above). Then the user flies live.
 2. Old items from the evening section below (outliers LOG17937/17942, coast spend split, howItWorks.pdf, DIAG_DRAG).
 
 **Trap:** never compare budget/q across probes at different q -- the fixed term divides by q. Compare torque (N m).
