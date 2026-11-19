@@ -77,7 +77,7 @@ while :; do
     [ $(( $(date +%s) - started[$N] )) -lt $GRACE ] && continue
     if game_running "$N"; then
       # A hang: the game is alive but KSP.log has not been written for HANG s
-      # (a healthy boot never pauses it longer than ~3 s; ksp5 froze mid-load
+      # (healthy boots: longest pause 4.6-5.6 s, port open ~25 s after; ksp5 froze mid-load
       # at 20:49:57 on 2026-11-18 and held a batch for 15 min).
       log="$HERE/ksp$N/KSP.log"
       last=$(stat -c %Y "$log" 2>/dev/null || echo 0)
