@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 night | live LOG17979: flip overshoot (aero torque unmodelled, done on angle only), coast oscillation, miss jump 39->1047 m at 11.5 km untraced; mirror-1118 unread |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 night | live misses: the coast prediction jumps ~1.2 km at M1.5 (live only, untraced); qs_fin2live1118 does not reproduce yet; coast settle fix 585b5b1 unflown |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
@@ -39,8 +39,7 @@ tools, not raw.
    torque and MoI fixed -- their tables and kRPC-dependent laws), ascent (KRPC.MechJeb now ships with kRPC; one
    smoke flight of qs_stack). Fly each pilot's standard batch before trusting its defaults.
 7. **Live**: the user flies the 0.8 defaults (latch reset, pace off). START SCRIPT / launcherMod under 0.8 not
-   exercised live yet. Live game has no GimbalTorqueFix (stock GetPotentialTorque over-credits 1.25-1.5x):
-   offer `gimbalTorqueFix/build.sh --live` (its torque patch still applies under 0.8).
+   exercised live yet. GimbalTorqueFix is installed live (checked 2026-11-18).
 8. **When 0.8.0 is released**: switch `tools/krpcmain.sh` to the release (mod zip + `pip install krpc==0.8.0`),
    diff it against 34c70de, re-fly.
 9. **Disk outside krpcLab (the user's call)**: Bazel's cache is 17 GB in `~/.cache/bazel` (`cd ~/krpc && bazel

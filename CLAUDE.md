@@ -53,8 +53,8 @@ appears:
 - *Suite run beside the farm, or a code edit in the main tree mid-batch*
   (`claudeHooks.py bash|edit`): refused, with what to do instead.
 - *Post-commit bundle/suite failure* (`claudeHooks.py notice`): reported once.
-- *Context over 100k tokens* (`claudeHooks.py notice`, every prompt and Bash call, repeated
-  every 10 min): a hard order to write the handoff, commit and clear self.
+- *A farm batch launched with the context over 100k tokens* (`claudeHooks.py notice`, on the
+  launching Bash call only): a hard order to write the handoff, commit and clear self.
 - *New save or craft committed* (post-commit) and *push with a pilot's code
   newer than its howItWorks.pdf* (`tools/githooks/pre-push`): reminders with
   the procedure.

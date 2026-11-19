@@ -2,33 +2,45 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
-## 2026-11-18 night (2): boosterland -- live LOG17979 read: flip overshoot, coast oscillation, 1.4 km short (unfixed)
+## 2026-11-18 night (2): boosterland -- live LOG17979: miss jump is live-only (M1.5 coast); coast settle gate fixed (unflown)
 
-State: defaults b3480ed9, code fb61b3b (mirrored hold probe), nothing changed this session. Farm down.
-mirror-1118 (`logs/rot-mirror-1118.txt`) **still unread** -- read it with the items below.
+State: defaults b3480ed9 unchanged. Code 585b5b1 (coast settle dwell + brake measurement gated on it), **not flown**.
+boosterland offline tests 206 OK. Farm down. mirror-1118 was read in f0a4403 (section below).
 
-**LOG17979** (live, FMRS_save_1 'Heavy Shuttle Probe', 274 t, sep 16.5 km M2.75): landed 5.5 m/s 1411 m short, tipped
-(tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
-1. **Boostback flip overshoot:** flip law planned u=0, rcs+wheels 0.056 rad/s^2, 124 deg, turn 12.5 s; it turned in
-   **3.8 s** and "flip done" fired at w=54 deg/s (~10x the modelled authority: aero torque at M2.6/18 km, not in
-   `flip_authority`). `flip_law` (autoland.py ~1368) ends on angle only (`flip_done_deg`), no rate check -> full thrust
-   while spinning -> overshoot (hold 7.6 v cmd 18.6, err 26), settled 4 s later.
-2. **Coast flip back + oscillation:** 955-983 s (18.9-12.5 km) hold 151/56/45/101/68/25/75/37/23/32/4, sat=1.00,
-   w up to 47 deg/s. Overlaps 5 rcs-trim pushes (rcs held open) and the late-brake measurement (open 968, 25 -> 75 deg
-   after) -- that measurement read open = 0.83x closed, so brakes stayed closed (bogus).
-3. **Short:** miss 39 m at 12.2 km (983.0) -> 1047 at 11.5 km (985.0) in one tick, then ~1.5 km to the end (prediction
-   right afterwards); cmd pinned at `can` 12 -> 8 deg. At the jump: "coast nose lag" re-measured 0.08 -> 0.53/0.62 s
-   (used by trajectory.py:628), and an rcs trim push from 977.66 never logged "done" (tr= grew to -0.62/+0.79, held to
-   the burn). Cause not yet traced.
+**LOG17979** (live, FMRS_save_1 'Heavy Shuttle Probe', 274 t, sep 16.5 km M2.75): landed 5.5 m/s 1411 m short, then
+tipped (tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
 
-**Next, in order:**
-1. Trace the 983->985 miss jump: replay the predictor at those ticks with nose_lag 0.08 v 0.6 and with/without the trim
-   translation (`boosterland/tools/replay.py`). A prediction error is top priority, fix at source.
-2. Flip: count measured aero torque in the flip authority (probe it, no fitted constant) and end the flip on rate
-   stopped, not angle alone.
-3. Coast: no rcs trim / brake measurement until the attitude has settled; find why the coast loop diverged (sat=1.00
-   for 30 s) -- fix the controller, not a window.
-4. Read mirror-1118 (see section below), then the earlier open items.
+1. **Miss jump (top priority, untraced).** Predicted miss 39 m -> 1047 m in one tick (983 -> 985 s, 11.5 km); ut+ttl
+   stepped 2.0 s earlier, and the *post*-jump prediction came true (touchdown 1034.0 v 1034.0 predicted). So the
+   pre-jump prediction was wrong. **LOG17952 (live) has the same: 203 -> 1370 m, ut+ttl -2 s, at 7.0 km.** None of 48
+   farm flights (nsep/mirror-1118) jumps > 400 m below 14 km. **Both live jumps happen as Mach crosses 1.50**
+   (1.48 -> 1.51; 1.52 -> 1.50); farm coasts below 14 km run at M~2.2, so the farm saves never fly this regime. 1.5 is a
+   0.25-Mach bin edge (`DRAG_CURVE_BINS` 24): look for a nearest-bin (stepped) lookup in what the coast prediction
+   reads at the current Mach (hold/`can`, lift slope, the burn's aero tables, `BURN_LIFT`). Ruled out: nose lag
+   (burn only, span change ~1.6 s), cda (smooth), the rcs trim (cross-track only, its physics can't move 1 km in 2 s).
+   DIAG_STATE was off and doesn't log steering state, so no offline replay.
+2. **Reproduce on the farm:** `saves/qs_fin2live1118` = the live `FMRS/FMRS_save_1.sfs` copied as-is (not in
+   saves/README yet). Flown 6x (live1118, LOG17980-17985, DIAG_STATE=True): **all destroyed 119 km E**. They started at
+   259 t, 17.5 km, M2.90, pad 22.6 km, against live's 274 t, 16.5 km, M2.75, pad 20.3 km. So it's not only the LAN shift
+   (`qs_finbooster` needed -0.124 deg): the save holds a different state from the one the live flight flew (check the
+   active vessel's mass/orbit in the .sfs against LOG17979's first line). Either fix the save, or make a farm
+   separation at ~16.5 km/M2.75 by flying the ascent to a lower staging. Then fly it with DIAG_STATE and replay the jump.
+3. **Coast oscillation (fixed, unflown, 585b5b1):** "coast settled" latched on the first tick inside RCS_ERROR_ON_DEG
+   (17.5 deg while turning at 47 deg/s). Then the rcs trim pushed and the late-brake measurement held the fins neutral
+   (the coast's attitude authority) mid-swing: 25 -> 75 deg after the brakes opened, and open/closed read 0.83 (bogus).
+   Now settled = inside for RCS_SETTLE_S (SETTLE_LAGS x measured lag) without leaving, and the brake measurement waits
+   for it. Whether the loop itself also diverges (sat=1.00 for 30 s) still has to be measured.
+4. **Boostback flip:** every flight (farm too) finishes the flip in 1-4 s against the law's planned 9-12 s
+   (`flip_authority` reads 0.056 rad/s^2 rcs+wheels; RCS reads 0 while the valve is shut, so it is probably read
+   before the valve opens). It arrives at 46-54 deg/s. The farm settles in one tick; live overshoots (err 26 deg, 4 s).
+   "flip done" is angle-only (`flip_done_deg` 25.8 deg). GimbalTorqueFix **is** installed live now (HANDOFF item 7 is
+   stale). Proposed: read flip authority after the valve opens, and end the flip on the rate as well as the angle.
+
+**Next, in order:** 1 (reproduce, then find the M1.5 step) -> fly 585b5b1 on the farm (nsep settings,
+`LOOP_PACING_GAME_TIME=True`, so it compares with nsep-1118) -> 4 -> the older items below.
+
+**Traps:** a live FMRS save copied as-is does not start the farm where live flew (LOG17980-85). The context-limit
+hook now fires only right after a batch launch (claudeHooks.py `BATCH_LAUNCH`).
 
 ## 2026-11-18 late night: boosterland -- the live "10x less torque" was a misreading; the real fault was the hold probe reading the fins' deflection (fixed, unflown)
 
