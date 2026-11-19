@@ -19,12 +19,21 @@ tipped (tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
    reads at the current Mach (hold/`can`, lift slope, the burn's aero tables, `BURN_LIFT`). Ruled out: nose lag
    (burn only, span change ~1.6 s), cda (smooth), the rcs trim (cross-track only, its physics can't move 1 km in 2 s).
    DIAG_STATE was off and doesn't log steering state, so no offline replay.
-2. **Reproduce on the farm:** `saves/qs_fin2live1118` = the live `FMRS/FMRS_save_1.sfs` copied as-is (not in
-   saves/README yet). Flown 6x (live1118, LOG17980-17985, DIAG_STATE=True): **all destroyed 119 km E**. They started at
-   259 t, 17.5 km, M2.90, pad 22.6 km, against live's 274 t, 16.5 km, M2.75, pad 20.3 km. So it's not only the LAN shift
-   (`qs_finbooster` needed -0.124 deg): the save holds a different state from the one the live flight flew (check the
-   active vessel's mass/orbit in the .sfs against LOG17979's first line). Either fix the save, or make a farm
-   separation at ~16.5 km/M2.75 by flying the ascent to a lower staging. Then fly it with DIAG_STATE and replay the jump.
+2. **Reproduce on the farm:** `saves/qs_fin2live1118` = the live `FMRS/FMRS_save_1.sfs` (LOG17979's separation), with
+   `activeVessel = 10` (the booster). FMRS saves keep the main mission active and live `fmrs.py` switches to the
+   booster; the farm harness flies whatever is active. The first batch (live1118, LOG17980-17985: 'Heavy Shuttle',
+   259 t, destroyed 119 km E) flew the **orbiter**. Ignore it. **RUNNING: detachjob `live1118b`** (started 20:00, ETA
+   ~20:04): `SAVES_LIST=qs_fin2live1118 LAPS=1 brot.sh live1118b "diag:DIAG_STATE=True"` -> `logs/rot-live1118b.txt`,
+   6 flights, defaults + DIAG_STATE. Read:
+   - Check the first SEPARATION line reads ~274 t, 16.5 km, M2.75, pad ~20.3 km, like LOG17979. If pad is off by
+     km, shift the Kerbin LANs as `qs_finbooster` did.
+   - Does the coast miss jump as Mach crosses 1.50? Use the awk scan of ut+ttl steps, which found -2.0 s in both live
+     logs.
+   - If yes: `boosterland/tools/replay.py` on the tick before and after the jump, to find which table steps at the
+     Mach 1.5 bin edge, and fix it at its source.
+   - If no: compare the coast's env lines (`holdable`, `torque limit`, `lift peak`) with LOG17979's. The farm and
+     live then differ in what the probes read.
+   Then add the save to saves/README.md.
 3. **Coast oscillation (fixed, unflown, 585b5b1):** "coast settled" latched on the first tick inside RCS_ERROR_ON_DEG
    (17.5 deg while turning at 47 deg/s). Then the rcs trim pushed and the late-brake measurement held the fins neutral
    (the coast's attitude authority) mid-swing: 25 -> 75 deg after the brakes opened, and open/closed read 0.83 (bogus).
@@ -39,7 +48,7 @@ tipped (tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
 **Next, in order:** 1 (reproduce, then find the M1.5 step) -> fly 585b5b1 on the farm (nsep settings,
 `LOOP_PACING_GAME_TIME=True`, so it compares with nsep-1118) -> 4 -> the older items below.
 
-**Traps:** a live FMRS save copied as-is does not start the farm where live flew (LOG17980-85). The context-limit
+**Traps:** a live FMRS save has the main mission active: set `activeVessel` to the booster before the farm flies it. The context-limit
 hook now fires only right after a batch launch (claudeHooks.py `BATCH_LAUNCH`).
 
 ## 2026-11-18 late night: boosterland -- the live "10x less torque" was a misreading; the real fault was the hold probe reading the fins' deflection (fixed, unflown)
