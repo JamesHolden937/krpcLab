@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 | **NEXT PRIORITY (the user, 11-18): the coast's RCS attitude limit cycle (0.65-5.2 t LFO)**; fin2 runs dry; fly qs_finbooster2 only |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 pm | coast RCS limit cycle = deadband fed by the steered prediction; fix on branch `band` (unflown); leg clearance at gear down reads 2 m low on qs_finbooster2_legs |
 | ascent | docs/ascent/handoff.md | 2026-11-18 | separation budget's fall drag fixed (843438e); re-fly ascent for a new fin2 separation (deferred by the user) |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
