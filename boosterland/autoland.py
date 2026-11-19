@@ -2843,8 +2843,16 @@ class Autoland:
             TOUCHDOWN: self.run_touchdown,
         }[self.state]
         handler(snap)
-        if self.prediction is not None:
-            self.miss_jitter.update(self.prediction.position)
+        # The deadbands are the scatter of the prediction *nothing commands*:
+        # the coast's stored prediction flies its commanded angle, and every
+        # change of that angle is a jump the band would read as noise -- a
+        # 10 deg <-> 0 toggle moved it +110 <-> -255 m, the band swelled past
+        # the miss and switched the steering off, which made the next jump
+        # (LOG17812, 0.65-5.2 t of RCS on the attitude chasing it).
+        noise = self.env.unsteered if self.state == COAST else None
+        noise = noise if noise is not None else self.prediction
+        if noise is not None:
+            self.miss_jitter.update(noise.position)
             self.env.miss_band = self.miss_jitter.band(self.cfg.NOISE_SIGMAS)
         if (self.cfg.KRPC_AP_DIAG and self.cfg.KRPC_AP_DIAG_BELOW_M > 0.0
                 and self.state == COAST and not self.diag_restarted
@@ -2996,7 +3004,9 @@ def compact_line(state, snap, prediction, run):
                if run.env.lift_slope is not None else "     -",
                run.env.aoa_tracking,
                (" can=%.1f" % run.env.holdable_deg
-                if run.env.holdable_deg is not None else ""))
+                if run.env.holdable_deg is not None else "")
+               + (" band=%.0f" % run.env.miss_band
+                  if run.env.miss_band is not None else ""))
             + attitude_fields(snap, run) + engine_fields(state, run)
             + (" tr=%+.2f/%+.2f/%+.2f" % run.trim_cmd
                if any(getattr(run, "trim_cmd", (0.0,))) else ""))
