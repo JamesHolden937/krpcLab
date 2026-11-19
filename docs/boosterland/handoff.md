@@ -15,16 +15,16 @@ start.sh now relaunches an instance that hangs at boot (c004501/c30334d; the fir
 - **The cap is 2.4 deg/s** ("coast rate cap 2.4 deg/s (on-angle 0.7 deg)", LOG17992): theta_on = RCS_ERROR_ON_DEG is
   0.7 deg, so sqrt(2 theta alpha) is far below the 30-48 deg/s the air drives. kRPC brakes always and still loses:
   the controls are 2-3x weaker than the air's moment, so no rate limit can stop the pendulum.
-- **The farm no longer reproduces the miss it was built for**: coast-end long ~-0.4 km (LOG17986-17990: -1.2 km), and
-  touchdowns go 150-900 m east instead of 1.4 km short. Unknown which change did it (same save, defaults moved by
-  COAST_RATE_CAP only; nocap arm too).
+- **East of the pad is short** (long= stays negative to touchdown). The swing still drives it: LOG18000 settles
+  ~25 s into the coast and walks to long=-1026 (lands 780 m short); LOG18003 settles in ~15 s, peaks -915, recovers
+  to -174 (180 m). The steering wins back only part of the walk. Smaller than LOG17986-17990 (-1.2 km) on this batch.
 
 **Next, in order:**
-1. Find why both arms land east 150-900 m: read one nocap log (LOG18003, 180 m; LOG18000, 780 m) from coast end to
-   touchdown with the summary tools: which phase builds the east error, and what the prediction said there.
-2. Decide COAST_RATE_CAP: on this batch it is not better at the pad; delete it unless (1) shows the swing is what
-   drives the east error. A cap from the on-angle is the wrong quantity -- the braking budget is the controls vs the
-   air's moment, not a stop inside the valve angle.
+1. The controls cannot brake the swing once it falls (air moment 2-3x the 2.05 MN m of wheels+RCS), so stop it
+   arising: the coast starts with the nose 140-165 deg off retrograde, straight from the boostback attitude. Turn it
+   toward retrograde while the engine still has gimbal authority (end of boostback), or enter the coast with the nose
+   where the air's moment is small -- "ask what the vehicle can do that the autopilot never commands".
+2. Delete COAST_RATE_CAP (no gain at the pad over 12 v 12; the on-angle is the wrong budget) unless (1) wants it.
 3. Then the old list below.
 
 ## 2026-11-18 night (4): boosterland -- the coast's overswing is kRPC pumping the air's pendulum; COAST_RATE_CAP (default, unflown)

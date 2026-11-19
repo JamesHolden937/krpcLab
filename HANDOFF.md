@@ -6,7 +6,7 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 21:30 | cap1118b: COAST_RATE_CAP trims swing 57->40 deg, pad no better (496 vs 405 m); all land 150-900 m east; next: find the east error, read it next |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 21:30 | cap1118b: COAST_RATE_CAP trims swing 57->40 deg, pad no better (496 vs 405 m); all still land 150-900 m short from the swing; next: turn the nose before the coast, read it next |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
