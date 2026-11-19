@@ -220,6 +220,8 @@ class Config:
                                             # than fitted to a gain; see
                                             # guidance.solve_steer.  Off until
                                             # it is measured in game.
+    STEER_ROOT_STEPS: int = 2               # false-position steps on an overshooting
+                                            # steer command (guidance.verified); numerics
     AERO_STEER_CROSS: bool = True           # roll the lift about the velocity
                                             # as well as tilting it, so the
                                             # cross-track miss has an actuator

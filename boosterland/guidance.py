@@ -378,29 +378,61 @@ def verified(env, r, v, mass, max_accel, cfg, normal, u, m0, zero, flat):
 
     The guard is free, because the prediction at the commanded angle is
     computed anyway to hand back to the caller.  So compare it against the
-    do-nothing prediction that was computed first: if steering is not an
-    improvement, halve the angle and look again, and if that still is not,
-    hold retrograde.  This is the same shape as ``correction_gradient``
-    refusing a burn that would make things worse, and it is why the altitude
-    floor above is not needed -- a command that helps at 1.5 km is kept, and
-    only one that does not is dropped.
+    do-nothing prediction that was computed first, and never hand back a
+    command that lands further off than flying straight.
+
+    And when the command overshoots -- the miss changed sign along its own
+    direction -- the two propagations bracket the angle that lands on the
+    target, so the root is found by false position between them (in the
+    command's scale ``s``, no plant shape assumed) rather than by halving.
+    The probe that sized ``u`` is taken at the holdable limit, near the lift
+    peak, where the curve flattens: the a|a| extrapolated from it under-reads
+    the small-angle sensitivity and over-commands 2-4x (sw-1118: every kept
+    command was the halved one, still +80..+234 m past a -205 m miss; on the
+    other ticks both were worse than nothing, so the coast toggled 8 <-> 0 deg
+    every 4 s and the RCS chased it).  Each step stops once the miss is inside
+    the prediction's own noise (``env.miss_band``).
     """
     flat_miss = math.hypot(m0[0], m0[1])
-    best = None
-    for scale in (1.0, 0.5):
-        trial = (u[0] * scale, u[1] * scale)
-        steer = steer_for(normal, v, trial, env.lift_slope_at,
-                         holdable(env, cfg))
+    if flat_miss <= 0.0:
+        env.steer_why = "worse"
+        return zero, flat
+    along = (m0[0] / flat_miss, m0[1] / flat_miss)
+    band = getattr(env, "miss_band", None) or 0.0
+
+    def trial(scale):
+        steer = steer_for(normal, v, (u[0] * scale, u[1] * scale),
+                          env.lift_slope_at, holdable(env, cfg))
         prediction = trajectory.predict_landing(env, r, v, mass, max_accel,
                                                 cfg, steer=steer)
         long, cross = trajectory.miss_components(env, prediction.position,
                                                  env.target, r)
-        miss = math.hypot(long, cross)
-        if miss <= flat_miss:
-            env.steer_why = "v%.1f" % scale
-            return steer, prediction
-        if best is None or miss < best[0]:
-            best = (miss, steer, prediction)
+        return (math.hypot(long, cross), long * along[0] + cross * along[1],
+                steer, prediction, scale)
+
+    tried = [trial(1.0)]
+    g1 = tried[0][1]
+    if g1 >= 0.0:
+        # Short of the target along the miss (or exactly on it): no bracket.
+        # Keep it if it helps; if the cross-track grew instead, halve once.
+        if tried[0][0] > flat_miss:
+            tried.append(trial(0.5))
+    else:
+        lo, glo, hi, ghi = 0.0, flat_miss, 1.0, g1
+        for _ in range(cfg.STEER_ROOT_STEPS):
+            if min(t[0] for t in tried) <= band:
+                break
+            s = lo + (hi - lo) * glo / (glo - ghi)
+            t = trial(s)
+            tried.append(t)
+            if t[1] >= 0.0:
+                lo, glo = s, t[1]
+            else:
+                hi, ghi = s, t[1]
+    best = min(tried, key=lambda t: t[0])
+    if best[0] <= flat_miss:
+        env.steer_why = "v%.2f" % best[4]
+        return best[2], best[3]
     # Every angle tried is worse than flying straight.  Do that.
     env.steer_why = "worse"
     return zero, flat
