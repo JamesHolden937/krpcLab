@@ -15,6 +15,11 @@ start.sh now relaunches an instance that hangs at boot (c004501/c30334d; the fir
 - **The cap is 2.4 deg/s** ("coast rate cap 2.4 deg/s (on-angle 0.7 deg)", LOG17992): theta_on = RCS_ERROR_ON_DEG is
   0.7 deg, so sqrt(2 theta alpha) is far below the 30-48 deg/s the air drives. kRPC brakes always and still loses:
   the controls are 2-3x weaker than the air's moment, so no rate limit can stop the pendulum.
+- **Not a kRPC (or KSPCF) bug** (checked 2026-11-18 for an issue draft): kRPC's profile (AttitudeController.cs:2395,
+  kRPC bc748fd) ignores the air's moment, but once the air drives the nose past the profile speed the rate loop
+  already brakes at sat=1.00; forcing it to brake throughout (this cap) bought 57 -> 40 deg and nothing at the pad.
+  The section (4) wording "kRPC pumping the swing" overstates kRPC's share: the cause is the coast's start attitude
+  with controls 2-3x weaker than the air. No issue filed.
 - **East of the pad is short** (long= stays negative to touchdown). The swing still drives it: LOG18000 settles
   ~25 s into the coast and walks to long=-1026 (lands 780 m short); LOG18003 settles in ~15 s, peaks -915, recovers
   to -174 (180 m). The steering wins back only part of the walk. Smaller than LOG17986-17990 (-1.2 km) on this batch.
