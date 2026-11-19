@@ -38,7 +38,7 @@ left and why it is allowed.
 ## Guards, numerics, game and site
 
 Pad coordinates; `AIM_BIAS_*` 0; `SEPARATION_COAST_S` (scan off only) and `SEPARATION_MAX_COAST_S`,
-`BOOSTBACK_MAX_BURN_S`, `GEAR_DEPLOY_ALT_M`, `GEAR_MEASURE_TIMEOUT_S`, ``,
+`BOOSTBACK_MAX_BURN_S`, `GEAR_DEPLOY_ALT_M`, `GEAR_MEASURE_TIMEOUT_S`,
 `TOUCHDOWN_WATCH_S`, `DEAD_STREAM_*`, `THROTTLE_DIVERGENCE`, `MASS_LOSS_FRACTION` (timeouts and
 backstops); `CLEARANCE_*` (collision geometry); `PREDICT_*`, `DENSITY_SAMPLE_COUNT`, `DRAG_MACH_MAX`,
 `DRAG_CURVE_BINS`, `LOOP_*`, `LOG_INTERVAL_UT`; `TERRAIN_*`, `SOUND_SPEED_FALLBACK_M_S`, KSP's default
