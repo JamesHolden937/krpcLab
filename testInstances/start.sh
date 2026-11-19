@@ -63,19 +63,30 @@ done
 # on a port wait that timed out flies five instances instead of six.
 #
 # So this does not return until every named port is open.  A crash is a
-# missing game process with no port, at least GRACE s after launch; that
+# missing game process with no port, at least GRACE s after launch, or a
+# live one with no port whose KSP.log has been silent HANG s (a hang); that
 # instance is cleared with stop.sh (which takes its compositor too) and
 # launched again, up to RETRIES times.  START_WAIT=0 restores the old
 # fire-and-forget behaviour.  Exit status 1 if any instance never came up.
-GRACE=30; RETRIES="${START_RETRIES:-3}"; DEADLINE=$(( $(date +%s) + ${START_TIMEOUT:-900} ))
+GRACE=30; HANG="${START_HANG:-120}"; RETRIES="${START_RETRIES:-3}"; DEADLINE=$(( $(date +%s) + ${START_TIMEOUT:-900} ))
 while :; do
   pending=()
   for N in "${want[@]}"; do
     port_up "$N" && continue
     pending+=("$N")
-    game_running "$N" && continue
     [ $(( $(date +%s) - started[$N] )) -lt $GRACE ] && continue
-    why="exited"; grep -q 'Crash!!!' "$(printf "$P" "$N")" 2>/dev/null && why="crashed"
+    if game_running "$N"; then
+      # A hang: the game is alive but KSP.log has not been written for HANG s
+      # (a healthy boot never pauses it longer than ~3 s; ksp5 froze mid-load
+      # at 20:49:57 on 2026-11-18 and held a batch for 15 min).
+      log="$HERE/ksp$N/KSP.log"
+      last=$(stat -c %Y "$log" 2>/dev/null || echo 0)
+      [ "$last" -lt "${started[$N]}" ] && last=${started[$N]}   # an old boot's log
+      [ $(( $(date +%s) - last )) -ge $HANG ] || continue
+      why="hung (KSP.log silent ${HANG} s)"
+    else
+      why="exited"; grep -q 'Crash!!!' "$(printf "$P" "$N")" 2>/dev/null && why="crashed"
+    fi
     [ "${tries[$N]}" -gt "$RETRIES" ] && continue          # given up
     if [ "${tries[$N]}" -eq "$RETRIES" ]; then
       echo "ksp$N $why at boot $RETRIES times; giving up" >&2
