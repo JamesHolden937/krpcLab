@@ -6,13 +6,13 @@ section there, not here.** Only cross-pilot items go here.
 
 | pilot | file | last worked | where it stands / next |
 |---|---|---|---|
-| boosterland | docs/boosterland/handoff.md | 2026-11-18 20:00 | live misses: coast prediction jumps ~1.2 km at M1.5 (live only, untraced); live1118b flying qs_fin2live1118 (live sep) to reproduce; coast settle fix 585b5b1 unflown |
+| boosterland | docs/boosterland/handoff.md | 2026-11-18 20:40 | live1118b: farm reproduces coast miss swings (312-595 m); steered prediction credits lift it drops (tracking step); next: DIAG steering tables + steered replay |
 | ascent | docs/ascent/handoff.md | 2026-11-18 eve | re-flown: asc-1118 separations on the corrected budget land 2-96 m with 21.5-23.4 t as predicted; ksp3's is the new qs_finbooster2 |
 | recon | docs/recon/handoff.md | 2026-11-18 | QUDRAC flies the mission; blocker: nose slam at main-gear contact; not pushed |
 | airplane | docs/airplane/handoff.md | 2026-11-08 | crash guard deleted; screening batch to re-fly on 4 instances; not pushed |
 | propPitch | docs/propPitch/handoff.md | 2026-11-04 | tip limit + stop-when-still defaults; the user flies it live |
 | spaceplane | docs/spaceplane/handoff.md | 2026-11-01 | APPROACH_BEST_LD deleted; next: fly heavy-1101 |
-| tooling | docs/handoffTooling.md | 2026-11-18 night | batch end with no next batch: notify + re-title before the self-clear (bedeec3, untested); event procedures live in hooks (batchHooks.py, claudeHooks.py, pre-push); 4 howItWorks PDFs stale |
+| tooling | docs/handoffTooling.md | 2026-11-18 20:40 | Stop hook refuses to end a turn with work left (ecd19b3); batch end notify-send (505290a; desktop daemon not answering); relays fire at launch+1 min; 4 howItWorks PDFs stale |
 
 Farm state: MiniSystem and Retooled since 2026-11-06 / 11-13 (banner at the top of CLAUDE.md). Retooled flights
 start at LOG16368; earlier ones (stock 1.12.5) are not comparable.

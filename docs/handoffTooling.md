@@ -1,5 +1,20 @@
 # Tooling HANDOFF (older cross-cutting sections) -- read when touching launcherMod, the bundle or the farm harnesses
 
+## 2026-11-18 night (2): batch-end notice, Stop hook, relay timing
+
+- **Why no notification after live1118b:** the relay was armed at ETA+3 (20:07), the batch ended 20:03, and the
+  PushNotification step runs only in the woken session. Fixes: relays now fire at launch+1 min and `detachjob wait`
+  (farmlaunch's exit-76 text, autoContinue.md). `batchHooks.post` also runs `notify-send` at once (505290a).
+  **Desktop notifications are down system-wide:** nobody owns `org.freedesktop.Notifications` on the session bus
+  (plasmashell lost it; `gdbus ... GetServerInformation` hangs). The user's desktop, not touched. PushNotification
+  (phone via Remote Control) is the working path.
+- **Stop hook** (`claudeHooks.py stop`, ecd19b3; the user: "make sure you don't stop when there's work left"):
+  blocks the end of a turn when tracked files are uncommitted, a batch ended with no handoff commit since, or
+  nothing is flying and the turn ends neither on a question nor on `DONE: <why>`. Passes relay runs and the wait
+  on a running detachjob; gives up after 4 blocks in a row (`logs/.stopHook.json`).
+- **Context-limit order false trigger:** `BATCH_LAUNCH` matched `brot.sh` inside a heredoc. `batch_launched` now
+  ignores heredoc bodies and quoted strings.
+
 ## 2026-11-18 night: the end of a batch with no next batch notifies before the clear (`bedeec3`)
 
 - nsep1118 finished at 18:01. The waiting session woke, wrote the boosterland handoff (`d9815b2`) and cleared

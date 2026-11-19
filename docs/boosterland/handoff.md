@@ -2,54 +2,52 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
-## 2026-11-18 night (2): boosterland -- live LOG17979: miss jump is live-only (M1.5 coast); coast settle gate fixed (unflown)
+## 2026-11-18 night (3): boosterland -- live1118b: the farm reproduces coast miss swings; the steered prediction credits lift it drops a tick later
 
-State: defaults b3480ed9 unchanged. Code 585b5b1 (coast settle dwell + brake measurement gated on it), **not flown**.
-boosterland offline tests 206 OK. Farm down. mirror-1118 was read in f0a4403 (section below).
+State: defaults b3480ed9 unchanged. Code 585b5b1 (coast settle dwell + brake measurement gated on it) **flown** in
+live1118b (5 flights, defaults + DIAG_STATE). Farm down. Commits this session: 505290a (batch-end notify-send),
+ecd19b3 (Stop hook), this handoff.
 
-**LOG17979** (live, FMRS_save_1 'Heavy Shuttle Probe', 274 t, sep 16.5 km M2.75): landed 5.5 m/s 1411 m short, then
-tipped (tilt 159) and broke up after touchdown (rcs on, hold ~100 deg).
+**live1118b** (`logs/rot-live1118b.txt`, LOG17986-17990, qs_fin2live1118 = live LOG17979's separation, booster active):
+all landed, 312/361/491/539/595 m from the pad, 0.3-2.1 m/s, mostly east (+361..+578). bb_exit miss 38-135 m, so the
+error grows in the coast. Coast peak_miss 648-1179 m. Live LOG17979 for comparison: 1411 m short.
 
-1. **Miss jump (top priority, untraced).** Predicted miss 39 m -> 1047 m in one tick (983 -> 985 s, 11.5 km); ut+ttl
-   stepped 2.0 s earlier, and the *post*-jump prediction came true (touchdown 1034.0 v 1034.0 predicted). So the
-   pre-jump prediction was wrong. **LOG17952 (live) has the same: 203 -> 1370 m, ut+ttl -2 s, at 7.0 km.** None of 48
-   farm flights (nsep/mirror-1118) jumps > 400 m below 14 km. **Both live jumps happen as Mach crosses 1.50**
-   (1.48 -> 1.51; 1.52 -> 1.50); farm coasts below 14 km run at M~2.2, so the farm saves never fly this regime. 1.5 is a
-   0.25-Mach bin edge (`DRAG_CURVE_BINS` 24): look for a nearest-bin (stepped) lookup in what the coast prediction
-   reads at the current Mach (hold/`can`, lift slope, the burn's aero tables, `BURN_LIFT`). Ruled out: nose lag
-   (burn only, span change ~1.6 s), cda (smooth), the rcs trim (cross-track only, its physics can't move 1 km in 2 s).
-   DIAG_STATE was off and doesn't log steering state, so no offline replay.
-2. **Reproduce on the farm:** `saves/qs_fin2live1118` = the live `FMRS/FMRS_save_1.sfs` (LOG17979's separation), with
-   `activeVessel = 10` (the booster). FMRS saves keep the main mission active and live `fmrs.py` switches to the
-   booster; the farm harness flies whatever is active. The first batch (live1118, LOG17980-17985: 'Heavy Shuttle',
-   259 t, destroyed 119 km E) flew the **orbiter**. Ignore it. **RUNNING: detachjob `live1118b`** (started 20:00, ETA
-   ~20:04): `SAVES_LIST=qs_fin2live1118 LAPS=1 brot.sh live1118b "diag:DIAG_STATE=True"` -> `logs/rot-live1118b.txt`,
-   6 flights, defaults + DIAG_STATE. Read:
-   - Check the first SEPARATION line reads ~274 t, 16.5 km, M2.75, pad ~20.3 km, like LOG17979. If pad is off by
-     km, shift the Kerbin LANs as `qs_finbooster` did.
-   - Does the coast miss jump as Mach crosses 1.50? Use the awk scan of ut+ttl steps, which found -2.0 s in both live
-     logs.
-   - If yes: `boosterland/tools/replay.py` on the tick before and after the jump, to find which table steps at the
-     Mach 1.5 bin edge, and fix it at its source.
-   - If no: compare the coast's env lines (`holdable`, `torque limit`, `lift peak`) with LOG17979's. The farm and
-     live then differ in what the probes read.
-   Then add the save to saves/README.md.
-3. **Coast oscillation (fixed, unflown, 585b5b1):** "coast settled" latched on the first tick inside RCS_ERROR_ON_DEG
-   (17.5 deg while turning at 47 deg/s). Then the rcs trim pushed and the late-brake measurement held the fins neutral
-   (the coast's attitude authority) mid-swing: 25 -> 75 deg after the brakes opened, and open/closed read 0.83 (bogus).
-   Now settled = inside for RCS_SETTLE_S (SETTLE_LAGS x measured lag) without leaving, and the brake measurement waits
-   for it. Whether the loop itself also diverges (sat=1.00 for 30 s) still has to be measured.
-4. **Boostback flip:** every flight (farm too) finishes the flip in 1-4 s against the law's planned 9-12 s
-   (`flip_authority` reads 0.056 rad/s^2 rcs+wheels; RCS reads 0 while the valve is shut, so it is probably read
-   before the valve opens). It arrives at 46-54 deg/s. The farm settles in one tick; live overshoots (err 26 deg, 4 s).
-   "flip done" is angle-only (`flip_done_deg` 25.8 deg). GimbalTorqueFix **is** installed live now (HANDOFF item 7 is
-   stale). Proposed: read flip authority after the valve opens, and end the flip on the rate as well as the angle.
+1. **The coast miss swings on the farm too (not live-only).** LOG17986 (M rising 1.46 -> 1.8 through the coast):
+   logged miss 557 -> 888 -> 1179 -> **20** (770971, aoa steering engages, sw=v0.67) -> 131 -> 15 -> 96 -> **838**
+   (770979). `replay.py logs/LOG17986` (unsteered re-propagation, its own curve) is smooth through those ticks:
+   318, 667, 967, 951, 769, 776, 927, 841. `--curve-from -1` gives the same shape, so the drag curve's re-sweep
+   (770969.80) is innocent. **So the steered prediction claimed ~900 m of lift correction for four ticks and then
+   gave it up.** The drop at 770977.6 is "aoa tracking: commanded 7.0, held 3.0 -> lift scaled by 0.19":
+   `lift_slope_at` scales by tracking squared, so the lift credit stepped by 27x in one event.
+   - Two defects: (a) the steering commanded lift the vehicle doesn't make (held 3 deg of 7) and the prediction
+     believed it until one tracking measurement; (b) that measurement is a single-event step, so the prediction
+     steps with it.
+2. **Live LOG17979's jump (770983 -> 770985, M1.48 -> 1.51, miss 39 -> 1047) is a different trigger:** trk=1.00
+   throughout, no tracking event, no first-probe event (bins at M1.49/M1.50 were probed at 770955/770959). At
+   M1.48 the steer claimed 39 m with aoa 5.5. One tick later even 13.6 leaves -1046 (can 13.6 -> 12.3, cla
+   -379 -> -473). The likely common cause is the same: the steered prediction's lift credit is wrong, and something
+   that steps at the bin edge revealed it. `holdable_aoa`/`torque_limit_aoa`/`_nearest` take the **nearest filled
+   bin** (stepped), and `_hold[index]`/`_lift_peak[index]` are **replaced wholesale** by each probe (no EMA). Those
+   are the stepped reads at a bin edge. Lift slope and drag interpolate.
+3. **Can't settle it offline yet:** DIAG_STATE logs the state, drag curve and atmosphere, so `replay.py` re-flies
+   only the **unsteered** prediction. Needed: DIAG_STATE also logs the steering tables (`_lift` bins,
+   `aoa_tracking`, `_hold` curves, `_lift_peak`, `_hold_fixed/_hold_surface`), and `replay.py` re-flies the steered
+   prediction (`guidance` solve) from them. Then re-fly LOG17986 770969-770981 and find which input moves the
+   steered miss. Fix at the source (principles: prediction error first, no bias/margin).
+4. **Coast settle (585b5b1) flew:** "coast settled: err 0.9 deg after 30.0s" (LOG17986). The coast started at
+   err 94 deg, sat=1.00, and took 30 s to settle. The steering's 900 m swing happened during that unsettled stretch,
+   so the commanded aoa wasn't being held. Whether the steer should command at all before "settled" is a question
+   for the fix in 3.
+5. **Boostback flip** (unchanged): finishes in 1-4 s against the law's planned 9-12 s; `flip_authority` reads RCS
+   before the valve opens. Proposed: read it after the valve opens, and end the flip on rate as well as angle.
 
-**Next, in order:** 1 (reproduce, then find the M1.5 step) -> fly 585b5b1 on the farm (nsep settings,
-`LOOP_PACING_GAME_TIME=True`, so it compares with nsep-1118) -> 4 -> the older items below.
+**Next, in order:** 3 (log steering tables in DIAG_STATE, extend replay.py to the steered solve, replay LOG17986)
+-> fix 1/2 at the source -> fly qs_fin2live1118 again (`SAVES_LIST=qs_fin2live1118 LAPS=1 brot.sh <name>
+"diag:DIAG_STATE=True"`, ~2.5 min) -> 5.
 
-**Traps:** a live FMRS save has the main mission active: set `activeVessel` to the booster before the farm flies it. The context-limit
-hook now fires only right after a batch launch (claudeHooks.py `BATCH_LAUNCH`).
+**Traps:** `ttl=` is logged rounded to whole seconds, so ut+ttl "steps" of 1-2 s are rounding, not events (the
+earlier "ut+ttl -2.0 s" in both live logs is just that). A live FMRS save has the main mission active: set
+`activeVessel` to the booster before the farm flies it.
 
 ## 2026-11-18 late night: boosterland -- the live "10x less torque" was a misreading; the real fault was the hold probe reading the fins' deflection (fixed, unflown)
 

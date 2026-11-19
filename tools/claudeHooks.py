@@ -162,6 +162,10 @@ def batch_launched(inp):
     if inp.get("hook_event_name") != "PostToolUse" or inp.get("tool_name") != "Bash":
         return False
     command = (inp.get("tool_input") or {}).get("command") or ""
+    # Only the command itself: a heredoc body or a quoted string that merely names a
+    # batch script is text (a handoff written by a heredoc fired the order, 2026-11-18).
+    command = command.split("<<", 1)[0]
+    command = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", command)
     return bool(BATCH_LAUNCH.search(command))
 
 
