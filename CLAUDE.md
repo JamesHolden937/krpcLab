@@ -49,7 +49,7 @@ appears:
   `testInstances/batchHooks.py`): saves in sync, same GameData, nothing stray,
   farm restarted, code committed; then swap after, leftovers, what to do now
   (read, handoff, commit, clear) and the periodic whole-vehicle audit.
-  When woken by an AUTO-CONTINUE message, `detachjob status NAME --tail 60` shows it.
+  When woken by an AUTO-CONTINUE message, `detachjob status NAME --tail 150` shows it.
 - *Suite run beside the farm, or a code edit in the main tree mid-batch*
   (`claudeHooks.py bash|edit`): refused, with what to do instead.
 - *Post-commit bundle/suite failure* (`claudeHooks.py notice`): reported once.
@@ -221,6 +221,13 @@ unchanged), an instance with a different mod set (`BetterTimeWarp` once moved
 a deorbit pass 23 km) -- is checked by `testInstances/batchHooks.py` at every
 batch's start and end. Re-clone rather than patch. See
 [docs/testInstances.md](docs/testInstances.md).
+
+## Reading code and logs (token cost)
+
+- **Never Read a source file over ~500 lines whole** (`boosterland/autoland.py` is 3.3k, ~40k tokens):
+  `grep -n "def \|^class " FILE` (or grep the name you need), then Read with `offset`/`limit` around it.
+- Read logs through the pilot's summary tool (`boosterland/tools/logsum.py`, the spaceplane's `*sum.py`),
+  and only then the lines of one log around the event it points to.
 
 ## Hard conventions
 

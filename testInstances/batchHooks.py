@@ -201,7 +201,7 @@ AUDIT = """AUDIT DUE (every %d batches; this was batch %d): stop and audit the w
       The largest error is rarely in the part you are looking at."""
 
 NEXT = """NOW (batch over; token cost is calls x context, so a fresh context per batch):
-  1. Read the result with the pilot's summary tools (not raw logs, not part of it).
+  1. Read the result (above, where the pilot has a summary tool; else its summary tools), not raw logs.
   2. Rewrite docs/%s/handoff.md's section so a cold session can carry on: the result with its
      log/batch names, what it means, the exact next batch to fly and why, and anything the user said
      that no doc records (a standing instruction goes into CLAUDE.md or memory, not only the handoff).
@@ -211,6 +211,38 @@ NEXT = """NOW (batch over; token cost is calls x context, so a fresh context per
      No next batch: clear self (mcp__ccd_session_mgmt__clear_session "self") with a one-line summary.
      Skip the clear only while the user is mid-conversation (a question or decision open) or the
      context is still small (under ~100k tokens)."""
+
+
+# Per pilot: the summary tool that reads a batch's logs (argv + log paths).
+SUMMARY = {"boosterland": [os.path.join(ROOT, "boosterland", "tools", "logsum.py")]}
+MAX_LINES = 80
+
+
+def summary(t0):
+    """The batch's result, so the session that reads this needs no further call to see it:
+    the harness's rot file(s) written during the batch and, where the pilot has one, its
+    one-line-per-flight summary of the logs the batch wrote."""
+    rots = sorted(f for f in glob.glob(os.path.join(ROOT, "logs", "rot-*.txt"))
+                  if os.path.getmtime(f) >= t0)
+    for f in rots[-2:]:
+        with open(f, errors="replace") as fh:
+            lines = fh.read().splitlines()
+        say("result %s (%d lines%s):" % (os.path.relpath(f, ROOT), len(lines),
+            ", last %d shown" % MAX_LINES if len(lines) > MAX_LINES else ""))
+        print("\n".join(lines[-MAX_LINES:]), flush=True)
+    logs = sorted((f for f in glob.glob(os.path.join(ROOT, "logs", "LOG[0-9]*"))
+                   if os.path.getmtime(f) >= t0),
+                  key=lambda f: int(os.path.basename(f)[3:]) if os.path.basename(f)[3:].isdigit() else 0)
+    tool = SUMMARY.get(pilot_of_cmd())
+    if tool and logs:
+        r = subprocess.run([sys.executable] + tool + logs, capture_output=True, text=True, timeout=120)
+        out = r.stdout.strip().splitlines()
+        say("%s over the batch's %d log(s) %s..%s:" % (os.path.basename(tool[0]), len(logs),
+            os.path.basename(logs[0]), os.path.basename(logs[-1])))
+        print("\n".join(out[-MAX_LINES:]) or (r.stderr.strip()[-500:] or "(no output)"), flush=True)
+    elif logs:
+        say("the batch wrote %d log(s): %s..%s" % (len(logs), os.path.basename(logs[0]),
+                                                    os.path.basename(logs[-1])))
 
 
 def post():
@@ -231,6 +263,7 @@ def post():
     n = st.get("count", 0) + 1
     st.update(count=n, last_end=now, last_rc=rc)
     save(st)
+    summary(st.get("pre_time") or float(os.environ.get("FARMLAUNCH_START") or now))
     print(NEXT % pilot_of_cmd(), flush=True)
     if n % AUDIT_EVERY == 0:
         print(AUDIT % (AUDIT_EVERY, n), flush=True)

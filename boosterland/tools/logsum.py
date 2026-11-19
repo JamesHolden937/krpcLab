@@ -171,8 +171,11 @@ def main(argv=None):
                      " ".join("%.1f" % h for h in hs)))
         return 0
 
+    last_config = None
     for path in args.logs:
         rows, phases, done, resweep, config = summarise(path)
+        # LOG_DIR says where the log went, not how the flight flew.
+        config = " ".join(f for f in (config or "").split() if not f.startswith("LOG_DIR="))
         # The *first* entry into COAST is the boostback exit; a later one is
         # a correction burn ending, which is a different event entirely.
         bb = next(((ut, note) for ut, n, note in phases if n == "COAST"),
@@ -186,8 +189,12 @@ def main(argv=None):
                  ("ut=%.2f" % resweep) if resweep else "no",
                  ("%s %.0f m at %.1f m/s" % (done[0].split(".")[-1], done[1], done[3]))
                  if done else "(no exit line)"))
-        # Which --set flew it.  A sweep is twenty logs that differ only here.
-        print("               config: %s" % (config or "(not recorded)"))
+        # Which --set flew it.  A sweep is twenty logs that differ only here,
+        # so it is printed when it changes: a log with no config line under it
+        # flew the one above.
+        if config != last_config:
+            print("               config: %s" % (config or "(not recorded)"))
+            last_config = config
         if args.trace:
             for ut, phase, alt, pad, miss, cda, mach in rows:
                 if phase in ("COAST", "CORRECTION", "LANDING_BURN"):
