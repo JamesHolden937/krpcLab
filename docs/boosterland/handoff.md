@@ -2,29 +2,31 @@
 
 This pilot's sections (most recent first). Replace a section rather than append; history goes in journal.md.
 
-## 2026-11-18 night: boosterland -- live flight LOG17952 missed 1200 m short: the live booster has ~10x less control torque than the farm's
+## 2026-11-18 late night: boosterland -- the live "10x less torque" was a misreading; the real fault was the hold probe reading the fins' deflection (fixed, unflown)
 
-State: defaults b3480ed9 unchanged, no code changed. The farm section below (nsep-1118, ~6 m) is still the farm's state.
+State: defaults b3480ed9 unchanged (no config change); code change in `environment.refresh_holdable`, committed, **not flown**.
+boosterland offline tests 206 OK. Farm down.
 
-**LOG17952** (the user, live, FMRS_save_1 of 'Heavy Shuttle', 276.7 t at separation): boostback exit miss 35 m. The flip
-cost ~2.7 km of predicted miss (err 40-100 deg for 25 s at M1.5) and the aoa steering won it back (+44 m at 11 km).
-Below ~9 km it commanded 16-18 deg (`can`), held only 9-11 (`hold`); `trk` fell to 0.57 (lift x0.32) and the predicted
-miss jumped -203 -> -1370 m at 7.7-7.0 km. The burn started 1294 m off; touchdown 1200 m short at 13 m/s on terrain,
-broke up (144 -> 1.6 t). Brief "throttle DIVERGED" at boostback end (user's throttle?) -- not the cause.
+**LOG17952** (live, FMRS_save_1 of 'Heavy Shuttle'): 1200 m short, broke up; below 9 km `can` 16-18 deg, held 7-12.
 
-**Why live differs:** the control budget. `torque limit` line: farm LOG17950 budget/q 2734 (limit 90 deg); live
-budget/q 304 then 203 (limit 23.8, then 9.4 deg). The aero moment/q curves are about the same (22 deg: 341 farm, 289
-live). The fins' save settings are identical (6 fins, authorityLimiter 150, deployAngle 22.5, nothing ignored;
-FMRS_save_1 vs saves/qs_finbooster2). So it's the game's reported available torque (wheels + RCS + surfaces; the
-surface term dominates on the farm), not the craft's settings. Live mods that could change it: ReStock, KSPCommunityFixes,
-ModularFlightIntegrator, KJR, AFBW, Kopernicus expansion (live GameData list).
+**The torque is the same on farm and live.** Fixed (wheels+RCS): flip law 0.056 v 0.055 rad/s^2 (x inertia ~1.9 MN m).
+Surface/q ~140 m^3 on both at 18 km (q from kspSim/atmosphere.py). budget/q = 0.7(fixed/q + surf/q) is dominated by
+fixed/q, so it scales as 1/q: farm's first probe was at 29 km (q ~550 Pa) -> 2734, live's at 18 km (q ~6500) -> 304.
+Farm at 18 km read 230, at 12 km 116 -- same as live. The live booster just reached the coast handback lower
+(18 km v 29 km): a different separation, not a different install. Old next step 1 (fly FMRS save on farm) is moot.
+
+**Real fault (old item 2, `can` bouncing 5.6-26 deg):** `refresh_holdable`'s torque and lift probes through
+`simulate_aerodynamic_torque_at/force_at` include the fins' *current* deflection (saturated in the coast, sat=1.00):
+the 11 deg moment/q read 159 then 243 eight seconds apart at the same Mach. Same trap fixed in probe_lift_slope
+(4a09ace). **Fix:** each angle probed at +aoa and -aoa; restoring moment = half-sum along each side's own axis, lift =
+half-difference of the side force, drag = mean. Doubles the hold probe's calls (16 -> 32 per 2 s refresh).
 
 **Next, in order:**
-1. Copy the live `~/KSP-Retooled/saves/default/FMRS/FMRS_save_1.sfs` into a farm save and fly it on the farm with
-   DIAG_STATE=True (the `diag hold` line splits fixed (wheels+RCS) from surface). Budget ~2700 -> it's the install
-   (diff GameData, bisect mods); ~300 -> it's the state (propellant, CoM, Mach, the separation).
-2. Separately: `can` (holdable_aoa) read 16-26 deg while the 770892 probe said 9.4 deg and the booster held ~10.
-   Find why it bounced between 5.6 and 26 deg in the coast (a prediction error: fix it at its source).
+1. Fly it: nsep comparison on qs_finbooster2 (+_legs), 24 flights, read `can` v `hold` below 10 km and miss v nsep-1118.
+   Then the user flies live.
+2. Old items from the evening section below (outliers LOG17937/17942, coast spend split, howItWorks.pdf, DIAG_DRAG).
+
+**Trap:** never compare budget/q across probes at different q -- the fixed term divides by q. Compare torque (N m).
 
 ## 2026-11-18 evening: boosterland -- coast steering fixed at its source (lift probe + solve root); new fin2 separation; median miss ~6 m
 

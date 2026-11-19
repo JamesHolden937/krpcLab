@@ -909,26 +909,40 @@ class Environment:
         polar.append((0.0, 0.0, -vec.dot(force, vec.unit(velocity)) / q))
         for i in range(1, n + 1):
             aoa = top * i / n
-            tilted = vec.unit(vec.add(vec.scale(retrograde, math.cos(aoa)),
-                                      vec.scale(side, math.sin(aoa))))
-            turned = vec.rotation_onto(rotation, nose, tilted)
-            if turned is None:
-                return
-            torque = self._probe_torque(position, velocity, turned)
-            if torque is None:
-                return
-            # tau along cross(t, retrograde) turns t toward retrograde: the
-            # identity (t x F) x t ~ F holds in either handedness.
-            axis = vec.cross(tilted, retrograde)
-            if vec.norm(axis) < 1e-9:
-                return
-            curve.append((aoa, vec.dot(torque, vec.unit(axis)) / q))
-            force = self._probe_force(position, velocity, turned)
-            if force is None:
-                return
-            lifts.append((aoa, vec.dot(force, side) / q))
-            polar.append((aoa, lifts[-1][1],
-                          -vec.dot(force, vec.unit(velocity)) / q))
+            # Mirrored, as probe_lift_slope: the vessel at +aoa and -aoa.  The
+            # game's torque and force include the fins as deflected *now*
+            # (saturated in the coast, flipping sign), a term that does not
+            # turn with the angle: the 11 deg moment/q read 159 then 243 eight
+            # seconds apart at one Mach, and holdable 9.4 -> 18 deg while the
+            # booster held 7-12 (live LOG17952).  The restoring moment and the
+            # lift change sign with the angle, the deflection's do not, so the
+            # half-sum along each side's own axis (and the half-difference of
+            # the side force) leaves the airframe's alone.
+            moments, sides, drags = [], [], []
+            for sign in (1.0, -1.0):
+                tilted = vec.unit(vec.add(
+                    vec.scale(retrograde, math.cos(aoa)),
+                    vec.scale(side, sign * math.sin(aoa))))
+                turned = vec.rotation_onto(rotation, nose, tilted)
+                if turned is None:
+                    return
+                torque = self._probe_torque(position, velocity, turned)
+                if torque is None:
+                    return
+                # tau along cross(t, retrograde) turns t toward retrograde:
+                # the identity (t x F) x t ~ F holds in either handedness.
+                axis = vec.cross(tilted, retrograde)
+                if vec.norm(axis) < 1e-9:
+                    return
+                moments.append(vec.dot(torque, vec.unit(axis)))
+                force = self._probe_force(position, velocity, turned)
+                if force is None:
+                    return
+                sides.append(sign * vec.dot(force, side))
+                drags.append(-vec.dot(force, vec.unit(velocity)))
+            curve.append((aoa, 0.5 * (moments[0] + moments[1]) / q))
+            lifts.append((aoa, 0.5 * (sides[0] + sides[1]) / q))
+            polar.append((aoa, lifts[-1][1], 0.5 * (drags[0] + drags[1]) / q))
         wheels = self._control_torque("available_reaction_wheel_torque")
         rcs = self._control_torque("available_rcs_torque")
         surface = self._control_torque("available_control_surface_torque")
