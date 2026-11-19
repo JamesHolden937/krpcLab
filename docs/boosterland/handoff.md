@@ -26,7 +26,7 @@ short, steering recovered it to 45 m by 11 km. Below 9 km cmd 17-18 deg = `can`,
 (`in=+0.51/+1.00`, sat=1.00), trk 0.90 -> 0.57; at 7.7 -> 7.0 km the miss jumped 203 -> 1370 m and stayed. So: `can`
 overstated what the fins could hold (the probe read saturated fins) -> asked for lift it could not make -> short.
 
-**IN FLIGHT: detachjob `mirror1118`** (started 19:10, ETA ~19:30): `SAVES_LIST="qs_finbooster2 qs_finbooster2_legs"
+**DONE, UNREAD: detachjob `mirror1118`** (19:10-19:21, exit 0; farm stopped after): `SAVES_LIST="qs_finbooster2 qs_finbooster2_legs"
 LAPS=2 brot.sh mirror-1118 d:` -> `logs/rot-mirror-1118.txt`, 24 flights on fb61b3b (mirrored hold probe), defaults.
 Read: miss median and outliers v nsep-1118 (~6 m, 20/24 within 36 m); `can` v `hold` and `trk` below 10 km (can
 should no longer exceed what is held with sat=1.00; can should not bounce tick to tick); coast spend (budgetcheck).
