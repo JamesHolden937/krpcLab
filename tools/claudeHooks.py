@@ -14,12 +14,15 @@ stdin, prints a hook JSON reply (or nothing), always exits 0.
             the tree: an edit mid-batch splits it into two experiments).
   notice    UserPromptSubmit / PostToolUse(Bash): a new .git-bundle-error.log
             (the post-commit bundle or background suite failed) is reported once;
-            and the CONTEXT LIMIT: once the conversation's context (the last
-            assistant turn's input + cache tokens, read from the transcript) is
-            over CONTEXT_LIMIT, a hard order to write the handoff and clear,
-            repeated every CONTEXT_REPEAT_S until it is done (the user,
-            2026-11-18: a judgement call to skip the clear "while the context is
-            small" was skipped at 205k).
+            and the CONTEXT LIMIT: when a Bash call has just launched a farm
+            batch (BATCH_LAUNCH: `detachjob start`, `farmlaunch`, a batch
+            script) and the conversation's context (the last assistant turn's
+            input + cache tokens, read from the transcript) is over
+            CONTEXT_LIMIT, a hard order to write the handoff and clear.  Only
+            then: the batch's wait is the free moment, and an order mid-analysis
+            cut work the user wanted finished (the user, 2026-11-18: "only
+            triggers after you start a farm batch"; earlier the same day a
+            judgement call to skip the clear was skipped at 205k).
 """
 import json
 import os
@@ -34,7 +37,9 @@ import batchHooks as bh  # noqa: E402
 LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "farmlaunch-kspfarm.lock")
 CODE_EXT = (".py", ".sh", ".cs", ".cfg", ".craft", ".sfs")
 CONTEXT_LIMIT = int(os.environ.get("KRPCLAB_CONTEXT_LIMIT", "100000"))   # tokens
-CONTEXT_REPEAT_S = 600          # the order is repeated this often until cleared
+# A Bash command that starts a farm batch (farmlaunch refuses from a session
+# unless under detachjob, so a session's launches go through `detachjob start`).
+BATCH_LAUNCH = re.compile(r"\bdetachjob\s+start\b|\bfarmlaunch\b|\b[bs]rot\.sh\b|\bfarmfly\b")
 
 
 def reply(event, **kw):
@@ -145,22 +150,23 @@ def context_tokens(path):
     return None
 
 
+def batch_launched(inp):
+    """Did this hook's Bash call start a farm batch?"""
+    if inp.get("hook_event_name") != "PostToolUse" or inp.get("tool_name") != "Bash":
+        return False
+    command = (inp.get("tool_input") or {}).get("command") or ""
+    return bool(BATCH_LAUNCH.search(command))
+
+
 def context_order(inp):
+    if not batch_launched(inp):
+        return None
     tokens = context_tokens(inp.get("transcript_path") or "")
     if tokens is None or tokens < CONTEXT_LIMIT:
         return None
-    stamp = os.path.join(ROOT, "logs", ".ctxOrder-%s" % (inp.get("session_id") or "x"))
-    try:
-        if time.time() - os.path.getmtime(stamp) < CONTEXT_REPEAT_S:
-            return None
-    except OSError:
-        pass
-    os.makedirs(os.path.dirname(stamp), exist_ok=True)
-    with open(stamp, "w"):
-        pass
-    return ("HARD RULE -- CONTEXT LIMIT: this conversation's context is %dk tokens, over the %dk limit "
-            "(tools/claudeHooks.py, the user 2026-11-18). Not a judgement call. Finish only the step in hand "
-            "(if you are answering the user, answer first), then: (1) rewrite the handoff of every pilot "
+    return ("HARD RULE -- CONTEXT LIMIT: a farm batch just started and this conversation's context is "
+            "%dk tokens, over the %dk limit (tools/claudeHooks.py, the user 2026-11-18). Not a judgement "
+            "call. Finish only the step in hand (if you are answering the user, answer first), then: (1) rewrite the handoff of every pilot "
             "touched (docs/<pilot>/handoff.md + HANDOFF.md's row) with the results so far, the running job "
             "and what to do with its outcome; (2) commit; (3) if a batch is flying or about to be: launch "
             "it detached and arm the relay task (~/.claude/docs/autoContinue.md steps 2-4); (4) clear self "
