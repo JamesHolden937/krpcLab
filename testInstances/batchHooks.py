@@ -208,8 +208,8 @@ NEXT = """NOW (batch over; token cost is calls x context, so a fresh context per
      Update that pilot's row in HANDOFF.md.
   3. Commit.
   4. Next batch: launch it detached (farmlaunch from a session prints the steps), then clear self.
-     No next batch: first tell the user (PushNotification: the result in one line and that nothing is
-     flying), re-title the session without the hourglass (set_session_title "self",
+     No next batch: first tell the user (PushNotification, for the phone: the result in one line and
+     that nothing is flying; the desktop was already notified above), re-title the session without the hourglass (set_session_title "self",
      "<project>: <result, <=8 words>"), then clear self (mcp__ccd_session_mgmt__clear_session "self").
      A clear wipes everything shown in the conversation, so the notification is the only report.
      Skip the clear only while the user is mid-conversation (a question or decision open). Over the
@@ -237,15 +237,34 @@ def summary(t0):
                    if os.path.getmtime(f) >= t0),
                   key=lambda f: int(os.path.basename(f)[3:]) if os.path.basename(f)[3:].isdigit() else 0)
     tool = SUMMARY.get(pilot_of_cmd())
+    result = []
     if tool and logs:
         r = subprocess.run([sys.executable] + tool + logs, capture_output=True, text=True, timeout=120)
         out = r.stdout.strip().splitlines()
         say("%s over the batch's %d log(s) %s..%s:" % (os.path.basename(tool[0]), len(logs),
             os.path.basename(logs[0]), os.path.basename(logs[-1])))
         print("\n".join(out[-MAX_LINES:]) or (r.stderr.strip()[-500:] or "(no output)"), flush=True)
+        result = [l.split("->", 1)[1].strip() for l in out if "->" in l]
     elif logs:
         say("the batch wrote %d log(s): %s..%s" % (len(logs), os.path.basename(logs[0]),
                                                     os.path.basename(logs[-1])))
+    return logs, result
+
+
+def notify(rc, logs, result):
+    """Tell the user at once that the batch is over: the session's own PushNotification
+    comes only after a relay wakes it (minutes later) and reads the result."""
+    name = os.environ.get("DETACHJOB") or "batch"
+    msg = "%s %s done exit=%s, %d log(s)" % (pilot_of_cmd() or "farm", name, rc, len(logs))
+    if logs:
+        msg += " %s..%s" % (os.path.basename(logs[0]), os.path.basename(logs[-1]))
+    body = "\n".join(result[:8])
+    try:
+        subprocess.run(["notify-send", "-a", "krpcLab", msg, body], timeout=10,
+                       capture_output=True)
+        say("notified: " + msg)
+    except Exception as e:
+        say("notify-send failed: %r" % e)
 
 
 def post():
@@ -266,7 +285,8 @@ def post():
     n = st.get("count", 0) + 1
     st.update(count=n, last_end=now, last_rc=rc)
     save(st)
-    summary(st.get("pre_time") or float(os.environ.get("FARMLAUNCH_START") or now))
+    logs, result = summary(st.get("pre_time") or float(os.environ.get("FARMLAUNCH_START") or now))
+    notify(rc, logs, result)
     print(NEXT % pilot_of_cmd(), flush=True)
     if n % AUDIT_EVERY == 0:
         print(AUDIT % (AUDIT_EVERY, n), flush=True)
